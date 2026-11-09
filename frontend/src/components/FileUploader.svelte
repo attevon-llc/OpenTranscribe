@@ -1,11 +1,9 @@
 <script lang="ts">
-  import { formatFileSize } from '$lib/utils/formatting';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import BulkAudioExtractionModal from './BulkAudioExtractionModal.svelte';
 
-  // Global stores
   import { recordingStore, recordingManager, hasActiveRecording } from '$stores/recording';
   import { uploadsStore } from '$stores/uploads';
   import type { UploadTranscriptionParams } from '$lib/services/uploadService';
@@ -17,23 +15,30 @@
   import { usageStore, isOverLimit, showQuotaExceeded } from '$lib/cloud';
   import { get } from 'svelte/store';
 
-  // APIs
   import { loadProtectedMediaAuthConfig } from '$lib/services/configService';
-  import { getAudioExtractionSettings, type AudioExtractionSettings } from '$lib/api/audioExtractionSettings';
+  import type { AudioExtractionSettings } from '$lib/api/audioExtractionSettings';
   import {
-    getTranscriptionSettings,
-    getTranscriptionSystemDefaults,
     type TranscriptionSettings,
     type TranscriptionSystemDefaults,
-    DEFAULT_TRANSCRIPTION_SETTINGS,
     isLightweightModel,
-    speakerPrefill,
-    speakerSubmitRange
+    speakerPrefill
   } from '$lib/api/transcriptionSettings';
-  import { ASRSettingsApi } from '$lib/api/asrSettings';
-  import { getMaxUploadBytes, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
-  import { MEDIA_TYPE_BY_EXTENSION, fileExtension } from '$lib/utils/mediaFormats';
+  import { warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
   import { listTags } from '$lib/api/tags';
+
+  import {
+    defaultSteps, withExtractionStep, withoutExtractionStep, shouldOfferExtraction,
+    buildTranscriptionParams, type StepConfig
+  } from '$lib/upload/wizardSteps';
+  import {
+    restorePreviousValues, savePreviousValues as persistPreviousValues,
+    loadRecordingSettings, loadAudioExtractionSettings, loadTranscriptionPreferences,
+    loadAdminDefaultModel, type UploadPreviousValues
+  } from '$lib/upload/uploadPreferences';
+  import { startBulkExtraction, extractAndQueue } from '$lib/upload/bulkExtraction';
+  import {
+    MEDIA_URL_REGEX, validateSelectedFile, partitionMultipleFiles, buildUrlPayload, urlErrorToast
+  } from '$lib/upload/submitUpload';
 
   // Step components
   import MediaFilePanel from './upload/MediaFilePanel.svelte';
@@ -48,63 +53,8 @@
 
   // ── Types ──
   interface FileWithSize extends File { size: number; }
-  type StepId = 'media' | 'extraction' | 'tags' | 'collections' | 'speakers' | 'model' | 'review';
-  interface StepConfig {
-    id: StepId;
-    labelKey: string;
-    optional: boolean;
-    skipped: boolean;
-    /**
-     * Optional per-step content width (any valid CSS `max-width` value), applied
-     * to `.step-content` for the active step. All steps share one `.step-body`
-     * (see the modal's fixed width), so a step whose natural content is narrower
-     * than the others — e.g. a short list of chips — would otherwise stretch to
-     * fill the same width as a step with a wide filter/create row (#751 item 1).
-     */
-    contentWidth?: string;
-  }
-  interface UploadPreviousValues {
-    collectionIds: string[];
-    collectionNames: string[];
-    tagNames: string[];
-    minSpeakers: number | null;
-    maxSpeakers: number | null;
-    numSpeakers: number | null;
-    skipSummary: boolean;
-    selectedWhisperModel: string | null;
-    skippedSteps: string[];  // step IDs that were skipped (e.g. ['tags', 'collections'])
-    timestamp: number;
-  }
-
-  /**
-   * Load the FFmpeg.wasm wrapper on first use.
-   *
-   * A static import pulled `@ffmpeg/ffmpeg` + `@ffmpeg/util` into the home-page
-   * chunk, so every visitor downloaded the wrapper even though client-side audio
-   * extraction is an opt-in path taken only for video uploads. The dynamic
-   * `import()` moves it to its own chunk, fetched the first time a user actually
-   * extracts. The module caches itself, so repeat calls are free.
-   */
-  async function loadAudioExtractionService() {
-    const { audioExtractionService } = await import('$lib/services/audioExtractionService');
-    return audioExtractionService;
-  }
-
-  // ── Constants ──
-  const MEDIA_URL_REGEX = /^https?:\/\/.+$/;
-  const PREVIOUS_VALUES_KEY = 'opentr:uploadPreviousValues';
-
   // ── Stepper State ──
-  let steps: StepConfig[] = [
-    { id: 'media',       labelKey: 'uploader.stepMedia',       optional: false, skipped: false },
-    { id: 'tags',        labelKey: 'uploader.stepTags',        optional: true,  skipped: false, contentWidth: '420px' },
-    { id: 'collections', labelKey: 'uploader.stepCollections', optional: true,  skipped: false },
-    // Model comes first: choosing the Fast model (or having speaker detection off) removes the
-    // Speakers step, so the user must not type a range before learning it would be discarded.
-    { id: 'model',       labelKey: 'uploader.stepModel',       optional: false, skipped: false },
-    { id: 'speakers',    labelKey: 'uploader.stepSpeakers',    optional: false, skipped: false },
-    { id: 'review',      labelKey: 'uploader.stepReview',      optional: false, skipped: false },
-  ];
+  let steps: StepConfig[] = defaultSteps();
   let currentStepIndex = 0;
   let maxStepReached = 0;
 
@@ -221,51 +171,15 @@
       voiceprintsOn = answer?.voiceprint_matching?.enabled !== false;
     });
     void loadProtectedMediaAuthConfig();
-    loadRecordingSettings();
+    applyRecordingSettings();
 
-    (async () => {
-      const defaults = { auto_extract_enabled: true, extraction_threshold_mb: 100, remember_choice: false, show_modal: true };
-      // Off = the deployment owns these preferences and the endpoint does not exist.
-      if (!isCapabilityEnabled(get(capabilities), 'audio_extraction')) {
-        audioExtractionSettings = defaults;
-        return;
-      }
-      try {
-        audioExtractionSettings = await getAudioExtractionSettings();
-      } catch {
-        audioExtractionSettings = defaults;
-      }
-    })();
-
-    (async () => {
-      try {
-        const [userSettings, systemDefaults] = await Promise.all([
-          getTranscriptionSettings(),
-          getTranscriptionSystemDefaults()
-        ]);
-        transcriptionSettings = userSettings;
-        transcriptionSystemDefaults = systemDefaults;
-        applyTranscriptionPreferences();
-      } catch {
-        transcriptionSettings = { ...DEFAULT_TRANSCRIPTION_SETTINGS };
-        transcriptionSystemDefaults = {
-          min_speakers: 1, max_speakers: 20, garbage_cleanup_enabled: true, garbage_cleanup_threshold: 50,
-          valid_speaker_prompt_behaviors: ['always_prompt', 'use_defaults', 'use_custom'],
-          available_source_languages: { auto: 'Auto-detect', en: 'English' },
-          available_llm_output_languages: { en: 'English' }, common_languages: ['auto', 'en'],
-          vad_threshold: 0.5, vad_min_silence_ms: 2000, vad_min_speech_ms: 250, vad_speech_pad_ms: 400,
-          hallucination_silence_threshold: null, repetition_penalty: 1.0,
-          diarization_source_default: 'provider', valid_diarization_sources: ['provider', 'local', 'pyannote', 'off']
-        };
-      }
-    })();
-
-    (async () => {
-      try {
-        const activeInfo = await ASRSettingsApi.getActiveLocalModel();
-        adminDefaultModel = activeInfo.active_model || 'large-v3-turbo';
-      } catch { adminDefaultModel = 'large-v3-turbo'; }
-    })();
+    void loadAudioExtractionSettings().then((v) => { audioExtractionSettings = v; });
+    void loadTranscriptionPreferences().then(({ settings, systemDefaults }) => {
+      transcriptionSettings = settings;
+      transcriptionSystemDefaults = systemDefaults;
+      applyTranscriptionPreferences();
+    });
+    void loadAdminDefaultModel().then((v) => { adminDefaultModel = v; });
 
     (async () => {
       try {
@@ -314,27 +228,12 @@
     ({ minSpeakers, maxSpeakers } = speakerPrefill(transcriptionSettings));
   }
 
-  // Everything the wizard collected about HOW to transcribe, as one object. Read it when the
-  // user confirms, not later: audio extraction finishes in the background after the wizard
-  // has reset its own state, so a lazy read there would see the defaults.
   function getTranscriptionParams(): UploadTranscriptionParams {
-    // Nothing to send for a range the server would discard (see speakerCountApplies).
-    const range = speakerCountApplies
-      ? speakerSubmitRange(
-          transcriptionSettings,
-          transcriptionSystemDefaults,
-          { minSpeakers, maxSpeakers },
-          numSpeakers
-        )
-      : { minSpeakers: null, maxSpeakers: null };
-    return {
-      minSpeakers: range.minSpeakers,
-      maxSpeakers: range.maxSpeakers,
-      numSpeakers: speakerCountApplies ? numSpeakers : null,
-      whisperModel: selectedWhisperModel,
-      skipSummary,
-      voiceprintConsent: voiceprintConsent && voiceprintsOn && speakerCountApplies ? 'granted' : null
-    };
+    return buildTranscriptionParams({
+      speakerCountApplies, transcriptionSettings, transcriptionSystemDefaults,
+      minSpeakers, maxSpeakers, numSpeakers, selectedWhisperModel, skipSummary,
+      voiceprintConsent, voiceprintsOn
+    });
   }
 
   function getOrganizeParams() {
@@ -345,60 +244,23 @@
   }
 
   // ── Recording Settings ──
-  function loadRecordingSettings() {
-    const settings = localStorage.getItem('recordingSettings');
-    if (settings) {
-      try {
-        const parsed = JSON.parse(settings);
-        maxRecordingDuration = (parsed.maxRecordingDuration || 120) * 60;
-        recordingQuality = parsed.recordingQuality || 'high';
-        autoStopEnabled = parsed.autoStopEnabled !== undefined ? parsed.autoStopEnabled : true;
-      } catch { /* use defaults */ }
-    }
+  function applyRecordingSettings() {
+    ({ maxRecordingDuration, recordingQuality, autoStopEnabled } = loadRecordingSettings());
   }
 
   // ── Remember Previous Values ──
   function loadPreviousValues() {
-    try {
-      const stored = localStorage.getItem(PREVIOUS_VALUES_KEY);
-      if (!stored) return;
-      const prev: UploadPreviousValues = JSON.parse(stored);
-
-      // Restore tags
-      if (prev.tagNames?.length > 0) {
-        selectedTags = [...prev.tagNames];
-        hasPreviousTags = true;
-      }
-
-      // Restore collections (validate IDs still exist)
-      if (prev.collectionIds?.length > 0) {
-        const validCollections = prev.collectionIds
-          .map(id => availableCollections.find(c => c.uuid === id))
-          .filter(Boolean) as Array<{uuid: string; name: string}>;
-        if (validCollections.length > 0) {
-          selectedCollections = validCollections;
-          hasPreviousCollections = true;
-        }
-      }
-
-      // Restore speaker settings
-      if (prev.minSpeakers !== undefined) minSpeakers = prev.minSpeakers;
-      if (prev.maxSpeakers !== undefined) maxSpeakers = prev.maxSpeakers;
-      if (prev.numSpeakers !== undefined) numSpeakers = prev.numSpeakers;
-
-      // Restore model/options
-      if (prev.skipSummary) skipSummary = prev.skipSummary;
-      if (prev.selectedWhisperModel !== undefined) selectedWhisperModel = prev.selectedWhisperModel;
-
-      // Restore which steps were skipped
-      if (prev.skippedSteps?.length > 0) {
-        steps = steps.map(s =>
-          s.optional && prev.skippedSteps.includes(s.id) ? { ...s, skipped: true } : s
-        );
-      }
-
-      rememberValues = true;
-    } catch { /* ignore parse errors */ }
+    const prev = restorePreviousValues(availableCollections, steps);
+    if (!prev) return;
+    if (prev.tags) { selectedTags = prev.tags; hasPreviousTags = true; }
+    if (prev.collections) { selectedCollections = prev.collections; hasPreviousCollections = true; }
+    if (prev.minSpeakers !== undefined) minSpeakers = prev.minSpeakers;
+    if (prev.maxSpeakers !== undefined) maxSpeakers = prev.maxSpeakers;
+    if (prev.numSpeakers !== undefined) numSpeakers = prev.numSpeakers;
+    if (prev.skipSummary) skipSummary = prev.skipSummary;
+    if (prev.selectedWhisperModel !== undefined) selectedWhisperModel = prev.selectedWhisperModel;
+    if (prev.steps) steps = prev.steps;
+    rememberValues = true;
   }
 
   function savePreviousValues() {
@@ -412,7 +274,7 @@
       skippedSteps,
       timestamp: Date.now(),
     };
-    localStorage.setItem(PREVIOUS_VALUES_KEY, JSON.stringify(values));
+    persistPreviousValues(values);
   }
 
   function clearPreviousTags() {
@@ -486,66 +348,31 @@
     isDuplicateFile = false;
     duplicateFileId = null;
 
-    if (!selectedFile.type || !selectedFile.type.match(/^(audio|video)\//)) {
-      error = $t('uploader.fileTypeError');
+    const verdict = validateSelectedFile(selectedFile);
+    error = verdict.error;
+    if (!verdict.ok) {
       file = null;
       return;
-    }
-
-    if (exceedsUploadLimit(selectedFile.size)) {
-      // Only reachable when the live limit is a real ceiling (exceedsUploadLimit is
-      // false whenever getMaxUploadBytes() is null, i.e. the admin disabled it).
-      error = $t('uploader.fileTooLargeError', { fileSize: formatFileSize(selectedFile.size), maxSize: formatFileSize(getMaxUploadBytes() ?? 0) });
-      file = null;
-      return;
-    }
-
-    if (warrantsLargeUploadWarning(selectedFile.size)) {
-      error = $t('uploader.largeFileWarning', { fileSize: formatFileSize(selectedFile.size) });
     }
 
     file = selectedFile as FileWithSize;
 
     // Check if large video needs extraction step
-    const isVideo = selectedFile.type.startsWith('video/');
-    const thresholdMb = audioExtractionSettings?.extraction_threshold_mb || 100;
-    const isLargeFile = selectedFile.size > thresholdMb * 1024 * 1024;
-    const shouldOfferExtraction = audioExtractionSettings?.auto_extract_enabled !== false && isVideo && isLargeFile;
+    const offerExtraction = shouldOfferExtraction(selectedFile, audioExtractionSettings);
 
-    if (shouldOfferExtraction && !needsExtraction) {
-      // Insert extraction step after media
+    if (offerExtraction && !needsExtraction) {
       needsExtraction = true;
-      steps = [
-        steps[0], // media
-        { id: 'extraction', labelKey: 'uploader.stepExtraction', optional: false, skipped: false },
-        ...steps.slice(1), // tags, collections, speakers, model, review
-      ];
-    } else if (!shouldOfferExtraction && needsExtraction) {
+      steps = withExtractionStep(steps);
+    } else if (!offerExtraction && needsExtraction) {
       // Remove extraction step if file changed to non-video
       needsExtraction = false;
-      steps = steps.filter(s => s.id !== 'extraction');
+      steps = withoutExtractionStep(steps);
     }
   }
 
   function handleMultipleFiles(event: CustomEvent<{ files: File[] }>) {
     const files = event.detail.files;
-    const validFiles: File[] = [];
-    const invalidFiles: string[] = [];
-
-    files.forEach(f => {
-      if (exceedsUploadLimit(f.size)) {
-        invalidFiles.push(`${f.name} (${$t('uploader.tooLarge', { size: formatFileSize(f.size) })})`);
-        return;
-      }
-      const isValidType = f.type && (f.type.startsWith('audio/') || f.type.startsWith('video/'));
-      if (!isValidType) {
-        if (!(fileExtension(f.name) in MEDIA_TYPE_BY_EXTENSION)) {
-          invalidFiles.push(`${f.name} (${$t('uploader.unsupportedFormat')})`);
-          return;
-        }
-      }
-      validFiles.push(f);
-    });
+    const { validFiles, invalidFiles } = partitionMultipleFiles(files);
 
     if (invalidFiles.length > 0) {
       toastStore.error($t('uploader.skippedInvalidFiles', { count: invalidFiles.length, files: invalidFiles.join('\n') }));
@@ -573,7 +400,7 @@
     duplicateFileId = null;
     if (needsExtraction) {
       needsExtraction = false;
-      steps = steps.filter(s => s.id !== 'extraction');
+      steps = withoutExtractionStep(steps);
     }
   }
 
@@ -586,13 +413,16 @@
     duplicateFileId = null;
   }
 
-  // ── Audio Extraction Modal Handlers ──
   // ── Extraction ──
   let extractionChoice: 'extract' | 'full' = 'extract';
 
+  function closeBulkModal() {
+    showBulkAudioExtractionModal = false;
+    bulkVideosToExtract = [];
+    bulkRegularFiles = [];
+  }
 
   function handleBulkExtractionConfirm() {
-    showBulkAudioExtractionModal = false;
     const { collectionIds, tagNames } = getOrganizeParams();
     const transcriptionParams = getTranscriptionParams();
     if (bulkRegularFiles.length > 0) {
@@ -600,12 +430,10 @@
     }
     if (bulkVideosToExtract.length > 0) startBulkExtraction(bulkVideosToExtract, transcriptionParams);
     dispatch('uploadComplete', { multiple: true, count: bulkVideosToExtract.length + bulkRegularFiles.length });
-    bulkVideosToExtract = [];
-    bulkRegularFiles = [];
+    closeBulkModal();
   }
 
   function handleBulkUploadAllFull() {
-    showBulkAudioExtractionModal = false;
     const { collectionIds, tagNames } = getOrganizeParams();
     const allFiles = [...bulkVideosToExtract, ...bulkRegularFiles];
     if (allFiles.length > 0) {
@@ -613,33 +441,10 @@
     }
     dispatch('uploadComplete', { multiple: true, count: allFiles.length });
     toastStore.success($t('uploader.addedToQueueOnly', { count: allFiles.length }));
-    bulkVideosToExtract = [];
-    bulkRegularFiles = [];
+    closeBulkModal();
   }
 
-  function handleBulkExtractionCancel() {
-    showBulkAudioExtractionModal = false;
-    bulkVideosToExtract = [];
-    bulkRegularFiles = [];
-  }
-
-  function startBulkExtraction(videoFiles: File[], transcriptionParams: UploadTranscriptionParams) {
-    toastStore.info($t('uploader.extractingAudioFrom', { count: videoFiles.length }));
-    videoFiles.forEach(async (videoFile) => {
-      try {
-        const ea = await (await loadAudioExtractionService()).extractAudio(videoFile);
-        uploadsStore.addExtractedAudio(
-          ea.blob,
-          ea.filename,
-          ea.metadata,
-          ea.metadata.compressionRatio,
-          transcriptionParams
-        );
-      } catch {
-        toastStore.error($t('uploader.failedToExtractAudio', { filename: videoFile.name }));
-      }
-    });
-  }
+  const handleBulkExtractionCancel = closeBulkModal;
 
   // ── Recording Warning ──
   function handleRecordingWarningConfirm() {
@@ -690,23 +495,7 @@
 
       // Extraction runs in background — result is queued when done. Captured now: the wizard
       // resets its state before extraction finishes.
-      const transcriptionParams = getTranscriptionParams();
-      (async () => {
-        try {
-          const extractionService = await loadAudioExtractionService();
-          const extractedAudio = await extractionService.extractAudio(fileToExtract);
-          uploadsStore.addExtractedAudio(
-            extractedAudio.blob,
-            extractedAudio.filename,
-            extractedAudio.metadata,
-            extractedAudio.metadata.compressionRatio,
-            transcriptionParams
-          );
-          toastStore.success($t('uploader.audioExtractedSuccess', { ratio: extractedAudio.metadata.compressionRatio }));
-        } catch {
-          toastStore.error($t('uploader.failedToExtractAudio', { filename: fileToExtract.name }));
-        }
-      })();
+      void extractAndQueue(fileToExtract, getTranscriptionParams());
       return;
     }
 
@@ -731,23 +520,14 @@
 
     processingUrl = true;
     try {
-      const payload: any = { url: mediaUrl.trim() };
-
-      // Get extras from URL panel (auth, download quality)
-      if (urlPanelRef) {
-        const extras = urlPanelRef.getUrlPayloadExtras();
-        Object.assign(payload, extras);
-      }
-
       const { collectionIds, tagNames } = getOrganizeParams();
-      if (collectionIds) payload.collection_ids = collectionIds;
-      if (tagNames) payload.tag_names = tagNames;
-      if (skipSummary) payload.skip_summary = true;
-      const params = getTranscriptionParams();
-      if (params.minSpeakers != null) payload.min_speakers = params.minSpeakers;
-      if (params.maxSpeakers != null) payload.max_speakers = params.maxSpeakers;
-      if (params.numSpeakers != null) payload.num_speakers = params.numSpeakers;
-      if (params.whisperModel) payload.whisper_model = params.whisperModel;
+      const payload = buildUrlPayload(
+        mediaUrl,
+        urlPanelRef ? urlPanelRef.getUrlPayloadExtras() : null,
+        { collectionIds, tagNames },
+        skipSummary,
+        getTranscriptionParams()
+      );
 
       const response = await axiosInstance.post('/files/process-url', payload);
       const responseData = response.data;
@@ -763,14 +543,9 @@
         toastStore.success($t('uploader.mediaVideoAdded', { title: responseData.title || 'video' }));
       }
     } catch (error: unknown) {
-      const axiosError = error as any;
-      if (axiosError.response?.status === 409) {
-        toastStore.warning(axiosError.response.data.detail || $t('uploader.duplicateMediaVideo'));
-      } else if (axiosError.response?.status === 400) {
-        toastStore.error(axiosError.response.data.detail || $t('uploader.invalidMediaUrl'));
-      } else {
-        toastStore.error($t('uploader.failedToProcessUrl'));
-      }
+      const failure = urlErrorToast(error);
+      if (failure.kind === 'warning') toastStore.warning(failure.message);
+      else toastStore.error(failure.message);
     } finally {
       processingUrl = false;
     }
@@ -813,7 +588,7 @@
     // Remove extraction step if it was dynamically added
     if (needsExtraction) {
       needsExtraction = false;
-      steps = steps.filter(s => s.id !== 'extraction');
+      steps = withoutExtractionStep(steps);
     }
   }
 

@@ -1,163 +1,42 @@
 import { get } from 'svelte/store';
 import axiosInstance from '$lib/axios';
 import { toastStore } from '$stores/toast';
-import { capabilities } from '$stores/capabilities';
 import { t } from '$stores/locale';
-import axios, { type AxiosProgressEvent, type CancelTokenSource } from 'axios';
+import axios from 'axios';
 import type { ExtractedAudioMetadata } from '$lib/types/audioExtraction';
 import { generateId } from '$lib/utils/ids';
 import { normalizeMediaType } from '$lib/utils/mediaType';
-import { fingerprintFile } from '$lib/services/fileFingerprint';
-import {
-  createStallWatchdog,
-  DEFAULT_STALL_TIMEOUT_MS,
-  type StallWatchdog,
-} from '$lib/services/stallWatchdog';
-import { uploadInParts, type MultipartPlan, type PutPart } from '$lib/services/multipartUploader';
+import type { MultipartPlan } from '$lib/services/multipartUploader';
 import { reconnectDelayMs } from '$lib/utils/backoff';
+import { putThenCompleteOrFallback } from './upload/completion';
+import { getErrorMessage, getSourceName } from './upload/format';
+import {
+  abortMultipart,
+  fingerprintOrWarn,
+  resumeMultipart,
+  runMultipart,
+} from './upload/multipart';
+import {
+  discardPersistedUploads,
+  loadPersistedUploads,
+  persistUploads,
+} from './upload/persistence';
+import { makeProgressHandler } from './upload/transfer';
+import {
+  MAX_CONCURRENT_UPLOADS,
+  MAX_RETRIES,
+  QUEUE_PROCESS_DELAY_MS,
+  type UploadEvent,
+  type UploadEventType,
+  type UploadHost,
+  type UploadItem,
+  type UploadResult,
+  type UploadTranscriptionParams,
+  type UploadType,
+} from './upload/types';
+import { processUrl } from './upload/urlIngest';
 
-// Upload item types
-type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
-type UploadStatus =
-  | 'queued'
-  | 'preparing'
-  | 'uploading'
-  | 'processing'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
-
-/**
- * The per-file choices the upload wizard collects. Optional everywhere: a caller that has
- * none (a recording, a watch import) sends none, and the server applies its defaults.
- */
-export interface UploadTranscriptionParams {
-  minSpeakers?: number | null;
-  maxSpeakers?: number | null;
-  numSpeakers?: number | null;
-  /** `null` = the deployment's default model; sent only when the user picked one. */
-  whisperModel?: string | null;
-  skipSummary?: boolean;
-  /** The uploader's statement that the speakers agreed to voice identification (a claim, not verified). */
-  voiceprintConsent?: 'granted' | null;
-}
-
-export interface UploadItem {
-  id: string;
-  type: UploadType;
-  source: File | string | Blob;
-  name: string;
-  size?: number;
-  status: UploadStatus;
-  progress: number;
-  error?: string;
-  fileId?: string; // UUID
-  retryCount: number;
-  startTime?: number;
-  /**
-   * Formatted time-to-completion ONLY (e.g. `2m 30s`), produced by
-   * `formatTimeRemaining`. `UploadProgress.svelte` renders it as
-   * `{estimatedTime} remaining`, so anything that is not a duration reads as
-   * nonsense there — this field carried localized STATUS strings for four
-   * phases, which is how the UI came to say "Calculating file hash... remaining".
-   * Put phase text in `statusText`.
-   */
-  estimatedTime?: string;
-  /**
-   * Localized description of the current phase ("Calculating file hash…",
-   * "Resuming…"). Rendered on its own, never suffixed with "remaining".
-   */
-  statusText?: string;
-  isDuplicate?: boolean;
-  /**
-   * The content fingerprint could not be computed, so this upload was NOT
-   * checked against the library. Rendered by `UploadProgress.svelte` — a
-   * degraded duplicate check has to be visible, not swallowed (issue #342).
-   */
-  dedupSkipped?: boolean;
-  cancelToken?: CancelTokenSource;
-  // Extraction metadata (for extracted-audio type)
-  extractionMetadata?: ExtractedAudioMetadata;
-  compressionRatio?: number; // Percentage for display (0-100)
-  // Speaker diarization parameters
-  minSpeakers?: number | null;
-  maxSpeakers?: number | null;
-  numSpeakers?: number | null;
-  // Per-file transcription choices made in the upload wizard
-  whisperModel?: string | null;
-  skipSummary?: boolean;
-  voiceprintConsent?: 'granted' | null;
-  // Organization parameters
-  collectionIds?: string[];
-  tagNames?: string[];
-  // Batch grouping
-  uploadBatchId?: string;
-  // Live multipart upload, kept so a retry resumes instead of restarting
-  multipart?: MultipartSession;
-}
-
-/**
- * Everything needed to pick an interrupted multipart upload back up.
- *
- * Survives on the in-memory `UploadItem` only: the File it refers to cannot be
- * persisted (see `loadPersistedUploads`), so resume covers retries within the
- * session — which is where a 10 GB upload actually dies — not a page reload.
- */
-interface MultipartSession {
-  fileId: string;
-  taskId: string;
-  fingerprint: string | null;
-  plan: MultipartPlan;
-}
-
-// Upload configuration constants
-const MAX_RETRIES = 3;
-const MAX_CONCURRENT_UPLOADS = 3;
-const QUEUE_PROCESS_DELAY_MS = 100;
-
-// Total-request timeout for the small JSON control-plane calls only (prepare,
-// complete, process-url). File bodies must NEVER use a total-request timeout —
-// see the note on UploadStalledError below.
-const CONTROL_REQUEST_TIMEOUT_MS = 300000; // 5 minutes
-
-// Event types for upload lifecycle
-type UploadEventType =
-  | 'added'
-  | 'started'
-  | 'progress'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'retry';
-
-export interface UploadEvent {
-  type: UploadEventType;
-  uploadId: string;
-  data?: unknown;
-}
-
-/** Result of a single upload/prepare flow. */
-interface UploadResult {
-  uuid: string;
-  isDuplicate: boolean;
-}
-
-/**
- * Raised when the stall watchdog aborts a body transfer.
- *
- * File bodies used to carry a 5-minute *total-request* timeout while the UI
- * advertises a 15 GB limit, so every upload slower than ~50 MB/s failed on the
- * clock alone — then burned all 3 retries doing it again. The timeout is now a
- * stall watchdog (abort only when no bytes have moved), and its abort surfaces
- * as this type rather than an axios `CanceledError`, because `axios.isCancel`
- * means "the user cancelled" everywhere else in this file and suppresses retry.
- */
-class UploadStalledError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'UploadStalledError';
-  }
-}
+export type { UploadEvent, UploadItem, UploadTranscriptionParams };
 
 class UploadService {
   private uploads: Map<string, UploadItem> = new Map();
@@ -165,8 +44,20 @@ class UploadService {
   private processingQueue: string[] = [];
   private activeUploads: Set<string> = new Set();
 
+  private readonly host: UploadHost = {
+    getItem: (id) => this.uploads.get(id),
+    update: (id, updates) => this.updateUpload(id, updates),
+    emit: (type, id, data) => this.emit(type, id, data),
+  };
+
   constructor() {
-    this.loadPersistedUploads();
+    const { entries, queueIds } = loadPersistedUploads();
+    entries.forEach(([id, upload]) => this.uploads.set(id, upload));
+    this.processingQueue.push(...queueIds);
+    // Start processing any restored uploads
+    if (this.processingQueue.length > 0) {
+      setTimeout(() => this.processQueue(), 1000);
+    }
   }
 
   // Event system
@@ -185,28 +76,6 @@ class UploadService {
     this.eventListeners.forEach((listener) => listener(event));
   }
 
-  /**
-   * The per-file choices as legacy-multipart headers. The presigned flow carries the same
-   * values in the `/files/complete` body; this is its twin for `POST /files`, shared so the
-   * main-file and extracted-audio fallbacks cannot drift apart again.
-   */
-  private transcriptionHeaders(upload: UploadItem): Record<string, string> {
-    const headers: Record<string, string> = {};
-    if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
-      headers['X-Min-Speakers'] = upload.minSpeakers.toString();
-    }
-    if (upload.maxSpeakers !== null && upload.maxSpeakers !== undefined) {
-      headers['X-Max-Speakers'] = upload.maxSpeakers.toString();
-    }
-    if (upload.numSpeakers !== null && upload.numSpeakers !== undefined) {
-      headers['X-Num-Speakers'] = upload.numSpeakers.toString();
-    }
-    if (upload.skipSummary) {
-      headers['X-Skip-Summary'] = 'true';
-    }
-    return headers;
-  }
-
   // Queue management
   addUpload(
     type: UploadType,
@@ -218,7 +87,7 @@ class UploadService {
     uploadBatchId?: string
   ): string {
     const id = this.generateId();
-    const uploadName = name || this.getSourceName(source);
+    const uploadName = name || getSourceName(source);
 
     const upload: UploadItem = {
       id,
@@ -242,7 +111,7 @@ class UploadService {
 
     this.uploads.set(id, upload);
     this.processingQueue.push(id);
-    this.persistUploads();
+    persistUploads(this.uploads);
 
     this.emit('added', id, upload);
 
@@ -310,7 +179,7 @@ class UploadService {
 
     this.uploads.set(id, upload);
     this.processingQueue.push(id);
-    this.persistUploads();
+    persistUploads(this.uploads);
 
     this.emit('added', id, upload);
 
@@ -380,7 +249,7 @@ class UploadService {
           );
           break;
         case 'url':
-          result = await this.processUrl(uploadId, upload.source as string);
+          result = await processUrl(this.host, uploadId, upload.source as string);
           break;
         default:
           throw new Error(get(t)('upload.unknownType', { type: upload.type }));
@@ -407,7 +276,7 @@ class UploadService {
     } catch (error: unknown) {
       // Log error through proper error handling below
 
-      const errorMessage = this.getErrorMessage(error);
+      const errorMessage = getErrorMessage(error);
       // The phase text belongs to the attempt that just died ("Calculating file hash…"
       // stayed on failed rows); the error is what the row says now.
       this.updateUpload(uploadId, {
@@ -432,7 +301,7 @@ class UploadService {
         // Out of retries: release the parts of an unfinished multipart upload
         // rather than leaving the user paying for gigabytes nothing will claim.
         if (upload.multipart) {
-          this.abortMultipart(upload.multipart.fileId);
+          abortMultipart(upload.multipart.fileId);
           this.updateUpload(uploadId, { multipart: undefined });
         }
         toastStore.error(
@@ -444,291 +313,7 @@ class UploadService {
       }
     }
 
-    this.persistUploads();
-  }
-
-  /**
-   * Run a whole-file body transfer under a stall watchdog.
-   *
-   * Replaces the total-request `timeout` that used to guard these calls: that
-   * capped how long a *healthy* upload was allowed to take, which is exactly
-   * wrong for a 15 GB limit. The watchdog aborts only when the byte stream goes
-   * quiet, and its abort is rethrown as `UploadStalledError` so the caller can
-   * tell it apart from a user cancellation.
-   *
-   * @param run - Issues the request; must pass `watchdog.signal` to axios and
-   *   feed `watchdog` from `onUploadProgress`.
-   */
-  private async sendBody<T>(run: (watchdog: StallWatchdog) => Promise<T>): Promise<T> {
-    const watchdog = createStallWatchdog();
-    try {
-      return await run(watchdog);
-    } catch (err: unknown) {
-      if (watchdog.stalled) {
-        throw new UploadStalledError(
-          get(t)('upload.stalled', { seconds: Math.round(DEFAULT_STALL_TIMEOUT_MS / 1000) })
-        );
-      }
-      throw err;
-    } finally {
-      watchdog.dispose();
-    }
-  }
-
-  /**
-   * Read a server-side duplicate rejection out of a failed `POST /files`.
-   *
-   * `prepare` normally catches a duplicate before any body is sent (`is_duplicate`),
-   * but it cannot catch every one: the same content can be uploaded between prepare
-   * and the POST, and a file whose fingerprint was skipped for the pre-check still
-   * carries one in the form data. For those, the backend re-checks and answers
-   * `409 {detail: {message, duplicate_file_uuid}}` (`api/endpoints/files/upload.py`) —
-   * a correct, deliberate refusal that pointed at the file the user already has.
-   * Left unhandled it reached the generic error path and was reported as a failed
-   * upload, which describes the opposite of what happened.
-   *
-   * @returns The duplicate result, or `null` if this is not a duplicate rejection —
-   *   a 409 without the uuid is some other conflict and must still fail, or a real
-   *   error would be reported as a file safely stored.
-   */
-  private duplicateFromConflict(err: unknown): UploadResult | null {
-    const response = (
-      err as {
-        response?: { status?: number; data?: { detail?: { duplicate_file_uuid?: string } } };
-      }
-    )?.response;
-    if (response?.status !== 409) return null;
-    const uuid = response.data?.detail?.duplicate_file_uuid;
-    return uuid ? { uuid, isDuplicate: true } : null;
-  }
-
-  /**
-   * Whether this server accepts the API-mediated `POST /files` fallback. When it does
-   * not, a failed presigned attempt is rethrown so the queue retries the presigned
-   * path, instead of re-sending the body to a route that will refuse it.
-   */
-  private apiMediatedUploadAllowed(): boolean {
-    return get(capabilities).apiMediatedUploadEnabled !== false;
-  }
-
-  /**
-   * The legacy `POST /files` is about to be used. With the fallback disabled that can
-   * only mean the server handed out no presigned plan, which it does not do in that
-   * mode (it answers 503 instead) — fail retryably rather than send the body.
-   */
-  private assertLegacyFallbackAllowed(): void {
-    if (!this.apiMediatedUploadAllowed()) {
-      throw new Error('Direct upload is unavailable right now; the upload will be retried.');
-    }
-  }
-
-  /**
-   * Detect a deterministic, non-retryable failure from `POST /files/complete`.
-   *
-   * A 503 here is `main.py`'s global `OpenTranscribeError` handler surfacing
-   * `ASRConfigurationError` (`backend/app/core/exceptions.py`, issue #905's fix): the
-   * backend has definitively decided it cannot dispatch this upload under the current
-   * deployment config (e.g. a `lite` image with no local ASR provider). Retrying via
-   * the legacy `POST /files` re-upload would hit the exact same refusal, at the cost of
-   * re-sending the whole file body through the API container for nothing (issue #911).
-   *
-   * A network-level failure (stall, dropped connection, no response at all) carries no
-   * `response.status` and is unaffected — those stay eligible for the legacy fallback,
-   * same as before this check existed.
-   */
-  private isNonRetryableCompleteFailure(err: unknown): boolean {
-    const status = (err as { response?: { status?: number } })?.response?.status;
-    return status === 503;
-  }
-
-  /**
-   * Build the axios progress callback for one upload: updates percentage + ETA
-   * and keeps the stall watchdog fed.
-   */
-  private makeProgressHandler(uploadId: string, upload: UploadItem) {
-    return (watchdog: StallWatchdog) => (progressEvent: AxiosProgressEvent) => {
-      watchdog.notifyProgress(progressEvent.loaded, progressEvent.total);
-      if (!progressEvent.total) return;
-      const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-      const progress = Math.min(percentCompleted, 99);
-      this.updateUpload(uploadId, { progress });
-      this.emit('progress', uploadId, { progress });
-      const elapsed = Date.now() - (upload.startTime || Date.now());
-      if (elapsed > 0) {
-        const rate = progressEvent.loaded / elapsed;
-        const remaining = (progressEvent.total - progressEvent.loaded) / rate;
-        // A real ETA supersedes the phase text; keep the phase text while
-        // `formatTimeRemaining` still returns '' (too early to estimate) so the
-        // row never goes blank.
-        const eta = this.formatTimeRemaining(remaining);
-        this.updateUpload(uploadId, eta ? { estimatedTime: eta, statusText: undefined } : {});
-      }
-    };
-  }
-
-  /**
-   * Send one multipart part body under the shared stall watchdog.
-   *
-   * Resolves with the part's ETag, or null when the header is unreadable — a
-   * bucket that does not expose `ETag` cross-origin. `/files/complete` then
-   * reads the authoritative part list back from storage instead.
-   */
-  private makePutPart(cancelToken: CancelTokenSource): PutPart {
-    return (url, body, onProgress) =>
-      this.sendBody(async (watchdog) => {
-        const response = await axios.put(url, body, {
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-          cancelToken: cancelToken.token,
-          signal: watchdog.signal,
-          onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-            watchdog.notifyProgress(progressEvent.loaded, progressEvent.total);
-            onProgress(progressEvent.loaded);
-          },
-        });
-        const etag = response.headers?.etag ?? response.headers?.ETag;
-        return etag ? String(etag).replace(/"/g, '') : null;
-      });
-  }
-
-  /** Percentage + ETA from a running byte count (the multipart equivalent of `makeProgressHandler`). */
-  private reportBytes(uploadId: string, loaded: number, total: number, startedAt: number) {
-    if (!total) return;
-    const progress = Math.min(Math.round((loaded * 100) / total), 99);
-    this.updateUpload(uploadId, { progress });
-    this.emit('progress', uploadId, { progress });
-    const elapsed = Date.now() - startedAt;
-    if (elapsed > 0 && loaded > 0) {
-      const remaining = ((total - loaded) * elapsed) / loaded;
-      const eta = this.formatTimeRemaining(remaining);
-      if (eta) this.updateUpload(uploadId, { estimatedTime: eta, statusText: undefined });
-    }
-  }
-
-  /**
-   * Run a presigned multipart upload to completion.
-   *
-   * The session is parked on the `UploadItem` for the whole transfer so a queue
-   * retry resumes it; it is cleared only once `/files/complete` has assembled
-   * the object.
-   */
-  private async runMultipart(
-    uploadId: string,
-    file: File | Blob,
-    session: MultipartSession,
-    cancelToken: CancelTokenSource,
-    resume: boolean
-  ): Promise<UploadResult> {
-    const upload = this.uploads.get(uploadId)!;
-    this.updateUpload(uploadId, {
-      status: 'uploading',
-      fileId: session.fileId,
-      multipart: session,
-      statusText: get(t)(resume ? 'upload.resuming' : 'upload.statusUploading'),
-    });
-
-    const clientPutStartMs = Date.now();
-    const { parts } = await uploadInParts({
-      fileId: session.fileId,
-      body: file,
-      plan: session.plan,
-      resume,
-      putPart: this.makePutPart(cancelToken),
-      onProgress: (loadedBytes) =>
-        this.reportBytes(uploadId, loadedBytes, file.size, clientPutStartMs),
-    });
-    const clientPutEndMs = Date.now();
-
-    await axiosInstance.post(
-      '/files/complete',
-      {
-        file_id: session.fileId,
-        task_id: session.taskId,
-        file_hash: session.fingerprint,
-        file_size: file.size,
-        upload_id: session.plan.upload_id,
-        parts,
-        client_put_start_ms: clientPutStartMs,
-        client_put_end_ms: clientPutEndMs,
-        min_speakers: upload.minSpeakers ?? null,
-        max_speakers: upload.maxSpeakers ?? null,
-        num_speakers: upload.numSpeakers ?? null,
-        skip_summary: upload.skipSummary || undefined,
-      },
-      // Assembling hundreds of parts is more than the 60 s default allows for.
-      { timeout: CONTROL_REQUEST_TIMEOUT_MS }
-    );
-
-    this.updateUpload(uploadId, { multipart: undefined });
-    return { uuid: session.fileId, isDuplicate: false };
-  }
-
-  /**
-   * Resume a parked multipart session, or report that it is gone.
-   *
-   * Returns null when the backend no longer knows the upload (404/409), which
-   * means starting over from `/prepare` is the only option. Any other failure
-   * is rethrown so the queue retries the resume rather than re-sending
-   * gigabytes that are already in the bucket.
-   */
-  private async resumeMultipart(
-    uploadId: string,
-    file: File | Blob,
-    session: MultipartSession,
-    cancelToken: CancelTokenSource
-  ): Promise<UploadResult | null> {
-    try {
-      return await this.runMultipart(uploadId, file, session, cancelToken, true);
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 404 || status === 409) {
-        this.updateUpload(uploadId, { multipart: undefined });
-        return null;
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Discard a multipart upload the client has given up on.
-   *
-   * Object storage bills for the parts of an incomplete upload until it is
-   * aborted, and they do not show up in a normal object listing. Fire-and-forget:
-   * the bucket's abort-incomplete lifecycle rule is the backstop.
-   */
-  private abortMultipart(fileId: string) {
-    axiosInstance.delete(`/files/${fileId}`).catch(() => {
-      /* best-effort */
-    });
-  }
-
-  /**
-   * Fingerprint a source, reporting rather than swallowing a failure.
-   *
-   * The fingerprint is optional — an upload without one still succeeds — but a
-   * missing one means this file was never checked against the library. That used
-   * to happen silently on every file above ~4 GB (`file.arrayBuffer()` threw
-   * `NotReadableError` and the `catch` was empty), so the largest uploads, where
-   * a duplicate costs the most GPU time, were the only ones never deduplicated.
-   * Reading 48 KiB should not fail, but if it does the user is told and the item
-   * carries `dedupSkipped` for the queue UI.
-   *
-   * @returns The fingerprint, or null if it could not be computed.
-   */
-  private async fingerprintOrWarn(
-    uploadId: string,
-    source: File | Blob,
-    name: string
-  ): Promise<string | null> {
-    try {
-      return await fingerprintFile(source);
-    } catch (err: unknown) {
-      this.updateUpload(uploadId, { dedupSkipped: true });
-      this.emit('progress', uploadId, { dedupSkipped: true });
-      console.warn(`[upload] duplicate check skipped for "${name}":`, err);
-      toastStore.warning(get(t)('upload.dedupSkipped', { name }));
-      return null;
-    }
+    persistUploads(this.uploads);
   }
 
   private async uploadFile(uploadId: string, file: File | Blob): Promise<UploadResult> {
@@ -741,7 +326,13 @@ class UploadService {
     // A parked session means a previous attempt died mid-transfer. Pick up the
     // parts already in the bucket instead of re-hashing and re-sending them.
     if (upload.multipart) {
-      const resumed = await this.resumeMultipart(uploadId, file, upload.multipart, cancelToken);
+      const resumed = await resumeMultipart(
+        this.host,
+        uploadId,
+        file,
+        upload.multipart,
+        cancelToken
+      );
       if (resumed) return resumed;
     }
 
@@ -757,7 +348,7 @@ class UploadService {
         progress: 0,
         statusText: get(t)('upload.calculatingHash'),
       });
-      fingerprint = await this.fingerprintOrWarn(uploadId, file, upload.name);
+      fingerprint = await fingerprintOrWarn(this.host, uploadId, file, upload.name);
     }
     const clientHashEndMs = Date.now();
 
@@ -807,7 +398,8 @@ class UploadService {
     // keep multi-GB bodies out of the API container, and a failure here is
     // resumable on retry, which re-sending the object from zero is not.
     if (uploadMethod === 'MULTIPART' && multipartPlan && taskId) {
-      return await this.runMultipart(
+      return await runMultipart(
+        this.host,
         uploadId,
         file,
         { fileId, taskId, fingerprint, plan: multipartPlan as MultipartPlan },
@@ -816,113 +408,19 @@ class UploadService {
       );
     }
 
-    const progressHandler = this.makeProgressHandler(uploadId, upload);
-
-    // --- Presigned flow ---------------------------------------------------
-    if (uploadUrl && uploadMethod === 'PUT' && taskId) {
-      let clientPutStartMs = 0;
-      let clientPutEndMs = 0;
-      let putSucceeded = false;
-      try {
-        clientPutStartMs = Date.now();
-        await this.sendBody((watchdog) =>
-          axios.put(uploadUrl, file, {
-            headers: {
-              'Content-Type': mediaType,
-            },
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity,
-            cancelToken: cancelToken.token,
-            signal: watchdog.signal,
-            onUploadProgress: progressHandler(watchdog),
-          })
-        );
-        clientPutEndMs = Date.now();
-        putSucceeded = true;
-      } catch (err: unknown) {
-        // A stalled connection is a network fault, not "the server can't do
-        // presigned uploads" — re-sending the whole body through the API
-        // container would stall too. Let the queue retry the presigned path.
-        if (axios.isCancel(err) || err instanceof UploadStalledError) {
-          throw err;
-        }
-        // No API-mediated fallback on this server: let the queue retry presigned.
-        if (!this.apiMediatedUploadAllowed()) {
-          throw err;
-        }
-        // Fall through to the legacy flow below.
-      }
-
-      // The body already landed in MinIO — a `/complete` failure here is a
-      // separate question from whether the PUT itself worked, and separated
-      // into its own try/catch so a deterministic refusal (issue #911) can be
-      // told apart from a transient one without re-triggering the PUT's own
-      // fallback comment above.
-      if (putSucceeded) {
-        try {
-          await axiosInstance.post('/files/complete', {
-            file_id: fileId,
-            task_id: taskId,
-            file_hash: fingerprint,
-            file_size: file.size,
-            client_hash_start_ms: clientHashStartMs,
-            client_hash_end_ms: clientHashEndMs,
-            client_put_start_ms: clientPutStartMs,
-            client_put_end_ms: clientPutEndMs,
-            min_speakers: upload.minSpeakers ?? null,
-            max_speakers: upload.maxSpeakers ?? null,
-            num_speakers: upload.numSpeakers ?? null,
-            skip_summary: upload.skipSummary || undefined,
-          });
-
-          return { uuid: fileId, isDuplicate: false };
-        } catch (err: unknown) {
-          if (axios.isCancel(err) || err instanceof UploadStalledError) {
-            throw err;
-          }
-          // A deterministic dispatch refusal (e.g. ASRConfigurationError, 503) will
-          // fail identically through the legacy path — don't pay for a full re-upload
-          // to learn that twice. Surface it directly; the row is already visible at
-          // ERROR (issue #905) so the gallery's normal error display picks it up.
-          if (this.isNonRetryableCompleteFailure(err) || !this.apiMediatedUploadAllowed()) {
-            throw err;
-          }
-          // Fall through to the legacy flow below.
-        }
-      }
-    }
-
-    // --- Legacy flow (multipart POST through the API container) ----------
-    this.assertLegacyFallbackAllowed();
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'multipart/form-data',
-      'X-File-ID': fileId,
-      'X-File-Hash': fingerprint || '',
-    };
-
-    Object.assign(headers, this.transcriptionHeaders(upload));
-
-    try {
-      await this.sendBody((watchdog) =>
-        axiosInstance.post('/files', formData, {
-          headers,
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-          cancelToken: cancelToken.token,
-          signal: watchdog.signal,
-          onUploadProgress: progressHandler(watchdog),
-        })
-      );
-    } catch (err: unknown) {
-      const duplicate = this.duplicateFromConflict(err);
-      if (duplicate) return duplicate;
-      throw err;
-    }
-
-    return { uuid: fileId, isDuplicate: false };
+    return putThenCompleteOrFallback({
+      upload,
+      body: file,
+      fileId,
+      taskId,
+      uploadUrl,
+      uploadMethod,
+      fingerprint,
+      contentType: mediaType,
+      cancelToken,
+      progressHandler: makeProgressHandler(this.host, uploadId, upload),
+      hashWindowMs: { start: clientHashStartMs, end: clientHashEndMs },
+    });
   }
 
   private async uploadExtractedAudio(
@@ -940,7 +438,8 @@ class UploadService {
     // uploadFile(), pick up the parts already in the bucket instead of
     // re-sending them.
     if (upload.multipart) {
-      const resumed = await this.resumeMultipart(
+      const resumed = await resumeMultipart(
+        this.host,
         uploadId,
         audioBlob,
         upload.multipart,
@@ -997,7 +496,8 @@ class UploadService {
     // reason — extracted audio from a long source video can exceed the
     // multipart threshold even with stream-copy (-c:a copy, no re-encode).
     if (uploadMethod === 'MULTIPART' && multipartPlan && taskId) {
-      return await this.runMultipart(
+      return await runMultipart(
+        this.host,
         uploadId,
         audioBlob,
         { fileId, taskId, fingerprint: sourceFingerprint, plan: multipartPlan as MultipartPlan },
@@ -1006,140 +506,20 @@ class UploadService {
       );
     }
 
-    const progressHandler = this.makeProgressHandler(uploadId, upload);
-
-    // --- Presigned flow: PUT the audio blob straight to MinIO, then finalize.
-    if (uploadUrl && uploadMethod === 'PUT' && taskId) {
-      let clientPutStartMs = 0;
-      let clientPutEndMs = 0;
-      let putSucceeded = false;
-      try {
-        clientPutStartMs = Date.now();
-        await this.sendBody((watchdog) =>
-          axios.put(uploadUrl, audioBlob, {
-            headers: { 'Content-Type': contentType },
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity,
-            cancelToken: cancelToken.token,
-            signal: watchdog.signal,
-            onUploadProgress: progressHandler(watchdog),
-          })
-        );
-        clientPutEndMs = Date.now();
-        putSucceeded = true;
-      } catch (err: unknown) {
-        // See uploadFile(): a stall must not silently re-send the body through
-        // the API container.
-        if (axios.isCancel(err) || err instanceof UploadStalledError) {
-          throw err;
-        }
-        // No API-mediated fallback on this server: let the queue retry presigned.
-        if (!this.apiMediatedUploadAllowed()) {
-          throw err;
-        }
-        // Fall through to the legacy flow below.
-      }
-
-      // See uploadFile(): separated so a deterministic `/complete` refusal
-      // (issue #911) can be told apart from a transient one.
-      if (putSucceeded) {
-        try {
-          await axiosInstance.post('/files/complete', {
-            file_id: fileId,
-            task_id: taskId,
-            file_hash: sourceFingerprint,
-            file_size: audioBlob.size,
-            client_put_start_ms: clientPutStartMs,
-            client_put_end_ms: clientPutEndMs,
-            min_speakers: upload.minSpeakers ?? null,
-            max_speakers: upload.maxSpeakers ?? null,
-            num_speakers: upload.numSpeakers ?? null,
-            skip_summary: upload.skipSummary || undefined,
-          });
-
-          return { uuid: fileId, isDuplicate: false };
-        } catch (err: unknown) {
-          if (axios.isCancel(err) || err instanceof UploadStalledError) {
-            throw err;
-          }
-          // See uploadFile(): a deterministic dispatch refusal must not pay for a
-          // full re-upload to learn the same refusal twice.
-          if (this.isNonRetryableCompleteFailure(err) || !this.apiMediatedUploadAllowed()) {
-            throw err;
-          }
-          // Fall through to the legacy flow below.
-        }
-      }
-    }
-
-    // --- Legacy fallback (multipart POST through the API container) -------
-    this.assertLegacyFallbackAllowed();
-    const formData = new FormData();
-    formData.append('file', audioBlob, upload.name);
-
-    try {
-      await this.sendBody((watchdog) =>
-        axiosInstance.post('/files', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            'X-File-ID': fileId,
-            'X-File-Hash': sourceFingerprint || '',
-            ...this.transcriptionHeaders(upload),
-          },
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-          cancelToken: cancelToken.token,
-          signal: watchdog.signal,
-          onUploadProgress: progressHandler(watchdog),
-        })
-      );
-    } catch (err: unknown) {
-      const duplicate = this.duplicateFromConflict(err);
-      if (duplicate) return duplicate;
-      throw err;
-    }
-
-    return { uuid: fileId, isDuplicate: false };
-  }
-
-  private async processUrl(uploadId: string, url: string): Promise<UploadResult> {
-    const upload = this.uploads.get(uploadId)!;
-
-    // Create cancel token
-    const cancelToken = axios.CancelToken.source();
-    this.updateUpload(uploadId, {
+    return putThenCompleteOrFallback({
+      upload,
+      body: audioBlob,
+      fileId,
+      taskId,
+      uploadUrl,
+      uploadMethod,
+      fingerprint: sourceFingerprint,
+      contentType,
       cancelToken,
-      status: 'processing',
+      progressHandler: makeProgressHandler(this.host, uploadId, upload),
+      legacyFilename: upload.name,
     });
-
-    const response = await axiosInstance.post(
-      '/files/process-url',
-      {
-        url: url.trim(),
-        collection_ids: upload.collectionIds || undefined,
-        tag_names: upload.tagNames || undefined,
-        min_speakers: upload.minSpeakers ?? undefined,
-        max_speakers: upload.maxSpeakers ?? undefined,
-        num_speakers: upload.numSpeakers ?? undefined,
-        whisper_model: upload.whisperModel || undefined,
-        skip_summary: upload.skipSummary || undefined,
-      },
-      {
-        timeout: CONTROL_REQUEST_TIMEOUT_MS,
-        cancelToken: cancelToken.token,
-        onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-          if (progressEvent.total) {
-            const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            this.updateUpload(uploadId, { progress });
-            this.emit('progress', uploadId, { progress });
-          }
-        },
-      }
-    );
-
-    return { uuid: response.data.uuid, isDuplicate: false };
   }
-
   // Upload management
   retryUpload(uploadId: string) {
     const upload = this.uploads.get(uploadId);
@@ -1162,7 +542,7 @@ class UploadService {
     this.processingQueue.push(uploadId);
     this.emit('retry', uploadId);
     this.processQueue();
-    this.persistUploads();
+    persistUploads(this.uploads);
   }
 
   cancelUpload(uploadId: string) {
@@ -1175,7 +555,7 @@ class UploadService {
     }
 
     if (upload.multipart) {
-      this.abortMultipart(upload.multipart.fileId);
+      abortMultipart(upload.multipart.fileId);
     }
 
     this.updateUpload(uploadId, {
@@ -1192,7 +572,7 @@ class UploadService {
     }
 
     this.emit('cancelled', uploadId);
-    this.persistUploads();
+    persistUploads(this.uploads);
 
     // Continue processing queue
     this.processQueue();
@@ -1212,7 +592,7 @@ class UploadService {
     }
 
     this.uploads.delete(uploadId);
-    this.persistUploads();
+    persistUploads(this.uploads);
   }
 
   clearCompleted() {
@@ -1221,7 +601,7 @@ class UploadService {
       .map(([id, _]) => id);
 
     completedIds.forEach((id) => this.uploads.delete(id));
-    this.persistUploads();
+    persistUploads(this.uploads);
   }
 
   /**
@@ -1241,17 +621,13 @@ class UploadService {
       }
       // Abort before the session cookie goes away — afterwards nothing can.
       if (upload.multipart) {
-        this.abortMultipart(upload.multipart.fileId);
+        abortMultipart(upload.multipart.fileId);
       }
     }
     this.uploads.clear();
     this.processingQueue = [];
     this.activeUploads.clear();
-    try {
-      localStorage.removeItem('upload_queue');
-    } catch {
-      /* ignore */
-    }
+    discardPersistedUploads();
   }
 
   // Getters
@@ -1287,112 +663,6 @@ class UploadService {
 
   private generateId(): string {
     return generateId('upload');
-  }
-
-  private getSourceName(source: File | string | Blob): string {
-    if (source instanceof File) {
-      return source.name;
-    } else if (typeof source === 'string') {
-      try {
-        const url = new URL(source);
-        // Try to extract YouTube video title or use a more descriptive name
-        if (url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
-          return get(t)('upload.youtubeVideo');
-        }
-        return url.pathname.split('/').pop() || get(t)('upload.videoUrl');
-      } catch {
-        return get(t)('upload.videoUrl');
-      }
-    } else {
-      // Blob (recording)
-      return `recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
-    }
-  }
-
-  private getErrorMessage(error: unknown): string {
-    if (axios.isCancel(error)) {
-      return get(t)('upload.cancelled');
-    }
-
-    const e = error as { response?: { data?: { detail?: string } }; message?: string };
-    if (e?.response?.data?.detail) {
-      return e.response.data.detail;
-    }
-
-    if (e?.message) {
-      return e.message;
-    }
-
-    return get(t)('common.unknownError');
-  }
-
-  private formatTimeRemaining(ms: number): string {
-    if (!ms || ms <= 0) return '';
-
-    const seconds = Math.ceil(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
-
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-
-    if (minutes < 60) {
-      return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-    }
-
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    return `${hours}h ${remainingMinutes}m`;
-  }
-
-  // Persistence
-  private persistUploads() {
-    try {
-      const uploadsData = Array.from(this.uploads.entries()).map(([id, upload]) => [
-        id,
-        {
-          ...upload,
-          // Don't persist source data, cancel tokens, or a multipart session:
-          // resuming one needs the File, which cannot survive a reload.
-          source: upload.type === 'url' ? upload.source : null,
-          cancelToken: undefined,
-          multipart: undefined,
-        },
-      ]);
-      localStorage.setItem('upload_queue', JSON.stringify(uploadsData));
-    } catch {
-      // localStorage persistence is optional
-    }
-  }
-
-  private loadPersistedUploads() {
-    try {
-      const stored = localStorage.getItem('upload_queue');
-      if (stored) {
-        const uploadsData = JSON.parse(stored);
-        uploadsData.forEach(([id, upload]: [string, UploadItem]) => {
-          // Only restore queued or failed uploads that can be retried
-          if (upload.status === 'queued' || upload.status === 'failed') {
-            // Reset to queued state for retry
-            upload.status = 'queued';
-            upload.progress = 0;
-            upload.error = undefined;
-            this.uploads.set(id, upload);
-
-            // Only add URL uploads back to queue (files would need re-selection)
-            if (upload.type === 'url' && upload.source) {
-              this.processingQueue.push(id);
-            }
-          }
-        });
-
-        // Start processing any restored uploads
-        if (this.processingQueue.length > 0) {
-          setTimeout(() => this.processQueue(), 1000);
-        }
-      }
-    } catch {
-      // localStorage loading is optional
-    }
   }
 }
 

@@ -8,6 +8,7 @@ outage is ``sqlalchemy.exc.OperationalError``.
 from __future__ import annotations
 
 import pytest
+from fixtures.auth_read_commit import is_auth_read_commit
 from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy.exc import OperationalError
 
@@ -159,7 +160,11 @@ class TestLogoutAllWhenSessionsCannotBeRevoked:
     ):
         tokens = _login(client, normal_user)
 
+        real_commit = db_session.commit
+
         def _commit_fails():
+            if is_auth_read_commit():
+                return real_commit()
             raise OperationalError("COMMIT", {}, Exception("database unavailable"))
 
         monkeypatch.setattr(db_session, "commit", _commit_fails)

@@ -8,13 +8,13 @@ path the permission service knows.
 
 from __future__ import annotations
 
-import sys
 import uuid
 from typing import Any
 
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
 from app.models.sharing import CollectionShare
+from fixtures.auth_read_commit import is_auth_read_commit
 
 
 class ReindexRecorder:
@@ -65,7 +65,7 @@ def count_commits(monkeypatch, db) -> list[int]:
     real_commit = db.commit
 
     def commit_and_count():
-        if sys._getframe(1).f_code.co_name != "end_read_transaction":
+        if not is_auth_read_commit():
             seen.append(1)
         return real_commit()
 

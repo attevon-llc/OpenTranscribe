@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
@@ -181,6 +182,7 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
         try:
             residual.extend(_purge_external_copies(file_plan))
         except Exception as e:  # one file must never block the rest
+            logger.exception("Account purge: external copies of a file were not removed")
             residual.append(
                 {
                     "stage": "storage",
@@ -201,8 +203,8 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
             from app.services.redis_cache_service import redis_cache
 
             redis_cache.invalidate_all_for_user(plan.user_id)
-        except Exception as cache_err:  # caches expire on their own TTL
-            logger.debug(f"account purge: cache invalidation failed (non-critical): {cache_err}")
+        except RedisError:  # caches expire on their own TTL
+            logger.warning("account purge: cache invalidation failed (non-critical)", exc_info=True)
 
     for avatar_path in plan.avatar_paths:
         try:
@@ -217,6 +219,7 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
                     }
                 )
         except Exception as e:  # one avatar must never block the rest
+            logger.exception("Account purge: avatar object was not removed")
             residual.append({"stage": "avatar", "avatar_path": avatar_path, "error": str(e)})
 
     return residual

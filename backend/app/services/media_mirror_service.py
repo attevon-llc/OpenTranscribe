@@ -18,6 +18,8 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from botocore.exceptions import BotoCoreError
+from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 
 from app.core import constants
@@ -228,7 +230,8 @@ def s3_bucket_status(cfg: dict[str, Any], db: Session | None = None) -> dict[str
         client = build_s3_client(cfg, db)
         client.head_bucket(Bucket=bucket)
         result["reachable"] = True
-    except Exception as exc:  # report any failure, never raise to the caller
+    except (BotoCoreError, ClientError, ValueError, OSError) as exc:  # reported as data
+        logger.warning("Media mirror bucket check failed", exc_info=True)
         result["error"] = str(exc)
     return result
 
@@ -247,7 +250,8 @@ def test_s3_connection(
             Bucket=bucket, Prefix=(cfg.get("s3_prefix") or "").lstrip("/"), MaxKeys=1
         )
         return {"ok": True, "error": None, "bucket": bucket}
-    except Exception as exc:  # surface the failure as data, never raise
+    except (BotoCoreError, ClientError, ValueError, OSError) as exc:  # surfaced as data
+        logger.warning("Media mirror connection test failed", exc_info=True)
         return {"ok": False, "error": str(exc), "bucket": bucket}
 
 

@@ -108,7 +108,8 @@ class LLMJsonExtractMixin(LLMHost):
                 from json_repair import loads as repair_json_loads
 
                 lib_repaired = repair_json_loads(content)
-            except Exception:
+            except (ValueError, TypeError, RecursionError):
+                logger.debug("json_repair could not parse the response", exc_info=True)
                 lib_repaired = None
 
             if isinstance(lib_repaired, dict) and lib_repaired:
@@ -205,8 +206,8 @@ class LLMJsonExtractMixin(LLMHost):
             result: dict[str, Any] = json.loads(repaired_content)
             return result
 
-        except (json.JSONDecodeError, Exception) as e:
-            logger.debug(f"JSON repair failed: {e}")
+        except (ValueError, IndexError) as e:  # JSONDecodeError is a ValueError
+            logger.debug(f"JSON repair failed: {e}", exc_info=True)
             return None
 
     def _strip_markdown_fences(self, content: str) -> str:

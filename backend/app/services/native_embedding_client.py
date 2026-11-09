@@ -207,8 +207,12 @@ def embed_waveform(samples: np.ndarray, base_url: str | None = None) -> np.ndarr
             norm = float(np.linalg.norm(vec))
             if norm > 0:
                 vectors.append(vec / norm)
-    except Exception as exc:  # any sidecar loss degrades to the in-process model
-        logger.warning("diar-native /embed_window failed (%s); caller falls back to PyAnnote", exc)
+    except (OSError, ValueError, KeyError) as exc:  # sidecar loss degrades to the in-process model
+        logger.warning(
+            "diar-native /embed_window failed (%s); caller falls back to PyAnnote",
+            exc,
+            exc_info=True,
+        )
         return None
 
     if not vectors:

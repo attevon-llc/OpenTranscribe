@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
@@ -78,7 +79,7 @@ def delete_file_storage_artifacts(
                 unverified.append(path_key)
         except Exception as minio_err:  # one artifact never blocks the rest
             all_deleted = False
-            logger.warning(f"Could not delete MinIO object {path}: {minio_err}")
+            logger.warning(f"Could not delete MinIO object {path}: {minio_err}", exc_info=True)
 
     # Regenerable derived cache — duplicates that must not outlive the original.
     # "Regenerable" describes how they were made, not what they hold: these are
@@ -96,7 +97,9 @@ def delete_file_storage_artifacts(
                 unverified.append("derived_cache")
         except Exception as cache_err:
             all_deleted = False
-            logger.warning(f"Derived-cache cleanup failed for file {file_id}: {cache_err}")
+            logger.warning(
+                f"Derived-cache cleanup failed for file {file_id}: {cache_err}", exc_info=True
+            )
 
     return all_deleted
 
@@ -295,7 +298,8 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
     }
     try:
         plan["speaker_uuids"] = [str(speaker.uuid) for speaker in list(file.speakers)]
-    except Exception as e:  # a failed load is itself a miss
+    except SQLAlchemyError as e:  # a failed load is itself a miss
+        logger.warning("Could not load the speakers of file %s", plan["file_uuid"], exc_info=True)
         plan["speaker_read_error"] = str(e)
     try:
         impact = _speaker_impact_of_file(db, file)
@@ -504,8 +508,10 @@ def purge_media_file(
             from app.services.redis_cache_service import redis_cache
 
             redis_cache.invalidate_all_for_user(owner_id)
-        except Exception as cache_err:
-            logger.debug(f"purge_media_file: cache invalidation failed (non-critical): {cache_err}")
+        except RedisError:
+            logger.warning(
+                "purge_media_file: cache invalidation failed (non-critical)", exc_info=True
+            )
 
         residual.extend(_refresh_surviving_centroids(db, owner_id, plan))
 

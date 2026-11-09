@@ -416,5 +416,5 @@ def notify_email_changed(old_email: str, new_email: str) -> None:
             "Your account email address was changed",
             f"The email address on your account was changed to {new_email}.",
         )
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.error("Failed to queue email-change notice to the previous address: %s", exc)
+    except Exception:  # the notice is secondary to the email change itself
+        logger.exception("Failed to queue email-change notice to the previous address")

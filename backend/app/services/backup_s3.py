@@ -6,6 +6,8 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from botocore.exceptions import BotoCoreError
+from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 
 from app.services.backup_config import DEST_S3
@@ -82,7 +84,8 @@ def s3_bucket_status(cfg: dict[str, Any], db: Session | None = None) -> dict[str
         client = _build_s3_client(cfg, get_s3_secret_key(db))
         client.head_bucket(Bucket=bucket)
         result["reachable"] = True
-    except Exception as exc:  # report any failure, never raise to the caller
+    except (BotoCoreError, ClientError, ValueError, OSError) as exc:  # reported as data
+        logger.warning("S3 backup destination check failed", exc_info=True)
         result["error"] = str(exc)
     return result
 
@@ -126,8 +129,8 @@ def list_backups_s3(cfg: dict[str, Any], db: Session | None = None) -> list[dict
                 )
         out.sort(key=lambda b: b["created_at"], reverse=True)
         return out
-    except Exception as exc:  # graceful; UI shows empty list + status banner
-        logger.warning("Could not list S3 backups: %s", exc)
+    except (BotoCoreError, ClientError, ValueError, OSError) as exc:  # UI shows a status banner
+        logger.warning("Could not list S3 backups: %s", exc, exc_info=True)
         return []
 
 
@@ -153,8 +156,8 @@ def prune_backups_s3(
         try:
             client.delete_object(Bucket=bucket, Key=key)
             deleted.append(key)
-        except Exception as exc:  # one bad delete shouldn't abort the run
-            logger.warning("Could not delete old S3 backup %s: %s", key, exc)
+        except (BotoCoreError, ClientError) as exc:  # one bad delete shouldn't abort the run
+            logger.warning("Could not delete old S3 backup %s: %s", key, exc, exc_info=True)
     return deleted
 
 
@@ -175,5 +178,6 @@ def test_s3_connection(
         client.head_bucket(Bucket=bucket)
         client.list_objects_v2(Bucket=bucket, Prefix=_s3_prefix(cfg), MaxKeys=1)
         return {"ok": True, "error": None, "bucket": bucket}
-    except Exception as exc:  # surface the failure as data, never raise
+    except (BotoCoreError, ClientError, ValueError, OSError) as exc:  # surfaced as data
+        logger.warning("S3 backup connection test failed", exc_info=True)
         return {"ok": False, "error": str(exc), "bucket": bucket}

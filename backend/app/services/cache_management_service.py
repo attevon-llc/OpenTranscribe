@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.services import system_settings_service
 from app.services.minio_bucket_admin import MinIOService
+from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
 from app.services.video_processing_service import VideoProcessingService
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -174,8 +175,10 @@ def is_legacy_audio_key(key: str) -> bool:
 def _bucket_is_versioned(client: Minio, bucket: str) -> bool:
     try:
         status = client.get_bucket_versioning(bucket).status
-    except Exception as e:  # unknown is treated as versioned, the safe side
-        logger.warning(f"Could not read versioning of {bucket} ({e}); deleting by version.")
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # unknown is treated as versioned, the safe side
+        logger.warning(
+            f"Could not read versioning of {bucket} ({e}); deleting by version.", exc_info=True
+        )
         return True
     return status in ("Enabled", "Suspended")
 
@@ -216,8 +219,8 @@ def reclaim_legacy_audio_cache(
                 break
             keys.add(name)
             targets.append(DeleteObject(name, obj.version_id) if versioned else DeleteObject(name))
-    except Exception as e:  # reported as an incomplete pass, never raised
-        logger.warning(f"Could not list legacy audio cache keys in {bucket}: {e}")
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # reported as an incomplete pass, never raised
+        logger.warning(f"Could not list legacy audio cache keys in {bucket}: {e}", exc_info=True)
         return LegacyAudioReclaim(scanned, len(keys), 0, 0, False)
 
     failed = 0
@@ -226,8 +229,8 @@ def reclaim_legacy_audio_cache(
             for err in storage.remove_objects(bucket, iter(targets)):
                 failed += 1
                 logger.warning(f"Could not delete legacy audio key {err.name}: {err.code}")
-        except Exception as e:  # reported as an incomplete pass, never raised
-            logger.warning(f"Legacy audio cache reclaim error in {bucket}: {e}")
+        except STORAGE_UNAVAILABLE_ERRORS as e:  # reported as an incomplete pass, never raised
+            logger.warning(f"Legacy audio cache reclaim error in {bucket}: {e}", exc_info=True)
             return LegacyAudioReclaim(scanned, len(keys), 0, len(targets), False)
     result = LegacyAudioReclaim(
         scanned, len(keys), len(targets) - failed, failed, not truncated and failed == 0

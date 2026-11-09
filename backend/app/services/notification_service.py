@@ -8,6 +8,8 @@ notification wrappers that were duplicated across 10+ task files.
 import logging
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
@@ -19,8 +21,8 @@ def _get_file_metadata_safe(file_id: int) -> dict[str, Any]:
         from app.tasks.transcription.notifications import get_file_metadata
 
         return get_file_metadata(file_id)
-    except Exception as e:
-        logger.debug("Could not fetch file metadata for notification: %s", e)
+    except (ImportError, SQLAlchemyError) as e:
+        logger.warning("Could not fetch file metadata for notification: %s", e, exc_info=True)
         return {}
 
 

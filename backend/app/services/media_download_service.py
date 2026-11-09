@@ -173,12 +173,13 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
             try:
                 if provider.can_handle(url, user_id=user_id):
                     return provider
-            except Exception as exc:
+            except Exception as exc:  # a faulty plugin must not block the other providers
                 logger.warning(
                     "Protected-media provider %s failed to check %s: %s",
                     type(provider).__name__,
                     url,
                     exc,
+                    exc_info=True,
                 )
         return None
 
@@ -709,8 +710,10 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
                     open(downloaded_file, "rb") as imo_fp,
                 ):
                     imohash_value = compute_from_stream(imo_fp, file_size)
-            except Exception as imo_err:
-                logger.debug(f"imohash compute failed for {url} (non-fatal): {imo_err}")
+            except (OSError, ValueError) as imo_err:
+                logger.warning(
+                    f"imohash compute failed for {url} (non-fatal): {imo_err}", exc_info=True
+                )
 
             # Upload to MinIO. Use the tuned uploader so large yt-dlp files
             # use 64 MiB multipart parts (~12× fewer parts than the minio-py
@@ -766,8 +769,8 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
             try:
                 shutil.rmtree(temp_dir, ignore_errors=True)
                 logger.debug(f"Cleaned up temporary directory: {temp_dir}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up temp directory {temp_dir}: {e}")
+            except OSError as e:
+                logger.warning(f"Failed to clean up temp directory {temp_dir}: {e}", exc_info=True)
 
 
 # Backward compatibility alias

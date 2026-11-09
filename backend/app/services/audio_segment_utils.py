@@ -151,8 +151,8 @@ def extract_audio_segment_np(
                 start,
                 duration,
             )
-    except Exception as e:
-        logger.debug("Segment extraction failed: %s", e)
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        logger.warning("Segment extraction failed: %s", e, exc_info=True)
     return None
 
 

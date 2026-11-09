@@ -326,7 +326,8 @@ class LLMSummarizationMixin(LLMChunkingMixin, LLMJsonExtractMixin):
                 from json_repair import loads as repair_json_loads
 
                 lib_repaired = repair_json_loads(content)
-            except Exception:
+            except (ValueError, TypeError, RecursionError):
+                logger.debug("json_repair could not parse the section response", exc_info=True)
                 lib_repaired = None
 
             if isinstance(lib_repaired, dict) and lib_repaired:

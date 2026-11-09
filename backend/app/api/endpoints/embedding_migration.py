@@ -18,6 +18,8 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.services.embedding_mode_service import EmbeddingModeService
+from app.services.migration_lock_service import LockState
+from app.services.migration_lock_service import migration_lock
 from app.services.migration_progress_service import MigrationStatus
 from app.services.migration_progress_service import migration_progress
 from app.services.privacy.migration_scope import summarize_migration_scopes
@@ -113,8 +115,6 @@ def get_migration_status(
 
         # Issue #657, defect 4: this was hardcoded False even after the lock
         # was actually wired up - now reports the real lock state.
-        from app.services.migration_lock_service import migration_lock
-
         status["transcription_paused"] = migration_lock.is_active()
 
         # Issue #657, defect 6: the UI ETA used to multiply v3_document_count
@@ -233,6 +233,13 @@ def start_migration(
     """
     from app.tasks.embedding_migration_v4 import migrate_speaker_embeddings_v4_task
 
+    # An unreadable lock is not a released one: refuse rather than risk a second migration.
+    if migration_lock.state() is LockState.UNKNOWN:
+        raise HTTPException(
+            status_code=503,
+            detail="Cannot tell whether a migration is already running. Try again shortly.",
+        )
+
     # Check if THIS migration type is already running
     if migration_progress.is_running():
         progress = migration_progress.get_status()
@@ -321,8 +328,6 @@ def stop_migration(
 
         # Release the migration lock (issue #657, defect 4) - a stopped
         # migration must not leave transcription backing off forever.
-        from app.services.migration_lock_service import migration_lock
-
         migration_lock.deactivate()
 
         # Revoke any in-flight batch tasks
@@ -606,8 +611,6 @@ def force_complete_migration(
         # only stops waiting on remaining files; without this the pause
         # point in transcription's embedding extraction would keep backing
         # off against a migration that is no longer actually running.
-        from app.services.migration_lock_service import migration_lock
-
         migration_lock.deactivate()
 
         # Send completion notification

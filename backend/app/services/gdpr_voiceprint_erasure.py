@@ -142,10 +142,10 @@ def delete_speaker_docs_by_query(
                 if failures:
                     _record(f"index {idx}: {len(failures)} document(s) failed to delete")
             except Exception as idx_err:  # best-effort per index
-                logger.warning(f"Voiceprint erasure failed on index {idx}: {idx_err}")
+                logger.exception(f"Voiceprint erasure failed on index {idx}: {idx_err}")
                 _record(f"index {idx}: {idx_err}")
     except Exception as e:  # OpenSearch optional
-        logger.warning(f"Voiceprint erasure skipped (OpenSearch error): {e}")
+        logger.exception(f"Voiceprint erasure skipped (OpenSearch error): {e}")
         _record(str(e))
 
     if deleted:
@@ -283,7 +283,7 @@ def count_speaker_docs_by_ids(
             )
         return found
     except Exception as exc:  # reported, and the caller treats it as unmeasured
-        logger.warning(f"Voiceprint residual count failed: {exc}")
+        logger.exception(f"Voiceprint residual count failed: {exc}")
         if errors is not None:
             errors.append({"stage": "residual_count", "error": str(exc)})
         return None
@@ -303,5 +303,5 @@ def _erase_profile_embedding(profile_uuid: str, errors: list[dict[str, Any]]) ->
 
         remove_profile_embedding(profile_uuid)
     except Exception as e:  # record, never abort the relational delete
-        logger.warning(f"Profile embedding removal failed for {profile_uuid}: {e}")
+        logger.exception(f"Profile embedding removal failed for {profile_uuid}: {e}")
         errors.append({"stage": "profile_embedding", "profile_uuid": profile_uuid, "error": str(e)})

@@ -38,6 +38,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 import requests
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.enums import ContextWindowStatus
@@ -298,8 +299,8 @@ def read_record(db: Session, provider: str, base_url: str | None, model: str) ->
     key = discovery_key(provider, base_url, model)
     try:
         raw = get_setting(db, key)
-    except Exception as exc:  # a capability read must not break settings
-        logger.warning("Context-window record read failed for %s: %s", key, exc)
+    except SQLAlchemyError as exc:  # a capability read must not break settings
+        logger.warning("Context-window record read failed for %s: %s", key, exc, exc_info=True)
         return {}
     if not raw:
         return {}

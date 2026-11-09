@@ -43,6 +43,10 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 from typing import Any
 
+import urllib3
+from botocore.exceptions import BotoCoreError
+from botocore.exceptions import ClientError
+
 from app.core import llm_defaults
 from app.core.config import settings
 from app.services import bedrock_settings
@@ -462,7 +466,9 @@ def stream_converse(
 
     try:
         response = client.converse_stream(**request)
-    except Exception as exc:  # surfaced in-band like every other provider
+    except (BotoCoreError, ClientError) as exc:  # surfaced in-band like every other provider
+        # The scrubbed text is logged on purpose, with no traceback: the raw exception message
+        # may carry connection details ``bedrock_settings.scrub`` removes.
         text = bedrock_settings.scrub(str(exc), connection)
         logger.error("Bedrock ConverseStream failed for %s: %s", model_id, text)
         yield LLMStreamEvent(
@@ -488,7 +494,7 @@ def stream_converse(
             yield event
             if event.type == "error":
                 return
-    except Exception as exc:
+    except (BotoCoreError, ClientError, OSError, urllib3.exceptions.HTTPError) as exc:
         text = bedrock_settings.scrub(str(exc), connection)
         logger.error("Bedrock stream interrupted for %s: %s", model_id, text)
         yield LLMStreamEvent(
@@ -535,7 +541,7 @@ def check_connection(
                 return False, bedrock_settings.FAILURE_MESSAGES[key]
     except BedrockNotConfiguredError:
         return False, bedrock_settings.FAILURE_MESSAGES["no_region"]
-    except Exception as exc:  # mapped to a fixed sentence, never echoed
+    except (BotoCoreError, ClientError, ValueError) as exc:  # mapped to a fixed sentence
         logger.warning("Bedrock connection test failed: %s", type(exc).__name__)
         return False, bedrock_settings.describe_failure(exc)
     if not answer.strip():

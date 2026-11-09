@@ -5,6 +5,7 @@ This module provides a Redis-based service for tracking the progress of
 long-running migrations like the v3 to v4 speaker embedding migration.
 """
 
+import enum
 import json
 import logging
 from datetime import UTC
@@ -14,6 +15,7 @@ from typing import TypedDict
 from typing import cast
 
 import redis
+from redis.exceptions import RedisError
 
 from app.core.redis import get_request_redis
 
@@ -49,6 +51,14 @@ class MigrationStatus(TypedDict):
     eta_seconds: NotRequired[float | None]  # Added by API layer from ProgressTracker
 
 
+class RunState(enum.Enum):
+    """Whether a migration is running, as far as Redis lets us tell."""
+
+    RUNNING = "running"
+    IDLE = "idle"
+    UNKNOWN = "unknown"
+
+
 class MigrationProgressService:
     """Service for tracking migration progress in Redis."""
 
@@ -68,8 +78,8 @@ class MigrationProgressService:
             try:
                 self._redis_client = get_request_redis()
                 self._redis_client.ping()
-            except Exception as e:
-                logger.error(f"Failed to connect to Redis: {e}")
+            except RedisError as e:
+                logger.error(f"Failed to connect to Redis: {e}", exc_info=True)
                 self._redis_client = None
         return self._redis_client
 
@@ -123,8 +133,8 @@ class MigrationProgressService:
                 return cast(MigrationStatus, parsed)
             return default_status
 
-        except Exception as e:
-            logger.error(f"Error getting migration status from Redis: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error getting migration status from Redis: {e}", exc_info=True)
             return default_status
 
     def is_running(self) -> bool:
@@ -133,8 +143,26 @@ class MigrationProgressService:
         Returns:
             True if a migration is in progress.
         """
-        status = self.get_status()
-        return status.get("running", False)
+        return self.running_state() is not RunState.IDLE
+
+    def running_state(self) -> RunState:
+        """Read whether a migration runs: yes, no, or unobservable (Redis down).
+
+        ``get_status`` answers a default "not running" status on an outage, which would let
+        a second migration start; this reads Redis directly so the outage stays visible.
+        """
+        client = self.redis_client
+        if not client:
+            return RunState.UNKNOWN
+        try:
+            status_json = client.get(self._get_key("status"))
+            if not status_json:
+                return RunState.IDLE
+            running = bool(json.loads(status_json).get("running", False))
+        except (RedisError, ValueError) as e:
+            logger.error(f"Could not read migration running state: {e}", exc_info=True)
+            return RunState.UNKNOWN
+        return RunState.RUNNING if running else RunState.IDLE
 
     def start_migration(self, total_files: int, task_id: str | None = None) -> bool:
         """Mark a migration as started.
@@ -170,8 +198,8 @@ class MigrationProgressService:
             logger.info(f"Started migration tracking: {total_files} files")
             return True
 
-        except Exception as e:
-            logger.error(f"Error starting migration tracking: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error starting migration tracking: {e}", exc_info=True)
             return False
 
     # Lua script for atomic increment of processed_files + optional failed_files append.
@@ -235,8 +263,8 @@ class MigrationProgressService:
             )
             return True
 
-        except Exception as e:
-            logger.error(f"Error incrementing processed count: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error incrementing processed count: {e}", exc_info=True)
             return False
 
     def complete_migration(self, success: bool = True) -> bool:
@@ -277,8 +305,8 @@ class MigrationProgressService:
             logger.info(f"Migration completed: {processed}/{total} processed, {failed} failed")
             return True
 
-        except Exception as e:
-            logger.error(f"Error completing migration: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error completing migration: {e}", exc_info=True)
             return False
 
     def clear_status(self) -> bool:
@@ -297,8 +325,8 @@ class MigrationProgressService:
             logger.info("Migration status cleared")
             return True
 
-        except Exception as e:
-            logger.error(f"Error clearing migration status: {e}")
+        except RedisError as e:
+            logger.error(f"Error clearing migration status: {e}", exc_info=True)
             return False
 
     def force_stop(self) -> bool:
@@ -328,8 +356,8 @@ class MigrationProgressService:
             logger.warning("Migration force stopped")
             return True
 
-        except Exception as e:
-            logger.error(f"Error force stopping migration: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error force stopping migration: {e}", exc_info=True)
             return False
 
 

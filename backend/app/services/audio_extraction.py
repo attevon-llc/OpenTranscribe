@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from app.core.config import settings
+from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
 from app.services.video_processing_host import VideoProcessingHost
 from app.services.video_subtitle_burn import _run_ffmpeg
 from app.utils.audio_stream import audio_map_args
@@ -160,7 +161,12 @@ class AudioExtractionMixin(VideoProcessingHost):
         try:
             stat = self.minio_service.stat_object(self.cache_bucket, cache_key)
             content_type = getattr(stat, "content_type", None) or "audio/mpeg"
-        except Exception:
+        except STORAGE_UNAVAILABLE_ERRORS:
+            logger.warning(
+                "Could not read stored audio metadata for %s; assuming audio/mpeg",
+                cache_key,
+                exc_info=True,
+            )
             content_type = "audio/mpeg"
         return cache_key, _CONTENT_TYPE_TO_EXT.get(content_type, "m4a"), content_type
 

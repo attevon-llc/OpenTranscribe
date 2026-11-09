@@ -51,6 +51,7 @@ from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.enums import ReasoningOffSwitch
@@ -247,8 +248,14 @@ def probe(config: LLMConfig) -> ReasoningProbeResult:
         on = _probe_arm(service, True)
         off = _probe_arm(service, False)
         omitted = _probe_arm(service, None)
-    except Exception as exc:  # any failure must degrade, never raise
-        logger.warning("Reasoning probe failed for %s/%s: %s", config.provider, config.model, exc)
+    except Exception as exc:  # any provider failure must degrade to UNKNOWN, never raise
+        logger.warning(
+            "Reasoning probe failed for %s/%s: %s",
+            config.provider,
+            config.model,
+            exc,
+            exc_info=True,
+        )
         return ReasoningProbeResult(
             off_switch=ReasoningOffSwitch.UNKNOWN,
             detail=f"probe could not complete: {type(exc).__name__}",
@@ -325,8 +332,8 @@ def read_record(db: Session, provider: str, base_url: str | None, model: str) ->
     key = capability_key(provider, base_url, model)
     try:
         raw = get_setting(db, key)
-    except Exception as exc:  # a capability read must not break chat
-        logger.warning("Reasoning capability read failed for %s: %s", key, exc)
+    except SQLAlchemyError as exc:  # a capability read must not break chat
+        logger.warning("Reasoning capability read failed for %s: %s", key, exc, exc_info=True)
         return {}
     if not raw:
         return {}

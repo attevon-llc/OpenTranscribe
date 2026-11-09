@@ -43,8 +43,8 @@ class MediaMetadataMixin:
             else:
                 logger.warning("No metadata extracted, using fallback")
                 return self._extract_basic_metadata(file_path)
-        except Exception as e:
-            logger.warning(f"Failed to extract technical metadata: {e}")
+        except Exception as e:  # metadata is optional; the basic extractor follows
+            logger.warning(f"Failed to extract technical metadata: {e}", exc_info=True)
             return self._extract_basic_metadata(file_path)
 
     def _safe_frame_rate_eval(self, frame_rate_str: str) -> float | None:
@@ -119,8 +119,8 @@ class MediaMetadataMixin:
 
             return metadata
 
-        except Exception as e:
-            logger.warning(f"Failed to extract basic metadata: {e}")
+        except Exception as e:  # metadata is optional for the ingest
+            logger.warning(f"Failed to extract basic metadata: {e}", exc_info=True)
             return {"content_type": "video/mp4"}
 
     def _prepare_media_metadata(self, url: str, media_info: dict[str, Any]) -> dict[str, Any]:

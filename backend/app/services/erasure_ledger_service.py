@@ -68,9 +68,12 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from minio.error import MinioException
 from sqlalchemy import ColumnElement
 from sqlalchemy import and_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from urllib3.exceptions import HTTPError as Urllib3HTTPError
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
@@ -78,6 +81,11 @@ from app.auth.audit_events import AuditOutcome
 from app.models.erasure import ErasureLedgerEntry
 
 logger = logging.getLogger(__name__)
+
+#: What the journal's two backends raise: a filesystem (``OSError``) or the MinIO client
+#: (``MinioException`` for S3 error responses, urllib3's ``HTTPError`` for a connection that
+#: never got a response).
+_JOURNAL_IO_ERRORS = (OSError, MinioException, Urllib3HTTPError)
 
 #: GDPR Art. 12(3): erasure must complete within one month of the request. Lives here
 #: rather than in ``gdpr_erasure_service`` so the value that stamps ``sla_due_at`` and
@@ -179,8 +187,8 @@ def _append_journal(entry: ErasureLedgerEntry) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, separators=(",", ":")) + "\n")
-    except Exception as e:
-        logger.error(
+    except (*_JOURNAL_IO_ERRORS, TypeError, ValueError) as e:
+        logger.exception(
             "Erasure journal append FAILED for entry %s: %s — a restore of an older "
             "database would silently undo this erasure",
             entry.uuid,
@@ -195,8 +203,8 @@ def _file_journal_records() -> Iterator[dict[str, Any]] | None:
         return iter(())
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
-    except Exception as e:
-        logger.error("Erasure journal unreadable at %s: %s", path, e)
+    except (OSError, ValueError) as e:
+        logger.exception("Erasure journal unreadable at %s: %s", path, e)
         return None
 
     def _parse() -> Iterator[dict[str, Any]]:
@@ -230,8 +238,8 @@ def _object_journal_records(known: set[str]) -> Iterator[dict[str, Any]] | None:
             and str(obj.object_name).endswith(".json")
             and not str(obj.object_name).startswith(prefix + RECEIPT_JOURNAL_DIR)
         ]
-    except Exception as e:
-        logger.error("Erasure journal unreadable at %s/%s: %s", bucket, prefix, e)
+    except _JOURNAL_IO_ERRORS as e:
+        logger.exception("Erasure journal unreadable at %s/%s: %s", bucket, prefix, e)
         return None
 
     def _fetch() -> Iterator[dict[str, Any]]:
@@ -242,8 +250,10 @@ def _object_journal_records(known: set[str]) -> Iterator[dict[str, Any]] | None:
             try:
                 response = client.get_object(bucket, name)
                 yield json.loads(response.read().decode("utf-8"))
-            except Exception as e:  # one bad object must not stop the rest
-                logger.warning("Skipping unreadable erasure journal object %s: %s", name, e)
+            except (*_JOURNAL_IO_ERRORS, ValueError) as e:  # one bad object must not stop the rest
+                logger.warning(
+                    "Skipping unreadable erasure journal object %s: %s", name, e, exc_info=True
+                )
             finally:
                 if response is not None:
                     response.close()
@@ -289,8 +299,8 @@ def append_receipt_line(entry: ErasureLedgerEntry, receipt: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(body + "\n")
-    except Exception as e:
-        logger.error("Erasure receipt journal append FAILED for %s: %s", entry.uuid, e)
+    except (*_JOURNAL_IO_ERRORS, TypeError, ValueError) as e:
+        logger.exception("Erasure receipt journal append FAILED for %s: %s", entry.uuid, e)
 
 
 def reopen_entry(db: Session, entry: ErasureLedgerEntry) -> None:
@@ -301,9 +311,9 @@ def reopen_entry(db: Session, entry: ErasureLedgerEntry) -> None:
         entry.deferred_reason = "error"
         entry.completed_at = None
         db.commit()
-    except Exception as e:
+    except SQLAlchemyError as e:
         db.rollback()
-        logger.error("Erasure ledger reopen FAILED for entry %s: %s", entry.uuid, e)
+        logger.exception("Erasure ledger reopen FAILED for entry %s: %s", entry.uuid, e)
         return
     _audit(entry, action="gdpr_erasure_reopened", outcome=AuditOutcome.PARTIAL)
 
@@ -407,9 +417,16 @@ def restore_from_journal(db: Session) -> int:
             db.commit()
             known.add(record["uuid"])
             restored += 1
-        except Exception as e:  # one bad line must not stop the rest
+        except (
+            SQLAlchemyError,
+            ValueError,
+            KeyError,
+            TypeError,
+        ) as e:  # one bad line must not stop the rest
             db.rollback()
-            logger.error("Could not restore erasure journal entry %s: %s", record.get("uuid"), e)
+            logger.exception(
+                "Could not restore erasure journal entry %s: %s", record.get("uuid"), e
+            )
 
     if restored:
         logger.error(
@@ -509,9 +526,9 @@ def record_request(
         db.add(entry)
         db.commit()
         db.refresh(entry)
-    except Exception as e:  # a ledger failure must not abort the erasure
+    except SQLAlchemyError as e:  # a ledger failure must not abort the erasure
         db.rollback()
-        logger.error(
+        logger.exception(
             "Erasure ledger write FAILED for %s subject user=%s org=%s: %s — the erasure "
             "will proceed but nothing will reconcile it",
             subject_type,
@@ -582,9 +599,9 @@ def record_outcome(
         entry.completed_at = _completion_time(entry, status, now)
         db.commit()
         db.refresh(entry)
-    except Exception as e:  # the deletion already happened; never re-raise
+    except SQLAlchemyError as e:  # the deletion already happened; never re-raise
         db.rollback()
-        logger.error("Erasure ledger outcome write FAILED for entry %s: %s", entry.uuid, e)
+        logger.exception("Erasure ledger outcome write FAILED for entry %s: %s", entry.uuid, e)
         return entry
 
     _audit(
@@ -615,9 +632,9 @@ def record_resurrection(
             entry.status = "pending"
             entry.completed_at = None
         db.commit()
-    except Exception as e:
+    except SQLAlchemyError as e:
         db.rollback()
-        logger.error("Erasure ledger resurrection write FAILED for entry %s: %s", entry.uuid, e)
+        logger.exception("Erasure ledger resurrection write FAILED for entry %s: %s", entry.uuid, e)
         return
 
     logger.warning(
@@ -819,5 +836,5 @@ def _audit(
                 **(extra or {}),
             },
         )
-    except Exception as e:  # audit must never break the erasure
-        logger.warning("Erasure ledger audit event failed: %s", e)
+    except Exception:  # audit must never break the erasure; the sink is arbitrary
+        logger.exception("Erasure ledger audit event failed")

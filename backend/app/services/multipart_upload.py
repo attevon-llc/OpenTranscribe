@@ -31,8 +31,11 @@ import datetime
 import logging
 from typing import Any
 
+from minio.error import S3Error
+
 from app.core.config import settings
 from app.services import storage_backend
+from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
 from app.services.minio_service import ensure_bucket_exists
 from app.services.minio_service import minio_client
 from app.services.storage_backend import clamp_presigned_expiry
@@ -165,8 +168,10 @@ def abort_upload(object_name: str, upload_id: str) -> bool:
         minio_client._abort_multipart_upload(_bucket(), object_name, upload_id)
         logger.info(f"Aborted multipart upload {upload_id} for {object_name}")
         return True
-    except Exception as e:  # cleanup must never fail the caller
-        logger.warning(f"Could not abort multipart upload {upload_id} for {object_name}: {e}")
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # cleanup must never fail the caller
+        logger.warning(
+            f"Could not abort multipart upload {upload_id} for {object_name}: {e}", exc_info=True
+        )
         return False
 
 
@@ -188,8 +193,8 @@ def abort_uploads_for_object(object_name: str) -> int:
                 continue
             if abort_upload(object_name, str(upload.upload_id)):
                 aborted += 1
-    except Exception as e:  # cleanup must never fail the caller
-        logger.warning(f"Could not list multipart uploads for {object_name}: {e}")
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # cleanup must never fail the caller
+        logger.warning(f"Could not list multipart uploads for {object_name}: {e}", exc_info=True)
     return aborted
 
 
@@ -233,7 +238,11 @@ def ensure_abort_incomplete_lifecycle(
                         return True
                 else:
                     others.append(rule)
-        except Exception:
+        except S3Error as e:
+            if e.code != "NoSuchLifecycleConfiguration":
+                # An unreadable config is not an empty one: writing "others + new" from an
+                # empty list would delete every other lifecycle rule on the bucket.
+                raise
             others = []
 
         rule = Rule(
@@ -247,8 +256,10 @@ def ensure_abort_incomplete_lifecycle(
         minio_client.set_bucket_lifecycle(bucket_name, LifecycleConfig([*others, rule]))
         logger.info(f"Abandoned multipart uploads on {bucket_name} expire after {days}d")
         return True
-    except Exception as e:  # best-effort housekeeping
-        logger.warning(f"Could not set multipart-abort lifecycle on {bucket_name}: {e}")
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # best-effort housekeeping
+        logger.warning(
+            f"Could not set multipart-abort lifecycle on {bucket_name}: {e}", exc_info=True
+        )
         return False
 
 
@@ -275,8 +286,10 @@ def build_upload_plan(
             upload_id = create_upload(object_name, content_type)
             first_batch = list(range(1, min(PART_URL_BATCH, part_count) + 1))
             urls, expires_in = presign_parts(object_name, upload_id, first_batch)
-        except Exception as e:  # degrade to the API-mediated path
-            logger.warning(f"Multipart setup failed for {object_name}, falling back: {e}")
+        except STORAGE_UNAVAILABLE_ERRORS as e:  # degrade to the API-mediated path
+            logger.warning(
+                f"Multipart setup failed for {object_name}, falling back: {e}", exc_info=True
+            )
             return None
         return {
             "upload_method": "MULTIPART",

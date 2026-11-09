@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import settings
 from app.services.bedrock_settings import BedrockConnection
 from app.services.bedrock_settings import connection_from_encrypted
@@ -532,8 +534,10 @@ class LLMFactoryMixin:
                 )
             finally:
                 db.close()
-        except Exception as exc:  # a capability read must not break the fallback service
-            logger.warning("Context-window measurement unavailable for the system LLM: %s", exc)
+        except SQLAlchemyError as exc:  # a capability read must not break the fallback service
+            logger.warning(
+                "Context-window measurement unavailable for the system LLM: %s", exc, exc_info=True
+            )
 
         try:
             config = LLMConfig(
@@ -549,6 +553,6 @@ class LLMFactoryMixin:
                 f"Created LLMService from system settings: {provider}/{model}, context_window={config.max_tokens}"
             )
             return LLMService(config)
-        except Exception as e:
-            logger.error(f"Failed to create LLMService from system settings: {e}")
+        except (ValueError, TypeError, ImportError, OSError) as e:
+            logger.exception(f"Failed to create LLMService from system settings: {e}")
             return None

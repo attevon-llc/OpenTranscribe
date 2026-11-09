@@ -38,6 +38,7 @@ from app.core.config import settings
 from app.core.constants import STORAGE_QUARANTINE_TAG_KEY
 from app.services import storage_backend
 from app.services import storage_presign_identity
+from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from minio import Minio
@@ -102,7 +103,8 @@ def _run(
     body = b"opentranscribe takedown probe"
     try:
         client.put_object(bucket, key, io.BytesIO(body), len(body))
-    except Exception as e:  # a probe failure is reported, never raised at boot
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # a probe failure is reported, never raised at boot
+        logger.warning(f"Takedown probe write to '{bucket}' failed", exc_info=True)
         return [], f"probe object write to '{bucket}' failed ({_code(e)})", None
     missing: list[str] = []
     error: str | None = None
@@ -116,13 +118,14 @@ def _run(
                     missing.append(label)
             elif error is None:
                 error = f"{action} on {bucket} failed ({e.code})"
-        except Exception as e:  # reported, never raised at boot
+        except STORAGE_UNAVAILABLE_ERRORS as e:  # reported, never raised at boot
+            logger.warning(f"Takedown probe step '{action}' on '{bucket}' failed", exc_info=True)
             if error is None:
                 error = f"{action} on {bucket} failed ({_code(e)})"
     leftover: str | None = None
     try:
         client.remove_object(bucket, key)
-    except Exception as e:  # a leftover probe object is harmless; say so
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # a leftover probe object is harmless; say so
         if delete_is_needed and _code(e) == "AccessDenied":
             label = f"s3:DeleteObject on {bucket}"
             if label not in missing:
@@ -131,7 +134,8 @@ def _run(
             leftover = f"{bucket}/{key}"
         logger.warning(
             f"Could not delete the takedown probe object '{key}' in '{bucket}' ({_code(e)}); "
-            f"it is a {len(body)}-byte object, safe to delete by hand."
+            f"it is a {len(body)}-byte object, safe to delete by hand.",
+            exc_info=True,
         )
     return missing, error, leftover
 

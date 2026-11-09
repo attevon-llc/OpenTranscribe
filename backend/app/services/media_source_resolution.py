@@ -13,6 +13,8 @@ import logging
 import os
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.services.media_source_access import query_user_media_sources
 from app.utils.media_origin import host_matches
 from app.utils.media_origin import source_base_url
@@ -42,7 +44,8 @@ class MediaSourceResolver:
                 return [s for s in sources if s.get("provider_type") == "mediacms"]
             finally:
                 db.close()
-        except Exception:
+        except SQLAlchemyError:
+            logger.warning("Failed to load system media sources", exc_info=True)
             return []
 
     def _get_user_media_sources(self, user_id: int | None = None) -> list[dict]:
@@ -77,8 +80,8 @@ class MediaSourceResolver:
                 return result
             finally:
                 db.close()
-        except Exception as e:
-            logger.debug("Failed to load per-user media sources: %s", e)
+        except SQLAlchemyError as e:
+            logger.warning("Failed to load per-user media sources: %s", e, exc_info=True)
             return []
 
     def _get_all_sources(self, user_id: int | None = None) -> list[dict]:

@@ -384,7 +384,9 @@ class EmailService:
             db = factory()
             return load_auth_mail_config(db)
         except Exception as exc:  # degrade to env SMTP, never fail the caller
-            logger.warning("Could not resolve the designated auth mail config: %s", exc)
+            logger.warning(
+                "Could not resolve the designated auth mail config: %s", exc, exc_info=True
+            )
             return None
         finally:
             if db is not None:

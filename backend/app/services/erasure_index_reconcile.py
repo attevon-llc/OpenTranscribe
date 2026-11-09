@@ -203,7 +203,7 @@ def check_subjects(subjects: list[IndexSubject]) -> IndexCheckResult:
         for name, key in _indices(client):
             _check_index(client, name, key, subjects, result)
     except Exception as e:  # an unreachable cluster is a reported state
-        logger.warning("erasure index check could not complete (%s)", type(e).__name__)
+        logger.exception("erasure index check could not complete (%s)", type(e).__name__)
         result.unverified += 1
         result.checked_entry_ids = []
         return result

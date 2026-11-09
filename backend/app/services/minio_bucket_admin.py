@@ -13,9 +13,12 @@ import os
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
+from minio.error import S3Error
+
 from app.core.config import settings
 from app.services import minio_service
 from app.services import storage_presign_identity
+from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
 from app.services.storage_backend import clamp_presigned_expiry
 from app.services.storage_backend import rewrite_public_host
 
@@ -203,8 +206,11 @@ class MinIOService:
                                 return
                         else:
                             existing_rules.append(r)
-            except Exception:
-                # No lifecycle config yet (S3 returns NoSuchLifecycleConfiguration).
+            except S3Error as e:
+                if e.code != "NoSuchLifecycleConfiguration":
+                    # An unreadable config is not an empty one: writing "existing + new"
+                    # from an empty list would delete every other lifecycle rule.
+                    raise
                 existing_rules = []
 
             rule = Rule(
@@ -217,8 +223,10 @@ class MinIOService:
             logger.info(
                 f"Set lifecycle rule '{rule_id}' on {bucket_name}/{prefix} (expire {days}d)"
             )
-        except Exception as e:  # pragma: no cover - best-effort housekeeping
-            logger.warning(f"Could not set lifecycle rule on {bucket_name}/{prefix}: {e}")
+        except STORAGE_UNAVAILABLE_ERRORS as e:  # best-effort housekeeping
+            logger.warning(
+                f"Could not set lifecycle rule on {bucket_name}/{prefix}: {e}", exc_info=True
+            )
 
     def remove_lifecycle_rule(self, bucket_name: str, rule_id: str) -> None:
         """Remove a single lifecycle rule by id, preserving any others. Best-effort."""
@@ -233,8 +241,10 @@ class MinIOService:
                 return  # rule wasn't present
             self.client.set_bucket_lifecycle(bucket_name, LifecycleConfig(remaining))
             logger.info(f"Removed lifecycle rule '{rule_id}' from {bucket_name}")
-        except Exception as e:  # pragma: no cover - best-effort housekeeping
-            logger.warning(f"Could not remove lifecycle rule '{rule_id}' on {bucket_name}: {e}")
+        except STORAGE_UNAVAILABLE_ERRORS as e:  # best-effort housekeeping
+            logger.warning(
+                f"Could not remove lifecycle rule '{rule_id}' on {bucket_name}: {e}", exc_info=True
+            )
 
     def prefix_stats(self, bucket_name: str, prefix: str) -> tuple[int, int]:
         """Return ``(object_count, total_bytes)`` for all objects under a prefix."""
@@ -244,8 +254,10 @@ class MinIOService:
             for obj in self.client.list_objects(bucket_name, prefix=prefix, recursive=True):
                 count += 1
                 total += int(obj.size or 0)
-        except Exception as e:
-            logger.warning(f"Could not compute prefix stats for {bucket_name}/{prefix}: {e}")
+        except STORAGE_UNAVAILABLE_ERRORS as e:
+            logger.warning(
+                f"Could not compute prefix stats for {bucket_name}/{prefix}: {e}", exc_info=True
+            )
         return count, total
 
     def delete_prefix(self, bucket_name: str, prefix: str) -> RemovalResult:

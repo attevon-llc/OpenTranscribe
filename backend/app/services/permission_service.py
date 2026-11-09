@@ -396,27 +396,36 @@ class PermissionService:
         owned = owned_query.all()
 
         # Shared profiles via collection chain
-        shared_query = (
-            db.query(SpeakerProfile.id)
-            .join(Speaker, Speaker.profile_id == SpeakerProfile.id)
-            .join(MediaFile, MediaFile.id == Speaker.media_file_id)
-            .join(CollectionMember, CollectionMember.media_file_id == MediaFile.id)
-            .join(
-                CollectionShare,
-                CollectionShare.collection_id == CollectionMember.collection_id,
-            )
-            .filter(
+        shared = PermissionService._shared_profile_ids(db, user_group_ids, user_id, org_pred)
+
+        return {row[0] for row in owned} | shared
+
+    @staticmethod
+    def _shared_profile_ids(
+        db: Session, user_group_ids: Any, user_id: int, org_pred: Any
+    ) -> set[int]:
+        """Ids of profiles with a speaker in a file of a collection shared with the caller.
+
+        A semi-join (``profile.id IN (SELECT speaker.profile_id ...)``) over the speaker /
+        collection chain: the old four-table join materialised one row per (speaker, member,
+        share) and deduplicated with DISTINCT afterwards (issue #1337, 90 ms mean). The
+        ``media_file`` hop added nothing: ``collection_member.media_file_id`` is that file.
+        """
+        reachable = (
+            select(Speaker.profile_id)
+            .join(CollectionMember, CollectionMember.media_file_id == Speaker.media_file_id)
+            .join(CollectionShare, CollectionShare.collection_id == CollectionMember.collection_id)
+            .where(
                 or_(
                     CollectionShare.target_user_id == user_id,
                     CollectionShare.target_group_id.in_(user_group_ids),
                 )
             )
         )
+        query = db.query(SpeakerProfile.id).filter(SpeakerProfile.id.in_(reachable))
         if org_pred is not None:
-            shared_query = shared_query.filter(org_pred)
-        shared = shared_query.distinct().all()
-
-        return {row[0] for row in owned} | {row[0] for row in shared}
+            query = query.filter(org_pred)
+        return {row[0] for row in query.all()}
 
     @staticmethod
     def get_matchable_profile_ids(
@@ -480,25 +489,7 @@ class PermissionService:
             owned_query = owned_query.filter(org_pred)
         owned_ids = {row[0] for row in owned_query.all()}
 
-        shared_query = (
-            db.query(SpeakerProfile.id)
-            .join(Speaker, Speaker.profile_id == SpeakerProfile.id)
-            .join(MediaFile, MediaFile.id == Speaker.media_file_id)
-            .join(CollectionMember, CollectionMember.media_file_id == MediaFile.id)
-            .join(
-                CollectionShare,
-                CollectionShare.collection_id == CollectionMember.collection_id,
-            )
-            .filter(
-                or_(
-                    CollectionShare.target_user_id == user_id,
-                    CollectionShare.target_group_id.in_(user_group_ids),
-                )
-            )
-        )
-        if org_pred is not None:
-            shared_query = shared_query.filter(org_pred)
-        shared_ids = {row[0] for row in shared_query.distinct().all()}
+        shared_ids = PermissionService._shared_profile_ids(db, user_group_ids, user_id, org_pred)
 
         result = [(pid, True) for pid in owned_ids]
         result.extend((pid, False) for pid in shared_ids - owned_ids)

@@ -465,9 +465,6 @@ frontend/src/stores/auth.mfaEnrollment.test.ts	2	pre-existing duplicated blocks 
 frontend/src/stores/auth.sessionCookieRejected.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/auth.sessionEndReason.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/auth.sessionProbe.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/stores/chat.rateLimit.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/stores/chat.reducer.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/stores/chat.retrievalFailed.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/websocket.notificationActions.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/websocket.retention.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/websocket.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -480,8 +477,6 @@ scripts/benchmark_engine_single.py	1	pre-existing duplicated blocks of 100+ toke
 scripts/diarization-der-compare.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 scripts/diarization-der.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 scripts/e2e_bench/config.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-scripts/guards/check_migration_safety.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-scripts/guards/check_raw_env.py	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+scripts/guards/check_raw_env.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 scripts/guards/check_style_literals.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-scripts/guards/check_suppressions.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 scripts/session_lifetime_audit/cli.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

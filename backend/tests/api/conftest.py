@@ -231,14 +231,16 @@ def caps_off():
     reset_capability_resolver()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def uncached_metrics_page(monkeypatch):
     """Make every ``GET /metrics`` render the page again.
 
     The endpoint reuses a rendered page for ``METRICS_PAGE_TTL_SECONDS`` (covered by
     ``tests/unit/test_metrics_page_ttl.py``). A test that scrapes to observe what changed
     between two scrapes (a gauge, a TTL-gated refresh) must see each scrape's own render.
-    A zero TTL disables the reuse (the check is a strict ``<``) and the cached page is
+    Autouse because the page cache is process-wide: a scrape in an earlier test of this xdist
+    worker, under 5 s ago, would otherwise answer a later test's scrape (an order- and
+    load-dependent failure). A zero TTL disables the reuse (the check is a strict ``<``) and the cached page is
     dropped so a scrape from an earlier test cannot answer this one.
     """
     from app.api.endpoints import metrics as metrics_endpoint

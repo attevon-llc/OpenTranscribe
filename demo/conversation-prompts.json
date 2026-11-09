@@ -2,59 +2,60 @@
   "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Each `items` entry is an item id in the shipped bundle's manifest (bundle-v1). A question is asked in its own conversation, followed by its follow-ups. At least half of the conversations are cross-file. The privacy-redaction item id is reserved for the scripted clip that the owner still has to record (bundle-v1/privacy-demo/SCRIPT.md); until it exists in the manifest, the generator reports it as missing. Questions that name specifics (dates, topics) are drawn from the items' opening captions (YouTube auto-captions) or page descriptions and must be rechecked against the transcripts once they exist.",
   "conversations": [
     {
-      "id": "news-latin-america-culture-and-ai",
-      "title": "What do the two Spanish-language reports cover?",
+      "id": "news-space-science-reports",
+      "title": "What do the space and Moon reports explain?",
       "items": [
-        "voa-es-8010993",
-        "voa-es-8011266"
+        "voa-en-7905637",
+        "voa-en-7872624",
+        "voa-en-7800840"
       ],
       "questions": [
-        "Summarize each Spanish-language report in two sentences.",
-        "What does the first report say about how artificial intelligence is advancing in Latin America, and what does the second describe about the National Museum of Colombia?",
-        "Which report mentions Fernando Botero or Gabriel Garcia Marquez, and in what context?"
+        "Summarize each of the three space reports in two sentences.",
+        "What caused the Ingenuity Mars helicopter to crash, and what does NASA say the team learned from the flights?",
+        "Which report describes spacecraft that have entered interstellar space, and what are they studying there?",
+        "What did the Moon water study find, and which instrument provided the data?"
       ]
     },
     {
-      "id": "news-russian-language-features",
-      "title": "What do the Russian-language features explain about life in the US?",
+      "id": "news-inventors-and-pioneers",
+      "title": "Which inventors and pioneers do these features profile?",
       "items": [
-        "voa-ru-7171673",
-        "voa-ru-7272032",
-        "voa-ru-7281198"
+        "voa-en-7998765",
+        "voa-en-7979682",
+        "voa-en-7974949"
       ],
       "questions": [
-        "Give a one-line summary of each Russian-language feature.",
-        "What facts does the winemaking feature give, and what facts does the firefighters feature give?",
-        "What does the eco-house report say about cost, and how does it compare to the other two reports in style?"
+        "Give a one-line summary of each profile.",
+        "What did the Wright brothers achieve on December 17th, 1903, and how long was the first flight?",
+        "How does the Robert Goddard feature compare his rocket work to the first airplane flight?",
+        "What is Thomas Edison remembered for, and how did he learn as a child?"
       ]
     },
     {
-      "id": "news-chinese-gen-z-series",
-      "title": "What do the two Chinese-language Gen Z reports say?",
+      "id": "news-nature-and-literature",
+      "title": "What do the Yellowstone and Pearl S. Buck reports cover?",
       "items": [
-        "voa-zh-8157382",
-        "voa-zh-8157388"
+        "voa-en-7974034",
+        "voa-en-7980858"
       ],
       "questions": [
-        "What is each report about?",
-        "What view of American national parks and of podcast culture does the presenter give?",
-        "How do the two reports differ in tone and structure?"
+        "Summarize the Yellowstone report and the Pearl S. Buck report in two sentences each.",
+        "What makes Yellowstone unusual according to the report, and how many geysers does it have?",
+        "What is The Good Earth about, and why was Pearl Buck the first American woman to win the Nobel Prize in Literature?"
       ]
     },
     {
-      "id": "news-languages-overview",
-      "title": "Which languages are in the news collection and what are the topics?",
+      "id": "news-language-and-culture",
+      "title": "What English expressions do the language features explain?",
       "items": [
-        "voa-es-8010993",
-        "voa-ko-8218258",
-        "voa-pt-8011706",
-        "voa-ru-7171673",
-        "voa-zh-8157388"
+        "voa-en-7835956",
+        "voa-en-7922042",
+        "voa-en-7897488"
       ],
       "questions": [
-        "List each report with its language and a one-sentence topic.",
-        "Which reports are explainers or lessons and which are features?",
-        "Which report concerns inventors turning fallen leaves into paper, and what do they say about their reason?"
+        "Which expressions does each feature explain?",
+        "How does the butterfly effect feature explain a chain reaction, and what related expression does it mention?",
+        "Across all the English-language reports in the News collection, which ones are about science or invention and which are about language?"
       ]
     },
     {

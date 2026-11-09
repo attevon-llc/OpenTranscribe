@@ -36,8 +36,7 @@ from app.api.endpoints.chat.export_redaction import resolve_export_policy
 from app.auth.audit_events import AuditEventType
 from app.db.base import get_db
 from app.models.chat import ROLE_USER
-from app.models.chat import STATUS_SUPERSEDED
-from app.models.chat import ChatMessage
+from app.services.chat.conversation_queries import visible_messages
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event
 from app.services.request_context import RequestContext
@@ -219,15 +218,7 @@ def export_conversation(
     """
     conversation_row = get_owned_conversation(db, ctx, conversation_uuid)
 
-    rows = (
-        db.query(ChatMessage)
-        .filter(
-            ChatMessage.conversation_id == conversation_row.id,
-            ChatMessage.status != STATUS_SUPERSEDED,
-        )
-        .order_by(ChatMessage.id.asc())
-        .all()
-    )
+    rows = visible_messages(db, conversation_row.id)
     conversation = _ExportConversation(
         uuid=str(conversation_row.uuid),
         title=conversation_row.title,

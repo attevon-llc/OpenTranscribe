@@ -21,7 +21,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -30,7 +29,6 @@ from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
-from app.models.chat import ChatConversation
 from app.models.chat import ChatProject
 from app.schemas.chat import ChatScope
 from app.schemas.chat import ProjectCreate
@@ -38,6 +36,11 @@ from app.schemas.chat import ProjectDetail
 from app.schemas.chat import ProjectList
 from app.schemas.chat import ProjectSummary
 from app.schemas.chat import ProjectUpdate
+from app.services.chat.conversation_queries import conversation_counts
+from app.services.chat.conversation_queries import detach_conversations
+from app.services.chat.conversation_queries import find_user_project
+from app.services.chat.conversation_queries import list_user_projects
+from app.services.chat.conversation_queries import llm_config_uuid_for_id
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -51,27 +54,10 @@ def get_owned_project(db: Session, uuid: str, ctx: RequestContext) -> ChatProjec
     404 rather than 403 on purpose: a project the caller may not see should not
     be distinguishable from one that does not exist.
     """
-    project = (
-        db.query(ChatProject)
-        .filter(ChatProject.uuid == uuid, ChatProject.user_id == ctx.user.id)
-        .first()
-    )
+    project = find_user_project(db, uuid, ctx.user.id)
     if project is None or project.organization_id != ctx.org_id:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
-
-
-def _conversation_counts(db: Session, project_ids: list[int]) -> dict[int, int]:
-    """Conversation counts for a page of projects, in one query."""
-    if not project_ids:
-        return {}
-    rows = (
-        db.query(ChatConversation.project_id, func.count(ChatConversation.id))
-        .filter(ChatConversation.project_id.in_(project_ids))
-        .group_by(ChatConversation.project_id)
-        .all()
-    )
-    return {int(pid): int(count) for pid, count in rows if pid is not None}
 
 
 def to_project_summary(project: ChatProject, conversation_count: int = 0) -> ProjectSummary:
@@ -87,13 +73,10 @@ def to_project_summary(project: ChatProject, conversation_count: int = 0) -> Pro
 
 
 def to_project_detail(db: Session, project: ChatProject) -> ProjectDetail:
-    count = _conversation_counts(db, [int(project.id)]).get(int(project.id), 0)
+    count = conversation_counts(db, [int(project.id)]).get(int(project.id), 0)
     llm_uuid: str | None = None
     if project.llm_config_id is not None:
-        from app.models.user_llm_settings import UserLLMSettings
-
-        cfg = db.query(UserLLMSettings).filter(UserLLMSettings.id == project.llm_config_id).first()
-        llm_uuid = str(cfg.uuid) if cfg else None
+        llm_uuid = llm_config_uuid_for_id(db, project.llm_config_id)
 
     return ProjectDetail(
         **to_project_summary(project, count).model_dump(),
@@ -151,18 +134,14 @@ def list_projects(
     ctx: RequestContext = Depends(get_current_context),
 ) -> ProjectList:
     """This user's projects, alphabetical, with conversation counts."""
-    query = db.query(ChatProject).filter(ChatProject.user_id == ctx.user.id)
-    if not include_archived:
-        query = query.filter(ChatProject.is_archived.is_(False))
-
     # Tenant comparison in Python, matching get_owned_conversation: org_id is
     # NULL for personal scope and SQL equality never matches NULL to NULL.
     projects = [
         p
-        for p in query.order_by(func.lower(ChatProject.name)).all()
+        for p in list_user_projects(db, ctx.user.id, include_archived=include_archived)
         if p.organization_id == ctx.org_id
     ]
-    counts = _conversation_counts(db, [int(p.id) for p in projects])
+    counts = conversation_counts(db, [int(p.id) for p in projects])
     return ProjectList(
         projects=[to_project_summary(p, counts.get(int(p.id), 0)) for p in projects],
         total=len(projects),
@@ -232,8 +211,6 @@ def delete_project(
     loaded in this session. Detaching explicitly first keeps both in agreement.
     """
     project = get_owned_project(db, project_uuid, ctx)
-    db.query(ChatConversation).filter(ChatConversation.project_id == project.id).update(
-        {ChatConversation.project_id: None}, synchronize_session=False
-    )
+    detach_conversations(db, project.id)
     db.delete(project)
     db.commit()

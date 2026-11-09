@@ -14,7 +14,6 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Query
 from fastapi import Request
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -29,30 +28,17 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.models.chat import ChatConversation
-from app.models.chat import ChatMessage
 from app.schemas.chat import ConversationCreate
 from app.schemas.chat import ConversationDetail
 from app.schemas.chat import ConversationList
 from app.schemas.chat import ConversationUpdate
+from app.services.chat.conversation_queries import list_conversation_page
+from app.services.chat.conversation_queries import message_counts
 from app.services.request_context import RequestContext
-from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _message_counts(db: Session, conversation_ids: list[int]) -> dict[int, int]:
-    """Message counts for a page of conversations, in one query."""
-    if not conversation_ids:
-        return {}
-    rows = (
-        db.query(ChatMessage.conversation_id, func.count(ChatMessage.id))
-        .filter(ChatMessage.conversation_id.in_(conversation_ids))
-        .group_by(ChatMessage.conversation_id)
-        .all()
-    )
-    return {int(cid): int(count) for cid, count in rows}
 
 
 @router.post("/conversations", response_model=ConversationDetail, status_code=201)
@@ -115,29 +101,17 @@ def list_conversations(
     ctx: RequestContext = Depends(get_current_context),
 ) -> ConversationList:
     """List the caller's conversations, most recently active first."""
-    query = db.query(ChatConversation).filter(
-        ChatConversation.user_id == ctx.user.id,
-        ChatConversation.is_archived.is_(archived),
-    )
-    query = (
-        query.filter(ChatConversation.organization_id == ctx.org_id)
-        if ctx.org_id is not None
-        else query.filter(ChatConversation.organization_id.is_(None))
-    )
-    if q:
-        query = query.filter(ChatConversation.title.ilike(f"%{escape_like(q)}%", escape="\\"))
-
-    total = query.count()
-    # A conversation that has never been messaged has no last_message_at; sorting
-    # those last pushed brand-new chats off page 1 entirely (30 rows) so they never
-    # appeared in the sidebar. created_at is the right fallback -- the sidebar's own
-    # date grouping and chat_retention already use exactly this coalesce.
-    recency = func.coalesce(ChatConversation.last_message_at, ChatConversation.created_at)
-    rows = (
-        query.order_by(recency.desc(), ChatConversation.id.desc()).offset(offset).limit(limit).all()
+    rows, total = list_conversation_page(
+        db,
+        user_id=ctx.user.id,
+        organization_id=ctx.org_id,
+        archived=archived,
+        title_filter=q,
+        limit=limit,
+        offset=offset,
     )
 
-    counts = _message_counts(db, [row.id for row in rows])
+    counts = message_counts(db, [row.id for row in rows])
     return ConversationList(
         conversations=[to_summary(row, counts.get(row.id, 0)) for row in rows],
         total=total,
@@ -154,7 +128,7 @@ def get_conversation(
 ) -> ConversationDetail:
     """Fetch one conversation's metadata, scope and settings."""
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
-    counts = _message_counts(db, [conversation.id])
+    counts = message_counts(db, [conversation.id])
     return to_detail(
         db,
         conversation,
@@ -197,7 +171,7 @@ def update_conversation(
     db.commit()
     db.refresh(conversation)
 
-    counts = _message_counts(db, [conversation.id])
+    counts = message_counts(db, [conversation.id])
     return to_detail(
         db,
         conversation,

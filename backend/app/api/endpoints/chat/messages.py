@@ -27,7 +27,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import ValidationError
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 from starlette.concurrency import run_in_threadpool
@@ -45,7 +44,6 @@ from app.core.constants import LLM_CONTEXT_WINDOW_MAX
 from app.core.constants import LLM_CONTEXT_WINDOW_MIN
 from app.core.tenant_limits import resolve_allowed_models
 from app.db.base import get_db
-from app.models.chat import ROLE_ASSISTANT
 from app.models.chat import ROLE_USER
 from app.models.chat import STATUS_SUPERSEDED
 from app.models.chat import ChatConversation
@@ -63,6 +61,14 @@ from app.services.chat import limits
 from app.services.chat.context_resolver import count_scope_files
 from app.services.chat.context_resolver import resolve_scope_file_uuids
 from app.services.chat.context_resolver import unscoped_hidden_file_uuids
+from app.services.chat.conversation_queries import find_user_message
+from app.services.chat.conversation_queries import last_user_message
+from app.services.chat.conversation_queries import message_owned_in_tenant
+from app.services.chat.conversation_queries import message_page
+from app.services.chat.conversation_queries import newest_message_id
+from app.services.chat.conversation_queries import recent_history
+from app.services.chat.conversation_queries import supersede_assistant_replies_after
+from app.services.chat.conversation_queries import supersede_message_range
 from app.services.chat.frames import sse
 from app.services.chat.hooks import ChatDispatchContext
 from app.services.chat.hooks import fire_before_message
@@ -78,7 +84,6 @@ from app.services.llm_settings_outage import llm_settings_outage_as_503
 from app.services.redaction.llm_guard import is_local_provider
 from app.services.request_context import RequestContext
 from app.services.support_access_service import coded_error
-from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)
 
@@ -146,16 +151,7 @@ def _history_for_prompt(db: Session, conversation_id: int, max_turns: int) -> li
     leak. Keep it that way if this function ever grows a reason to read more
     of the row.
     """
-    rows = (
-        db.query(ChatMessage)
-        .filter(
-            ChatMessage.conversation_id == conversation_id,
-            ChatMessage.status.notin_([STATUS_SUPERSEDED, "error"]),
-        )
-        .order_by(ChatMessage.id.desc())
-        .limit(max_turns * 2)
-        .all()
-    )
+    rows = recent_history(db, conversation_id, max_turns)
     return [{"role": row.role, "content": row.content} for row in reversed(rows) if row.content]
 
 
@@ -170,9 +166,7 @@ def list_messages(
     """Replay a conversation, oldest first, with citations inline."""
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
-    query = db.query(ChatMessage).filter(ChatMessage.conversation_id == conversation.id)
-    total = query.count()
-    rows = query.order_by(ChatMessage.id.asc()).offset(offset).limit(limit).all()
+    rows, total = message_page(db, conversation.id, offset=offset, limit=limit)
 
     serialized = [_serialize_message(row) for row in rows]
     _drop_invalid_citations(serialized, conversation_uuid)
@@ -531,15 +525,7 @@ def regenerate(
     # A plain `def` for the reason given in send_message.
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
-    last_user = (
-        db.query(ChatMessage)
-        .filter(
-            ChatMessage.conversation_id == conversation.id,
-            ChatMessage.role == ROLE_USER,
-        )
-        .order_by(ChatMessage.id.desc())
-        .first()
-    )
+    last_user = last_user_message(db, conversation.id)
     if last_user is None:
         raise HTTPException(status_code=400, detail="Nothing to regenerate")
 
@@ -550,11 +536,7 @@ def regenerate(
     question = str(last_user.content)
     kwargs = _prepare_turn(request, db, ctx, conversation, question, None)
 
-    db.query(ChatMessage).filter(
-        ChatMessage.conversation_id == conversation.id,
-        ChatMessage.role == ROLE_ASSISTANT,
-        ChatMessage.id > last_user.id,
-    ).update({ChatMessage.status: STATUS_SUPERSEDED}, synchronize_session=False)
+    supersede_assistant_replies_after(db, conversation.id, last_user.id)
     # The question is re-sent as a fresh turn, so retire the original too.
     last_user.status = STATUS_SUPERSEDED
     # Read before the commit: expire_on_commit would make `ctx.user.id` a lazy reload that
@@ -595,15 +577,7 @@ def edit_message(
     # A plain `def` for the reason given in send_message.
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
-    target = (
-        db.query(ChatMessage)
-        .filter(
-            ChatMessage.uuid == message_uuid,
-            ChatMessage.conversation_id == conversation.id,
-            ChatMessage.role == ROLE_USER,
-        )
-        .first()
-    )
+    target = find_user_message(db, conversation.id, message_uuid)
     if target is None:
         raise HTTPException(status_code=404, detail="Message not found")
 
@@ -612,19 +586,11 @@ def edit_message(
     # consequence: _prepare_turn persists the REPLACEMENT question, so the
     # supersede below must be bounded to rows that existed before it, or it
     # would immediately retire the very message it just created.
-    boundary = (
-        db.query(func.max(ChatMessage.id))
-        .filter(ChatMessage.conversation_id == conversation.id)
-        .scalar()
-    )
+    boundary = newest_message_id(db, conversation.id)
     kwargs = _prepare_turn(request, db, ctx, conversation, body.content, None)
 
     # Retire the edited question and everything downstream of it.
-    db.query(ChatMessage).filter(
-        ChatMessage.conversation_id == conversation.id,
-        ChatMessage.id >= target.id,
-        ChatMessage.id <= boundary,
-    ).update({ChatMessage.status: STATUS_SUPERSEDED}, synchronize_session=False)
+    supersede_message_range(db, conversation.id, first_id=target.id, last_id=boundary)
     # Read before the commit and release the connection after it, for the reasons in
     # regenerate().
     user_id = ctx.user.id
@@ -658,19 +624,9 @@ def cancel_message(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Message not found") from exc
 
-    owned = (
-        db.query(ChatMessage.id)
-        .join(ChatConversation, ChatConversation.id == ChatMessage.conversation_id)
-        .filter(
-            ChatMessage.uuid == parsed,
-            ChatConversation.user_id == ctx.user.id,
-            # Same tenant rule as get_owned_conversation: a conversation from
-            # another tenant is not found.
-            org_stamp_is(ChatConversation.organization_id, ctx.org_id),
-        )
-        .first()
-    )
-    if owned is None:
+    # Same tenant rule as get_owned_conversation: a conversation from another tenant is not
+    # found.
+    if not message_owned_in_tenant(db, parsed, ctx.user.id, ctx.org_id):
         raise HTTPException(status_code=404, detail="Message not found")
 
     limits.request_cancel(str(parsed))

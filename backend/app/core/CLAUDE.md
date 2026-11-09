@@ -10,7 +10,13 @@ should import `app.api` or `app.services` at module scope.
 
 - `config.py` — pydantic-settings `Settings`; the module-level `settings` singleton is the only
   supported import. `extra="ignore"`, so an undeclared/typo'd compose env var is silently
-  dropped rather than crashing startup.
+  dropped rather than crashing startup. `Settings` is assembled from field-group mixins
+  (`settings_security/storage/search/identity/providers/capacity/...`, plain `BaseSettings`
+  subclasses). Put a new field in the mixin of its concern; a validator must live in the class
+  that declares every field it names (pydantic checks that at class creation), so the
+  cross-mixin pool/batch floor validator and the `validate_auth_settings` model validator stay in
+  `config.py`. `tests/unit/test_settings_split_characterization.py` pins the field set, defaults
+  and validators.
   **Gate every security control on `settings.is_hardened`, never on
   `ENVIRONMENT in ("production", "prod")`.** `ENVIRONMENT` defaults to `production` and only the
   closed `RELAXED_ENVIRONMENTS` set (`development`/`dev`/`testing`/`test`/`local`) relaxes

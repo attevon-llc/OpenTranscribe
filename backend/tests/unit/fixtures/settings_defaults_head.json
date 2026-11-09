@@ -1,0 +1,1531 @@
+{
+ "field_validators": [
+  "_clamp_chunks_index_topology",
+  "_clamp_pool_and_batch_floors",
+  "_closed_deployment_mode",
+  "_floor_statement_timeout",
+  "_normalize_max_upload_bytes",
+  "_validate_embedding_mode",
+  "_validate_reranker_torch_threads",
+  "assemble_cors_origins"
+ ],
+ "fields": {
+  "ABUSE_CONTACT_EMAIL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "ACCOUNT_EXPIRATION_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "ACCOUNT_INACTIVE_DAYS": {
+   "annotation": "<class 'int'>",
+   "default": "90"
+  },
+  "ACCOUNT_LOCKOUT_DURATION_MINUTES": {
+   "annotation": "<class 'int'>",
+   "default": "15"
+  },
+  "ACCOUNT_LOCKOUT_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES": {
+   "annotation": "<class 'int'>",
+   "default": "1440"
+  },
+  "ACCOUNT_LOCKOUT_PROGRESSIVE": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "ACCOUNT_LOCKOUT_THRESHOLD": {
+   "annotation": "<class 'int'>",
+   "default": "5"
+  },
+  "ALERTMANAGER_WEBHOOK_TOKEN": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "ALLOW_INSECURE_COOKIES": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "ALLOW_OPEN_REGISTRATION": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "ANTHROPIC_API_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "ANTHROPIC_BASE_URL": {
+   "annotation": "<class 'str'>",
+   "default": "'https://api.anthropic.com'"
+  },
+  "ANTHROPIC_MODEL_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'claude-haiku-4-5'"
+  },
+  "API_MEDIATED_UPLOAD_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "API_PREFIX": {
+   "annotation": "<class 'str'>",
+   "default": "'/api'"
+  },
+  "API_THREADPOOL_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "0"
+  },
+  "ASR_ALLOW_PRIVATE_ENDPOINTS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "ASR_PROVIDER": {
+   "annotation": "<class 'str'>",
+   "default": "'local'"
+  },
+  "ASSEMBLYAI_API_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "ASSEMBLYAI_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'universal'"
+  },
+  "AUDIT_LOG_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "AUDIT_LOG_FALLBACK_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "AUDIT_LOG_FALLBACK_PATH": {
+   "annotation": "<class 'str'>",
+   "default": "'/var/log/opentranscribe/audit-fallback.jsonl'"
+  },
+  "AUDIT_LOG_FORMAT": {
+   "annotation": "<class 'str'>",
+   "default": "'json'"
+  },
+  "AUDIT_LOG_RETENTION_DAYS": {
+   "annotation": "<class 'int'>",
+   "default": "0"
+  },
+  "AUDIT_LOG_TO_OPENSEARCH": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "AWS_ACCESS_KEY_ID": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "AWS_ASR_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'standard'"
+  },
+  "AWS_REGION": {
+   "annotation": "<class 'str'>",
+   "default": "'us-east-1'"
+  },
+  "AWS_SECRET_ACCESS_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "AWS_TRANSCRIBE_BUCKET": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "AZURE_ASR_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'whisper'"
+  },
+  "AZURE_SPEECH_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "AZURE_SPEECH_REGION": {
+   "annotation": "<class 'str'>",
+   "default": "'eastus'"
+  },
+  "BATCH_SIZE": {
+   "annotation": "<class 'str'>",
+   "default": "'auto'"
+  },
+  "BEDROCK_MAX_ATTEMPTS": {
+   "annotation": "<class 'int'>",
+   "default": "8"
+  },
+  "BEDROCK_MODEL_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'anthropic.claude-haiku-4-5-20251001-v1:0'"
+  },
+  "BEDROCK_REGION": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "BEDROCK_RETRY_MODE": {
+   "annotation": "<class 'str'>",
+   "default": "'adaptive'"
+  },
+  "CACHE_BUCKET_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'processed-videos'"
+  },
+  "CELERY_BROKER_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "CELERY_RESULT_BACKEND": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "CHAT_MAX_CONCURRENT_STREAMS_GLOBAL": {
+   "annotation": "<class 'int'>",
+   "default": "64"
+  },
+  "CHAT_RERANKER_TORCH_THREADS": {
+   "annotation": "<class 'str'>",
+   "default": "'auto'"
+  },
+  "CHAT_THREADPOOL_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "0"
+  },
+  "COMPUTE_TYPE": {
+   "annotation": "<class 'str'>",
+   "default": "'auto'"
+  },
+  "CONCURRENT_SESSION_POLICY": {
+   "annotation": "<class 'str'>",
+   "default": "'terminate_oldest'"
+  },
+  "CORS_ORIGINS": {
+   "annotation": "list[str]",
+   "default": "['http://localhost:5173', 'http://127.0.0.1:5173']"
+  },
+  "DATABASE_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "DATA_DIR": {
+   "annotation": "<class 'pathlib.Path'>",
+   "default": "PosixPath('/app/data')"
+  },
+  "DB_APPLICATION_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS": {
+   "annotation": "<class 'int'>",
+   "default": "300000"
+  },
+  "DB_MAX_OVERFLOW": {
+   "annotation": "<class 'int'>",
+   "default": "40"
+  },
+  "DB_OVERLOAD_RETRY_AFTER_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "2"
+  },
+  "DB_POOL_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "20"
+  },
+  "DB_POOL_TIMEOUT_SECONDS": {
+   "annotation": "<class 'float'>",
+   "default": "5.0"
+  },
+  "DB_STATEMENT_TIMEOUT_MS": {
+   "annotation": "<class 'int'>",
+   "default": "0"
+  },
+  "DEBUG": {
+   "annotation": "bool | None",
+   "default": "None"
+  },
+  "DEEPGRAM_API_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "DEEPGRAM_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'nova-3'"
+  },
+  "DEMO_MODE": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "DEMO_RATE_LIMIT_PER_MINUTE": {
+   "annotation": "<class 'int'>",
+   "default": "120"
+  },
+  "DEMO_STATUS_FILE": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "DEMO_USER_EMAIL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "DEMO_USER_PASSWORD": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "DEPLOYMENT_EDITION": {
+   "annotation": "<class 'str'>",
+   "default": "'community'"
+  },
+  "DEPLOYMENT_MODE": {
+   "annotation": "<class 'str'>",
+   "default": "'full'"
+  },
+  "DERIVED_CACHE_RETENTION_DAYS": {
+   "annotation": "<class 'int'>",
+   "default": "7"
+  },
+  "ENCRYPTION_ALGORITHM_V3": {
+   "annotation": "<class 'str'>",
+   "default": "'AES-256-GCM'"
+  },
+  "ENCRYPTION_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "'this_should_be_changed_in_production_for_api_key_encryption'"
+  },
+  "ENVIRONMENT": {
+   "annotation": "<class 'str'>",
+   "default": "'production'"
+  },
+  "ERASURE_JOURNAL_BACKEND": {
+   "annotation": "typing.Literal['file', 'object_storage']",
+   "default": "'file'"
+  },
+  "ERASURE_JOURNAL_OBJECT_PREFIX": {
+   "annotation": "<class 'str'>",
+   "default": "'gdpr/erasure-journal/'"
+  },
+  "EXTERNAL_SESSION_ABSOLUTE_TIMEOUT_ENFORCED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "FIPS_MIGRATION_MODE": {
+   "annotation": "<class 'str'>",
+   "default": "'compatible'"
+  },
+  "FIPS_MODE": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "FIPS_VALIDATE_ENTROPY": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "FIPS_VERSION": {
+   "annotation": "<class 'str'>",
+   "default": "'140-3'"
+  },
+  "FRONTEND_URL": {
+   "annotation": "<class 'str'>",
+   "default": "'http://localhost:5173'"
+  },
+  "GLADIA_API_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "GLADIA_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'standard'"
+  },
+  "GOOGLE_ASR_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'chirp-3'"
+  },
+  "GOOGLE_CLOUD_CREDENTIALS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "GPU_DEVICE_ID": {
+   "annotation": "<class 'int'>",
+   "default": "0"
+  },
+  "HUGGINGFACE_TOKEN": {
+   "annotation": "str | None",
+   "default": "None"
+  },
+  "INITIAL_ADMIN_EMAIL": {
+   "annotation": "<class 'str'>",
+   "default": "'admin@example.com'"
+  },
+  "INITIAL_ADMIN_PASSWORD": {
+   "annotation": "str | None",
+   "default": "None"
+  },
+  "JWT_ACCESS_TOKEN_EXPIRE_MINUTES": {
+   "annotation": "<class 'int'>",
+   "default": "60"
+  },
+  "JWT_ALGORITHM": {
+   "annotation": "<class 'str'>",
+   "default": "'HS256'"
+  },
+  "JWT_ALGORITHM_V3": {
+   "annotation": "<class 'str'>",
+   "default": "'HS512'"
+  },
+  "JWT_REFRESH_TOKEN_EXPIRE_DAYS": {
+   "annotation": "<class 'int'>",
+   "default": "7"
+  },
+  "JWT_SECRET_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "'this_should_be_changed_in_production'"
+  },
+  "LDAP_ADMIN_GROUPS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LDAP_ADMIN_USERS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LDAP_BIND_DN": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LDAP_BIND_PASSWORD": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LDAP_CA_CERT_FILE": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LDAP_EMAIL_ATTR": {
+   "annotation": "<class 'str'>",
+   "default": "'mail'"
+  },
+  "LDAP_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "LDAP_GROUP_ATTR": {
+   "annotation": "<class 'str'>",
+   "default": "'memberOf'"
+  },
+  "LDAP_NAME_ATTR": {
+   "annotation": "<class 'str'>",
+   "default": "'cn'"
+  },
+  "LDAP_PORT": {
+   "annotation": "<class 'int'>",
+   "default": "636"
+  },
+  "LDAP_RECURSIVE_GROUPS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "LDAP_SEARCH_BASE": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LDAP_SERVER": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LDAP_TIMEOUT": {
+   "annotation": "<class 'int'>",
+   "default": "10"
+  },
+  "LDAP_TLS_SERVER_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LDAP_TLS_SKIP_VERIFY": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "LDAP_USERNAME_ATTR": {
+   "annotation": "<class 'str'>",
+   "default": "'sAMAccountName'"
+  },
+  "LDAP_USER_GROUPS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LDAP_USER_SEARCH_FILTER": {
+   "annotation": "<class 'str'>",
+   "default": "'({username_attr}={username})'"
+  },
+  "LDAP_USE_SSL": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "LDAP_USE_TLS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "LLM_ALLOW_PRIVATE_ENDPOINTS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "LLM_PROVIDER": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LOCAL_AUTH_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "LOGIN_BANNER_CLASSIFICATION": {
+   "annotation": "<class 'str'>",
+   "default": "'UNCLASSIFIED'"
+  },
+  "LOGIN_BANNER_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "LOGIN_BANNER_TEXT": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "LOG_FORMAT": {
+   "annotation": "<class 'str'>",
+   "default": "'text'"
+  },
+  "MAX_CONCURRENT_SESSIONS": {
+   "annotation": "<class 'int'>",
+   "default": "5"
+  },
+  "MAX_REQUEST_BODY_BYTES": {
+   "annotation": "<class 'int'>",
+   "default": "1048576"
+  },
+  "MAX_SPEAKERS": {
+   "annotation": "<class 'int'>",
+   "default": "20"
+  },
+  "MAX_UPLOAD_BYTES": {
+   "annotation": "int | None",
+   "default": "16106127360"
+  },
+  "MEDIA_BUCKET_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'opentranscribe'"
+  },
+  "MEDIA_URL_EXPIRE_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "21600"
+  },
+  "MFA_BACKUP_CODE_COUNT": {
+   "annotation": "<class 'int'>",
+   "default": "10"
+  },
+  "MFA_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "MFA_ISSUER_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'OpenTranscribe'"
+  },
+  "MFA_REQUIRED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "MFA_REQUIRED_FOR_ADMINS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "MFA_REQUIRE_REDIS": {
+   "annotation": "bool | None",
+   "default": "None"
+  },
+  "MFA_TOKEN_EXPIRE_MINUTES": {
+   "annotation": "<class 'int'>",
+   "default": "5"
+  },
+  "MIGRATION_DATABASE_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "MINIO_HOST": {
+   "annotation": "<class 'str'>",
+   "default": "'localhost'"
+  },
+  "MINIO_PORT": {
+   "annotation": "<class 'str'>",
+   "default": "'9000'"
+  },
+  "MINIO_PUBLIC_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "MINIO_ROOT_PASSWORD": {
+   "annotation": "<class 'str'>",
+   "default": "'minioadmin'"
+  },
+  "MINIO_ROOT_USER": {
+   "annotation": "<class 'str'>",
+   "default": "'minioadmin'"
+  },
+  "MINIO_SECURE": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "MIN_SPEAKERS": {
+   "annotation": "<class 'int'>",
+   "default": "1"
+  },
+  "MODEL_BASE_DIR": {
+   "annotation": "<class 'pathlib.Path'>",
+   "default": "PosixPath('/app/models')"
+  },
+  "MULTIPART_THRESHOLD_MB": {
+   "annotation": "<class 'int'>",
+   "default": "512"
+  },
+  "NUM_SPEAKERS": {
+   "annotation": "int | None",
+   "default": "None"
+  },
+  "OIDC_ADMIN_ROLE": {
+   "annotation": "<class 'str'>",
+   "default": "'admin'"
+  },
+  "OIDC_ALLOWED_GROUPS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_AUDIENCE": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_BLOCKED_GROUPS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_CALLBACK_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_CLIENT_ID": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_CLIENT_SECRET": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_DISCOVERY_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "OIDC_INTERNAL_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_ISSUER": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_REALM": {
+   "annotation": "<class 'str'>",
+   "default": "'opentranscribe'"
+  },
+  "OIDC_ROLES_CLAIM": {
+   "annotation": "<class 'str'>",
+   "default": "'realm_access.roles'"
+  },
+  "OIDC_SCOPES": {
+   "annotation": "<class 'str'>",
+   "default": "'openid email profile'"
+  },
+  "OIDC_SERVER_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OIDC_TIMEOUT": {
+   "annotation": "<class 'int'>",
+   "default": "30"
+  },
+  "OIDC_USE_PKCE": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "OIDC_VERIFY_AUDIENCE": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "OIDC_VERIFY_ISSUER": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "OLLAMA_BASE_URL": {
+   "annotation": "<class 'str'>",
+   "default": "'http://localhost:11434'"
+  },
+  "OLLAMA_MODEL_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'llama2:7b-chat'"
+  },
+  "OPENAI_API_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OPENAI_ASR_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'gpt-4o-transcribe'"
+  },
+  "OPENAI_BASE_URL": {
+   "annotation": "<class 'str'>",
+   "default": "'https://api.openai.com/v1'"
+  },
+  "OPENAI_MODEL_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'gpt-4o-mini'"
+  },
+  "OPENROUTER_API_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OPENROUTER_BASE_URL": {
+   "annotation": "<class 'str'>",
+   "default": "'https://openrouter.ai/api/v1'"
+  },
+  "OPENROUTER_HTTP_REFERER": {
+   "annotation": "<class 'str'>",
+   "default": "'https://github.com/attevon-llc/OpenTranscribe'"
+  },
+  "OPENROUTER_MODEL_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'anthropic/claude-haiku-4.5'"
+  },
+  "OPENSEARCH_AUTH": {
+   "annotation": "<class 'str'>",
+   "default": "'basic'"
+  },
+  "OPENSEARCH_AWS_REGION": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OPENSEARCH_AWS_SERVICE": {
+   "annotation": "<class 'str'>",
+   "default": "'es'"
+  },
+  "OPENSEARCH_CHUNKS_INDEX": {
+   "annotation": "<class 'str'>",
+   "default": "'transcript_chunks'"
+  },
+  "OPENSEARCH_CHUNKS_INDEX_REPLICAS": {
+   "annotation": "<class 'int'>",
+   "default": "0"
+  },
+  "OPENSEARCH_CHUNKS_INDEX_SHARDS": {
+   "annotation": "<class 'int'>",
+   "default": "1"
+  },
+  "OPENSEARCH_EMBEDDING_MODE": {
+   "annotation": "<class 'str'>",
+   "default": "'local'"
+  },
+  "OPENSEARCH_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "OPENSEARCH_HOST": {
+   "annotation": "<class 'str'>",
+   "default": "'localhost'"
+  },
+  "OPENSEARCH_INDEX_TIMEOUT_RETRIES": {
+   "annotation": "<class 'int'>",
+   "default": "2"
+  },
+  "OPENSEARCH_INDEX_TIMEOUT_S": {
+   "annotation": "<class 'float'>",
+   "default": "60.0"
+  },
+  "OPENSEARCH_NEURAL_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'huggingface/sentence-transformers/all-MiniLM-L6-v2'"
+  },
+  "OPENSEARCH_NEURAL_MODEL_ID": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OPENSEARCH_NEURAL_PIPELINE": {
+   "annotation": "<class 'str'>",
+   "default": "'transcript-neural-ingest'"
+  },
+  "OPENSEARCH_NEURAL_SEARCH_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "OPENSEARCH_PASSWORD": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OPENSEARCH_PORT": {
+   "annotation": "<class 'str'>",
+   "default": "'9200'"
+  },
+  "OPENSEARCH_SEARCH_PIPELINE": {
+   "annotation": "<class 'str'>",
+   "default": "'transcript-hybrid-search'"
+  },
+  "OPENSEARCH_SPEAKER_INDEX": {
+   "annotation": "<class 'str'>",
+   "default": "'speakers'"
+  },
+  "OPENSEARCH_SUMMARY_INDEX": {
+   "annotation": "<class 'str'>",
+   "default": "'transcript_summaries'"
+  },
+  "OPENSEARCH_TRANSCRIPT_INDEX": {
+   "annotation": "<class 'str'>",
+   "default": "'transcripts'"
+  },
+  "OPENSEARCH_USER": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "OPENSEARCH_USE_TLS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "OPENSEARCH_VERIFY_CERTS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "PASSWORD_BLOCKLIST_ENABLED": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PASSWORD_BLOCKLIST_PATH": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PASSWORD_CONTEXT_WORDS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PASSWORD_HIBP_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "PASSWORD_HIBP_TIMEOUT_SECONDS": {
+   "annotation": "<class 'float'>",
+   "default": "3.0"
+  },
+  "PASSWORD_HIBP_URL": {
+   "annotation": "<class 'str'>",
+   "default": "'https://api.pwnedpasswords.com/range'"
+  },
+  "PASSWORD_HISTORY_COUNT": {
+   "annotation": "<class 'int'>",
+   "default": "24"
+  },
+  "PASSWORD_MAX_AGE_DAYS": {
+   "annotation": "<class 'int'>",
+   "default": "60"
+  },
+  "PASSWORD_MAX_LENGTH": {
+   "annotation": "<class 'int'>",
+   "default": "0"
+  },
+  "PASSWORD_MIN_AGE_HOURS": {
+   "annotation": "<class 'int'>",
+   "default": "24"
+  },
+  "PASSWORD_MIN_LENGTH": {
+   "annotation": "<class 'int'>",
+   "default": "12"
+  },
+  "PASSWORD_POLICY_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "PASSWORD_POLICY_PROFILE": {
+   "annotation": "<class 'str'>",
+   "default": "'hardened'"
+  },
+  "PASSWORD_REQUIRE_DIGIT": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "PASSWORD_REQUIRE_LOWERCASE": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "PASSWORD_REQUIRE_SPECIAL": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "PASSWORD_REQUIRE_UPPERCASE": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "PBKDF2_ITERATIONS": {
+   "annotation": "<class 'int'>",
+   "default": "210000"
+  },
+  "PBKDF2_ITERATIONS_V3": {
+   "annotation": "<class 'int'>",
+   "default": "600000"
+  },
+  "PKI_ADMIN_DNS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PKI_CA_CERT_PATH": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PKI_CERT_DN_HEADER": {
+   "annotation": "<class 'str'>",
+   "default": "'X-Client-Cert-DN'"
+  },
+  "PKI_CERT_HEADER": {
+   "annotation": "<class 'str'>",
+   "default": "'X-Client-Cert'"
+  },
+  "PKI_CRL_CACHE_MAX_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "1000"
+  },
+  "PKI_CRL_CACHE_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "3600"
+  },
+  "PKI_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "PKI_OCSP_CACHE_MAX_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "1000"
+  },
+  "PKI_OCSP_TIMEOUT_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "5"
+  },
+  "PKI_REVOCATION_SOFT_FAIL": {
+   "annotation": "bool | None",
+   "default": "None"
+  },
+  "PKI_TRUSTED_PROXIES": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PKI_VERIFY_REVOCATION": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "POSTGRES_APP_PASSWORD": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "POSTGRES_APP_ROLE_PROVISION": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "POSTGRES_APP_USER": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "POSTGRES_DB": {
+   "annotation": "<class 'str'>",
+   "default": "'opentranscribe'"
+  },
+  "POSTGRES_HOST": {
+   "annotation": "<class 'str'>",
+   "default": "'localhost'"
+  },
+  "POSTGRES_PASSWORD": {
+   "annotation": "<class 'str'>",
+   "default": "'postgres'"
+  },
+  "POSTGRES_PORT": {
+   "annotation": "<class 'str'>",
+   "default": "'5432'"
+  },
+  "POSTGRES_SSLMODE": {
+   "annotation": "<class 'str'>",
+   "default": "'prefer'"
+  },
+  "POSTGRES_USER": {
+   "annotation": "<class 'str'>",
+   "default": "'postgres'"
+  },
+  "PRESIGNED_URL_MAX_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "21600"
+  },
+  "PROJECT_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'Transcription App'"
+  },
+  "PROMETHEUS_MULTIPROC_DIR": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PROXY_ALLOWED_DOMAINS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PROXY_EMAIL_HEADER": {
+   "annotation": "<class 'str'>",
+   "default": "'X-Forwarded-Email'"
+  },
+  "PROXY_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "PROXY_GROUPS_HEADER": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PROXY_GROUPS_SEPARATOR": {
+   "annotation": "<class 'str'>",
+   "default": "','"
+  },
+  "PROXY_JIT_PROVISIONING": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "PROXY_NAME_HEADER": {
+   "annotation": "<class 'str'>",
+   "default": "'X-Forwarded-User'"
+  },
+  "PROXY_ROLE_HEADER": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PROXY_SHARED_SECRET": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PROXY_TRUSTED_PROXIES": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PYANNOTE_API_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "PYANNOTE_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'parakeet'"
+  },
+  "RATE_LIMIT_API_PER_MINUTE": {
+   "annotation": "<class 'int'>",
+   "default": "100"
+  },
+  "RATE_LIMIT_AUTH_METHODS_PER_MINUTE": {
+   "annotation": "<class 'int'>",
+   "default": "60"
+  },
+  "RATE_LIMIT_AUTH_PER_MINUTE": {
+   "annotation": "<class 'int'>",
+   "default": "10"
+  },
+  "RATE_LIMIT_DIRECTORY_PER_MINUTE": {
+   "annotation": "<class 'int'>",
+   "default": "60"
+  },
+  "RATE_LIMIT_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE": {
+   "annotation": "<class 'int'>",
+   "default": "10"
+  },
+  "RATE_LIMIT_SEARCH_PER_MINUTE": {
+   "annotation": "<class 'int'>",
+   "default": "30"
+  },
+  "RATE_LIMIT_TRUSTED_PROXIES": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "READINESS_CACHE_SECONDS": {
+   "annotation": "<class 'float'>",
+   "default": "2.0"
+  },
+  "READ_CACHE_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "REDACTION_DEVICE": {
+   "annotation": "<class 'str'>",
+   "default": "'auto'"
+  },
+  "REDACTION_MIN_FREE_VRAM_GB": {
+   "annotation": "<class 'float'>",
+   "default": "1.5"
+  },
+  "REDACTION_PII_USE_GLINER": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "REDIS_HOST": {
+   "annotation": "<class 'str'>",
+   "default": "'localhost'"
+  },
+  "REDIS_PASSWORD": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "REDIS_PORT": {
+   "annotation": "<class 'str'>",
+   "default": "'6379'"
+  },
+  "REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS": {
+   "annotation": "<class 'float'>",
+   "default": "2.0"
+  },
+  "REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS": {
+   "annotation": "<class 'float'>",
+   "default": "2.0"
+  },
+  "REDIS_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "REDIS_USE_TLS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "REINDEX_PARALLEL_WORKERS": {
+   "annotation": "<class 'int'>",
+   "default": "4"
+  },
+  "REQUEST_DEADLINE_SECONDS": {
+   "annotation": "<class 'float'>",
+   "default": "55.0"
+  },
+  "REQUIRE_ACCOUNT_APPROVAL": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "RUN_MIGRATIONS_ON_STARTUP": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "S3_CONFIGURE_BUCKET_CORS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "S3_CORS_ALLOWED_ORIGINS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "S3_ENDPOINT_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "S3_REGION": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "S3_USE_IAM_ROLE": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "SAML_ADMIN_GROUP": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_ALLOWED_GROUPS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_BLOCKED_GROUPS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_EMAIL_ATTRIBUTE": {
+   "annotation": "<class 'str'>",
+   "default": "'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'"
+  },
+  "SAML_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "SAML_GROUPS_ATTRIBUTE": {
+   "annotation": "<class 'str'>",
+   "default": "'groups'"
+  },
+  "SAML_IDP_ENTITY_ID": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_IDP_SLO_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_IDP_SSO_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_IDP_X509_CERT": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_NAME_ATTRIBUTE": {
+   "annotation": "<class 'str'>",
+   "default": "'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'"
+  },
+  "SAML_SIGN_AUTHN_REQUESTS": {
+   "annotation": "<class 'bool'>",
+   "default": "False"
+  },
+  "SAML_SP_ACS_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_SP_ENTITY_ID": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_SP_PRIVATE_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_SP_SLS_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_SP_X509_CERT": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SAML_WANT_ASSERTIONS_SIGNED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "SAML_WANT_MESSAGES_SIGNED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "SEARCH_BULK_BATCH_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "100"
+  },
+  "SEARCH_CHUNK_OVERLAP_WORDS": {
+   "annotation": "<class 'int'>",
+   "default": "40"
+  },
+  "SEARCH_CHUNK_TARGET_WORDS": {
+   "annotation": "<class 'int'>",
+   "default": "200"
+  },
+  "SEARCH_COLLAPSE_MAX_CONCURRENT": {
+   "annotation": "<class 'int'>",
+   "default": "20"
+  },
+  "SEARCH_COMBINATION_TECHNIQUE": {
+   "annotation": "<class 'str'>",
+   "default": "'arithmetic_mean'"
+  },
+  "SEARCH_COMBINATION_WEIGHTS": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SEARCH_FUSION_STRATEGY": {
+   "annotation": "<class 'str'>",
+   "default": "'rrf'"
+  },
+  "SEARCH_HYBRID_MIN_SCORE": {
+   "annotation": "<class 'float'>",
+   "default": "0.005"
+  },
+  "SEARCH_INDEX_RETRY_BASE_DELAY_S": {
+   "annotation": "<class 'int'>",
+   "default": "30"
+  },
+  "SEARCH_INDEX_RETRY_HORIZON_S": {
+   "annotation": "<class 'int'>",
+   "default": "21600"
+  },
+  "SEARCH_INDEX_RETRY_MAX_DELAY_S": {
+   "annotation": "<class 'int'>",
+   "default": "600"
+  },
+  "SEARCH_INDEX_SWEEP_BATCH_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "25"
+  },
+  "SEARCH_INDEX_SWEEP_COOLDOWN_S": {
+   "annotation": "<class 'int'>",
+   "default": "1800"
+  },
+  "SEARCH_INDEX_SWEEP_LOOKBACK_HOURS": {
+   "annotation": "<class 'int'>",
+   "default": "72"
+  },
+  "SEARCH_LARGE_TRANSCRIPT_CHUNKS": {
+   "annotation": "<class 'int'>",
+   "default": "500"
+  },
+  "SEARCH_MAX_OVERFETCH": {
+   "annotation": "<class 'int'>",
+   "default": "1000"
+  },
+  "SEARCH_NEURAL_BATCH_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "5"
+  },
+  "SEARCH_NORMALIZATION_TECHNIQUE": {
+   "annotation": "<class 'str'>",
+   "default": "'min_max'"
+  },
+  "SEARCH_RRF_RANK_CONSTANT": {
+   "annotation": "<class 'int'>",
+   "default": "30"
+  },
+  "SEARCH_RRF_WINDOW_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "500"
+  },
+  "SEARCH_SEMANTIC_HIGH_CONFIDENCE": {
+   "annotation": "<class 'float'>",
+   "default": "0.01"
+  },
+  "SEARCH_SEMANTIC_SUPPRESS_RATIO": {
+   "annotation": "<class 'float'>",
+   "default": "0.2"
+  },
+  "SESSION_ABSOLUTE_TIMEOUT_MINUTES": {
+   "annotation": "<class 'int'>",
+   "default": "480"
+  },
+  "SESSION_IDLE_TIMEOUT_MINUTES": {
+   "annotation": "<class 'int'>",
+   "default": "15"
+  },
+  "SETTINGS_CACHE_TTL": {
+   "annotation": "<class 'int'>",
+   "default": "30"
+  },
+  "SLOW_QUERY_MS": {
+   "annotation": "<class 'int'>",
+   "default": "500"
+  },
+  "SMTP_FROM": {
+   "annotation": "<class 'str'>",
+   "default": "'noreply@example.com'"
+  },
+  "SMTP_HOST": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SMTP_PASSWORD": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SMTP_PORT": {
+   "annotation": "<class 'int'>",
+   "default": "587"
+  },
+  "SMTP_USER": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SMTP_USE_TLS": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "SPEECHMATICS_API_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "SPEECHMATICS_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'standard'"
+  },
+  "STORAGE_BACKEND": {
+   "annotation": "<class 'str'>",
+   "default": "'minio'"
+  },
+  "STORAGE_PRESIGN_IDENTITY_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "STORAGE_PUBLIC_URL": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "STORAGE_TAG_PROBE_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "TASK_LOCK_LEASE_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "60"
+  },
+  "TEMP_DIR": {
+   "annotation": "<class 'pathlib.Path'>",
+   "default": "PosixPath('<TEMP_DIR>')"
+  },
+  "TENANCY_MODE": {
+   "annotation": "<class 'str'>",
+   "default": "'auto'"
+  },
+  "THUMBNAIL_URL_EXPIRE_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "900"
+  },
+  "TOKEN_REVOCATION_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "TORCH_DEVICE": {
+   "annotation": "<class 'str'>",
+   "default": "'auto'"
+  },
+  "TOTP_ALGORITHM": {
+   "annotation": "<class 'str'>",
+   "default": "'SHA1'"
+  },
+  "TOTP_VALID_WINDOW": {
+   "annotation": "<class 'int'>",
+   "default": "1"
+  },
+  "USE_GPU": {
+   "annotation": "<class 'str'>",
+   "default": "'auto'"
+  },
+  "UVICORN_LIMIT_CONCURRENCY": {
+   "annotation": "<class 'int'>",
+   "default": "512"
+  },
+  "VLLM_API_KEY": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "VLLM_BASE_URL": {
+   "annotation": "<class 'str'>",
+   "default": "'http://localhost:8012/v1'"
+  },
+  "VLLM_MODEL_NAME": {
+   "annotation": "<class 'str'>",
+   "default": "'gpt-oss'"
+  },
+  "WATCH_ALLOW_PRIVATE_ENDPOINTS": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "WATCH_FOLDER_PATH": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "WATCH_TEMP_DIR": {
+   "annotation": "<class 'str'>",
+   "default": "''"
+  },
+  "WHISPER_MODEL": {
+   "annotation": "<class 'str'>",
+   "default": "'large-v3-turbo'"
+  },
+  "WS_HANDSHAKES_PER_IP_PER_MINUTE": {
+   "annotation": "<class 'int'>",
+   "default": "60"
+  },
+  "WS_MAX_SOCKETS_PER_PROCESS": {
+   "annotation": "<class 'int'>",
+   "default": "2000"
+  },
+  "WS_MAX_SOCKETS_PER_USER": {
+   "annotation": "<class 'int'>",
+   "default": "20"
+  },
+  "WS_SEND_QUEUE_SIZE": {
+   "annotation": "<class 'int'>",
+   "default": "100"
+  },
+  "YOUTUBE_COOKIE_BROWSER": {
+   "annotation": "str | None",
+   "default": "None"
+  },
+  "YOUTUBE_COOKIE_FILE": {
+   "annotation": "str | None",
+   "default": "None"
+  },
+  "YOUTUBE_DOWNLOAD_RATE_LIMIT": {
+   "annotation": "<class 'str'>",
+   "default": "'30/h'"
+  },
+  "YOUTUBE_PLAYLIST_STAGGER_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "YOUTUBE_PLAYLIST_STAGGER_INCREMENT": {
+   "annotation": "<class 'int'>",
+   "default": "5"
+  },
+  "YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "30"
+  },
+  "YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "5"
+  },
+  "YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED": {
+   "annotation": "<class 'bool'>",
+   "default": "True"
+  },
+  "YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "15"
+  },
+  "YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS": {
+   "annotation": "<class 'int'>",
+   "default": "2"
+  }
+ },
+ "members": [
+  "_OPENSEARCH_EMBEDDING_MODES",
+  "_abc_impl",
+  "_calculate_keys",
+  "_clamp_chunks_index_topology",
+  "_clamp_pool_and_batch_floors",
+  "_closed_deployment_mode",
+  "_copy_and_set_values",
+  "_floor_statement_timeout",
+  "_get_value",
+  "_iter",
+  "_normalize_max_upload_bytes",
+  "_resolve_database_urls",
+  "_setattr_handler",
+  "_settings_build_values",
+  "_settings_init_sources",
+  "_settings_log_debug",
+  "_settings_restore_init_kwarg_names",
+  "_settings_warn_unused_config_keys",
+  "_validate_embedding_mode",
+  "_validate_reranker_torch_threads",
+  "assemble_cors_origins",
+  "db_role_split_requested",
+  "effective_batch_size",
+  "effective_compute_type",
+  "effective_torch_device",
+  "effective_use_gpu",
+  "fips_140_3_active",
+  "is_hardened",
+  "settings_cached",
+  "settings_clear_cache",
+  "validate_auth_settings",
+  "watch_temp_dir"
+ ],
+ "model_validators": [
+  "validate_auth_settings"
+ ]
+}

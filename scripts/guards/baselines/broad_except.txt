@@ -300,13 +300,13 @@ backend/app/services/llm_bedrock.py::check_connection#1	1	re-keyed per handler s
 backend/app/services/llm_bedrock.py::stream_converse#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/llm_bedrock.py::stream_converse#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/llm_context_window.py::read_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_factory.py::LLMFactoryMixin.create_from_system_settings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_factory.py::LLMFactoryMixin.create_from_system_settings#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/llm_health.py::LLMHealthMixin.health_check#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/llm_json_extract.py::LLMJsonExtractMixin._parse_summary_response#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/llm_json_extract.py::LLMJsonExtractMixin._repair_truncated_json#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/llm_reasoning.py::probe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/llm_reasoning.py::read_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/llm_service.py::LLMService.create_from_system_settings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/llm_service.py::LLMService.create_from_system_settings#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/llm_service.py::is_llm_available.<locals>._check#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/llm_summarization.py::LLMSummarizationMixin._summarize_section#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/local_models/runner.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

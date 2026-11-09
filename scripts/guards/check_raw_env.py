@@ -37,6 +37,13 @@ _DEFAULT_BASELINE = _HERE / 'baselines' / 'raw_env.txt'
 # Repo-relative paths allowed to read the environment directly, each with the reason.
 EXEMPT: dict[str, str] = {
     'backend/app/core/config.py': 'the sanctioned settings module; the one place env is read',
+    # Settings fields moved verbatim out of config.py (v0.7.0 L07); `Settings` inherits them, so
+    # these classes are the declaration half of the same sanctioned settings module.
+    'backend/app/core/settings_identity.py': 'Settings mixin split from config.py: field declarations',
+    'backend/app/core/settings_providers.py': 'Settings mixin split from config.py: field declarations',
+    'backend/app/core/settings_search.py': 'Settings mixin split from config.py: field declarations',
+    'backend/app/core/settings_security.py': 'Settings mixin split from config.py: field declarations',
+    'backend/app/core/settings_storage.py': 'Settings mixin split from config.py: field declarations',
     'backend/app/core/env.py': 'the sanctioned reader for tuning knobs (D4 policy); every other module calls it',
 }
 

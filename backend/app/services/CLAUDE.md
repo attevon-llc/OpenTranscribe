@@ -279,7 +279,7 @@ Detail in `backend/app/services/speaker_matching/CLAUDE.md`.
 Backend selection, presign identity, absence/recovery rules: `backend/app/services/notes/storage.md`.
 ## LLM features (optional)
 
-Provider handling, per-model reasoning capability (measured, `llm_reasoning.py`, #64) and the measured context window (`llm_context_window.py`, #533/#833): `backend/app/services/notes/llm-features.md`. Both capabilities are MEASURED per model, never assumed from a name.
+`LLMService` is composed of `llm_*` mixins: `llm_transport.py` (endpoints, headers, pinned session, send), `llm_factory.py` (every `create_from_*`, credential/config resolution; refers to `LLMService` and its errors through function-local imports because `llm_service` imports it) plus the metering/payload/summarization/etc. mixins. Provider handling, per-model reasoning capability (measured, `llm_reasoning.py`, #64) and the measured context window (`llm_context_window.py`, #533/#833): `backend/app/services/notes/llm-features.md`. Both capabilities are MEASURED per model, never assumed from a name.
 
 **Token limits (#790, D13) are enforced at ONE seam: `LLMService.chat_completion` and
 `chat_completion_stream`** (`llm_budget.py`). Every feature (chat and its planning calls,

@@ -26,7 +26,12 @@ from app.core.capabilities import COMMUNITY_CAPABILITIES
 
 #: backend/tests/unit/<this file> -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SETTINGS_MODAL = REPO_ROOT / "frontend" / "src" / "components" / "SettingsModal.svelte"
+#: The modal's sidebar table and per-section capability inputs live beside it under ``$lib/settings``.
+SETTINGS_MODAL_SOURCES = (
+    REPO_ROOT / "frontend" / "src" / "components" / "SettingsModal.svelte",
+    REPO_ROOT / "frontend" / "src" / "lib" / "settings" / "sidebarSections.ts",
+    REPO_ROOT / "frontend" / "src" / "lib" / "settings" / "sectionCapabilities.ts",
+)
 
 #: `{ id: 'x', label: ..., cap: 'watch_sources' }` — the sidebar item gate.
 CAP_ATTR_RE = re.compile(r"\bcap:\s*'([^']+)'")
@@ -60,9 +65,10 @@ DEPLOYMENT_LOCKED_KEYS = frozenset(
 
 def _frontend_capability_keys() -> set[str]:
     """Capability keys referenced by the settings UI."""
-    if not SETTINGS_MODAL.is_file():
-        pytest.fail(f"SettingsModal.svelte not found at {SETTINGS_MODAL}")
-    source = SETTINGS_MODAL.read_text(encoding="utf-8")
+    for path in SETTINGS_MODAL_SOURCES:
+        if not path.is_file():
+            pytest.fail(f"settings capability source not found at {path}")
+    source = "\n".join(path.read_text(encoding="utf-8") for path in SETTINGS_MODAL_SOURCES)
     return set(CAP_ATTR_RE.findall(source)) | set(CAP_CALL_RE.findall(source))
 
 

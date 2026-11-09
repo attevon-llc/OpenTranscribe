@@ -8,15 +8,12 @@
   import { afterNavigate } from '$app/navigation';
   import { reopenSettingsAfterBack } from '$lib/settings/returnToSettings';
   import { user as userStore } from '$stores/auth';
-  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
+  import { capabilities } from '$stores/capabilities';
   import { isCloudEdition } from '$lib/edition';
-  import { orgPrivacyVisible } from '$lib/settings/privacyPolicy';
-  import { orgAdminCapOn as orgCapOn } from '$lib/settings/orgAdminAccess';
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
-  import axiosInstance from '$lib/axios';
   import { listLegalDocuments } from '$lib/api/legal';
-  import { UserSettingsApi, RecordingSettingsHelper, type RecordingSettings } from '$lib/api/userSettings';
+  import type { RecordingSettings } from '$lib/api/userSettings';
 
   // Sections are lazy (LazySection + sectionLoaders): only the pieces the modal itself needs
   // are imported statically.
@@ -28,32 +25,43 @@
     prefetchSectionIntent,
     type PrefetchRole,
   } from '$lib/settings/sectionLoaders';
-  import { findSettingElement } from '$lib/search/findSettingElement';
   import { invalidateSectionData, SectionDataKey } from '$lib/settings/sectionData';
   import type { ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
-  import { SupportAccessApi } from '$lib/api/supportAccess';
   import { TakedownNoticesApi } from '$lib/api/takedownNotices';
   import { SUPPORT_ACCESS_EVENT } from '$lib/supportAccess/events';
-  import { UserApprovalsApi } from '$lib/api/userApprovals';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { createConfirmDialog } from '$lib/confirmDialog';
   import ProcessingDetailsModal from '$components/settings/ProcessingDetailsModal.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
 
   import SettingsSearch from '$components/settings/SettingsSearch.svelte';
-  import {
-    buildSettingsSearchItems,
-    createSettingsFuzzyIndex,
-    type SettingsSearchItem,
-    type VisibleSection,
-  } from '$lib/search/settingsSearchIndex';
+  import type { SettingsSearchItem } from '$lib/search/settingsSearchIndex';
   import type { FuzzyIndex } from '$lib/search/fuzzyMatcher';
-  import { privacyRedactionTabs, privacyRedactionVisible } from '$lib/settings/privacyRedactionTabs';
-  import { transcriptionTabs, transcriptionVisible } from '$lib/settings/transcriptionTabs';
+  import { SECTION_MIN_ROLE, sectionLocked, lockReason as lockReasonFor } from '$lib/settings/sectionAccess';
   import {
-    speakerIdentificationTabs,
-    speakerIdentificationVisible,
-  } from '$lib/settings/speakerIdentificationTabs';
+    buildSidebarSections,
+    capOn,
+    orgAdminCapOn as orgAdminCapOnFor,
+    orgPrivacyOn,
+  } from '$lib/settings/sidebarSections';
+  import {
+    buildSettingsFuzzyIndex,
+    buildVisibleSections,
+    flashSettingControl as flashControl,
+  } from '$lib/settings/settingsSearch';
+  import { buildSectionAccess } from '$lib/settings/sectionCapabilities';
+  import { loadRecording, saveRecording, resetRecording } from '$lib/settings/recordingSettings';
+  import {
+    countPendingApprovals,
+    countSupportRequests,
+    fetchAdminUsers,
+    fetchSystemStats,
+    initialSystemStats,
+    recoverUserFilesRequest,
+    type AdminUserRow,
+    type SearchHealthStatus,
+    type SearchIndexStatus,
+  } from '$lib/settings/adminLoaders';
   import {
     aliasIdsOf,
     dataTabFor,
@@ -63,8 +71,6 @@
     transcriptionTabFor,
     watchSourcesTabFor,
   } from '$lib/settings/sectionAliases';
-  import { dataManagementTabs, dataManagementVisible } from '$lib/settings/dataManagementTabs';
-  import { fileStatusTabs } from '$lib/settings/fileStatusTabs';
 
   // Import i18n
   import { t, locale } from '$stores/locale';
@@ -108,62 +114,11 @@
   $: isAdmin = $userStore?.role === 'admin' || $userStore?.role === 'super_admin';
   $: isSuperAdmin = $userStore?.role === 'super_admin';
 
-  /**
-   * The privilege tier each gated section needs, mirroring the FastAPI dependency
-   * on the endpoints it calls (`get_current_admin_user` vs
-   * `get_current_active_superuser`). This is the ONE place the modal decides who
-   * may open what: the sidebar, the mobile picker and the content router all read
-   * it, so a nav entry can no longer disagree with what the panel renders.
-   *
-   * Sections absent from the map are open to any signed-in user. `redaction-policy`
-   * and `engine-settings` are deliberately absent: each is now a tab of another section
-   * (Privacy & Redaction, Speaker Identification; the ids survive only as deep-link
-   * aliases) and `privacyRedactionTabs` / `speakerIdentificationTabs` gate those tabs
-   * by the same super_admin tier. `asr-provider`, `custom-vocabulary` and
-   * `speaker-attributes` are open to all and likewise only alias a tab.
-   */
-  const SECTION_MIN_ROLE: Partial<Record<SettingsSection, 'admin' | 'super_admin'>> = {
-    // super_admin — deployment configuration (P4.3 moved these off the admin tier)
-    authentication: 'super_admin',
-    'audit-logs': 'super_admin',
-    // admin
-    'admin-users': 'admin',
-    quarantine: 'admin',
-    'platform-holds': 'admin',
-    'takedown-notices': 'admin',
-    'data-management': 'admin',
-    'support-access': 'admin',
-  };
-
-  /**
-   * A section the user cannot open is rendered **disabled with a tooltip**, never
-   * omitted. Silently dropping the entry is what made an admin conclude the LDAP
-   * configuration page did not exist, so absence is no longer used to express
-   * "not for you" — only greyed-out presence is.
-   *
-   * Below-admin users still don't see admin groups at all: those sit inside
-   * `isAdmin`-gated sidebar groups, so there is no entry to grey out.
-   */
-  const sectionLocked = (
-    section: SettingsSection,
-    admin: boolean,
-    superAdmin: boolean
-  ): boolean => {
-    const required = SECTION_MIN_ROLE[section];
-    if (required === 'super_admin') return !superAdmin;
-    if (required === 'admin') return !admin;
-    return false;
-  };
-
   // An alias id is judged by the row that now holds it (retention -> Data & Storage).
   $: activeSectionLocked = sectionLocked(sidebarRowFor(activeSection), isAdmin, isSuperAdmin);
   $: activeSectionRequires = SECTION_MIN_ROLE[sidebarRowFor(activeSection)];
 
-  /** Tooltip for a locked entry, worded for the tier it actually needs. */
-  const lockReason = (section: SettingsSection): string =>
-    SECTION_MIN_ROLE[section] === 'admin'
-      ? $t('settings.permission.adminTitle')
-      : $t('settings.nav.requiresSuperAdmin');
+  const lockReason = (section: SettingsSection): string => lockReasonFor(section, $t);
 
   // Recording settings section
   let maxRecordingDuration = 120;
@@ -173,7 +128,7 @@
   let recordingSettingsLoading = false;
 
   // Admin Users section
-  let users: any[] = [];
+  let users: AdminUserRow[] = [];
   let usersLoading = false;
 
   /**
@@ -188,11 +143,7 @@
   let pendingApprovalCount = 0;
 
   async function loadPendingApprovalCount() {
-    try {
-      pendingApprovalCount = (await UserApprovalsApi.list()).length;
-    } catch {
-      pendingApprovalCount = 0;
-    }
+    pendingApprovalCount = await countPendingApprovals();
   }
 
   /**
@@ -204,59 +155,11 @@
   $: supportOrgTab = orgAdminCapOn(capState, 'organizations') && $userStore?.org_role === 'org:admin';
 
   async function loadSupportRequestCount() {
-    if (!tenancyMulti) {
-      supportRequestCount = 0;
-      return;
-    }
-    const pending = { status: 'pending' as const, limit: 1, offset: 0 };
-    try {
-      const pages = await Promise.all([
-        SupportAccessApi.listRequests('workspace', pending),
-        ...(supportOrgTab ? [SupportAccessApi.listRequests('org', pending)] : [])
-      ]);
-      supportRequestCount = pages.reduce((sum, page) => sum + page.total, 0);
-    } catch {
-      supportRequestCount = 0;
-    }
+    supportRequestCount = await countSupportRequests(tenancyMulti, supportOrgTab);
   }
 
   // Admin Stats section
-  let stats: any = {
-    users: { total: 0, new: 0 },
-    files: { total: 0, new: 0, total_duration: 0, segments: 0 },
-    tasks: {
-      total: 0,
-      pending: 0,
-      running: 0,
-      completed: 0,
-      failed: 0,
-      success_rate: 0,
-      avg_processing_time: 0,
-      recent: []
-    },
-    speakers: { total: 0, avg_per_file: 0 },
-    models: {
-      whisper: { name: $t('common.notAvailable'), description: $t('common.notAvailable'), purpose: $t('common.notAvailable') },
-      diarization: { name: $t('common.notAvailable'), description: $t('common.notAvailable'), purpose: $t('common.notAvailable') }
-    },
-    system: {
-      cpu: { total_percent: '0%', per_cpu: [], logical_cores: 0, physical_cores: 0 },
-      memory: { total: '0 B', available: '0 B', used: '0 B', percent: '0%' },
-      disk: { total: '0 B', used: '0 B', free: '0 B', percent: '0%' },
-      // These stay the untranslated literal "N/A" on purpose: it is the backend's
-      // wire sentinel for an unreadable GPU metric (admin.py / tasks/utility.py) and
-      // SystemStatisticsPanel compares `utilization_percent !== 'N/A'` against it.
-      // The placeholder entry is `available: false`, so none of it ever renders.
-      gpus: [{ available: false, name: 'N/A', memory_total: 'N/A', memory_used: 'N/A', memory_free: 'N/A', memory_percent: 'N/A', utilization_percent: 'N/A', temperature_celsius: null }],
-      uptime: $t('common.unknown'),
-      platform: $t('common.unknown'),
-      python_version: $t('common.unknown')
-    },
-    throughput: { total_completed: 0, last_1h: 0, last_3h: 0, rate_1h: 0, rate_3h: 0 },
-    eta: { remaining: 0, files_per_hour: 0, hours_remaining: null, est_completion: null },
-    file_timing: { files: 0, avg_secs: 0, min_secs: 0, max_secs: 0, avg_mins: 0 },
-    queues: { gpu: 0, download: 0, nlp: 0, embedding: 0, cpu: 0, utility: 0, total: 0 }
-  };
+  let stats = initialSystemStats($t);
   let showProcessingDetails = false;
   let processingDetailsSection = 'performance';
   let statsLoading = false;
@@ -265,8 +168,8 @@
   let gpuRetryScheduled = false;
 
   // Search index status (for system stats card)
-  let searchIndexStatus: { indexed_files: number; total_files: number; pending_files: number; in_progress: boolean; current_model: string } | null = null;
-  let searchHealthStatus: Record<string, { status: string; doc_count: number }> | null = null;
+  let searchIndexStatus: SearchIndexStatus | null = null;
+  let searchHealthStatus: SearchHealthStatus | null = null;
 
   // Admin Task Health confirmation flow (panel dispatches, modal owns ConfirmationModal)
   const confirmDialog = createConfirmDialog();
@@ -285,45 +188,13 @@
   // Support-access UI exists only in multi-tenant mode and is FAIL-CLOSED (unknown = hidden),
   // unlike `capOn`, which is fail-open. Do not route this through isCapabilityEnabled.
   $: tenancyMulti = capState.tenancyMode === 'multi';
-  const capOn = (state: typeof $capabilities, key?: string) =>
-    !key || isCapabilityEnabled(state, key);
 
-  $: transcriptionAccess = {
-    prefsCap: capOn(capState, 'transcription.prefs'),
-    asrCap: capOn(capState, 'asr.user_providers'),
-    modelSelectionCap: capOn(capState, 'asr.model_selection'),
-    vocabCap: capOn(capState, 'vocab.user'),
-  };
-
-  $: speakerIdAccess = {
-    isAdmin,
-    isSuperAdmin,
-    prefsCap: capOn(capState, 'transcription.prefs'),
-    engineCap: capOn(capState, 'engine.settings'),
-    migrationCap: capOn(capState, 'speaker_attributes.migration'),
-  };
-
-  $: dataAccess = {
-    isAdmin,
-    isSuperAdmin,
-    retentionCap: capOn(capState, 'admin.retention'),
-    backupCap: capOn(capState, 'admin.backup'),
-    integrityCap: capOn(capState, 'admin.data_integrity'),
-    searchCap: capOn(capState, 'admin.search_indexing'),
-    embeddingCap: capOn(capState, 'admin.embedding_migration'),
-  };
-
-  $: statusAccess = {
-    isAdmin,
-    taskHealthCap: capOn(capState, 'admin.task_health'),
-  };
-
-  $: privacyAccess = {
-    isAdmin,
-    isSuperAdmin,
-    userCap: capOn(capState, 'redaction.user'),
-    policyCap: capOn(capState, 'redaction.policy'),
-  };
+  $: access = buildSectionAccess(capState, isAdmin, isSuperAdmin);
+  $: transcriptionAccess = access.transcription;
+  $: speakerIdAccess = access.speakerId;
+  $: dataAccess = access.data;
+  $: statusAccess = access.status;
+  $: privacyAccess = access.privacy;
 
   // The modal's default landing section is 'system-statistics' (self-host: a
   // reasonable dashboard for any signed-in user). The capabilities store is
@@ -341,233 +212,40 @@
       ? 'profile'
       : sidebarRowFor(activeSection); // aliases highlight the row that now holds them
 
-  // Cloud-edition org-admin gating ($lib/settings/orgAdminAccess, shared with the legal-hold actions).
-  const orgAdminCapOn = (state: typeof $capabilities, key: string) => orgCapOn(state, key, isCloudEdition);
+  const orgAdminCapOn = orgAdminCapOnFor;
 
-  // The privacy panel (issue #1280) additionally needs the person to BE an organization
-  // administrator, and it lives in core: a deployment that replaces $lib/cloud still gets it.
-  const orgPrivacyOn = (state: typeof $capabilities, orgRole: string | undefined) =>
-    orgPrivacyVisible({
-      isCloudEdition,
-      capabilityEnabled: isCapabilityEnabled(state, 'org.defaults'),
-      audience: state.audience['org.defaults'],
-      orgRole,
-    });
+  $: sidebarSections = buildSidebarSections({
+    t: $t,
+    capState,
+    isAdmin,
+    isSuperAdmin,
+    orgRole: $userStore?.org_role,
+    tenancyMulti,
+    supportRequestCount,
+    pendingApprovalCount,
+    hasTakedowns,
+    legalAvailable,
+    transcriptionAccess,
+    speakerIdAccess,
+    dataAccess,
+    privacyAccess,
+  });
 
-  // Define sidebar sections (filtered by capability; empty sections drop out).
-  //
-  // Grouped by WHO changes it and HOW OFTEN, not by subject matter (issue #861):
-  // the user's own settings first, then shared/media concerns, then admin
-  // configuration, then deployment maintenance last. Within every group, rows are
-  // ordered by expected frequency of use — do NOT re-alphabetize them.
-  //
-  // Group gating vs row gating: a group carrying `...(isAdmin ? [...] : [])` is
-  // invisible below that tier. A row inside an UNGATED group that needs privilege
-  // is spread in the same way, which keeps the group (and its ungated siblings)
-  // visible. `SECTION_MIN_ROLE` above stays the single source of privilege truth —
-  // never add an ad-hoc guard on a render block.
-  $: sidebarSections = [
-    {
-      title: $t('settings.sections.account'),
-      items: [
-        { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
-        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
-        ...(tenancyMulti ? [{ id: 'support-access-requests' as SettingsSection, label: $t('settings.supportAccessRequests.navLabel'), icon: 'life-buoy', badge: supportRequestCount }] : []),
-        // issue #1254: only for a user who has had a file taken down; it is the durable copy of the notice.
-        ...(hasTakedowns ? [{ id: 'my-takedowns' as SettingsSection, label: $t('takedown.mine.navLabel'), icon: 'shield-off' }] : [])
-      ]
-    },
-    {
-      title: $t('settings.sections.transcription'),
-      items: [
-        // Two jobs, two rows, each with tabs: words (language, provider and model, vocabulary,
-        // accuracy) and speakers (detection, attributes, engine, maintenance). The old rows
-        // asr-provider / custom-vocabulary / engine-settings / speaker-attributes survive as
-        // aliases that open their tab (see lib/settings/sectionAliases.ts).
-        // Read-only overview first: where each step runs, with links to the rows below that edit it.
-        ...(transcriptionAccess.prefsCap ? [{ id: 'processing-pipeline' as SettingsSection, label: $t('settings.pipeline.title'), icon: 'flow' }] : []),
-        ...(transcriptionVisible(transcriptionAccess) ? [{ id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' }] : []),
-        ...(speakerIdentificationVisible(speakerIdAccess) ? [{ id: 'speaker-identification' as SettingsSection, label: $t('settings.speakerIdentification.title'), icon: 'user' }] : [])
-      ]
-    },
-    {
-      title: $t('settings.sections.aiChat'),
-      items: [
-        // Admin platform tuning for chat lives in this panel's Advanced tab, not a second row.
-        { id: 'chat' as SettingsSection, label: $t('chat.settings.title'), icon: 'message', cap: 'chat.rag' },
-        // Content analysis, not an account setting: ML detectors on the redaction worker, and the
-        // policy decides what an AI model may see. One row, two tabs: the per-user preference and
-        // (admin) the policy floor that overrides it.
-        ...(privacyRedactionVisible(privacyAccess) ? [{ id: 'content-redaction' as SettingsSection, label: $t('settings.privacyRedaction.title'), icon: 'eye-off' }] : []),
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
-        { id: 'llm-usage' as SettingsSection, label: $t('settings.llmUsage.title'), icon: 'activity', cap: 'llm.user_settings' },
-        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message', cap: 'prompts.user' },
-        // Org context is prompt material: OrganizationContextSettings persists
-        // include_in_default_prompts / include_in_custom_prompts and nothing else reads it.
-        { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' },
-        // Tags and collections, not speakers: it sat in the Transcription group only by history.
-        { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' }
-      ]
-    },
-    {
-      title: $t('settings.sections.mediaOutput'),
-      items: [
-        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'url_ingest' },
-        { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link', cap: 'media_sources' },
-        { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye', cap: 'watch_sources' },
-        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic', cap: 'recording' },
-        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio', cap: 'audio_extraction' }
-      ]
-    },
-    // Cloud edition — org-admin billing/usage/team. Gated by audience='org_admin'
-    // so regular org members never see these. Community never reaches here
-    // (isCloudEdition is false), so the section is empty and drops out.
-    ...(orgAdminCapOn(capState, 'billing') || orgAdminCapOn(capState, 'usage_dashboard') || orgAdminCapOn(capState, 'organizations') || orgAdminCapOn(capState, 'org.takedown') || orgAdminCapOn(capState, 'org.audit_logs') || orgAdminCapOn(capState, 'org.legal_hold') || orgPrivacyOn(capState, $userStore?.org_role) ? [
-      {
-        title: $t('settings.sections.billingTeam'),
-        items: [
-          ...(orgAdminCapOn(capState, 'billing') ? [{ id: 'billing' as SettingsSection, label: $t('billing.navLabel'), icon: 'credit-card' }] : []),
-          ...(orgAdminCapOn(capState, 'usage_dashboard') ? [{ id: 'usage' as SettingsSection, label: $t('usage.navLabel'), icon: 'activity' }] : []),
-          ...(orgAdminCapOn(capState, 'organizations') ? [{ id: 'team' as SettingsSection, label: $t('team.navLabel'), icon: 'users' }, { id: 'org-erasures' as SettingsSection, label: $t('orgErasures.navLabel'), icon: 'trash' }] : []),
-          // issue #1253: the organization's own takedown queue. Server-enforced by the
-          // `org.takedown` capability (unlike the platform queue's UI-only `admin.takedown`).
-          ...(orgAdminCapOn(capState, 'org.takedown') ? [{ id: 'org-takedown' as SettingsSection, label: $t('settings.quarantine.orgNavLabel'), icon: 'shield-off' }] : []),
-          ...(orgAdminCapOn(capState, 'org.audit_logs') ? [{ id: 'org-audit-logs' as SettingsSection, label: $t('orgAudit.navLabel'), icon: 'clipboard' }] : []),
-          ...(orgAdminCapOn(capState, 'org.legal_hold') ? [{ id: 'org-holds' as SettingsSection, label: $t('holds.navLabel'), icon: 'shield' }] : []),
-          ...(orgPrivacyOn(capState, $userStore?.org_role) ? [{ id: 'org-privacy' as SettingsSection, label: $t('privacy.org.navLabel'), icon: 'lock' }] : [])
-        ]
-      }
-    ] : []),
-    // Administration = who may do what, and how this deployment behaves.
-    // Listed for every admin; rows above the admin's tier render disabled — see sectionLocked().
-    ...(isAdmin ? [
-      {
-        title: $t('settings.sections.administration'),
-        items: [
-          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin', badge: pendingApprovalCount },
-          { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' },
-          { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
-          // issue #576: abuse/DMCA takedown review queue. `admin.takedown` is
-          // declared in the backend capability maps but gates the NAV ENTRY only —
-          // the endpoints are NOT capability-gated, since `require_capability`
-          // 404s and a compliance endpoint that vanishes is worse than one that
-          // refuses.
-          { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' },
-          { id: 'takedown-notices' as SettingsSection, label: $t('takedown.admin.navLabel'), icon: 'file-text', cap: 'admin.takedown' },
-          // Operator legal holds without a takedown (legal-hold plan §8.4); ungated like the takedown routes.
-          { id: 'platform-holds' as SettingsSection, label: $t('holds.platform.navLabel'), icon: 'shield' },
-          ...(tenancyMulti ? [{ id: 'support-access' as SettingsSection, label: $t('settings.supportAccess.navLabel'), icon: 'life-buoy' }] : [])
-        ]
-      }
-    ] : []),
-    {
-      // System = looking at or repairing the deployment's state (vs. Administration,
-      // which configures its behaviour). Last because it is the least-often opened.
-      // The GROUP is deliberately ungated: `system-statistics` is open to every
-      // signed-in user and is the modal's default landing section
-      // (settingsModalStore initialState / Navbar.svelte). Only the maintenance rows
-      // are admin-gated.
-      title: $t('settings.sections.system'),
-      items: [
-        { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' },
-        { id: 'file-status' as SettingsSection, label: $t('settings.fileStatus.title'), icon: 'activity' },
-        // Hidden when the deployment ships no legal documents (cloud edition) or the list fails.
-        ...(legalAvailable ? [{ id: 'legal' as SettingsSection, label: $t('settings.legal.title'), icon: 'file-text' }] : []),
-        // Task health is the Recovery tab of File status (admin-task-health stays as an alias).
-        ...(isAdmin ? [
-          // File retention, media cache, backups, integrity, search index and speaker embeddings
-          // are tabs of one row (the old ids stay as aliases; see lib/settings/sectionAliases.ts).
-          ...(dataManagementVisible(dataAccess) ? [{ id: 'data-management' as SettingsSection, label: $t('settings.dataManagement.title'), icon: 'database' }] : [])
-        ] : [])
-      ]
-    }
-  ]
-    .map((section) => ({
-      ...section,
-      items: section.items
-        .filter((item) => capOn(capState, (item as { cap?: string }).cap))
-        // A capability the deployment lacks is genuinely absent, so it stays
-        // filtered out above. A privilege the *user* lacks is not: the entry
-        // remains, flagged `locked`, and renders greyed out with a reason.
-        // `badge` is normalised to a number for every item so the template can
-        // read it without the union splitting on whether the property exists.
-        .map((item) => ({
-          ...item,
-          locked: sectionLocked(item.id, isAdmin, isSuperAdmin),
-          badge: (item as { badge?: number }).badge ?? 0
-        }))
-    }))
-    .filter((section) => section.items.length > 0);
+  $: visibleSections = buildVisibleSections($t, sidebarSections, {
+    isAdmin,
+    isSuperAdmin,
+    transcriptionAccess,
+    speakerIdAccess,
+    dataAccess,
+    statusAccess,
+    privacyAccess,
+  });
 
-  // Flat list of the sections this user can actually open — the search index is
-  // limited to these so it never surfaces a section the user can't navigate to.
-  // Locked entries are excluded on purpose: they stay discoverable in the sidebar
-  // (greyed out, with a tooltip), but a search hit promises a usable destination.
-  $: visibleSections = [
-    ...sidebarSections.flatMap((section) =>
-      section.items
-        .filter((item) => !item.locked)
-        .map((item) => ({ id: item.id, label: item.label }) as VisibleSection)
-    ),
-    // The policy tab has no sidebar row of its own, but its settings stay searchable
-    // for exactly the users who can open it; the hit lands on that tab.
-    ...(privacyRedactionTabs(privacyAccess).some((tab) => tab.id === 'policy' && !tab.locked)
-      ? [{ id: 'redaction-policy', label: $t('settings.redactionPolicy.title') } as VisibleSection]
-      : []),
-    // Same for the four ids that became tabs: no sidebar row, still searchable, and the
-    // hit lands on the tab, but only for users whose tab is present and unlocked.
-    ...aliasSearchEntries(transcriptionAccess, speakerIdAccess, dataAccess, statusAccess),
-    // The email-notifications tab is super_admin only and lives on the watch-sources row, so it
-    // is searchable only where that row is shown and the user can open the tab.
-    ...(isSuperAdmin && sidebarSections.some((section) => section.items.some((item) => item.id === 'watch-sources' && !item.locked))
-      ? [{ id: 'watch-sources-email', label: $t('settings.emailNotifications.heading') } as VisibleSection]
-      : []),
-    // The chat Advanced tab (platform-wide retrieval tuning) is admin only and lives on the
-    // chat row; without this entry its settings were unsearchable and the "Advanced features"
-    // hit opened the General tab.
-    ...(isAdmin && sidebarSections.some((section) => section.items.some((item) => item.id === 'chat' && !item.locked))
-      ? [{ id: 'chat-admin', label: $t('chat.settings.tabs.advanced') } as VisibleSection]
-      : []),
-  ];
-
-  function aliasSearchEntries(
-    tx: typeof transcriptionAccess,
-    spk: typeof speakerIdAccess,
-    data: typeof dataAccess,
-    status: typeof statusAccess
-  ): VisibleSection[] {
-    const dataOpen = (id: string) =>
-      dataManagementTabs(data).some((tab) => tab.id === id && !tab.locked);
-    const txOpen = (id: string) => transcriptionTabs(tx).some((tab) => tab.id === id && !tab.locked);
-    const spkOpen = (id: string) =>
-      speakerIdentificationTabs(spk).some((tab) => tab.id === id && !tab.locked);
-    const entries: VisibleSection[] = [];
-    if (fileStatusTabs(status).some((tab) => tab.id === 'status-recovery')) entries.push({ id: 'admin-task-health', label: $t('settings.taskHealth.title') } as VisibleSection);
-    if (txOpen('tx-provider')) entries.push({ id: 'asr-provider', label: $t('settings.asrProvider.title') } as VisibleSection);
-    if (txOpen('tx-vocabulary')) entries.push({ id: 'custom-vocabulary', label: $t('settings.customVocabulary.title') } as VisibleSection);
-    if (spkOpen('spk-attributes')) entries.push({ id: 'speaker-attributes', label: $t('settings.speakerAttributes.title') } as VisibleSection);
-    if (spkOpen('spk-engine')) entries.push({ id: 'engine-settings', label: $t('settings.engineSettings.title') } as VisibleSection);
-    if (dataOpen('data-retention')) entries.push({ id: 'retention', label: $t('settings.retention.title') } as VisibleSection);
-    if (dataOpen('data-backup')) entries.push({ id: 'backup', label: $t('settings.backup.title') } as VisibleSection);
-    if (dataOpen('data-integrity')) entries.push({ id: 'data-integrity', label: $t('settings.dataIntegrity.title') } as VisibleSection);
-    if (dataOpen('data-search')) entries.push({ id: 'search-indexing', label: $t('settings.searchIndexing.title') } as VisibleSection);
-    if (dataOpen('data-embeddings')) entries.push({ id: 'embedding-migration', label: $t('settings.embeddingMigration.title') } as VisibleSection);
-    return entries;
-  }
-
+  const indexFor = (_locale: string, sections: Parameters<typeof buildSettingsFuzzyIndex>[0]) =>
+    buildSettingsFuzzyIndex(sections);
   // Rebuild the fuzzy index only while the modal is open. `$locale` is referenced
   // so the index refreshes when the UI language changes (labels are localized).
-  $: settingsSearchIndex = isOpen ? buildSettingsFuzzyIndex($locale, visibleSections) : null;
-
-  function buildSettingsFuzzyIndex(_locale: string, sections: VisibleSection[]) {
-    if (!i18next.isInitialized) return null;
-    const dict = i18next.getResourceBundle(i18next.language, 'translation') as Record<
-      string,
-      string
-    > | null;
-    const items = buildSettingsSearchItems(dict || {}, sections);
-    return createSettingsFuzzyIndex(items);
-  }
+  $: settingsSearchIndex = isOpen ? indexFor($locale, visibleSections) : null;
 
   // Any change of section (sidebar click, alias, search hit, in-panel jump link) must show where the
   // user landed: a row far below the fold is otherwise invisible and the change reads as "nothing
@@ -599,26 +277,7 @@
     flashSettingControl(anchorText);
   }
 
-  function flashSettingControl(anchorText: string, attempt = 0) {
-    if (!anchorText) return;
-    const container = modalElement?.querySelector('.settings-content');
-    const el = container ? findSettingElement(container, anchorText) : null;
-    if (!el) {
-      // Panel content may still be loading — retry briefly (~1s total) before giving up.
-      if (attempt < 20) window.setTimeout(() => flashSettingControl(anchorText, attempt + 1), 50);
-      return;
-    }
-    const scrollTarget =
-      (el.closest(
-        '.form-group, .form-row, .form-field, .settings-section, .content-section'
-      ) as HTMLElement) || el;
-    scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    document
-      .querySelectorAll('.settings-search-flash')
-      .forEach((node) => node.classList.remove('settings-search-flash'));
-    scrollTarget.classList.add('settings-search-flash');
-    window.setTimeout(() => scrollTarget.classList.remove('settings-search-flash'), 1600);
-  }
+  const flashSettingControl = (anchorText: string) => flashControl(modalElement, anchorText);
 
   // Reactive recording settings change detection
   $: {
@@ -791,23 +450,14 @@
   // Recording settings functions
   async function loadRecordingSettings() {
     recordingSettingsLoading = true;
-    try {
-      const settings = await UserSettingsApi.getRecordingSettings();
+    const settings = await loadRecording($t);
+    if (settings) {
       maxRecordingDuration = settings.max_recording_duration;
       recordingQuality = settings.recording_quality;
       autoStopEnabled = settings.auto_stop_enabled;
       recordingSettingsChanged = false;
-    } catch (err: unknown) {
-      console.error('Error loading recording settings:', err);
-      // Via handleApiError, not a bare toast: this modal mounts before the first
-      // account-lifecycle 403 lands, so a pending-approval user got a raw
-      // "Request failed with status code 403" toast in front of the blocking
-      // screen. handleApiError swallows lifecycle refusals the way it already
-      // swallows cancellations.
-      handleApiError(err, $t('settings.toast.recordingSettingsSaveFailed'));
-    } finally {
-      recordingSettingsLoading = false;
     }
+    recordingSettingsLoading = false;
   }
 
   function handleRecordingSettingsChange() {
@@ -817,51 +467,25 @@
 
   async function saveRecordingSettings() {
     recordingSettingsLoading = true;
-
-    // Validate settings
-    const settingsToValidate: RecordingSettings = {
+    const settings: RecordingSettings = {
       max_recording_duration: maxRecordingDuration,
       recording_quality: recordingQuality,
       auto_stop_enabled: autoStopEnabled
     };
-
-    const validationErrors = RecordingSettingsHelper.validateSettings(settingsToValidate);
-    if (validationErrors.length > 0) {
-      toastStore.error(validationErrors[0]);
-      recordingSettingsLoading = false;
-      return;
-    }
-
-    try {
-      await UserSettingsApi.updateRecordingSettings(settingsToValidate);
-      toastStore.success($t('settings.toast.recordingSettingsSaved'));
+    if (await saveRecording(settings, $t)) {
       recordingSettingsChanged = false;
       settingsModalStore.clearDirty('recording');
-    } catch (err: unknown) {
-      console.error('Error saving recording settings:', err);
-      const message = getErrorMessage(err, $t('settings.toast.recordingSettingsSaveFailed'));
-      toastStore.error(message);
-    } finally {
-      recordingSettingsLoading = false;
     }
+    recordingSettingsLoading = false;
   }
 
   async function resetRecordingSettings() {
     recordingSettingsLoading = true;
-
-    try {
-      await UserSettingsApi.resetRecordingSettings();
-      await loadRecordingSettings();
-      toastStore.success($t('settings.toast.recordingSettingsReset'));
+    if (await resetRecording($t, loadRecordingSettings)) {
       recordingSettingsChanged = false;
       settingsModalStore.clearDirty('recording');
-    } catch (err: unknown) {
-      console.error('Error resetting recording settings:', err);
-      const message = getErrorMessage(err, $t('settings.toast.recordingSettingsResetFailed'));
-      toastStore.error(message);
-    } finally {
-      recordingSettingsLoading = false;
     }
+    recordingSettingsLoading = false;
   }
 
   // Admin functions
@@ -872,8 +496,7 @@
     }
 
     try {
-      const response = await axiosInstance.get('/admin/users');
-      users = response.data;
+      users = await fetchAdminUsers();
     } catch (err: unknown) {
       console.error('Error loading admin users:', err);
       const message = getErrorMessage(err, $t('settings.toast.usersLoadFailed'));
@@ -892,7 +515,7 @@
 
   async function recoverUserFiles(userId: string) {
     try {
-      await axiosInstance.post(`/tasks/system/recover-user-files/${userId}`);
+      await recoverUserFilesRequest(userId);
       toastStore.success($t('settings.toast.userRecoveryInitiated'));
     } catch (err: unknown) {
       console.error('Error recovering user files:', err);
@@ -920,20 +543,16 @@
     }
 
     try {
-      const [statsRes, indexRes, healthRes] = await Promise.all([
-        axiosInstance.get('/system/stats'),
-        axiosInstance.get('/search/reindex/status').catch(() => null),
-        axiosInstance.get('/search/index-health').catch(() => null),
-      ]);
+      const result = await fetchSystemStats();
 
-      stats = statsRes.data;
+      stats = result.stats;
       statsInitialLoaded = true;
 
-      if (indexRes?.data) searchIndexStatus = indexRes.data;
-      if (healthRes?.data) searchHealthStatus = healthRes.data;
+      if (result.indexStatus) searchIndexStatus = result.indexStatus;
+      if (result.indexHealth) searchHealthStatus = result.indexHealth;
 
       // Auto-retry once if GPU stats are loading
-      if (statsRes.data?.system?.gpus?.[0]?.loading && !gpuRetryScheduled) {
+      if (result.stats?.system?.gpus?.[0]?.loading && !gpuRetryScheduled) {
         gpuRetryScheduled = true;
         setTimeout(() => {
           gpuRetryScheduled = false;

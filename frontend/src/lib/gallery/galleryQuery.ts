@@ -55,3 +55,43 @@ export function buildGalleryQuery(state: GalleryQueryState): URLSearchParams {
   if (state.held) params.append('held', 'true');
   return params;
 }
+
+/**
+ * Whether any filter is narrowing the list, including the toolbar search box (issue #747). Drives
+ * GalleryGrid's empty-state copy: an empty result with a filter active means "no matches", not
+ * "your library is empty" (§4.1 defect 3).
+ */
+export function hasActiveFilters(
+  state: Omit<GalleryQueryState, 'page' | 'pageSize' | 'sortBy' | 'sortOrder' | 'selectedOwners'>
+): boolean {
+  return (
+    state.searchQuery !== '' ||
+    state.selectedTags.length > 0 ||
+    state.selectedSpeakers.length > 0 ||
+    state.selectedFileTypes.length > 0 ||
+    state.selectedStatuses.length > 0 ||
+    state.dateRange.from !== null ||
+    state.dateRange.to !== null ||
+    state.durationRange.min !== null ||
+    state.durationRange.max !== null ||
+    state.ownershipFilter !== 'all' ||
+    state.hiddenMode !== 'exclude' ||
+    state.held
+  );
+}
+
+/** The `filter` event detail GalleryFilterPanel / FilterSidebar emit when a facet changes. */
+export interface FilterPanelDetail {
+  search: string;
+  tags: string[];
+  speaker: string[];
+  /** UUID */
+  collectionId: string | null;
+  dates: DateRange;
+  durationRange?: DurationRange;
+  fileTypes?: string[];
+  statuses?: string[];
+  ownership?: 'all' | 'mine' | 'shared';
+  /** Owner UUIDs (issue #966) */
+  owners?: string[];
+}

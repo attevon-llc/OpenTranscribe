@@ -8,7 +8,13 @@ const axiosMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: axiosMock }));
 
 import { get } from 'svelte/store';
-import { createUndo, summarizeTrashResults, trashConfirmMessage } from './galleryTrash';
+import {
+  createUndo,
+  summarizeTrashResults,
+  trashConfirmMessage,
+  trashSelection,
+} from './galleryTrash';
+import { toastStore } from '$stores/toast';
 
 const { englishLocale } = await import('$testMocks/galleryToolbarMocks');
 const t = get(englishLocale().t);
@@ -88,5 +94,38 @@ describe('createUndo', () => {
     expect(await createUndo(['a', 'b'])()).toBe(false);
     axiosMock.post.mockRejectedValueOnce(new Error('down'));
     expect(await createUndo(['a'])()).toBe(false);
+  });
+});
+
+describe('trashSelection', () => {
+  const hooks = () => ({ t, removeFiles: vi.fn(), refetch: vi.fn(), clearSelection: vi.fn() });
+
+  it('animates the trashed rows out, toasts success with an Undo, and clears the selection', async () => {
+    axiosMock.post.mockResolvedValue({
+      data: [
+        { file_uuid: 'a', success: true, message: '' },
+        { file_uuid: 'b', success: true, message: '' },
+      ],
+    });
+    const show = vi.spyOn(toastStore, 'show').mockImplementation(() => 0 as never);
+    const h = hooks();
+    await trashSelection(new Set(['a', 'b']), h);
+    expect(h.removeFiles).toHaveBeenCalledWith(['a', 'b']);
+    expect(h.clearSelection).toHaveBeenCalledTimes(1);
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(show.mock.calls[0][3]).toMatchObject({ action: { label: t('gallery.undo') } });
+    show.mockRestore();
+  });
+
+  it('keeps the selection out of the trash path on a request failure and toasts the error', async () => {
+    axiosMock.post.mockRejectedValue(new Error('down'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = vi.spyOn(toastStore, 'error').mockImplementation(() => 0 as never);
+    const h = hooks();
+    await trashSelection(new Set(['a']), h);
+    expect(h.removeFiles).not.toHaveBeenCalled();
+    expect(h.clearSelection).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledTimes(1);
+    error.mockRestore();
   });
 });

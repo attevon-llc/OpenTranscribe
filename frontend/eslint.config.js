@@ -90,13 +90,21 @@ export default tseslint.config(
       'svelte/no-immutable-reactive-statements': 'warn',
       'svelte/no-reactive-reassign': 'warn',
       // Repo convention is the $lib/$components/$stores aliases. Assets and the build scripts
-      // in frontend/scripts (imported by the src/bundleBudget*.test.ts gate tests) have no alias.
+      // in frontend/scripts (imported by the src/bundleBudget*.test.ts gate tests) have no alias, and
+      // neither has the project-root vite.config (imported by src/viteConfig.test.ts).
       'no-restricted-imports': [
         'warn',
         {
           patterns: [
             {
-              group: ['../*', '!../assets', '!../assets/*', '!../scripts', '!../scripts/*'],
+              group: [
+                '../*',
+                '!../assets',
+                '!../assets/*',
+                '!../scripts',
+                '!../scripts/*',
+                '!../vite.config',
+              ],
               message:
                 'Use the $lib, $components or $stores alias instead of a relative ../ import.',
             },

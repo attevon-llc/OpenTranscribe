@@ -13,10 +13,16 @@ from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Any
 
+from botocore.exceptions import BotoCoreError
+from botocore.exceptions import ClientError
+
 from app.services.watch_sources.base import BaseWatchSourceClient
 from app.services.watch_sources.base import RemoteFileInfo
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+# Endpoints and UNC paths can sit in exception text: frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 _CONNECT_TIMEOUT = 10
 _READ_TIMEOUT = 30
@@ -71,14 +77,14 @@ class S3WatchClient(BaseWatchSourceClient):
         try:
             self._client().head_bucket(Bucket=self._bucket)
             return True, f"OK — bucket '{self._bucket}' reachable"
-        except Exception as e:
+        except (BotoCoreError, ClientError, ValueError, OSError) as e:
             # Returned directly as the response body of
             # POST /watch-sources/{uuid}/test -- the OUTER handler in
             # api/endpoints/watch_sources.py only sanitizes an exception that
             # escapes this method, not this already-caught one (#859's
             # residual half, #914). A boto3 ClientError can quote the
             # endpoint_url/region; only the class of failure is returned.
-            logger.warning("S3 watch source connection test failed: %s", e)
+            logger.warning("S3 watch source connection test failed", exc_info=True)
             return False, f"S3 connection failed ({type(e).__name__})"
 
     def list_files(
@@ -124,8 +130,8 @@ class S3WatchClient(BaseWatchSourceClient):
         try:
             head = client.head_object(Bucket=self._bucket, Key=remote_path)
             expected = int(head.get("ContentLength", 0))
-        except Exception as e:
-            logger.debug("head_object failed for %s: %s", remote_path, e)
+        except (BotoCoreError, ClientError, ValueError):
+            logger.debug("head_object failed for %s", remote_path, exc_info=True)
         if expected and os.path.exists(local_path) and os.path.getsize(local_path) == expected:
             return expected
         client.download_file(self._bucket, remote_path, local_path)

@@ -15,11 +15,14 @@ from app.services.erasure_receipt.inventory import ErasureStore
 from app.services.erasure_receipt.inventory import stores_for
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+# Subject identifiers can sit in exception text: frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 #: ``store key -> count``, or ``None`` when it could not be measured.
 Measurement = dict[str, int | None]
@@ -30,11 +33,9 @@ def _one(store: ErasureStore, scope: ErasureScope, captured: Captured, db: Sessi
         count = store.count(scope, captured, db)
         db.rollback()  # a failed statement must not poison the next store's read
         return count
-    except Exception as e:  # unmeasurable is a reported state, not a crash
+    except Exception:  # per-store isolation boundary: unmeasurable is a reported state
         db.rollback()
-        logger.warning(
-            "erasure receipt: %s could not be measured (%s)", store.key, type(e).__name__
-        )
+        logger.warning("erasure receipt: %s could not be measured", store.key, exc_info=True)
         return None
 
 

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from dataclasses import replace
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core import chat_defaults
@@ -210,8 +211,8 @@ def get_chat_settings(db: Session) -> ChatSettings:
 
     try:
         stored = get_settings_map(db, list(SETTING_KEYS.values()))
-    except Exception as exc:  # never fail a chat on a settings read
-        logger.warning(f"Falling back to default chat settings: {exc}")
+    except SQLAlchemyError:  # never fail a chat on a settings read
+        logger.warning("Falling back to default chat settings", exc_info=True)
         return ChatSettings()
 
     # Keyed by field name, so the value types cannot be related to the field types statically;

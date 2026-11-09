@@ -124,8 +124,8 @@ def process_single_speaker(
                 logger.warning(f"Zero mean embedding for speaker {speaker_id}")
                 return None
             aggregated_embedding = mean_vec / norm
-    except Exception as e:
-        logger.error(f"Error aggregating embeddings for speaker {speaker_id}: {e}")
+    except (ValueError, TypeError):
+        logger.exception("Error aggregating embeddings for speaker %s", speaker_id)
         return None
 
     speaker = self.db.query(Speaker).filter(Speaker.id == speaker_id).first()

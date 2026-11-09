@@ -34,6 +34,8 @@ from datetime import UTC
 from datetime import datetime
 from typing import Any
 
+from redis.exceptions import RedisError
+
 logger = logging.getLogger(__name__)
 
 KEY_PREFIX = "asr:worker_model:"
@@ -56,8 +58,8 @@ def report_loaded_model(hostname: str, model_name: str, redis_client: Any = None
 
             redis_client = get_probe_redis()
         redis_client.set(f"{KEY_PREFIX}{hostname}", payload, ex=REPORT_TTL_SECONDS)
-    except Exception as exc:
-        logger.warning("Could not record the loaded model: %s", type(exc).__name__)
+    except RedisError:
+        logger.warning("Could not record the loaded model", exc_info=True)
 
 
 def read_loaded_models(redis_client: Any = None) -> list[dict[str, str]]:
@@ -90,6 +92,6 @@ def read_loaded_models(redis_client: Any = None) -> list[dict[str, str]]:
             except (ValueError, KeyError, TypeError):
                 logger.warning("Ignoring an unreadable worker model record")
         return reports
-    except Exception as exc:
-        logger.warning("Could not read the loaded models: %s", type(exc).__name__)
+    except RedisError:
+        logger.warning("Could not read the loaded models", exc_info=True)
         return []

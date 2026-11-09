@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 import numpy as np
+from opensearchpy.exceptions import OpenSearchException
 
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
@@ -57,8 +58,8 @@ def _progress_reporter(progress_callback: Any | None) -> Report:
         if progress_callback:
             try:
                 progress_callback(step, total, msg, pct)
-            except Exception as e:
-                logger.debug("Progress callback failed: %s", e)
+            except Exception:  # caller-supplied callback boundary: never breaks the pass
+                logger.warning("Progress callback failed", exc_info=True)
 
     return _report
 
@@ -84,8 +85,8 @@ def _clear_old_clusters(
             from app.services.opensearch_service import delete_cluster_embedding
 
             delete_cluster_embedding(str(oc.uuid))
-        except Exception:
-            logger.debug("Failed to remove centroid for cluster %s", oc.uuid)
+        except OpenSearchException:
+            logger.warning("Failed to remove centroid for cluster %s", oc.uuid, exc_info=True)
         self.db.query(Speaker).filter(Speaker.cluster_id == oc.id).update({"cluster_id": None})
         self.db.delete(oc)
     self.db.flush()
@@ -125,8 +126,8 @@ def _refresh_speaker_index() -> None:
         active_index = get_active_speaker_index()
         if opensearch_client:
             opensearch_client.indices.refresh(index=active_index)
-    except Exception as e:
-        logger.warning("Failed to refresh speaker index: %s", e)
+    except OpenSearchException:
+        logger.warning("Failed to refresh speaker index", exc_info=True)
 
 
 def _apply_separation_scores(

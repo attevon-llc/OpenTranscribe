@@ -160,8 +160,8 @@ def rewrite_query(
 
     try:
         response = llm.chat_completion(messages, max_tokens=max_tokens, temperature=0)
-    except Exception as exc:  # enhancement, never a dependency
-        logger.info(f"Query rewrite unavailable, using original question: {exc}")
+    except Exception:  # LLM-provider boundary; the rewrite is an enhancement
+        logger.warning("Query rewrite unavailable, using original question", exc_info=True)
         return RewriteResult(question)
 
     raw = getattr(response, "content", "") or ""

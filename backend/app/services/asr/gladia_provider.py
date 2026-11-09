@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.exceptions import ASRConfigurationError
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 from app.utils.url_validation import pinned_requests_session
 from app.utils.url_validation import resolve_pinned_target
 
@@ -33,6 +34,8 @@ if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checker
     import requests
 
 logger = logging.getLogger(__name__)
+# Provider SDK errors can quote credentials in their message: log frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 #: The real Gladia API. A literal in this file, never user- or operator-supplied, so it
 #: is exempt from the SSRF guard below — guarding it would mean every provider
@@ -117,7 +120,7 @@ class GladiaProvider(ASRProvider):
         if resp is not None:
             try:
                 body = resp.text.strip()
-            except Exception:
+            except (AttributeError, ValueError, RuntimeError):
                 body = ""
             if body:
                 detail = f"{detail} — {body[:500]}"
@@ -206,7 +209,8 @@ class GladiaProvider(ASRProvider):
             if r.status_code == 401:
                 return False, "Invalid Gladia API key", ms
             return True, f"Gladia reachable (HTTP {r.status_code})", ms
-        except Exception as e:
+        except Exception as e:  # provider-SDK boundary: the probe reports, never raises
+            logger.warning("%s connection test failed", "Gladia", exc_info=True)
             ms = (time.time() - start) * 1000
             return False, self._sanitize_error(str(e), self._api_key), ms
 
@@ -390,10 +394,14 @@ class GladiaProvider(ASRProvider):
                     data = self._fetch_poll(poll_session, result_target)
                 except ASRRateLimitedError:
                     raise
-                except Exception as exc:
+                except Exception as exc:  # per-poll retry boundary; the loop is bounded
                     sanitized = self._sanitize_error(str(exc), self._api_key)
                     logger.warning(
-                        "Gladia poll error (attempt %d) for file=%s: %s", i, filename, sanitized
+                        "Gladia poll error (attempt %d) for file=%s: %s",
+                        i,
+                        filename,
+                        sanitized,
+                        exc_info=True,
                     )
                     continue
                 if data.get("status") == "done":

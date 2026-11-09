@@ -269,7 +269,7 @@ def test_the_gender_outlier_analysis_has_nothing_to_analyse_while_the_switch_is_
     )
     monkeypatch.setattr(
         "app.services.opensearch_service.get_speaker_embeddings_batch",
-        lambda uuids: {u: speaker_os_seams["voiceprints"][u] for u in uuids},
+        lambda uuids, **_kw: {u: speaker_os_seams["voiceprints"][u] for u in uuids},
     )
 
     result = SpeakerClusteringService(db_session).analyze_gender_outliers(
@@ -280,3 +280,33 @@ def test_the_gender_outlier_analysis_has_nothing_to_analyse_while_the_switch_is_
         [str(members[2].uuid)] if allowed else []
     )
     assert result["majority_gender"] == ("male" if allowed else "unknown")
+
+
+def test_the_gender_outlier_analysis_raises_on_an_index_outage_instead_of_reporting_no_outliers(
+    db_session, normal_user, speaker_os_seams, monkeypatch
+):
+    from app.services.opensearch_service.client import OpenSearchUnavailableError
+
+    org = make_org(db_session, gender=True)
+    cluster, _members = _gendered_cluster(
+        db_session,
+        normal_user,
+        org,
+        speaker_os_seams,
+        [("male", False), ("male", False), ("female", False)],
+    )
+    seen: dict[str, object] = {}
+
+    def outage(uuids, **kw):
+        seen.update(kw)
+        if kw.get("strict"):
+            raise OpenSearchUnavailableError("down")
+        return {}
+
+    monkeypatch.setattr("app.services.opensearch_service.get_speaker_embeddings_batch", outage)
+
+    with pytest.raises(OpenSearchUnavailableError):
+        SpeakerClusteringService(db_session).analyze_gender_outliers(
+            str(cluster.uuid), normal_user.id, organization_id=org.id
+        )
+    assert seen == {"strict": True}

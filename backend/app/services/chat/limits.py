@@ -94,8 +94,8 @@ def check_hourly_limit(user_id: int, limit: int) -> tuple[bool, int]:
             logger.info("Chat hourly limit hit for user %s (%s/%s)", user_id, count, limit)
             return False, retry_after
         return True, 0
-    except Exception as exc:  # fail open
-        logger.warning(f"Chat rate limiter unavailable (allowing): {exc}")
+    except (RedisError, ValueError, TypeError):  # fail open: availability over abuse control
+        logger.warning("Chat rate limiter unavailable (allowing)", exc_info=True)
         return True, 0
 
 
@@ -105,8 +105,8 @@ def _drop_legacy_counter(client: Redis, key: str) -> None:
         if client.type(key) == "string" or client.type(key) == b"string":
             client.delete(key)
             logger.info("Retired legacy chat concurrency counter at %s", key)
-    except Exception as exc:  # never block a chat over cleanup
-        logger.debug(f"Could not inspect chat slot key type: {exc}")
+    except RedisError:  # never block a chat over cleanup
+        logger.debug("Could not inspect chat slot key type", exc_info=True)
 
 
 def acquire_stream_slot(
@@ -159,8 +159,8 @@ def acquire_stream_slot(
             )
             return None
         return slot
-    except Exception as exc:  # fail open
-        logger.warning(f"Chat concurrency guard unavailable (allowing): {exc}")
+    except (RedisError, ValueError, TypeError):  # fail open: availability over abuse control
+        logger.warning("Chat concurrency guard unavailable (allowing)", exc_info=True)
         return slot
 
 
@@ -240,8 +240,8 @@ def release_stream_slot(user_id: int, slot_id: str | None = None) -> None:
             # No id (older call site): prune by age only, never blanket-delete —
             # that would free slots still legitimately held.
             client.zremrangebyscore(key, "-inf", time.time() - _ACTIVE_TTL_SECONDS)
-    except Exception as exc:
-        logger.debug(f"Could not release chat stream slot: {exc}")
+    except RedisError:
+        logger.debug("Could not release chat stream slot", exc_info=True)
 
 
 def request_cancel(message_uuid: str) -> None:
@@ -254,8 +254,8 @@ def request_cancel(message_uuid: str) -> None:
         redis_core.get_request_redis().setex(
             _CANCEL_KEY.format(message_uuid=message_uuid), _CANCEL_TTL_SECONDS, "1"
         )
-    except Exception as exc:
-        logger.warning(f"Could not set chat cancel flag: {exc}")
+    except RedisError:
+        logger.warning("Could not set chat cancel flag", exc_info=True)
 
 
 def is_cancelled(message_uuid: str) -> bool:
@@ -264,7 +264,8 @@ def is_cancelled(message_uuid: str) -> bool:
         return bool(
             redis_core.get_request_redis().get(_CANCEL_KEY.format(message_uuid=message_uuid))
         )
-    except Exception:
+    except RedisError:
+        logger.warning("Could not read chat cancel flag; treating as not cancelled", exc_info=True)
         return False
 
 
@@ -272,5 +273,5 @@ def clear_cancel(message_uuid: str) -> None:
     """Drop a cancel flag once the generation has finished."""
     try:
         redis_core.get_request_redis().delete(_CANCEL_KEY.format(message_uuid=message_uuid))
-    except Exception as exc:
-        logger.debug(f"Could not clear chat cancel flag: {exc}")
+    except RedisError:
+        logger.debug("Could not clear chat cancel flag", exc_info=True)

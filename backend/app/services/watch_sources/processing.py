@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy import text as sa_text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -489,8 +490,8 @@ def import_single_file(
         if status == "imported" and isinstance(client, LocalWatchClient) and delete_after_import:
             try:
                 client.delete_file(file_info.path)
-            except Exception as e:
-                logger.warning("delete_after_import failed for %s: %s", file_info.path, e)
+            except OSError:
+                logger.warning("delete_after_import failed for %s", file_info.path, exc_info=True)
 
         return status
 
@@ -535,8 +536,8 @@ def _notify_file_created(user_id: int, media_file: MediaFile) -> None:
             {"file_id": str(media_file.uuid), "file": file_data},
             file_uuid=media_file.uuid,
         )
-    except Exception as e:
-        logger.warning("file_created WS notify failed for %s: %s", media_file.id, e)
+    except Exception:  # notification boundary: the import already succeeded
+        logger.warning("file_created WS notify failed for %s", media_file.id, exc_info=True)
 
 
 def _dispatch_pipeline(media_file: MediaFile, user_id: int, source: WatchSource) -> str | None:
@@ -586,5 +587,5 @@ def _record_error(source_id: int, remote_path: str, message: str) -> None:
                 row.error_message = message[:2000]
                 row.retry_count = (row.retry_count or 0) + 1
                 row.processed_at = datetime.now(UTC)
-    except Exception as e:
-        logger.error("Failed to record watch import error for %s: %s", remote_path, e)
+    except SQLAlchemyError:
+        logger.exception("Failed to record watch import error for %s", remote_path)

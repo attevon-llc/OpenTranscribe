@@ -168,8 +168,8 @@ def _run_leg(leg: Leg) -> LegOutcome:
         return LegOutcome(
             leg=leg, result=result, duration_ms=int((time.monotonic() - started) * 1000)
         )
-    except Exception as exc:  # a leg failure degrades, never propagates
-        logger.warning("Chat leg %r (%s) failed: %s", leg.name, leg.kind, exc)
+    except Exception as exc:  # per-leg isolation boundary: a leg failure degrades, never propagates
+        logger.warning("Chat leg %r (%s) failed", leg.name, leg.kind, exc_info=True)
         return LegOutcome(
             leg=leg, error=str(exc), duration_ms=int((time.monotonic() - started) * 1000)
         )

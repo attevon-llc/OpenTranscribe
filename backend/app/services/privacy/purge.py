@@ -68,6 +68,7 @@ from typing import Any
 from typing import Literal
 from typing import cast
 
+from redis.exceptions import RedisError
 from sqlalchemy import Text
 from sqlalchemy import cast as sql_cast
 from sqlalchemy import false
@@ -733,8 +734,10 @@ def write_record(
         get_request_redis().set(
             _RECORD_KEY.format(task_id=task_id), json.dumps(record), ex=_RECORD_TTL_SECONDS
         )
-    except Exception:
-        logger.warning("privacy purge: could not store the status record for %s", task_id)
+    except (RedisError, TypeError, ValueError):
+        logger.warning(
+            "privacy purge: could not store the status record for %s", task_id, exc_info=True
+        )
 
 
 def read_record(task_id: str) -> dict[str, Any] | None:
@@ -744,7 +747,9 @@ def read_record(task_id: str) -> dict[str, Any] | None:
 
         raw = get_request_redis().get(_RECORD_KEY.format(task_id=task_id))
         record = json.loads(raw) if raw else None
-    except Exception:
-        logger.warning("privacy purge: could not read the status record for %s", task_id)
+    except (RedisError, ValueError):
+        logger.warning(
+            "privacy purge: could not read the status record for %s", task_id, exc_info=True
+        )
         return None
     return record if isinstance(record, dict) else None

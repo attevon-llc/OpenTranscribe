@@ -37,6 +37,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
+
 from .base import ASRProvider
 from .locales import to_locale
 from .types import ASRConfig
@@ -45,6 +47,8 @@ from .types import ASRSegment
 from .types import ASRWord
 
 logger = logging.getLogger(__name__)
+# Provider SDK errors can quote credentials in their message: log frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 # Azure REFERENCE_TIME ticks per second (100-ns units).
 _TICKS_PER_SEC = 10_000_000
@@ -84,7 +88,8 @@ class AzureASRProvider(ASRProvider):
             sdk.SpeechConfig(subscription=self._api_key, region=self._region)
             ms = (time.time() - start) * 1000
             return True, f"Azure Speech validated (region: {self._region})", ms
-        except Exception as e:
+        except Exception as e:  # provider-SDK boundary: the probe reports, never raises
+            logger.warning("%s connection test failed", "Azure Speech", exc_info=True)
             ms = (time.time() - start) * 1000
             return False, self._sanitize_error(str(e), self._api_key), ms
 
@@ -198,7 +203,7 @@ class AzureASRProvider(ASRProvider):
                             words=words,
                         )
                     )
-                except Exception:
+                except (ValueError, KeyError, IndexError, TypeError, AttributeError):
                     # Fall back to timing from the result object; end = start + duration.
                     offset_s = evt.result.offset / _TICKS_PER_SEC
                     dur_s = evt.result.duration / _TICKS_PER_SEC
@@ -299,7 +304,7 @@ class AzureASRProvider(ASRProvider):
                             words=words,
                         )
                     )
-                except Exception:
+                except (ValueError, KeyError, IndexError, TypeError, AttributeError):
                     offset_s = result.offset / _TICKS_PER_SEC
                     dur_s = result.duration / _TICKS_PER_SEC
                     speaker_id = getattr(result, "speaker_id", None)

@@ -145,8 +145,8 @@ class ScanDispatcher:
                     )
                     return False
                 self._dispatch(source_id)
-        except Exception as e:  # never kill the supervisor thread
-            logger.warning("FS-event scan dispatch failed for source %s: %s", source_id, e)
+        except Exception:  # supervisor-thread boundary: never kill the thread
+            logger.warning("FS-event scan dispatch failed for source %s", source_id, exc_info=True)
             return False
 
         with self._mutex:

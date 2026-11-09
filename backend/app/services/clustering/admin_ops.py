@@ -4,6 +4,8 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.speaker import Speaker
@@ -182,8 +184,8 @@ def merge_clusters(
         self.db.commit()
         self._rename_tracker.flush(self.db)
 
-    except Exception as e:
-        logger.error("Error merging clusters: %s", e)
+    except SQLAlchemyError:
+        logger.exception("Error merging clusters")
         self.db.rollback()
         self._rename_tracker.discard()
         self._assigned = SpeakerImpact()
@@ -299,8 +301,8 @@ def split_cluster(
         self.db.commit()
         self._rename_tracker.flush(self.db)
 
-    except Exception as e:
-        logger.error("Error splitting cluster: %s", e)
+    except SQLAlchemyError:
+        logger.exception("Error splitting cluster")
         self.db.rollback()
         self._rename_tracker.discard()
         return None

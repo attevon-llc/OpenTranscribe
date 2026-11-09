@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.exceptions import ServiceUnavailableError
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.redaction import device
@@ -75,12 +76,28 @@ def test_a_pii_detector_crash_is_recorded_and_logs_frames_without_the_text(caplo
     assert all(secret not in (r.exc_text or "") for r in records)
 
 
-def test_a_failed_reveal_audit_write_logs_a_traceback(caplog):
+def test_a_reveal_is_refused_when_its_audit_record_cannot_be_written(caplog):
+    """Revealing redacted text fails CLOSED: no audit record, no reveal."""
+    db_file = MediaFile(id=1, uuid="u", organization_id=None)
+    user = User(id=2, email="a@example.com")
+    with (
+        patch("app.auth.audit.audit_logger.log", side_effect=OSError("disk full")),
+        caplog.at_level(logging.ERROR),
+        pytest.raises(ServiceUnavailableError) as refused,
+    ):
+        audit_unredacted_reveal(db_file, user, {"pii"}, surface="transcript")
+    assert refused.value.status_code == 503
+    assert "disk full" not in str(refused.value.detail)
+    assert _traceback_records(caplog)
+
+
+def test_nothing_revealed_needs_no_audit_record(caplog):
     db_file = MediaFile(id=1, uuid="u", organization_id=None)
     user = User(id=2, email="a@example.com")
     with (
         patch("app.auth.audit.audit_logger.log", side_effect=OSError("disk full")),
         caplog.at_level(logging.ERROR),
     ):
-        audit_unredacted_reveal(db_file, user, {"pii"}, surface="transcript")
-    assert _traceback_records(caplog)
+        # Would raise and log if the sink were touched; nothing revealed means nothing to record.
+        audit_unredacted_reveal(db_file, user, set(), surface="transcript")
+    assert not caplog.records

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
@@ -20,8 +21,11 @@ from app.services.opensearch_erasure import _erase_cluster_docs
 from app.services.opensearch_erasure import _erase_profile_docs
 from app.services.opensearch_erasure import _erase_speaker_docs
 from app.services.storage_versions import UNVERIFIED_VERSIONS_ERROR
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+# Subject paths can sit in exception text: frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 
 @dataclass(frozen=True)
@@ -180,7 +184,8 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
     for file_plan in plan.files:
         try:
             residual.extend(_purge_external_copies(file_plan))
-        except Exception as e:  # one file must never block the rest
+        except Exception as e:  # per-file isolation boundary: recorded as residual, never blocks
+            logger.exception("account purge: external copies of one file could not be erased")
             residual.append(
                 {
                     "stage": "storage",
@@ -201,8 +206,8 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
             from app.services.redis_cache_service import redis_cache
 
             redis_cache.invalidate_all_for_user(plan.user_id)
-        except Exception as cache_err:  # caches expire on their own TTL
-            logger.debug(f"account purge: cache invalidation failed (non-critical): {cache_err}")
+        except RedisError:  # caches expire on their own TTL
+            logger.debug("account purge: cache invalidation failed (non-critical)", exc_info=True)
 
     for avatar_path in plan.avatar_paths:
         try:
@@ -216,7 +221,8 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
                         "error": UNVERIFIED_VERSIONS_ERROR,
                     }
                 )
-        except Exception as e:  # one avatar must never block the rest
+        except Exception as e:  # per-avatar isolation boundary: recorded as residual
+            logger.exception("account purge: one avatar could not be erased")
             residual.append({"stage": "avatar", "avatar_path": avatar_path, "error": str(e)})
 
     return residual

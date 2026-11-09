@@ -96,11 +96,15 @@ def _collect_speaker_embeddings(speakers: list[Speaker]) -> dict[int, list[float
     """Collect embeddings for all speakers, keyed by speaker ID.
 
     Uses batch fetch to avoid N+1 OpenSearch calls per speaker.
+
+    Raises:
+        OpenSearchUnavailableError: The index could not answer; an outage must not read as
+            "no speaker has a voiceprint" and rewrite profile centroids from nothing.
     """
     from app.services.opensearch_service import get_speaker_embeddings_batch
 
     uuid_to_id = {str(s.uuid): int(s.id) for s in speakers}
-    batch_result = get_speaker_embeddings_batch(list(uuid_to_id.keys()))
+    batch_result = get_speaker_embeddings_batch(list(uuid_to_id.keys()), strict=True)
     return {uuid_to_id[uuid]: emb for uuid, emb in batch_result.items() if uuid in uuid_to_id}
 
 

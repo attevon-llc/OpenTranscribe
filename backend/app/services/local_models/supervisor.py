@@ -35,8 +35,10 @@ from app.core.local_whisper_catalog import LocalWhisperModel
 from app.services.local_models import cache
 from app.services.local_models import downloader
 from app.services.local_models.state import DownloadStore
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+logger.addFilter(MessageFreeTracebackFilter())
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 #: The soft time limit of a download; the Celery limits on the task sit just above it.
@@ -138,8 +140,8 @@ class _Progress:
         try:
             self._store.write_state(**fields)
             self._notify({k: v for k, v in fields.items() if k not in self._ids})
-        except Exception as exc:  # progress is a display; it must never fail the download
-            logger.warning("Could not publish download progress: %s", type(exc).__name__)
+        except Exception:  # progress is a display; it must never fail the download
+            logger.warning("Could not publish download progress", exc_info=True)
 
 
 def run_download(
@@ -199,8 +201,8 @@ def _resolve_plan(
     """Ask the hub for the plan; on failure publish the classified code and return None."""
     try:
         return downloader.resolve_plan(entry, token, endpoint=endpoint)
-    except Exception as exc:
-        logger.warning("Model plan failed: %s", type(exc).__name__)
+    except Exception as exc:  # hub/network boundary: classified and published, not raised
+        logger.warning("Model plan failed", exc_info=True)
         _fail(progress, downloader.classify_error(exc))
     return None
 

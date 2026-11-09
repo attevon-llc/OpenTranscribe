@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable
 
 from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
@@ -27,6 +28,8 @@ from .types import ASRWord
 from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
+# Provider SDK errors can quote credentials in their message: log frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 _BASE_URL = "https://api.pyannote.ai"
 
@@ -105,7 +108,7 @@ class PyAnnoteProvider(ASRProvider):
         if isinstance(exc, httpx.HTTPStatusError):
             try:
                 body = exc.response.text.strip()
-            except Exception:
+            except (AttributeError, ValueError, RuntimeError):
                 body = ""
             if body:
                 detail = f"{detail} — {body[:500]}"
@@ -146,7 +149,8 @@ class PyAnnoteProvider(ASRProvider):
         except ImportError:
             ms = (time.time() - start) * 1000
             return False, "httpx package not installed (required for pyannote.ai)", ms
-        except Exception as exc:
+        except Exception as exc:  # provider boundary: the probe reports, never raises
+            logger.warning("pyannote.ai connection test failed", exc_info=True)
             ms = (time.time() - start) * 1000
             sanitized = self._sanitize_error(str(exc), self._api_key)
             return False, f"Connection failed: {sanitized}", ms
@@ -371,7 +375,7 @@ class PyAnnoteProvider(ASRProvider):
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 timeout=30.0,
             )
-        except Exception as exc:
+        except httpx.HTTPError as exc:
             # Transport failure (DNS, connection reset, timeout, ...) — transient,
             # keep polling. raise_for_status() is deliberately NOT called inside this
             # try: a 401 must be distinguished from a transport error (see below), and
@@ -385,6 +389,7 @@ class PyAnnoteProvider(ASRProvider):
                 filename,
                 job_id,
                 sanitized,
+                exc_info=True,
             )
             return None
 

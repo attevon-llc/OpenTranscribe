@@ -18,6 +18,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
+
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
 from .errors import http_status_of
@@ -30,6 +32,8 @@ from .types import ASRWord
 from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
+# Provider SDK errors can quote credentials in their message: log frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 _JOB_TIMEOUT = 1800.0  # seconds — hard cap on wait_for_completion
 
@@ -91,7 +95,8 @@ class SpeechmaticsProvider(ASRProvider):
                     ms,
                 )
             return True, "Speechmatics connection successful", ms
-        except Exception as e:
+        except Exception as e:  # provider-SDK boundary: the probe reports, never raises
+            logger.warning("%s connection test failed", "Speechmatics", exc_info=True)
             ms = (time.time() - start) * 1000
             return False, self._sanitize_error(str(e), self._api_key), ms
 

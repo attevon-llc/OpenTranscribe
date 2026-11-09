@@ -4,6 +4,8 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
@@ -159,8 +161,8 @@ def promote_cluster_to_profile(
         self.db.commit()
         self._rename_tracker.flush(self.db)
 
-    except Exception as e:
-        logger.error("Error promoting cluster to profile: %s", e)
+    except SQLAlchemyError:
+        logger.exception("Error promoting cluster to profile")
         self.db.rollback()
         self._rename_tracker.discard()
         return None

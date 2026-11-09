@@ -53,11 +53,13 @@ def test_admin_stats_statement_count_is_flat_in_media_rows(
     add(2)
     with count_statements(db_session.connection()) as small:
         r_small = client.get("/api/admin/stats", headers=admin_token_headers)
-    total_small = r_small.json()["files"]["total"]
     add(10)
     with count_statements(db_session.connection()) as large:
         r_large = client.get("/api/admin/stats", headers=admin_token_headers)
 
     assert r_small.status_code == r_large.status_code == 200
-    assert r_large.json()["files"]["total"] >= total_small + 10  # control: rows were counted
+    # Control: this test's own 12 committed rows are counted. Not relative to the small run:
+    # the table is shared with parallel xdist workers whose tests delete rows in between
+    # (seen 102 -> 12 in the w2 sweep), which made a relative bound a race, not a signal.
+    assert r_large.json()["files"]["total"] >= 12
     assert large.count == small.count, large.describe()

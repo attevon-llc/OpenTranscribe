@@ -23,7 +23,7 @@ export interface SearchIndexStatus {
 export type SearchHealthStatus = Record<string, { status: string; doc_count: number }>;
 
 /** One GPU entry of the stats payload; `loading` is set by the backend while it warms up. */
-export interface GpuStats {
+interface GpuStats {
   available: boolean;
   name: string;
   memory_total: string;

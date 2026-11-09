@@ -167,7 +167,7 @@ def _aws(tmp_path, model: str, monkeypatch) -> list[ASRSegment]:
         result_data=data,
     )
     tc.get_medical_transcription_job.return_value = {
-        "MedicalTranscriptionJob": {"MedicalTranscriptionJobStatus": "COMPLETED"}
+        "MedicalTranscriptionJob": {"TranscriptionJobStatus": "COMPLETED"}
     }
     _wire_provider(provider, monkeypatch, s3, tc)
     audio = tmp_path / "a.wav"

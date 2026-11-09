@@ -12,7 +12,7 @@ import type { NotificationData } from '$lib/notifications/types';
  * locales but was dead (issue #569's currency review); `downloadNotifications.ts` is the first
  * caller.
  */
-const TITLE_KEYS: Readonly<Record<string, string>> = {
+export const TITLE_KEYS: Readonly<Record<string, string>> = {
   transcription_status: 'notifications.transcriptionUpdate',
   summarization_status: 'notifications.summarizationUpdate',
   redaction_status: 'notifications.redactionUpdate',

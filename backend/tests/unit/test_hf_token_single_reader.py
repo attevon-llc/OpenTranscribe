@@ -1,7 +1,7 @@
 """Nothing under ``app/`` reads the Hugging Face token except the resolver.
 
 A second reader is how a token saved in Settings gets ignored by one model loader while
-the others honour it. The environment variable is declared once (``core/config.py``) and
+the others honour it. The environment variable is declared once (``core/settings_providers.py``) and
 read once (``services/huggingface_token.py``); every other site calls ``get_hf_token()``.
 Prose that merely mentions the name (docstrings, messages) is fine and is not matched:
 only an attribute access, a subscript or an exact-name string argument is.
@@ -14,7 +14,7 @@ from pathlib import Path
 
 _APP = Path(__file__).resolve().parents[2] / "app"
 _NAME = "HUGGINGFACE_TOKEN"
-_ALLOWED = {"core/config.py", "services/huggingface_token.py"}
+_ALLOWED = {"core/settings_providers.py", "services/huggingface_token.py"}
 
 
 def _readers(source: str) -> list[int]:
@@ -58,5 +58,5 @@ def test_only_the_resolver_reads_the_token():
 
 def test_the_resolver_itself_still_reads_it():
     # guards the guard: an allow-listed module that stops reading would hide a rename
-    assert _readers((_APP / "core/config.py").read_text(encoding="utf-8"))
+    assert _readers((_APP / "core/settings_providers.py").read_text(encoding="utf-8"))
     assert _readers((_APP / "services/huggingface_token.py").read_text(encoding="utf-8"))

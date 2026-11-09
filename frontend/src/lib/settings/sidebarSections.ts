@@ -62,7 +62,7 @@ export interface SidebarContext {
   privacyAccess: PrivacyRedactionAccess;
 }
 
-export interface RawItem {
+interface RawItem {
   id: SettingsSection;
   label: string;
   icon: string;

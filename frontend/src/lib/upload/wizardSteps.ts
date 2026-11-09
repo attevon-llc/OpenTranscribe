@@ -6,14 +6,7 @@ import type {
   TranscriptionSystemDefaults,
 } from '$lib/api/transcriptionSettings';
 
-export type StepId =
-  | 'media'
-  | 'extraction'
-  | 'tags'
-  | 'collections'
-  | 'speakers'
-  | 'model'
-  | 'review';
+type StepId = 'media' | 'extraction' | 'tags' | 'collections' | 'speakers' | 'model' | 'review';
 
 export interface StepConfig {
   id: StepId;

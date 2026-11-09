@@ -97,7 +97,11 @@ restore_models() {
         mv "$STASH_DIR" "$MODELS_DIR" && info "restored $MODELS_DIR ($(ls "$MODELS_DIR" | wc -l) files)"
     fi
 }
-trap restore_models EXIT INT TERM
+# INT/TERM end the run (EXIT restores the models); a returning handler would let the test
+# carry on against the model set it just put back.
+trap restore_models EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # --- refuse to mutate the live export ---------------------------------------------
 # Compare resolved paths: a relative MODELS_DIR, a symlink or a trailing slash must not be

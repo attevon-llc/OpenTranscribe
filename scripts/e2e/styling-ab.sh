@@ -87,7 +87,9 @@ W="$WORK_ROOT/$LANE"
 mkdir -p "$W"
 PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -TERM "$p" 2>/dev/null; done; }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 FONTS=""
 for root in "$REPO_ROOT" "$MAIN_ROOT"; do

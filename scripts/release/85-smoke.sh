@@ -291,7 +291,11 @@ cleanup_install_smoke() {
         echo -e "${YELLOW}install-smoke cleanup reported a problem -- check for leftover ot-reltest-fresh resources${NC}" >&2
     fi
 }
-trap cleanup_install_smoke EXIT INT TERM
+# A handler that merely returns hands control back to the interrupted script, which would
+# carry on against the stack it just tore down; INT/TERM must end the run (EXIT then cleans up).
+trap cleanup_install_smoke EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo -e "${BLUE}amd64: fresh install pulling :${VERSION} from Docker Hub${NC}" >&2
 install_smoke_started=true

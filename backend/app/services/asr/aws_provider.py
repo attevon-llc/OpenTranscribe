@@ -239,7 +239,7 @@ class AWSTranscribeProvider(ASRProvider):
             sanitized = self._sanitize_error(sanitized, self._access_key_id)
             return False, sanitized, ms
 
-    def transcribe(  # noqa: C901
+    def transcribe(
         self,
         audio_path: str,
         config: ASRConfig,
@@ -275,11 +275,60 @@ class AWSTranscribeProvider(ASRProvider):
         if progress_callback:
             progress_callback(0.1, "Uploading to S3 for AWS Transcribe…")
 
+        self._ensure_bucket(s3, bucket, owner)
+
+        job_name = f"opentranscribe-{uuid.uuid4().hex}"
+        s3_key = f"jobs/{job_name}.audio"
+        result_key = f"jobs/{job_name}-result.json"
+
+        try:
+            s3.upload_file(audio_path, bucket, s3_key, ExtraArgs={"ExpectedBucketOwner": owner})
+            self._start_job(
+                tc, self._build_job_request(job_name, bucket, s3_key, result_key, config)
+            )
+            if progress_callback:
+                progress_callback(0.25, "AWS Transcribe job running…")
+            self._poll_job(tc, job_name, progress_callback)
+            result_obj = s3.get_object(Bucket=bucket, Key=result_key, ExpectedBucketOwner=owner)
+            data = json.loads(result_obj["Body"].read())
+        except ClientError as exc:
+            self._raise_if_throttled(exc, filename)
+            raise
+        finally:
+            self._cleanup_s3_objects(s3, bucket, owner, [s3_key, result_key])
+
+        elapsed_ms = (time.time() - t_start) * 1000
+        logger.info("AWS Transcribe complete: file=%s duration_ms=%.0f", filename, elapsed_ms)
+
+        if progress_callback:
+            progress_callback(0.9, "Parsing AWS Transcribe results…")
+
+        tr = data.get("results", {})
+        if config.enable_diarization and "speaker_labels" in tr:
+            has_speakers = True
+            segments = self._segments_with_speakers(tr)
+        else:
+            has_speakers = False
+            segments = self._segments_by_silence_gap(tr)
+
+        if progress_callback:
+            progress_callback(1.0, "AWS Transcribe complete")
+
+        return ASRResult(
+            segments=segments,
+            language=tr.get("language_code", config.language),
+            has_speakers=has_speakers,
+            provider_name="aws",
+            model_name=self._model_name,
+        )
+
+    def _ensure_bucket(self, s3: Any, bucket: str, owner: str) -> None:
+        """Create the scratch bucket only when HeadBucket reports it is missing."""
+        from botocore.exceptions import ClientError
+
         try:
             s3.head_bucket(Bucket=bucket, ExpectedBucketOwner=owner)
         except Exception as head_exc:
-            from botocore.exceptions import ClientError
-
             # HeadBucket is a HEAD request — S3 returns no body on failure, so
             # botocore cannot parse a named error code like "NoSuchBucket" and
             # fabricates the Code from the HTTP status instead. Per AWS's
@@ -301,259 +350,223 @@ class AWSTranscribeProvider(ASRProvider):
                     Bucket=bucket, CreateBucketConfiguration={"LocationConstraint": self._region}
                 )
 
-        job_name = f"opentranscribe-{uuid.uuid4().hex}"
-        s3_key = f"jobs/{job_name}.audio"
-        result_key = f"jobs/{job_name}-result.json"
-
-        try:
-            s3.upload_file(audio_path, bucket, s3_key, ExtraArgs={"ExpectedBucketOwner": owner})
-
-            job_kw: dict = {
-                "TranscriptionJobName": job_name,
-                "Media": {"MediaFileUri": f"s3://{bucket}/{s3_key}"},
-                "OutputBucketName": bucket,
-                "OutputKey": result_key,
-            }
-            # LanguageCode, IdentifyLanguage, and IdentifyMultipleLanguages are mutually
-            # exclusive — set exactly one. The "multilingual" model transcribes a file that
-            # mixes languages (code-switching); otherwise use the explicit language, or
-            # auto-detect a single dominant language.
-            if self._model_name == "multilingual":
-                job_kw["IdentifyMultipleLanguages"] = True
-            else:
-                aws_lang = _aws_language_code(config.language)
-                if aws_lang:
-                    job_kw["LanguageCode"] = aws_lang
-                else:
-                    job_kw["IdentifyLanguage"] = True
-            settings_kw: dict = {}
-            if config.enable_diarization:
-                settings_kw["ShowSpeakerLabels"] = True
-                # AWS Transcribe supports up to 30 speakers (per the diarization docs).
-                settings_kw["MaxSpeakerLabels"] = max(2, min(config.max_speakers, 30))
-            if config.vocabulary:
-                # AWS Transcribe requires a pre-created custom vocabulary by name.
-                vocab_name = os.getenv("AWS_TRANSCRIBE_VOCABULARY_NAME")
-                if vocab_name:
-                    settings_kw["VocabularyName"] = vocab_name
-                else:
-                    logger.warning(
-                        "config.vocabulary provided but AWS_TRANSCRIBE_VOCABULARY_NAME is not set. "
-                        "AWS Transcribe requires a pre-created custom vocabulary. "
-                        "Create one in the AWS console and set AWS_TRANSCRIBE_VOCABULARY_NAME."
-                    )
-            if settings_kw:
-                job_kw["Settings"] = settings_kw
-
-            if self._model_name == "medical":
-                job_kw["Specialty"] = "PRIMARYCARE"
-                job_kw["Type"] = "CONVERSATION"
-                tc.start_medical_transcription_job(**job_kw)
-            else:
-                tc.start_transcription_job(**job_kw)
-
-            if progress_callback:
-                progress_callback(0.25, "AWS Transcribe job running…")
-
-            elapsed = 0
-            status = ""
-            while elapsed < 7200:
-                time.sleep(15)
-                elapsed += 15
-                if self._model_name == "medical":
-                    r = tc.get_medical_transcription_job(MedicalTranscriptionJobName=job_name)
-                    status = r["MedicalTranscriptionJob"].get("MedicalTranscriptionJobStatus", "")
-                else:
-                    r = tc.get_transcription_job(TranscriptionJobName=job_name)
-                    status = r["TranscriptionJob"].get("TranscriptionJobStatus", "")
-                if status == "COMPLETED":
-                    break
-                if status == "FAILED":
-                    failure_reason = r.get(
-                        "TranscriptionJob", r.get("MedicalTranscriptionJob", {})
-                    ).get("FailureReason", "unknown reason")
-                    raise RuntimeError(
-                        f"AWS Transcribe job failed: {self._sanitize_error(str(failure_reason))}"
-                    )
-                if progress_callback:
-                    progress_callback(0.25 + min(elapsed / 7200, 0.5), "AWS Transcribe processing…")
-
-            if status != "COMPLETED":
-                raise RuntimeError("AWS Transcribe job timed out after 7200 seconds")
-
-            result_obj = s3.get_object(Bucket=bucket, Key=result_key, ExpectedBucketOwner=owner)
-            data = json.loads(result_obj["Body"].read())
-
-        except ClientError as exc:
-            # Everything in the try block above (S3 upload, job start, polling, result
-            # fetch) can throttle. Unlike the head_bucket check above, nothing here
-            # previously converted a botocore ClientError into a sanitized RuntimeError —
-            # a throttle would have propagated as a raw ClientError. Classify only the
-            # throttle codes; every other ClientError propagates unchanged, same as before
-            # this clause existed (fail-closed — see app/services/asr/errors.py).
-            code = str(exc.response.get("Error", {}).get("Code", ""))
-            if code in _AWS_THROTTLE_CODES:
-                from .errors import ASRRateLimitedError
-
-                sanitized = self._sanitize_error(str(exc))
-                logger.warning("AWS Transcribe rate-limited for file=%s: %s", filename, sanitized)
-                raise ASRRateLimitedError(
-                    f"AWS Transcribe rate limited: {sanitized}",
-                    provider="aws",
-                ) from exc
-            raise
-        finally:
-            # Always clean up S3 objects, even on failure.
-            for key in [s3_key, result_key]:
-                try:
-                    s3.delete_object(Bucket=bucket, Key=key, ExpectedBucketOwner=owner)
-                except Exception as del_exc:
-                    logger.warning(
-                        "Failed to clean up S3 object s3://%s/%s: %s", bucket, key, del_exc
-                    )
-
-        elapsed_ms = (time.time() - t_start) * 1000
-        logger.info("AWS Transcribe complete: file=%s duration_ms=%.0f", filename, elapsed_ms)
-
-        if progress_callback:
-            progress_callback(0.9, "Parsing AWS Transcribe results…")
-
-        tr = data.get("results", {})
-        segments: list[ASRSegment] = []
-        has_speakers = False
-
-        if config.enable_diarization and "speaker_labels" in tr:
-            has_speakers = True
-            items = tr.get("items", [])
-            # Build start_time → speaker_label map from the speaker_labels block.
-            # Each entry in speaker_labels.segments[].items[] carries the item's
-            # start_time and inherits the speaker_label from the parent segment.
-            # Key on the parsed float, not the raw JSON string — AWS's two
-            # blocks (items[] and speaker_labels[]) aren't guaranteed to
-            # serialize the same start_time with identical trailing-zero
-            # precision (e.g. "2.0" vs "2.000"), and a raw-string lookup treats
-            # that formatting drift as a genuine mismatch, silently falling
-            # back to the previous word's speaker instead of the true one.
-            spk_map: dict = {}
-            for seg in tr["speaker_labels"].get("segments", []):
-                for sl_item in seg.get("items", []):
-                    spk_map[float(sl_item["start_time"])] = seg["speaker_label"]
-
-            cur_spk = None
-            cur_words: list[ASRWord] = []
-            cur_start = 0.0
-
-            for item in items:
-                if item["type"] != "pronunciation":
-                    # Punctuation items have no timestamps; attach to the last word.
-                    if cur_words and item["type"] == "punctuation":
-                        punct = item["alternatives"][0]["content"]
-                        cur_words[-1] = ASRWord(
-                            cur_words[-1].word + punct,
-                            cur_words[-1].start,
-                            cur_words[-1].end,
-                            cur_words[-1].confidence,
-                        )
-                    continue
-                st = item.get("start_time", "0")
-                word = item["alternatives"][0]["content"]
-                conf_raw = item["alternatives"][0].get("confidence", "1.0")
-                conf = float(conf_raw) if conf_raw not in (None, "") else 1.0
-                spk = spk_map.get(float(st), cur_spk)
-                end_s = float(item.get("end_time", st))
-
-                if spk != cur_spk:
-                    if cur_words:
-                        avg_conf = sum(w.confidence for w in cur_words) / len(cur_words)
-                        segments.append(
-                            ASRSegment(
-                                text=" ".join(w.word for w in cur_words),
-                                start=cur_start,
-                                end=cur_words[-1].end,
-                                speaker=self._normalize_speaker_label(cur_spk),
-                                confidence=avg_conf,
-                                words=cur_words,
-                            )
-                        )
-                    cur_spk, cur_words, cur_start = spk, [], float(st)
-
-                cur_words.append(ASRWord(word, float(st), end_s, conf))
-
-            if cur_words:
-                avg_conf = sum(w.confidence for w in cur_words) / len(cur_words)
-                segments.append(
-                    ASRSegment(
-                        text=" ".join(w.word for w in cur_words),
-                        start=cur_start,
-                        end=cur_words[-1].end,
-                        speaker=self._normalize_speaker_label(cur_spk),
-                        confidence=avg_conf,
-                        words=cur_words,
-                    )
-                )
+    def _build_job_request(
+        self, job_name: str, bucket: str, s3_key: str, result_key: str, config: ASRConfig
+    ) -> dict:
+        """Assemble the Start(Medical)TranscriptionJob keyword arguments."""
+        # StartMedicalTranscriptionJob names the job MedicalTranscriptionJobName.
+        name_key = (
+            "MedicalTranscriptionJobName"
+            if self._model_name == "medical"
+            else "TranscriptionJobName"
+        )
+        job_kw: dict = {
+            name_key: job_name,
+            "Media": {"MediaFileUri": f"s3://{bucket}/{s3_key}"},
+            "OutputBucketName": bucket,
+            "OutputKey": result_key,
+        }
+        # LanguageCode, IdentifyLanguage, and IdentifyMultipleLanguages are mutually
+        # exclusive — set exactly one. The "multilingual" model transcribes a file that
+        # mixes languages (code-switching); otherwise use the explicit language, or
+        # auto-detect a single dominant language.
+        if self._model_name == "multilingual":
+            job_kw["IdentifyMultipleLanguages"] = True
         else:
-            # No diarization — build word list from pronunciation items, attach punctuation,
-            # then split into segments on silence gaps or max-duration threshold.
-            all_words: list[ASRWord] = []
-            for item in tr.get("items", []):
-                if item["type"] == "pronunciation":
-                    st = float(item.get("start_time", 0))
-                    et = float(item.get("end_time", st))
-                    conf_raw = item["alternatives"][0].get("confidence", "1.0")
-                    conf = float(conf_raw) if conf_raw not in (None, "") else 1.0
-                    all_words.append(ASRWord(item["alternatives"][0]["content"], st, et, conf))
-                elif item["type"] == "punctuation" and all_words:
-                    punct = item["alternatives"][0]["content"]
-                    all_words[-1] = ASRWord(
-                        all_words[-1].word + punct,
-                        all_words[-1].start,
-                        all_words[-1].end,
-                        all_words[-1].confidence,
-                    )
-
-            if not all_words:
-                segments = [ASRSegment(text="", start=0.0, end=0.0)]
+            aws_lang = _aws_language_code(config.language)
+            if aws_lang:
+                job_kw["LanguageCode"] = aws_lang
+            elif self._model_name == "medical":
+                # StartMedicalTranscriptionJob requires LanguageCode and has no
+                # IdentifyLanguage; Amazon Transcribe Medical supports en-US only, so
+                # "auto" has exactly one possible answer.
+                job_kw["LanguageCode"] = "en-US"
             else:
-                cur_chunk: list[ASRWord] = [all_words[0]]
-                for w in all_words[1:]:
-                    gap = w.start - cur_chunk[-1].end
-                    duration = cur_chunk[-1].end - cur_chunk[0].start
-                    if (
-                        gap >= ASR_SEGMENT_MIN_GAP_SECONDS
-                        or duration >= ASR_SEGMENT_MAX_DURATION_SECONDS
-                    ):
-                        avg_conf = sum(x.confidence for x in cur_chunk) / len(cur_chunk)
-                        segments.append(
-                            ASRSegment(
-                                text=" ".join(x.word for x in cur_chunk),
-                                start=cur_chunk[0].start,
-                                end=cur_chunk[-1].end,
-                                confidence=avg_conf,
-                                words=list(cur_chunk),
-                            )
-                        )
-                        cur_chunk = [w]
-                    else:
-                        cur_chunk.append(w)
-                if cur_chunk:
-                    avg_conf = sum(x.confidence for x in cur_chunk) / len(cur_chunk)
-                    segments.append(
-                        ASRSegment(
-                            text=" ".join(x.word for x in cur_chunk),
-                            start=cur_chunk[0].start,
-                            end=cur_chunk[-1].end,
-                            confidence=avg_conf,
-                            words=list(cur_chunk),
-                        )
-                    )
+                job_kw["IdentifyLanguage"] = True
+        settings_kw = self._job_settings(config)
+        if settings_kw:
+            job_kw["Settings"] = settings_kw
+        if self._model_name == "medical":
+            job_kw["Specialty"] = "PRIMARYCARE"
+            job_kw["Type"] = "CONVERSATION"
+        return job_kw
 
-        if progress_callback:
-            progress_callback(1.0, "AWS Transcribe complete")
+    @staticmethod
+    def _job_settings(config: ASRConfig) -> dict:
+        settings_kw: dict = {}
+        if config.enable_diarization:
+            settings_kw["ShowSpeakerLabels"] = True
+            # AWS Transcribe supports up to 30 speakers (per the diarization docs).
+            settings_kw["MaxSpeakerLabels"] = max(2, min(config.max_speakers, 30))
+        if config.vocabulary:
+            # AWS Transcribe requires a pre-created custom vocabulary by name.
+            vocab_name = os.getenv("AWS_TRANSCRIBE_VOCABULARY_NAME")
+            if vocab_name:
+                settings_kw["VocabularyName"] = vocab_name
+            else:
+                logger.warning(
+                    "config.vocabulary provided but AWS_TRANSCRIBE_VOCABULARY_NAME is not set. "
+                    "AWS Transcribe requires a pre-created custom vocabulary. "
+                    "Create one in the AWS console and set AWS_TRANSCRIBE_VOCABULARY_NAME."
+                )
+        return settings_kw
 
-        return ASRResult(
-            segments=segments,
-            language=tr.get("language_code", config.language),
-            has_speakers=has_speakers,
-            provider_name="aws",
-            model_name=self._model_name,
+    def _start_job(self, tc: Any, job_kw: dict) -> None:
+        if self._model_name == "medical":
+            tc.start_medical_transcription_job(**job_kw)
+        else:
+            tc.start_transcription_job(**job_kw)
+
+    def _poll_job(
+        self,
+        tc: Any,
+        job_name: str,
+        progress_callback: Callable[[float, str], None] | None,
+    ) -> None:
+        """Poll until COMPLETED; raise on FAILED or after the 7200 s budget."""
+        elapsed = 0
+        status = ""
+        while elapsed < 7200:
+            time.sleep(15)
+            elapsed += 15
+            if self._model_name == "medical":
+                r = tc.get_medical_transcription_job(MedicalTranscriptionJobName=job_name)
+                # The medical job's status field is TranscriptionJobStatus (botocore
+                # MedicalTranscriptionJob shape); there is no MedicalTranscriptionJobStatus.
+                status = r["MedicalTranscriptionJob"].get("TranscriptionJobStatus", "")
+            else:
+                r = tc.get_transcription_job(TranscriptionJobName=job_name)
+                status = r["TranscriptionJob"].get("TranscriptionJobStatus", "")
+            if status == "COMPLETED":
+                return
+            if status == "FAILED":
+                failure_reason = r.get(
+                    "TranscriptionJob", r.get("MedicalTranscriptionJob", {})
+                ).get("FailureReason", "unknown reason")
+                raise RuntimeError(
+                    f"AWS Transcribe job failed: {self._sanitize_error(str(failure_reason))}"
+                )
+            if progress_callback:
+                progress_callback(0.25 + min(elapsed / 7200, 0.5), "AWS Transcribe processing…")
+        raise RuntimeError("AWS Transcribe job timed out after 7200 seconds")
+
+    def _raise_if_throttled(self, exc: Any, filename: str) -> None:
+        # Everything in transcribe()'s try block (S3 upload, job start, polling, result
+        # fetch) can throttle. Classify only the throttle codes; every other ClientError
+        # propagates unchanged (fail-closed — see app/services/asr/errors.py).
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in _AWS_THROTTLE_CODES:
+            from .errors import ASRRateLimitedError
+
+            sanitized = self._sanitize_error(str(exc))
+            logger.warning("AWS Transcribe rate-limited for file=%s: %s", filename, sanitized)
+            raise ASRRateLimitedError(
+                f"AWS Transcribe rate limited: {sanitized}",
+                provider="aws",
+            ) from exc
+
+    @staticmethod
+    def _cleanup_s3_objects(s3: Any, bucket: str, owner: str, keys: list[str]) -> None:
+        """Always clean up S3 objects, even on failure."""
+        for key in keys:
+            try:
+                s3.delete_object(Bucket=bucket, Key=key, ExpectedBucketOwner=owner)
+            except Exception as del_exc:
+                logger.warning("Failed to clean up S3 object s3://%s/%s: %s", bucket, key, del_exc)
+
+    @staticmethod
+    def _word_from_item(item: dict) -> ASRWord:
+        st = float(item.get("start_time", 0))
+        et = float(item.get("end_time", st))
+        alt = item["alternatives"][0]
+        conf_raw = alt.get("confidence", "1.0")
+        conf = float(conf_raw) if conf_raw not in (None, "") else 1.0
+        return ASRWord(alt["content"], st, et, conf)
+
+    @staticmethod
+    def _with_punctuation(word: ASRWord, item: dict) -> ASRWord:
+        """Punctuation items carry no timestamps; glue them onto the preceding word."""
+        punct = item["alternatives"][0]["content"]
+        return ASRWord(word.word + punct, word.start, word.end, word.confidence)
+
+    def _segments_with_speakers(self, tr: dict) -> list[ASRSegment]:
+        # Build start_time → speaker_label map from the speaker_labels block.
+        # Each entry in speaker_labels.segments[].items[] carries the item's
+        # start_time and inherits the speaker_label from the parent segment.
+        # Key on the parsed float, not the raw JSON string — AWS's two
+        # blocks (items[] and speaker_labels[]) aren't guaranteed to
+        # serialize the same start_time with identical trailing-zero
+        # precision (e.g. "2.0" vs "2.000"), and a raw-string lookup treats
+        # that formatting drift as a genuine mismatch, silently falling
+        # back to the previous word's speaker instead of the true one.
+        spk_map: dict = {}
+        for seg in tr["speaker_labels"].get("segments", []):
+            for sl_item in seg.get("items", []):
+                spk_map[float(sl_item["start_time"])] = seg["speaker_label"]
+
+        segments: list[ASRSegment] = []
+        cur_spk = None
+        cur_words: list[ASRWord] = []
+        cur_start = 0.0
+
+        for item in tr.get("items", []):
+            if item["type"] != "pronunciation":
+                if cur_words and item["type"] == "punctuation":
+                    cur_words[-1] = self._with_punctuation(cur_words[-1], item)
+                continue
+            st = item.get("start_time", "0")
+            spk = spk_map.get(float(st), cur_spk)
+            if spk != cur_spk:
+                if cur_words:
+                    segments.append(self._speaker_segment(cur_words, cur_start, cur_spk))
+                cur_spk, cur_words, cur_start = spk, [], float(st)
+            cur_words.append(self._word_from_item(item))
+
+        if cur_words:
+            segments.append(self._speaker_segment(cur_words, cur_start, cur_spk))
+        return segments
+
+    def _speaker_segment(self, words: list[ASRWord], start: float, speaker: Any) -> ASRSegment:
+        return ASRSegment(
+            text=" ".join(w.word for w in words),
+            start=start,
+            end=words[-1].end,
+            speaker=self._normalize_speaker_label(speaker),
+            confidence=sum(w.confidence for w in words) / len(words),
+            words=words,
+        )
+
+    def _segments_by_silence_gap(self, tr: dict) -> list[ASRSegment]:
+        """No diarization: split the word stream on silence gaps or max duration."""
+        all_words: list[ASRWord] = []
+        for item in tr.get("items", []):
+            if item["type"] == "pronunciation":
+                all_words.append(self._word_from_item(item))
+            elif item["type"] == "punctuation" and all_words:
+                all_words[-1] = self._with_punctuation(all_words[-1], item)
+
+        if not all_words:
+            return [ASRSegment(text="", start=0.0, end=0.0)]
+
+        segments: list[ASRSegment] = []
+        cur_chunk: list[ASRWord] = [all_words[0]]
+        for w in all_words[1:]:
+            gap = w.start - cur_chunk[-1].end
+            duration = cur_chunk[-1].end - cur_chunk[0].start
+            if gap >= ASR_SEGMENT_MIN_GAP_SECONDS or duration >= ASR_SEGMENT_MAX_DURATION_SECONDS:
+                segments.append(self._chunk_segment(cur_chunk))
+                cur_chunk = [w]
+            else:
+                cur_chunk.append(w)
+        segments.append(self._chunk_segment(cur_chunk))
+        return segments
+
+    @staticmethod
+    def _chunk_segment(chunk: list[ASRWord]) -> ASRSegment:
+        return ASRSegment(
+            text=" ".join(x.word for x in chunk),
+            start=chunk[0].start,
+            end=chunk[-1].end,
+            confidence=sum(x.confidence for x in chunk) / len(chunk),
+            words=list(chunk),
         )

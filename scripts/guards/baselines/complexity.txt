@@ -1,12 +1,8 @@
-backend/app/api/endpoints/asr_settings.py::update_asr_config	26	complexity: decomposition planned
 backend/app/api/endpoints/files/complete_upload.py::complete_upload	16	v0.6.1 merge: release function; decomposition planned
 backend/app/api/endpoints/files/media_delivery.py::download_stream	16	complexity: decomposition planned
 backend/app/api/endpoints/prompts.py::get_prompts	16	complexity: decomposition planned
 backend/app/api/endpoints/users_self_service.py::update_current_user	16	complexity: decomposition planned
-backend/app/services/asr/aws_provider.py::AWSTranscribeProvider.transcribe	43	complexity: decomposition planned
-backend/app/services/asr/gladia_provider.py::GladiaProvider.transcribe	26	complexity: decomposition planned
 backend/app/services/asr/google_provider.py::GoogleASRProvider.transcribe	16	complexity: decomposition planned
-backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider.transcribe	24	complexity: decomposition planned
 backend/app/services/opensearch_service/repair.py::rebuild_speaker_index	30	complexity: decomposition planned
 backend/app/services/opensearch_service/speaker_read.py::iter_speaker_embeddings	17	complexity: decomposition planned
 backend/app/services/profile_embedding_service.py::ProfileEmbeddingService.update_profile_embedding	16	complexity: decomposition planned

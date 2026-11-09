@@ -152,7 +152,7 @@ class PyAnnoteProvider(ASRProvider):
 
     # ── Transcription ─────────────────────────────────────────────────────────
 
-    def transcribe(  # noqa: C901
+    def transcribe(
         self,
         audio_path: str,
         config: ASRConfig,
@@ -167,8 +167,6 @@ class PyAnnoteProvider(ASRProvider):
         4. Poll GET /v1/jobs/{jobId} until succeeded or failed
         5. Parse turnLevelTranscription + wordLevelTranscription into ASRResult
         """
-        import httpx
-
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
@@ -187,12 +185,59 @@ class PyAnnoteProvider(ASRProvider):
 
         headers = self._headers()
 
-        # ── Step 1: Get pre-signed upload URL ─────────────────────────────────
         if progress_callback:
             progress_callback(0.05, "Requesting upload URL from pyannote.ai...")
 
         object_key = f"upload/{int(time.time())}_{filename}"
         media_uri = f"media://{object_key}"
+        upload_url = self._request_upload_url(media_uri, headers, filename)
+
+        if progress_callback:
+            progress_callback(0.1, "Uploading audio to pyannote.ai...")
+
+        self._upload_audio(audio_path, upload_url, filename)
+        logger.info("pyannote.ai audio uploaded: file=%s object_key=%s", filename, object_key)
+
+        if progress_callback:
+            progress_callback(0.2, "Submitting pyannote.ai transcription job...")
+
+        job_body = self._build_job_body(config, media_uri, diarization_model, transcription_model)
+        job_id = self._submit_job(job_body, headers, filename)
+        logger.info("pyannote.ai job submitted: file=%s job_id=%s", filename, job_id)
+
+        if progress_callback:
+            progress_callback(0.3, "pyannote.ai transcription in progress...")
+
+        result_data = self._poll_job(job_id, filename, progress_callback)
+
+        total_ms = (time.time() - t_start) * 1000
+        logger.info(
+            "pyannote.ai transcribe complete: file=%s job_id=%s duration_ms=%.0f",
+            filename,
+            job_id,
+            total_ms,
+        )
+
+        if progress_callback:
+            progress_callback(0.9, "Parsing pyannote.ai results...")
+
+        segments = self._parse_response(result_data.get("output", {}))
+
+        if progress_callback:
+            progress_callback(1.0, "pyannote.ai transcription complete")
+
+        has_speakers = any(s.speaker is not None for s in segments)
+
+        return ASRResult(
+            segments=segments,
+            language=config.language,
+            has_speakers=has_speakers,
+            provider_name="pyannote",
+            model_name=self._model_name,
+        )
+
+    def _request_upload_url(self, media_uri: str, headers: dict[str, str], filename: str) -> str:
+        import httpx
 
         try:
             resp = httpx.post(
@@ -202,7 +247,8 @@ class PyAnnoteProvider(ASRProvider):
                 timeout=30.0,
             )
             resp.raise_for_status()
-            upload_url = resp.json()["url"]
+            upload_url: str = resp.json()["url"]
+            return upload_url
         except Exception as exc:
             self._raise_if_rate_limited(exc, "upload URL request")
             sanitized = self._sanitize_error(str(exc), self._api_key)
@@ -211,9 +257,8 @@ class PyAnnoteProvider(ASRProvider):
             )
             raise RuntimeError(f"pyannote.ai upload URL request failed: {sanitized}") from exc
 
-        # ── Step 2: Upload audio to pre-signed URL ────────────────────────────
-        if progress_callback:
-            progress_callback(0.1, "Uploading audio to pyannote.ai...")
+    def _upload_audio(self, audio_path: str, upload_url: str, filename: str) -> None:
+        import httpx
 
         try:
             with open(audio_path, "rb") as f:
@@ -231,12 +276,10 @@ class PyAnnoteProvider(ASRProvider):
             logger.error("pyannote.ai audio upload failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"pyannote.ai audio upload failed: {sanitized}") from exc
 
-        logger.info("pyannote.ai audio uploaded: file=%s object_key=%s", filename, object_key)
-
-        # ── Step 3: Submit diarize + transcribe job ───────────────────────────
-        if progress_callback:
-            progress_callback(0.2, "Submitting pyannote.ai transcription job...")
-
+    @staticmethod
+    def _build_job_body(
+        config: ASRConfig, media_uri: str, diarization_model: str, transcription_model: str
+    ) -> dict:
         job_body: dict = {
             "url": media_uri,
             "model": diarization_model,
@@ -253,6 +296,10 @@ class PyAnnoteProvider(ASRProvider):
                 job_body["minSpeakers"] = config.min_speakers
             if config.max_speakers < 20:
                 job_body["maxSpeakers"] = config.max_speakers
+        return job_body
+
+    def _submit_job(self, job_body: dict, headers: dict[str, str], filename: str) -> str:
+        import httpx
 
         try:
             resp = httpx.post(
@@ -263,21 +310,22 @@ class PyAnnoteProvider(ASRProvider):
             )
             resp.raise_for_status()
             job_data = resp.json()
-            job_id = job_data["jobId"]
+            job_id: str = job_data["jobId"]
+            return job_id
         except Exception as exc:
             self._raise_if_rate_limited(exc, "job submission")
             sanitized = self._err_detail(exc)
             logger.error("pyannote.ai job submission failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"pyannote.ai job submission failed: {sanitized}") from exc
 
-        logger.info("pyannote.ai job submitted: file=%s job_id=%s", filename, job_id)
-
-        # ── Step 4: Poll for completion ───────────────────────────────────────
-        if progress_callback:
-            progress_callback(0.3, "pyannote.ai transcription in progress...")
-
+    def _poll_job(
+        self,
+        job_id: str,
+        filename: str,
+        progress_callback: Callable[[float, str], None] | None,
+    ) -> dict:
+        """Poll until the job succeeds; raise on failure, cancellation, 401 or timeout."""
         poll_start = time.time()
-        result_data: dict = {}
 
         while True:
             elapsed = time.time() - poll_start
@@ -294,75 +342,15 @@ class PyAnnoteProvider(ASRProvider):
 
             time.sleep(_POLL_INTERVAL)
 
-            try:
-                poll_resp = httpx.get(
-                    f"{_BASE_URL}/v1/jobs/{job_id}",
-                    headers={"Authorization": f"Bearer {self._api_key}"},
-                    timeout=30.0,
-                )
-            except Exception as exc:
-                # Transport failure (DNS, connection reset, timeout, ...) — transient,
-                # keep polling. raise_for_status() is deliberately NOT called inside this
-                # try: a 401 must be distinguished from a transport error (see below), and
-                # calling it here would fold both into this same generic branch, which is
-                # exactly the bug this rewrite fixes (a 401 used to be retried for the
-                # full 300s timeout and reported as "timed out" instead of "invalid key").
-                sanitized = self._sanitize_error(str(exc), self._api_key)
-                logger.warning(
-                    "pyannote.ai poll error (elapsed=%.0fs) for file=%s job_id=%s: %s",
-                    elapsed,
-                    filename,
-                    job_id,
-                    sanitized,
-                )
+            result_data = self._poll_once(job_id, filename, elapsed)
+            if result_data is None:
                 continue
 
-            if poll_resp.status_code == 401:
-                # Terminal: an invalid/revoked key will never succeed on retry. Fail
-                # immediately rather than exhausting the 300s poll timeout and reporting
-                # a misleading "timed out" error for what is actually an auth failure.
-                raise RuntimeError("pyannote.ai: invalid API key (401 Unauthorized)")
-
-            if poll_resp.status_code != 200:
-                # Any other non-200 (5xx, 429, ...) is transient — including a 429, which
-                # must stay transient here: the loop's own retry-and-continue is correct
-                # for a rate limit seen mid-poll, and widening this branch to raise
-                # ASRRateLimitedError would abort a job that may still succeed on its own.
-                logger.warning(
-                    "pyannote.ai poll (elapsed=%.0fs) for file=%s job_id=%s returned HTTP %d",
-                    elapsed,
-                    filename,
-                    job_id,
-                    poll_resp.status_code,
-                )
-                continue
-
-            result_data = poll_resp.json()
             status = result_data.get("status", "")
-
             if status == "succeeded":
-                break
-
+                return result_data
             if status in ("failed", "canceled"):
-                if status == "canceled":
-                    error_msg = f"pyannote.ai transcription job {job_id} was canceled"
-                else:
-                    error_msg = (
-                        result_data.get("output", {}).get("error")
-                        or result_data.get("output", {}).get("warning")
-                        or "unknown error"
-                    )
-                sanitized = self._sanitize_error(str(error_msg), self._api_key)
-                logger.error(
-                    "pyannote.ai job %s for file=%s job_id=%s: %s",
-                    status,
-                    filename,
-                    job_id,
-                    sanitized,
-                )
-                if status == "canceled":
-                    raise RuntimeError(sanitized)
-                raise RuntimeError(f"pyannote.ai transcription failed: {sanitized}")
+                self._raise_for_ended_job(status, result_data, job_id, filename)
 
             # Update progress during polling (0.3 → 0.85 range).
             if progress_callback:
@@ -372,33 +360,78 @@ class PyAnnoteProvider(ASRProvider):
                     f"pyannote.ai processing ({status})...",
                 )
 
-        total_ms = (time.time() - t_start) * 1000
-        logger.info(
-            "pyannote.ai transcribe complete: file=%s job_id=%s duration_ms=%.0f",
+    def _poll_once(self, job_id: str, filename: str, elapsed: float) -> dict | None:
+        """One poll request: the job document, or None for a transient failure to retry."""
+        import httpx
+
+        try:
+            poll_resp = httpx.get(
+                f"{_BASE_URL}/v1/jobs/{job_id}",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                timeout=30.0,
+            )
+        except Exception as exc:
+            # Transport failure (DNS, connection reset, timeout, ...) — transient,
+            # keep polling. raise_for_status() is deliberately NOT called inside this
+            # try: a 401 must be distinguished from a transport error (see below), and
+            # calling it here would fold both into this same generic branch, which is
+            # exactly the bug this rewrite fixes (a 401 used to be retried for the
+            # full 300s timeout and reported as "timed out" instead of "invalid key").
+            sanitized = self._sanitize_error(str(exc), self._api_key)
+            logger.warning(
+                "pyannote.ai poll error (elapsed=%.0fs) for file=%s job_id=%s: %s",
+                elapsed,
+                filename,
+                job_id,
+                sanitized,
+            )
+            return None
+
+        if poll_resp.status_code == 401:
+            # Terminal: an invalid/revoked key will never succeed on retry. Fail
+            # immediately rather than exhausting the 300s poll timeout and reporting
+            # a misleading "timed out" error for what is actually an auth failure.
+            raise RuntimeError("pyannote.ai: invalid API key (401 Unauthorized)")
+
+        if poll_resp.status_code != 200:
+            # Any other non-200 (5xx, 429, ...) is transient — including a 429, which
+            # must stay transient here: the loop's own retry-and-continue is correct
+            # for a rate limit seen mid-poll, and widening this branch to raise
+            # ASRRateLimitedError would abort a job that may still succeed on its own.
+            logger.warning(
+                "pyannote.ai poll (elapsed=%.0fs) for file=%s job_id=%s returned HTTP %d",
+                elapsed,
+                filename,
+                job_id,
+                poll_resp.status_code,
+            )
+            return None
+
+        job_doc: dict = poll_resp.json()
+        return job_doc
+
+    def _raise_for_ended_job(
+        self, status: str, result_data: dict, job_id: str, filename: str
+    ) -> None:
+        if status == "canceled":
+            error_msg = f"pyannote.ai transcription job {job_id} was canceled"
+        else:
+            error_msg = (
+                result_data.get("output", {}).get("error")
+                or result_data.get("output", {}).get("warning")
+                or "unknown error"
+            )
+        sanitized = self._sanitize_error(str(error_msg), self._api_key)
+        logger.error(
+            "pyannote.ai job %s for file=%s job_id=%s: %s",
+            status,
             filename,
             job_id,
-            total_ms,
+            sanitized,
         )
-
-        # ── Step 5: Parse response ────────────────────────────────────────────
-        if progress_callback:
-            progress_callback(0.9, "Parsing pyannote.ai results...")
-
-        output = result_data.get("output", {})
-        segments = self._parse_response(output)
-
-        if progress_callback:
-            progress_callback(1.0, "pyannote.ai transcription complete")
-
-        has_speakers = any(s.speaker is not None for s in segments)
-
-        return ASRResult(
-            segments=segments,
-            language=config.language,
-            has_speakers=has_speakers,
-            provider_name="pyannote",
-            model_name=self._model_name,
-        )
+        if status == "canceled":
+            raise RuntimeError(sanitized)
+        raise RuntimeError(f"pyannote.ai transcription failed: {sanitized}")
 
     def _parse_response(self, output: dict) -> list[ASRSegment]:
         """Parse pyannote.ai output into ASRSegment list.

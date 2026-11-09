@@ -210,7 +210,7 @@ class GladiaProvider(ASRProvider):
             ms = (time.time() - start) * 1000
             return False, self._sanitize_error(str(e), self._api_key), ms
 
-    def transcribe(  # noqa: C901
+    def transcribe(
         self,
         audio_path: str,
         config: ASRConfig,
@@ -232,6 +232,40 @@ class GladiaProvider(ASRProvider):
         if progress_callback:
             progress_callback(0.1, "Uploading to Gladia…")
 
+        audio_url = self._upload_audio(audio_path, filename)
+
+        if progress_callback:
+            progress_callback(0.2, "Starting Gladia job…")
+
+        result_url = self._submit_job(self._build_job_body(config, audio_url, filename), filename)
+        result_target = self._validated_result_target(result_url)
+
+        if progress_callback:
+            progress_callback(0.3, "Gladia transcription in progress…")
+
+        data = self._poll_result(result_target, filename, progress_callback)
+
+        elapsed_ms = (time.time() - t_start) * 1000
+        logger.info("Gladia transcribe complete: file=%s duration_ms=%.0f", filename, elapsed_ms)
+
+        if progress_callback:
+            progress_callback(0.9, "Parsing Gladia results…")
+
+        segments, detected = self._parse_result(data, config)
+
+        if progress_callback:
+            progress_callback(1.0, "Gladia transcription complete")
+
+        return ASRResult(
+            segments=segments,
+            language=detected,
+            has_speakers=config.enable_diarization and any(s.speaker for s in segments),
+            provider_name="gladia",
+            model_name=self._model_name,
+        )
+
+    def _upload_audio(self, audio_path: str, filename: str) -> str:
+        """Upload the file and return Gladia's ``audio_url``."""
         try:
             import mimetypes
 
@@ -265,11 +299,11 @@ class GladiaProvider(ASRProvider):
             logger.error("Gladia upload failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"Gladia upload failed: {sanitized}") from exc
 
-        audio_url = up.json()["audio_url"]
+        audio_url: str = up.json()["audio_url"]
+        return audio_url
 
-        if progress_callback:
-            progress_callback(0.2, "Starting Gladia job…")
-
+    @staticmethod
+    def _build_job_body(config: ASRConfig, audio_url: str, filename: str) -> dict:
         body: dict = {
             "audio_url": audio_url,
             "diarization": config.enable_diarization,
@@ -288,7 +322,10 @@ class GladiaProvider(ASRProvider):
                     len(config.vocabulary) - 100,
                 )
             body["custom_vocabulary"] = config.vocabulary[:100]
+        return body
 
+    def _submit_job(self, body: dict, filename: str) -> str:
+        """POST the transcription job and return the ``result_url`` to poll."""
         try:
             job_r = self._guarded_request(
                 "POST", f"{self._base}/v2/transcription", headers=self._hdr(), json=body, timeout=30
@@ -307,20 +344,24 @@ class GladiaProvider(ASRProvider):
             logger.error("Gladia job submission failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"Gladia job submission failed: {sanitized}") from exc
 
-        result_url = job_r.json().get("result_url")
+        result_url: str | None = job_r.json().get("result_url")
         if not result_url:
             raise RuntimeError("Gladia did not return a result_url for polling")
+        return result_url
 
+    @staticmethod
+    def _validated_result_target(result_url: str) -> Any:
         # `result_url` is data the (already-validated) base_url's server chose to return —
         # untrusted vendor-response content, not a literal or operator-configured value like
         # `base_url`. It must be validated before it is EVER fetched, even when `base_url` was
         # the real default: a compromised or merely misbehaving server could still point
         # `result_url` at an internal target (defense in depth). Resolved and pinned ONCE, here,
-        # rather than inside the per-iteration try/except below — that except is a deliberate
-        # swallow-and-continue for transient poll failures (see the "no consecutive-failure cap"
-        # characterization test), and letting it also swallow a blocked `result_url` would mean
-        # up to 720 silent retries against an address that was never going to be fetched, ending
-        # in a generic timeout instead of the specific reason it was refused.
+        # rather than inside the per-iteration try/except of the poll loop — that except is a
+        # deliberate swallow-and-continue for transient poll failures (see the "no
+        # consecutive-failure cap" characterization test), and letting it also swallow a blocked
+        # `result_url` would mean up to 720 silent retries against an address that was never
+        # going to be fetched, ending in a generic timeout instead of the specific reason it
+        # was refused.
         from app.core.config import settings as _settings
 
         result_target, result_reason = resolve_pinned_target(
@@ -332,32 +373,21 @@ class GladiaProvider(ASRProvider):
                 "Gladia returned a result_url that is not a permitted outbound target: "
                 f"{result_reason}"
             )
+        return result_target
 
-        if progress_callback:
-            progress_callback(0.3, "Gladia transcription in progress…")
-
+    def _poll_result(
+        self,
+        result_target: Any,
+        filename: str,
+        progress_callback: Callable[[float, str], None] | None,
+    ) -> dict:
+        """Poll the pinned result URL until ``done``; raise on ``error`` or after 7200 s."""
         data: dict = {}
-        completed = False
         with pinned_requests_session(result_target) as poll_session:
             for i in range(720):
                 time.sleep(10)
                 try:
-                    # `allow_redirects=False`: the pin covers ONE hop — a 302 from the
-                    # otherwise-valid result_url must not be silently followed.
-                    poll = poll_session.get(
-                        result_target.url,
-                        headers={**self._hdr(), **result_target.headers},
-                        timeout=30,
-                        allow_redirects=False,
-                    )
-                    self._raise_if_rate_limited(poll, "poll")
-                    if 300 <= poll.status_code < 400:
-                        raise RuntimeError(
-                            f"Gladia poll returned an unfollowed redirect "
-                            f"(HTTP {poll.status_code} → {poll.headers.get('Location', '?')})"
-                        )
-                    poll.raise_for_status()
-                    data = poll.json()
+                    data = self._fetch_poll(poll_session, result_target)
                 except ASRRateLimitedError:
                     raise
                 except Exception as exc:
@@ -367,8 +397,7 @@ class GladiaProvider(ASRProvider):
                     )
                     continue
                 if data.get("status") == "done":
-                    completed = True
-                    break
+                    return data
                 if data.get("status") == "error":
                     err_msg = self._sanitize_error(
                         str(data.get("error_message", "unknown error")), self._api_key
@@ -377,17 +406,29 @@ class GladiaProvider(ASRProvider):
                     raise RuntimeError(f"Gladia error: {err_msg}")
                 if progress_callback:
                     progress_callback(0.3 + min(i / 720, 0.5), "Gladia processing…")
+        raise RuntimeError("Gladia transcription timed out after 7200 seconds")
 
-        if not completed:
-            raise RuntimeError("Gladia transcription timed out after 7200 seconds")
+    def _fetch_poll(self, poll_session: Any, result_target: Any) -> dict:
+        # `allow_redirects=False`: the pin covers ONE hop — a 302 from the
+        # otherwise-valid result_url must not be silently followed.
+        poll = poll_session.get(
+            result_target.url,
+            headers={**self._hdr(), **result_target.headers},
+            timeout=30,
+            allow_redirects=False,
+        )
+        self._raise_if_rate_limited(poll, "poll")
+        if 300 <= poll.status_code < 400:
+            raise RuntimeError(
+                f"Gladia poll returned an unfollowed redirect "
+                f"(HTTP {poll.status_code} → {poll.headers.get('Location', '?')})"
+            )
+        poll.raise_for_status()
+        data: dict = poll.json()
+        return data
 
-        elapsed_ms = (time.time() - t_start) * 1000
-        logger.info("Gladia transcribe complete: file=%s duration_ms=%.0f", filename, elapsed_ms)
-
-        if progress_callback:
-            progress_callback(0.9, "Parsing Gladia results…")
-
-        utts = data.get("result", {}).get("transcription", {}).get("utterances", [])
+    def _parse_result(self, data: dict, config: ASRConfig) -> tuple[list[ASRSegment], str]:
+        transcription = data.get("result", {}).get("transcription", {})
         segments = [
             ASRSegment(
                 text=u.get("text", ""),
@@ -407,19 +448,7 @@ class GladiaProvider(ASRProvider):
                     for w in u.get("words", [])
                 ],
             )
-            for u in utts
+            for u in transcription.get("utterances", [])
         ]
-
-        langs = data.get("result", {}).get("transcription", {}).get("languages", [])
-        detected = langs[0] if langs else config.language
-
-        if progress_callback:
-            progress_callback(1.0, "Gladia transcription complete")
-
-        return ASRResult(
-            segments=segments,
-            language=detected,
-            has_speakers=config.enable_diarization and any(s.speaker for s in segments),
-            provider_name="gladia",
-            model_name=self._model_name,
-        )
+        langs = transcription.get("languages", [])
+        return segments, langs[0] if langs else config.language

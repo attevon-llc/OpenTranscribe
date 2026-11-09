@@ -40,7 +40,7 @@
   let testing = false;
   let testResult: { success: boolean; message: string } | null = null;
   let showApiKey = false;
-  let isDirty = false;
+  let isDirty: boolean;
 
   let formData = {
     name: '',
@@ -60,26 +60,35 @@
   const AZURE_REGIONS = ['westus', 'eastus', 'eastus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast'];
   const AWS_REGIONS = ['us-east-1', 'us-west-2', 'eu-west-1', 'eu-central-1', 'ap-southeast-1', 'ap-northeast-1'];
 
-  $: if (show) {
-    if (editingConfig && editingConfig.uuid !== lastEditingConfigId) {
-      populateForm(editingConfig);
-      lastEditingConfigId = editingConfig.uuid;
-    } else if (!editingConfig && lastEditingConfigId !== null) {
+  function syncEditingConfig(isShown: boolean, config: typeof editingConfig) {
+    if (!isShown) {
+      lastEditingConfigId = null;
+      testResult = null;
+    } else if (config && config.uuid !== lastEditingConfigId) {
+      populateForm(config);
+      lastEditingConfigId = config.uuid;
+    } else if (!config && lastEditingConfigId !== null) {
       resetForm();
       lastEditingConfigId = null;
     }
-  } else {
-    lastEditingConfigId = null;
-    testResult = null;
   }
+  $: syncEditingConfig(show, editingConfig);
 
   let presetApplied = false;
-  $: if (!show) {
-    presetApplied = false;
-  } else if (!editingConfig && !presetApplied && (presetProvider || presetShared)) {
-    presetApplied = true;
-    applyPreset();
+  function syncPreset(
+    isShown: boolean,
+    config: typeof editingConfig,
+    provider: typeof presetProvider,
+    shared: typeof presetShared
+  ) {
+    if (!isShown) {
+      presetApplied = false;
+    } else if (!config && !presetApplied && (provider || shared)) {
+      presetApplied = true;
+      applyPreset();
+    }
   }
+  $: syncPreset(show, editingConfig, presetProvider, presetShared);
 
   function applyPreset() {
     resetForm();

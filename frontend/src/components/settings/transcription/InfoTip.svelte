@@ -1,5 +1,9 @@
 <script lang="ts" context="module">
-  let nextId = 0;
+  let lastId = 0;
+  function allocateId(): number {
+    lastId += 1;
+    return lastId;
+  }
 </script>
 
 <script lang="ts">
@@ -12,7 +16,7 @@
   // Accessible name of the trigger. Pass the topic ("How it works") when the icon stands alone.
   export let label = '';
 
-  const panelId = `infotip-${nextId++}`;
+  const panelId = `infotip-${allocateId()}`;
   const CLOSE_DELAY_MS = 150;
   const PANEL_GAP = 8;
 

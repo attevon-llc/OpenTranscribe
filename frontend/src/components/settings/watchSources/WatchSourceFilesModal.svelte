@@ -64,16 +64,20 @@
 
   // Load when the modal opens for a source, and reset per-source state so a second
   // source never inherits the first's filters or selection.
-  $: if (show && source && loadedFor !== source.uuid) {
-    loadedFor = source.uuid;
-    page = 1;
-    statusFilter = '';
-    query = '';
-    selectedUuids = new Set();
-    dirty = false;
-    load();
+  function syncSource(isShown: boolean, current: typeof source) {
+    if (!isShown) {
+      loadedFor = null;
+    } else if (current && loadedFor !== current.uuid) {
+      loadedFor = current.uuid;
+      page = 1;
+      statusFilter = '';
+      query = '';
+      selectedUuids = new Set();
+      dirty = false;
+      load();
+    }
   }
-  $: if (!show) loadedFor = null;
+  $: syncSource(show, source);
 
   async function load() {
     if (!source) return;

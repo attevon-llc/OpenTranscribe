@@ -24,10 +24,12 @@
   // string, not the id union: <Tabs bind:activeId> is string-typed.
   let activeTab: string = initialTab;
   let seenInitial = initialTab;
-  $: if (initialTab !== seenInitial) {
-    seenInitial = initialTab;
-    activeTab = initialTab;
+  function followInitialTab(requested: typeof initialTab) {
+    if (requested === seenInitial) return;
+    seenInitial = requested;
+    activeTab = requested;
   }
+  $: followInitialTab(initialTab);
 
   // A non-admin can never sit on a tab that does not exist for them.
   $: if (!isAdmin && activeTab === 'chat-advanced') activeTab = 'chat-general';

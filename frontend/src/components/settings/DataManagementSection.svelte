@@ -47,10 +47,12 @@
   // string, not the id union: <Tabs bind:activeId> is string-typed.
   let activeId: string = initialTab;
   let seenInitial = initialTab;
-  $: if (initialTab !== seenInitial) {
-    seenInitial = initialTab;
-    activeId = initialTab;
+  function followInitialTab(requested: typeof initialTab) {
+    if (requested === seenInitial) return;
+    seenInitial = requested;
+    activeId = requested;
   }
+  $: followInitialTab(initialTab);
   // A tab the role cannot open (or that vanished on demotion) is never left active.
   $: {
     const next = resolveDataTab(activeId as DataTabId, specs);

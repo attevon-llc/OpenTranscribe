@@ -170,7 +170,12 @@
   // the real `capabilities` prop (which arrives after init) — otherwise new
   // sources would wrongly default to S3 even when a local folder is available.
   let prevShow = false;
-  $: if (show && !prevShow) {
+  function syncOpenState(open: boolean) {
+    if (!open) {
+      prevShow = false;
+      return;
+    }
+    if (prevShow) return;
     prevShow = true;
     currentStepIndex = 0;
     testResult = null;
@@ -186,7 +191,7 @@
       maxStepReached = 0;
     }
   }
-  $: if (!show && prevShow) prevShow = false;
+  $: syncOpenState(show);
 
   $: connectionValid = (() => {
     if (!form.name?.trim()) return false;

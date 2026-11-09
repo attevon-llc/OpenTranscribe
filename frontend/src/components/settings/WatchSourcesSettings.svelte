@@ -59,10 +59,12 @@
   // string, not the id union: the Tabs component's bound activeId is string-typed.
   let activeTab: string = initialTab;
   let seenInitial = initialTab;
-  $: if (initialTab !== seenInitial) {
-    seenInitial = initialTab;
-    activeTab = initialTab;
+  function followInitialTab(requested: typeof initialTab) {
+    if (requested === seenInitial) return;
+    seenInitial = requested;
+    activeTab = requested;
   }
+  $: followInitialTab(initialTab);
   $: tabIds = watchSourcesTabs(isSuperAdmin);
   $: if (!tabIds.includes(activeTab as WatchSourcesTabId)) {
     activeTab = resolveWatchSourcesTab(activeTab as WatchSourcesTabId, tabIds);

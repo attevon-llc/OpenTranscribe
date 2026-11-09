@@ -115,6 +115,14 @@
 
   $: localTabConfig = collectLocalTabConfig(configs);
 
+  /**
+   * Whether auth mail can be delivered, for the dot on the tab. Fetched here on mount
+   * rather than by the tab's panel: the panel is lazy, so a dot that waited for it
+   * would not appear until the admin had already clicked in. The panel reports its
+   * own saves back through `on:change`, so the dot clears the moment it is fixed.
+   */
+  let mailReadiness: AuthMailReadiness | null = null;
+
   $: tabs = [
     { id: 'local', label: $t('settings.authentication.tab.local') },
     { id: 'ldap', label: $t('settings.authentication.tab.ldap') },
@@ -156,13 +164,6 @@
    * honest state when no configuration can be read.
    */
   let emailConfigs: EmailConfig[] = [];
-  /**
-   * Whether auth mail can be delivered, for the dot on the tab. Fetched here on mount
-   * rather than by the tab's panel: the panel is lazy, so a dot that waited for it
-   * would not appear until the admin had already clicked in. The panel reports its
-   * own saves back through `on:change`, so the dot clears the moment it is fixed.
-   */
-  let mailReadiness: AuthMailReadiness | null = null;
   let emailConfigsLoaded = false;
 
   async function loadEmailConfigs() {
@@ -177,7 +178,10 @@
   });
 
   // Fetched lazily: most visits to this panel never open the mail tab.
-  $: if (activeTab === 'mail' && !emailConfigsLoaded) loadEmailConfigs();
+  function loadEmailConfigsOnFirstVisit(tab: string) {
+    if (tab === 'mail' && !emailConfigsLoaded) loadEmailConfigs();
+  }
+  $: loadEmailConfigsOnFirstVisit(activeTab);
 
   // Transform array of config objects to key-value dictionary
   function transformConfigArray(configArray: any[]): Record<string, any> {

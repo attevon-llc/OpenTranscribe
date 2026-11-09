@@ -81,6 +81,29 @@ function open() {
   return render(WatchSourceFilesModal, { props: { show: true, source: SOURCE } } as never);
 }
 
+describe('load guard', () => {
+  const OTHER = { uuid: 'w2', name: 'Other' } as never;
+
+  it('loads once per open: a re-render with the same source does not refetch, a reopen and a new source do', async () => {
+    const { rerender } = render(WatchSourceFilesModal, {
+      props: { show: true, source: SOURCE },
+    } as never);
+    await waitFor(() => expect(api.getWatchSourceFiles).toHaveBeenCalledTimes(1));
+
+    await rerender({ show: true, source: { ...(SOURCE as object) } } as never);
+    await rerender({ show: true, source: SOURCE } as never);
+    expect(api.getWatchSourceFiles).toHaveBeenCalledTimes(1);
+
+    await rerender({ show: false, source: SOURCE } as never);
+    await rerender({ show: true, source: SOURCE } as never);
+    await waitFor(() => expect(api.getWatchSourceFiles).toHaveBeenCalledTimes(2));
+
+    await rerender({ show: true, source: OTHER } as never);
+    await waitFor(() => expect(api.getWatchSourceFiles).toHaveBeenCalledTimes(3));
+    expect(api.getWatchSourceFiles).toHaveBeenLastCalledWith('w2', 1, 50, undefined, undefined);
+  });
+});
+
 describe('loading', () => {
   it('fetches the first page for the source when opened', async () => {
     open();

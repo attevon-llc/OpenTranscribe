@@ -92,7 +92,7 @@ export interface RecordingSettings {
   autoStopEnabled: boolean;
 }
 
-export const DEFAULT_RECORDING_SETTINGS: RecordingSettings = {
+const DEFAULT_RECORDING_SETTINGS: RecordingSettings = {
   maxRecordingDuration: 7200,
   recordingQuality: 'high',
   autoStopEnabled: true,
@@ -114,7 +114,7 @@ export function loadRecordingSettings(): RecordingSettings {
   }
 }
 
-export const FALLBACK_AUDIO_EXTRACTION_SETTINGS: AudioExtractionSettings = {
+const FALLBACK_AUDIO_EXTRACTION_SETTINGS: AudioExtractionSettings = {
   auto_extract_enabled: true,
   extraction_threshold_mb: 100,
   remember_choice: false,
@@ -122,7 +122,7 @@ export const FALLBACK_AUDIO_EXTRACTION_SETTINGS: AudioExtractionSettings = {
 };
 
 /** Used when the system-defaults endpoint cannot be reached. */
-export const FALLBACK_TRANSCRIPTION_SYSTEM_DEFAULTS: TranscriptionSystemDefaults = {
+const FALLBACK_TRANSCRIPTION_SYSTEM_DEFAULTS: TranscriptionSystemDefaults = {
   min_speakers: 1,
   max_speakers: 20,
   garbage_cleanup_enabled: true,

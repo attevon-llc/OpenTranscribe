@@ -28,7 +28,9 @@ def count_commits(session: Any) -> Iterator[list[int]]:
         session.commit = original
 
 
-def endpoint_commits(client: Any, session: Any, method: str, path: str, **kwargs: Any) -> int:
+def endpoint_commits(
+    client: Any, session: Any, method: str, path: str, *, expect: int = 200, **kwargs: Any
+) -> int:
     """Commits an endpoint adds beyond what authenticating the same request costs.
 
     Every authenticated request commits a fixed amount in the auth layer. That amount is
@@ -40,5 +42,5 @@ def endpoint_commits(client: Any, session: Any, method: str, path: str, **kwargs
         assert client.get("/api/users/me", headers=headers).status_code == 200
     with count_commits(session) as total:
         response = client.request(method, path, **kwargs)
-    assert response.status_code == 200, (path, response.status_code, response.text)
+    assert response.status_code == expect, (path, response.status_code, response.text)
     return total[0] - overhead[0]

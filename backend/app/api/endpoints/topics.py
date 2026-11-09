@@ -32,7 +32,6 @@ from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed_for_file
-from app.models.topic import TopicSuggestion
 from app.models.user import User
 from app.schemas.topic import ApplyTopicSuggestionsRequest
 from app.schemas.topic import ExtractTopicsRequest
@@ -43,6 +42,8 @@ from app.schemas.topic import TopicSuggestionResponse
 from app.services.llm_settings_outage import llm_settings_outage_as_503
 from app.services.request_context import RequestContext
 from app.services.topic_extraction_service import TopicExtractionService
+from app.services.topic_suggestion_queries import link_files_to_new_batch
+from app.services.topic_suggestion_queries import suggestion_for_file
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.tasks.topic_extraction import extract_topics_task
 from app.utils.db_helpers import file_has_transcript
@@ -135,33 +136,12 @@ def batch_extract_topics(
     # so that downstream batch grouping in extract_topics_task works
     batch_uuid_str: str | None = None
     if len(verified_uuids) >= 2:
-        from app.models.media import MediaFile
-        from app.models.upload_batch import UploadBatch
-
-        # Check if all files already share a batch
-        batch_files = db.query(MediaFile).filter(MediaFile.uuid.in_(verified_uuids)).all()
-        batch_ids = {mf.upload_batch_id for mf in batch_files if mf.upload_batch_id}
-
-        if len(batch_ids) != 1:
-            # Files don't share a single batch -- create one and link them
-            import uuid as uuid_pkg
-
-            batch = UploadBatch(
-                uuid=uuid_pkg.uuid4(),
-                user_id=current_user.id,
-                source="batch_extract",
-                file_count=len(batch_files),
-            )
-            db.add(batch)
-            db.flush()
-
-            for mf in batch_files:
-                mf.upload_batch_id = batch.id
-
+        batch = link_files_to_new_batch(db, verified_uuids, current_user.id)
+        if batch is not None:
             db.commit()
             batch_uuid_str = str(batch.uuid)
             logger.info(
-                f"Created upload batch {batch.uuid} for {len(batch_files)} files "
+                f"Created upload batch {batch.uuid} for {batch.file_count} files "
                 f"via batch_extract_topics"
             )
 
@@ -290,9 +270,7 @@ def auto_label_single_file(
             detail="Auto-labeling is disabled in your settings",
         )
 
-    suggestion = (
-        db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == media_file.id).first()
-    )
+    suggestion = suggestion_for_file(db, media_file.id)
 
     if not suggestion:
         raise HTTPException(
@@ -354,7 +332,7 @@ def get_topic_suggestions(
     file_id = media_file.id
 
     # Get suggestion from PostgreSQL
-    suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
+    suggestion = suggestion_for_file(db, file_id)
 
     if not suggestion:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -451,9 +429,7 @@ def extract_topics(
         )
 
     # Check if suggestion already exists
-    existing = (
-        db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == media_file.id).first()
-    )
+    existing = suggestion_for_file(db, media_file.id)
 
     if existing and not request_data.force_regenerate:
         raise HTTPException(
@@ -516,7 +492,7 @@ def apply_topic_suggestions(
     file_id = media_file.id
 
     # Get suggestion
-    suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
+    suggestion = suggestion_for_file(db, file_id)
 
     if not suggestion:
         raise HTTPException(
@@ -576,7 +552,7 @@ def dismiss_topic_suggestions(
     file_id = media_file.id
 
     # Get suggestion
-    suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
+    suggestion = suggestion_for_file(db, file_id)
 
     if not suggestion:
         raise HTTPException(

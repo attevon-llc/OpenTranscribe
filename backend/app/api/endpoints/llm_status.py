@@ -15,6 +15,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
+from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
 from app.services.llm_service import is_llm_available
 from app.services.llm_settings_outage import LLM_SETTINGS_UNREADABLE_MESSAGE
@@ -89,8 +90,8 @@ async def get_llm_status(
                             "message": "LLM service is not configured",
                         }
                     )
-            except Exception as e:
-                logger.warning(f"Error getting LLM service details: {e}")
+            except (LLMConfigurationError, SQLAlchemyError, ValueError, OSError) as e:
+                logger.warning(f"Error getting LLM service details: {e}", exc_info=True)
                 status_info.update(
                     {
                         "provider": "unknown",

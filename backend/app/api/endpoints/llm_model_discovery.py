@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Request
 from fastapi import Response
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -159,8 +160,10 @@ def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None
         )
         if config and config.api_key and str(config.provider) != "bedrock":
             return decrypt_api_key(str(config.api_key))
-    except (ValueError, Exception) as e:
-        logger.warning(f"Could not retrieve stored API key for config {config_id}: {e}")
+    except (ValueError, SQLAlchemyError) as e:
+        logger.warning(
+            f"Could not retrieve stored API key for config {config_id}: {e}", exc_info=True
+        )
     return None
 
 

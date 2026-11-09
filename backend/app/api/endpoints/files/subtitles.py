@@ -546,8 +546,8 @@ def bulk_export_stream(
                     continue
                 try:
                     data = _json.loads(msg["data"])
-                except Exception:
-                    logger.debug("Skipping malformed bulk export event payload")
+                except (ValueError, TypeError):
+                    logger.warning("Skipping malformed bulk export event payload", exc_info=True)
                     continue
                 status = data.get("status")
                 if status == "completed" and data.get("url"):

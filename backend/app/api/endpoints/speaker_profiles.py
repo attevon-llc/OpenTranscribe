@@ -7,7 +7,10 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
+from kombu.exceptions import KombuError
+from minio.error import S3Error
 from sqlalchemy.orm import Session
+from urllib3.exceptions import HTTPError
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
@@ -114,8 +117,8 @@ def _profile_avatar_url(profile: SpeakerProfile, bypass: PlatformBypass) -> str 
     if profile.avatar_path:
         try:
             avatar_url = get_file_url(profile.avatar_path, expires=bypass.presign_ttl(3600))
-        except Exception:
-            logger.warning(f"Failed to get avatar URL for profile {profile.uuid}")
+        except (S3Error, HTTPError, ValueError, OSError):
+            logger.warning(f"Failed to get avatar URL for profile {profile.uuid}", exc_info=True)
     return avatar_url
 
 
@@ -359,8 +362,10 @@ def _dispatch_profile_rename_propagation(
         from app.tasks.rename_propagation_task import dispatch_speaker_rename
 
         dispatch_speaker_rename(renames, new_name)
-    except Exception as exc:  # a committed rename must not 500 on dispatch
-        logger.warning(f"Could not queue chunk-plane profile rename propagation: {exc}")
+    except (KombuError, OSError) as exc:  # a committed rename must not 500 on dispatch
+        logger.warning(
+            f"Could not queue chunk-plane profile rename propagation: {exc}", exc_info=True
+        )
 
 
 @router.put("/profiles/{profile_uuid}", response_model=dict[str, Any])
@@ -569,8 +574,8 @@ def delete_speaker_profile(
                 from app.services.minio_service import delete_file
 
                 delete_file(profile.avatar_path)
-            except Exception:
-                logger.warning(f"Failed to delete avatar for profile {profile.uuid}")
+            except Exception:  # delete_file wraps every storage failure in a bare Exception
+                logger.exception(f"Failed to delete avatar for profile {profile.uuid}")
 
         impact.erase_profile_uuids.add(str(profile.uuid))
         db.delete(profile)

@@ -25,6 +25,7 @@ from fastapi import UploadFile
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -211,8 +212,8 @@ async def upload_media_file(
         from app.services.redis_cache_service import redis_cache
 
         redis_cache.invalidate_user_files(user_id)
-    except Exception as e:
-        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+    except RedisError as e:
+        logger.warning(f"Cache invalidation failed (non-critical): {e}", exc_info=True)
 
     # Create a response with the file ID in headers
     response = JSONResponse(content=jsonable_encoder(db_file))

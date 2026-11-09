@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -18,6 +19,7 @@ from joserfc import jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import OctKey
 from joserfc.jwt import JWTClaimsRegistry
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -336,8 +338,8 @@ async def _end_federated_session(db: Session, user_id: int) -> bool | None:
     try:
         decrypted_rt, oidc_cfg = await run_in_threadpool(_federated_logout_inputs, db, user_id)
         return await call_federated_logout(decrypted_rt, cfg=oidc_cfg)
-    except Exception as e:
-        logger.warning(f"OIDC federated logout failed: {e}")
+    except (httpx.HTTPError, SQLAlchemyError, ValueError, OSError) as e:
+        logger.warning(f"OIDC federated logout failed: {e}", exc_info=True)
         return False
     finally:
         # Always clear stored token regardless of outcome
@@ -428,9 +430,9 @@ async def logout(
         )
         if user_id is not None:
             federated_ok = await _end_federated_session(db, user_id)
-    except Exception as e:
+    except (SQLAlchemyError, ValueError) as e:
         # Infrastructure failure (database). Logged loudly and reported below.
-        logger.error("Logout could not fully revoke server-side state: %s", e)
+        logger.error("Logout could not fully revoke server-side state: %s", e, exc_info=True)
         failed.append("session")
 
     if user_id is not None or failed:

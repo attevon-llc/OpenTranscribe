@@ -19,6 +19,7 @@ from fastapi import Response
 from fastapi import status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
@@ -170,9 +171,9 @@ def _store_session_id_token(db: Session, session_row: RefreshToken, id_token: st
     try:
         session_row.oidc_id_token = MFAService.encrypt_totp_secret(id_token)
         db.commit()
-    except Exception as e:  # pragma: no cover - defensive
+    except (ValueError, SQLAlchemyError) as e:
         db.rollback()
-        logger.warning(f"Failed to store the OIDC id_token on the session row: {e}")
+        logger.warning(f"Failed to store the OIDC id_token on the session row: {e}", exc_info=True)
 
 
 @router.get("/oidc/callback")
@@ -322,8 +323,9 @@ def _complete_oidc_login(
         try:
             user.oidc_refresh_token = MFAService.encrypt_totp_secret(tokens.refresh_token)
             db.commit()
-        except Exception as e:
-            logger.warning(f"Failed to store the OIDC refresh token: {e}")
+        except (ValueError, SQLAlchemyError) as e:
+            db.rollback()
+            logger.warning(f"Failed to store the OIDC refresh token: {e}", exc_info=True)
             # Non-fatal — login still succeeds, federated logout just won't work
 
     if not user.is_active:

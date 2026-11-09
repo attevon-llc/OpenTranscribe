@@ -15,6 +15,7 @@ from app.core.embedding_models import get_speaker_index
 from app.core.embedding_models import get_speaker_index_v4
 from app.db.base import get_db
 from app.models.user import User
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -65,8 +66,8 @@ def get_index_health(
         aliases_response = opensearch_client.cat.aliases(format="json", h="alias,index")
         for row in aliases_response:
             alias_map[row.get("alias", "")] = row.get("index", "")
-    except Exception as e:
-        logger.debug("Could not resolve aliases: %s", e)
+    except CLUSTER_UNAVAILABLE_ERRORS as e:
+        logger.warning("Could not resolve aliases: %s", e, exc_info=True)
 
     for idx in indices:
         concrete_names.append(alias_map.get(idx, idx))
@@ -82,8 +83,9 @@ def get_index_health(
             idx_name = row.get("index", "")
             doc_count_str = row.get("docs.count", "0")
             index_stats[idx_name] = int(doc_count_str) if doc_count_str else 0
-    except Exception as e:
-        logger.debug("Bulk _cat/indices call failed, will mark missing: %s", e)
+    except (*CLUSTER_UNAVAILABLE_ERRORS, ValueError) as e:
+        # Reported below as red / "unreachable", never as a zero count.
+        logger.warning("Bulk _cat/indices call failed, will mark red: %s", e, exc_info=True)
 
     for idx in indices:
         concrete = alias_map.get(idx, idx)
@@ -150,7 +152,9 @@ def _probe_index_health(indices: list[str]) -> dict[str, str]:
             # Test if index is healthy
             opensearch_client.search(index=idx, body={"query": {"match_all": {}}, "size": 0})
             health[idx] = "healthy"
-        except Exception:
+        except CLUSTER_UNAVAILABLE_ERRORS:
+            # Per-index isolation: one bad index must not hide the verdict on the others.
+            logger.warning("Index health probe failed for %s", idx, exc_info=True)
             health[idx] = "unhealthy"
     return health
 

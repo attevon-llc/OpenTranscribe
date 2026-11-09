@@ -13,6 +13,7 @@ from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -29,6 +30,7 @@ from app.utils.client_ip import resolve_client_ip
 from app.utils.websocket_notify import SESSION_REVOKED_EVENT
 
 from ..core.config import settings
+from ..core.exceptions import AuthenticationError
 from ..core.security import verify_token
 from ..models.user import User
 
@@ -309,8 +311,11 @@ class ConnectionManager:
             except TimeoutError:
                 self._drop(websocket, user_id, f"a send took longer than {WS_SEND_TIMEOUT_S} s")
                 return
-            except Exception as e:
-                logger.error(f"Error sending WebSocket message to user {user_id}: {e}")
+            except (WebSocketDisconnect, RuntimeError, OSError):
+                # A failed send ends the socket; keeping the writer would repeat it for every frame.
+                logger.error(f"Error sending WebSocket message to user {user_id}", exc_info=True)
+                self._drop(websocket, user_id, "a send failed")
+                return
             finally:
                 box.queue.task_done()
 
@@ -395,8 +400,8 @@ async def _dispatch_notification(message: dict) -> None:
         return
     try:
         notification_data = json.loads(message["data"])
-    except Exception as e:
-        logger.error(f"Error decoding Redis notification: {e}")
+    except (ValueError, TypeError, KeyError) as e:
+        logger.error(f"Error decoding Redis notification: {e}", exc_info=True)
         return
 
     user_id = notification_data.get("user_id")
@@ -466,8 +471,8 @@ async def redis_subscriber() -> None:
             logger.warning(f"Redis subscriber connection lost: {e}; reconnecting in {backoff}s")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
-        except Exception as e:
-            logger.error(f"Unexpected Redis subscriber error: {e}; reconnecting in {backoff}s")
+        except Exception:  # subscriber-loop boundary: this task must outlive any one failure
+            logger.exception(f"Unexpected Redis subscriber error; reconnecting in {backoff}s")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 
@@ -480,12 +485,14 @@ async def publish_notification(user_id: int, notification_type: str, data: dict[
 
     notification = {"user_id": user_id, "type": notification_type, "data": data}
 
+    if redis_client is None:
+        logger.error("Cannot publish notification: the Redis client is not initialised")
+        return
     try:
-        assert redis_client is not None
         await redis_client.publish("websocket_notifications", json.dumps(notification))
         logger.info(f"Published notification to Redis for user {user_id}: {notification_type}")
-    except Exception as e:
-        logger.error(f"Failed to publish notification to Redis: {e}")
+    except (RedisError, OSError, TypeError, ValueError) as e:
+        logger.error(f"Failed to publish notification to Redis: {e}", exc_info=True)
 
 
 def _try_authenticate_token(token: str, db: Session, websocket: WebSocket) -> User | None:
@@ -519,11 +526,11 @@ def _try_authenticate_token(token: str, db: Session, websocket: WebSocket) -> Us
                 ):
                     return None
                 return external_user
-    except Exception as e:
+    except SQLAlchemyError as e:
         reraise_db_overload(e)
         # Never let an external-auth problem break local WS authentication;
         # fall through to the local-JWT path.
-        logger.debug(f"WebSocket external token authentication error: {e}")
+        logger.warning(f"WebSocket external token authentication error: {e}", exc_info=True)
 
     try:
         payload = verify_token(token)
@@ -543,9 +550,9 @@ def _try_authenticate_token(token: str, db: Session, websocket: WebSocket) -> Us
         if user is None or not user.is_active or not admitted_on_optional_auth(user, websocket, db):
             return None
         return user
-    except Exception as e:
+    except (AuthenticationError, SQLAlchemyError) as e:
         reraise_db_overload(e)
-        logger.error(f"WebSocket token authentication error: {str(e)}")
+        logger.error(f"WebSocket token authentication error: {str(e)}", exc_info=True)
         return None
 
 
@@ -739,7 +746,8 @@ async def _authenticate_handshake(websocket: WebSocket) -> tuple[User, str | Non
     except (json.JSONDecodeError, WebSocketDisconnect):
         with contextlib.suppress(Exception):
             await websocket.close(code=4002, reason="Invalid message")
-    except Exception:
+    except Exception:  # per-connection boundary: any handshake failure closes this socket only
+        logger.exception("WebSocket authentication failed unexpectedly")
         with contextlib.suppress(Exception):
             await websocket.close(code=4003, reason="Authentication error")
     return None
@@ -861,6 +869,6 @@ async def _serve_authenticated(websocket: WebSocket, user_id: int) -> None:
             await websocket.send_text(json.dumps({"type": "echo", "data": data}))
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)
-    except Exception as e:
-        logger.error(f"WebSocket error: {str(e)}")
+    except Exception:  # per-connection boundary: one socket's failure must not reach the others
+        logger.exception("WebSocket error")
         manager.disconnect(websocket, user_id)

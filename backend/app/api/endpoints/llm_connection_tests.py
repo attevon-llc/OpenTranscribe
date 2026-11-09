@@ -13,6 +13,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app import models
@@ -124,9 +125,10 @@ def _run_connection_test(
                 if config and config.api_key and str(config.provider) != "bedrock":
                     # Decrypt the stored API key
                     effective_api_key = decrypt_api_key(str(config.api_key))
-            except Exception as e:
+            except (SQLAlchemyError, ValueError) as e:
                 logger.warning(
-                    f"Could not retrieve stored API key for config {test_request.config_id}: {e}"
+                    f"Could not retrieve stored API key for config {test_request.config_id}: {e}",
+                    exc_info=True,
                 )
 
         # Map schema enum to service enum

@@ -1,9 +1,11 @@
 """Local LLM endpoint discovery (issue #644)."""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any
 
+import aiohttp
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Request
@@ -17,6 +19,7 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # --- Local endpoint discovery (issue #644) ---
@@ -150,9 +153,10 @@ async def _probe_local_endpoint(spec: _LocalEndpointSpec) -> dict[str, Any]:
             if http_response.status != 200:
                 return _unreachable_local_endpoint(spec)
             data = await http_response.json()
-    except Exception:
-        # Broad on purpose — a down/unreachable dev overlay is the expected common case,
-        # not a bug to log loudly about, and no failure detail may reach the response.
+    except (aiohttp.ClientError, TimeoutError, OSError, ValueError):
+        # A down/unreachable dev overlay is the expected common case, so this is INFO, and
+        # no failure detail may reach the response.
+        logger.info("Local LLM endpoint probe failed for %s", spec.id, exc_info=True)
         return _unreachable_local_endpoint(spec)
 
     return {

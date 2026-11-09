@@ -28,6 +28,8 @@ from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
 from onelogin.saml2.errors import OneLogin_Saml2_Error
+from onelogin.saml2.errors import OneLogin_Saml2_ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
@@ -400,8 +402,8 @@ def _complete_saml_sls(
 
     try:
         redirect_url = auth.process_slo(delete_session_cb=_revoke_current_session)
-    except Exception as e:  # python3-saml raises broad OneLogin_Saml2_ValidationError
-        logger.warning("SAML SLO processing failed: %s", e)
+    except (OneLogin_Saml2_Error, OneLogin_Saml2_ValidationError, SQLAlchemyError) as e:
+        logger.warning("SAML SLO processing failed: %s", e, exc_info=True)
         redirect_url = None
         processing_failed = True
 

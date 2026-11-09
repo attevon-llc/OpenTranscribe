@@ -16,6 +16,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
+from kombu.exceptions import KombuError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -217,9 +218,17 @@ def restart_gpu_worker(
     try:
         inspector = celery_app.control.inspect(timeout=3.0)
         ping_result = inspector.ping() or {}
-    except Exception as exc:
-        logger.warning("Failed to inspect Celery workers: %s", exc)
-        ping_result = {}
+    except (KombuError, OSError) as exc:
+        # An unreachable broker is not "no worker answered": the admin must not be told to
+        # wait for a restart that was never possible.
+        logger.exception("Failed to inspect Celery workers: broker unreachable")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "worker_broker_unavailable",
+                "message": "The task broker is unreachable, so workers cannot be restarted.",
+            },
+        ) from exc
 
     # Only the workers that load the pinned Whisper model. Restarting anything else (the
     # diarization worker, media downloads - which include a model download in flight - yt-dlp,

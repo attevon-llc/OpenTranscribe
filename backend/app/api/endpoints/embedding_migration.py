@@ -10,16 +10,22 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.api.endpoints.migration_stop import BATCH_REVOCATION_FAILED
+from app.api.endpoints.migration_stop import clear_stop_tracker
+from app.api.endpoints.migration_stop import revoke_batch_tasks
 from app.core.db_overload import reraise_db_overload
 from app.core.exceptions import DomainError
+from app.core.redis import get_request_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.services.embedding_mode_service import EmbeddingModeService
 from app.services.migration_progress_service import MigrationStatus
 from app.services.migration_progress_service import migration_progress
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.privacy.migration_scope import summarize_migration_scopes
 from app.services.privacy.redact_view import VOICEPRINTS_DISABLED_CODE
 
@@ -34,47 +40,42 @@ def _compute_ground_truth_status(db: Session) -> dict | None:
     Files with no speakers or only sub-0.5s segments are excluded — they
     legitimately cannot produce embeddings and are not "stalled".
 
-    Returns dict with stalled info or None if not stalled.
+    Returns dict with stalled info or None if not stalled. Raises when the database or
+    OpenSearch cannot be read: "not stalled" is a verdict, an outage is not one.
     """
     from app.models.media import FileStatus
     from app.models.media import MediaFile
     from app.tasks.embedding_migration_v4_scope import _count_embeddable_speakers_per_file
     from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
-    try:
-        completed_ids = [
-            int(row[0])
-            for row in db.query(MediaFile.id).filter(MediaFile.status == FileStatus.COMPLETED).all()
-        ]
+    completed_ids = [
+        int(row[0])
+        for row in db.query(MediaFile.id).filter(MediaFile.status == FileStatus.COMPLETED).all()
+    ]
 
-        if not completed_ids:
-            return None
-
-        # Only count files that actually have embeddable speakers
-        embeddable_counts = _count_embeddable_speakers_per_file(completed_ids)
-        migratable_ids = {fid for fid, count in embeddable_counts.items() if count > 0}
-
-        if not migratable_ids:
-            return None
-
-        already_migrated_ids = _get_already_migrated_file_ids()
-        migrated_count = len(migratable_ids & already_migrated_ids)
-
-        remaining = len(migratable_ids) - migrated_count
-        if remaining <= 0:
-            return None
-
-        return {
-            "stalled": True,
-            "total_completed_files": len(migratable_ids),
-            "migrated_files": migrated_count,
-            "remaining_files": remaining,
-        }
-    except Exception as e:
-        # An overload is the request's 503: "not stalled" would be a guess presented as fact.
-        reraise_db_overload(e)
-        logger.warning("Could not compute ground truth status: %s", e)
+    if not completed_ids:
         return None
+
+    # Only count files that actually have embeddable speakers
+    embeddable_counts = _count_embeddable_speakers_per_file(completed_ids)
+    migratable_ids = {fid for fid, count in embeddable_counts.items() if count > 0}
+
+    if not migratable_ids:
+        return None
+
+    already_migrated_ids = _get_already_migrated_file_ids()
+    migrated_count = len(migratable_ids & already_migrated_ids)
+
+    remaining = len(migratable_ids) - migrated_count
+    if remaining <= 0:
+        return None
+
+    return {
+        "stalled": True,
+        "total_completed_files": len(migratable_ids),
+        "migrated_files": migrated_count,
+        "remaining_files": remaining,
+    }
 
 
 @router.get("/status")
@@ -139,10 +140,18 @@ def get_migration_status(
             and status.get("current_mode") == "v3"
             and status.get("v4_document_count", 0) > 0
         ):
-            ground_truth = _compute_ground_truth_status(db)
-            if ground_truth:
-                status["stalled"] = True
-                status["stalled_info"] = ground_truth
+            try:
+                ground_truth = _compute_ground_truth_status(db)
+            except (SQLAlchemyError, *CLUSTER_UNAVAILABLE_ERRORS) as exc:
+                # An overload is the request's 503; any other outage is reported rather
+                # than answered as "not stalled".
+                reraise_db_overload(exc)
+                logger.warning("Could not compute ground truth status: %s", exc, exc_info=True)
+                status["stalled_check_failed"] = True
+            else:
+                if ground_truth:
+                    status["stalled"] = True
+                    status["stalled_info"] = ground_truth
 
         # Include consistency status (Redis reads only — near zero cost)
         try:
@@ -326,55 +335,35 @@ def stop_migration(
         migration_lock.deactivate()
 
         # Revoke any in-flight batch tasks
-        try:
-            from app.core.celery import celery_app
-            from app.core.redis import get_request_redis
-
-            r = get_request_redis()
-            raw = r.get("embedding_migration:batch_task_ids")
-            if raw:
-                import json
-
-                batch_ids = json.loads(raw)
-                for tid in batch_ids:
-                    celery_app.control.revoke(tid, terminate=True)
-                r.delete("embedding_migration:batch_task_ids")
-                logger.info("Revoked %d embedding migration batch tasks", len(batch_ids))
-        except Exception as e:
-            logger.warning("Failed to revoke batch tasks: %s", e)
+        revoked_count, revoke_failed = revoke_batch_tasks(
+            get_request_redis(), "embedding_migration:batch_task_ids"
+        )
+        if revoked_count:
+            logger.info("Revoked %d embedding migration batch tasks", revoked_count)
 
         # Clear ProgressTracker so queue status clears immediately
-        try:
-            from app.services.progress_tracker import ProgressTracker
-
-            tracker = ProgressTracker(
-                task_type="migration",
-                user_id=current_user.id,
-                total=0,
-            )
-            tracker.complete(message="Stopped by user")
-        except Exception as e:
-            logger.warning("Failed to clear progress tracker: %s", e)
+        clear_stop_tracker("migration", current_user.id)
 
         # Notify frontend via WebSocket
-        try:
-            from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
-            from app.utils.websocket_notify import send_ws_event
+        from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
+        from app.utils.websocket_notify import send_ws_event
 
-            send_ws_event(
-                current_user.id,
-                NOTIFICATION_TYPE_MIGRATION_COMPLETE,
-                {"status": "stopped", "message": "Migration stopped by user"},
-            )
-        except Exception as e:
-            logger.warning("Failed to send stop WS event: %s", e)
+        # send_ws_event logs its own failures and never raises.
+        send_ws_event(
+            current_user.id,
+            NOTIFICATION_TYPE_MIGRATION_COMPLETE,
+            {"status": "stopped", "message": "Migration stopped by user"},
+        )
 
         if success:
             logger.warning("Migration force stopped by user")
-            return {
+            stopped: dict[str, Any] = {
                 "status": "stopped",
                 "message": "Migration stopped and transcription lock released.",
             }
+            if revoke_failed:
+                stopped["warnings"] = [BATCH_REVOCATION_FAILED]
+            return stopped
         else:
             return {
                 "status": "error",

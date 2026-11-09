@@ -9,6 +9,9 @@ of a deleted one. Used by the legacy multipart route (``upload.py``), the presig
 import contextlib
 import logging
 
+from kombu.exceptions import KombuError
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.env import env_bool
@@ -99,8 +102,10 @@ def dispatch_thumbnail_for_video(db_file: MediaFile, user_id: int) -> None:
             storage_path=str(db_file.storage_path),
         )
         logger.info(f"Dispatched thumbnail generation for video file {db_file.id}")
-    except Exception as thumb_err:
-        logger.warning(f"Thumbnail dispatch failed for {db_file.id} (non-fatal): {thumb_err}")
+    except (KombuError, OSError) as thumb_err:
+        logger.warning(
+            f"Thumbnail dispatch failed for {db_file.id} (non-fatal): {thumb_err}", exc_info=True
+        )
 
 
 def dispatch_upload_pipeline(
@@ -201,13 +206,15 @@ def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: E
         from app.services.redis_cache_service import redis_cache
 
         redis_cache.invalidate_user_files(user_id)
-    except Exception as cache_err:
-        logger.debug(f"Cache invalidation after a dispatch failure failed: {cache_err}")
+    except RedisError as cache_err:
+        logger.warning(
+            f"Cache invalidation after a dispatch failure failed: {cache_err}", exc_info=True
+        )
 
     try:
         _send_dispatch_failed_ws_event(media_file, user_id, message)
-    except Exception as ws_err:
-        logger.debug(f"WS notification after a dispatch failure failed: {ws_err}")
+    except (SQLAlchemyError, ValueError) as ws_err:
+        logger.warning(f"WS notification after a dispatch failure failed: {ws_err}", exc_info=True)
 
 
 def _send_dispatch_failed_ws_event(media_file: MediaFile, user_id: int, message: str) -> None:

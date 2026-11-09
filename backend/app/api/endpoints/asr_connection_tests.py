@@ -7,11 +7,16 @@ error text scrubbed of credentials before it is stored or returned.
 import logging
 import re
 import time
+import traceback
 from datetime import UTC
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+import httpx
+import requests
+from botocore.exceptions import BotoCoreError
+from botocore.exceptions import ClientError
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -34,6 +39,26 @@ from app.utils.encryption import decrypt_api_key
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _frames(exc: BaseException) -> str:
+    """The traceback frames of ``exc`` without its message, which can echo the API key."""
+    return "".join(traceback.format_tb(exc.__traceback__))
+
+
+# What building a provider and validating its connection can raise: the provider's own
+# RuntimeError family (ASRProviderError), bad config, and the HTTP / AWS client errors of
+# the vendor SDKs. A bug (AttributeError, TypeError) is not a "connection failed" result.
+_PROVIDER_TEST_ERRORS = (
+    RuntimeError,
+    ValueError,
+    ImportError,
+    OSError,
+    requests.RequestException,
+    httpx.HTTPError,
+    BotoCoreError,
+    ClientError,
+)
 
 # ---------------------------------------------------------------------------
 # Sensitive-data sanitization for error messages
@@ -114,13 +139,15 @@ def test_asr_connection(
             access_key_id=access_key_id,
         )
         success, message, response_time_ms = provider.validate_connection()
-    except Exception as exc:
+    except _PROVIDER_TEST_ERRORS as exc:
         response_time_ms = (time.time() - start_time) * 1000
         sanitized = _sanitize_message(str(exc), api_key)
+        # Frames only, not exc_info: the exception text can hold the provider key.
         logger.warning(
-            "ASR ad-hoc test failed for provider '%s': %s",
+            "ASR ad-hoc test failed for provider '%s': %s\n%s",
             provider_name,
             sanitized,
+            _frames(exc),
         )
         return {
             "success": False,
@@ -164,12 +191,17 @@ def test_saved_asr_config(
 
         provider = ASRProviderFactory.create_from_db_config(config)
         success, message, response_time_ms = provider.validate_connection()
-    except Exception as exc:
+    except _PROVIDER_TEST_ERRORS as exc:
         success = False
         # Sanitize before storing or returning — provider exceptions may echo back the key
         message = _sanitize_message(str(exc), api_key)
         response_time_ms = (time.time() - start_time) * 1000
-        logger.warning("ASR saved-config test failed for config %s: %s", config_uuid, message)
+        logger.warning(
+            "ASR saved-config test failed for config %s: %s\n%s",
+            config_uuid,
+            message,
+            _frames(exc),
+        )
 
     # Persist test result only if the current user owns the config
     if config.user_id == current_user.id:

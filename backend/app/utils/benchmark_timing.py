@@ -319,24 +319,33 @@ def record_retry(
         )
 
 
+def fetch_all_strict(task_id: str) -> dict[str, str]:
+    """Read every marker for a task_id; a Redis outage raises ``RedisError``.
+
+    An empty dict means the hash genuinely does not exist. Callers that must
+    tell "no data" from "could not look" (the admin endpoint) use this one.
+    """
+    from app.core.redis import get_redis
+
+    raw = get_redis().hgetall(_hash_key(task_id))
+    return {
+        (k.decode() if isinstance(k, (bytes, bytearray)) else str(k)): (
+            v.decode() if isinstance(v, (bytes, bytearray)) else str(v)
+        )
+        for k, v in raw.items()
+    }
+
+
 def fetch_all(task_id: str) -> dict[str, str]:
     """Read every marker for a given task_id. Returns empty dict on miss.
 
     Not gated on the env flag — consumers (admin endpoint, finalizer,
-    benchmark scripts) always read whatever was written.
+    benchmark scripts) always read whatever was written. A Redis outage is
+    logged with its traceback and also returns ``{}``; use ``fetch_all_strict``
+    where the two must be told apart.
     """
     try:
-        from app.core.redis import get_redis
-
-        raw = get_redis().hgetall(_hash_key(task_id))
-        if not raw:
-            return {}
-        return {
-            (k.decode() if isinstance(k, (bytes, bytearray)) else str(k)): (
-                v.decode() if isinstance(v, (bytes, bytearray)) else str(v)
-            )
-            for k, v in raw.items()
-        }
+        return fetch_all_strict(task_id)
     except RedisError as e:
         logger.warning(f"fetch_all for {task_id} failed: {e}", exc_info=True)
         return {}

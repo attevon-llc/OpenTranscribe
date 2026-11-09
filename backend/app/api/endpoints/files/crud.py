@@ -4,6 +4,8 @@ from typing import Any
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
+from kombu.exceptions import KombuError
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
@@ -20,6 +22,7 @@ from app.schemas.transcript import TranscriptSegmentUpdate
 from app.services.file_availability import is_unavailable
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
@@ -217,8 +220,10 @@ def update_media_file(
         new_title = str(db_file.title or db_file.filename)
         try:
             update_transcript_title(str(db_file.uuid), new_title)  # Use UUID not integer ID
-        except Exception as e:
-            logger.warning(f"Failed to update OpenSearch title for file {file_id}: {e}")
+        except CLUSTER_UNAVAILABLE_ERRORS as e:
+            logger.warning(
+                f"Failed to update OpenSearch title for file {file_id}: {e}", exc_info=True
+            )
 
         # ...and the CHUNK plane, which is a separate index write.
         # `update_transcript_title` only touches the full-document transcript index.
@@ -232,16 +237,19 @@ def update_media_file(
             from app.tasks.rename_propagation_task import propagate_title_rename
 
             propagate_title_rename.delay(file_uuid=str(db_file.uuid), new_title=new_title)
-        except Exception as exc:  # dispatch failure must not break the rename
-            logger.warning(f"Could not queue chunk title propagation for {db_file.uuid}: {exc}")
+        except (KombuError, OSError) as exc:  # dispatch failure must not break the rename
+            logger.warning(
+                f"Could not queue chunk title propagation for {db_file.uuid}: {exc}",
+                exc_info=True,
+            )
 
     # Invalidate caches so gallery reflects the update
     try:
         from app.services.redis_cache_service import redis_cache
 
         redis_cache.invalidate_user_files(current_user.id)
-    except Exception as e:
-        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+    except RedisError as e:
+        logger.warning(f"Cache invalidation failed (non-critical): {e}", exc_info=True)
 
     return db_file
 

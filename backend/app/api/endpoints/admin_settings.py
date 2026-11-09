@@ -547,5 +547,5 @@ def _reload_protected_media_providers() -> None:
         from app.services.protected_media_providers import _load_providers
 
         protected_media_providers.PROTECTED_MEDIA_PROVIDERS = _load_providers()
-    except Exception as e:
-        logger.warning("Failed to reload protected media providers: %s", e)
+    except (ImportError, OSError) as e:
+        logger.warning("Failed to reload protected media providers: %s", e, exc_info=True)

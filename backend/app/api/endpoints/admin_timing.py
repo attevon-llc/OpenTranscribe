@@ -18,6 +18,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_admin_user
@@ -57,7 +58,14 @@ def get_timing(
     postprocess_end). When both are present, derived durations are
     recomputed from the Redis hash.
     """
-    raw = benchmark_timing.fetch_all(task_id)
+    try:
+        raw = benchmark_timing.fetch_all_strict(task_id)
+    except RedisError as exc:
+        logger.exception("Timing read for task_id=%s failed: Redis unavailable", task_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Timing store (Redis) is unavailable; this is not the same as no data.",
+        ) from exc
     persisted = db.query(FilePipelineTiming).filter(FilePipelineTiming.task_id == task_id).first()
 
     if not raw and not persisted:

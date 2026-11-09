@@ -5,7 +5,6 @@ Allows admins to trigger bulk processing of existing files for
 speaker gender/age detection.
 """
 
-import json
 import logging
 from typing import Any
 
@@ -15,6 +14,9 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.api.endpoints.migration_stop import BATCH_REVOCATION_FAILED
+from app.api.endpoints.migration_stop import clear_stop_tracker
+from app.api.endpoints.migration_stop import revoke_batch_tasks
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
@@ -156,55 +158,38 @@ def stop_attribute_migration(
         success = attribute_migration_progress.force_stop()
 
         # Revoke pending batch tasks from the GPU queue
-        revoked = 0
-        try:
-            r = attribute_migration_progress.redis_client
-            if r:
-                batch_ids_json = r.get(f"{attribute_migration_progress.key_prefix}:batch_task_ids")
-                if batch_ids_json:
-                    batch_ids = json.loads(batch_ids_json)
-                    from app.core.celery import celery_app
-
-                    for tid in batch_ids:
-                        celery_app.control.revoke(tid, terminate=True)
-                        revoked += 1
-                    r.delete(f"{attribute_migration_progress.key_prefix}:batch_task_ids")
-                    logger.info("Revoked %d pending batch tasks", revoked)
-        except Exception as e:
-            logger.warning("Failed to revoke batch tasks: %s", e)
+        revoked, revoke_failed = 0, False
+        redis_client = attribute_migration_progress.redis_client
+        if redis_client:
+            revoked, revoke_failed = revoke_batch_tasks(
+                redis_client, f"{attribute_migration_progress.key_prefix}:batch_task_ids"
+            )
+            if revoked:
+                logger.info("Revoked %d pending batch tasks", revoked)
 
         # Clear ProgressTracker so queue status clears immediately
-        try:
-            from app.services.progress_tracker import ProgressTracker
-
-            tracker = ProgressTracker(
-                task_type="attribute_migration",
-                user_id=current_user.id,
-                total=0,
-            )
-            tracker.complete(message="Stopped by user")
-        except Exception as e:
-            logger.warning("Failed to clear progress tracker: %s", e)
+        clear_stop_tracker("attribute_migration", current_user.id)
 
         # Notify frontend via WebSocket
-        try:
-            from app.core.constants import NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_COMPLETE
-            from app.utils.websocket_notify import send_ws_event
+        from app.core.constants import NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_COMPLETE
+        from app.utils.websocket_notify import send_ws_event
 
-            send_ws_event(
-                current_user.id,
-                NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_COMPLETE,
-                {"status": "stopped", "message": "Migration stopped by user"},
-            )
-        except Exception as e:
-            logger.warning("Failed to send stop WS event: %s", e)
+        # send_ws_event logs its own failures and never raises.
+        send_ws_event(
+            current_user.id,
+            NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_COMPLETE,
+            {"status": "stopped", "message": "Migration stopped by user"},
+        )
 
         if success:
             logger.warning("Speaker attribute migration stopped by user")
-            return {
+            stopped: dict[str, Any] = {
                 "status": "stopped",
                 "message": f"Speaker attribute migration stopped. {revoked} pending tasks revoked.",
             }
+            if revoke_failed:
+                stopped["warnings"] = [BATCH_REVOCATION_FAILED]
+            return stopped
         else:
             return {
                 "status": "error",

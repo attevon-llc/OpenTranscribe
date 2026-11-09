@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter
 from fastapi import Depends
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -39,8 +40,13 @@ def get_post_processing_status(
     )
     try:
         stored = read_status(int(media_file.id))
-    except Exception as exc:  # "unknown" is the honest answer
-        logger.warning("post-processing status unreadable for file %s: %s", media_file.id, exc)
+    except (RedisError, ValueError) as exc:  # "unknown" is the honest answer
+        logger.warning(
+            "post-processing status unreadable for file %s: %s",
+            media_file.id,
+            exc,
+            exc_info=True,
+        )
         stored = {"run_at": None, "tasks": {}}
     return PostProcessingStatusResponse(
         file_id=str(media_file.uuid), run_at=stored["run_at"], tasks=stored["tasks"]

@@ -5,7 +5,6 @@ backend/app/auth/pki_certificate.py::function::extract_display_name_from_gov_dn	
 backend/app/auth/provider_registry.py::function::register_verifier	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/provider_registry.py::function::unregister_verifier	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/session.py::method::delete_state	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/auth/session.py::method::srem	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/token_service.py::method::cleanup_expired_tokens	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/token_service.py::method::create_token	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/token_service.py::method::token_needs_upgrade	1	residual after the dead-code pass; delete or whitelist when touched

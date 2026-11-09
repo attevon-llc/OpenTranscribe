@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Redis key pattern: task_progress:{task_type}:{user_id}
 _KEY_PREFIX = "task_progress"
+# Per-user index of this user's progress keys, so listing needs no keyspace SCAN.
+_INDEX_PREFIX = "task_progress_index"
 _TTL_ACTIVE = 86400  # 24h while running
 _TTL_COMPLETED = 3600  # 1h after completion
 
@@ -231,7 +233,14 @@ class ProgressTracker:
         """Write state to Redis with optional force (bypass rate limit)."""
         try:
             r = get_request_redis()
-            r.set(self._key, json.dumps(state.to_dict()), ex=ttl)
+            # One round trip: the state key plus its membership in the user's index
+            # (redis-py "Pipelines" batch commands into a single request).
+            index_key = f"{_INDEX_PREFIX}:{self.user_id}"
+            pipe = r.pipeline()
+            pipe.set(self._key, json.dumps(state.to_dict()), ex=ttl)
+            pipe.sadd(index_key, self._key)
+            pipe.expire(index_key, _TTL_ACTIVE)
+            pipe.execute()
             self._last_write_time = time.time()
         except Exception as e:
             logger.debug(f"Failed to write progress state: {e}")
@@ -252,20 +261,29 @@ class ProgressTracker:
     def get_active_tasks(cls, user_id: int) -> list[dict]:
         """Get all active (running) tasks for a user.
 
-        Scans Redis for task_progress:*:{user_id} keys.
+        Reads the per-user index set, then every state with one MGET (two round
+        trips total, independent of keyspace size). Index members whose key has
+        expired are pruned.
         """
         results: list[dict] = []
         try:
             r = get_request_redis()
-            pattern = f"{_KEY_PREFIX}:*:{user_id}"
-            for key in r.scan_iter(match=pattern, count=100):
-                raw = r.get(key)
-                if raw:
-                    state = ProgressState.from_dict(json.loads(raw))
-                    if state.status == "running":
-                        results.append(state.to_dict())
+            index_key = f"{_INDEX_PREFIX}:{user_id}"
+            keys = sorted(k.decode() if isinstance(k, bytes) else k for k in r.smembers(index_key))
+            if not keys:
+                return results
+            stale = []
+            for key, raw in zip(keys, r.mget(keys), strict=True):
+                if not raw:
+                    stale.append(key)
+                    continue
+                state = ProgressState.from_dict(json.loads(raw))
+                if state.status == "running":
+                    results.append(state.to_dict())
+            if stale:
+                r.srem(index_key, *stale)
         except Exception as e:
-            logger.debug(f"Failed to scan active tasks: {e}")
+            logger.debug(f"Failed to read active tasks: {e}")
         return results
 
 

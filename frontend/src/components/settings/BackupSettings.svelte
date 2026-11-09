@@ -26,7 +26,7 @@
 
   let loading = true;
   let saving = false;
-  let hasChanges = false;
+  let hasChanges: boolean;
 
   // Form fields
   let enabled = false;

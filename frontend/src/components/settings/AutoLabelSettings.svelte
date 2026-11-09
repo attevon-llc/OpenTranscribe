@@ -25,7 +25,7 @@
   let retroactiveTotal = 0;
   let retroactiveEtaSeconds: number | null = null;
   let retroactiveMessage = '';
-  let hasChanges = false;
+  let hasChanges: boolean;
 
   // Original values for change tracking
   let originalAutoTopicExtraction = true;

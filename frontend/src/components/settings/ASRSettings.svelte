@@ -384,14 +384,13 @@
   }
 
   let _asrModalWasOpen = false;
-  $: {
-    const _anyOpen = showConfigModal || showDeleteModal || showDeleteAllModal;
-    if (_anyOpen !== _asrModalWasOpen) {
-      if (_anyOpen) lockScroll();
-      else unlockScroll();
-      _asrModalWasOpen = _anyOpen;
-    }
+  function syncScrollLock(anyOpen: boolean) {
+    if (anyOpen === _asrModalWasOpen) return;
+    if (anyOpen) lockScroll();
+    else unlockScroll();
+    _asrModalWasOpen = anyOpen;
   }
+  $: syncScrollLock(showConfigModal || showDeleteModal || showDeleteAllModal);
 </script>
 
 <div class="asr-settings">

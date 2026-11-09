@@ -650,12 +650,6 @@ backend/app/startup/warmups.py::_start_pii_warmup#1	1	re-keyed per handler so a 
 backend/app/startup/warmups.py::_start_reranker_warmup#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/analytics.py::analyze_transcript_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/auto_labeling.py::auto_label_batch_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/cleanup.py::_purge_expired_loop#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/cleanup.py::emergency_file_recovery#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/cleanup.py::orphan_upload_sweeper#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/cleanup.py::orphan_upload_sweeper#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/cleanup.py::orphan_upload_sweeper#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/cleanup.py::orphan_upload_sweeper#4	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/combined_speaker_analysis_task.py::_combined_result_writer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/combined_speaker_analysis_task.py::_combined_result_writer#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/combined_speaker_analysis_task.py::_orchestrate_combined#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

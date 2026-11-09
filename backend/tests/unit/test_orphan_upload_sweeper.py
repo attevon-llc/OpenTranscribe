@@ -136,7 +136,7 @@ def test_a_storage_outage_during_the_sweep_leaves_the_row_alone(
     monkeypatch.setattr(minio_service, "delete_file", lambda path: None, raising=True)
 
     def _raise(path: str):
-        raise RuntimeError("simulated storage outage")
+        raise OSError("simulated storage outage")
 
     monkeypatch.setattr(minio_service, "object_exists_and_size", _raise, raising=True)
     file_id = sweeper_env(file_size=1024, age_minutes=180)
@@ -182,3 +182,43 @@ def test_grace_window_scales_with_size_and_is_capped():
     assert cleanup._upload_grace_minutes(None, 30) == 30
     assert cleanup._upload_grace_minutes(1024, 30) == 30
     assert cleanup._upload_grace_minutes(10**15, 30) == cleanup._MAX_UPLOAD_GRACE_MINUTES
+
+
+def test_storage_outage_skip_logs_the_traceback(db_session, sweeper_env, monkeypatch, caplog):
+    """The uncertain-skip is correct, but the operator needs the stack of WHY it was uncertain."""
+    import logging
+
+    def _raise(path: str):
+        raise OSError("simulated storage outage")
+
+    monkeypatch.setattr(minio_service, "object_exists_and_size", _raise, raising=True)
+    sweeper_env(file_size=1024, age_minutes=180)
+
+    with caplog.at_level(logging.WARNING, logger=cleanup.logger.name):
+        cleanup.orphan_upload_sweeper.run(max_age_minutes=30)
+
+    assert any(
+        "could not confirm object absence" in r.getMessage() and r.exc_info for r in caplog.records
+    )
+
+
+def test_a_programming_error_in_the_storage_check_is_not_treated_as_an_outage(
+    db_session, sweeper_env, monkeypatch, caplog
+):
+    """Only storage errors mean "uncertain"; a TypeError must reach the outer handler as an error."""
+    import logging
+
+    def _raise(path: str):
+        raise TypeError("bug, not an outage")
+
+    monkeypatch.setattr(minio_service, "object_exists_and_size", _raise, raising=True)
+    sweeper_env(file_size=1024, age_minutes=180)
+
+    with caplog.at_level(logging.ERROR, logger=cleanup.logger.name):
+        result = cleanup.orphan_upload_sweeper.run(max_age_minutes=30)
+
+    assert result["errors"] == 1
+    assert result["skipped_uncertain"] == 0
+    assert any(
+        "orphan_upload_sweeper error" in r.getMessage() and r.exc_info for r in caplog.records
+    )

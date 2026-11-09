@@ -6,6 +6,8 @@ Bulk-writes aggregated speaker embedding documents to the v4 index.
 import datetime
 import logging
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.embedding_models import get_speaker_index_v4
 from app.services.speaker_analysis_models import SegmentResult
 from app.tasks.embedding_migration_v4_scope import _file_skipped_by_policy
@@ -56,8 +58,8 @@ def _bulk_write_v4_embeddings(speaker_docs: list[dict]) -> int:
                     failed_count += 1
             return len(speaker_docs) - failed_count
         return len(speaker_docs)
-    except Exception as e:
-        logger.error(f"Bulk write to v4 index failed: {e}")
+    except OpenSearchException:
+        logger.exception("Bulk write to v4 index failed")
         return 0
 
 

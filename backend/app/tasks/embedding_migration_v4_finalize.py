@@ -9,6 +9,9 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_FINALIZED
 from app.core.embedding_models import get_speaker_index
@@ -128,8 +131,10 @@ def migrate_profile_documents_to_v4(client: OpenSearch, v4_index: str) -> int:
             response = client.scroll(scroll_id=scroll_id, scroll="2m")
             scroll_id = response.get("_scroll_id")
             hits = response["hits"]["hits"]
-    except Exception as e:
-        logger.error(f"Failed to scroll v4 speaker docs for profile backfill: {e}")
+    except OpenSearchException:
+        # Not fatal here: the profile-count guard in the finalize task refuses the swap
+        # when profile documents are missing.
+        logger.exception("Failed to scroll v4 speaker docs for profile backfill")
         return 0
 
     if not profiles:
@@ -197,8 +202,8 @@ def migrate_profile_documents_to_v4(client: OpenSearch, v4_index: str) -> int:
             )
             if ok:
                 written += 1
-        except Exception as e:
-            logger.error(f"Failed to backfill v4 profile {profile_uuid}: {e}")
+        except (OpenSearchException, ValueError, KeyError, ArithmeticError):
+            logger.exception(f"Failed to backfill v4 profile {profile_uuid}")
 
     logger.info(f"Profile backfill: wrote {written}/{len(profiles)} v4 profile documents")
     return written
@@ -232,8 +237,8 @@ def _count_profile_docs(
         else:
             body = _PROFILE_DOC_QUERY
         return int(client.count(index=index, body=body)["count"])
-    except Exception as e:
-        logger.error(f"Profile-doc count failed for index '{index}': {e}")
+    except (OpenSearchException, KeyError, ValueError, TypeError):
+        logger.exception(f"Profile-doc count failed for index '{index}'")
         return None
 
 
@@ -286,8 +291,8 @@ def finalize_v4_migration_task(self: Any, user_id: int = 1) -> dict[str, Any]:
         # guards, so a real loss is still caught. A policy that cannot be read aborts.
         try:
             off_scopes = _scopes_off_by_policy()
-        except Exception as e:
-            logger.error(f"Cannot read the privacy policy for finalize: {e}")
+        except SQLAlchemyError:
+            logger.exception("Cannot read the privacy policy for finalize")
             return {
                 "status": "error",
                 "message": "Cannot read the privacy policy; refusing to swap the index.",
@@ -389,8 +394,8 @@ def finalize_v4_migration_task(self: Any, user_id: int = 1) -> dict[str, Any]:
         send_ws_event(user_id, NOTIFICATION_TYPE_MIGRATION_FINALIZED, result)
         return result
 
-    except Exception as e:
-        logger.error(f"Error finalizing migration: {e}")
+    except Exception as e:  # task boundary: report to the admin, finally-block cleans up
+        logger.exception("Error finalizing migration")
         result = {"status": "error", "message": str(e)}
         send_ws_event(user_id, NOTIFICATION_TYPE_MIGRATION_FINALIZED, result)
         return result

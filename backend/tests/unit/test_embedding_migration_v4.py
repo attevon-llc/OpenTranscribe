@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from opensearchpy.exceptions import ConnectionError as OSConnectionError
 
 # Patch path for get_opensearch_client -- it's imported inside function bodies
 # from app.services.opensearch_service, so we patch at the source.
@@ -453,7 +454,9 @@ class TestCountProfileDocs:
 
         client = MagicMock()
         client.indices.exists.return_value = True
-        client.count.side_effect = RuntimeError("opensearch unavailable")
+        client.count.side_effect = OSConnectionError(
+            "N/A", "opensearch unavailable", Exception("down")
+        )
         assert _count_profile_docs(client, "speakers_v3") is None
 
     def test_returns_count_and_filters_by_document_type(self):
@@ -533,7 +536,7 @@ class TestFinalizeV4MigrationProfileGuard:
                 and body.get("query", {}).get("term", {}).get("document_type") == "profile"
             )
             if is_profile_query:
-                raise RuntimeError("opensearch timeout")
+                raise OSConnectionError("N/A", "opensearch timeout", Exception("down"))
             return {"count": 100}
 
         client.count.side_effect = count_side_effect

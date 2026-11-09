@@ -18,8 +18,17 @@ from fastapi import FastAPI
 from prometheus_client.parser import text_string_to_metric_families
 from starlette.testclient import TestClient
 
+from app.api import health
 from app.middleware.audit import AuditMiddleware
 from app.middleware.observability import ObservabilityMiddleware
+
+
+@pytest.fixture(autouse=True)
+def _fresh_readiness_snapshot():
+    """/health/ready answers from a short-lived cached snapshot; no test may read another's."""
+    health.reset_readiness_state()
+    yield
+    health.reset_readiness_state()
 
 
 @pytest.fixture
@@ -205,10 +214,11 @@ def test_readiness_happy_path(client, monkeypatch):
 def test_readiness_critical_db_failure_returns_503(client, monkeypatch):
     """A failed CRITICAL dependency (Postgres) → 503 not_ready."""
 
-    def _broken_session():
+    def _broken_engine():
         raise RuntimeError("db down")
 
-    monkeypatch.setattr("app.db.base.SessionLocal", _broken_session)
+    # /health/ready probes Postgres on its own one-connection engine, not the request pool.
+    monkeypatch.setattr("app.db.probe_engine.get_probe_engine", _broken_engine)
 
     resp = client.get("/health/ready")
     assert resp.status_code == 503

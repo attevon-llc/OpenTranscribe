@@ -1,5 +1,7 @@
 """Tests for error classification system."""
 
+from typing import cast
+
 from app.utils.error_classification import ErrorCategory
 from app.utils.error_classification import categorize_error
 from app.utils.error_classification import get_retry_delay
@@ -11,7 +13,8 @@ class TestCategorizeError:
 
     def test_empty_message(self):
         assert categorize_error("") == ErrorCategory.UNKNOWN
-        assert categorize_error(None) == ErrorCategory.UNKNOWN  # type: ignore[arg-type]
+        # Off-contract input on purpose: a None message must still classify as UNKNOWN.
+        assert categorize_error(cast("str", None)) == ErrorCategory.UNKNOWN
 
     # Permanent failures
     def test_private_video(self):

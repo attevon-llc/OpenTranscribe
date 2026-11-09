@@ -9,6 +9,7 @@ verifiers, so every test restores the empty-registry state on exit.
 import uuid
 from types import SimpleNamespace
 from typing import Any
+from typing import cast
 
 import pytest
 from fastapi import HTTPException
@@ -73,7 +74,7 @@ def _identity(**overrides: Any) -> ExternalIdentity:
 def _fake_request() -> Request:
     # get_current_user only touches request.state on the external path; a
     # lightweight stand-in keeps these tests free of ASGI plumbing.
-    return SimpleNamespace(state=SimpleNamespace())  # type: ignore[return-value]
+    return cast(Request, SimpleNamespace(state=SimpleNamespace()))
 
 
 @pytest.fixture(autouse=True)
@@ -322,10 +323,15 @@ class TestGetOptionalCurrentUserExternalBranch:
     def _request_with_token(self, token: str) -> Request:
         # get_optional_current_user reads the token from the Authorization
         # header / cookie and touches request.state on the external path.
-        return SimpleNamespace(  # type: ignore[return-value]
-            headers={"Authorization": f"Bearer {token}"},
-            cookies={},
-            state=SimpleNamespace(),
+        # Partial stand-in: only the attributes the external branch reads exist. cast() names
+        # the Request the endpoint is typed against without building a real ASGI scope.
+        return cast(
+            Request,
+            SimpleNamespace(
+                headers={"Authorization": f"Bearer {token}"},
+                cookies={},
+                state=SimpleNamespace(),
+            ),
         )
 
     def test_external_token_returns_jit_user_and_stashes_identity(self, db_session):
@@ -350,7 +356,7 @@ class TestGetOptionalCurrentUserExternalBranch:
         register_verifier(EXTERNAL_PROVIDER, FakeVerifier("ext-token", _identity()))
         request = SimpleNamespace(headers={}, cookies={}, state=SimpleNamespace())
 
-        assert get_optional_current_user(request=request, db=db_session) is None  # type: ignore[arg-type]
+        assert get_optional_current_user(request=cast(Request, request), db=db_session) is None
 
     def test_non_matching_token_falls_through_to_none(self, db_session):
         from app.api.endpoints.auth import get_optional_current_user

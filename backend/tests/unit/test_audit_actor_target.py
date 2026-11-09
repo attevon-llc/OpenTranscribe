@@ -30,6 +30,7 @@ from __future__ import annotations
 import ast
 import json
 import pathlib
+from unittest.mock import patch
 
 import pytest
 
@@ -127,8 +128,8 @@ def _emitted(**kwargs) -> dict:
         def error(self, *a, **k) -> None:  # pragma: no cover - not exercised
             pass
 
-    logger._logger = _Sink()  # type: ignore[assignment]
-    logger.log(**kwargs)
+    with patch.object(logger, "_logger", _Sink()):
+        logger.log(**kwargs)
     assert captured, "the logger emitted nothing — AUDIT_LOG_ENABLED may be off"
     event: dict = json.loads(captured[0])
     return event

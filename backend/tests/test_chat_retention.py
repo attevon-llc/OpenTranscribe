@@ -15,6 +15,7 @@ import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -76,11 +77,7 @@ def _run_sweep(db, monkeypatch, *, retention_days: int):
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _session_scope)
 
-    class _Settings:
-        pass
-
-    settings = _Settings()
-    settings.retention_days = retention_days  # type: ignore[attr-defined]
+    settings = SimpleNamespace(retention_days=retention_days)
     monkeypatch.setattr(
         "app.services.chat.settings.get_chat_settings", lambda _db: settings, raising=True
     )

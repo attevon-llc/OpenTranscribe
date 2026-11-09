@@ -22,13 +22,13 @@ from __future__ import annotations
 
 import logging
 import sys
-import types
 from typing import Any
 
 import pytest
 
 from app.transcription import config as config_mod
 from app.transcription.config import TranscriptionConfig
+from tests.helpers import make_stub_module
 
 
 @pytest.fixture(autouse=True)
@@ -65,9 +65,7 @@ def _fake_torch(
             assert total_memory_mb is not None
             return _Props(total_memory_mb * 1024**2)
 
-    module = types.ModuleType("torch")
-    module.cuda = _Cuda()  # type: ignore[attr-defined]
-    return module
+    return make_stub_module("torch", cuda=_Cuda())
 
 
 # ---------------------------------------------------------------------------

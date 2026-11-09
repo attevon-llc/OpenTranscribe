@@ -1,17 +1,14 @@
-"""Shared offset/limit pagination helpers.
+"""Offset/limit pagination for SQLAlchemy queries.
 
 Consolidates the ``total = query.count(); rows = query.offset(skip).limit(limit).all()``
-boilerplate repeated across list endpoints. Behavior-preserving: ``paginate``
-computes the total with ordering stripped (``order_by(None)`` — ordering never
-affects a COUNT and lets Postgres skip an unnecessary sort) and then returns the
-ordered/sliced rows, exactly as the hand-rolled sites did.
+boilerplate repeated across list queries. ``paginate`` computes the total with ordering
+stripped (``order_by(None)``: ordering never affects a COUNT and lets Postgres skip an
+unnecessary sort) and then returns the ordered/sliced rows. The FastAPI query-parameter
+dependency lives in ``app.api.pagination``.
 """
 
-from typing import Annotated
 from typing import Any
 
-from fastapi import Depends
-from fastapi import Query
 from sqlalchemy.orm import Query as SAQuery
 
 
@@ -30,24 +27,3 @@ def paginate(query: SAQuery, skip: int = 0, limit: int = 100) -> tuple[list[Any]
     total = query.order_by(None).count()
     rows = query.offset(skip).limit(limit).all()
     return rows, total
-
-
-class PageParams:
-    """Reusable skip/limit query-parameter dependency.
-
-    Usage::
-
-        @router.get("/things")
-        def list_things(page: PageParams = Depends()): ...
-    """
-
-    def __init__(
-        self,
-        skip: Annotated[int, Query(ge=0)] = 0,
-        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
-    ) -> None:
-        self.skip = skip
-        self.limit = limit
-
-
-PageParamsDep = Annotated[PageParams, Depends()]

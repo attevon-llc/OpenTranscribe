@@ -26,7 +26,6 @@ fails on an unchecked one.
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -40,6 +39,7 @@ from app.core.constants import LEGAL_PROCESSING_ACCEPTANCE_SCOPE_KEY
 from app.core.constants import LEGAL_PROCESSING_ACCEPTANCE_SCOPES
 from app.core.constants import LEGAL_PROCESSING_GATE_TTL_SECONDS
 from app.core.constants import LEGAL_PROCESSING_REQUIRED_KEYS_KEY
+from app.core.env import testing_mode
 from app.legal import registry
 from app.models.legal_acceptance import LegalAcceptance
 
@@ -101,7 +101,7 @@ def _cache_disabled() -> bool:
     # settings rows live in a rolled-back savepoint and a cached answer would leak across tests.
     from app.core.config import settings
 
-    return settings.SETTINGS_CACHE_TTL <= 0 or os.environ.get("TESTING", "").lower() == "true"
+    return settings.SETTINGS_CACHE_TTL <= 0 or testing_mode()
 
 
 def read_config(db: Session) -> GateConfig:

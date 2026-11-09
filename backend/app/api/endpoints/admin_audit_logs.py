@@ -118,15 +118,15 @@ def export_audit_logs(
 ) -> Response:
     """Export audit logs for compliance reporting. Super admin only (all tenants).
 
-    Reads through ``query_audit_logs`` and renders with ``auth/audit_export``: the same two
+    Reads through ``query_audit_logs`` and renders with ``api/audit_export``: the same two
     pieces the organization admin's export uses, so the columns and the CSV neutralisation
     are one implementation. Capped at ``AUDIT_EXPORT_MAX_ROWS`` newest events;
     ``X-Export-Truncated`` says when that cut something off. The export is itself audited.
     """
+    from app.api.audit_export import audit_export_response
     from app.auth.audit import audit_logger
     from app.auth.audit_events import AuditEventType
     from app.auth.audit_events import AuditOutcome
-    from app.auth.audit_export import audit_export_response
     from app.auth.audit_query import query_audit_logs
     from app.core.constants import AUDIT_EXPORT_MAX_ROWS
     from app.middleware.audit import get_request_context

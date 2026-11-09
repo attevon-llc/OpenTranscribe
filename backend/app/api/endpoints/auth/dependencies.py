@@ -11,7 +11,6 @@ globals and called from here.
 """
 
 import logging
-import os
 from uuid import UUID
 
 from fastapi import Depends
@@ -38,6 +37,7 @@ from app.auth.token_service import token_service
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 from app.core.db_overload import reraise_db_overload
+from app.core.env import testing_mode
 from app.core.exceptions import DomainError
 from app.core.security import accepted_algorithms
 from app.db.base import get_db
@@ -105,9 +105,7 @@ def _load_token_user(
         # TESTING enables auth shortcuts (here, a fabricated user). Gate on
         # is_hardened as well, so the flag can never take effect in a real
         # deployment even if it leaks into the environment (issue #284 A0.8).
-        testing_environment = (
-            os.environ.get("TESTING", "False").lower() == "true" and not settings.is_hardened
-        )
+        testing_environment = testing_mode() and not settings.is_hardened
         if testing_environment:
             logger.info(f"Creating mock user for testing with uuid {token_data.sub}")
             # For tests, create a basic user object with the UUID from the token

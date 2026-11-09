@@ -28,25 +28,27 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
-from fastapi import HTTPException
+from app.core.exceptions import DomainError
 
 logger = logging.getLogger(__name__)
 
 
-class QuotaExceededError(HTTPException):
+class QuotaExceededError(DomainError):
     """Raised by a before-dispatch hook when the tenant is over quota.
 
-    Subclasses HTTPException so API-triggered dispatches surface as a clean
-    402 Payment Required without extra translation layers; Celery-triggered
+    A DomainError, so API-triggered dispatches surface as a clean 402 Payment
+    Required through the handler registered in ``main.py``; Celery-triggered
     dispatches (watch sources) catch it like any pipeline error.
     """
 
+    status_code = 402
+
     def __init__(self, detail: str = "Transcription quota exceeded", hours_over: float = 0.0):
-        super().__init__(status_code=402, detail=detail)
+        super().__init__(detail)
         self.hours_over = hours_over
 
 
-class DispatchBlockedError(HTTPException):
+class DispatchBlockedError(DomainError):
     """Raised by a before-dispatch hook to refuse a job for a NON-quota reason.
 
     Containment in :func:`fire_before_dispatch` exists so a buggy third-party
@@ -56,15 +58,18 @@ class DispatchBlockedError(HTTPException):
     dispatched anyway. This is the explicit "fail closed" signal, and raising it
     is the ONLY way (besides ``QuotaExceededError``) a hook can block dispatch.
 
-    Subclasses HTTPException so an API-triggered dispatch surfaces a clean
-    status without a translation layer, exactly as ``QuotaExceededError`` does
+    A DomainError, so an API-triggered dispatch surfaces a clean status through
+    the handler registered in ``main.py``, exactly as ``QuotaExceededError`` does
     with 402. The default is 403 Forbidden — "you may not run this", as opposed
     to quota's "pay for more and you may". ``status_code`` is settable for a
     blocker that needs a different one (451 for a legal hold, say).
     """
 
+    status_code = 403
+
     def __init__(self, detail: str | dict = "Transcription blocked", status_code: int = 403):
-        super().__init__(status_code=status_code, detail=detail)
+        super().__init__(detail)
+        self.status_code = status_code
 
 
 class LegalAcceptanceRequiredError(DispatchBlockedError):
@@ -83,11 +88,8 @@ class LegalAcceptanceRequiredError(DispatchBlockedError):
         )
         self.code = code
         self.document_keys = tuple(document_keys)
-
-    @property
-    def message(self) -> str:
-        """The stable one-line form stored on a refused file (``code: key, key``)."""
-        return f"{self.code}: {', '.join(self.document_keys) or '-'}"
+        # The stable one-line form stored on a refused file (``code: key, key``).
+        self.message = f"{self.code}: {', '.join(self.document_keys) or '-'}"
 
 
 @dataclass(frozen=True)

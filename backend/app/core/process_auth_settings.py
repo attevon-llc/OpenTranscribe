@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.core.auth_settings import CONFIG_FALLBACK_LOG
 from app.core.auth_settings import DynamicAuthSettings
 from app.core.auth_settings import count_config_fallback
+from app.core.env import testing_mode
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +62,8 @@ def _process_cache_ttl() -> float:
     reading ``.env`` again. Isolation between tests comes from the autouse
     ``_clear_process_auth_cache`` fixture instead.
     """
-    import os
 
-    if os.environ.get("TESTING", "").lower() == "true":
+    if testing_mode():
         return math.inf
     return AUTH_CONFIG_CACHE_SECONDS
 
@@ -163,9 +163,8 @@ def _read_effective_from_own_session(key: str) -> Any:
     suite's savepoint and would never see the row the test just wrote, so the
     honest answer is "no database value here".
     """
-    import os
 
-    if os.environ.get("TESTING", "").lower() == "true":
+    if testing_mode():
         return None
 
     try:

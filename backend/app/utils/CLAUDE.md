@@ -77,7 +77,8 @@ so keep heavy imports lazy.
   403 detail said "verification". Authorization is a FastAPI `Depends`
   (`api/endpoints/auth/dependencies.py` for privilege, `uuid_helpers` for resource access).
 - `pagination.py` — `paginate()` replaces the
-  count+offset+limit boilerplate (counts with `order_by(None)`).
+  count+offset+limit boilerplate (counts with `order_by(None)`). Plain SQLAlchemy, so services use it;
+  the FastAPI `PageParams` query-parameter dependency lives in `app/api/pagination.py`.
 - `encryption.py` — AES-256-GCM (v3) with legacy Fernet auto-detect. Every stored secret (ASR/LLM
   keys, S3/SMB creds, OIDC refresh/ID tokens) goes through it.
 - `task_secret_handoff.py` — **the only way a secret reaches a Celery task.** A task argument is

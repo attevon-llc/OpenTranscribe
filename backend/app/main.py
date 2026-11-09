@@ -5,7 +5,6 @@ from app.core import privacy_env  # noqa: F401  # isort: skip
 # isort: split
 import asyncio
 import logging
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextlib import suppress
@@ -34,11 +33,13 @@ from app.api.hold_refusal import hold_refused_handler
 from app.api.overload_response import handle_db_overload
 from app.api.overload_response import handle_http_exception
 from app.api.router import api_router
+from app.api.validation_errors import validation_error_handler
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
 from app.core.db_overload import OVERLOAD_EXCEPTION_CLASSES
 from app.core.env import env_bool
+from app.core.env import testing_mode
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.core.exceptions import EmailDeliveryError
@@ -48,7 +49,6 @@ from app.core.exceptions import SearchIndexError
 from app.core.exceptions import StorageError
 from app.core.logging_config import configure_logging
 from app.core.startup_validation import _validate_production_secrets
-from app.core.validation_errors import validation_error_handler
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
@@ -116,7 +116,7 @@ async def _lifespan_body(app: FastAPI) -> AsyncIterator[None]:
 
     configure_api_threadpool()
 
-    if os.environ.get("TESTING", "").lower() == "true":
+    if testing_mode():
         logger.info("Test mode: skipping startup tasks")
         yield
         return
@@ -448,7 +448,7 @@ async def handle_secret_decryption_error(
 # A HoldRefusedError no route translated (legal-hold freeze backstop): 409 FILE_UNDER_LEGAL_HOLD.
 app.add_exception_handler(HoldRefusedError, hold_refused_handler)
 
-# FastAPI's default 422, with any echoed credential removed from the body (core/validation_errors).
+# FastAPI's default 422, with any echoed credential removed from the body (api/validation_errors).
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 
 # Include the API router

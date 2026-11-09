@@ -21,6 +21,7 @@ from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarize_result import DiarizeResult
 from app.transcription.errors import MODEL_LOAD_ERRORS
+from app.utils.hf_hub_offline import hf_offline_requested
 from app.utils.pyannote_utils import build_native_embeddings
 from app.utils.pyannote_utils import extract_overlap_regions
 
@@ -84,9 +85,7 @@ class SpeakerDiarizer:
                     label=f"PyAnnote pipeline ({PYANNOTE_V4_MODEL})",
                 )
             if self._pipeline is None:
-                import os
-
-                if os.getenv("HF_HUB_OFFLINE") == "1":
+                if hf_offline_requested():
                     msg = (
                         f"PyAnnote model '{PYANNOTE_V4_MODEL}' returned None. "
                         "In offline mode, models must be pre-downloaded. "
@@ -123,9 +122,7 @@ class SpeakerDiarizer:
                         label=f"PyAnnote fallback pipeline ({PYANNOTE_V3_FALLBACK})",
                     )
                 if self._pipeline is None:
-                    import os
-
-                    if os.getenv("HF_HUB_OFFLINE") == "1":
+                    if hf_offline_requested():
                         msg = (
                             f"PyAnnote fallback model '{PYANNOTE_V3_FALLBACK}' returned None. "
                             "In offline mode, models must be pre-downloaded. "

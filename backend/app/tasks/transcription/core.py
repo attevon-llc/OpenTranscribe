@@ -27,6 +27,7 @@ from celery import chain
 from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.enums import TranscriptionStage
+from app.core.env import celery_visibility_timeout_s
 from app.core.queues import CeleryQueues
 from app.core.queues import GPUPriority
 from app.core.queues import gpu_split_enabled
@@ -142,7 +143,7 @@ def _claim_gpu_split_diarize_dispatch(task_id: str) -> bool:
 
     from app.core.redis import get_redis
 
-    ttl_s = int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600")) + 3600
+    ttl_s = celery_visibility_timeout_s() + 3600
     key = f"gpu_split_diarize_dispatched:{task_id}"
     try:
         return bool(get_redis().set(key, "1", nx=True, ex=ttl_s))

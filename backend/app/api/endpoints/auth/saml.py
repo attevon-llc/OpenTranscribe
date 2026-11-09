@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.login_completion import _check_mfa_requirement
 from app.api.endpoints.auth.login_completion import record_successful_login
+from app.api.saml_request import saml_request_data
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
@@ -47,7 +48,6 @@ from app.auth.saml.assertion import extract_saml_user_data
 from app.auth.saml.config import SAMLConfig
 from app.auth.saml.provisioning import sync_saml_user_to_db
 from app.auth.saml.sp import build_auth
-from app.auth.saml.sp import saml_request_data
 from app.auth.token_service import token_service
 from app.core.config import settings
 from app.core.exceptions import DomainError

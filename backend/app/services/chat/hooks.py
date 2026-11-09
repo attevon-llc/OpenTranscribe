@@ -24,16 +24,18 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from fastapi import HTTPException
+from app.core.exceptions import DomainError
 
 logger = logging.getLogger(__name__)
 
 
-class ChatQuotaExceededError(HTTPException):
-    """Raised by a before-message hook when the tenant is over quota."""
+class ChatQuotaExceededError(DomainError):
+    """Raised by a before-message hook when the tenant is over quota (402)."""
+
+    status_code = 402
 
     def __init__(self, detail: str = "Chat quota exceeded"):
-        super().__init__(status_code=402, detail=detail)
+        super().__init__(detail)
 
 
 @dataclass(frozen=True)

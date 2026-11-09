@@ -11,9 +11,9 @@ from __future__ import annotations
 import csv
 import io
 
+from app.api.audit_export import EXPORT_COLUMNS
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
-from app.auth.audit_export import EXPORT_COLUMNS
 from app.core.config import settings
 
 EXPORT = "/api/admin/audit-logs/export"

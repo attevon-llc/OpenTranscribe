@@ -12,6 +12,7 @@ import ssl
 
 from app.core import celery_worker_lifecycle
 from app.core import worker_metrics
+from app.core.env import celery_visibility_timeout_s
 from app.core.env import env_bool
 from app.utils.nltk_offline import ensure_nltk_data_private
 
@@ -396,7 +397,7 @@ celery_app.conf.update(
         # lease and the orphan reaper (app/core/broker_orphans.py) returns a dead
         # holder's message to the head of its queue as soon as the lease lapses. This
         # timeout is only the backstop for acks_late tasks that hold no lease.
-        "visibility_timeout": int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600")),
+        "visibility_timeout": celery_visibility_timeout_s(),
         # Dead-connection detection — see _REDIS_SOCKET_TIMEOUT above (issue #1144).
         "socket_keepalive": True,
         "socket_keepalive_options": _REDIS_KEEPALIVE_OPTIONS,

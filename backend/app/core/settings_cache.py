@@ -37,13 +37,13 @@ required to keep the cache from leaking.
 
 from __future__ import annotations
 
-import os
 import threading
 from typing import Any
 
 from cachetools import TTLCache
 
 from app.core.config import settings
+from app.core.env import testing_mode
 from app.core.metrics import cache_operations_total
 
 _CACHE_NAME = "settings"
@@ -58,7 +58,7 @@ def _bypass() -> bool:
     if settings.SETTINGS_CACHE_TTL <= 0:
         return True
     # Read at call time so import ordering can never defeat the test guard.
-    return os.environ.get("TESTING", "").lower() == "true"
+    return testing_mode()
 
 
 def cached_get(db: Any, key: str, default: str | None = None) -> str | None:

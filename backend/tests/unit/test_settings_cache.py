@@ -81,7 +81,7 @@ def test_testing_bypass_is_airtight(monkeypatch):
 def test_ttl_zero_bypasses(monkeypatch):
     """SETTINGS_CACHE_TTL <= 0 disables the cache."""
     monkeypatch.setattr(settings_cache.settings, "SETTINGS_CACHE_TTL", 0)
-    monkeypatch.setattr(settings_cache.os.environ, "get", lambda *a, **k: "")
+    monkeypatch.delenv("TESTING", raising=False)
     assert settings_cache._bypass() is True
 
 

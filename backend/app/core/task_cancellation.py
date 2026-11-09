@@ -66,6 +66,7 @@ from dataclasses import dataclass
 
 import redis
 
+from app.core.env import celery_visibility_timeout_s
 from app.core.worker_shutdown import raise_if_shutting_down
 
 logger = logging.getLogger(__name__)
@@ -156,12 +157,8 @@ def _cancel_ttl_seconds() -> int:
     ``settings.CELERY_VISIBILITY_TIMEOUT`` does not exist and a ``getattr`` default here would
     be a fixed constant wearing a derivation's clothes.
     """
-    import os
 
-    try:
-        return int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600"))
-    except ValueError:
-        return 21600
+    return celery_visibility_timeout_s()
 
 
 def _flag_is_set(task_id: str) -> bool:

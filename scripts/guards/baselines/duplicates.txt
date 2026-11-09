@@ -1,6 +1,4 @@
 backend/app/api/endpoints/search_helpers.py	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/app/api/endpoints/user_settings_audio_extraction.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/app/api/endpoints/user_settings_recording.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/auth/audit.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/auth/oidc/config.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/auth/saml/config.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -303,7 +301,7 @@ frontend/src/components/settings/OIDCSettings.svelte	12	pre-existing duplicated 
 frontend/src/components/settings/OrganizationContextSettings.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/PKISettings.svelte	8	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/PasswordPolicySettings.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/settings/PromptSettings.svelte	19	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/settings/PromptSettings.svelte	13	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/ProxySettings.svelte	8	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/PyannoteCredentialForm.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/QuarantinePanel.cells.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

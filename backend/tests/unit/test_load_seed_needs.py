@@ -16,6 +16,11 @@ from app.scripts.scale_dataset import pg_synthetic as pg
 from app.scripts.scale_dataset.pg_governance import seed_all
 from tests.fixtures import locust_stub as stub
 
+# Seeds write fixed natural keys (perf-N@loadtest.invalid) into uncommitted rows, so two of
+# these open on different workers block on each other's unique index while each still holds the
+# shared DDL lock, which stalls every ddl_exclusive test queued behind them. One group, one worker.
+pytestmark = pytest.mark.xdist_group("scale_dataset_seed")
+
 SEEDED_USERS = 24
 # A small copy of the runbook's load seed: same flags, scaled down.
 LOAD_SHAPE = pg.Shape(

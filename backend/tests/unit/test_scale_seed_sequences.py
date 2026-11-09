@@ -7,6 +7,10 @@ M2 tool bugs T2, T3, T9: a snapshot whose sequences sat behind ``max(id)`` made 
 
 from __future__ import annotations
 
+from sqlalchemy import Column
+from sqlalchemy import Integer
+from sqlalchemy import MetaData
+from sqlalchemy import Table
 from sqlalchemy import text
 
 from app.schemas.chat import Citation
@@ -138,3 +142,20 @@ def test_activity_only_repairs_the_sequences_an_older_snapshot_left_behind(db_se
     seed_activity_only(conn, SHAPE, "seq1337")
 
     assert _behind(conn, SEEDED_TABLES) == []
+
+
+def test_claiming_zero_ids_from_a_never_drawn_sequence_leaves_it_alone(db_session):
+    """``setval(seq, 0)`` is out of range, so a zero-row claim must not issue one."""
+    conn = db_session.connection()
+    conn.execute(text("CREATE TEMP TABLE claim_zero_probe (id serial PRIMARY KEY)"))
+    table = Table("claim_zero_probe", MetaData(), Column("id", Integer, primary_key=True))
+
+    base = pg._claim_ids(conn, table, 0)
+
+    assert base == 0
+    last = conn.execute(
+        text(
+            "SELECT pg_sequence_last_value(pg_get_serial_sequence('claim_zero_probe', 'id')::regclass)"
+        )
+    ).scalar_one()
+    assert last is None, "the sequence must still be undrawn"

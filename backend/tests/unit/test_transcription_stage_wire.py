@@ -84,15 +84,10 @@ _EXPECTED_CALL_SITES: dict[tuple[str, str, str], str] = {
     ("tasks/transcription/pipelines.py", "progress_callback", _FORWARDED): "stage",
     (
         "tasks/transcription/pipelines.py",
-        "_run_engine_pipeline",
+        "_begin_transcribe_stage",
         "Running AI transcription",
     ): "TRANSCRIBE",
     ("tasks/transcription/pipelines.py", "_progress", _FORWARDED): "stage",
-    (
-        "tasks/transcription/pipelines.py",
-        "_run_transcribe_only_stage",
-        "Running AI transcription",
-    ): "TRANSCRIBE",
     (
         "tasks/transcription/cloud_asr.py",
         "_run_cloud_asr_pipeline",
@@ -215,7 +210,6 @@ def _calls_named(name: str):
 # Keys that legitimately occur more than once (one per branch); every other key occurs once.
 _REPEATED_CALL_SITES = {
     ("tasks/transcription/core.py", "transcribe_gpu_task", "Starting AI transcription"): 2,
-    ("tasks/transcription/pipelines.py", "_progress", _FORWARDED): 2,
     ("tasks/transcription/postprocess.py", "_finalize", "Processing speaker identification"): 2,
 }
 

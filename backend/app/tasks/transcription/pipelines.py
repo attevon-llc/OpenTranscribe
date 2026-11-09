@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from app.core.config import settings
@@ -27,6 +28,7 @@ from .user_settings import resolve_speaker_range
 
 if TYPE_CHECKING:
     from app.transcription import EngineConfig
+    from app.transcription.engine.job import PreprocessResult
 
 logger = logging.getLogger(__name__)
 
@@ -216,56 +218,28 @@ def _run_transcription_pipeline(
     return raw_result
 
 
-def _run_engine_pipeline(
-    ctx: TranscriptionContext,
-    local_wav_path: str,
-    preprocess_context: dict,
-) -> dict:
-    """Engine split-stage fast path: skips MinIO download via shared-volume WAV.
+def _build_stage_overrides(ctx: TranscriptionContext, preprocess_context: dict) -> dict:
+    """Per-task EngineConfig overrides: language, speaker range, VAD, privacy limits.
 
-    Uses Engine.run_gpu_stage() + Engine.run_cpu_finalize() so that transcription
-    and diarization run in the GPU stage while speaker assignment runs in the CPU
-    finalize stage — identical output shape to _run_transcription_pipeline().
-
-    Args:
-        ctx: Transcription task context (task_id, file_id, user_id, …).
-        local_wav_path: Path to the pre-decoded WAV on the shared volume written
-            by the preprocess task.  Caller must verify the file exists.
-        preprocess_context: Raw dict forwarded from the preprocess task, used to
-            extract per-task overrides (speakers, language, model, …).
-
-    Returns:
-        dict compatible with _process_and_save_critical() — same shape as
-        _run_transcription_pipeline() with ``asr_provider`` and ``asr_model`` set.
+    Shared by the single-GPU fast path and the split transcribe-only stage so both build the
+    same overrides from the same user settings.
     """
-    from app.transcription import Engine
-    from app.transcription.engine.job import PreprocessResult
-
     min_speakers = preprocess_context.get("min_speakers")
     max_speakers = preprocess_context.get("max_speakers")
     num_speakers = preprocess_context.get("num_speakers")
     source_language = preprocess_context.get("source_language")
     translate_to_english = preprocess_context.get("translate_to_english")
     enable_diarization = plan_of(preprocess_context).diarization.execution == "inline_local"
-    whisper_model = preprocess_context.get("whisper_model")
 
     source_language, translate_to_english = _resolve_language_settings(
         ctx, source_language, translate_to_english
-    )
-
-    logger.info(
-        "Engine fast path: file=%d lang=%s translate=%s wav=%s",
-        ctx.file_id,
-        source_language,
-        translate_to_english,
-        local_wav_path,
     )
 
     with session_scope() as db:
         user_settings = _get_user_transcription_settings(db, ctx.user_id)
     speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
-    overrides: dict = dict(
+    return dict(
         source_language=source_language,
         translate_to_english=translate_to_english,
         min_speakers=speaker_range.min_speakers,
@@ -284,28 +258,12 @@ def _run_engine_pipeline(
         **job_privacy_overrides(ctx.file_id),
     )
 
-    # Honour admin-pinned model (same validation as _run_transcription_pipeline)
-    from app.transcription import TranscriptionConfig as _TranscriptionConfig
 
-    if whisper_model:
-        if whisper_model in LIGHTWEIGHT_MODELS:
-            logger.warning(
-                "Lightweight model '%s' reached engine fast path — should have been "
-                "routed to CPU. Using admin-pinned model instead.",
-                whisper_model,
-            )
-        elif whisper_model != _TranscriptionConfig._pinned_model_name:
-            logger.warning(
-                "Model override '%s' rejected in engine fast path — only the "
-                "admin-pinned model ('%s') is supported.",
-                whisper_model,
-                _TranscriptionConfig._pinned_model_name,
-            )
-
-    engine_config = _build_engine_config(overrides)
-    config = engine_config.transcription_config
-
-    engine = Engine(engine_config)
+def _begin_transcribe_stage(
+    ctx: TranscriptionContext, local_wav_path: str, engine_config: EngineConfig
+) -> tuple[PreprocessResult, Callable[..., None]]:
+    """Build the shared-volume ``PreprocessResult``, announce 40%, return it with a progress hook."""
+    from app.transcription.engine.job import PreprocessResult
 
     pre = PreprocessResult(
         task_id=ctx.task_id,
@@ -340,6 +298,69 @@ def _run_engine_pipeline(
         with session_scope() as db:
             update_task_status(db, ctx.task_id, "in_progress", progress=progress)
         send_progress_notification(ctx.user_id, ctx.file_id, progress, message, stage=stage)
+
+    return pre, _progress
+
+
+def _run_engine_pipeline(
+    ctx: TranscriptionContext,
+    local_wav_path: str,
+    preprocess_context: dict,
+) -> dict:
+    """Engine split-stage fast path: skips MinIO download via shared-volume WAV.
+
+    Uses Engine.run_gpu_stage() + Engine.run_cpu_finalize() so that transcription
+    and diarization run in the GPU stage while speaker assignment runs in the CPU
+    finalize stage — identical output shape to _run_transcription_pipeline().
+
+    Args:
+        ctx: Transcription task context (task_id, file_id, user_id, …).
+        local_wav_path: Path to the pre-decoded WAV on the shared volume written
+            by the preprocess task.  Caller must verify the file exists.
+        preprocess_context: Raw dict forwarded from the preprocess task, used to
+            extract per-task overrides (speakers, language, model, …).
+
+    Returns:
+        dict compatible with _process_and_save_critical() — same shape as
+        _run_transcription_pipeline() with ``asr_provider`` and ``asr_model`` set.
+    """
+    from app.transcription import Engine
+
+    overrides = _build_stage_overrides(ctx, preprocess_context)
+    whisper_model = preprocess_context.get("whisper_model")
+
+    logger.info(
+        "Engine fast path: file=%d lang=%s translate=%s wav=%s",
+        ctx.file_id,
+        overrides["source_language"],
+        overrides["translate_to_english"],
+        local_wav_path,
+    )
+
+    # Honour admin-pinned model (same validation as _run_transcription_pipeline)
+    from app.transcription import TranscriptionConfig as _TranscriptionConfig
+
+    if whisper_model:
+        if whisper_model in LIGHTWEIGHT_MODELS:
+            logger.warning(
+                "Lightweight model '%s' reached engine fast path — should have been "
+                "routed to CPU. Using admin-pinned model instead.",
+                whisper_model,
+            )
+        elif whisper_model != _TranscriptionConfig._pinned_model_name:
+            logger.warning(
+                "Model override '%s' rejected in engine fast path — only the "
+                "admin-pinned model ('%s') is supported.",
+                whisper_model,
+                _TranscriptionConfig._pinned_model_name,
+            )
+
+    engine_config = _build_engine_config(overrides)
+    config = engine_config.transcription_config
+
+    engine = Engine(engine_config)
+
+    pre, _progress = _begin_transcribe_stage(ctx, local_wav_path, engine_config)
 
     raw = engine.run_gpu_stage(pre, progress_callback=_progress)
     job_result = engine.run_cpu_finalize(raw)
@@ -380,42 +401,9 @@ def _run_transcribe_only_stage(
     """
     from app.transcription import Engine
     from app.transcription import TranscriptionConfig as _TranscriptionConfig
-    from app.transcription.engine.job import PreprocessResult
 
-    min_speakers = preprocess_context.get("min_speakers")
-    max_speakers = preprocess_context.get("max_speakers")
-    num_speakers = preprocess_context.get("num_speakers")
-    source_language = preprocess_context.get("source_language")
-    translate_to_english = preprocess_context.get("translate_to_english")
-    enable_diarization = plan_of(preprocess_context).diarization.execution == "inline_local"
+    overrides = _build_stage_overrides(ctx, preprocess_context)
     whisper_model = preprocess_context.get("whisper_model")
-
-    source_language, translate_to_english = _resolve_language_settings(
-        ctx, source_language, translate_to_english
-    )
-
-    with session_scope() as db:
-        user_settings = _get_user_transcription_settings(db, ctx.user_id)
-    speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
-
-    overrides: dict = dict(
-        source_language=source_language,
-        translate_to_english=translate_to_english,
-        min_speakers=speaker_range.min_speakers,
-        max_speakers=speaker_range.max_speakers,
-        num_speakers=speaker_range.num_speakers,
-        vad_threshold=user_settings["vad_threshold"],
-        vad_min_silence_ms=user_settings["vad_min_silence_ms"],
-        vad_min_speech_ms=user_settings["vad_min_speech_ms"],
-        vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
-        hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
-        repetition_penalty=user_settings["repetition_penalty"],
-        enable_diarization=enable_diarization,
-        vocabulary=_load_file_vocabulary(ctx),
-        # What the privacy policy forbids for this file's owner and organization (fresh read,
-        # restrictions only): no centroids leave the diarizer, no gender is requested.
-        **job_privacy_overrides(ctx.file_id),
-    )
 
     if (
         whisper_model
@@ -435,39 +423,7 @@ def _run_transcribe_only_stage(
     engine_config = _build_engine_config(overrides)
     engine = Engine(engine_config)
 
-    pre = PreprocessResult(
-        task_id=ctx.task_id,
-        file_id=ctx.file_id,
-        user_id=ctx.user_id,
-        local_wav_path=local_wav_path,
-        minio_temp_object="",
-        audio_duration_s=0.0,
-        audio_sample_rate=16000,
-        audio_channels=1,
-        audio_size_bytes=0,
-        vad_regions=None,
-        config_snapshot=engine_config.to_snapshot(),
-    )
-
-    with session_scope() as db:
-        update_task_status(db, ctx.task_id, "in_progress", progress=0.40)
-
-    send_progress_notification(
-        ctx.user_id,
-        ctx.file_id,
-        0.40,
-        "Running AI transcription",
-        stage=TranscriptionStage.TRANSCRIBE,
-    )
-
-    def _progress(
-        progress: float,
-        message: str,
-        stage: TranscriptionStage = TranscriptionStage.TRANSCRIBE,
-    ) -> None:
-        with session_scope() as db:
-            update_task_status(db, ctx.task_id, "in_progress", progress=progress)
-        send_progress_notification(ctx.user_id, ctx.file_id, progress, message, stage=stage)
+    pre, _progress = _begin_transcribe_stage(ctx, local_wav_path, engine_config)
 
     transcript = engine.run_transcribe_only(pre, progress_callback=_progress)
     return transcript.serialize()

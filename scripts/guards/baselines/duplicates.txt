@@ -358,7 +358,7 @@ frontend/src/components/tags/TagList.svelte	2	pre-existing duplicated blocks of 
 frontend/src/components/tags/TagManagerModal.behaviour.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/tags/TagManagerModal.contract.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/transcript/SpeakerEditorPanel.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/transcript/TranscriptSegmentList.svelte	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/transcript/TranscriptSegmentList.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/ui/ConnectionStatusBanner.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/upload/UploadStepExtraction.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/upload/UploadStepSpeakers.svelte	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

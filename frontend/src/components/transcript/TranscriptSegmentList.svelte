@@ -316,6 +316,101 @@
     class="transcript-display"
     bind:this={transcriptDisplayElement}
   >
+  {#snippet segmentBody(segment: TranscriptSegment)}
+    {#if editable && editingSegmentId === segment.uuid}
+      <div class="segment-edit-container">
+        <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
+        {#if !diarizationDisabled}
+        {@const speakerMatch = speakerMatchState(segment)}
+        <div
+          class="segment-speaker"
+          class:search-match={speakerMatch.highlighted && !speakerMatch.isCurrent}
+          class:current-match={speakerMatch.isCurrent}
+        >{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
+        {/if}
+        <div class="segment-edit-input">
+          <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
+          <div class="segment-edit-actions">
+            <button
+              class="cancel-button"
+              on:click={cancelEditSegment}
+              title={$t('transcript.cancelSegmentTitle')}
+            >{$t('common.cancel')}</button>
+            <button
+              class="save-button"
+              on:click={() => saveSegment(segment)}
+              disabled={savingTranscript}
+              title={$t('transcript.saveSegmentTitle')}
+            >
+              {savingTranscript ? $t('common.saving') : $t('common.save')}
+            </button>
+          </div>
+        </div>
+      </div>
+    {:else}
+      <div class="segment-row">
+        <button
+          class="segment-content{diarizationDisabled ? ' monologue' : ''}"
+          on:click={() => handleSegmentClick(segment.start_time)}
+          on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
+          title={$t('transcript.jumpToSegment')}
+        >
+          <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
+          {#if !diarizationDisabled}
+          {@const speakerMatch = speakerMatchState(segment)}
+          <div
+            class="segment-speaker-wrapper"
+            role="button"
+            tabindex="0"
+            on:click|stopPropagation
+            on:keydown={(e) => e.key === 'Enter' && e.stopPropagation()}
+          >
+            <SegmentSpeakerDropdown
+              {segment}
+              speakers={speakerList}
+              mediaFileUuid={file?.uuid?.toString() || ''}
+              highlighted={speakerMatch.highlighted}
+              isCurrentMatch={speakerMatch.isCurrent}
+              readOnly={!editable}
+              on:change={handleSegmentSpeakerChange}
+              on:speakerCreated={handleSpeakerCreated}
+              on:speakerUpdate={handleSpeakerUpdate}
+            />
+          </div>
+          {/if}
+          <div
+            class="segment-text"
+            dir="auto"
+            class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
+            class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
+          >
+            <SanitizedHtml html={segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification)} />
+            {#if segment.confidence !== undefined && segment.confidence !== null && segment.confidence < 0.7}
+              <span class="low-confidence-dot" role="img" aria-label={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'} title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}><MenuIcon name="dot" size={8} /></span>
+            {/if}
+          </div>
+        </button>
+        {#if editable}
+        <button
+          class="edit-button"
+          on:click|stopPropagation={() => editSegment(segment)}
+          title={$t('transcript.editSegment')}
+        >
+          {$t('common.edit')}
+        </button>
+        {:else if $frozen}
+        <button
+          class="edit-button"
+          disabled
+          title={$t('holds.frozenControl')}
+          aria-describedby="transcript-frozen-note"
+        >
+          {$t('common.edit')}
+        </button>
+        {/if}
+      </div>
+    {/if}
+  {/snippet}
   {#each groupedTranscriptSegments as group (groupKey(group))}
     {#if group.isOverlapGroup}
       <!-- Overlap Group Container -->
@@ -340,96 +435,7 @@
             class:last-in-overlap={!diarizationDisabled && segIdx === group.segments.length - 1}
             data-segment-id="{segment.uuid}"
           >
-            {#if editable && editingSegmentId === segment.uuid}
-              <div class="segment-edit-container">
-                <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
-                {#if !diarizationDisabled}
-                {@const speakerMatch = speakerMatchState(segment)}
-                <div
-                  class="segment-speaker"
-                  class:search-match={speakerMatch.highlighted && !speakerMatch.isCurrent}
-                  class:current-match={speakerMatch.isCurrent}
-                >{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
-                {/if}
-                <div class="segment-edit-input">
-                  <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
-                  <div class="segment-edit-actions">
-                    <button
-                      class="cancel-button"
-                      on:click={cancelEditSegment}
-                      title={$t('transcript.cancelSegmentTitle')}
-                    >{$t('common.cancel')}</button>
-                    <button
-                      class="save-button"
-                      on:click={() => saveSegment(segment)}
-                      disabled={savingTranscript}
-                      title={$t('transcript.saveSegmentTitle')}
-                    >
-                      {savingTranscript ? $t('common.saving') : $t('common.save')}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            {:else}
-              <div class="segment-row">
-                <button
-                  class="segment-content{diarizationDisabled ? ' monologue' : ''}"
-                  on:click={() => handleSegmentClick(segment.start_time)}
-                  on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
-                  title={$t('transcript.jumpToSegment')}
-                >
-                  <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
-                  {#if !diarizationDisabled}
-                  {@const speakerMatch = speakerMatchState(segment)}
-                  <div
-                    class="segment-speaker-wrapper"
-                    role="button"
-                    tabindex="0"
-                    on:click|stopPropagation
-                    on:keydown={(e) => e.key === 'Enter' && e.stopPropagation()}
-                  >
-                    <SegmentSpeakerDropdown
-                      {segment}
-                      speakers={speakerList}
-                      mediaFileUuid={file?.uuid?.toString() || ''}
-                      highlighted={speakerMatch.highlighted}
-                      isCurrentMatch={speakerMatch.isCurrent}
-                      readOnly={!editable}
-                      on:change={handleSegmentSpeakerChange}
-                      on:speakerCreated={handleSpeakerCreated}
-                      on:speakerUpdate={handleSpeakerUpdate}
-                    />
-                  </div>
-                  {/if}
-                  <div
-                    class="segment-text"
-                    dir="auto"
-                    class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
-                    class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
-                  >
-                    <SanitizedHtml html={segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification)} />
-                  </div>
-                </button>
-                {#if editable}
-                <button
-                  class="edit-button"
-                  on:click|stopPropagation={() => editSegment(segment)}
-                  title={$t('transcript.editSegment')}
-                >
-                  {$t('common.edit')}
-                </button>
-                {:else if $frozen}
-                <button
-                  class="edit-button"
-                  disabled
-                  title={$t('holds.frozenControl')}
-                  aria-describedby="transcript-frozen-note"
-                >
-                  {$t('common.edit')}
-                </button>
-                {/if}
-              </div>
-            {/if}
+            {@render segmentBody(segment)}
           </div>
         {/each}
       </div>
@@ -441,99 +447,7 @@
         data-segment-id="{segment.uuid}"
         data-seg-index={group.startSegmentIndex}
       >
-        {#if editable && editingSegmentId === segment.uuid}
-          <div class="segment-edit-container">
-            <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
-            {#if !diarizationDisabled}
-            {@const speakerMatch = speakerMatchState(segment)}
-            <div
-              class="segment-speaker"
-              class:search-match={speakerMatch.highlighted && !speakerMatch.isCurrent}
-              class:current-match={speakerMatch.isCurrent}
-            >{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
-            {/if}
-            <div class="segment-edit-input">
-              <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
-              <div class="segment-edit-actions">
-                <button
-                  class="cancel-button"
-                  on:click={cancelEditSegment}
-                  title={$t('transcript.cancelSegmentTitle')}
-                >{$t('common.cancel')}</button>
-                <button
-                  class="save-button"
-                  on:click={() => saveSegment(segment)}
-                  disabled={savingTranscript}
-                  title={$t('transcript.saveSegmentTitle')}
-                >
-                  {savingTranscript ? $t('common.saving') : $t('common.save')}
-                </button>
-              </div>
-            </div>
-          </div>
-        {:else}
-          <div class="segment-row">
-            <button
-              class="segment-content{diarizationDisabled ? ' monologue' : ''}"
-              on:click={() => handleSegmentClick(segment.start_time)}
-              on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
-              title={$t('transcript.jumpToSegment')}
-            >
-              <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
-              {#if !diarizationDisabled}
-              {@const speakerMatch = speakerMatchState(segment)}
-              <div
-                class="segment-speaker-wrapper"
-                role="button"
-                tabindex="0"
-                on:click|stopPropagation
-                on:keydown={(e) => e.key === 'Enter' && e.stopPropagation()}
-              >
-                <SegmentSpeakerDropdown
-                  {segment}
-                  speakers={speakerList}
-                  mediaFileUuid={file?.uuid?.toString() || ''}
-                  highlighted={speakerMatch.highlighted}
-                  isCurrentMatch={speakerMatch.isCurrent}
-                  readOnly={!editable}
-                  on:change={handleSegmentSpeakerChange}
-                  on:speakerCreated={handleSpeakerCreated}
-                  on:speakerUpdate={handleSpeakerUpdate}
-                />
-              </div>
-              {/if}
-              <div
-                class="segment-text"
-                dir="auto"
-                class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
-                class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
-              >
-                <SanitizedHtml html={segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification)} />
-                {#if segment.confidence !== undefined && segment.confidence !== null && segment.confidence < 0.7}
-                  <span class="low-confidence-dot" role="img" aria-label={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'} title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}><MenuIcon name="dot" size={8} /></span>
-                {/if}
-              </div>
-            </button>
-            {#if editable}
-            <button
-              class="edit-button"
-              on:click|stopPropagation={() => editSegment(segment)}
-              title={$t('transcript.editSegment')}
-            >
-              {$t('common.edit')}
-            </button>
-            {:else if $frozen}
-            <button
-              class="edit-button"
-              disabled
-              title={$t('holds.frozenControl')}
-              aria-describedby="transcript-frozen-note"
-            >
-              {$t('common.edit')}
-            </button>
-            {/if}
-          </div>
-        {/if}
+        {@render segmentBody(segment)}
       </div>
     {/if}
   {/each}

@@ -101,9 +101,10 @@ describe('TranscriptSegmentList', () => {
     const texts = [...container.querySelectorAll('.segment-text')];
     expect(texts.length).toBe(4);
     for (const el of texts) expect(el.getAttribute('dir')).toBe('auto');
+    // One shared snippet renders both the regular and the overlap-group rows.
     const source = readFileSync(resolve(__dirname, 'TranscriptSegmentList.svelte'), 'utf8');
     const opened = source.match(/class="segment-text"[^>]*>/g) ?? [];
-    expect(opened.length).toBe(2);
+    expect(opened.length).toBe(1);
     for (const tag of opened) expect(tag).toContain('dir="auto"');
   });
 
@@ -270,5 +271,27 @@ describe('TranscriptSegmentList', () => {
     fireVisibility([{ target: rows[2], isIntersecting: false }]);
     await tick();
     expect(fill.style.width).toBe('3%');
+  });
+});
+
+describe('TranscriptSegmentList confidence marker', () => {
+  beforeEach(() => {
+    vi.stubGlobal('IntersectionObserver', StubIntersectionObserver);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([false, true])('marks a low-confidence segment (overlap group: %s)', (isOverlapGroup) => {
+    const low = { ...segment('low', 0), confidence: 0.4 };
+    const sure = { ...segment('sure', 1), confidence: 0.95 };
+    const grouped = [
+      { ...group('low', 0), isOverlapGroup, segments: isOverlapGroup ? [low, sure] : [low] },
+    ];
+    const { container } = render(TranscriptSegmentList, {
+      props: { ...props, groupedTranscriptSegments: grouped },
+    });
+    expect(container.querySelectorAll('.low-confidence-dot')).toHaveLength(1);
   });
 });

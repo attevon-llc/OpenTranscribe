@@ -385,7 +385,8 @@ def test_get_status_returns_defaults_when_redis_is_unreachable(unreachable_svc):
     status = unreachable_svc.get_status()
     assert status["running"] is False
     assert status["failed_files"] == []
-    assert unreachable_svc.is_running() is False
+    # Fail closed: an unreadable state is not "no migration running".
+    assert unreachable_svc.is_running() is True
 
 
 # =============================================================================

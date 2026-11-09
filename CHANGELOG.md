@@ -186,7 +186,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The embedding-migration lock now fails closed. `MigrationLockService.state()` is tri-state (`RELEASED` / `ACTIVE` / `UNKNOWN`); a Redis outage used to read as "released", so `is_active()` now counts `UNKNOWN` as active and `POST /embedding-migration/start` answers 503 instead of risking a second migration.
+- The embedding-migration lock now fails closed. `MigrationLockService.state()` is tri-state (`RELEASED` / `ACTIVE` / `UNKNOWN`); a Redis outage used to read as "released", so `is_active()` now counts `UNKNOWN` as active and `POST /embedding-migration/start` answers 503 instead of risking a second migration. `MigrationProgressService.is_running()` fails closed the same way (new `running_state()`: `RUNNING` / `IDLE` / `UNKNOWN`), so no migration orchestrator reads a Redis outage as "not running".
 
 - Every `type: ignore` in `backend/app/api`, `schemas` and `main.py` is gone because the typing it hid is fixed. Real behaviour changes: `PUT` ASR settings with an explicit null for `name`, `provider`, `model_name`, `is_active` or `is_shared` (NOT NULL columns) now answers 422 (provider null was a 500, name null wrote NULL); `create_media_file_record` takes a `UploadedFileInfo` protocol (the prepare-upload path passed it a `FileMetadata`, not an `UploadFile`); external token verifiers are typed against Starlette `HTTPConnection`, which is what the WebSocket handshake already passed them; the rate-limit and validation exception handlers use Starlette's declared `(Request, Exception)` signature; collection, URL-import and LLM-settings responses are built with `model_validate` instead of assigning ORM rows into schema fields.
 

@@ -5,6 +5,7 @@ This module provides a Redis-based service for tracking the progress of
 long-running migrations like the v3 to v4 speaker embedding migration.
 """
 
+import enum
 import json
 import logging
 from datetime import UTC
@@ -48,6 +49,14 @@ class MigrationStatus(TypedDict):
     orchestrator_task_id: str | None
     last_updated: str | None  # ISO timestamp
     eta_seconds: NotRequired[float | None]  # Added by API layer from ProgressTracker
+
+
+class RunState(enum.Enum):
+    """Whether a migration is running, as far as Redis lets us tell."""
+
+    RUNNING = "running"
+    IDLE = "idle"
+    UNKNOWN = "unknown"
 
 
 class MigrationProgressService:
@@ -134,8 +143,26 @@ class MigrationProgressService:
         Returns:
             True if a migration is in progress.
         """
-        status = self.get_status()
-        return status.get("running", False)
+        return self.running_state() is not RunState.IDLE
+
+    def running_state(self) -> RunState:
+        """Read whether a migration runs: yes, no, or unobservable (Redis down).
+
+        ``get_status`` answers a default "not running" status on an outage, which would let
+        a second migration start; this reads Redis directly so the outage stays visible.
+        """
+        client = self.redis_client
+        if not client:
+            return RunState.UNKNOWN
+        try:
+            status_json = client.get(self._get_key("status"))
+            if not status_json:
+                return RunState.IDLE
+            running = bool(json.loads(status_json).get("running", False))
+        except (RedisError, ValueError) as e:
+            logger.error(f"Could not read migration running state: {e}", exc_info=True)
+            return RunState.UNKNOWN
+        return RunState.RUNNING if running else RunState.IDLE
 
     def start_migration(self, total_files: int, task_id: str | None = None) -> bool:
         """Mark a migration as started.

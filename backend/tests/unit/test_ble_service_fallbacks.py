@@ -68,7 +68,7 @@ def test_migration_lock_redis_outage_is_logged_with_traceback(monkeypatch, caplo
     )
     lock = migration_lock_service.MigrationLockService()
     with caplog.at_level(logging.ERROR, logger=migration_lock_service.logger.name):
-        assert lock.is_active() is False
+        assert lock.is_active() is True  # unknown counts as active (fail closed)
     assert _traceback_records(caplog, migration_lock_service.logger.name)
 
 

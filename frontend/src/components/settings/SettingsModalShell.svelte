@@ -42,10 +42,10 @@
 <SettingsModalFrame busy on:close={close}>
   <div slot="sidebar" class="sidebar-skeleton" role="status" aria-label={$t('settings.modal.sectionLoading')}>
     <div class="search-skeleton"></div>
-    {#each groups as rows}
+    {#each groups as rows, i (i)}
       <div class="group-skeleton">
         <div class="heading-skeleton"></div>
-        {#each Array(rows) as _}
+        {#each Array(rows) as _, j (j)}
           <div class="row-skeleton"></div>
         {/each}
       </div>

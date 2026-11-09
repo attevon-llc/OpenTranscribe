@@ -207,7 +207,7 @@
               { key: 'nlp', label: $t('settings.statistics.queueNlp') },
               { key: 'embedding', label: $t('settings.statistics.queueEmbedding') },
               { key: 'cpu', label: $t('settings.statistics.queueCpu') }
-            ] as queue}
+            ] as queue (queue.key)}
               {#if stats.queues?.[queue.key] > 0}
                 <div class="stat-detail">{queue.label}: {stats.queues[queue.key]}</div>
               {/if}
@@ -290,7 +290,7 @@
           {/if}
           {#if searchHealthStatus}
             <div class="search-health-row">
-              {#each Object.entries(searchHealthStatus) as [name, info]}
+              {#each Object.entries(searchHealthStatus) as [name, info] (name)}
                 <span class="search-health-dot" class:healthy={info.status === 'green'} class:error={info.status === 'red'} title="{name}: {info.status === 'green' ? $t('settings.search.indexGreen') : $t('settings.search.indexRed')}"></span>
               {/each}
               <span class="search-health-label">
@@ -405,7 +405,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each stats.tasks.recent as task}
+              {#each stats.tasks.recent as task (task.id)}
                 <tr>
                   <td>{task.id.substring(0, 8)}...</td>
                   <td>{task.type}</td>

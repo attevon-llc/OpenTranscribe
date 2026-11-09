@@ -209,7 +209,7 @@
       id="search-suggestions-listbox"
       use:anchoredPanel={{ anchor: inputEl }}
     >
-      {#each suggestions as suggestion, i}
+      {#each suggestions as suggestion, i (i)}
         <button
           class="suggestion-item"
           class:selected={i === selectedIndex}

@@ -87,7 +87,7 @@
           disabled={$isRecording}
           title={$t('uploader.selectMicrophoneTooltip')}
         >
-          {#each audioDevices as device, i}
+          {#each audioDevices as device, i (device.deviceId)}
             <option value={device.deviceId}>
               {device.label || `${$t('uploader.microphone')} ${i + 1}`}
             </option>
@@ -124,7 +124,7 @@
 
           <div class="visualizer">
             <div class="level-meter">
-              {#each Array(20) as _, i}
+              {#each Array(20) as _, i (i)}
                 <div
                   class="level-bar"
                   class:active={($audioLevel / 100) * 20 > i}

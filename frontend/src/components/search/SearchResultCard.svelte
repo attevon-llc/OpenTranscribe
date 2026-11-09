@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import { resolve } from '$app/paths';
   /**
    * One transcript hit as a compact search-engine result: title, one muted meta line,
@@ -13,7 +14,6 @@
   import type { SearchHit, SearchOccurrence as SearchOccurrenceType } from '$stores/search';
   import { t, locale } from '$stores/locale';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { formatClock, formatDate } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SearchOccurrence from './SearchOccurrence.svelte';
@@ -112,7 +112,7 @@
         </svg>
       {/if}
       <span dir="auto"
-        >{#if hit.title_highlighted}{@html sanitizeHighlightHtml(hit.title_highlighted)}{:else}{hit.title}{/if}</span
+        >{#if hit.title_highlighted}<SanitizedHtml html={hit.title_highlighted} />{:else}{hit.title}{/if}</span
       >
     </a>
     <p class="result-meta">

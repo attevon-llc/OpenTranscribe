@@ -150,7 +150,7 @@
         title={$t('summary.selectPromptTooltip')}
       >
         <option value={null}>{$t('summary.useActivePrompt')}</option>
-        {#each availablePrompts as prompt}
+        {#each availablePrompts as prompt (prompt.uuid)}
           <option value={prompt.uuid}>
             {prompt.name}{prompt.is_system_default ? ` (${$t('summary.systemPrompt')})` : ''}
           </option>

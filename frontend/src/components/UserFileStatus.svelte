@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import axiosInstance from '$lib/axios';
@@ -28,7 +29,7 @@
   let fileStatus: any = null;
   let selectedFile: any = null;
   let detailedStatus: any = null;
-  let retryingFiles = new Set();
+  let retryingFiles = new SvelteSet();
 
   // Auto-refresh settings (enabled by default)
   // WebSocket push handles real-time updates; this is a fallback safety net to catch any
@@ -142,7 +143,7 @@
 
     try {
       // Build query parameters for backend filtering + pagination
-      const params = new URLSearchParams();
+      const params = new SvelteURLSearchParams();
       if (taskFilter !== 'all') {
         params.append('status', taskFilter);
       }
@@ -385,7 +386,7 @@
   {#if loading && !fileStatus}
     <div class="skeleton-status">
       <div class="status-cards">
-        {#each Array(5) as _}
+        {#each Array(5) as _, i (i)}
           <div class="status-card skeleton-card">
             <SkeletonLoader lines={1} height={28} />
             <SkeletonLoader lines={1} height={12} />

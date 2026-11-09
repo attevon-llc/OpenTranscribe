@@ -130,7 +130,7 @@
           <div class="task-details">
             <h4>{$t('fileStatus.taskDetailsTitle')}</h4>
             <div class="task-metadata-grid">
-              {#each detailedStatus.task_details as task}
+              {#each detailedStatus.task_details as task (task.id)}
                 <div class="task-metadata-card">
                   <div class="task-card-header">
                     <span class="task-type-label">{task.task_type}</span>

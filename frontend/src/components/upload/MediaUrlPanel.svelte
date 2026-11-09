@@ -196,7 +196,7 @@
           <div class="download-option-row">
             <label for="dl-video-quality">{$t('settings.download.videoQuality')}</label>
             <select id="dl-video-quality" bind:value={downloadVideoQuality} disabled={downloadAudioOnly} class="download-select">
-              {#each Object.entries(downloadDefaults.available_video_qualities) as [value, label]}
+              {#each Object.entries(downloadDefaults.available_video_qualities) as [value, label] (value)}
                 <option {value}>{label}</option>
               {/each}
             </select>
@@ -212,7 +212,7 @@
             <div class="download-option-row">
               <label for="dl-audio-quality">{$t('settings.download.audioQuality')}</label>
               <select id="dl-audio-quality" bind:value={downloadAudioQuality} class="download-select">
-                {#each Object.entries(downloadDefaults.available_audio_qualities) as [value, label]}
+                {#each Object.entries(downloadDefaults.available_audio_qualities) as [value, label] (value)}
                   <option {value}>{label}</option>
                 {/each}
               </select>

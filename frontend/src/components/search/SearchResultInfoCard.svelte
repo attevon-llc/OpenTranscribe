@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import { resolve } from '$app/paths';
   /**
    * Knowledge-panel-style facts for one transcript hit: the metadata the compact result
@@ -15,7 +16,6 @@
   import type { SearchHit } from '$stores/search';
   import { t, locale } from '$stores/locale';
   import { formatClock, formatDate, formatFileSize, formatLanguageNames } from '$lib/utils/formatting';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
 
   export let hit: SearchHit;
@@ -98,7 +98,7 @@
   {/if}
   {#if variant === 'panel'}
     <h3 class="info-title" dir="auto">
-      {#if hit.title_highlighted}{@html sanitizeHighlightHtml(hit.title_highlighted)}{:else}{hit.title}{/if}
+      {#if hit.title_highlighted}<SanitizedHtml html={hit.title_highlighted} />{:else}{hit.title}{/if}
     </h3>
     <p class="info-kind">{isVideo ? $t('common.video') : $t('common.audio')}</p>
   {/if}

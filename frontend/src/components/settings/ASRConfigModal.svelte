@@ -292,7 +292,7 @@
             title={editingConfig ? $t('settings.asrProvider.providerLockedOnEdit') : undefined}
           >
             <option value="">{$t('settings.asrProvider.selectProvider')}</option>
-            {#each selectableProviders as p}
+            {#each selectableProviders as p (p.provider)}
               <option value={p.provider}>
                 {optionWithFlags(
                   ASRSettingsApi.getProviderDisplayName(p.provider),
@@ -339,7 +339,7 @@
             {#if availableModels.length > 0}
               <select id="asr-model" bind:value={formData.model_name} on:change={onModelChange} class="form-select">
                 <option value="">{$t('settings.asrProvider.selectModel')}</option>
-                {#each availableModels as m}
+                {#each availableModels as m (m.id)}
                   <option value={m.id}>
                     {optionWithFlags(m.name, modelCapability(providers, formData.provider, m.id), $t)}{m.price_per_min_batch ? ` — $${m.price_per_min_batch}/min` : ''}{m.description ? ` — ${m.description}` : ''}
                   </option>
@@ -423,7 +423,7 @@
               <label for="asr-region">{$t('settings.asrProvider.fields.region')}</label>
               <select id="asr-region" bind:value={formData.region} class="form-select">
                 <option value="">{$t('settings.asrProvider.selectRegion')}</option>
-                {#each regionOptions as r}
+                {#each regionOptions as r (r)}
                   <option value={r}>{r}</option>
                 {/each}
               </select>

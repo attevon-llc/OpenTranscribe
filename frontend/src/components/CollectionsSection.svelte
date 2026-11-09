@@ -39,7 +39,7 @@
     <h4 class="section-heading">{$t('collectionsSection.title')}</h4>
     <div class="collections-preview">
       {#if collections && collections.length > 0}
-        {#each collections.slice(0, 3) as collection}
+        {#each collections.slice(0, 3) as collection (collection.uuid)}
           <span class="collection-chip">{collection.name || $t('collectionsSection.unnamed')}</span>
         {/each}
         {#if collections.length > 3}

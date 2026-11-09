@@ -535,7 +535,7 @@
       {#if models.length === 0}
         <option value="">{$t('settings.search.loadingModels')}</option>
       {:else}
-        {#each models as model}
+        {#each models as model (model.model_id)}
           <option value={model.model_id}>
             {model.name} — {model.dimension}d, ~{model.size_mb}MB{model.model_id === currentModelId ? ' (Current)' : ''}
           </option>

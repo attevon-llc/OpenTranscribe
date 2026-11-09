@@ -320,7 +320,7 @@
             </svg>
             {$t('settings.orgContext.sharedByOthers')}
           </h4>
-          {#each sharedContexts as shared}
+          {#each sharedContexts as shared (shared.user_id)}
             <div class="shared-card" class:active={shared.is_active}>
               <div class="shared-card-header">
                 <div class="shared-card-info">

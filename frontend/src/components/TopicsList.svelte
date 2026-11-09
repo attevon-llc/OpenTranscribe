@@ -1,7 +1,7 @@
 <script lang="ts">
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import type { MajorTopic } from '$lib/types/summary';
   import { t } from '$stores/locale';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { MenuIconName } from '$lib/ui/menuIcons';
 
@@ -27,7 +27,7 @@
 <section class="topics-section">
   <h3 class="section-title">{$t('topics.majorTopics')}</h3>
   <div class="topics-list">
-    {#each topics as topic}
+    {#each topics as topic, i (i)}
       {@const level = importanceOf(topic.importance)}
       <div class="topic-item">
         <h4 class="topic-heading">
@@ -37,19 +37,19 @@
             aria-label={$t(IMPORTANCE_LABEL[level])}
             title={$t(IMPORTANCE_LABEL[level])}
           ><MenuIcon name={IMPORTANCE_ICON[level]} size={12} /></span>
-          {@html sanitizeHighlightHtml(topic.topic)}
+          <SanitizedHtml html={topic.topic} />
         </h4>
 
         {#if topic.participants && topic.participants.length > 0}
           <div class="topic-meta">
-            <em>{$t('topics.keyParticipants')} {@html sanitizeHighlightHtml(topic.participants.join(', '))}</em>
+            <em>{$t('topics.keyParticipants')} <SanitizedHtml html={topic.participants.join(', ')} /></em>
           </div>
         {/if}
 
         {#if topic.key_points && topic.key_points.length > 0}
           <ul class="topic-points">
-            {#each topic.key_points as point}
-              <li>{@html sanitizeHighlightHtml(point)}</li>
+            {#each topic.key_points as point, i (i)}
+              <li><SanitizedHtml html={point} /></li>
             {/each}
           </ul>
         {/if}

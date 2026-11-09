@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteSet } from 'svelte/reactivity';
   import { supportSessionGate } from '$stores/supportSession';
   import type { Speaker } from '$lib/types/speaker';
   import { resolveGroupedSegments } from '$lib/transcript/resolveGroupedSegments';
@@ -99,7 +100,7 @@
   }
 
   // Handle segment speaker change
-  const updatingSegments = new Set<string>();
+  const updatingSegments = new SvelteSet<string>();
 
   async function handleSegmentSpeakerChange(event: CustomEvent) {
     const { segmentUuid, speakerUuid, speaker: createdSpeaker } = event.detail;

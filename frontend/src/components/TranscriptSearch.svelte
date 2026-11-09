@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteMap } from 'svelte/reactivity';
   import type { Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import type { TranscriptSegment } from '$lib/types/media';
@@ -51,7 +52,7 @@
     const normalizedQuery = query.toLowerCase().trim();
     if (!normalizedQuery || !transcriptSegments?.length) return [];
 
-    const speakerMapping = new Map<string, string>();
+    const speakerMapping = new SvelteMap<string, string>();
     speakerList.forEach((speaker: Speaker) => {
       speakerMapping.set(speaker.name, translateSpeakerLabel(speaker.display_name || speaker.name));
     });

@@ -401,7 +401,7 @@
             {$t('settings.backup.mirror.failedObjects', { count: lastResult.objects_failed ?? 0 })}
           </span>
         </div>
-        {#each lastResult.errors ?? [] as errLine}
+        {#each lastResult.errors ?? [] as errLine, i (i)}
           <div class="status-error">{errLine}</div>
         {/each}
       {/if}

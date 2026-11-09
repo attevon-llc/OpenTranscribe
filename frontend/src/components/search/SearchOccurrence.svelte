@@ -1,8 +1,8 @@
 <script lang="ts">
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import { resolve } from '$app/paths';
   import type { SearchOccurrence } from '$stores/search';
   import { t } from '$stores/locale';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { formatClock } from '$lib/utils/formatting';
 
   export let occurrence: SearchOccurrence;
@@ -21,7 +21,7 @@
     {#if occurrence.speaker}
       <span class="speaker" dir="auto">
         {#if occurrence.speaker_highlighted}
-          {@html sanitizeHighlightHtml(occurrence.speaker_highlighted)}
+          <SanitizedHtml html={occurrence.speaker_highlighted} />
         {:else}
           {occurrence.speaker}
         {/if}
@@ -30,7 +30,7 @@
   </div>
   {#if occurrence.snippet}
     <div class="snippet" dir="auto" class:context-only={occurrence.match_type === 'title' || occurrence.match_type === 'speaker'} class:semantic-snippet={occurrence.highlight_type === 'semantic'}>
-      {@html sanitizeHighlightHtml(occurrence.snippet)}
+      <SanitizedHtml html={occurrence.snippet} />
     </div>
   {/if}
 </div>

@@ -80,7 +80,7 @@
     </svg>
   </button>
 
-  {#each pages as p}
+  {#each pages as p, i (p === '...' ? `ellipsis-${i}` : p)}
     {#if p === '...'}
       <span class="ellipsis">...</span>
     {:else}

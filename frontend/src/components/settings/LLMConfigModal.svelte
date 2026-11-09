@@ -140,7 +140,7 @@
 
   // Bedrock account fields: any admin sees whether the server's own AWS credentials resolve.
   $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
-  $: bedrockDefaults = getProviderDefaults('bedrock');
+  const bedrockDefaults = getProviderDefaults('bedrock');
 
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
@@ -487,7 +487,7 @@
             required
           >
             <option value="">{$t('llm.selectProvider')}</option>
-            {#each [...supportedProviders].sort((a, b) => llmProviderDisplayName(a.provider, $t).localeCompare(llmProviderDisplayName(b.provider, $t))) as provider}
+            {#each [...supportedProviders].sort((a, b) => llmProviderDisplayName(a.provider, $t).localeCompare(llmProviderDisplayName(b.provider, $t))) as provider (provider.provider)}
               <option value={provider.provider}>{llmProviderDisplayName(provider.provider, $t)}</option>
             {/each}
           </select>
@@ -658,7 +658,7 @@
               <div class="model-selector">
                 <h4>{$t('llm.availableModels')}</h4>
                 <div class="model-list">
-                  {#each ollamaModels as model}
+                  {#each ollamaModels as model (model.name)}
                     <button
                       type="button"
                       class="model-item"
@@ -683,7 +683,7 @@
               <div class="model-selector">
                 <h4>{$t('llm.availableModels')}</h4>
                 <div class="model-list">
-                  {#each openaiCompatibleModels as model}
+                  {#each openaiCompatibleModels as model (model.id)}
                     <button
                       type="button"
                       class="model-item"
@@ -709,7 +709,7 @@
               <div class="model-selector">
                 <h4>{$t('llm.availableModels')}</h4>
                 <div class="model-list">
-                  {#each anthropicModels as model}
+                  {#each anthropicModels as model (model.id)}
                     <button
                       type="button"
                       class="model-item"

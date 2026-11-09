@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import {
@@ -7,7 +8,6 @@
     estimateDurationFromFileSize,
   } from '$lib/utils/metadataMapper';
   import { formatFileSize } from '$lib/utils/formatting';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
   import { t } from '$stores/locale';
   import BaseModal from './ui/BaseModal.svelte';
@@ -60,7 +60,7 @@
          literal tags into the UI. Same treatment as UploadStepExtraction: {@html}
          through the DOMPurify allowlist. -->
     <p class="info-message">
-      {@html sanitizeHighlightHtml($t('extraction.bulkMessage', { count: videoFiles.length }))}
+      <SanitizedHtml html={$t('extraction.bulkMessage', { count: videoFiles.length })} />
     </p>
   </div>
 
@@ -68,7 +68,7 @@
   <div class="file-list-container">
     <div class="file-list-header">{$t('extraction.filesToExtract')}</div>
     <div class="file-list">
-      {#each videoFiles as file}
+      {#each videoFiles as file (file.name + file.lastModified)}
         <div class="file-item">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="23 7 16 12 23 17 23 7"></polygon>

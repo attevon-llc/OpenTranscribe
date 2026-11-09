@@ -142,7 +142,7 @@
     aria-label={$t('settings.passwordTier.heading')}
     data-testid="password-tier-picker"
   >
-    {#each PASSWORD_TIERS as option}
+    {#each PASSWORD_TIERS as option (option)}
       <label class="tier-card" class:selected={tier === option} class:inert={disabled}>
         <span class="tier-head">
           <input
@@ -165,7 +165,7 @@
   <div class="policy-preview" data-testid="password-tier-rules">
     <strong>{$t('settings.passwordTier.effectiveHeading')}</strong>
     <ul>
-      {#each ruleLines as line}
+      {#each ruleLines as line (line)}
         <li>{line}</li>
       {/each}
     </ul>

@@ -301,7 +301,7 @@
         <p class="backup-warning">{$t('settings.security.backupCodesWarning')}</p>
 
         <div class="backup-codes-grid">
-          {#each backupCodes as code, i}
+          {#each backupCodes as code, i (code)}
             <div class="backup-code">{i + 1}. {code}</div>
           {/each}
         </div>

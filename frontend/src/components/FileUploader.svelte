@@ -604,7 +604,7 @@
 <div class="uploader-container" on:keydown={handleStepKeydown}>
   <!-- Stepper Indicator (always visible so users see the full journey) -->
   <div class="step-indicator" role="navigation" aria-label={$t('uploader.stepsNav')}>
-    {#each activeSteps as step, i}
+    {#each activeSteps as step, i (step.id)}
       <button
         class="step-item"
         class:active={currentStepIndex === i}

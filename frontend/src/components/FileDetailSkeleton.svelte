@@ -71,7 +71,7 @@
       </div>
 
       <div class="skeleton-transcript-list">
-        {#each Array(6) as _, i}
+        {#each Array(6) as _, i (i)}
           <div class="skeleton-transcript-item">
             <div class="skeleton-speaker-dot shimmer"></div>
             <div class="skeleton-transcript-body">

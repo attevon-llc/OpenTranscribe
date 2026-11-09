@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteURLSearchParams } from 'svelte/reactivity';
   import type { Collection, CollectionVisibility } from '$lib/types/collection';
   import { onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
@@ -87,7 +88,7 @@
     }
     currentLoading = true;
     try {
-      const params = new URLSearchParams();
+      const params = new SvelteURLSearchParams();
       for (const uuid of selectedMediaIds) params.append('file_uuids', uuid);
       const response = await axiosInstance.get('/collections/for-files', { params });
       if (requestId !== currentCollectionsRequestId) return;

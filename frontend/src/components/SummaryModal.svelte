@@ -52,6 +52,7 @@
   let summaryEnabledSystem: boolean = true;
 
   // Get LLM availability from centralized store
+  let llmAvailable = false;
   $: llmAvailable = $isLLMAvailable;
   let llmSettingsUnavailable = false;
 

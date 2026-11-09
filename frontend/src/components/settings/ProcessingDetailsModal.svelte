@@ -135,7 +135,7 @@
         {#if section === 'queues'}
           <div class="detail-section">
             <div class="detail-grid">
-              {#each ['gpu', 'download', 'nlp', 'embedding', 'cpu'] as queueName}
+              {#each ['gpu', 'download', 'nlp', 'embedding', 'cpu'] as queueName (queueName)}
                 <div class="detail-row">
                   <span class="detail-label">
                     {$t(QUEUE_NAME_KEYS[queueName])}
@@ -159,7 +159,7 @@
           <div class="detail-section">
             {#if stats.models}
               <div class="detail-grid">
-                {#each Object.entries(stats.models) as [key, model]}
+                {#each Object.entries(stats.models) as [key, model] (key)}
                   {@const m = model as {
                     name?: string;
                     description?: string;

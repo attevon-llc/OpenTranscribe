@@ -358,7 +358,7 @@
       <div class="field-group">
         <label class="field-label" for="timezone">{$t('settings.retention.timezone')}</label>
         <select id="timezone" bind:value={timezone} class="form-input" disabled={!retentionEnabled}>
-          {#each TIMEZONES as tz}
+          {#each TIMEZONES as tz (tz)}
             <option value={tz}>{tz}</option>
           {/each}
         </select>
@@ -465,7 +465,7 @@
                 </tr>
               </thead>
               <tbody>
-                {#each previewResult.files as file}
+                {#each previewResult.files as file (file.uuid)}
                   <tr>
                     <td class="col-title">{file.title}</td>
                     <td>{file.owner_email}</td>

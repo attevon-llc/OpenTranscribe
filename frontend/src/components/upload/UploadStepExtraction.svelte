@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import {
@@ -7,7 +8,6 @@
     estimateDurationFromFileSize,
   } from '$lib/utils/metadataMapper';
   import { formatFileSize } from '$lib/utils/formatting';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
 
   export let file: File | null = null;
@@ -46,7 +46,7 @@
            runs with interpolation.escapeValue=false, so the interpolated value is
            NOT escaped for us — sanitize the rendered result. -->
       <p class="info-message">
-        {@html sanitizeHighlightHtml($t('extraction.videoSizeMessage', { size: formatFileSize(file.size) }))}
+        <SanitizedHtml html={$t('extraction.videoSizeMessage', { size: formatFileSize(file.size) })} />
       </p>
     </div>
 

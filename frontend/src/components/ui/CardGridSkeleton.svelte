@@ -52,7 +52,7 @@
 >
   <span class="sr-only">{$t('common.loading')}</span>
 
-  {#each cards as _, i}
+  {#each cards as _, i (i)}
     <div class="skel-card">
       {#if variant === 'media'}
         <!-- Media card: thumbnail (16:9) + title + meta -->

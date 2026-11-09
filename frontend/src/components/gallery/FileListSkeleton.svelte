@@ -48,7 +48,7 @@
     <div class="list-cell">{$t('gallery.columnStatus')}</div>
   </div>
 
-  {#each rows as _, i}
+  {#each rows as _, i (i)}
     <div class="skel-row" class:selecting-mode={isSelecting} aria-hidden="true">
       {#if isSelecting}
         <div class="list-cell"><div class="skel-check shimmer"></div></div>

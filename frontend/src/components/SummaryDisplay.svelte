@@ -1,9 +1,10 @@
 <script lang="ts">
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { SummaryData } from '$lib/types/summary';
   import TopicsList from './TopicsList.svelte';
   import { t } from '$stores/locale';
-  import { escapeHtml, sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { escapeHtml } from '$lib/utils/sanitizeHtml';
 
   export let summary: SummaryData;
   export let searchQuery: string = '';
@@ -326,14 +327,14 @@
     <section class="bluf-section">
       <h3 class="section-title">{$t('summary.executiveSummary')}</h3>
       <div class="bluf-content">
-        {@html sanitizeHighlightHtml(highlightedContent?.bluf || escapeHtml(summary.bluf || ''))}
+        <SanitizedHtml html={highlightedContent?.bluf || escapeHtml(summary.bluf || '')} />
       </div>
     </section>
 
     <section class="brief-summary-section">
       <h3 class="section-title">{$t('summary.briefSummary')}</h3>
       <div class="brief-summary-content">
-        {@html sanitizeHighlightHtml(highlightedContent?.briefSummary || escapeHtml(summary.brief_summary || ''))}
+        <SanitizedHtml html={highlightedContent?.briefSummary || escapeHtml(summary.brief_summary || '')} />
       </div>
     </section>
 
@@ -347,18 +348,18 @@
       <section class="action-items-section">
         <h3 class="section-title">{$t('summary.actionItems')}</h3>
         <div class="action-items-list">
-          {#each (highlightedContent?.actionItems || escapedActionItems) as item}
+          {#each (highlightedContent?.actionItems || escapedActionItems) as item, i (i)}
             <div class="action-item">
               <div class="action-item-bullet" aria-hidden="true"><MenuIcon name="checkbox" size="sm" /></div>
               <div class="action-item-body">
-                <div class="action-item-text">{@html sanitizeHighlightHtml(item.text)}</div>
+                <div class="action-item-text"><SanitizedHtml html={item.text} /></div>
                 {#if item.owner || item.dueDate || item.priority}
                   <div class="action-item-meta">
                     {#if item.owner}
-                      <span class="action-item-owner">{$t('summary.owner')}: {@html sanitizeHighlightHtml(item.owner)}</span>
+                      <span class="action-item-owner">{$t('summary.owner')}: <SanitizedHtml html={item.owner} /></span>
                     {/if}
                     {#if item.dueDate}
-                      <span class="action-item-due">{$t('summary.dueDate')}: {@html sanitizeHighlightHtml(item.dueDate)}</span>
+                      <span class="action-item-due">{$t('summary.dueDate')}: <SanitizedHtml html={item.dueDate} /></span>
                     {/if}
                     {#if item.priority}
                       <span class="action-item-priority priority-{item.priority}">{item.priority}</span>
@@ -376,10 +377,10 @@
       <section class="key-decisions-section">
         <h3 class="section-title">{$t('summary.keyDecisions')}</h3>
         <div class="key-decisions-list">
-          {#each (highlightedContent?.keyDecisions || summary.key_decisions) as decision}
+          {#each (highlightedContent?.keyDecisions || summary.key_decisions) as decision, i (i)}
             <div class="key-decision-item">
               <div class="decision-bullet" aria-hidden="true"><MenuIcon name="check" size="sm" /></div>
-              <div class="decision-text">{@html sanitizeHighlightHtml(highlightedContent ? (decision as string) : escapeHtml(extractText(decision)))}</div>
+              <div class="decision-text"><SanitizedHtml html={highlightedContent ? (decision as string) : escapeHtml(extractText(decision))} /></div>
             </div>
           {/each}
         </div>
@@ -390,19 +391,19 @@
       <section class="speaker-analysis-section">
         <h3 class="section-title">{$t('summary.speakerAnalysis')}</h3>
         <div class="speakers-list">
-          {#each (highlightedContent?.speakersAnalysis || escapedSpeakersAnalysis) as s}
+          {#each (highlightedContent?.speakersAnalysis || escapedSpeakersAnalysis) as s, i (i)}
             <div class="speaker-item">
               <div class="speaker-header">
-                <span class="speaker-name">{@html sanitizeHighlightHtml(s.name)}</span>
-                {#if s.role}<span class="speaker-role">{@html sanitizeHighlightHtml(s.role)}</span>{/if}
+                <span class="speaker-name"><SanitizedHtml html={s.name} /></span>
+                {#if s.role}<span class="speaker-role"><SanitizedHtml html={s.role} /></span>{/if}
                 {#if s.talkTime !== null && s.talkTime !== undefined}
                   <span class="speaker-talktime" dir="ltr">{s.talkTime}%</span>
                 {/if}
               </div>
               {#if s.points && s.points.length > 0}
                 <ul class="speaker-points">
-                  {#each s.points as point}
-                    <li>{@html sanitizeHighlightHtml(point)}</li>
+                  {#each s.points as point, i (i)}
+                    <li><SanitizedHtml html={point} /></li>
                   {/each}
                 </ul>
               {/if}
@@ -416,10 +417,10 @@
       <section class="follow-up-section">
         <h3 class="section-title">{$t('summary.followUpItems')}</h3>
         <div class="follow-up-list">
-          {#each (highlightedContent?.followUpItems || summary.follow_up_items) as item}
+          {#each (highlightedContent?.followUpItems || summary.follow_up_items) as item, i (i)}
             <div class="follow-up-item">
               <div class="follow-up-bullet" aria-hidden="true"><MenuIcon name="arrow-right" size="sm" /></div>
-              <div class="follow-up-text">{@html sanitizeHighlightHtml(highlightedContent ? (item as string) : escapeHtml(extractText(item)))}</div>
+              <div class="follow-up-text"><SanitizedHtml html={highlightedContent ? (item as string) : escapeHtml(extractText(item))} /></div>
             </div>
           {/each}
         </div>
@@ -428,7 +429,7 @@
   {:else}
     <!-- Flexible Custom Format Display -->
     <div class="custom-summary">
-      {@html sanitizeHighlightHtml(customHighlightedContent)}
+      <SanitizedHtml html={customHighlightedContent} />
     </div>
   {/if}
 

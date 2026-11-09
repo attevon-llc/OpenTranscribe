@@ -28,7 +28,7 @@
   on:change={handleChange}
   title={$t(options.find(o => o.value === value)?.descKey || '')}
 >
-  {#each options as option}
+  {#each options as option (option.value)}
     <option value={option.value} title={$t(option.descKey)}>
       {$t(option.labelKey)}
     </option>

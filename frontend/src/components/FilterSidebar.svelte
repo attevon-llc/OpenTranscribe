@@ -590,7 +590,7 @@
   <div class="filter-section">
     <h3>{$t('filter.fileType')}</h3>
     <div class="file-type-list">
-      {#each availableFileTypes as fileType}
+      {#each availableFileTypes as fileType (fileType)}
         <FilterChipButton
           class="file-type-button"
           selected={selectedFileTypes.includes(fileType)}
@@ -652,7 +652,7 @@
         </p>
       {:else}
         <div class="speakers-list">
-          {#each namedSpeakers.slice(0, 4) as speaker}
+          {#each namedSpeakers.slice(0, 4) as speaker (speakerLabel(speaker))}
             <FilterChipButton
               class="speaker-button"
               selected={selectedSpeakers.includes(speakerLabel(speaker))}
@@ -791,7 +791,7 @@
   <div class="filter-section">
     <h3>{$t('filter.processingStatus')}</h3>
     <div class="status-list">
-      {#each availableStatuses as status}
+      {#each availableStatuses as status (status)}
         <FilterChipButton
           class="status-button"
           selected={selectedStatuses.includes(status)}
@@ -825,7 +825,7 @@
       <p class="empty-text">{$t('filter.noTagsCreated')}</p>
     {:else}
       <div class="tags-list">
-        {#each allTags.slice(0, 6) as tag}
+        {#each allTags.slice(0, 6) as tag (tag.name)}
           <FilterChipButton
             class="tag-button"
             selected={selectedTags.includes(tag.name)}
@@ -864,7 +864,7 @@
     <div class="filter-section">
       <h3>{$t('filter.language')}</h3>
       <div class="file-type-list">
-        {#each availableLanguages as lang}
+        {#each availableLanguages as lang (lang)}
           <FilterChipButton
             class="file-type-button"
             selected={selectedLanguage === lang}

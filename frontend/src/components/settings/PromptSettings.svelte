@@ -524,7 +524,7 @@
                 {/if}
                 {#if prompt.tags && prompt.tags.length > 0}
                   <div class="tag-pills">
-                    {#each prompt.tags as tag}
+                    {#each prompt.tags as tag (tag)}
                       <span class="tag-pill">{tag}</span>
                     {/each}
                   </div>
@@ -671,7 +671,7 @@
                 {/if}
                 {#if prompt.tags && prompt.tags.length > 0}
                   <div class="tag-pills">
-                    {#each prompt.tags as tag}
+                    {#each prompt.tags as tag (tag)}
                       <span class="tag-pill">{tag}</span>
                     {/each}
                   </div>

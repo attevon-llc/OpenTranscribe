@@ -75,7 +75,7 @@
   <!-- Selected chips -->
   {#if selectedTags.length > 0}
     <div class="selected-chips">
-      {#each selectedTags as tag}
+      {#each selectedTags as tag (tag)}
         <span class="chip tag-chip">
           {tag}
           <button type="button" class="chip-remove" on:click={() => removeTag(tag)} title={$t('uploader.removeItem')}>×</button>

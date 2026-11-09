@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteSet } from 'svelte/reactivity';
   import { WATCH_FILE_STATUS_KEYS } from '$lib/i18n/keyMaps';
   /**
    * Per-file import history for one watch source, with retry and delete-record (#489).
@@ -133,7 +134,7 @@
   }
 
   function markBusy(uuids: string[], busy: boolean) {
-    const next = new Set(busyUuids);
+    const next = new SvelteSet(busyUuids);
     for (const uuid of uuids) {
       if (busy) next.add(uuid);
       else next.delete(uuid);
@@ -217,7 +218,7 @@
   }
 
   function toggleSelect(event: CustomEvent<string>) {
-    const next = new Set(selectedUuids);
+    const next = new SvelteSet(selectedUuids);
     if (next.has(event.detail)) next.delete(event.detail);
     else next.add(event.detail);
     selectedUuids = next;

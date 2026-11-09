@@ -191,7 +191,7 @@
 
   {#if speakerList && speakerList.length > 0}
     <div class="speaker-list">
-      {#each speakerList as speaker}
+      {#each speakerList as speaker (speaker.uuid)}
         <div class="speaker-item">
           <div class="speaker-header">
             <span
@@ -266,7 +266,7 @@
           <!-- Speaker Timestamp Links -->
           {#if speaker.segment_timestamps && speaker.segment_timestamps.length > 0}
             <div class="speaker-timestamps">
-              {#each speaker.segment_timestamps as ts}
+              {#each speaker.segment_timestamps as ts, i (i)}
                 <button
                   class="timestamp-link"
                   title={$t('transcript.jumpToTimestampTitle', { time: formatClock(ts.start_time) })}
@@ -315,7 +315,7 @@
                         <div class="chip-row">
                           <span class="chip-label metadata-label">{$t('transcript.metadataHints')}</span>
                           <div class="chips-wrap">
-                            {#each speaker.metadata_hints.slice(0, 4) as hint}
+                            {#each speaker.metadata_hints.slice(0, 4) as hint, i (i)}
                               <button
                                 class="suggestion-chip metadata-chip"
                                 on:click={() => {
@@ -393,7 +393,7 @@
                         <div class="chip-row">
                           <span class="chip-label profile-label">{$t('transcript.profileMatch')}</span>
                           <div class="chips-wrap">
-                            {#each speaker.profile_suggestions.slice(0, 4) as suggestion}
+                            {#each speaker.profile_suggestions.slice(0, 4) as suggestion, i (i)}
                               <button
                                 class="suggestion-chip profile-chip"
                                 class:high-confidence={suggestion.confidence >= 0.75}
@@ -465,7 +465,7 @@
                       </div>
                       <div class="compact-matches">
                         <div class="matches-scroll-container">
-                        {#each visibleMatches as match}
+                        {#each visibleMatches as match, i (i)}
                           <div class="compact-match" title={match.title || match.media_file_title || $t('transcript.unknownVideo')}>
                             <span class="match-text">{((match.title || match.media_file_title || $t('transcript.unknownVideo')).length > 35 ? (match.title || match.media_file_title || $t('transcript.unknownVideo')).substring(0, 35) + '...' : (match.title || match.media_file_title || $t('transcript.unknownVideo')))}</span>
                             <span class="match-confidence">
@@ -486,7 +486,7 @@
                           <div class="more-matches-compact hover-container">
                             <span class="more-matches-text">{$t('transcript.moreMatches', { count: remainingCount })}</span>
                             <div class="hover-popup">
-                              {#each remainingMatches as match}
+                              {#each remainingMatches as match, i (i)}
                                 <div class="popup-match">
                                   <span class="popup-match-text">{match.title || match.media_file_title || $t('transcript.unknownVideo')}</span>
                                   <span class="popup-match-confidence">

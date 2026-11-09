@@ -214,7 +214,7 @@
             </div>
           {/if}
           <div class="overview-grid">
-            {#each indexOverview.indices as idx}
+            {#each indexOverview.indices as idx (idx.name)}
               <div class="index-card" class:missing={!idx.exists && !idx.error}>
                 <div class="index-header">
                   <span class="index-label">{idx.label}</span>
@@ -230,7 +230,7 @@
                   </div>
                 {:else if idx.breakdown && Object.keys(idx.breakdown).length > 0}
                   <div class="index-body">
-                    {#each Object.entries(idx.breakdown) as [key, count], i}
+                    {#each Object.entries(idx.breakdown) as [key, count], i (key)}
                       <div class="breakdown-row" class:muted={i > 0}>
                         <span>{$t(breakdownLabels[key] || key)}</span>
                         <span class="breakdown-val">{count}</span>
@@ -324,7 +324,7 @@
               <span class="col-orphans">{$t('settings.dataIntegrity.colOrphans')}</span>
               <span class="col-cleaned">{$t('settings.dataIntegrity.colCleaned')}</span>
             </div>
-            {#each getIndexResults(lastRun.results) as row}
+            {#each getIndexResults(lastRun.results) as row (row.name)}
               <div class="results-row" class:has-orphans={row.orphaned > 0}>
                 <span class="col-index">{row.name}</span>
                 <span class="col-total">{row.total}</span>

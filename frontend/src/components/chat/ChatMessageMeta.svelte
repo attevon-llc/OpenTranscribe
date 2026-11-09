@@ -172,7 +172,7 @@
           <dt>{$t('chat.meta.plan')}</dt>
           <dd>
             <ol class="plan-steps" data-testid="chat-meta-plan-steps">
-              {#each meta.plan.steps as step, i}
+              {#each meta.plan.steps as step, i (i)}
                 <li>
                   {#if i > 0}<MenuIcon name="chevron-right" size="xs" />{/if}<span dir="auto">{step}</span>
                 </li>

@@ -127,7 +127,7 @@
         class="form-select"
       >
         {#if systemDefaults}
-          {#each Object.entries(systemDefaults.available_video_qualities) as [value, label]}
+          {#each Object.entries(systemDefaults.available_video_qualities) as [value, label] (value)}
             <option {value}>{label}</option>
           {/each}
         {:else}
@@ -169,7 +169,7 @@
           class="form-select"
         >
           {#if systemDefaults}
-            {#each Object.entries(systemDefaults.available_audio_qualities) as [value, label]}
+            {#each Object.entries(systemDefaults.available_audio_qualities) as [value, label] (value)}
               <option {value}>{label}</option>
             {/each}
           {:else}

@@ -76,6 +76,7 @@
     }
   }
 
+  let dismissed = false;
   $: dismissed = readDismissed(storageKey);
 
   function dismiss(): void {

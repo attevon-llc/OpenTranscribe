@@ -68,7 +68,7 @@
     </div>
 
     <div class="suggestions">
-      {#each suggestions as suggestion}
+      {#each suggestions as suggestion (suggestion)}
         <button
           type="button"
           class="suggestion-card"

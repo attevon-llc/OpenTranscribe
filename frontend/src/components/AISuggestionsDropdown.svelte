@@ -126,7 +126,7 @@
         {:else}
           <!-- Suggestions as colored chips -->
           <div class="suggestions-chips">
-            {#each suggestions as suggestion}
+            {#each suggestions as suggestion (suggestion.name)}
               <div
                 class="suggestion-chip"
                 style="

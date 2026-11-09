@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { GroupedSegmentView, TranscriptSegment } from '$lib/types/media';
   import type { Speaker } from '$lib/types/speaker';
@@ -7,7 +9,6 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import { highlightTextWithMatches, type SearchMatch } from '$lib/utils/searchHighlight';
   import { highlightClassifiedText, type MatchClassificationType } from '$lib/transcript/matchClassification';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { formatClock } from '$lib/utils/formatting';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
@@ -109,10 +110,9 @@
   // An IntersectionObserver gets the same answer with no scroll handler, no DOM
   // query and no layout read: the browser tells us which segments are on screen
   // and the smallest index among them is the top one.
-  // Plain Set on purpose: nothing in the markup reads it, so making it reactive
-  // would only add invalidation churn on every intersection callback.
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not read by the markup, see above
-  const visibleSegmentIndices = new Set<number>();
+  // A SvelteSet costs nothing extra here: reactivity only tracks reads inside effects and
+  // deriveds, and nothing in the markup reads this set.
+  const visibleSegmentIndices = new SvelteSet<number>();
   let progressObserver: IntersectionObserver | null = null;
 
   function updateScrollProgress() {
@@ -222,7 +222,7 @@
   // payload they are DIFFERENT object refs than `transcript_segments`, so a plain
   // `indexOf` returns -1 and highlights silently vanish. Look up by uuid instead.
   $: segmentIndexByUuid = (() => {
-    const map = new Map<string | number, number>();
+    const map = new SvelteMap<string | number, number>();
     (file?.transcript_segments || []).forEach((s: TranscriptSegment, i: number) => {
       if (s?.uuid != null) map.set(s.uuid, i);
     });
@@ -407,7 +407,7 @@
                     class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
                     class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
                   >
-                    {@html sanitizeHighlightHtml(segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification))}
+                    <SanitizedHtml html={segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification)} />
                   </div>
                 </button>
                 {#if editable}
@@ -508,7 +508,7 @@
                 class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
                 class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
               >
-                {@html sanitizeHighlightHtml(segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification))}
+                <SanitizedHtml html={segmentHighlight(segment, searchQuery, searchMatches, currentMatchIndex, segmentClassification)} />
                 {#if segment.confidence !== undefined && segment.confidence !== null && segment.confidence < 0.7}
                   <span class="low-confidence-dot" role="img" aria-label={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'} title={$t('transcript.segmentLowConfidence') + ': ' + Math.round(segment.confidence * 100) + '%'}><MenuIcon name="dot" size={8} /></span>
                 {/if}

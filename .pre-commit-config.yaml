@@ -85,6 +85,7 @@ repos:
           - deepgram-sdk==7.16.0
           - fastapi==0.136.3
           - httpx==0.28.1
+          - httpx2==2.16.0
           - huggingface-hub==1.17.0
           - joserfc==1.7.7
           - json-repair==0.64.2

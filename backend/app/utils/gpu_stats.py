@@ -6,6 +6,7 @@ dashboard's direct read.
 
 import logging
 import subprocess
+from subprocess import SubprocessError
 
 from app.utils.stats_helpers import format_bytes
 
@@ -54,8 +55,8 @@ def _query_gpu_memory_torch(device_id: int) -> tuple[float, float] | None:
             return None
         free, total = torch.cuda.mem_get_info(device_id)
         return (float(free), float(total))
-    except Exception as e:
-        logger.debug(f"torch.cuda.mem_get_info({device_id}) failed: {e}")
+    except (RuntimeError, AssertionError, ImportError) as e:
+        logger.debug(f"torch.cuda.mem_get_info({device_id}) failed: {e}", exc_info=True)
         return None
 
 
@@ -158,6 +159,6 @@ def query_gpu_stats(device_id: int, *, timeout: float | None = 5) -> dict | None
             "temperature_celsius": temperature_celsius,
             "memory_source": memory_source,
         }
-    except Exception as e:
-        logger.warning(f"nvidia-smi query for device {device_id} failed: {e}")
+    except (SubprocessError, OSError, IndexError, ValueError) as e:
+        logger.warning(f"nvidia-smi query for device {device_id} failed: {e}", exc_info=True)
         return None

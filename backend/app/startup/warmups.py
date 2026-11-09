@@ -86,7 +86,7 @@ async def _initialize_neural_search() -> None:
             )
 
     except Exception as e:
-        logger.error(f"Error initializing neural search: {e}")
+        logger.error(f"Error initializing neural search: {e}", exc_info=True)
 
 
 def _register_chat_usage_hook() -> None:
@@ -101,7 +101,7 @@ def _register_chat_usage_hook() -> None:
 
         register_chat_usage()
     except Exception as e:  # accounting never blocks startup
-        logger.warning(f"Chat usage hook registration failed (non-fatal): {e}")
+        logger.warning(f"Chat usage hook registration failed (non-fatal): {e}", exc_info=True)
 
 
 def _start_pii_warmup() -> None:
@@ -121,7 +121,7 @@ def _start_pii_warmup() -> None:
 
         start_pii_warmup()
     except Exception as e:  # an optimisation never blocks startup
-        logger.warning(f"PII analyzer warm-up could not start (non-fatal): {e}")
+        logger.warning(f"PII analyzer warm-up could not start (non-fatal): {e}", exc_info=True)
 
 
 def _start_reranker_warmup() -> None:
@@ -136,7 +136,7 @@ def _start_reranker_warmup() -> None:
 
         start_reranker_warmup()
     except Exception as e:  # an optimisation never blocks startup
-        logger.warning(f"Chat reranker warm-up could not start (non-fatal): {e}")
+        logger.warning(f"Chat reranker warm-up could not start (non-fatal): {e}", exc_info=True)
 
 
 def _provision_native_diarizer() -> None:
@@ -151,7 +151,7 @@ def _provision_native_diarizer() -> None:
 
         ensure_native_models()
     except Exception as e:  # a degraded diarizer never blocks startup
-        logger.warning(f"diar-native provisioning could not run (non-fatal): {e}")
+        logger.warning(f"diar-native provisioning could not run (non-fatal): {e}", exc_info=True)
 
 
 def _log_password_blocklist_status() -> None:
@@ -167,7 +167,7 @@ def _log_password_blocklist_status() -> None:
             password_policy.blocklist_enabled, str(settings.PASSWORD_BLOCKLIST_PATH)
         )
     except Exception as e:
-        logger.warning(f"Password blocklist status check failed (non-fatal): {e}")
+        logger.warning(f"Password blocklist status check failed (non-fatal): {e}", exc_info=True)
 
 
 def _enforce_database_role_or_exit() -> None:
@@ -194,4 +194,4 @@ def _log_tenancy_mode_at_startup() -> None:
             logger.info("Tenancy mode: %s", tenancy_mode(db).value)
             warn_if_forced_single_with_orgs(db)
     except Exception as e:
-        logger.warning(f"Tenancy mode startup check failed (non-fatal): {e}")
+        logger.warning(f"Tenancy mode startup check failed (non-fatal): {e}", exc_info=True)

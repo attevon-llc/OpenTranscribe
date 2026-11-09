@@ -180,6 +180,7 @@ def run_sweep(
             poller.stop()
             status = "ERROR"
             note = str(exc)[:120]
+            logger.error("batch size %s failed: %s", bs, exc, exc_info=True)
 
         print(
             f"{bs:>6}  {stable_before:>16.0f}  {peak_mb or 0:>9.0f}  "

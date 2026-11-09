@@ -60,6 +60,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import bindparam
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from app.core.queues import CeleryQueues
 from app.models.media import MediaFile
@@ -932,7 +933,7 @@ class TestGetModelsInfo:
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_MODEL", "fallback/model")
 
         def _boom():
-            raise RuntimeError("db unavailable")
+            raise OperationalError("SELECT 1", {}, Exception("db unavailable"))
 
         monkeypatch.setattr(
             "app.services.search.settings_service.get_search_embedding_model", _boom

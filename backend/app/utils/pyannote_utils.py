@@ -72,8 +72,8 @@ def build_native_embeddings(
         )
         return embeddings
 
-    except Exception as e:
-        logger.warning(f"Failed to build native embeddings: {e}")
+    except (ValueError, IndexError, KeyError, TypeError, AttributeError) as e:
+        logger.warning(f"Failed to build native embeddings: {e}", exc_info=True)
         return {}
 
 
@@ -107,6 +107,6 @@ def extract_overlap_regions(
             return overlaps
 
         return all_regions
-    except Exception as e:
-        logger.warning(f"Could not extract overlap regions: {e}")
+    except (ValueError, TypeError, AttributeError) as e:
+        logger.warning(f"Could not extract overlap regions: {e}", exc_info=True)
         return []

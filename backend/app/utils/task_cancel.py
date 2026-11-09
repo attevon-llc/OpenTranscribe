@@ -4,6 +4,8 @@ import logging
 from datetime import UTC
 from datetime import datetime
 
+from kombu.exceptions import OperationalError as KombuOperationalError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.env import env_bool
@@ -103,8 +105,9 @@ def cancel_active_task(db: Session, file_id: int) -> bool:
             f"The running stage stands down at its next checkpoint and confirms by writing "
             f"CANCELLED (issue #823)."
         )
-    except Exception as e:
-        logger.error(f"Failed to cancel task for file {file_id}: {e}")
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to cancel task for file {file_id}: {e}", exc_info=True)
         return False
 
     _schedule_cancellation_reconcile(file_id, task_id)
@@ -131,9 +134,10 @@ def _schedule_cancellation_reconcile(file_id: int, task_id: str) -> None:
             countdown=CANCEL_RECONCILE_DELAY_S,
             queue=CeleryQueues.UTILITY,
         )
-    except Exception as e:
+    except (KombuOperationalError, OSError) as e:
         logger.warning(
             f"Could not queue the cancellation reconciliation for file {file_id} "
             f"(task {task_id}): {e}. The cooperative stop is still armed; the file will stay "
-            f"CANCELLING if no worker confirms it."
+            f"CANCELLING if no worker confirms it.",
+            exc_info=True,
         )

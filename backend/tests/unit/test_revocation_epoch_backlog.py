@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.auth import token_service as token_service_module
 from app.auth.revocation_backlog import PendingEpochs
@@ -34,6 +35,9 @@ class _DownStore:
 
     def eval(self, *_a: Any, **_k: Any) -> None:
         raise ConnectionError("redis down")
+
+    def publish(self, *_a: Any, **_k: Any) -> None:
+        raise RedisConnectionError("redis down")
 
 
 class _Clock:

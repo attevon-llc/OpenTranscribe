@@ -9,6 +9,7 @@ import asyncio
 import logging
 
 from minio.error import MinioException
+from minio.error import S3Error
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
@@ -115,7 +116,7 @@ def _setup_minio() -> None:
         try:
             _backfill_quarantine_tags()
         except Exception as e:  # best-effort, must never block startup
-            logger.warning(f"Quarantine-tag backfill failed (non-fatal): {e}")
+            logger.warning(f"Quarantine-tag backfill failed (non-fatal): {e}", exc_info=True)
 
         if native_s3:
             return
@@ -123,7 +124,7 @@ def _setup_minio() -> None:
         _remove_public_bucket_policy(minio_client, bucket_name)
 
     except Exception as e:
-        logger.error(f"Error setting up media bucket: {e}")
+        logger.error(f"Error setting up media bucket: {e}", exc_info=True)
 
 
 def _setup_media_bucket(minio_client, bucket_name: str, native_s3: bool) -> None:
@@ -206,9 +207,23 @@ def _remove_public_bucket_policy(minio_client, bucket_name: str) -> None:
                     f"SECURITY FIX: Removed public access policy from bucket '{bucket_name}'. "
                     "All file access now requires authentication via presigned URLs."
                 )
-    except Exception:
-        # No policy set (expected for new buckets) — this is the secure default
-        logger.debug("No bucket policy set for '%s' (secure default)", bucket_name)
+    except S3Error as e:
+        if e.code == "NoSuchBucketPolicy":
+            # No policy set (expected for new buckets) — this is the secure default
+            logger.debug("No bucket policy set for '%s' (secure default)", bucket_name)
+        else:
+            logger.error(
+                "Could not check or remove a public-access policy on bucket '%s': %s",
+                bucket_name,
+                e,
+                exc_info=True,
+            )
+    except ValueError:
+        logger.error(
+            "Bucket policy for '%s' is not valid JSON; a public-access policy cannot be ruled out",
+            bucket_name,
+            exc_info=True,
+        )
 
 
 def _apply_derived_cache_policy() -> None:
@@ -299,7 +314,7 @@ async def _run_startup_recovery() -> None:
         result = startup_recovery_task.delay()
         logger.info(f"Startup recovery task scheduled: {result.id}")
     except Exception as e:
-        logger.error(f"Error scheduling startup recovery: {e}")
+        logger.error(f"Error scheduling startup recovery: {e}", exc_info=True)
 
 
 async def _run_search_maintenance() -> None:
@@ -324,7 +339,7 @@ async def _run_search_maintenance() -> None:
         result = search_index_maintenance_task.delay()
         logger.info(f"Search index maintenance task scheduled: {result.id}")
     except Exception as e:
-        logger.error(f"Error scheduling search maintenance: {e}")
+        logger.error(f"Error scheduling search maintenance: {e}", exc_info=True)
 
 
 async def _run_availability_reconcile() -> None:
@@ -387,7 +402,7 @@ async def _run_thumbnail_migration() -> None:
         await asyncio.sleep(45)  # Wait for other startup tasks
         await run_in_threadpool(_dispatch_thumbnail_passes)
     except Exception as e:
-        logger.error(f"Error scheduling thumbnail migration: {e}")
+        logger.error(f"Error scheduling thumbnail migration: {e}", exc_info=True)
 
 
 def _dispatch_thumbnail_passes() -> None:
@@ -458,7 +473,7 @@ async def _run_imohash_recompute() -> None:
         result = recompute_all.delay()
         logger.info(f"imohash package recompute task scheduled: {result.id}")
     except Exception as e:
-        logger.error(f"Error scheduling imohash recompute: {e}")
+        logger.error(f"Error scheduling imohash recompute: {e}", exc_info=True)
 
 
 async def _run_one_time_embedding_normalization() -> None:
@@ -475,7 +490,7 @@ async def _run_one_time_embedding_normalization() -> None:
         await asyncio.sleep(60)
         await run_in_threadpool(_dispatch_embedding_normalization)
     except Exception as e:
-        logger.error(f"Embedding normalization dispatch error: {e}")
+        logger.error(f"Embedding normalization dispatch error: {e}", exc_info=True)
 
 
 def _dispatch_embedding_normalization() -> None:

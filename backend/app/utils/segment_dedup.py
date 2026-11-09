@@ -436,7 +436,7 @@ def split_sentences_nltk(segments: list[dict]) -> list[dict]:
             if nltk_downloads_permitted(corpus="the punkt sentence tokenizer"):
                 nltk.download("punkt_tab", quiet=True)
             sentence_splitter = nltk_load("tokenizers/punkt/english.pickle")
-        except Exception as exc:
+        except NLTK_CORPUS_UNAVAILABLE as exc:
             logger.warning(
                 "NLTK punkt unavailable (%s: %s); leaving segments unsplit. "
                 "Multi-sentence segments will not be divided. Run "
@@ -445,6 +445,7 @@ def split_sentences_nltk(segments: list[dict]) -> list[dict]:
                 "docs-site/docs/installation/offline-installation.md.",
                 type(exc).__name__,
                 exc,
+                exc_info=True,
             )
             return segments
 

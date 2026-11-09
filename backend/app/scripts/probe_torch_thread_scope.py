@@ -35,6 +35,7 @@ import os
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 DEFAULT_CAP = 3
@@ -66,20 +67,10 @@ def _timed_matmul(torch: Any, iters: int) -> float:
 
 def _run_on_thread(name: str, fn: Any) -> Any:
     """Run ``fn`` on a fresh thread and return its result (re-raising its error)."""
-    box: dict[str, Any] = {}
-
-    def body() -> None:
-        try:
-            box["value"] = fn()
-        except BaseException as exc:  # re-raised on the caller
-            box["error"] = exc
-
-    thread = threading.Thread(target=body, name=name)
-    thread.start()
-    thread.join()
-    if "error" in box:
-        raise box["error"]
-    return box["value"]
+    # A one-worker executor spawns a thread nothing has latched and hands its exception back
+    # through the future (concurrent.futures docs), so no handler of our own is needed.
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix=name) as pool:
+        return pool.submit(fn).result()
 
 
 def run_probe(cap: int = DEFAULT_CAP, matmul_iters: int = DEFAULT_MATMUL_ITERS) -> dict[str, Any]:

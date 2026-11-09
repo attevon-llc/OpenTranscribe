@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import logging
 
+from redis.exceptions import RedisError
+
 logger = logging.getLogger(__name__)
 
 #: How long one boot "generation" lasts. Long enough to cover a rolling restart of every
@@ -49,12 +51,13 @@ def run_once_per_boot(step: str, ttl: int = DEFAULT_BOOT_WINDOW_SECONDS) -> bool
         from app.core.redis import get_redis
 
         claimed = get_redis().set(key, "1", nx=True, ex=ttl)
-    except Exception as exc:  # Redis availability is a deployment concern
+    except RedisError as exc:  # Redis availability is a deployment concern
         logger.warning(
             "Boot election unavailable for %s (%s); running the step. Duplicated work is "
             "safer here than skipped work.",
             step,
             exc,
+            exc_info=True,
         )
         return True
 

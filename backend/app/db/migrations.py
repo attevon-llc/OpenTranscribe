@@ -499,8 +499,10 @@ def run_migrations() -> None:
             lock_conn.execute(text(f"SELECT pg_advisory_unlock({MIGRATION_LOCK_KEY})"))
             lock_conn.commit()
             logger.info("Released migration advisory lock")
-        except Exception as exc:  # closing the session releases it anyway
-            logger.warning("Advisory unlock failed (%s); closing the session releases it", exc)
+        except SQLAlchemyError as exc:  # closing the session releases it anyway
+            logger.warning(
+                "Advisory unlock failed (%s); closing the session releases it", exc, exc_info=True
+            )
         finally:
             lock_conn.close()
             lock_engine.dispose()

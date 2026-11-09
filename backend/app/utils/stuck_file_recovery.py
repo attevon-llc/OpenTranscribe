@@ -7,7 +7,10 @@ from datetime import datetime
 from datetime import timedelta
 
 from celery.result import AsyncResult
+from kombu.exceptions import OperationalError as KombuOperationalError
+from redis.exceptions import RedisError
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.env import env_bool
@@ -94,8 +97,10 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
                     file.active_task_id = None
                     file.task_started_at = None
                     db.commit()
-            except Exception as e:
-                logger.warning(f"Could not check task status for {active_task_id}: {e}")
+            except (RedisError, KombuOperationalError, SQLAlchemyError) as e:
+                logger.warning(
+                    f"Could not check task status for {active_task_id}: {e}", exc_info=True
+                )
                 stuck_file_ids.append(int(file.id))
         else:
             stuck_file_ids.append(int(file.id))

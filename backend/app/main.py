@@ -93,7 +93,7 @@ async def _drain_websockets() -> None:
 
         await manager.drain()
     except Exception as e:  # never block shutdown on drain
-        logger.warning(f"WebSocket drain failed (non-fatal): {e}")
+        logger.warning(f"WebSocket drain failed (non-fatal): {e}", exc_info=True)
 
 
 @asynccontextmanager
@@ -206,7 +206,7 @@ async def _lifespan_body(app: FastAPI) -> AsyncIterator[None]:
             # opensearch_service forms a package cycle (issue #540).
             check_and_repair_chunks_index()
     except Exception as e:
-        logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
+        logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}", exc_info=True)
 
     # Sync speaker profile data from PostgreSQL to OpenSearch. A worker task, once per boot
     # window: at scale the sync takes minutes and must not hold up API health (#1337).
@@ -217,7 +217,9 @@ async def _lifespan_body(app: FastAPI) -> AsyncIterator[None]:
         if run_once_per_boot("speaker_profile_sync_dispatch"):
             speaker_profile_opensearch_sync_task.delay()
     except Exception as e:
-        logger.warning(f"Speaker profile sync could not be scheduled (non-fatal): {e}")
+        logger.warning(
+            f"Speaker profile sync could not be scheduled (non-fatal): {e}", exc_info=True
+        )
 
     # Derived-cache retention (per process) and the one-time legacy reclaims (elected).
     _apply_derived_cache_policy()
@@ -231,7 +233,7 @@ async def _lifespan_body(app: FastAPI) -> AsyncIterator[None]:
         if run_once_per_boot("clear_stale_task_state"):
             _clear_stale_task_state()
     except Exception as e:
-        logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
+        logger.warning(f"Migration state cleanup failed (non-fatal): {e}", exc_info=True)
 
     _start_pii_warmup()
     _start_reranker_warmup()

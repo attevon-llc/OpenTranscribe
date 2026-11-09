@@ -295,7 +295,7 @@ def validate_uploaded_file(
 
         return is_valid, result
 
-    except Exception as e:
-        logger.error(f"Error validating file {filename or 'unknown'}: {e}")
+    except (ValueError, TypeError, OSError) as e:
+        logger.error(f"Error validating file {filename or 'unknown'}: {e}", exc_info=True)
         # On error, fail closed (reject the file)
         return False, f"Validation error: {str(e)}"

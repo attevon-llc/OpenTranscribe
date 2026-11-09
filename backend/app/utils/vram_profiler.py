@@ -16,6 +16,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from app.core.env import env_bool
 
 logger = logging.getLogger(__name__)
@@ -205,8 +207,8 @@ class VRAMProfiler:
             r.expire(history_key, 86400)
 
             logger.info(f"VRAM profile saved to Redis: {key}")
-        except Exception as e:
-            logger.warning(f"Failed to save VRAM profile to Redis: {e}")
+        except (RedisError, TypeError, ValueError) as e:
+            logger.warning(f"Failed to save VRAM profile to Redis: {e}", exc_info=True)
 
     def log_report(self) -> None:
         """Log the full profiling report at INFO level."""

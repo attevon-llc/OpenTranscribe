@@ -13,10 +13,12 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Any
 
+from redis.exceptions import RedisError
 from sqlalchemy import extract
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import Label
 
@@ -423,8 +425,8 @@ def get_queue_depths() -> dict[str, int]:
         }
         depths["total"] = sum(depths.values())
         return depths
-    except Exception as e:
-        logger.error(f"Error getting queue depths: {e}")
+    except (RedisError, OSError) as e:
+        logger.error(f"Error getting queue depths: {e}", exc_info=True)
         return {q: 0 for q in CeleryQueues.ALL} | {"total": 0}
 
 
@@ -462,6 +464,7 @@ def get_models_info() -> dict[str, dict[str, Any]]:
 
         diarizer_status = describe_diarizer_status()
     except Exception:  # a stats panel never fails over a display value
+        logger.warning("Could not describe the diarizer status", exc_info=True)
         diarizer_status = {
             "configured": "unknown",
             "configured_description": "unknown diarization engine",
@@ -501,7 +504,11 @@ def get_models_info() -> dict[str, dict[str, Any]]:
             from app.services.search.settings_service import get_search_embedding_model
 
             neural_model = get_search_embedding_model()
-        except Exception:
+        except SQLAlchemyError:
+            logger.warning(
+                "Could not read the search embedding model setting; using the configured default",
+                exc_info=True,
+            )
             neural_model = getattr(settings, "OPENSEARCH_NEURAL_MODEL", "")
         if neural_model:
             short_name = neural_model.rsplit("/", 1)[-1] if "/" in neural_model else neural_model

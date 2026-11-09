@@ -3,7 +3,11 @@
 import logging
 import time
 
+import urllib3
 from celery.result import AsyncResult
+from kombu.exceptions import OperationalError as KombuOperationalError
+from minio.error import MinioException
+from redis.exceptions import RedisError
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -55,11 +59,17 @@ def is_file_safe_to_delete(db: Session, file_id: int) -> tuple[bool, str]:
                     False,
                     f"File is currently being processed (task: {active_task_id})",
                 )
-        except Exception as e:
-            # If we can't check task status, assume it's safe
+        except (RedisError, KombuOperationalError) as e:
+            # Fail closed: this gates a destructive purge, and an unreadable result
+            # backend is not evidence that the task has finished.
             logger.warning(
                 f"Could not check Celery task status for {active_task_id}: {e}. "
-                "Assuming file is safe to delete."
+                "Refusing to treat the file as safe to delete.",
+                exc_info=True,
+            )
+            return (
+                False,
+                f"Could not confirm that task {active_task_id} has finished; try again shortly",
             )
 
     # Safe to delete in these states
@@ -123,13 +133,14 @@ def media_object_is_resolvable(media_file: MediaFile) -> bool:
 
     try:
         return object_exists_and_size(str(storage_path)) is not None
-    except Exception as e:
+    except (MinioException, urllib3.exceptions.HTTPError, OSError) as e:
         # object_exists_and_size only returns None for a genuine "no such key";
         # everything else (outage, credentials, network) raises, and none of
         # those is evidence the object is gone.
         logger.warning(
             f"Could not confirm media object {storage_path!r} for file {media_file.id}: "
-            f"{type(e).__name__}: {e}. Treating it as unresolvable."
+            f"{type(e).__name__}: {e}. Treating it as unresolvable.",
+            exc_info=True,
         )
         return False
 
@@ -293,11 +304,11 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
                 )
                 time.sleep(_DEADLOCK_RETRY_DELAY_S)
                 continue
-            logger.error(f"Failed to reset file {file_id} for retry: {e}")
+            logger.error(f"Failed to reset file {file_id} for retry: {e}", exc_info=True)
             return False
 
-        except Exception as e:
-            logger.error(f"Failed to reset file {file_id} for retry: {e}")
+        except Exception:  # boundary: the caller reads False as "reset failed"
+            logger.exception(f"Failed to reset file {file_id} for retry")
             db.rollback()
             return False
 

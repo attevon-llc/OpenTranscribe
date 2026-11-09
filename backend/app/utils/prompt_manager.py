@@ -7,6 +7,7 @@ import uuid
 
 from sqlalchemy import and_
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.base import SessionLocal
@@ -194,8 +195,10 @@ def increment_prompt_usage(db: Session, prompt_id_or_uuid: int | str | uuid.UUID
             return
         prompt.usage_count = (prompt.usage_count or 0) + 1
         db.commit()
-    except Exception as e:
-        logger.warning(f"Failed to increment usage_count for prompt {prompt_id_or_uuid}: {e}")
+    except SQLAlchemyError as e:
+        logger.warning(
+            f"Failed to increment usage_count for prompt {prompt_id_or_uuid}: {e}", exc_info=True
+        )
         db.rollback()
 
 

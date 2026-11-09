@@ -26,6 +26,7 @@ from app.core.db_overload import overload_cause
 from app.core.db_overload import reraise_db_overload
 from app.db.session_utils import session_scope
 from app.services import ws_admission
+from app.services.user_lookup import get_user_by_uuid
 from app.utils.client_ip import resolve_client_ip
 from app.utils.websocket_notify import SESSION_REVOKED_EVENT
 
@@ -546,7 +547,7 @@ def _try_authenticate_token(token: str, db: Session, websocket: WebSocket) -> Us
             )
             return None
 
-        user = db.query(User).filter(User.uuid == user_identifier).first()
+        user = get_user_by_uuid(db, user_identifier)
         if user is None or not user.is_active or not admitted_on_optional_auth(user, websocket, db):
             return None
         return user

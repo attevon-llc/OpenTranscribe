@@ -11,7 +11,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import selectinload
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
@@ -28,7 +27,10 @@ from app.schemas.watch_source import WatchSourceFileActionResult
 from app.schemas.watch_source import WatchSourceFilesList
 from app.schemas.watch_source import WatchSourceStats
 from app.services.request_context import RequestContext
-from app.utils.sql_like import escape_like
+from app.services.watch_source_queries import file_status_counts
+from app.services.watch_source_queries import find_tracked_file
+from app.services.watch_source_queries import list_file_history
+from app.services.watch_source_queries import tracked_files_by_uuid
 
 router = APIRouter()
 
@@ -61,26 +63,8 @@ def list_source_files(
     row. Newest first.
     """
     source = _get_source_or_404(db, source_uuid, ctx, need="read")
-    # ``selectinload`` because the serialization below reads ``r.media_file`` on every
-    # row: lazily that is one query per row, and ``page_size`` goes up to 200.
-    query = (
-        db.query(WatchSourceFile)
-        .options(selectinload(WatchSourceFile.media_file))
-        .filter(WatchSourceFile.watch_source_id == source.id)
-    )
-    if status_filter:
-        query = query.filter(WatchSourceFile.status == status_filter)
-    if q and q.strip():
-        # ``ilike`` with the wildcards escaped, so a filename containing % or _ is
-        # searched for literally rather than turning into a match-everything pattern.
-        needle = escape_like(q.strip())
-        query = query.filter(WatchSourceFile.filename.ilike(f"%{needle}%", escape="\\"))
-    total = query.count()
-    rows = (
-        query.order_by(WatchSourceFile.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
+    rows, total = list_file_history(
+        db, source.id, status=status_filter, name_contains=q, page=page, page_size=page_size
     )
     from app.services.file_availability import is_unavailable
 
@@ -131,16 +115,8 @@ def source_file_stats(
     caller rarely cares which), and ``pending`` folds ``pending`` + ``importing`` +
     ``downloading`` into one "in flight" number.
     """
-    from sqlalchemy import func
-
     source = _get_source_or_404(db, source_uuid, ctx, need="read")
-    counts: dict[str, int] = {
-        status: count
-        for status, count in db.query(WatchSourceFile.status, func.count(WatchSourceFile.id))
-        .filter(WatchSourceFile.watch_source_id == source.id)
-        .group_by(WatchSourceFile.status)
-        .all()
-    }
+    counts = file_status_counts(db, source.id)
     skipped = sum(v for k, v in counts.items() if k.startswith("skipped"))
     return WatchSourceStats(
         total=sum(counts.values()),
@@ -164,14 +140,7 @@ def delete_source_file(
 ) -> dict:
     """Remove a tracking row (does NOT delete from the source or the gallery)."""
     source = _get_source_or_404(db, source_uuid, ctx)
-    row = (
-        db.query(WatchSourceFile)
-        .filter(
-            WatchSourceFile.uuid == file_uuid,
-            WatchSourceFile.watch_source_id == source.id,
-        )
-        .first()
-    )
+    row = find_tracked_file(db, source.id, file_uuid)
     if not row:
         raise HTTPException(status_code=404, detail="Tracked file not found")
     db.delete(row)
@@ -188,14 +157,7 @@ def _rows_for_action(
     usually acting on a page of results that another scan may have changed underneath
     them, and failing the whole request would discard the work for every valid row.
     """
-    rows = (
-        db.query(WatchSourceFile)
-        .filter(
-            WatchSourceFile.watch_source_id == source.id,
-            WatchSourceFile.uuid.in_(file_uuids),
-        )
-        .all()
-    )
+    rows = tracked_files_by_uuid(db, source.id, file_uuids)
     by_uuid = {str(r.uuid): r for r in rows}
     missing = [
         WatchSourceFileActionResult(

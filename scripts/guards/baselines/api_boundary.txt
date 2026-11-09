@@ -17,7 +17,6 @@ fastapi_import::backend/app/services/pipeline_plan_inputs.py	1	layering: removal
 fastapi_import::backend/app/tasks/transcription/hooks.py	1	layering: removal planned
 fastapi_import::backend/app/utils/client_ip.py	1	layering: removal planned
 fastapi_import::backend/app/utils/pagination.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/deps_context.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/asr_config_state.py	7	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/asr_local_model.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/asr_provider_catalog.py	2	layering: removal planned
@@ -86,9 +85,3 @@ orm_call_in_api::backend/app/api/endpoints/user_settings_recording.py	3	layering
 orm_call_in_api::backend/app/api/endpoints/user_settings_speaker_attributes.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/user_settings_transcription.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/user_settings_transcription_validators.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/watch_sources.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/watch_sources_access.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/watch_sources_email_configs.py	4	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/watch_sources_email_links.py	7	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/watch_sources_files.py	4	layering: removal planned
-orm_call_in_api::backend/app/api/websockets.py	1	layering: removal planned

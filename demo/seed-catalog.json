@@ -1,5 +1,5 @@
 {
-  "_comment": "Candidate sources for the public demo's seed bundle (issue #628). Each seeded file lands in the named `collection` (ids in app.scripts.demo_seed.bundle.COLLECTIONS). Every item built from these must pass `python -m app.scripts.demo_seed validate`, and each source's licence page must be re-read and dated in license_checked_on at bundle build (docs-site/docs/operations/public-demo.md). Only the speech of people speaking in an official or professional public capacity is used; no private individual. `exclusions` are rules the curator applies when choosing recordings; FCC and OSHA were dropped on 2026-11-08 because their licence pages could not be read (see `excluded`); every remaining source's licence page was re-read that day except LibriVox, which stays out pending the owner's decision. The owner approves the final item list. Neutrality review 2026-11-08: the owner rejected the first picks as not politically neutral; the list now covers science, space, weather, technology, culture, education, how-to and statistics explainers only. The government-meetings collection is filled with NASA meetings and USGS public lectures, so a rename to 'Government meetings & public talks' is proposed for the owner (COLLECTIONS unchanged).",
+  "_comment": "Candidate sources for the public demo's seed bundle (issue #628). Each seeded file lands in the named `collection` (ids in app.scripts.demo_seed.bundle.COLLECTIONS). Every item built from these must pass `python -m app.scripts.demo_seed validate`, and each source's licence page must be re-read and dated in license_checked_on at bundle build (docs-site/docs/operations/public-demo.md). Only the speech of people speaking in an official or professional public capacity is used; no private individual. `exclusions` are rules the curator applies when choosing recordings; FCC and OSHA were dropped on 2026-11-08 because their licence pages could not be read (see `excluded`); every remaining source's licence page was re-read that day except LibriVox, which stays out pending the owner's decision. The owner approves the final item list. Neutrality review 2026-11-08: the owner rejected the first picks as not politically neutral; the list now covers science, space, weather, technology, culture, education, how-to and statistics explainers only. The government-meetings collection is filled with NASA meetings and USGS public lectures, so the collection was renamed 'Government meetings & public talks' on 2026-11-08 (owner decision; the id `government-meetings` is unchanged).",
   "collections": [
     {
       "id": "news",
@@ -7,7 +7,7 @@
     },
     {
       "id": "government-meetings",
-      "name": "Government meetings"
+      "name": "Government meetings & public talks"
     },
     {
       "id": "business-finance",
@@ -28,7 +28,7 @@
   ],
   "sources": [
     {
-      "name": "Voice of America features in several languages (science, technology, culture, lifestyle, economy explainers)",
+      "name": "Voice of America English reports (VOA Learning English: science, space, nature, history of invention, language and culture)",
       "collection": "news",
       "url": "https://www.voanews.com/",
       "license": "US-GOV-PD",
@@ -38,10 +38,10 @@
       "exclusions": [
         "Exclude any segment not produced exclusively by VOA: the page says some material is licensed for VOA programming only and is not public domain, and AFP, AP and Reuters material may not be redistributed.",
         "Exclude street interviews and vox pops with private individuals; keep only VOA staff, officials and named experts speaking in a professional capacity.",
-        "Neutral topics only: no elections, politics, conflict, crime, immigration or individuals' cases; sports and entertainment items were not taken because they usually carry third-party game, film or music footage that VOA's public-domain statement does not cover."
+        "English only (owner decision 2026-11-08); audio of VOA Learning English articles whose byline names no AP, Reuters, AFP or Getty source (most Learning English items are adapted from those agencies and are skipped). Neutral topics only: no elections, politics, conflict, crime, immigration or individuals' cases; sports and entertainment items were not taken because they usually carry third-party game, film or music footage that VOA's public-domain statement does not cover."
       ],
       "shows": [
-        "multi-language transcripts",
+        "English transcripts of clear, slow narration",
         "summaries",
         "keyword and semantic search"
       ],

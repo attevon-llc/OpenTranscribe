@@ -266,14 +266,14 @@ python -m app.scripts.demo_seed validate --bundle /path/to/bundle
 ### What goes in the bundle
 
 `demo/seed-catalog.json` lists the candidate sources by collection. Each item in a bundle names
-its `collection`, one of: News, Government meetings, Business & finance, Training & education,
+its `collection`, one of: News, Government meetings & public talks, Business & finance, Training & education,
 Science & briefings, Privacy demo. The seeder creates each collection for the demo user and files
 the item in it; `demo_seed validate` refuses an item whose collection is missing or unknown.
 
 | Collection | Sources | Licence |
 |---|---|---|
-| News | Voice of America (several languages) | US-GOV-PD |
-| Government meetings | FCC open commission meetings, NTSB board meetings, FDA advisory committee meetings | US-GOV-PD |
+| News | Voice of America English reports (VOA Learning English) | US-GOV-PD |
+| Government meetings & public talks | NASA public meetings, USGS public lectures | US-GOV-PD |
 | Business & finance | Federal Reserve FOMC press conferences, SEC open meetings | US-GOV-PD |
 | Training & education | NASA education, FEMA and OSHA training videos, LibriVox readings | US-GOV-PD, PDM-1.0 |
 | Science & briefings | NASA, NOAA / National Weather Service | US-GOV-PD |

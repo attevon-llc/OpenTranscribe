@@ -53,7 +53,7 @@ ATTRIBUTION_REQUIRED = frozenset({"CC-BY-4.0", "CC-BY-SA-4.0"})
 #: catalogue (``demo/seed-catalog.json``) uses the same ids; a new one is added here first.
 COLLECTIONS: dict[str, str] = {
     "news": "News",
-    "government-meetings": "Government meetings",
+    "government-meetings": "Government meetings & public talks",
     "business-finance": "Business & finance",
     "training-education": "Training & education",
     "science-briefings": "Science & briefings",

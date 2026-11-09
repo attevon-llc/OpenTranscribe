@@ -23,6 +23,7 @@ from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.exceptions import DomainError
 from app.core.security import authenticate_user
+from app.db.session_utils import end_read_transaction
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -194,6 +195,10 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
     Raises:
         HTTPException: If user is inactive or their email is unverified
     """
+    # The password hash is the slowest step of a login; no pooled connection waits on it.
+    # Everything this request read so far is a read, so commit-and-release loses nothing.
+    end_read_transaction(db)
+
     # Try direct auth first
     user_data = direct_authenticate_user(username, password)
     if user_data:
@@ -205,7 +210,9 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
 
     # Fall back to ORM-based auth
     logger.info("Falling back to the ORM password check for local user: %s", username)
-    user = authenticate_user(db, username, password)
+    user = authenticate_user(
+        db, username, password, before_hash=lambda found: end_read_transaction(db, found)
+    )
     if not user:
         return None
 

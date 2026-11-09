@@ -41,6 +41,7 @@ from app.core.auth_types import AUTH_TYPE_LDAP
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import resolve_ldap_search_filter
 from app.core.config import settings
+from app.core.db_overload import reraise_db_overload
 from app.core.env import is_truthy
 from app.models.group import MAPPING_SOURCE_LDAP
 from app.models.user import User
@@ -304,6 +305,7 @@ def _resolve_login_config(db: Session | None) -> LdapConfig:
     try:
         return LdapConfig.from_db(db)
     except Exception as exc:
+        reraise_db_overload(exc)
         logger.warning(
             "Could not read the LDAP settings from the database (%s); using the environment",
             type(exc).__name__,
@@ -328,7 +330,10 @@ def ldap_authenticate(
 
     Returns:
         The user's directory data, or ``None`` when the login is refused for any reason.
-        Never raises.
+
+    Raises:
+        A database overload while reading the LDAP settings (``core/db_overload.py``), so
+        the login answers 503; nothing else.
     """
     cfg = _resolve_login_config(db)
     if not cfg.enabled:

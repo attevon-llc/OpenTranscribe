@@ -351,6 +351,11 @@ codes.
 - Lockout is keyed on a **canonical identifier per account**, so an account reachable by both
   an email address and an LDAP uid gets one budget, not two.
 - Rate limiting is per-IP, resolved through the trusted-proxy chain.
+- **A database that cannot answer is a 503, never a 401.** When the password check cannot read
+  the account (no free database connection, a statement past `DB_STATEMENT_TIMEOUT_MS`, the
+  request deadline, or the database down), sign-in answers **503 with `Retry-After`** and
+  records **no** lockout attempt, since no password was checked. A wrong password with the
+  database healthy is still the same counted 401 as an unknown account.
 - The dev stack relaxes both (`docker-compose.override.yml`: 120 requests/min, lockout threshold
   100). Production never loads that overlay.
 

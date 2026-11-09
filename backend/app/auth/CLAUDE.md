@@ -212,7 +212,7 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   `900cad2a6` (its cited `plans/session-ownership-decision.md` was untracked in `d8e1e4c7b`).
 - TOTP per RFC 6238/4226 (Google Authenticator / Authy compatible). MFA tokens are
   single-use — the JTI is blacklisted in Redis after verification.
-- Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table; reads: `audit_query.py`.
+- Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table; reads: `audit_query.py`. Password sign-in (plan 5.6): a DB failure is 503 never 401, no connection is held across the hash, and its login/session events are staged in the outbox in the mint's commit (`create_refresh_token(audit_stager=)`; call `record_successful_login(user)` BEFORE the mint) — see the `direct_auth`/`login`/`login_completion` docstrings.
 - **A resource event names its OWN tenant** (#1277): `log(..., resource_type=, resource_uuid=,
   tenant_scope="org"|"personal")` are typed top-level keywords (a pre-existing monthly index gets them
   by `put_mapping`, once per process; a conflict is a WARNING and the next month is right).

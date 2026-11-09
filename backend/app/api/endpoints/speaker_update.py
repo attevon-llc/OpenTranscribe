@@ -21,6 +21,7 @@ from app.api.endpoints.speaker_match_notify import (
     send_bulk_update_notification as _send_bulk_update_notification,
 )
 from app.api.endpoints.speakers_profile_workflow import _update_profile_embedding
+from app.core.db_overload import reraise_db_overload
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerMatch
@@ -541,24 +542,22 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
             db, trigger, scored, tracker
         )
         # A failed suggestion load must not drop the index push of matches Postgres
-        # already committed above: push and notify first, then raise with the real counts.
-        suggestion_load_error: Exception | None = None
+        # already committed above: push and notify first, then raise. A database overload
+        # is raised as itself, so the caller sees the overload rather than a partial
+        # result; anything else carries the real counts.
         try:
             documents.extend(_load_suggestion_speaker_documents(db, trigger))
             db.commit()
         except Exception as exc:
             logger.exception(f"Suggestion-speaker sync load failed for speaker {speaker_id}")
             db.rollback()
-            suggestion_load_error = exc
+            _push_speaker_documents(documents)
+            _send_bulk_update_notification(trigger, auto_applied_count, suggested_count)
+            reraise_db_overload(exc)
+            raise SuggestionSyncIncompleteError(auto_applied_count, suggested_count) from exc
 
         # Phase 3 — index writes. NO transaction is open here.
         _push_speaker_documents(documents)
-
-        if suggestion_load_error is not None:
-            _send_bulk_update_notification(trigger, auto_applied_count, suggested_count)
-            raise SuggestionSyncIncompleteError(
-                auto_applied_count, suggested_count
-            ) from suggestion_load_error
 
         logger.info(
             f"Retroactive matching complete: {auto_applied_count} auto-applied, {suggested_count} suggested"

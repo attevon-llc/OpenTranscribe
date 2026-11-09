@@ -4,14 +4,8 @@
 # which fails on an unlisted finding, a stale entry and an entry with no reason.
 #
 # The authentication path (dependencies, lifecycle gates, approval, revocation fallback,
-# refresh-token verification, external-token JIT sync) re-raises and is NOT listed here.
-
-# Login and session mint: owned by scale lane E (scale_foundations_plan.md 5.6), which maps
-# infrastructure errors on the login path to 503.
-app/api/endpoints/auth/login.py::_resolve_lockout_account  # lane E (login); raises AccountLookupError, which the login handler answers
-app/api/endpoints/auth/login_completion.py::record_successful_login  # lane E (login); rolls back the best-effort login bookkeeping, login still completes
-app/auth/session_ceiling.py::_session_lifetime_minutes  # lane E (session mint at login); falls back to the .env session timeouts
-app/auth/ldap_auth.py::_resolve_login_config  # lane E (LDAP login); falls back to the .env LDAP config
+# refresh-token verification, external-token JIT sync, password and LDAP login, session
+# mint) re-raises and is NOT listed here.
 
 # WebSocket handshake: owned by scale lane F (plan section 6, M2 #8).
 app/api/websockets.py::_try_authenticate_token  # lane F: handshake auth failure on pool exhaustion is its finding (M2 #8)
@@ -51,10 +45,3 @@ app/api/endpoints/llm_connection_tests.py::test_llm_connection  # an admin "test
 app/api/endpoints/llm_local_endpoints.py::_probe_local_endpoint  # reports the endpoint unreachable in the probe result
 app/api/endpoints/llm_model_discovery.py::get_ollama_models  # model discovery answers success=False with a message
 app/api/endpoints/llm_model_discovery.py::_get_stored_api_key  # discovery proceeds without a stored key and says so
-
-# Read paths that degrade one part of a response. FOLLOW-UP (lead): convert these to
-# reraise_db_overload so an overload is a 503 rather than a partial answer.
-app/api/endpoints/embedding_migration.py::_compute_ground_truth_status  # admin migration status shows "unknown"
-app/api/endpoints/files/detail_response.py::get_file_collections  # file detail shows no collections for this response
-app/api/endpoints/files/redaction_gate.py::claim_and_dispatch_redaction_scan  # answers queued=False; the scan is re-requested on the next view
-app/api/endpoints/speaker_update.py::trigger_retroactive_matching  # records suggestion_load_error and reports it

@@ -26,6 +26,11 @@ SERVER_BUSY_CODE = "server_busy"
 SERVER_BUSY_DETAIL = "Server busy, try again shortly"
 
 
+def retry_after_headers() -> dict[str, str]:
+    """The ``Retry-After`` header every retryable 503 from the API carries."""
+    return {"Retry-After": str(max(1, int(settings.DB_OVERLOAD_RETRY_AFTER_SECONDS)))}
+
+
 def _pool_usage() -> str:
     from sqlalchemy.pool import QueuePool
 
@@ -56,7 +61,7 @@ def _server_busy(request: Request, exc: BaseException, cause: str) -> JSONRespon
     return JSONResponse(
         status_code=503,
         content={"detail": SERVER_BUSY_DETAIL, "code": SERVER_BUSY_CODE},
-        headers={"Retry-After": str(max(1, int(settings.DB_OVERLOAD_RETRY_AFTER_SECONDS)))},
+        headers=retry_after_headers(),
     )
 
 

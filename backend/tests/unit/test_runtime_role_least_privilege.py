@@ -33,16 +33,9 @@ def test_the_login_connection_uses_the_runtime_role_not_the_owner_credentials(mo
     monkeypatch.setattr(settings, "POSTGRES_USER", "owner_credentials_not_given_to_the_api")
     monkeypatch.setattr(settings, "POSTGRES_PASSWORD", "")
 
-    conn = direct_auth.get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT current_user")
-        row = cursor.fetchone()
-        assert row is not None
-        login_role = row[0]
-        cursor.close()
-    finally:
-        conn.close()
+    with direct_auth.get_db_connection() as conn:
+        login_role = conn.execute(text("SELECT current_user")).scalar()
+    assert login_role
 
     with engine.connect() as runtime:
         runtime_role = runtime.execute(text("SELECT current_user")).scalar()

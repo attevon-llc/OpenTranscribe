@@ -25,6 +25,7 @@ from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.login_completion import _apply_password_expiry
 from app.api.endpoints.auth.login_completion import _check_mfa_requirement
 from app.api.endpoints.auth.login_completion import _generate_login_tokens
+from app.api.overload_response import retry_after_headers
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
@@ -43,6 +44,8 @@ from app.core.auth_settings import get_auth_settings
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
 from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
+from app.core.db_overload import database_unreachable
+from app.core.db_overload import reraise_db_overload
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
@@ -57,6 +60,8 @@ logger = logging.getLogger(__name__)
 class AccountLookupError(Exception):
     """The login attempt's account lookup raised, so its lockout bucket is unknown."""
 
+
+SIGN_IN_UNAVAILABLE_DETAIL = "Sign-in is temporarily unavailable. Please try again shortly."
 
 #: The values ``schemas/auth_config.py`` admits for ``concurrent_session_policy``.
 CONCURRENT_SESSION_POLICIES = frozenset({"reject", "terminate_oldest"})
@@ -141,6 +146,9 @@ def _resolve_lockout_account(db: Session, username: str, user_uuid_str: str) -> 
             return db.query(User).filter(User.uuid == UUID(user_uuid_str)).first()
         return db.query(User).filter((User.email == username) | (User.ldap_uid == username)).first()
     except Exception as exc:
+        # An overload is the request's 503, like one anywhere else on this path; only a
+        # failure of this query itself is the fail-secure refusal below.
+        reraise_db_overload(exc)
         logger.warning("Could not resolve the account for a login attempt", exc_info=True)
         raise AccountLookupError from exc
 
@@ -186,7 +194,8 @@ def _refuse_unresolved_attempt(
         )
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Sign-in is temporarily unavailable. Please try again shortly.",
+        detail=SIGN_IN_UNAVAILABLE_DETAIL,
+        headers=retry_after_headers(),
     )
 
 
@@ -584,6 +593,17 @@ def login_for_access_token(
     except (HTTPException, DomainError):
         raise
     except Exception as e:
+        # The database could not answer, so nothing about the credentials is known: 503
+        # with Retry-After, never 401 (a 401 sent the SPA into a sign-in retry storm under
+        # load, #1337 M2) and never 500. No lockout attempt was recorded for it.
+        reraise_db_overload(e)
+        if database_unreachable(e):
+            logger.warning("Login for %s: database unreachable (%s)", username, type(e).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=SIGN_IN_UNAVAILABLE_DETAIL,
+                headers=retry_after_headers(),
+            ) from e
         logger.error("Unexpected error during authentication: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

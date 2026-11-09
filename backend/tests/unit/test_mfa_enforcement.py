@@ -48,6 +48,7 @@ from app.models.user import User
 from app.models.user_mfa import UserMFA
 from app.schemas.user import MFADisableRequest
 from app.schemas.user import MFAVerifySetupRequest
+from app.services import audit_outbox
 from tests.helpers import fake_request
 from tests.jwt_compat import jwt
 
@@ -78,6 +79,7 @@ class _FakeDB:
         self.commits = 0
         self.deleted: list = []
         self.added: list = []
+        self.info: dict = {}  # Session.info (the audit outbox keeps its staged ids here)
 
     def query(self, model):
         return _FakeQuery(self.rows.get(model))
@@ -847,9 +849,7 @@ class TestAuditRecordsRealAuthMethod:
         """A PKI user who used the local password must not be audited as an LDAP login."""
         monkeypatch.setattr(settings, "LDAP_ENABLED", True)
         captured = {}
-        monkeypatch.setattr(
-            completion.audit_logger, "log_login_success", lambda **kw: captured.update(kw)
-        )
+        monkeypatch.setattr(audit_outbox, "stage", lambda db, **kw: captured.update(kw))
         monkeypatch.setattr(
             completion.token_service,
             "create_refresh_token",
@@ -867,7 +867,7 @@ class TestAuditRecordsRealAuthMethod:
             auth_method="local",
         )
 
-        assert captured["auth_method"] == "local"
+        assert captured["details"]["auth_method"] == "local"
 
 
 # ── an inactive account is an ordinary failed attempt ────────────────────────────

@@ -304,7 +304,7 @@ def _complete_saml_acs(
         details={"groups": saml_data["groups"]},
     )
 
-    record_successful_login(db, user)
+    record_successful_login(user)
     logger.info(f"SAML authentication successful for user: {user.email}")
 
     refresh_token, _session_row = token_service.create_refresh_token(

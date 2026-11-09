@@ -30,8 +30,10 @@ chain and the answer is the same 503.
 
 from __future__ import annotations
 
+import psycopg2
 from prometheus_client import Counter
 from psycopg2 import errors as pg_errors
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
@@ -72,6 +74,27 @@ def reraise_db_overload(exc: BaseException) -> None:
     """
     if overload_cause(exc) is not None:
         raise exc
+
+
+def database_unreachable(exc: BaseException) -> bool:
+    """Whether ``exc`` says the database could not be reached at all (down, connection lost).
+
+    Not an overload, and deliberately not in :func:`overload_cause`: most handlers have no
+    better answer than a 500 for it. The login path does (scale_foundations_plan.md 5.6): a
+    sign-in that cannot reach the database answers 503 with ``Retry-After``, never 401.
+
+    Two signals, both from the library rather than from message text of our own:
+    ``DBAPIError.connection_invalidated`` (SQLAlchemy sets it when the dialect's
+    ``is_disconnect`` recognises a dropped connection), and a psycopg2 ``OperationalError``
+    with no ``pgcode``: every error the server sends carries a SQLSTATE, so one without is
+    libpq failing to connect or talk to it (psycopg2 docs, ``Error.pgcode``).
+    """
+    if not isinstance(exc, DBAPIError):
+        return False
+    if exc.connection_invalidated:
+        return True
+    orig = exc.orig
+    return isinstance(orig, psycopg2.OperationalError) and getattr(orig, "pgcode", None) is None
 
 
 def overload_in_chain(exc: BaseException) -> BaseException | None:

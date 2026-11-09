@@ -329,6 +329,47 @@ def test_suggestion_load_failure_still_pushes_committed_match_documents(
     assert (excinfo.value.auto_applied_count, excinfo.value.suggested_count) == (1, 0)
 
 
+def test_an_overload_in_the_suggestion_load_is_raised_as_itself(
+    db_session, normal_user, monkeypatch
+):
+    """A database overload is reported as the overload, not as a partial sync, and the
+    matches Postgres already committed still reach the index and the user first."""
+    from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+
+    from app.api.endpoints import speaker_update
+
+    mf = _make_file(db_session, normal_user)
+    spk = _make_speaker(db_session, normal_user, mf)
+    spk.display_name = "Dana Lee"
+    db_session.commit()
+
+    match_doc = {"speaker_uuid": "committed-match"}
+    pushed: list[list[dict]] = []
+    notified: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(speaker_update, "get_speaker_embedding", lambda _uuid: [0.1, 0.2, 0.3])
+    monkeypatch.setattr(
+        speaker_update, "_persist_match_results", lambda db, trig, scored, tr: (1, 0, [match_doc])
+    )
+    monkeypatch.setattr(speaker_update, "_push_speaker_documents", lambda docs: pushed.append(docs))
+    monkeypatch.setattr(
+        speaker_update,
+        "_send_bulk_update_notification",
+        lambda trig, applied, suggested: notified.append((applied, suggested)),
+    )
+
+    def _overloaded(*args, **kwargs):
+        raise PoolTimeoutError("QueuePool limit reached")
+
+    monkeypatch.setattr(speaker_update, "_load_suggestion_speaker_documents", _overloaded)
+
+    with pytest.raises(PoolTimeoutError):
+        trigger_retroactive_matching(spk, db_session)
+
+    assert pushed == [[match_doc]]
+    assert notified == [(1, 0)]
+
+
 def test_retroactive_matching_with_no_candidates_still_returns_zero(
     db_session, normal_user, monkeypatch
 ):

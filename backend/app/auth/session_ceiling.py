@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.db_overload import reraise_db_overload
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -24,9 +25,10 @@ def _session_lifetime_minutes(db: Session) -> tuple[int, int, int]:
     """Return ``(idle_timeout_minutes, absolute_timeout_minutes, max_concurrent_sessions)``.
 
     DB-backed (admin UI) over ``.env`` over the coded default, like the rest of the
-    auth configuration. Never raises: a configuration read must not be able to
-    break token issue or verification, so an unavailable database degrades to the
-    environment values.
+    auth configuration. A configuration read must not be able to break token issue or
+    verification, so a failed read degrades to the environment values; a database
+    overload is the exception and is re-raised, so the request answers 503 instead of
+    minting a session on limits nobody configured.
 
     The concurrent-session cap rides along with the two timeouts precisely so that
     :meth:`TokenService.create_refresh_token` — the one place that needs all three —
@@ -41,7 +43,9 @@ def _session_lifetime_minutes(db: Session) -> tuple[int, int, int]:
             auth_settings.session_absolute_timeout_minutes,
             auth_settings.max_concurrent_sessions,
         )
-    except Exception:
+    except Exception as exc:
+        # An overload answers the request 503; minting a session on guessed limits would not.
+        reraise_db_overload(exc)
         from app.core.auth_settings import CONFIG_FALLBACK_LOG
         from app.core.auth_settings import count_config_fallback
 

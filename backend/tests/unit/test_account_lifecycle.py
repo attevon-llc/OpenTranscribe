@@ -44,6 +44,7 @@ from app.auth.audit_events import AuditEventType
 from app.core.config import settings
 from app.core.process_auth_settings import get_process_auth_settings
 from app.models.user import User
+from app.services import audit_outbox
 from tests.helpers import fake_request
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000bb"
@@ -76,6 +77,7 @@ class _FakeDB:
         self.rows = rows or {}
         self.commits = 0
         self.rollbacks = 0
+        self.info: dict = {}  # Session.info (the audit outbox keeps its staged ids here)
 
     def query(self, model):
         return _FakeQuery(self.rows.get(model))
@@ -418,25 +420,30 @@ class TestExpiryRuleHasOneImplementation:
 
 class TestLastLoginIsStamped:
     @pytest.fixture
-    def token_env(self, monkeypatch):
-        monkeypatch.setattr(completion.audit_logger, "log_login_success", lambda **kw: None)
-        monkeypatch.setattr(
-            completion.token_service,
-            "create_refresh_token",
-            lambda **kwargs: ("refresh-token", None),
-        )
+    def minted(self, monkeypatch) -> tuple[Any, list[Any]]:
+        """A user, and its ``last_login_at`` as each session mint saw it."""
+        user = _user()
+        seen: list[Any] = []
+
+        def _mint(**kwargs):
+            seen.append(user.last_login_at)
+            return "refresh-token", None
+
+        monkeypatch.setattr(audit_outbox, "stage", lambda db, **kw: None)
+        monkeypatch.setattr(completion.audit_logger, "log", lambda **kw: None)
+        monkeypatch.setattr(completion.token_service, "create_refresh_token", _mint)
+        return user, seen
 
     def test_helper_stamps_the_column(self):
         user = _user()
-        db = _FakeDB()
+        before = datetime.now(UTC)
 
-        completion.record_successful_login(cast(Any, db), user)
+        completion.record_successful_login(user)
 
-        assert user.last_login_at is not None
-        assert db.commits == 1
+        assert before <= user.last_login_at <= datetime.now(UTC)
 
-    def test_session_issue_stamps_it(self, token_env):
-        user = _user()
+    def test_session_issue_stamps_it(self, minted):
+        user, _seen = minted
         before = datetime.now(UTC)
 
         completion._generate_login_tokens(
@@ -455,28 +462,27 @@ class TestLastLoginIsStamped:
         # a carried-over value — reads as "not None" and disables the control silently.
         assert before <= user.last_login_at <= datetime.now(UTC)
 
-    def test_a_write_failure_never_costs_the_session(self, token_env):
-        """Bookkeeping is not allowed to 500 a login that already succeeded."""
+    def test_the_stamp_is_in_place_before_the_session_is_minted(self, minted):
+        """The mint's commit writes the stamp, so the two land together or not at all.
 
-        class _BrokenDB(_FakeDB):
-            def commit(self):
-                raise RuntimeError("database went away")
-
-        db = _BrokenDB()
-        response = completion._generate_login_tokens(
+        It used to be a separate commit after the mint, which under load could fail on
+        its own: then either the session already existed and the caller lost it, or the
+        failure was swallowed and the session had no stamp.
+        """
+        user, seen = minted
+        completion._generate_login_tokens(
             fake_request(),
             cast(Any, _FakeDB()),
-            _user(),
+            user,
             USER_UUID,
             "user",
             "pytest",
             "10.0.0.1",
             auth_method="local",
         )
-        completion.record_successful_login(cast(Any, db), _user())
 
-        assert response.status_code == 200
-        assert db.rollbacks == 1
+        assert len(seen) == 1
+        assert seen[0] is not None
 
     def test_failed_login_stamps_nothing(self, monkeypatch):
         user = _user()

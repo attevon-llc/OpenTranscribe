@@ -122,23 +122,34 @@ def stage(db: Session, **log_kwargs: Any) -> str | None:
     return str(event_uuid)
 
 
-def deliver_staged(db: Session) -> None:
-    """After the commit: try to deliver what ``db`` staged.
+def take_staged(db: Session) -> list[str]:
+    """The event uuids ``db`` staged since the last take, removed from the session."""
+    return list(db.info.pop(_STAGED_KEY, None) or ())
 
-    A sink outage is handled by :func:`relay`; a database error is logged and swallowed. Either
-    way the change has committed and its rows stay pending for the beat relay.
 
-    Uses its own short sessions, never ``db``: the caller's session may still hold work of its
-    own. A uuid whose transaction rolled back matches no row and is simply dropped.
+def deliver(event_uuids: list[str]) -> None:
+    """Try to deliver these committed events now; the relay retries whatever this misses.
+
+    A sink outage is handled by :func:`relay`; a database error is logged and swallowed.
+    Either way the change has committed and its rows stay pending for the beat relay.
+
+    Uses its own short sessions, so it can run after the request's session has closed: the
+    login path schedules it as the response's background task (Starlette ``BackgroundTask``,
+    run after the response is sent), so the caller does not wait on OpenSearch. A uuid whose
+    transaction rolled back matches no row and is simply dropped.
     """
     try:
-        staged = list(db.info.pop(_STAGED_KEY, None) or ())
-        if staged:
-            relay(only=staged)
+        if event_uuids:
+            relay(only=event_uuids)
     except SQLAlchemyError:
         logger.warning(
             "audit outbox: immediate delivery failed; the relay will retry", exc_info=True
         )
+
+
+def deliver_staged(db: Session) -> None:
+    """After the commit: try to deliver what ``db`` staged (:func:`deliver`, now)."""
+    deliver(take_staged(db))
 
 
 def retry_delay_seconds(attempts: int) -> int:

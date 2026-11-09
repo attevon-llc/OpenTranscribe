@@ -368,7 +368,7 @@ def _complete_oidc_login(
     )
 
     # Every successful auth path stamps last_login_at — see pki.py for why.
-    record_successful_login(db, user)
+    record_successful_login(user)
 
     logger.info(f"OIDC authentication successful for user: {user.email}")
 

@@ -665,15 +665,6 @@ backend/app/tasks/embedding_consistency_repair.py::_run_repair_phase#1	1	re-keye
 backend/app/tasks/embedding_migration_v4.py::extract_v4_embeddings_batch_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/embedding_migration_v4.py::extract_v4_embeddings_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/embedding_migration_v4.py::migrate_speaker_embeddings_v4_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/embedding_migration_v4_finalize.py::_count_profile_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/embedding_migration_v4_finalize.py::finalize_v4_migration_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/embedding_migration_v4_finalize.py::finalize_v4_migration_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/embedding_migration_v4_finalize.py::migrate_profile_documents_to_v4#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/embedding_migration_v4_finalize.py::migrate_profile_documents_to_v4#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/embedding_migration_v4_scope.py::_clear_v4_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/embedding_migration_v4_scope.py::_count_skipped_by_policy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/embedding_migration_v4_scope.py::_take_skipped_by_policy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/embedding_migration_v4_writer.py::_bulk_write_v4_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/erasure_reconciliation.py::erasure_reconciliation_sweep#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/erasure_reconciliation.py::erasure_reconciliation_sweep#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/erasure_reconciliation.py::notify_hold_released#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -690,9 +681,6 @@ backend/app/tasks/media_playlist_processing.py::process_youtube_playlist_task#1	
 backend/app/tasks/migration_pipeline.py::_process_file_segments#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/migration_pipeline.py::cleanup_gpu_memory#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/migration_pipeline.py::process_batch_pipelined#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/opensearch_integrity_task.py::_cleanup_index_by_field#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/opensearch_integrity_task.py::_cleanup_index_by_field#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/opensearch_integrity_task.py::get_index_overview#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::_check_opensearch_health#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::_sweep_superseded_rows#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::periodic_health_check_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

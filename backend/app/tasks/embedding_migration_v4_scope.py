@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from opensearchpy.exceptions import OpenSearchException
+from redis.exceptions import RedisError
 
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.core.embedding_models import get_speaker_index_v3
@@ -116,8 +117,10 @@ def _clear_v4_index() -> None:
             refresh=True,
         )
         logger.info(f"Cleared {count_before} documents from {v4_index} for force re-migration")
-    except Exception as e:
-        logger.error(f"Failed to clear v4 index: {e}")
+    except OpenSearchException:
+        # Re-raise: a forced re-migration over a half-cleared index mixes old and new vectors.
+        logger.exception("Failed to clear v4 index")
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -257,11 +260,16 @@ def _count_skipped_by_policy() -> None:
         r = get_redis()
         r.incr(_SKIPPED_BY_POLICY_KEY)
         r.expire(_SKIPPED_BY_POLICY_KEY, 86400)
-    except Exception as e:
-        logger.warning("Could not count a policy-skipped migration file: %s", e)
+    except RedisError:
+        logger.warning("Could not count a policy-skipped migration file", exc_info=True)
 
 
-def _take_skipped_by_policy() -> int:
+def _take_skipped_by_policy() -> int | None:
+    """Read and clear the skipped-by-policy counter; ``None`` when Redis cannot say.
+
+    ``None`` and ``0`` are different answers: 0 tells an admin no voiceprints were
+    left out, None tells them the count is unknown.
+    """
     try:
         from app.core.redis import get_redis
 
@@ -269,9 +277,9 @@ def _take_skipped_by_policy() -> int:
         raw = r.get(_SKIPPED_BY_POLICY_KEY)
         r.delete(_SKIPPED_BY_POLICY_KEY)
         return int(raw or 0)
-    except Exception as e:
-        logger.warning("Could not read the policy-skipped migration count: %s", e)
-        return 0
+    except RedisError:
+        logger.warning("Could not read the policy-skipped migration count", exc_info=True)
+        return None
 
 
 def _file_skipped_by_policy(media_file_id: int) -> bool:

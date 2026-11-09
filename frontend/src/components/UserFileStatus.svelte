@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
-  import { user } from '../stores/auth';
-  import { websocketStore } from '../stores/websocket';
-  import { toastStore } from '../stores/toast';
-  import { t } from '../stores/locale';
+  import { user } from '$stores/auth';
+  import { websocketStore } from '$stores/websocket';
+  import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { createPoller } from '$lib/utils/poller';
   import { getFlowerUrl } from '$lib/utils/url';
@@ -44,27 +44,11 @@
   let tasksError: any = null;
   let showTasksSection = false;
 
-  // Collapsible sections state
-  let showProblemsSection = true;  // Expanded by default (needs attention!)
-  let showRecentSection = true;    // Expanded by default
-
   // Restore tasks section state from session storage
   if (typeof window !== 'undefined') {
     const savedTasksSection = sessionStorage.getItem('showTasksSection');
     if (savedTasksSection === 'true') {
       showTasksSection = true;
-    }
-
-    // Restore problems section state
-    const savedProblemsSection = sessionStorage.getItem('showProblemsSection');
-    if (savedProblemsSection !== null) {
-      showProblemsSection = savedProblemsSection === 'true';
-    }
-
-    // Restore recent section state
-    const savedRecentSection = sessionStorage.getItem('showRecentSection');
-    if (savedRecentSection !== null) {
-      showRecentSection = savedRecentSection === 'true';
     }
   }
 
@@ -78,8 +62,7 @@
 
   // Task pagination state
   let taskPage = 1;
-  let taskPageSize = 25;
-  let taskTotal = 0;
+  const taskPageSize = 25;
   let taskTotalPages = 0;
   let filtersReady = false;
 
@@ -184,12 +167,10 @@
       // Handle paginated response
       if (data.items) {
         tasks = data.items;
-        taskTotal = data.total;
         taskTotalPages = data.total_pages;
       } else {
         // Fallback for non-paginated response
         tasks = Array.isArray(data) ? data : [];
-        taskTotal = tasks.length;
         taskTotalPages = 1;
       }
       filteredTasks = tasks;
@@ -203,33 +184,6 @@
       if (!silent) {
         tasksLoading = false;
       }
-    }
-  }
-
-  function toggleTasksSection() {
-    showTasksSection = !showTasksSection;
-
-    // Save state to session storage
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('showTasksSection', showTasksSection.toString());
-    }
-
-    if (showTasksSection && tasks.length === 0) {
-      fetchTasks();
-    }
-  }
-
-  function toggleProblemsSection() {
-    showProblemsSection = !showProblemsSection;
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('showProblemsSection', showProblemsSection.toString());
-    }
-  }
-
-  function toggleRecentSection() {
-    showRecentSection = !showRecentSection;
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('showRecentSection', showRecentSection.toString());
     }
   }
 

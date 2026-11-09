@@ -5,15 +5,9 @@
  * reads them).
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
-export type DownloadStatus =
-  | 'queued'
-  | 'downloading'
-  | 'verifying'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
+type DownloadStatus = 'queued' | 'downloading' | 'verifying' | 'completed' | 'failed' | 'cancelled';
 
 export type LanguageSupport = 'multilingual' | 'english_only' | 'english_optimized';
 

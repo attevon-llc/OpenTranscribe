@@ -3025,7 +3025,6 @@
   "uploader.uploadRecordingTooltip": "Téléverser l'enregistrement pour transcription et traitement IA",
   "uploader.uploadTooltip": "Téléverser le fichier sélectionné pour transcription",
   "uploader.uploading": "Téléversement...",
-  "uploader.urlProcessingCancelled": "Traitement de l'URL annulé",
   "uploader.useCtrlV": "Utilisez Ctrl+V ou Cmd+V pour coller",
   "uploader.useExistingFile": "Utiliser le Fichier Existant",
   "uploader.usesDefault": "Utilise par défaut",

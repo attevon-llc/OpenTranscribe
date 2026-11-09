@@ -83,13 +83,13 @@ export interface TagListFilters {
   scope?: TagScope;
 }
 
-export interface TagClusterMember extends Tag {
+interface TagClusterMember extends Tag {
   usage_count: number;
   suggested_survivor: boolean;
 }
 
 /** A near match of a cluster, never one of its members. */
-export interface TagClusterSuggestion extends Tag {
+interface TagClusterSuggestion extends Tag {
   usage_count: number;
   similarity: number;
 }
@@ -102,7 +102,7 @@ export interface TagCollisionCluster {
   suggestions: TagClusterSuggestion[];
 }
 
-export interface TagImpactEntry {
+interface TagImpactEntry {
   uuid: string;
   name: string;
   accessible_file_count: number;

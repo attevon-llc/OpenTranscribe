@@ -65,7 +65,7 @@ export interface GalleryActions {
   toggleSelection: () => void;
   setSelecting: (selecting: boolean) => void;
   toggleFileSelection: (fileId: string) => void; // UUID
-  handleMultiSelect: (fileId: string, ctrlKey: boolean, shiftKey: boolean) => void;
+  handleMultiSelect: (fileId: string, shiftKey: boolean) => void;
   selectAllFiles: () => void;
   clearSelection: () => void;
   setFiles: (files: MediaFile[]) => void;
@@ -138,7 +138,7 @@ const initialState: GalleryState = {
 
 // Create the store
 function createGalleryStore() {
-  const { subscribe, set, update } = writable<GalleryState>(initialState);
+  const { subscribe, update } = writable<GalleryState>(initialState);
 
   // Action stores for triggering operations
   const uploadTrigger = writable<number>(0);
@@ -205,7 +205,7 @@ function createGalleryStore() {
       });
     },
 
-    handleMultiSelect: (fileId: string, ctrlKey: boolean, shiftKey: boolean) => {
+    handleMultiSelect: (fileId: string, shiftKey: boolean) => {
       update((state) => {
         const newSelected = new Set(state.selectedFiles);
 

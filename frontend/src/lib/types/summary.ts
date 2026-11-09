@@ -6,16 +6,10 @@
  */
 
 // Legacy types for default BLUF format (optional fields)
-export interface SpeakerInfo {
+interface SpeakerInfo {
   name: string;
   talk_time_seconds: number;
   percentage: number;
-  key_points: string[];
-}
-
-export interface ContentSection {
-  time_range: string;
-  topic: string;
   key_points: string[];
 }
 
@@ -39,7 +33,7 @@ export interface MajorTopic {
  * `actionItemOwner()` helpers are the actual shape-tolerant readers; this
  * type exists so a literal built from either shape still type-checks.
  */
-export interface ActionItem {
+interface ActionItem {
   // The shape the DEFAULT prompt actually emits.
   item?: string;
   owner?: string | null;
@@ -55,7 +49,7 @@ export interface ActionItem {
   context?: string;
 }
 
-export interface SummaryMetadata {
+interface SummaryMetadata {
   provider: string;
   model: string;
   usage_tokens?: number;
@@ -103,10 +97,3 @@ export interface SummaryResponse {
 // `SummarySearchHit` / `SummarySearchResponse` described `POST /api/files/search`,
 // which queried only that index and was unmounted with it (#67). They had no
 // importer outside this file.
-
-export interface SpeakerIdentificationResponse {
-  message: string;
-  task_id: string;
-  file_id: string; // UUID
-  speaker_count: number;
-}

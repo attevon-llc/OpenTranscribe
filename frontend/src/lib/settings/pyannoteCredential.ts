@@ -7,7 +7,7 @@ import type { PyannoteCredentialStatus, PyannoteTestCode } from '$lib/api/pyanno
 
 const KEY_PREFIX = 'settings.speakerIdentification.pyannoteKey';
 
-export type PyannoteBadge = 'locked' | 'notConfigured' | 'configured' | 'verified' | 'failed';
+type PyannoteBadge = 'locked' | 'notConfigured' | 'configured' | 'verified' | 'failed';
 
 export interface PyannoteCredentialView {
   badge: PyannoteBadge;

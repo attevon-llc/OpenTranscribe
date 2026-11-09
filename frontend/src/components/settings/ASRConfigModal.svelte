@@ -1,16 +1,15 @@
 <script lang="ts">
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
-  import Spinner from '../ui/Spinner.svelte';
-  import BaseModal from '../ui/BaseModal.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
   import {
     ASRSettingsApi,
     type UserASRSettingsResponse,
     type ASRProviderInfo,
-    type ASRModelInfo,
     type ASRProvider,
-  } from '../../lib/api/asrSettings';
-  import { toastStore } from '../../stores/toast';
+  } from '$lib/api/asrSettings';
+  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import type { DiarizationSource } from '$lib/api/transcriptionSettings';

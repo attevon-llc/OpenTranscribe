@@ -10,7 +10,7 @@ import axiosInstance from '$lib/axios';
 
 const BASE = '/admin/directory-sync';
 
-export interface DirectorySyncResult {
+interface DirectorySyncResult {
   status?: string | null; // ok | directory_unavailable
   error?: string | null;
   dry_run?: boolean | null;

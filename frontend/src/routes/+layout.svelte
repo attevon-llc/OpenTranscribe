@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount, type Component } from "svelte";
   import { goto, afterNavigate, preloadCode } from "$app/navigation";
   import { page } from '$app/state';
@@ -6,23 +7,23 @@
   import { get } from 'svelte/store';
 
   // Import theme styles
-  import "../styles/theme.css";
-  import "../styles/form-elements.css";
-  import "../styles/range-slider.css";
-  import "../styles/tables.css";
-  import "../styles/animations.css";
-  import "../styles/search.css";
-  import "../styles/support-access.css";
+  import "$styles/theme.css";
+  import "$styles/form-elements.css";
+  import "$styles/range-slider.css";
+  import "$styles/tables.css";
+  import "$styles/animations.css";
+  import "$styles/search.css";
+  import "$styles/support-access.css";
 
   // Import auth store
-  import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
+  import { isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";
   import { capabilities, isCapabilityEnabled } from "$stores/capabilities";
   import { supportSession } from "$stores/supportSession";
   import { isCloudEdition } from "$lib/edition";
-  import { theme } from "../stores/theme";
+  import { theme } from "$stores/theme";
   import { locale, localeReady, t } from "$stores/locale";
-  import { llmStatusStore } from "../stores/llmStatus";
-  import { networkStore } from "../stores/network";
+  import { llmStatusStore } from "$stores/llmStatus";
+  import { networkStore } from "$stores/network";
   import { unregisterServiceWorkers } from "$lib/serviceWorkerCleanup";
   import { resetScrollLock } from '$lib/scrollLock';
   import { initMonitoring } from '$lib/monitoring';
@@ -37,15 +38,15 @@
   } from '$lib/settings/settingsModalLoader';
 
   // Import components
-  import Navbar from "../components/Navbar.svelte";
+  import Navbar from "$components/Navbar.svelte";
   import SupportAccessBanner from "$components/supportAccess/SupportAccessBanner.svelte";
   import { demoMode, loadDemoAttributions } from "$stores/demo";
-  import NotificationsPanel from "../components/NotificationsPanel.svelte";
-  import ToastContainer from "../components/ToastContainer.svelte";
-  import UploadManager from "../components/UploadManager.svelte";
-  import AppContent from "../components/AppContent.svelte";
+  import NotificationsPanel from "$components/NotificationsPanel.svelte";
+  import ToastContainer from "$components/ToastContainer.svelte";
+  import UploadManager from "$components/UploadManager.svelte";
+  import AppContent from "$components/AppContent.svelte";
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
-  import SessionCheckScreen from "../components/SessionCheckScreen.svelte";
+  import SessionCheckScreen from "$components/SessionCheckScreen.svelte";
 
   // Heavy, conditionally shown components are loaded with a dynamic import so every visitor
   // (the login page included) doesn't download them before first paint. Each one is fetched
@@ -252,14 +253,14 @@
         // (its sign-in component on /login handles sign-up + recovery inline), so
         // the local credential routes are dead — redirect any hit to /login.
         if (isCloudEdition && LOCAL_CREDENTIAL_PATHS.includes(currentPath)) {
-          goto("/login", { replace: true });
+          goto(resolve('/login'), { replace: true });
         } else {
           const isPublicPath = PUBLIC_PATHS.includes(currentPath);
 
           if (!isAuth && !isPublicPath) {
-            goto("/login", { replace: true });
+            goto(resolve('/login'), { replace: true });
           } else if (isAuth && isPublicPath) {
-            goto("/", { replace: true });
+            goto(resolve('/'), { replace: true });
           }
         }
 
@@ -275,7 +276,7 @@
         console.error('Layout: onMount - Error during initAuth or subsequent logic:', error);
         const currentPath = page.url.pathname;
         if (currentPath !== "/login" && currentPath !== "/register") {
-          goto("/login", { replace: true });
+          goto(resolve('/login'), { replace: true });
         }
       }
     })();
@@ -297,7 +298,7 @@
   // mid-session). Bounce to /login, which owns both remedy screens. `goto` keeps
   // this an SPA navigation — a full reload would drop the in-memory reason.
   $: if ($authReady && lifecycleHold && page.url.pathname !== '/login') {
-    goto('/login', { replace: true });
+    goto(resolve('/login'), { replace: true });
   }
 
 </script>

@@ -86,7 +86,7 @@ in production passes while proving nothing. Correctness over 1.3 s.
 
 ## Path aliases (never use `../../`)
 
-`$lib` → `src/lib` · `$components` → `src/components` · `$stores` → `src/stores`.
+`$lib` → `src/lib` · `$components` → `src/components` · `$stores` → `src/stores` · `$styles` → `src/styles` · `$assets` → `src/assets` · `$testMocks` → `src/test-mocks`.
 
 ## Architecture rule: thin frontend, fat backend
 

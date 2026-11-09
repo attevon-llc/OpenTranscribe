@@ -2195,7 +2195,6 @@
   "uploader.useCtrlV": "Use Ctrl+V (Cmd+V on Mac) to paste",
   "uploader.readyToPaste": "Ready to paste - use Ctrl+V (Cmd+V on Mac)",
   "uploader.clipboardRequiresHttps": "Clipboard access requires HTTPS. Use Ctrl+V to paste manually.",
-  "uploader.urlProcessingCancelled": "URL processing cancelled",
   "uploader.calculating": "Calculating...",
   "uploader.tooLarge": "too large: {{size}}",
   "uploader.unsupportedFormat": "unsupported format",

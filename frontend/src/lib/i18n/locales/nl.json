@@ -2195,7 +2195,6 @@
   "uploader.useCtrlV": "Gebruik Ctrl+V (Cmd+V op Mac) om te plakken",
   "uploader.readyToPaste": "Klaar om te plakken - gebruik Ctrl+V (Cmd+V op Mac)",
   "uploader.clipboardRequiresHttps": "Toegang tot klembord vereist HTTPS. Gebruik Ctrl+V om handmatig te plakken.",
-  "uploader.urlProcessingCancelled": "URL-verwerking geannuleerd",
   "uploader.calculating": "Berekenen...",
   "uploader.tooLarge": "te groot: {{size}}",
   "uploader.unsupportedFormat": "niet-ondersteund formaat",

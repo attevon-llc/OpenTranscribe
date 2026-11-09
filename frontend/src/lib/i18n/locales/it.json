@@ -2208,7 +2208,6 @@
   "uploader.useCtrlV": "Usa Ctrl+V (Cmd+V su Mac) per incollare",
   "uploader.readyToPaste": "Pronto per incollare - usa Ctrl+V (Cmd+V su Mac)",
   "uploader.clipboardRequiresHttps": "L'accesso agli appunti richiede HTTPS. Usa Ctrl+V per incollare manualmente.",
-  "uploader.urlProcessingCancelled": "Elaborazione dell'URL annullata",
   "uploader.calculating": "Calcolo in corso...",
   "uploader.tooLarge": "troppo grande: {{size}}",
   "uploader.unsupportedFormat": "formato non supportato",

@@ -2153,7 +2153,6 @@
   "uploader.useCtrlV": "Ctrl+V（MacではCmd+V）を使用して貼り付け",
   "uploader.readyToPaste": "貼り付け準備完了 - Ctrl+V（MacではCmd+V）を使用",
   "uploader.clipboardRequiresHttps": "クリップボードアクセスにはHTTPSが必要です。Ctrl+Vを使用して手動で貼り付けてください。",
-  "uploader.urlProcessingCancelled": "URL処理をキャンセルしました",
   "uploader.calculating": "計算中...",
   "uploader.tooLarge": "大きすぎます: {{size}}",
   "uploader.unsupportedFormat": "サポートされていない形式",

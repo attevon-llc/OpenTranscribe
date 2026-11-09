@@ -17,7 +17,7 @@ export interface RestartReply {
   restart_requested_at: string;
 }
 
-export interface ActivationApi {
+interface ActivationApi {
   setLocalModel(modelId: string): Promise<unknown>;
   restartGpuWorker(): Promise<RestartReply>;
   getLoadedModels(): Promise<LoadedModel[]>;

@@ -439,7 +439,6 @@ export type ChatWarningCode =
 // these two modules is not a runtime cycle — and one definition cannot drift
 // from a copy.
 import type { TraceState } from '$lib/chat/traceTree';
-export type { TraceState };
 
 export type TraceStage =
   | 'submitted'

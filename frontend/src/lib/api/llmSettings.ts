@@ -2,7 +2,7 @@
  * API client for LLM settings management
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export type LLMProvider =
   | 'openai'
@@ -13,7 +13,7 @@ export type LLMProvider =
   | 'bedrock'
   | 'custom';
 
-export type ConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
+type ConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
 export interface UserLLMSettings {
   uuid: string; // UUID - primary identifier from backend
@@ -116,7 +116,7 @@ export interface ProviderDefaults {
  * Whether the SERVER's own AWS credential chain resolves (admin only). `source` is the KIND of
  * credential source, never a value; `region` is the deployment's region, if any.
  */
-export type BedrockCredentialSource =
+type BedrockCredentialSource =
   | 'environment'
   | 'shared_profile'
   | 'assumed_role'
@@ -195,10 +195,6 @@ export interface UserLLMConfigurationsList {
    * share one verdict.
    */
   reasoning_off_switch?: Record<string, ReasoningOffSwitch>;
-}
-
-export interface SetActiveConfigRequest {
-  configuration_id: string; // UUID
 }
 
 /**

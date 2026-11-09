@@ -25,6 +25,9 @@ export default defineConfig({
       $lib: path.resolve('./src/lib'),
       $components: path.resolve('./src/components'),
       $stores: path.resolve('./src/stores'),
+      $styles: path.resolve('./src/styles'),
+      $assets: path.resolve('./src/assets'),
+      $testMocks: path.resolve('./src/test-mocks'),
       // `$app/*` is injected by the SvelteKit Vite plugin, which is not loaded
       // here. Without these, any component importing `goto` / `page` / `browser`
       // fails to RESOLVE, and vitest reports an unresolvable import as "no tests

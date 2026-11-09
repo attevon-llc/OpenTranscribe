@@ -5,14 +5,14 @@
   import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
   import { onMount } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import {
     ASRSettingsApi,
     type UserASRSettingsResponse,
     type ASRProviderInfo,
     type ASRProvider,
-  } from '../../lib/api/asrSettings';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
+  } from '$lib/api/asrSettings';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import ASRConfigModal from './ASRConfigModal.svelte';
   import CloudProviderPolicy from './asr/CloudProviderPolicy.svelte';
   import LocalModelLibrary from './localModels/LocalModelLibrary.svelte';
@@ -21,7 +21,7 @@
   import { changeMessages, type ChangeMessage } from '$lib/settings/asrOutcome';
   import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
   import { getTranscriptionSettings, type DiarizationSource } from '$lib/api/transcriptionSettings';
-  import { toastStore } from '../../stores/toast';
+  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
 
@@ -273,7 +273,7 @@
     }
   }
 
-  async function handleConfigSaved(event: CustomEvent<UserASRSettingsResponse>) {
+  async function handleConfigSaved() {
     // Re-fetch canonical state from backend to pick up auto-activation, etc.
     await loadData();
     void policyPanel?.reload();
@@ -390,7 +390,8 @@
   $: {
     const _anyOpen = showConfigModal || showDeleteModal || showDeleteAllModal;
     if (_anyOpen !== _asrModalWasOpen) {
-      _anyOpen ? lockScroll() : unlockScroll();
+      if (_anyOpen) lockScroll();
+      else unlockScroll();
       _asrModalWasOpen = _anyOpen;
     }
   }

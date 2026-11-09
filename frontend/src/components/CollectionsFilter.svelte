@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { Collection } from '$lib/types/collection';
   import { onMount } from 'svelte';
-  import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { t } from '$stores/locale';
@@ -14,8 +13,6 @@
   /** The option shape SearchableMultiSelect expects (its own `Option` type is component-local). */
   type MultiSelectOption = { id: string; name: string; count: number };
   let dropdownCollections: MultiSelectOption[] = [];
-
-  const dispatch = createEventDispatcher();
 
   // Reactive: Prepare dropdown collections with proper format
   $: dropdownCollections = collections.map(collection => ({
@@ -67,9 +64,8 @@
 
   /**
    * Handle collection deselection from multiselect dropdown
-   * @param {CustomEvent} event - Event with collection id
    */
-  function handleCollectionDeselect(event: CustomEvent) {
+  function handleCollectionDeselect() {
     selectedCollectionId = null;
   }
 

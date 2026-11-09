@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { resolve } from '$app/paths';
   import { pageStore } from '$stores/pageStore';
   import axiosInstance from '$lib/axios';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { t } from '$stores/locale';
 
-  import logoBanner from '../../assets/logo-banner.png';
+  import logoBanner from '$assets/logo-banner.png';
 
   let newPassword = '';
   let confirmPassword = '';
@@ -76,14 +76,14 @@
       </div>
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
+        <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else if !tokenParam}
       <div class="error-message" role="alert">
         {$t('auth.invalidResetLink')}
       </div>
       <div class="auth-links">
-        <a href="/forgot-password" class="auth-link">{$t('auth.requestNewLink')}</a>
+        <a href={resolve('/forgot-password')} class="auth-link">{$t('auth.requestNewLink')}</a>
       </div>
     {:else}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
@@ -150,7 +150,7 @@
       </form>
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
+        <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {/if}
   </div>

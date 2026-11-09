@@ -61,11 +61,17 @@ describe('getMediaStreamUrl', () => {
   });
 
   it('caches video/thumbnail/audio for the same file independently', async () => {
-    mockInstance.get.mockImplementation((url: string, opts: { params: { media_type: string } }) => {
-      return Promise.resolve({
-        data: { url: `https://s3/${opts.params.media_type}`, expires_in: 3600, content_type: 'x' },
-      });
-    });
+    mockInstance.get.mockImplementation(
+      (_url: string, opts: { params: { media_type: string } }) => {
+        return Promise.resolve({
+          data: {
+            url: `https://s3/${opts.params.media_type}`,
+            expires_in: 3600,
+            content_type: 'x',
+          },
+        });
+      }
+    );
 
     const video = await getMediaStreamUrl('file-1', 'video');
     const thumb = await getMediaStreamUrl('file-1', 'thumbnail');

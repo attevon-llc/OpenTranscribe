@@ -47,12 +47,6 @@ const START: ChatStreamEvent = {
   assistant_message_uuid: ASSISTANT_UUID,
 };
 
-function assistant() {
-  const message = get(chatStore).messages.find((m) => m.uuid === ASSISTANT_UUID);
-  if (!message) throw new Error('assistant message not found');
-  return message;
-}
-
 async function stream(frames: ChatStreamEvent[]) {
   scriptedFrames = frames;
   await chatStore.sendMessage('What did they decide?');

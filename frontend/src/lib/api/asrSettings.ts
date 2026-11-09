@@ -2,7 +2,7 @@
  * API client for ASR (Automatic Speech Recognition) provider settings management
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 import type { PipelineIssue } from './pipeline';
 
 export type ASRProvider =
@@ -33,7 +33,7 @@ export interface LocalWhisperModel {
   language_support: string;
 }
 
-export interface ASRModelInfo {
+interface ASRModelInfo {
   id: string;
   /** display_name from the backend catalog */
   display_name: string;
@@ -137,8 +137,6 @@ export interface UserASRSettingsResponse {
   created_at: string;
   updated_at: string;
 }
-
-export type { PipelineIssue };
 
 /**
  * `set-active` / `clear-active` (issue #1225) and config delete (issue #1236). A switch

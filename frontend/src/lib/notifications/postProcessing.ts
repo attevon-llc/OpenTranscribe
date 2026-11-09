@@ -14,7 +14,7 @@
  */
 import type { Notification, NotificationData } from '$stores/websocket';
 
-export type PostProcessingWireState = 'queued' | 'started' | 'done' | 'failed' | 'skipped';
+type PostProcessingWireState = 'queued' | 'started' | 'done' | 'failed' | 'skipped';
 
 export interface PostProcessingEntry {
   state: PostProcessingWireState;

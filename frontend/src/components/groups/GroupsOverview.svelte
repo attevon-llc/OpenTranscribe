@@ -242,7 +242,7 @@
     {/if}
   </div>
 
-  <GroupCreateModal bind:isOpen={showCreateModal} noBackdrop on:created={handleGroupCreated} />
+  <GroupCreateModal bind:isOpen={showCreateModal} on:created={handleGroupCreated} />
 {/if}
 
 <style>

@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { formatDuration } from '$lib/utils/formatting';
   import { goto } from "$app/navigation";
   import { pageStore } from '$stores/pageStore';
-  import { user, logout } from "../stores/auth";
+  import { user, logout } from "$stores/auth";
   import { onMount, onDestroy } from "svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
   import NavbarBrand from "$components/navbar/NavbarBrand.svelte";
@@ -13,26 +14,26 @@
   import { refreshUsage, refreshBilling } from "$lib/cloud";
 
   // Import the centralized notification panel store
-  import { showNotificationsPanel, toggleNotificationsPanel } from '../stores/notificationsPanel';
-  import { unreadCount } from '../stores/websocket';
+  import { showNotificationsPanel, toggleNotificationsPanel } from '$stores/notificationsPanel';
+  import { unreadCount } from '$stores/websocket';
 
   // Import recording store
-  import { recordingStore, recordingManager } from '../stores/recording';
+  import { recordingStore, recordingManager } from '$stores/recording';
 
   // Import upload store for background uploads
-  import { uploadsStore } from '../stores/uploads';
+  import { uploadsStore } from '$stores/uploads';
   import { supportSessionGate } from '$stores/supportSession';
-  import { toastStore } from '../stores/toast';
+  import { toastStore } from '$stores/toast';
 
   // Import settings modal store
-  import { settingsModalStore } from '../stores/settingsModalStore';
+  import { settingsModalStore } from '$stores/settingsModalStore';
 
   // Import i18n
-  import { t } from '../stores/locale';
+  import { t } from '$stores/locale';
   import { prefetchSpeakersData } from '$lib/prefetch';
 
   // Capability gating (chat surface)
-  import { capabilities, isCapabilityEnabled } from '../stores/capabilities';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
 
   // Recording control popup state
   let showRecordingControls = false;
@@ -62,7 +63,6 @@
   $: hasActiveRecording = $recordingStore.hasActiveRecording;
   $: isRecording = $recordingStore.isRecording;
   $: recordingDuration = $recordingStore.recordingDuration;
-  $: recordingStartTime = $recordingStore.recordingStartTime;
   $: isPaused = $recordingStore.isPaused;
   $: recordedBlob = $recordingStore.recordedBlob;
 
@@ -91,7 +91,7 @@
    */
   function handleLogout() {
     logout();
-    goto("/login");
+    goto(resolve('/login'));
   }
 
   /**
@@ -173,7 +173,7 @@
    */
   function handleOpenRecordingModal(event: MouseEvent) {
     event.stopPropagation();
-    goto('/');
+    goto(resolve('/'));
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('openAddMediaModal', {
         detail: { activeTab: 'record' }
@@ -288,7 +288,7 @@
            items appear and disappear shifts the other items under the cursor
            and gives no stable place to aim for. -->
       <a
-        href="/"
+        href={resolve('/')}
         title={$t('nav.gallery')}
         class="nav-link"
         class:active={isGalleryActive}
@@ -307,7 +307,7 @@
       {#if !$supportSessionGate.active}
       <!-- Search link -->
       <a
-        href="/search"
+        href={resolve('/search')}
         title={$t('nav.transcriptSearch')}
         class="nav-link"
         class:active={isSearchActive}
@@ -325,7 +325,7 @@
       <!-- Chat link -->
       {#if chatEnabled && !$supportSessionGate.active}
         <a
-          href="/chat"
+          href={resolve('/chat/[[conversationId]]', {})}
           title={$t('nav.aiChat')}
           class="nav-link"
           class:active={isChatActive}
@@ -343,7 +343,7 @@
       {#if !$supportSessionGate.active}
       <!-- Speakers link -->
       <a
-        href="/speakers"
+        href={resolve('/speakers')}
         title={$t('nav.speakers')}
         class="nav-link"
         class:active={isSpeakersActive}

@@ -2153,7 +2153,6 @@
   "uploader.useCtrlV": "使用 Ctrl+V 粘贴",
   "uploader.readyToPaste": "准备粘贴",
   "uploader.clipboardRequiresHttps": "剪贴板访问需要 HTTPS",
-  "uploader.urlProcessingCancelled": "URL 处理已取消",
   "uploader.calculating": "计算中...",
   "uploader.tooLarge": "太大：{{size}}",
   "uploader.unsupportedFormat": "不支持的格式",

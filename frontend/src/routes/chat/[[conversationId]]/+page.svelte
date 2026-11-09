@@ -10,6 +10,7 @@
   changed my mind" visits from littering the history sidebar.
 -->
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { CHAT_STATE_ERROR_FALLBACK, CHAT_STATE_ERROR_KEYS, keyFor } from '$lib/i18n/keyMaps';
   import { onDestroy, onMount } from 'svelte';
   import { createRetryCountdown } from '$lib/utils/retryAfter';
@@ -218,21 +219,19 @@
 
   async function handleSelectConversation(event: CustomEvent<string>): Promise<void> {
     sidebarOpen = false;
-    await goto(`/chat/${event.detail}`);
+    await goto(resolve('/chat/[[conversationId]]', { conversationId: event.detail }));
   }
 
   async function handleNewChat(): Promise<void> {
     sidebarOpen = false;
     chatStore.newConversation();
-    await goto('/chat');
+    await goto(resolve('/chat/[[conversationId]]', {}));
   }
 
   // --- projects (#360) ---
   let projects: ChatProject[] = [];
   let projectModalOpen = false;
   let editingProject: ChatProjectDetail | null = null;
-  /** Pre-selected project for the next conversation, set by "new chat here". */
-  let pendingProjectUuid: string | null = null;
 
   async function loadProjects(): Promise<void> {
     try {
@@ -258,12 +257,11 @@
 
   async function newChatInProject(uuid: string): Promise<void> {
     // The conversation row is created lazily on first send, so the project is
-    // held here and attached at that point rather than creating an empty row.
-    pendingProjectUuid = uuid;
+    // held in the store and attached at that point rather than creating an empty row.
     sidebarOpen = false;
     chatStore.newConversation();
     chatStore.setPendingProject(uuid);
-    await goto('/chat');
+    await goto(resolve('/chat/[[conversationId]]', {}));
   }
 
   async function applyScope(scope: ChatScope): Promise<void> {

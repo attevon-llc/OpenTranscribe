@@ -735,12 +735,6 @@
     }
   }
 
-  function handleBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) {
-      attemptClose();
-    }
-  }
-
   function attemptClose() {
     const hasUnsavedChanges = settingsModalStore.hasAnyDirty($settingsModalStore);
     if (hasUnsavedChanges) {

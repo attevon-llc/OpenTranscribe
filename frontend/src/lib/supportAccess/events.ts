@@ -11,8 +11,3 @@ export type SupportAccessEventType =
   | 'support_access_break_glass'
   | 'support_access_decided'
   | 'support_access_revoked';
-
-export interface SupportAccessEventDetail {
-  type: SupportAccessEventType;
-  data: Record<string, unknown>;
-}

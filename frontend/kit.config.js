@@ -59,5 +59,8 @@ export const kitConfig = {
     $lib: './src/lib',
     $components: './src/components',
     $stores: './src/stores',
+    $styles: './src/styles',
+    $assets: './src/assets',
+    $testMocks: './src/test-mocks',
   },
 };

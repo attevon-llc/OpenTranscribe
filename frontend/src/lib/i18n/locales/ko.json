@@ -2182,7 +2182,6 @@
   "uploader.useCtrlV": "Ctrl+V(Mac은 Cmd+V)를 사용하여 붙여넣으세요",
   "uploader.readyToPaste": "붙여넣을 준비가 되었습니다 - Ctrl+V(Mac은 Cmd+V) 사용",
   "uploader.clipboardRequiresHttps": "클립보드 접근에는 HTTPS가 필요합니다. Ctrl+V로 직접 붙여넣으세요.",
-  "uploader.urlProcessingCancelled": "URL 처리가 취소되었습니다",
   "uploader.calculating": "계산 중...",
   "uploader.tooLarge": "너무 큼: {{size}}",
   "uploader.unsupportedFormat": "지원되지 않는 형식",

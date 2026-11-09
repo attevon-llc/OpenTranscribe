@@ -35,7 +35,7 @@
     </EmptyState>
   {:else}
     <div class="inbox-list">
-      {#each inboxItems as item, idx (item.speaker_uuid)}
+      {#each inboxItems as item (item.speaker_uuid)}
         <SpeakerInboxItem
           {item}
           {profiles}

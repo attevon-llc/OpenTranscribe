@@ -2179,7 +2179,6 @@
   "uploader.useCtrlV": "Use Ctrl+V (Cmd+V no Mac) para colar",
   "uploader.readyToPaste": "Pronto para colar - use Ctrl+V (Cmd+V no Mac)",
   "uploader.clipboardRequiresHttps": "Acesso à área de transferência requer HTTPS. Use Ctrl+V para colar manualmente.",
-  "uploader.urlProcessingCancelled": "Processamento de URL cancelado",
   "uploader.calculating": "Calculando...",
   "uploader.tooLarge": "muito grande: {{size}}",
   "uploader.unsupportedFormat": "formato não suportado",

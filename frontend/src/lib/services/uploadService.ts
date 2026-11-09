@@ -342,7 +342,7 @@ class UploadService {
 
     try {
       await this.processUpload(nextUploadId);
-    } catch (error) {
+    } catch {
       // Error is handled in processUpload method
     } finally {
       this.activeUploads.delete(nextUploadId);
@@ -1359,7 +1359,7 @@ class UploadService {
         },
       ]);
       localStorage.setItem('upload_queue', JSON.stringify(uploadsData));
-    } catch (error) {
+    } catch {
       // localStorage persistence is optional
     }
   }
@@ -1390,7 +1390,7 @@ class UploadService {
           setTimeout(() => this.processQueue(), 1000);
         }
       }
-    } catch (error) {
+    } catch {
       // localStorage loading is optional
     }
   }

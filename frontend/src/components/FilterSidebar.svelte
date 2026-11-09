@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { Tag, TagWithCount } from '$lib/types/tag';
-  import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
+  import type { TagWithCount } from '$lib/types/tag';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import RangeSlider from 'svelte-range-slider-pips';
-  import '../styles/range-slider-dual.css';
+  import '$styles/range-slider-dual.css';
   import DateRangePicker from '$components/ui/DateRangePicker.svelte';
   import FilterChipButton from '$components/ui/FilterChipButton.svelte';
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import { listTags } from '$lib/api/tags';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { fetchMetadataFilters } from '$lib/api/metadataFilters';
@@ -127,7 +127,6 @@
   // State
   /** @type {Tag[]} */
   let allTags: TagWithCount[] = [];
-  let showAllTags = false;  // Toggle for showing all tags vs top 9
   /** The option shape SearchableMultiSelect expects (its own `Option` type is component-local). */
   type MultiSelectOption = { id: string; name: string; count: number };
   let dropdownTags: MultiSelectOption[] = [];  // All tags for multiselect dropdown
@@ -209,9 +208,9 @@
 
   // Available options for filters
   /** @type {string[]} */
-  let availableFileTypes = ['audio', 'video'];
+  const availableFileTypes = ['audio', 'video'];
   /** @type {string[]} */
-  let availableStatuses = ['pending', 'processing', 'completed', 'error'];
+  const availableStatuses = ['pending', 'processing', 'completed', 'error'];
 
   // Event dispatcher
   const dispatch = createEventDispatcher();

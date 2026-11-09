@@ -3025,7 +3025,6 @@
   "uploader.uploadRecordingTooltip": "Subir grabación para transcripción y procesamiento con IA",
   "uploader.uploadTooltip": "Subir el archivo seleccionado para transcripción",
   "uploader.uploading": "Cargando",
-  "uploader.urlProcessingCancelled": "Procesamiento de URL cancelado",
   "uploader.useCtrlV": "Usa Ctrl+V (Cmd+V en Mac) para pegar",
   "uploader.useExistingFile": "Usar Archivo Existente",
   "uploader.usesDefault": "Usa predeterminado",

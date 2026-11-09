@@ -3,7 +3,7 @@
   import { createEventDispatcher } from 'svelte';
   import type { SummaryData, SummaryResponse } from '$lib/types/summary';
   import axiosInstance from '$lib/axios';
-  import { isLLMAvailable } from '../stores/llmStatus';
+  import { isLLMAvailable } from '$stores/llmStatus';
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
@@ -50,7 +50,6 @@
   let canRetry: boolean = false;
   let canGenerate: boolean = true;
   let summaryEnabledSystem: boolean = true;
-  let summaryEnabledUser: boolean = true;
 
   // Get LLM availability from centralized store
   $: llmAvailable = $isLLMAvailable;
@@ -105,7 +104,6 @@
           canRetry = statusData.can_retry;
           canGenerate = statusData.can_generate ?? true;
           summaryEnabledSystem = statusData.summary_enabled_system ?? true;
-          summaryEnabledUser = statusData.summary_enabled_user ?? true;
         }
       } catch (statusErr) {
         console.warn('Failed to load summary status:', statusErr);

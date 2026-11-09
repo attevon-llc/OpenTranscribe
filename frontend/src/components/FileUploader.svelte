@@ -6,11 +6,10 @@
   import BulkAudioExtractionModal from './BulkAudioExtractionModal.svelte';
 
   // Global stores
-  import { recordingStore, recordingManager, hasActiveRecording, isRecording, recordingStartTime } from '$stores/recording';
+  import { recordingStore, recordingManager, hasActiveRecording } from '$stores/recording';
   import { uploadsStore } from '$stores/uploads';
   import type { UploadTranscriptionParams } from '$lib/services/uploadService';
   import { toastStore } from '$stores/toast';
-  import { isOnline } from '$stores/network';
   import { t } from '$stores/locale';
   import { loadEffectivePrivacy } from '$stores/privacyPolicy';
   import { isCloudEdition } from '$lib/edition';
@@ -20,7 +19,6 @@
 
   // APIs
   import { loadProtectedMediaAuthConfig } from '$lib/services/configService';
-  import type { ExtractedAudio } from '$lib/types/audioExtraction';
   import { getAudioExtractionSettings, type AudioExtractionSettings } from '$lib/api/audioExtractionSettings';
   import {
     getTranscriptionSettings,
@@ -95,7 +93,6 @@
   // ── Constants ──
   const MEDIA_URL_REGEX = /^https?:\/\/.+$/;
   const PREVIOUS_VALUES_KEY = 'opentr:uploadPreviousValues';
-  const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024;
 
   // ── Stepper State ──
   let steps: StepConfig[] = [
@@ -946,7 +943,6 @@
               bind:mediaUrl
               {processingUrl}
               on:urlChange={(e) => mediaUrl = e.detail.url}
-              on:cancel={() => { mediaUrl = ''; processingUrl = false; }}
             />
           {:else}
             <MediaRecordPanel

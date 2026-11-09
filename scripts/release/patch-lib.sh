@@ -130,6 +130,8 @@ declare -a PATCH_REHEARSAL_TRIGGERS=(
     # thing that executes it; v0.6.0's pyannote group failed for every user
     # with all of A-C green.
     'download-models'
+    # ...which since the L08 split also lives in the scripts/model_download/ package.
+    'scripts/model_download/'
     # ...and the backend modules download-models.py imports at run time, inside the image.
     # A backend-only patch to one of them changes what the downloader does with no change
     # to the script itself (the v0.6.0 pyannote break was exactly a library change).

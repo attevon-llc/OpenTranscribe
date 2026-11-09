@@ -582,6 +582,7 @@ ensure_opensearch_models() {
       -e OPENSEARCH_MODELS="all-MiniLM-L6-v2" \
       -v "$(realpath "$opensearch_models_dir"):/home/appuser/.cache/opensearch-ml" \
       -v "./scripts/download-models.py:/app/download-models.py:ro" \
+      -v "./scripts/model_download:/app/model_download:ro" \
       "$downloader_image" \
       python /app/download-models.py --only opensearch 2>&1) || dl_status=$?
   printf '%s\n' "$dl_output" | grep -E "(Downloading|Downloaded|ERROR|WARNING|Success)" || true
@@ -665,6 +666,7 @@ ensure_nltk_corpora() {
       -e NLTK_DATA=/nltk_data \
       -v "$(realpath "$nltk_dir"):/nltk_data" \
       -v "./scripts/download-models.py:/app/download-models.py:ro" \
+      -v "./scripts/model_download:/app/model_download:ro" \
       davidamacey/opentranscribe-backend:latest \
       python /app/download-models.py --only nltk 2>&1 | grep -E "(Downloading|Downloaded|ERROR|WARNING|Success)" || true
 

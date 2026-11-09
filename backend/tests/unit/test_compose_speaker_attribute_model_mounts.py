@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._downloader_package import downloader_source
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASE = "docker-compose.yml"
 
@@ -140,14 +142,15 @@ def test_every_attribute_worker_mounts_the_model_cache(chain: tuple[str, ...]) -
 
 def _download_groups() -> tuple[set[str], set[str]]:
     """``(group names, string literals inside the speaker-attributes downloader)``."""
-    tree = ast.parse((REPO_ROOT / "scripts" / "download-models.py").read_text(encoding="utf-8"))
+    tree = ast.parse(downloader_source())
     groups: set[str] = set()
     func_name = None
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == "DOWNLOAD_GROUPS" for t in node.targets
         ):
-            assert isinstance(node.value, ast.Dict)
+            if not isinstance(node.value, ast.Dict):
+                continue  # the entry script's alias of the table; the literal is in groups.py
             for key, value in zip(node.value.keys, node.value.values, strict=True):
                 assert isinstance(key, ast.Constant)
                 assert isinstance(key.value, str)

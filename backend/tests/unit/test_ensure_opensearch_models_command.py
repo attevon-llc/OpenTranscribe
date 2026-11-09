@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._downloader_package import downloader_source
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 COMMON = REPO_ROOT / "scripts" / "common.sh"
 DL_SCRIPT = REPO_ROOT / "scripts" / "download-models.py"
@@ -70,7 +72,7 @@ def test_runs_only_the_opensearch_group(tmp_path: Path):
 
 
 def test_the_group_it_names_exists_in_the_downloader():
-    assert "'opensearch': download_opensearch_neural_models" in DL_SCRIPT.read_text()
+    assert "'opensearch': download_opensearch_neural_models" in downloader_source()
 
 
 def test_uses_the_image_tag_the_install_uses_not_latest(tmp_path: Path):

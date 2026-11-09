@@ -70,6 +70,8 @@ minio-data/
 opensearch-data/
 redis-data/
 *_data/
+# A Python package, not a Docker volume (scripts/cleanup-test-data.py imports it).
+!scripts/cleanup_test_data/
 
 # Python
 __pycache__/

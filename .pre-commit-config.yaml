@@ -400,7 +400,7 @@ repos:
         language: python
         additional_dependencies: *mypy_env
         pass_filenames: false
-        files: ^(scripts/(guards|lib|audit_tests)/.*\.py|pyproject\.toml|backend/requirements-dev\.txt)$
+        files: ^(scripts/(guards|lib|audit_tests|model_download|cleanup_test_data)/.*\.py|pyproject\.toml|backend/requirements-dev\.txt)$
       # What `type: ignore` hides (plan: code_debt_plan.md G-c). Strips every ignore from a temp
       # copy of backend/ and runs the pinned mypy over it, so it needs the mypy hook's typed
       # world: the `*mypy_env` alias is that hook's dependency list. Whole-tree mypy takes about

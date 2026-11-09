@@ -24,7 +24,7 @@ _TESTS_DIR = _REPO_ROOT / "backend" / "tests"
 
 
 def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("cleanup_test_data", _SCRIPT)
+    spec = importlib.util.spec_from_file_location("cleanup_test_data_entry", _SCRIPT)
     assert spec is not None and spec.loader is not None, f"cannot load {_SCRIPT}"
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

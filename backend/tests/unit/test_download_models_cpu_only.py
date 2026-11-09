@@ -14,7 +14,6 @@ against the unmodified downloader inside the real backend image:
 
 from __future__ import annotations
 
-import importlib.util
 import inspect
 import re
 from pathlib import Path
@@ -23,6 +22,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.transcription.native_provision import DEFAULT_MODELS_DIR
+from tests.unit._downloader_package import package_module
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOWNLOADER_PY = REPO_ROOT / "scripts" / "download-models.py"
@@ -56,12 +56,15 @@ def real_mps_empty_cache():
 
 @pytest.fixture
 def downloader(real_mps_empty_cache):
-    """``download-models.py`` loaded as a module (its filename is not importable)."""
-    spec = importlib.util.spec_from_file_location("download_models_under_test", DOWNLOADER_PY)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """The two downloader modules these tests exercise, under the names the script had them.
+
+    ``guard_mps_empty_cache`` lives in ``model_download.torch_compat`` and the whisper group in
+    ``model_download.whisper``; ``real_mps_empty_cache`` restores any torch patch they apply.
+    """
+    return SimpleNamespace(
+        guard_mps_empty_cache=package_module("torch_compat").guard_mps_empty_cache,
+        download_whisperx_models=package_module("whisper").download_whisperx_models,
+    )
 
 
 def _fake_torch(*, mps_available: bool):

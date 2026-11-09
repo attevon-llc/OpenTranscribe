@@ -361,6 +361,7 @@ download_models_docker() {
         -v "$(realpath "$MODEL_CACHE_DIR/opensearch-ml"):/home/appuser/.cache/opensearch-ml" \
         -v "$(realpath "$MODEL_CACHE_DIR/diar-native"):/models" \
         -v "$SCRIPT_DIR/download-models.py:/app/download-models.py:ro" \
+        -v "$SCRIPT_DIR/model_download:/app/model_download:ro" \
         "${DOWNLOADER_IMAGE}" \
         python /app/download-models.py
 

@@ -16,11 +16,12 @@ substitution: ``snapshot_download`` and ``Pipeline.from_pretrained`` record thei
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+from tests.unit._downloader_package import package_module
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOWNLOADER_PY = REPO_ROOT / "scripts" / "download-models.py"
@@ -29,17 +30,8 @@ COMMUNITY_1 = "pyannote/speaker-diarization-community-1"
 
 @pytest.fixture
 def downloader():
-    """``download-models.py`` loaded as a module, with torch.load restored afterwards."""
-    torch = pytest.importorskip("torch")
-    saved_load, saved_empty_cache = torch.load, torch.mps.empty_cache
-    spec = importlib.util.spec_from_file_location("download_models_pyannote", DOWNLOADER_PY)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(module)
-        yield module
-    finally:
-        torch.load, torch.mps.empty_cache = saved_load, saved_empty_cache
+    """The downloader's ``pyannote`` group module (``scripts/model_download/pyannote.py``)."""
+    return package_module("pyannote")
 
 
 def _no_speech_whisperx_pipeline():

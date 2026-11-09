@@ -1,2 +1,3 @@
 opentranscribe.sh	2872	single-file-installer: user-downloaded installer kept as one self-contained file (industry practice: Homebrew install.sh, nvm install.sh, rustup-init.sh, get.docker.com); internally sectioned, shellcheck clean
 setup-opentranscribe.sh	2748	single-file-installer: user-downloaded installer kept as one self-contained file (industry practice: Homebrew install.sh, nvm install.sh, rustup-init.sh, get.docker.com); internally sectioned, shellcheck clean
+scripts/common.sh	1943	single-file-installer: shell library shipped with every install via release-manifest.txt, so it stays one file and is not size-capped (owner decision 2026-11-09); reviewed and fixed in place by the shell review lane

@@ -193,7 +193,6 @@ frontend/src/components/settings/SearchSettings.svelte::no-restricted-imports	2	
 frontend/src/components/settings/SearchSettings.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/settings/SecuritySettings.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/settings/SessionSettings.svelte::svelte/require-each-key	1	lint: burn-down planned
-frontend/src/components/settings/SettingsModalFrame.svelte::svelte/no-unused-svelte-ignore	1	lint: burn-down planned
 frontend/src/components/settings/SettingsModalShell.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/settings/SpeakerIdentificationSection.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/settings/SystemStatisticsPanel.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
@@ -251,7 +250,6 @@ frontend/src/components/ui/SortDropdown.test.ts::@typescript-eslint/no-unused-va
 frontend/src/components/ui/SortDropdown.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/ui/Tabs.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/ui/TagInput.svelte::svelte/require-each-key	1	lint: burn-down planned
-frontend/src/components/upload/MediaFilePanel.svelte::svelte/no-unused-svelte-ignore	1	lint: burn-down planned
 frontend/src/components/upload/MediaRecordPanel.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/upload/MediaUrlPanel.svelte::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
 frontend/src/components/upload/MediaUrlPanel.svelte::svelte/require-each-key	2	lint: burn-down planned

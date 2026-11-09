@@ -26,7 +26,6 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="settings-modal-backdrop"
   class:skip-enter={skipEnter}

@@ -1256,6 +1256,13 @@ main() {
         exit 0
     fi
 
+    # Usage text needs no Docker either: without this, `help` first ran the docker/login/builder
+    # checks below (and failed on a host with no Docker) before printing it.
+    if [ "${BUILD_TARGET}" = "help" ] || [ "${BUILD_TARGET}" = "--help" ] || [ "${BUILD_TARGET}" = "-h" ]; then
+        show_usage
+        exit 0
+    fi
+
     if ! assert_platform_table_matches_scan_components; then
         print_error "Refusing to continue: the platform table and the scan-component list disagree"
         exit 1
@@ -1440,10 +1447,6 @@ main() {
         cleanup)
             print_info "Cleanup mode - removing old partial version tags..."
             cleanup_old_tags
-            exit 0
-            ;;
-        help|--help|-h)
-            show_usage
             exit 0
             ;;
         *)

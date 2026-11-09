@@ -1,0 +1,4 @@
+# Resolve `source` relative to each script's own directory so SC1091 follows sourced files.
+# https://github.com/koalaman/shellcheck/wiki/Directive#source-path
+# https://github.com/koalaman/shellcheck/blob/master/shellcheck.1.md (RC FILES)
+source-path=SCRIPTDIR

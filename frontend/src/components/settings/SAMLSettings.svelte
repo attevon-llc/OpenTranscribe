@@ -2,6 +2,8 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { SAMLConfig } from '$lib/api/authConfig';
+  import { SAML_FORM_DEFAULTS } from '$lib/settings/authFormDefaults';
+  import { withDefaults } from '$lib/utils/withDefaults';
   import { toastStore } from '$stores/toast';
   import { copyToClipboard } from '$lib/utils/clipboard';
 
@@ -22,29 +24,7 @@
    * `saml_sp_private_key` is deliberately absent — see `privateKeyInput`.
    */
   function buildFormData(source: Partial<SAMLConfig>): Omit<SAMLConfig, 'saml_sp_private_key'> {
-    return {
-      saml_enabled: source.saml_enabled ?? false,
-      saml_sp_entity_id: source.saml_sp_entity_id ?? '',
-      saml_sp_acs_url: source.saml_sp_acs_url ?? '',
-      saml_sp_sls_url: source.saml_sp_sls_url ?? '',
-      saml_sp_x509_cert: source.saml_sp_x509_cert ?? '',
-      saml_idp_entity_id: source.saml_idp_entity_id ?? '',
-      saml_idp_sso_url: source.saml_idp_sso_url ?? '',
-      saml_idp_slo_url: source.saml_idp_slo_url ?? '',
-      saml_idp_x509_cert: source.saml_idp_x509_cert ?? '',
-      saml_want_assertions_signed: source.saml_want_assertions_signed ?? true,
-      saml_want_messages_signed: source.saml_want_messages_signed ?? true,
-      saml_sign_authn_requests: source.saml_sign_authn_requests ?? false,
-      saml_email_attribute:
-        source.saml_email_attribute ??
-        'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
-      saml_name_attribute:
-        source.saml_name_attribute ?? 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name',
-      saml_groups_attribute: source.saml_groups_attribute ?? 'groups',
-      saml_admin_group: source.saml_admin_group ?? '',
-      saml_allowed_groups: source.saml_allowed_groups ?? '',
-      saml_blocked_groups: source.saml_blocked_groups ?? ''
-    };
+    return withDefaults(SAML_FORM_DEFAULTS, source);
   }
 
   let formData = buildFormData(config);

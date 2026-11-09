@@ -65,6 +65,13 @@ function declarations(body: string): Map<string, string> {
   return map;
 }
 
+// Folds a closed top-level block into its token set; blocks for other selectors are ignored.
+function mergeBlock(sets: TokenSets, selector: string, body: string): void {
+  const target = BLOCK_SELECTORS[selector];
+  if (!target) return;
+  for (const [k, v] of declarations(body)) sets[target].set(k, v);
+}
+
 /** Read the top-level `:root` and `[data-theme='dark']` blocks of a stylesheet. */
 export function parseTokenSets(css: string): TokenSets {
   const text = stripComments(css);
@@ -84,10 +91,7 @@ export function parseTokenSets(css: string): TokenSets {
     } else if (ch === '}') {
       depth--;
       if (depth === 0) {
-        const target = BLOCK_SELECTORS[selector];
-        if (target) {
-          for (const [k, v] of declarations(text.slice(bodyStart, i))) sets[target].set(k, v);
-        }
+        mergeBlock(sets, selector, text.slice(bodyStart, i));
         selectorStart = i + 1;
       }
     }

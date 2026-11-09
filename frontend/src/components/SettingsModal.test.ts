@@ -339,43 +339,43 @@ describe('merged Privacy & Redaction section', () => {
   });
 });
 
+function sectionOf(container: HTMLElement, label: string): string | null {
+  const item = navItem(container, label);
+  return (
+    item?.closest('.sidebar-section')?.querySelector('.section-heading')?.textContent?.trim() ??
+    null
+  );
+}
+
+const engineValue = (value: unknown) => ({ value, source: 'default' });
+async function openAs(role: 'user' | 'admin' | 'super_admin', section: SettingsSection) {
+  mockAxios.get.mockImplementation(async (url: string) => ({
+    data:
+      url === '/admin/engine-settings'
+        ? {
+            diarizer_backend: engineValue('native'),
+            diarizer_require_sidecar: engineValue(false),
+            boundary_smoothing_enabled: engineValue(true),
+            boundary_acoustic_recheck_enabled: engineValue(false),
+            boundary_acoustic_cosine_margin: engineValue(0.05),
+            boundary_acoustic_max_word_dur: engineValue(1.0),
+          }
+        : url === '/embeddings/migration/status'
+          ? { current_mode: 'v4', migration_needed: false }
+          : url === '/admin/backup/list'
+            ? { backups: [] }
+            : {},
+  }));
+  setUser(role);
+  settingsModalStore.open(section);
+  const view = render(SettingsModal);
+  await waitForOpen(view.container);
+  return view;
+}
+const tab = (container: HTMLElement, id: string) =>
+  container.querySelector(`#tab-${id}`) as HTMLButtonElement | null;
+
 describe('Transcription and Speaker Identification sections', () => {
-  function sectionOf(container: HTMLElement, label: string): string | null {
-    const item = navItem(container, label);
-    return (
-      item?.closest('.sidebar-section')?.querySelector('.section-heading')?.textContent?.trim() ??
-      null
-    );
-  }
-
-  const engineValue = (value: unknown) => ({ value, source: 'default' });
-  async function openAs(role: 'user' | 'admin' | 'super_admin', section: SettingsSection) {
-    mockAxios.get.mockImplementation(async (url: string) => ({
-      data:
-        url === '/admin/engine-settings'
-          ? {
-              diarizer_backend: engineValue('native'),
-              diarizer_require_sidecar: engineValue(false),
-              boundary_smoothing_enabled: engineValue(true),
-              boundary_acoustic_recheck_enabled: engineValue(false),
-              boundary_acoustic_cosine_margin: engineValue(0.05),
-              boundary_acoustic_max_word_dur: engineValue(1.0),
-            }
-          : url === '/embeddings/migration/status'
-            ? { current_mode: 'v4', migration_needed: false }
-            : url === '/admin/backup/list'
-              ? { backups: [] }
-              : {},
-    }));
-    setUser(role);
-    settingsModalStore.open(section);
-    const view = render(SettingsModal);
-    await waitForOpen(view.container);
-    return view;
-  }
-  const tab = (container: HTMLElement, id: string) =>
-    container.querySelector(`#tab-${id}`) as HTMLButtonElement | null;
-
   it('has no engine-settings, asr-provider, vocabulary or attributes row, for any role', async () => {
     for (const role of ['user', 'admin', 'super_admin'] as const) {
       const { container, unmount } = await openAs(role, 'recording');
@@ -507,264 +507,262 @@ describe('Transcription and Speaker Identification sections', () => {
       { timeout: 10_000 }
     );
   });
+});
 
-  describe('revealing the active sidebar row', () => {
-    const scrolled: { row: Element | null; opts: ScrollIntoViewOptions | undefined }[] = [];
+describe('revealing the active sidebar row', () => {
+  const scrolled: { row: Element | null; opts: ScrollIntoViewOptions | undefined }[] = [];
 
-    beforeEach(() => {
-      scrolled.length = 0;
-      Element.prototype.scrollIntoView = function (
-        this: Element,
-        opts?: boolean | ScrollIntoViewOptions
-      ) {
-        scrolled.push({ row: this, opts: opts as ScrollIntoViewOptions | undefined });
-      };
-    });
-
-    afterEach(() => {
-      // jsdom ships no scrollIntoView, so removing the stub restores the original state.
-      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
-      vi.unstubAllGlobals();
-    });
-
-    async function followMaintenanceLink(container: HTMLElement) {
-      await fireEvent.click(tab(container, 'spk-maintenance') as HTMLElement);
-      const button = await waitFor(() => {
-        const el = container.querySelector('[data-testid="embedding-link-card"] button');
-        expect(el).not.toBeNull();
-        return el as HTMLElement;
-      });
-      await fireEvent.click(button);
-    }
-
-    it('scrolls the Data & Storage row into view when the link card jumps there', async () => {
-      const { container } = await openAs('super_admin', 'speaker-identification');
-      scrolled.length = 0;
-      await followMaintenanceLink(container);
-
-      const embedding = navItem(container, 'settings.dataManagement.title');
-      await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
-      expect(embedding?.classList.contains('active')).toBe(true);
-      const call = scrolled.find((c) => c.row === embedding);
-      expect(call?.opts?.block).toBe('nearest');
-    });
-
-    it('does not animate the scroll when the user prefers reduced motion', async () => {
-      vi.stubGlobal('matchMedia', (query: string) => ({
-        matches: query.includes('prefers-reduced-motion'),
-        media: query,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-      }));
-      const { container } = await openAs('super_admin', 'speaker-identification');
-      scrolled.length = 0;
-      await followMaintenanceLink(container);
-
-      const embedding = navItem(container, 'settings.dataManagement.title');
-      await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
-      expect(scrolled.find((c) => c.row === embedding)?.opts?.behavior).toBe('auto');
-    });
-  });
-
-  describe('Data & Storage row (#1243 item 8)', () => {
-    const TABS = [
-      'data-retention',
-      'data-cache',
-      'data-backup',
-      'data-integrity',
-      'data-search',
-      'data-embeddings',
-    ];
-
-    it('replaces the five System rows with one row of six tabs for a super_admin', async () => {
-      const { container } = await openAs('super_admin', 'data-management');
-      for (const key of [
-        'settings.retention.title',
-        'settings.backup.title',
-        'settings.dataIntegrity.title',
-        'settings.searchIndexing.title',
-        'settings.embeddingMigration.title',
-      ]) {
-        expect(navItem(container, key), key).toBeNull();
-      }
-      expect(navItem(container, 'settings.dataManagement.title')).not.toBeNull();
-      for (const id of TABS) expect(tab(container, id), id).not.toBeNull();
-      expect(tab(container, 'data-retention')?.getAttribute('aria-selected')).toBe('true');
-    });
-
-    it('uses the shared sticky tab strip, one tab per topic', async () => {
-      const { container } = await openAs('super_admin', 'data-management');
-      const strip = container.querySelector(
-        '[data-testid="data-management-section"] .tabs.sticky'
-      ) as HTMLElement;
-      expect(strip.getAttribute('aria-label')).toBe('settings.dataManagement.tabs.ariaLabel');
-      expect(strip.querySelectorAll('[role="tab"]')).toHaveLength(6);
-    });
-
-    it('shows an admin the backups tab locked, not missing', async () => {
-      const { container } = await openAs('admin', 'data-management');
-      const backup = tab(container, 'data-backup');
-      expect(backup).not.toBeNull();
-      expect(backup?.disabled).toBe(true);
-      expect(tab(container, 'data-integrity')?.disabled).toBe(false);
-    });
-
-    it('gives a plain user no row', async () => {
-      const { container } = await openAs('user', 'recording');
-      expect(navItem(container, 'settings.dataManagement.title')).toBeNull();
-    });
-
-    it.each([
-      ['retention', 'data-retention'],
-      ['backup', 'data-backup'],
-      ['data-integrity', 'data-integrity'],
-      ['embedding-migration', 'data-embeddings'],
-      // search-indexing is covered by sectionAliases.test.ts: its panel needs a full search-index
-      // API fixture that this suite's blanket axios mock does not provide.
-    ] as const)('the old id %s opens the %s tab of the Data & Storage row', async (id, tabId) => {
-      const { container } = await openAs('super_admin', id);
-      expect(
-        navItem(container, 'settings.dataManagement.title')?.classList.contains('active')
-      ).toBe(true);
-      await waitFor(() =>
-        expect(tab(container, tabId)?.getAttribute('aria-selected')).toBe('true')
-      );
-    });
-
-    it('keeps the modal heading the first .section-title in the content area', async () => {
-      const { container } = await openAs('super_admin', 'retention');
-      const first = container.querySelector('.settings-content .section-title');
-      expect(first?.textContent?.trim()).toBe('settings.dataManagement.title');
-    });
-
-    it('shows the unsaved-changes dot on the row when a legacy-id panel is dirty', async () => {
-      const { container } = await openAs('super_admin', 'data-management');
-      settingsModalStore.setDirty('retention', true);
-      await waitFor(() =>
-        expect(
-          navItem(container, 'settings.dataManagement.title')?.classList.contains('dirty')
-        ).toBe(true)
-      );
-      settingsModalStore.setDirty('retention', false);
-    });
-  });
-
-  describe('File status row: Status and Recovery tabs', () => {
-    const STATUS = {
-      status_counts: { total: 3, completed: 2, processing: 1, pending: 0, error: 0 },
-      problem_files: { count: 0, files: [] },
-      recent_files: { count: 0, files: [] },
-      has_problems: false,
+  beforeEach(() => {
+    scrolled.length = 0;
+    Element.prototype.scrollIntoView = function (
+      this: Element,
+      opts?: boolean | ScrollIntoViewOptions
+    ) {
+      scrolled.push({ row: this, opts: opts as ScrollIntoViewOptions | undefined });
     };
-    async function openStatus(role: 'user' | 'admin' | 'super_admin', section: SettingsSection) {
-      mockAxios.get.mockImplementation(async (url: string) => ({
-        data:
-          url === '/my-files/status'
-            ? STATUS
-            : url === '/tasks/system/health'
-              ? {
-                  stuck_tasks: { count: 0, items: [] },
-                  inconsistent_files: { count: 0, items: [] },
-                }
-              : {},
-      }));
-      setUser(role);
-      settingsModalStore.open(section);
-      const view = render(SettingsModal);
-      await waitForOpen(view.container);
-      return view;
+  });
+
+  afterEach(() => {
+    // jsdom ships no scrollIntoView, so removing the stub restores the original state.
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    vi.unstubAllGlobals();
+  });
+
+  async function followMaintenanceLink(container: HTMLElement) {
+    await fireEvent.click(tab(container, 'spk-maintenance') as HTMLElement);
+    const button = await waitFor(() => {
+      const el = container.querySelector('[data-testid="embedding-link-card"] button');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    await fireEvent.click(button);
+  }
+
+  it('scrolls the Data & Storage row into view when the link card jumps there', async () => {
+    const { container } = await openAs('super_admin', 'speaker-identification');
+    scrolled.length = 0;
+    await followMaintenanceLink(container);
+
+    const embedding = navItem(container, 'settings.dataManagement.title');
+    await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
+    expect(embedding?.classList.contains('active')).toBe(true);
+    const call = scrolled.find((c) => c.row === embedding);
+    expect(call?.opts?.block).toBe('nearest');
+  });
+
+  it('does not animate the scroll when the user prefers reduced motion', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    const { container } = await openAs('super_admin', 'speaker-identification');
+    scrolled.length = 0;
+    await followMaintenanceLink(container);
+
+    const embedding = navItem(container, 'settings.dataManagement.title');
+    await waitFor(() => expect(scrolled.some((c) => c.row === embedding)).toBe(true));
+    expect(scrolled.find((c) => c.row === embedding)?.opts?.behavior).toBe('auto');
+  });
+});
+
+describe('Data & Storage row (#1243 item 8)', () => {
+  const TABS = [
+    'data-retention',
+    'data-cache',
+    'data-backup',
+    'data-integrity',
+    'data-search',
+    'data-embeddings',
+  ];
+
+  it('replaces the five System rows with one row of six tabs for a super_admin', async () => {
+    const { container } = await openAs('super_admin', 'data-management');
+    for (const key of [
+      'settings.retention.title',
+      'settings.backup.title',
+      'settings.dataIntegrity.title',
+      'settings.searchIndexing.title',
+      'settings.embeddingMigration.title',
+    ]) {
+      expect(navItem(container, key), key).toBeNull();
     }
-    const statusTab = (container: HTMLElement, id: string) =>
-      container.querySelector(`#tab-${id}`) as HTMLButtonElement | null;
-
-    it('removes the Task Health Monitor row and gives an admin two tabs on File status', async () => {
-      const { container } = await openStatus('admin', 'file-status');
-      expect(navItem(container, 'settings.taskHealth.title')).toBeNull();
-      expect(navItem(container, 'settings.fileStatus.title')).not.toBeNull();
-      const strip = container.querySelector(
-        '[data-testid="file-status-section"] .tabs.sticky'
-      ) as HTMLElement;
-      expect(strip.querySelectorAll('[role="tab"]')).toHaveLength(2);
-      expect(statusTab(container, 'status-files')?.getAttribute('aria-selected')).toBe('true');
-    });
-
-    it('opens the Recovery tab of the File status row for the old admin-task-health id', async () => {
-      const { container } = await openStatus('admin', 'admin-task-health');
-      expect(navItem(container, 'settings.fileStatus.title')?.classList.contains('active')).toBe(
-        true
-      );
-      await waitFor(() =>
-        expect(statusTab(container, 'status-recovery')?.getAttribute('aria-selected')).toBe('true')
-      );
-      await waitFor(() =>
-        expect(container.textContent).toContain('settings.taskHealth.systemRecovery')
-      );
-    });
-
-    it('gives a plain user the Status panel with no tab strip and no Recovery panel', async () => {
-      const { container } = await openStatus('user', 'file-status');
-      await waitFor(() => expect(container.textContent).toContain('fileStatus.totalFiles'));
-      expect(container.querySelector('[data-testid="file-status-section"] .tabs')).toBeNull();
-      expect(statusTab(container, 'status-recovery')).toBeNull();
-      expect(container.querySelector('#tabpanel-status-recovery')).toBeNull();
-    });
-
-    it('drops the Recovery tab when the deployment lacks admin.task_health', async () => {
-      capabilities.set({
-        edition: 'community',
-        loaded: true,
-        capabilities: { 'admin.task_health': false },
-        audience: {},
-        maxUploadBytes: undefined,
-      });
-      const { container } = await openStatus('admin', 'file-status');
-      expect(statusTab(container, 'status-recovery')).toBeNull();
-      expect(container.querySelector('[data-testid="file-status-section"] .tabs')).toBeNull();
-    });
-
-    it('keeps the modal heading the first .section-title and shows the title once', async () => {
-      const { container } = await openStatus('admin', 'admin-task-health');
-      const titles = [...container.querySelectorAll('.settings-content .section-title')].map(
-        (e) => e.textContent?.trim()
-      );
-      expect(titles[0]).toBe('settings.fileStatus.title');
-      expect(titles).not.toContain('settings.taskHealth.title');
-    });
+    expect(navItem(container, 'settings.dataManagement.title')).not.toBeNull();
+    for (const id of TABS) expect(tab(container, id), id).not.toBeNull();
+    expect(tab(container, 'data-retention')?.getAttribute('aria-selected')).toBe('true');
   });
 
-  it('locks the embedding migration controls for an admin without calling its routes (#1208)', async () => {
-    const { container } = await openAs('admin', 'embedding-migration');
-    await waitFor(() =>
-      expect(container.querySelector('[data-testid="embedding-migration-locked"]')).not.toBeNull()
+  it('uses the shared sticky tab strip, one tab per topic', async () => {
+    const { container } = await openAs('super_admin', 'data-management');
+    const strip = container.querySelector(
+      '[data-testid="data-management-section"] .tabs.sticky'
+    ) as HTMLElement;
+    expect(strip.getAttribute('aria-label')).toBe('settings.dataManagement.tabs.ariaLabel');
+    expect(strip.querySelectorAll('[role="tab"]')).toHaveLength(6);
+  });
+
+  it('shows an admin the backups tab locked, not missing', async () => {
+    const { container } = await openAs('admin', 'data-management');
+    const backup = tab(container, 'data-backup');
+    expect(backup).not.toBeNull();
+    expect(backup?.disabled).toBe(true);
+    expect(tab(container, 'data-integrity')?.disabled).toBe(false);
+  });
+
+  it('gives a plain user no row', async () => {
+    const { container } = await openAs('user', 'recording');
+    expect(navItem(container, 'settings.dataManagement.title')).toBeNull();
+  });
+
+  it.each([
+    ['retention', 'data-retention'],
+    ['backup', 'data-backup'],
+    ['data-integrity', 'data-integrity'],
+    ['embedding-migration', 'data-embeddings'],
+    // search-indexing is covered by sectionAliases.test.ts: its panel needs a full search-index
+    // API fixture that this suite's blanket axios mock does not provide.
+  ] as const)('the old id %s opens the %s tab of the Data & Storage row', async (id, tabId) => {
+    const { container } = await openAs('super_admin', id);
+    expect(navItem(container, 'settings.dataManagement.title')?.classList.contains('active')).toBe(
+      true
     );
-    expect(mockAxios.get).not.toHaveBeenCalledWith('/embeddings/migration/status');
-  });
-
-  it('leaves the embedding migration unlocked and loaded for a super admin (#1208)', async () => {
-    const { container } = await openAs('super_admin', 'embedding-migration');
-    await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/embeddings/migration/status'));
-    expect(container.querySelector('[data-testid="embedding-migration-locked"]')).toBeNull();
+    await waitFor(() => expect(tab(container, tabId)?.getAttribute('aria-selected')).toBe('true'));
   });
 
   it('keeps the modal heading the first .section-title in the content area', async () => {
-    const { container } = await openAs('super_admin', 'speaker-attributes');
+    const { container } = await openAs('super_admin', 'retention');
     const first = container.querySelector('.settings-content .section-title');
-    expect(first?.textContent?.trim()).toBe('settings.speakerIdentification.title');
+    expect(first?.textContent?.trim()).toBe('settings.dataManagement.title');
   });
 
-  it('passes the unsaved flag of a child form up to the section row', async () => {
-    const { container } = await openAs('user', 'speaker-identification');
+  it('shows the unsaved-changes dot on the row when a legacy-id panel is dirty', async () => {
+    const { container } = await openAs('super_admin', 'data-management');
+    settingsModalStore.setDirty('retention', true);
     await waitFor(() =>
-      expect(container.querySelector('#diarization-source, #speaker-behavior')).not.toBeNull()
+      expect(navItem(container, 'settings.dataManagement.title')?.classList.contains('dirty')).toBe(
+        true
+      )
     );
-    const select = container.querySelector('#speaker-behavior') as HTMLSelectElement;
-    await fireEvent.change(select, { target: { value: 'use_custom' } });
+    settingsModalStore.setDirty('retention', false);
+  });
+});
+
+describe('File status row: Status and Recovery tabs', () => {
+  const STATUS = {
+    status_counts: { total: 3, completed: 2, processing: 1, pending: 0, error: 0 },
+    problem_files: { count: 0, files: [] },
+    recent_files: { count: 0, files: [] },
+    has_problems: false,
+  };
+  async function openStatus(role: 'user' | 'admin' | 'super_admin', section: SettingsSection) {
+    mockAxios.get.mockImplementation(async (url: string) => ({
+      data:
+        url === '/my-files/status'
+          ? STATUS
+          : url === '/tasks/system/health'
+            ? {
+                stuck_tasks: { count: 0, items: [] },
+                inconsistent_files: { count: 0, items: [] },
+              }
+            : {},
+    }));
+    setUser(role);
+    settingsModalStore.open(section);
+    const view = render(SettingsModal);
+    await waitForOpen(view.container);
+    return view;
+  }
+  const statusTab = (container: HTMLElement, id: string) =>
+    container.querySelector(`#tab-${id}`) as HTMLButtonElement | null;
+
+  it('removes the Task Health Monitor row and gives an admin two tabs on File status', async () => {
+    const { container } = await openStatus('admin', 'file-status');
+    expect(navItem(container, 'settings.taskHealth.title')).toBeNull();
+    expect(navItem(container, 'settings.fileStatus.title')).not.toBeNull();
+    const strip = container.querySelector(
+      '[data-testid="file-status-section"] .tabs.sticky'
+    ) as HTMLElement;
+    expect(strip.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(statusTab(container, 'status-files')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('opens the Recovery tab of the File status row for the old admin-task-health id', async () => {
+    const { container } = await openStatus('admin', 'admin-task-health');
+    expect(navItem(container, 'settings.fileStatus.title')?.classList.contains('active')).toBe(
+      true
+    );
     await waitFor(() =>
-      expect(
-        navItem(container, 'settings.speakerIdentification.title')?.classList.contains('dirty')
-      ).toBe(true)
+      expect(statusTab(container, 'status-recovery')?.getAttribute('aria-selected')).toBe('true')
+    );
+    await waitFor(() =>
+      expect(container.textContent).toContain('settings.taskHealth.systemRecovery')
     );
   });
+
+  it('gives a plain user the Status panel with no tab strip and no Recovery panel', async () => {
+    const { container } = await openStatus('user', 'file-status');
+    await waitFor(() => expect(container.textContent).toContain('fileStatus.totalFiles'));
+    expect(container.querySelector('[data-testid="file-status-section"] .tabs')).toBeNull();
+    expect(statusTab(container, 'status-recovery')).toBeNull();
+    expect(container.querySelector('#tabpanel-status-recovery')).toBeNull();
+  });
+
+  it('drops the Recovery tab when the deployment lacks admin.task_health', async () => {
+    capabilities.set({
+      edition: 'community',
+      loaded: true,
+      capabilities: { 'admin.task_health': false },
+      audience: {},
+      maxUploadBytes: undefined,
+    });
+    const { container } = await openStatus('admin', 'file-status');
+    expect(statusTab(container, 'status-recovery')).toBeNull();
+    expect(container.querySelector('[data-testid="file-status-section"] .tabs')).toBeNull();
+  });
+
+  it('keeps the modal heading the first .section-title and shows the title once', async () => {
+    const { container } = await openStatus('admin', 'admin-task-health');
+    const titles = [...container.querySelectorAll('.settings-content .section-title')].map(
+      (e) => e.textContent?.trim()
+    );
+    expect(titles[0]).toBe('settings.fileStatus.title');
+    expect(titles).not.toContain('settings.taskHealth.title');
+  });
+});
+
+it('locks the embedding migration controls for an admin without calling its routes (#1208)', async () => {
+  const { container } = await openAs('admin', 'embedding-migration');
+  await waitFor(() =>
+    expect(container.querySelector('[data-testid="embedding-migration-locked"]')).not.toBeNull()
+  );
+  expect(mockAxios.get).not.toHaveBeenCalledWith('/embeddings/migration/status');
+});
+
+it('leaves the embedding migration unlocked and loaded for a super admin (#1208)', async () => {
+  const { container } = await openAs('super_admin', 'embedding-migration');
+  await waitFor(() => expect(mockAxios.get).toHaveBeenCalledWith('/embeddings/migration/status'));
+  expect(container.querySelector('[data-testid="embedding-migration-locked"]')).toBeNull();
+});
+
+it('keeps the modal heading the first .section-title in the content area', async () => {
+  const { container } = await openAs('super_admin', 'speaker-attributes');
+  const first = container.querySelector('.settings-content .section-title');
+  expect(first?.textContent?.trim()).toBe('settings.speakerIdentification.title');
+});
+
+it('passes the unsaved flag of a child form up to the section row', async () => {
+  const { container } = await openAs('user', 'speaker-identification');
+  await waitFor(() =>
+    expect(container.querySelector('#diarization-source, #speaker-behavior')).not.toBeNull()
+  );
+  const select = container.querySelector('#speaker-behavior') as HTMLSelectElement;
+  await fireEvent.change(select, { target: { value: 'use_custom' } });
+  await waitFor(() =>
+    expect(
+      navItem(container, 'settings.speakerIdentification.title')?.classList.contains('dirty')
+    ).toBe(true)
+  );
 });
 
 describe('settings search placement', () => {

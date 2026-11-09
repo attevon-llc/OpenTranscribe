@@ -35,6 +35,108 @@ function saveUserCollapsed(value: boolean): void {
   }
 }
 
+// Events that make the tray's "new activity" dot light up.
+const ACTIVITY_EVENTS = ['added', 'completed', 'failed'];
+
+// The next tray state after one upload-service event, given the service's current upload list.
+function stateAfterEvent(
+  state: UploadStoreState,
+  event: UploadEvent,
+  uploads: UploadItem[]
+): UploadStoreState {
+  const hasNewActivity = state.hasNewActivity || ACTIVITY_EVENTS.includes(event.type);
+
+  // Surface the tray when the first upload starts, unless the user has
+  // closed it on purpose.
+  const firstUploadStarted =
+    event.type === 'added' && state.uploads.length === 0 && uploads.length > 0;
+  const isExpanded = state.isExpanded || (firstUploadStarted && !state.userCollapsed);
+
+  return {
+    ...state,
+    uploads,
+    hasNewActivity: isExpanded && !state.isExpanded ? false : hasNewActivity,
+    isExpanded,
+  };
+}
+
+// Queueing actions: plain delegation to the upload service, which owns the queue.
+const queueActions = {
+  addFile(
+    file: File,
+    transcriptionParams?: UploadTranscriptionParams,
+    collectionIds?: string[],
+    tagNames?: string[]
+  ) {
+    return uploadService.addUpload(
+      'file',
+      file,
+      undefined,
+      transcriptionParams,
+      collectionIds,
+      tagNames
+    );
+  },
+
+  addFiles(
+    files: File[],
+    collectionIds?: string[],
+    tagNames?: string[],
+    transcriptionParams?: UploadTranscriptionParams
+  ) {
+    return uploadService.addMultipleFiles(files, collectionIds, tagNames, transcriptionParams);
+  },
+
+  addUrl(
+    url: string,
+    collectionIds?: string[],
+    tagNames?: string[],
+    transcriptionParams?: UploadTranscriptionParams
+  ) {
+    return uploadService.addUpload(
+      'url',
+      url,
+      undefined,
+      transcriptionParams,
+      collectionIds,
+      tagNames
+    );
+  },
+
+  addRecording(
+    blob: Blob,
+    name?: string,
+    collectionIds?: string[],
+    tagNames?: string[],
+    transcriptionParams?: UploadTranscriptionParams
+  ) {
+    return uploadService.addUpload(
+      'recording',
+      blob,
+      name,
+      transcriptionParams,
+      collectionIds,
+      tagNames
+    );
+  },
+
+  addExtractedAudio(
+    audioBlob: Blob,
+    filename: string,
+    extractionMetadata: ExtractedAudioMetadata,
+    compressionRatio: number,
+    transcriptionParams?: UploadTranscriptionParams
+  ) {
+    return uploadService.addExtractedAudio(
+      audioBlob,
+      filename,
+      extractionMetadata,
+      compressionRatio,
+      transcriptionParams
+    );
+  },
+};
+
 // Create the writable store
 function createUploadStore() {
   const initialState: UploadStoreState = {
@@ -51,28 +153,7 @@ function createUploadStore() {
 
   // Listen to upload service events
   eventListenerCleanup = uploadService.addEventListener((event: UploadEvent) => {
-    update((state) => {
-      const uploads = uploadService.getAllUploads();
-      let hasNewActivity = state.hasNewActivity;
-
-      // Mark new activity for certain events
-      if (['added', 'completed', 'failed'].includes(event.type)) {
-        hasNewActivity = true;
-      }
-
-      // Surface the tray when the first upload starts, unless the user has
-      // closed it on purpose.
-      const firstUploadStarted =
-        event.type === 'added' && state.uploads.length === 0 && uploads.length > 0;
-      const isExpanded = state.isExpanded || (firstUploadStarted && !state.userCollapsed);
-
-      return {
-        ...state,
-        uploads,
-        hasNewActivity: isExpanded && !state.isExpanded ? false : hasNewActivity,
-        isExpanded,
-      };
-    });
+    update((state) => stateAfterEvent(state, event, uploadService.getAllUploads()));
   });
 
   // Initialize with current uploads
@@ -123,80 +204,7 @@ function createUploadStore() {
       }));
     },
 
-    // Upload actions (delegate to service)
-    addFile(
-      file: File,
-      transcriptionParams?: UploadTranscriptionParams,
-      collectionIds?: string[],
-      tagNames?: string[]
-    ) {
-      return uploadService.addUpload(
-        'file',
-        file,
-        undefined,
-        transcriptionParams,
-        collectionIds,
-        tagNames
-      );
-    },
-
-    addFiles(
-      files: File[],
-      collectionIds?: string[],
-      tagNames?: string[],
-      transcriptionParams?: UploadTranscriptionParams
-    ) {
-      return uploadService.addMultipleFiles(files, collectionIds, tagNames, transcriptionParams);
-    },
-
-    addUrl(
-      url: string,
-      collectionIds?: string[],
-      tagNames?: string[],
-      transcriptionParams?: UploadTranscriptionParams
-    ) {
-      return uploadService.addUpload(
-        'url',
-        url,
-        undefined,
-        transcriptionParams,
-        collectionIds,
-        tagNames
-      );
-    },
-
-    addRecording(
-      blob: Blob,
-      name?: string,
-      collectionIds?: string[],
-      tagNames?: string[],
-      transcriptionParams?: UploadTranscriptionParams
-    ) {
-      return uploadService.addUpload(
-        'recording',
-        blob,
-        name,
-        transcriptionParams,
-        collectionIds,
-        tagNames
-      );
-    },
-
-    addExtractedAudio(
-      audioBlob: Blob,
-      filename: string,
-      extractionMetadata: ExtractedAudioMetadata,
-      compressionRatio: number,
-      transcriptionParams?: UploadTranscriptionParams
-    ) {
-      return uploadService.addExtractedAudio(
-        audioBlob,
-        filename,
-        extractionMetadata,
-        compressionRatio,
-        transcriptionParams
-      );
-    },
+    ...queueActions,
 
     retry(uploadId: string) {
       uploadService.retryUpload(uploadId);

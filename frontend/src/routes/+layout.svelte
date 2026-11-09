@@ -20,6 +20,7 @@
   import { capabilities, isCapabilityEnabled } from "$stores/capabilities";
   import { supportSession } from "$stores/supportSession";
   import { isCloudEdition } from "$lib/edition";
+  import { startupRedirect } from "$lib/auth/startupRedirect";
   import { theme } from "$stores/theme";
   import { locale, localeReady, t } from "$stores/locale";
   import { llmStatusStore } from "$stores/llmStatus";
@@ -249,20 +250,17 @@
         const isAuth = get(isAuthenticated);
         const currentPath = page.url.pathname;
 
-        // Cloud edition: the hosted IdP owns login/registration/forgot-password
-        // (its sign-in component on /login handles sign-up + recovery inline), so
-        // the local credential routes are dead — redirect any hit to /login.
-        if (isCloudEdition && LOCAL_CREDENTIAL_PATHS.includes(currentPath)) {
-          goto(resolve('/login'), { replace: true });
-        } else {
-          const isPublicPath = PUBLIC_PATHS.includes(currentPath);
-
-          if (!isAuth && !isPublicPath) {
-            goto(resolve('/login'), { replace: true });
-          } else if (isAuth && isPublicPath) {
-            goto(resolve('/'), { replace: true });
-          }
-        }
+        // Cloud edition: the hosted IdP owns login/registration/forgot-password, so the local
+        // credential routes are dead there (see $lib/auth/startupRedirect).
+        const redirectTo = startupRedirect({
+          isAuthenticated: isAuth,
+          path: currentPath,
+          isCloudEdition,
+          publicPaths: PUBLIC_PATHS,
+          localCredentialPaths: LOCAL_CREDENTIAL_PATHS
+        });
+        if (redirectTo === '/login') goto(resolve('/login'), { replace: true });
+        else if (redirectTo === '/') goto(resolve('/'), { replace: true });
 
         // Initialize LLM status store after authentication is ready
         if (isAuth) {

@@ -5,6 +5,7 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from './ui/Spinner.svelte';
+  import { optimalWaveformResolution, type WaveformEnvironment } from '$lib/utils/waveformResolution';
 
   // Props
   export let fileId: string | number;
@@ -43,38 +44,13 @@
    * Determine optimal waveform resolution based on device and screen size
    */
   function getOptimalResolution() {
-    const containerWidth = container?.offsetWidth || 800;
-    const devicePixelRatio = window.devicePixelRatio || 1;
-    const screenWidth = window.innerWidth;
-
-    // Check for low bandwidth connections
-    const connection = (navigator as any).connection;
-    const isLowBandwidth = connection && (
-      connection.effectiveType === 'slow-2g' ||
-      connection.effectiveType === '2g' ||
-      connection.downlink < 1.5  // Less than 1.5 Mbps
-    );
-
-    const isMobile = screenWidth < 768;
-    const isTablet = screenWidth >= 768 && screenWidth < 1024;
-    const isHighDPI = devicePixelRatio >= 2;
-    const isLargeContainer = containerWidth >= 1200;
-
-    // Prioritize bandwidth and device constraints
-    if (isLowBandwidth) {
-      return 500;  // Always use smallest for poor connections
-    }
-
-    // Choose resolution based on device and screen characteristics
-    if (isMobile || containerWidth < 600) {
-      return 500;  // Small: mobile devices, small containers
-    } else if (isTablet || (!isHighDPI && containerWidth < 1200)) {
-      return 1000; // Medium: tablets, standard desktop displays
-    } else if (isHighDPI || isLargeContainer) {
-      return 2000; // Large: high-DPI displays, large screens, detailed view
-    } else {
-      return 1000; // Default to medium for standard cases
-    }
+    return optimalWaveformResolution({
+      containerWidth: container?.offsetWidth || 800,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      screenWidth: window.innerWidth,
+      connection: (navigator as Navigator & { connection?: WaveformEnvironment['connection'] })
+        .connection
+    });
   }
 
   /**

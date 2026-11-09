@@ -106,7 +106,9 @@ describe('PipelineOverview', () => {
       card(container, 'transcription').querySelector('[data-testid="badge-adapter"]')
     ).toBeNull();
   });
+});
 
+describe('PipelineOverview: privacy and issues', () => {
   it('names both vendors in the one privacy note when audio goes to two of them', async () => {
     const { container } = await renderView(twoVendorView());
     expect(text(container.querySelector('[data-testid="pipeline-privacy"]'))).toBe(
@@ -133,7 +135,9 @@ describe('PipelineOverview', () => {
       text(card(container, 'diarization').querySelector('[data-testid="pipeline-hints"]'))
     ).toBe('settings.pipeline.hintsIgnored');
   });
+});
 
+describe('PipelineOverview: issues, links and failure states', () => {
   it('renders an issue from its code, never from the server text, and links to the tab that fixes it', async () => {
     const view = fullLocalView({
       issues: [issue('asr_no_timing_for_speakers', 'error', 'diarization')],

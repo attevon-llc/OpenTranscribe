@@ -24,14 +24,20 @@ caches of API responses.
   clearing one bumps `lifecycleHoldCleared`: `auth.ts` re-reads capabilities and
   `websocket.ts` reconnects a socket that is not open.
 - `websocket.ts` — the socket lifecycle (connect, reconnect, close codes; policy in
-  `$lib/websocket/connectionPolicy.ts`) and frame dispatch. `websocketNotifications.ts` — the
-  notification list it holds (persistence, retention, panel/client actions, folds of inbound frames
-  into cards); it only touches `state.notifications`.
+  `$lib/websocket/connectionPolicy.ts`) and, through `$lib/websocket/frameDispatch.ts`, frame
+  dispatch. `websocketNotifications.ts` — the notification list it holds: its state shape and the
+  panel/client actions; `notificationStorage.ts` is persistence and retention and
+  `notificationFrameFolds.ts` the folds of inbound frames into cards. All only touch
+  `state.notifications`.
+- `chat.ts` — the RAG chat store; its actions are three groups in `$lib/chat` (`conversationActions`,
+  `composerActions`, `streamActions`) over one store and `ChatSession`, and the SSE frame to state
+  mapping is the pure `$lib/chat/streamReducer.ts`.
 - `toast.ts` — `toastStore.success/error(...)` notifications.
 - `transcriptStore.ts` — transcript segments + processed cache (used by transcript views/analytics).
 - `notificationRetention.ts` — the "Keep notifications for" preference and the "N cleared" notice
   count (#1217); policy lives in `$lib/notifications/retention.ts`.
-- `notificationsPanel.ts`, `downloads.ts`, `uploads.ts`, `recording.ts`, `gallery.ts`, `search.ts`,
+- `notificationsPanel.ts`, `downloads.ts`, `uploads.ts`, `recording.ts`, `gallery.ts` (its toolbar
+  triggers are `galleryActionTriggers.ts`, selection arithmetic `$lib/gallery/selection.ts`), `search.ts`,
   `sharing.ts`, `groups.ts`, `llmStatus.ts`, `network.ts`, `locale.ts`, `theme.js`,
   `audioPlaybackStore.ts`, `settingsModalStore.ts`.
 

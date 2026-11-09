@@ -15,7 +15,10 @@ import { CHAT_ERROR_CODES } from '$lib/utils/chatErrors';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const localesDir = join(here, 'locales');
-const chatStoreSource = readFileSync(join(here, '..', '..', 'stores', 'chat.ts'), 'utf8');
+// The chat store's actions live in $lib/chat; the literals are spread across those modules.
+const chatStoreSource = ['conversationActions.ts', 'streamActions.ts', 'streamReducer.ts']
+  .map((file) => readFileSync(join(here, '..', 'chat', file), 'utf8'))
+  .join('\n');
 
 /** The string literals the chat store assigns to `state.error` besides frame codes. */
 const storeErrorLiterals = [...chatStoreSource.matchAll(/error: '([A-Za-z_]+)'/g)].map((m) => m[1]);

@@ -192,115 +192,115 @@ describe('OrgPrivacyPolicyPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByTestId('org-voiceprints-switch')).toBeInTheDocument();
   });
+});
 
-  describe('redaction floor (#1279)', () => {
-    const floor = (over: Record<string, unknown> = {}) => ({
-      forced_categories: ['pii'],
-      forced_pii_entities: [],
-      forced_custom_words: [],
-      force_toxicity_threshold: null,
-      force_export_redacted: false,
-      force_redact_before_llm: false,
-      ...over,
+describe('redaction floor (#1279)', () => {
+  const floor = (over: Record<string, unknown> = {}) => ({
+    forced_categories: ['pii'],
+    forced_pii_entities: [],
+    forced_custom_words: [],
+    force_toxicity_threshold: null,
+    force_export_redacted: false,
+    force_redact_before_llm: false,
+    ...over,
+  });
+
+  it('shows no floor controls while redaction.policy is off (server sends null)', async () => {
+    api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: null });
+    render(OrgPrivacyPolicyPanel);
+    await screen.findByTestId('org-voiceprints-switch');
+    expect(screen.queryByTestId('org-redaction-floor')).toBeNull();
+  });
+
+  it('shows the stored floor when the capability is on', async () => {
+    api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
+    render(OrgPrivacyPolicyPanel);
+    await screen.findByTestId('org-redaction-floor');
+    expect(screen.getByTestId('org-floor-pii')).toBeChecked();
+    expect(screen.getByTestId('org-floor-toxicity')).not.toBeChecked();
+  });
+
+  it('sends only the changed floor field, with the full category list', async () => {
+    api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
+    api.updatePolicy.mockResolvedValue({
+      ...policy(),
+      redaction_floor: floor({ forced_categories: ['pii', 'toxicity'] }),
     });
+    render(OrgPrivacyPolicyPanel);
+    await fireEvent.click(await screen.findByTestId('org-floor-toxicity'));
+    await waitFor(() =>
+      expect(api.updatePolicy).toHaveBeenCalledWith({
+        redaction_floor: { forced_categories: ['pii', 'toxicity'] },
+      })
+    );
+    await fireEvent.click(await screen.findByTestId('org-floor-force_export_redacted'));
+    await waitFor(() =>
+      expect(api.updatePolicy).toHaveBeenLastCalledWith({
+        redaction_floor: { force_export_redacted: true },
+      })
+    );
+  });
 
-    it('shows no floor controls while redaction.policy is off (server sends null)', async () => {
-      api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: null });
-      render(OrgPrivacyPolicyPanel);
-      await screen.findByTestId('org-voiceprints-switch');
-      expect(screen.queryByTestId('org-redaction-floor')).toBeNull();
+  it('adds a forced PII entity and sends only that list', async () => {
+    api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
+    api.updatePolicy.mockResolvedValue({
+      ...policy(),
+      redaction_floor: floor({ forced_pii_entities: ['SSN'] }),
     });
+    render(OrgPrivacyPolicyPanel);
+    await fireEvent.click(await screen.findByTestId('org-floor-entity-SSN'));
+    await waitFor(() =>
+      expect(api.updatePolicy).toHaveBeenCalledWith({
+        redaction_floor: { forced_pii_entities: ['SSN'] },
+      })
+    );
+  });
 
-    it('shows the stored floor when the capability is on', async () => {
-      api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
-      render(OrgPrivacyPolicyPanel);
-      await screen.findByTestId('org-redaction-floor');
-      expect(screen.getByTestId('org-floor-pii')).toBeChecked();
-      expect(screen.getByTestId('org-floor-toxicity')).not.toBeChecked();
+  it('sends trimmed custom words once, and nothing when they are unchanged', async () => {
+    api.getPolicy.mockResolvedValue({
+      ...policy(),
+      redaction_floor: floor({ forced_custom_words: ['Bluefin'] }),
     });
-
-    it('sends only the changed floor field, with the full category list', async () => {
-      api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
-      api.updatePolicy.mockResolvedValue({
-        ...policy(),
-        redaction_floor: floor({ forced_categories: ['pii', 'toxicity'] }),
-      });
-      render(OrgPrivacyPolicyPanel);
-      await fireEvent.click(await screen.findByTestId('org-floor-toxicity'));
-      await waitFor(() =>
-        expect(api.updatePolicy).toHaveBeenCalledWith({
-          redaction_floor: { forced_categories: ['pii', 'toxicity'] },
-        })
-      );
-      await fireEvent.click(await screen.findByTestId('org-floor-force_export_redacted'));
-      await waitFor(() =>
-        expect(api.updatePolicy).toHaveBeenLastCalledWith({
-          redaction_floor: { force_export_redacted: true },
-        })
-      );
+    api.updatePolicy.mockResolvedValue({
+      ...policy(),
+      redaction_floor: floor({ forced_custom_words: ['Bluefin', 'ProjectX'] }),
     });
+    render(OrgPrivacyPolicyPanel);
+    const box = await screen.findByTestId('org-floor-words');
+    await fireEvent.change(box, { target: { value: 'Bluefin' } });
+    expect(api.updatePolicy).not.toHaveBeenCalled();
+    await fireEvent.change(box, { target: { value: ' Bluefin \n\nProjectX ' } });
+    await waitFor(() =>
+      expect(api.updatePolicy).toHaveBeenCalledWith({
+        redaction_floor: { forced_custom_words: ['Bluefin', 'ProjectX'] },
+      })
+    );
+  });
 
-    it('adds a forced PII entity and sends only that list', async () => {
-      api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
-      api.updatePolicy.mockResolvedValue({
-        ...policy(),
-        redaction_floor: floor({ forced_pii_entities: ['SSN'] }),
-      });
-      render(OrgPrivacyPolicyPanel);
-      await fireEvent.click(await screen.findByTestId('org-floor-entity-SSN'));
-      await waitFor(() =>
-        expect(api.updatePolicy).toHaveBeenCalledWith({
-          redaction_floor: { forced_pii_entities: ['SSN'] },
-        })
-      );
+  it('shows the threshold only while toxicity is forced and sends it on change', async () => {
+    api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
+    const { unmount } = render(OrgPrivacyPolicyPanel);
+    await screen.findByTestId('org-redaction-floor');
+    expect(document.getElementById('org-floor-threshold')).toBeNull();
+    unmount();
+
+    api.getPolicy.mockResolvedValue({
+      ...policy(),
+      redaction_floor: floor({ forced_categories: ['toxicity'] }),
     });
-
-    it('sends trimmed custom words once, and nothing when they are unchanged', async () => {
-      api.getPolicy.mockResolvedValue({
-        ...policy(),
-        redaction_floor: floor({ forced_custom_words: ['Bluefin'] }),
-      });
-      api.updatePolicy.mockResolvedValue({
-        ...policy(),
-        redaction_floor: floor({ forced_custom_words: ['Bluefin', 'ProjectX'] }),
-      });
-      render(OrgPrivacyPolicyPanel);
-      const box = await screen.findByTestId('org-floor-words');
-      await fireEvent.change(box, { target: { value: 'Bluefin' } });
-      expect(api.updatePolicy).not.toHaveBeenCalled();
-      await fireEvent.change(box, { target: { value: ' Bluefin \n\nProjectX ' } });
-      await waitFor(() =>
-        expect(api.updatePolicy).toHaveBeenCalledWith({
-          redaction_floor: { forced_custom_words: ['Bluefin', 'ProjectX'] },
-        })
-      );
+    api.updatePolicy.mockResolvedValue({
+      ...policy(),
+      redaction_floor: floor({ forced_categories: ['toxicity'], force_toxicity_threshold: 0.8 }),
     });
-
-    it('shows the threshold only while toxicity is forced and sends it on change', async () => {
-      api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
-      const { unmount } = render(OrgPrivacyPolicyPanel);
-      await screen.findByTestId('org-redaction-floor');
-      expect(document.getElementById('org-floor-threshold')).toBeNull();
-      unmount();
-
-      api.getPolicy.mockResolvedValue({
-        ...policy(),
-        redaction_floor: floor({ forced_categories: ['toxicity'] }),
-      });
-      api.updatePolicy.mockResolvedValue({
-        ...policy(),
-        redaction_floor: floor({ forced_categories: ['toxicity'], force_toxicity_threshold: 0.8 }),
-      });
-      render(OrgPrivacyPolicyPanel);
-      await screen.findByTestId('org-redaction-floor');
-      const slider = document.getElementById('org-floor-threshold') as HTMLInputElement;
-      expect(slider).not.toBeNull();
-      await fireEvent.change(slider, { target: { value: '0.8' } });
-      await waitFor(() =>
-        expect(api.updatePolicy).toHaveBeenCalledWith({
-          redaction_floor: { force_toxicity_threshold: 0.8 },
-        })
-      );
-    });
+    render(OrgPrivacyPolicyPanel);
+    await screen.findByTestId('org-redaction-floor');
+    const slider = document.getElementById('org-floor-threshold') as HTMLInputElement;
+    expect(slider).not.toBeNull();
+    await fireEvent.change(slider, { target: { value: '0.8' } });
+    await waitFor(() =>
+      expect(api.updatePolicy).toHaveBeenCalledWith({
+        redaction_floor: { force_toxicity_threshold: 0.8 },
+      })
+    );
   });
 });

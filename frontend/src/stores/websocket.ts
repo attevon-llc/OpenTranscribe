@@ -1,28 +1,20 @@
 import { writable, derived, get } from 'svelte/store';
 import * as authStore from './auth';
-import { downloadStore, type DownloadState } from './downloads';
-import { t } from '$stores/locale';
-import axiosInstance from '$lib/axios';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
 import { sessionAnswersAfterRefusal, sessionSurvivesRevocation } from '$lib/auth/sessionRecheck';
 import { countUnreadItems } from '$lib/notifications/jobGrouping';
 import type { PostProcessingFrame } from '$lib/notifications/postProcessing';
 import { showNotificationsPanel } from '$stores/notificationsPanel';
-import { routeFrame } from '$lib/websocket/frameRouting';
+import { dispatchMessage, recoverActiveProgress } from '$lib/websocket/frameDispatch';
 import {
   closeAction,
   uiConnectionStatus,
   websocketUrl,
   type UiConnectionStatus,
 } from '$lib/websocket/connectionPolicy';
-import { frameKind, progressFields } from '$lib/notifications/progressFrame';
-import { recoverTask, type ActiveTask } from '$lib/notifications/activeTaskRecovery';
-import {
-  createNotificationActions,
-  loadNotificationsFromStorage,
-  type WebSocketState,
-} from './websocketNotifications';
+import { createNotificationActions, type WebSocketState } from './websocketNotifications';
+import { loadNotificationsFromStorage } from './notificationStorage';
 
 export { NOTIFICATION_TYPES } from '$lib/notifications/types';
 export type { NotificationType, NotificationData, Notification } from '$lib/notifications/types';
@@ -37,6 +29,20 @@ const initialState: WebSocketState = {
   reconnectAttempts: 0,
   error: null,
 };
+
+// Cloud edition: send the hosted IdP's fresh token as the first frame. A failure is logged,
+// not fatal: the backend closes a socket it cannot authenticate.
+async function sendExternalAuth(socket: WebSocket): Promise<void> {
+  try {
+    const { getSessionToken } = await import('$lib/cloud');
+    const sessionToken = await getSessionToken();
+    if (sessionToken) {
+      socket.send(JSON.stringify({ type: 'authenticate', token: sessionToken }));
+    }
+  } catch (err) {
+    console.error('[ws] Failed to send external authenticate frame:', err);
+  }
+}
 
 // Create the store
 function createWebSocketStore() {
@@ -58,6 +64,16 @@ function createWebSocketStore() {
     });
     unsubscribe();
     return currentState;
+  };
+
+  const markConnected = () => {
+    update((s: WebSocketState) => {
+      s.status = 'connected';
+      s.reconnectAttempts = 0;
+      return s;
+    });
+    // Recover active task progress from backend (survives page refresh/modal close)
+    recoverActiveProgress(notifications);
   };
 
   // Connect to WebSocket server (cookies are sent automatically)
@@ -97,34 +113,10 @@ function createWebSocketStore() {
           // fresh hosted-IdP token. The backend's WS external-verifier reads it.
           // We only mark connected / recover progress after auth is sent.
           if (isCloudEdition) {
-            (async () => {
-              try {
-                const { getSessionToken } = await import('$lib/cloud');
-                const sessionToken = await getSessionToken();
-                if (sessionToken) {
-                  socket.send(JSON.stringify({ type: 'authenticate', token: sessionToken }));
-                }
-              } catch (err) {
-                console.error('[ws] Failed to send external authenticate frame:', err);
-              }
-              update((s: WebSocketState) => {
-                s.status = 'connected';
-                s.reconnectAttempts = 0;
-                return s;
-              });
-              recoverActiveProgress();
-            })();
+            void sendExternalAuth(socket).then(markConnected);
             return;
           }
-
-          update((s: WebSocketState) => {
-            s.status = 'connected';
-            s.reconnectAttempts = 0;
-            return s;
-          });
-
-          // Recover active task progress from backend (survives page refresh/modal close)
-          recoverActiveProgress();
+          markConnected();
         };
 
         socket.onclose = (event) => {
@@ -167,39 +159,7 @@ function createWebSocketStore() {
           });
         };
 
-        socket.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-
-            // Handle different message types
-            if (data.type === 'download_progress') {
-              // Handle download progress messages specially
-              handleDownloadProgress(data);
-              return;
-            }
-
-            // Window events and cache invalidation ($lib/websocket/frameRouting).
-            if (routeFrame(data)) return;
-
-            // Progress cards, post-processing, silent and regular notifications
-            // ($lib/notifications/progressFrame).
-            const kind = frameKind(data.type, data.data);
-
-            if (kind === 'progress') {
-              const fields = progressFields(data.type, data.data, get(t));
-
-              notifications.foldProgressFrame(data.type, data.data, fields);
-            } else if (kind === 'post_processing') {
-              notifications.applyPostProcessing(data.data);
-            } else if (kind === 'silent') {
-              notifications.addSilentFrame(data.type, data.data);
-            } else {
-              notifications.addRegularFrame(data.type, data.data);
-            }
-          } catch (error) {
-            console.error('Error processing WebSocket message:', error);
-          }
-        };
+        socket.onmessage = (event) => dispatchMessage(event.data, notifications);
       } catch (error) {
         state.status = 'error';
         state.error = 'Failed to connect to WebSocket server';
@@ -257,51 +217,6 @@ function createWebSocketStore() {
       }
       return state;
     });
-  };
-
-  // Handle download progress messages (legacy/global). Media downloads initiated
-  // from the file page are delivered over a dedicated SSE stream — see
-  // TranscriptDisplay's EventSource — so this only mirrors status into the store.
-  const handleDownloadProgress = (data: {
-    data: {
-      file_id?: string;
-      status: DownloadState['status'];
-      progress?: number;
-      error?: string;
-    };
-  }) => {
-    const { file_id, status, progress, error } = data.data;
-
-    if (file_id) {
-      downloadStore.updateStatus(file_id, status, progress, error);
-    }
-  };
-
-  // Recover active task progress from backend on connect/reconnect
-  // ($lib/notifications/activeTaskRecovery).
-  const recoverActiveProgress = async () => {
-    try {
-      const { data: activeTasks } = await axiosInstance.get<ActiveTask[]>('/tasks/progress/active');
-
-      if (!activeTasks || activeTasks.length === 0) return;
-
-      for (const task of activeTasks) {
-        const recovered = recoverTask(task);
-        if (!recovered) continue;
-
-        // Dispatch CustomEvent for settings components
-        if (typeof window !== 'undefined' && recovered.event) {
-          window.dispatchEvent(
-            new CustomEvent(recovered.event.name, { detail: recovered.event.detail })
-          );
-        }
-
-        // Create/update progressive notification
-        notifications.upsertRecoveredTask(task, recovered);
-      }
-    } catch {
-      // Recovery is best-effort; don't break WebSocket on failure
-    }
   };
 
   return {

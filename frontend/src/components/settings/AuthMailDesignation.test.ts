@@ -248,48 +248,49 @@ describe('AuthMailDesignation', () => {
       expect(toastStore.error).toHaveBeenCalledWith(`No email configuration with UUID ${GONE_UUID}`)
     );
   });
+});
 
-  describe('connection test', () => {
-    const ACTIVE = () =>
-      designation({
-        config_uuid: ENABLED_UUID,
-        config_name: 'Corp M365',
-        provider: 'm365',
-        is_enabled: true,
-        resolves: true,
-        status: 'active',
-      });
-    const post = vi.mocked(axiosInstance.post);
-
-    it('tests the designated config through the existing email-config endpoint', async () => {
-      await renderPanel(ACTIVE());
-      post.mockResolvedValue({ data: { success: true, message: 'ok' } } as never);
-
-      await fireEvent.click(screen.getByTestId('auth-mail-test'));
-
-      await waitFor(() =>
-        expect(post).toHaveBeenCalledWith(
-          expect.stringContaining(`/email-configs/${ENABLED_UUID}/test`)
-        )
-      );
-      expect(toastStore.success).toHaveBeenCalledWith('Corp M365: ok');
+describe('connection test', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const ACTIVE = () =>
+    designation({
+      config_uuid: ENABLED_UUID,
+      config_name: 'Corp M365',
+      provider: 'm365',
+      is_enabled: true,
+      resolves: true,
+      status: 'active',
     });
+  const post = vi.mocked(axiosInstance.post);
 
-    it('reports a failed connection as an error, not a success', async () => {
-      await renderPanel(ACTIVE());
-      post.mockResolvedValue({ data: { success: false, message: 'Connection failed' } } as never);
+  it('tests the designated config through the existing email-config endpoint', async () => {
+    await renderPanel(ACTIVE());
+    post.mockResolvedValue({ data: { success: true, message: 'ok' } } as never);
 
-      await fireEvent.click(screen.getByTestId('auth-mail-test'));
+    await fireEvent.click(screen.getByTestId('auth-mail-test'));
 
-      await waitFor(() =>
-        expect(toastStore.error).toHaveBeenCalledWith('Corp M365: Connection failed', 6000)
-      );
-      expect(toastStore.success).not.toHaveBeenCalled();
-    });
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        expect.stringContaining(`/email-configs/${ENABLED_UUID}/test`)
+      )
+    );
+    expect(toastStore.success).toHaveBeenCalledWith('Corp M365: ok');
+  });
 
-    it('offers no test when nothing is designated', async () => {
-      await renderPanel(designation());
-      expect(screen.queryByTestId('auth-mail-test')).toBeNull();
-    });
+  it('reports a failed connection as an error, not a success', async () => {
+    await renderPanel(ACTIVE());
+    post.mockResolvedValue({ data: { success: false, message: 'Connection failed' } } as never);
+
+    await fireEvent.click(screen.getByTestId('auth-mail-test'));
+
+    await waitFor(() =>
+      expect(toastStore.error).toHaveBeenCalledWith('Corp M365: Connection failed', 6000)
+    );
+    expect(toastStore.success).not.toHaveBeenCalled();
+  });
+
+  it('offers no test when nothing is designated', async () => {
+    await renderPanel(designation());
+    expect(screen.queryByTestId('auth-mail-test')).toBeNull();
   });
 });

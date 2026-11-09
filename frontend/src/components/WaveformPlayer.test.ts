@@ -320,7 +320,9 @@ describe('click-to-seek', () => {
     await rerender({ fileId: 'f1', duration: 120 });
     expect(onSeek).not.toHaveBeenCalled();
   });
+});
 
+describe('click-to-seek: real pointer sequences', () => {
   it('dispatches exactly ONE seek for a real mouse click (mousedown + click)', async () => {
     // DEFECT THIS CATCHES (issue #645): the canvas had on:click AND on:mousedown
     // and both seeked, so every click on the waveform issued two identical seeks

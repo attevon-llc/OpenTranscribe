@@ -103,11 +103,12 @@ const EXEMPT: Record<string, string> = {
   'lib/users/rowPermissions':
     'Pure functions with no state of any kind. The detector matched the `resetPassword` / ' +
     '`resetMfa` keys of the RowActions flags object (which actions a row offers).',
-  'lib/users/accountActions':
+  'lib/users/accountSessionActions':
     'Pure factory: the only state (`pendingUuid`, the row with an action in flight) is a ' +
-    'store created per createAccountActions() call. UserManagementTable makes one per mount ' +
-    'and it is discarded with the component, so nothing outlives the session. The detector ' +
-    'matched the `resetUserMFA` action name, which is an HTTP POST, not a teardown API.',
+    'store created per createAccountActions() call and handed in. UserManagementTable makes ' +
+    'one per mount and it is discarded with the component, so nothing outlives the session. ' +
+    'The detector matched the `resetUserMFA` action name, which is an HTTP POST, not a ' +
+    'teardown API.',
   'lib/users/invitationsController':
     'Pure factory: the invitation list, form and flags are stores created per ' +
     'createInvitationsController() call, one per UserManagementTable mount, discarded with ' +
@@ -161,6 +162,14 @@ const EXEMPT: Record<string, string> = {
   'lib/fileDetail/segmentEdit':
     'clearProcessedVideoCache() is an HTTP DELETE of the server’s processed-video cache, not ' +
     'module state; the module holds no state of its own (editor state is the page’s).',
+  'lib/fileDetail/speakerBulkSave':
+    'Stateless: performBulkSave() is a plain async function over the page context it is ' +
+    'handed. The detector matched its clearProcessedVideoCache() call, an HTTP DELETE of the ' +
+    'server’s processed-video cache, not module state.',
+  'lib/chat/streamActions':
+    'Per-store factory: the stream bookkeeping (AbortController, pending context) lives in ' +
+    'the ChatSession that stores/chat creates, and chatStore.reset(), which IS registered, ' +
+    'aborts and clears it. The detector matched `reset: false`, a SvelteKit goto() option.',
   'lib/fileDetail/speakerSave':
     'createSpeakerSaveFlow() is a FACTORY: the profile-decision queue and bulk decisions live ' +
     'in its closure, one per file-detail page mount, and die with the page. resetBulkState() ' +

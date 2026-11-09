@@ -24,6 +24,38 @@ export interface PyannoteCredentialView {
   warningKey: string | null;
 }
 
+const BADGE_SUFFIX: Record<PyannoteBadge, string> = {
+  locked: 'statusLocked',
+  notConfigured: 'statusNotConfigured',
+  configured: 'statusConfigured',
+  verified: 'statusVerified',
+  failed: 'statusFailed',
+};
+
+function badgeFor(
+  status: PyannoteCredentialStatus | null,
+  locked: boolean,
+  configured: boolean
+): PyannoteBadge {
+  if (locked) return 'locked';
+  if (!configured) return 'notConfigured';
+  if (status?.test_status === 'success') return 'verified';
+  return status?.test_status === 'failed' ? 'failed' : 'configured';
+}
+
+function warningKeyFor(
+  status: PyannoteCredentialStatus | null,
+  locked: boolean,
+  configured: boolean,
+  diarizationSource: string
+): string | null {
+  if (locked) return `${KEY_PREFIX}.lockedHint`;
+  if (status !== null && diarizationSource === 'pyannote' && !configured) {
+    return `${KEY_PREFIX}.missingWarning`;
+  }
+  return null;
+}
+
 /**
  * @param status the server's status, or null while it is loading or after a failed load
  * @param diarizationSource the user's current speaker-detection source
@@ -35,29 +67,12 @@ export function pyannoteCredentialView(
   const locked = status?.locked === true;
   const configured = status?.configured === true;
 
-  let badge: PyannoteBadge;
-  if (locked) badge = 'locked';
-  else if (!configured) badge = 'notConfigured';
-  else if (status?.test_status === 'success') badge = 'verified';
-  else if (status?.test_status === 'failed') badge = 'failed';
-  else badge = 'configured';
-
-  const badgeSuffix: Record<PyannoteBadge, string> = {
-    locked: 'statusLocked',
-    notConfigured: 'statusNotConfigured',
-    configured: 'statusConfigured',
-    verified: 'statusVerified',
-    failed: 'statusFailed',
-  };
-
-  let warningKey: string | null = null;
-  if (locked) warningKey = `${KEY_PREFIX}.lockedHint`;
-  else if (status !== null && diarizationSource === 'pyannote' && !configured)
-    warningKey = `${KEY_PREFIX}.missingWarning`;
+  const badge = badgeFor(status, locked, configured);
+  const warningKey = warningKeyFor(status, locked, configured, diarizationSource);
 
   return {
     badge,
-    badgeKey: `${KEY_PREFIX}.${badgeSuffix[badge]}`,
+    badgeKey: `${KEY_PREFIX}.${BADGE_SUFFIX[badge]}`,
     canSave: status !== null && !locked,
     saveLabelKey: `${KEY_PREFIX}.${configured ? 'replace' : 'save'}`,
     // Removing your own secret is allowed even when the deployment locks the source.

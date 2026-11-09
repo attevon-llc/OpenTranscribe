@@ -115,117 +115,119 @@ export interface ProgressFields {
   };
 }
 
+function progressIdFor(type: string, data: ProgressFrameData): string {
+  if (type in ADMIN_TASK_PROGRESS_IDS) return ADMIN_TASK_PROGRESS_IDS[type];
+  if (type === 'playlist_processing_status') {
+    return `playlist_processing_${data.playlist_id || 'unknown'}`;
+  }
+  return `${type}_${data.file_id}`;
+}
+
+// Admin completion types map to 'completed'
+function statusFor(type: string, data: ProgressFrameData): string {
+  if (ADMIN_COMPLETION_TYPES.has(type)) return 'completed';
+  if (type in ADMIN_TASK_PROGRESS_IDS) return 'processing';
+  return data.status || 'processing';
+}
+
+// "processed N / M files" wording shared by the migration task families.
+function processedStep(data: ProgressFrameData, completed: boolean, translate: Translate): string {
+  const count = data.processed_files ?? 0;
+  const total = data.total_files ?? 0;
+  return completed
+    ? translate('notifications.progress.processedComplete', { count })
+    : translate('notifications.progress.processedProgress', { count, total });
+}
+
+type StepBuilder = (data: ProgressFrameData, completed: boolean, translate: Translate) => string;
+
+// Step text for admin tasks whose frames carry no message, keyed by task-type prefix.
+const ADMIN_STEP_BUILDERS: ReadonlyArray<readonly [string, StepBuilder]> = [
+  [
+    'reindex',
+    (data, completed, translate) => {
+      const count = data.indexed_files ?? data.stats?.indexed_files ?? 0;
+      const total = data.total_files ?? data.stats?.total_files ?? 0;
+      return completed
+        ? translate('notifications.progress.indexedComplete', { count })
+        : translate('notifications.progress.indexedProgress', { count, total });
+    },
+  ],
+  ['migration', processedStep],
+  [
+    'clustering',
+    (data, completed, translate) => {
+      const step = data.step ?? 0;
+      const total = data.total_steps ?? 0;
+      return completed
+        ? translate('notifications.progress.clusteringComplete')
+        : translate('notifications.progress.clusteringStep', { step, total });
+    },
+  ],
+  ['attribute_migration', processedStep],
+  [
+    'data_integrity',
+    (data, completed, translate) => {
+      const count = data.processed_files ?? data.processed ?? 0;
+      const total = data.total_files ?? data.total ?? 0;
+      return completed
+        ? translate('notifications.progress.checkedComplete', { count })
+        : translate('notifications.progress.checkedProgress', { count, total });
+    },
+  ],
+  [
+    'embedding_consistency',
+    (data, completed, translate) => {
+      const count = data.processed_files ?? 0;
+      const total = data.total_files ?? 0;
+      return completed
+        ? translate('notifications.progress.repairedComplete', { count: data.repaired ?? 0 })
+        : translate('notifications.progress.repairingProgress', { count, total });
+    },
+  ],
+];
+
+function currentStepFor(
+  type: string,
+  data: ProgressFrameData,
+  status: string,
+  translate: Translate
+): string {
+  const given = llmBudgetMessage(data, translate) || data.message || '';
+  if (given) return given;
+  if (type in ADMIN_TASK_PROGRESS_IDS) {
+    const builder = ADMIN_STEP_BUILDERS.find(([prefix]) => type.startsWith(prefix));
+    const synthesized = builder?.[1](data, status === 'completed', translate);
+    if (synthesized) return synthesized;
+  }
+  return translate('notifications.progress.processing');
+}
+
 /** The card fields of a frame `frameKind` filed as `progress`. */
 export function progressFields(
   type: string,
   data: ProgressFrameData,
   translate: Translate
 ): ProgressFields {
-  const isAdminProgressType = type in ADMIN_TASK_PROGRESS_IDS;
-
-  // Determine progressId
-  let progressId: string;
-  if (isAdminProgressType) {
-    progressId = ADMIN_TASK_PROGRESS_IDS[type];
-  } else if (type === 'playlist_processing_status') {
-    progressId = `playlist_processing_${data.playlist_id || 'unknown'}`;
-  } else {
-    progressId = `${type}_${data.file_id}`;
-  }
-
-  // Determine status — admin completion types map to 'completed'
-  let status: string;
-  if (ADMIN_COMPLETION_TYPES.has(type)) {
-    status = 'completed';
-  } else if (isAdminProgressType) {
-    status = 'processing';
-  } else {
-    status = data.status || 'processing';
-  }
-
-  // Synthesize message for admin tasks that don't have one
-  let currentStep = llmBudgetMessage(data, translate) || data.message || '';
-  if (!currentStep && isAdminProgressType) {
-    if (type.startsWith('reindex')) {
-      const idx = data.indexed_files ?? data.stats?.indexed_files ?? 0;
-      const tot = data.total_files ?? data.stats?.total_files ?? 0;
-      currentStep =
-        status === 'completed'
-          ? translate('notifications.progress.indexedComplete', { count: idx })
-          : translate('notifications.progress.indexedProgress', {
-              count: idx,
-              total: tot,
-            });
-    } else if (type.startsWith('migration')) {
-      const proc = data.processed_files ?? 0;
-      const tot = data.total_files ?? 0;
-      currentStep =
-        status === 'completed'
-          ? translate('notifications.progress.processedComplete', { count: proc })
-          : translate('notifications.progress.processedProgress', {
-              count: proc,
-              total: tot,
-            });
-    } else if (type.startsWith('clustering')) {
-      const step = data.step ?? 0;
-      const tot = data.total_steps ?? 0;
-      currentStep =
-        status === 'completed'
-          ? translate('notifications.progress.clusteringComplete')
-          : translate('notifications.progress.clusteringStep', { step, total: tot });
-    } else if (type.startsWith('attribute_migration')) {
-      const proc = data.processed_files ?? 0;
-      const tot = data.total_files ?? 0;
-      currentStep =
-        status === 'completed'
-          ? translate('notifications.progress.processedComplete', { count: proc })
-          : translate('notifications.progress.processedProgress', {
-              count: proc,
-              total: tot,
-            });
-    } else if (type.startsWith('data_integrity')) {
-      const proc = data.processed_files ?? data.processed ?? 0;
-      const tot = data.total_files ?? data.total ?? 0;
-      currentStep =
-        status === 'completed'
-          ? translate('notifications.progress.checkedComplete', { count: proc })
-          : translate('notifications.progress.checkedProgress', {
-              count: proc,
-              total: tot,
-            });
-    } else if (type.startsWith('embedding_consistency')) {
-      const proc = data.processed_files ?? 0;
-      const tot = data.total_files ?? 0;
-      currentStep =
-        status === 'completed'
-          ? translate('notifications.progress.repairedComplete', {
-              count: data.repaired ?? 0,
-            })
-          : translate('notifications.progress.repairingProgress', {
-              count: proc,
-              total: tot,
-            });
-    }
-  }
-  if (!currentStep) currentStep = translate('notifications.progress.processing');
+  const status = statusFor(type, data);
 
   // Normalize progress: admin tasks send 0.0-1.0, others send 0-100
   let rawProgress = data.progress || 0;
-  if (isAdminProgressType && rawProgress <= 1 && rawProgress > 0) {
+  if (type in ADMIN_TASK_PROGRESS_IDS && rawProgress <= 1 && rawProgress > 0) {
     rawProgress = rawProgress * 100;
   }
 
-  // Read ETA from data
   const etaRaw = data.eta_seconds ?? null;
-  const etaDisplay = formatEtaSeconds(etaRaw);
-
-  const progress = {
-    current: Math.floor(rawProgress),
-    total: 100,
-    percentage: Math.round(rawProgress),
-    etaSeconds: etaRaw,
-    etaDisplay,
+  return {
+    progressId: progressIdFor(type, data),
+    status,
+    currentStep: currentStepFor(type, data, status, translate),
+    progress: {
+      current: Math.floor(rawProgress),
+      total: 100,
+      percentage: Math.round(rawProgress),
+      etaSeconds: etaRaw,
+      etaDisplay: formatEtaSeconds(etaRaw),
+    },
   };
-
-  return { progressId, status, currentStep, progress };
 }

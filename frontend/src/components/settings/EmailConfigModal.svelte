@@ -4,6 +4,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { buildEmailConfigPayload } from '$lib/settings/emailConfigPayload';
   import {
     createEmailConfig,
     updateEmailConfig,
@@ -77,31 +78,8 @@
     return false;
   })();
 
-  function buildPayload(): any {
-    const p: any = {
-      name: form.name.trim(),
-      is_enabled: form.is_enabled,
-      from_address: form.from_address.trim(),
-      default_recipients: form.default_recipients?.trim() || null,
-    };
-    if (form.provider === 'smtp') {
-      p.smtp_host = form.smtp_host.trim();
-      p.smtp_port = Number(form.smtp_port);
-      p.smtp_use_tls = form.smtp_use_tls;
-      p.smtp_username = form.smtp_username?.trim() || null;
-      if (form.smtp_password?.trim()) p.smtp_password = form.smtp_password.trim();
-    } else if (form.provider === 'm365') {
-      p.m365_tenant_id = form.m365_tenant_id.trim();
-      p.m365_client_id = form.m365_client_id.trim();
-      if (form.m365_client_secret?.trim()) p.m365_client_secret = form.m365_client_secret.trim();
-    } else if (form.provider === 'exchange') {
-      p.exchange_server = form.exchange_server.trim();
-      p.exchange_domain = form.exchange_domain?.trim() || null;
-      p.exchange_username = form.exchange_username?.trim() || null;
-      p.smtp_port = Number(form.smtp_port);
-      if (form.exchange_password?.trim()) p.exchange_password = form.exchange_password.trim();
-    }
-    return p;
+  function buildPayload() {
+    return buildEmailConfigPayload(form);
   }
 
   async function handleSave() {

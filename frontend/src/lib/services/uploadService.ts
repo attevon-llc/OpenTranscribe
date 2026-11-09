@@ -38,6 +38,29 @@ import { processUrl } from './upload/urlIngest';
 
 export type { UploadEvent, UploadItem, UploadTranscriptionParams };
 
+// The `/files/prepare` body for an extracted-audio upload: the blob's own size and type, the
+// SOURCE video's fingerprint, and the extracted-from-video metadata the backend records.
+function extractedPrepareBody(
+  upload: UploadItem,
+  audioBlob: Blob,
+  contentType: string,
+  sourceFingerprint: string | null,
+  extractionMetadata: ExtractedAudioMetadata | undefined
+) {
+  return {
+    filename: upload.name,
+    file_size: audioBlob.size,
+    content_type: contentType,
+    file_hash: sourceFingerprint,
+    extracted_from_video: extractionMetadata?.videoMetadata || null,
+    collection_ids: upload.collectionIds || undefined,
+    tag_names: upload.tagNames || undefined,
+    whisper_model: upload.whisperModel || undefined,
+    voiceprint_consent: upload.voiceprintConsent || undefined,
+    use_presigned: true,
+  };
+}
+
 class UploadService {
   private uploads: Map<string, UploadItem> = new Map();
   private eventListeners: ((event: UploadEvent) => void)[] = [];
@@ -457,18 +480,10 @@ class UploadService {
     // Step 1: Prepare — presigned direct-to-MinIO first (same ingress path as
     // regular uploads), carrying the extracted-from-video metadata so the
     // backend records the source video details.
-    const prepareResponse = await axiosInstance.post('/files/prepare', {
-      filename: upload.name,
-      file_size: audioBlob.size,
-      content_type: contentType,
-      file_hash: sourceFingerprint,
-      extracted_from_video: extractionMetadata?.videoMetadata || null,
-      collection_ids: upload.collectionIds || undefined,
-      tag_names: upload.tagNames || undefined,
-      whisper_model: upload.whisperModel || undefined,
-      voiceprint_consent: upload.voiceprintConsent || undefined,
-      use_presigned: true,
-    });
+    const prepareResponse = await axiosInstance.post(
+      '/files/prepare',
+      extractedPrepareBody(upload, audioBlob, contentType, sourceFingerprint, extractionMetadata)
+    );
 
     const {
       file_id: fileId,

@@ -27,6 +27,7 @@
     resetStoreFilters
   } from '$lib/mediaSearch/searchParams';
   import { openPreviewMedia, speakerAtTime } from '$lib/mediaSearch/previewMedia';
+  import { dateRangeFromStore, searchRestoreAction } from '$lib/mediaSearch/restoreState';
   import { watchPanelViewport } from '$lib/mediaSearch/viewport';
   import CardGridSkeleton from '$components/ui/CardGridSkeleton.svelte';
 
@@ -188,33 +189,33 @@
     filterSelectedCollectionId = $searchStore.selectedCollectionId;
     filterSelectedLanguage = $searchStore.selectedLanguage;
     filterDurationRange = { ...$searchStore.durationRange };
-    if ($searchStore.dateFrom || $searchStore.dateTo) {
-      filterDateRange = {
-        from: $searchStore.dateFrom ? new Date($searchStore.dateFrom + 'T00:00:00') : null,
-        to: $searchStore.dateTo ? new Date($searchStore.dateTo + 'T00:00:00') : null,
-      };
-    }
+    const restoredDates = dateRangeFromStore($searchStore.dateFrom, $searchStore.dateTo);
+    if (restoredDates) filterDateRange = restoredDates;
 
-    if (restoredQuery) {
-      // D3: Check if we can reuse cached results
-      const currentParams = buildSearchParamsString(restoredQuery, urlPage);
-      if ($searchStore.lastSearchParams === currentParams && $searchStore.results.length > 0) {
-        // Results match - skip API call
-        searchInput = restoredQuery;
-
-        // Restore scroll position
-        if ($searchStore.scrollPosition > 0) {
-          requestAnimationFrame(() => {
-            const scrollable = document.querySelector('.scrollable-content');
-            if (scrollable) scrollable.scrollTop = $searchStore.scrollPosition;
-          });
-        }
-      } else if ($searchStore.results.length > 0 && $searchStore.query === restoredQuery) {
-        // Store has matching results even if params string differs (e.g. back navigation)
-        searchInput = restoredQuery;
-      } else {
-        performSearch(restoredQuery, urlPage);
+    // D3: reuse cached results when they are the ones this URL asks for
+    const restore = searchRestoreAction(
+      restoredQuery,
+      buildSearchParamsString(restoredQuery, urlPage),
+      {
+        lastSearchParams: $searchStore.lastSearchParams,
+        resultsLength: $searchStore.results.length,
+        query: $searchStore.query
       }
+    );
+    if (restore === 'reuse-cached') {
+      // Results match - skip API call and restore scroll position
+      searchInput = restoredQuery;
+      if ($searchStore.scrollPosition > 0) {
+        requestAnimationFrame(() => {
+          const scrollable = document.querySelector('.scrollable-content');
+          if (scrollable) scrollable.scrollTop = $searchStore.scrollPosition;
+        });
+      }
+    } else if (restore === 'keep-results') {
+      // Store has matching results even if params string differs (e.g. back navigation)
+      searchInput = restoredQuery;
+    } else if (restore === 'search') {
+      performSearch(restoredQuery, urlPage);
     }
 
     // The search results are restored from the store (above), but the preview

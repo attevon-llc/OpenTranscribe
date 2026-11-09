@@ -117,7 +117,9 @@ describe('createSseParser', () => {
 
     expect(events).toEqual([{ type: 'delta', text: 'known' }]);
   });
+});
 
+describe('createSseParser: frame vocabulary', () => {
   it('parses the full frame vocabulary', () => {
     const { events, onEvent } = collect();
     const parser = createSseParser(onEvent);
@@ -287,7 +289,9 @@ describe('streamChatMessage', () => {
 
     vi.unstubAllGlobals();
   });
+});
 
+describe('streamChatMessage: error mapping', () => {
   it('maps HTTP failures to typed error events', async () => {
     const { streamChatMessage } = await import('./chatStream');
 

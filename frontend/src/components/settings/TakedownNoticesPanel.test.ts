@@ -63,21 +63,21 @@ const notice = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-describe('TakedownNoticesPanel', () => {
-  // The list and the per-notice read share one mock, answered by path.
-  function serve(listed: unknown[], detail?: (uuid: string) => unknown) {
-    get.mockImplementation(async (path: string) => {
-      const match = /^\/admin\/takedown-notices\/([^/]+)$/.exec(path);
-      if (match) return { data: detail ? detail(match[1]) : listed[0] } as never;
-      return { data: { notices: listed, total: listed.length } } as never;
-    });
-  }
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    serve([notice()]);
+// The list and the per-notice read share one mock, answered by path.
+function serve(listed: unknown[], detail?: (uuid: string) => unknown) {
+  get.mockImplementation(async (path: string) => {
+    const match = /^\/admin\/takedown-notices\/([^/]+)$/.exec(path);
+    if (match) return { data: detail ? detail(match[1]) : listed[0] } as never;
+    return { data: { notices: listed, total: listed.length } } as never;
   });
+}
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  serve([notice()]);
+});
+
+describe('TakedownNoticesPanel', () => {
   it('re-reads a notice when it is opened, so a stale list cannot show a released file as open', async () => {
     serve([notice()], () =>
       notice({ links: [link({ status: 'released', outcome_at: '2026-10-05T00:00:00Z' })] })
@@ -124,7 +124,9 @@ describe('TakedownNoticesPanel', () => {
     await waitFor(() => expect(screen.getByText('Counter-notice received')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Record counter-notice' })).toBeNull();
   });
+});
 
+describe('TakedownNoticesPanel: outcomes, notify and the form', () => {
   it('offers no outcome action for a released file or a purged one', async () => {
     serve([
       notice({
@@ -199,7 +201,9 @@ describe('TakedownNoticesPanel', () => {
       })
     );
   });
+});
 
+describe('TakedownNoticesPanel: recording a notice', () => {
   it('records a new notice from the form, which is invalid until reference and basis exist', async () => {
     post.mockResolvedValue({ data: notice({ links: [] }) } as never);
     const { container } = render(TakedownNoticesPanel);
@@ -231,87 +235,85 @@ describe('TakedownNoticesPanel', () => {
     render(TakedownNoticesPanel);
     await waitFor(() => expect(screen.getByText('No notices recorded')).toBeInTheDocument());
   });
+});
 
-  describe('Add notice form', () => {
-    it('has a Cancel that closes the form and discards what was typed', async () => {
-      const { container } = render(TakedownNoticesPanel);
-      await waitFor(() => expect(screen.getByText('CASE-42')).toBeInTheDocument());
+describe('Add notice form', () => {
+  it('has a Cancel that closes the form and discards what was typed', async () => {
+    const { container } = render(TakedownNoticesPanel);
+    await waitFor(() => expect(screen.getByText('CASE-42')).toBeInTheDocument());
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Record a notice' }));
-      await fireEvent.input(container.querySelector('#panel-notice-reference')!, {
-        target: { value: 'CASE-9' },
-      });
-      const form = container.querySelector('form.record-form') as HTMLElement;
-      await fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
-
-      expect(container.querySelector('form.record-form')).toBeNull();
-      expect(post).not.toHaveBeenCalled();
-      // Re-opening starts blank, and the toolbar button reads as the opener again.
-      await fireEvent.click(screen.getByRole('button', { name: 'Record a notice' }));
-      expect((container.querySelector('#panel-notice-reference') as HTMLInputElement).value).toBe(
-        ''
-      );
+    await fireEvent.click(screen.getByRole('button', { name: 'Record a notice' }));
+    await fireEvent.input(container.querySelector('#panel-notice-reference')!, {
+      target: { value: 'CASE-9' },
     });
+    const form = container.querySelector('form.record-form') as HTMLElement;
+    await fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
 
-    it('turns the toolbar button into Cancel while open, like Add user', async () => {
-      const { container } = render(TakedownNoticesPanel);
-      await waitFor(() => expect(screen.getByText('CASE-42')).toBeInTheDocument());
-
-      await fireEvent.click(screen.getByRole('button', { name: 'Record a notice' }));
-      const toolbar = container.querySelector('.toolbar') as HTMLElement;
-      await fireEvent.click(within(toolbar).getByRole('button', { name: 'Cancel' }));
-
-      expect(container.querySelector('form.record-form')).toBeNull();
-    });
+    expect(container.querySelector('form.record-form')).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+    // Re-opening starts blank, and the toolbar button reads as the opener again.
+    await fireEvent.click(screen.getByRole('button', { name: 'Record a notice' }));
+    expect((container.querySelector('#panel-notice-reference') as HTMLInputElement).value).toBe('');
   });
 
-  describe('Export', () => {
-    function stubDownload() {
-      vi.stubGlobal('URL', {
-        ...URL,
-        createObjectURL: vi.fn(() => 'blob:x'),
-        revokeObjectURL: vi.fn(),
-      });
-      return vi.spyOn(TakedownNoticesApi, 'export').mockResolvedValue({
-        blob: new Blob(['x']),
-        filename: 'notices',
-        truncated: false,
-      } as never);
-    }
+  it('turns the toolbar button into Cancel while open, like Add user', async () => {
+    const { container } = render(TakedownNoticesPanel);
+    await waitFor(() => expect(screen.getByText('CASE-42')).toBeInTheDocument());
 
-    it('is one Export button, not separate CSV and JSON buttons', async () => {
-      render(TakedownNoticesPanel);
-      await waitFor(() => expect(screen.getByText('CASE-42')).toBeInTheDocument());
+    await fireEvent.click(screen.getByRole('button', { name: 'Record a notice' }));
+    const toolbar = container.querySelector('.toolbar') as HTMLElement;
+    await fireEvent.click(within(toolbar).getByRole('button', { name: 'Cancel' }));
 
-      expect(screen.getByRole('button', { name: /Export/ })).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Export JSON' })).toBeNull();
+    expect(container.querySelector('form.record-form')).toBeNull();
+  });
+});
+
+describe('Export', () => {
+  function stubDownload() {
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:x'),
+      revokeObjectURL: vi.fn(),
     });
+    return vi.spyOn(TakedownNoticesApi, 'export').mockResolvedValue({
+      blob: new Blob(['x']),
+      filename: 'notices',
+      truncated: false,
+    } as never);
+  }
 
-    it('is disabled with an explanation when there are no notices', async () => {
-      serve([]);
-      render(TakedownNoticesPanel);
-      await waitFor(() => expect(screen.getByText('No notices recorded')).toBeInTheDocument());
+  it('is one Export button, not separate CSV and JSON buttons', async () => {
+    render(TakedownNoticesPanel);
+    await waitFor(() => expect(screen.getByText('CASE-42')).toBeInTheDocument());
 
-      const button = screen.getByRole('button', { name: /Export/ }) as HTMLButtonElement;
-      expect(button.disabled).toBe(true);
-      expect(button.title).toBe('There are no notices to export yet.');
-    });
+    expect(screen.getByRole('button', { name: /Export/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Export JSON' })).toBeNull();
+  });
 
-    it('exports the format chosen from the menu', async () => {
-      const exporter = stubDownload();
-      render(TakedownNoticesPanel);
-      await waitFor(() => expect(screen.getByText('CASE-42')).toBeInTheDocument());
+  it('is disabled with an explanation when there are no notices', async () => {
+    serve([]);
+    render(TakedownNoticesPanel);
+    await waitFor(() => expect(screen.getByText('No notices recorded')).toBeInTheDocument());
 
-      await fireEvent.click(screen.getByRole('button', { name: /Export/ }));
-      await fireEvent.click(await screen.findByRole('menuitem', { name: 'JSON' }));
-      await waitFor(() => expect(exporter).toHaveBeenCalledWith('json'));
+    const button = screen.getByRole('button', { name: /Export/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe('There are no notices to export yet.');
+  });
 
-      await fireEvent.click(screen.getByRole('button', { name: /Export/ }));
-      await fireEvent.click(await screen.findByRole('menuitem', { name: 'CSV' }));
-      await waitFor(() => expect(exporter).toHaveBeenLastCalledWith('csv'));
-      expect(exporter).toHaveBeenCalledTimes(2);
-      vi.unstubAllGlobals();
-    });
+  it('exports the format chosen from the menu', async () => {
+    const exporter = stubDownload();
+    render(TakedownNoticesPanel);
+    await waitFor(() => expect(screen.getByText('CASE-42')).toBeInTheDocument());
+
+    await fireEvent.click(screen.getByRole('button', { name: /Export/ }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'JSON' }));
+    await waitFor(() => expect(exporter).toHaveBeenCalledWith('json'));
+
+    await fireEvent.click(screen.getByRole('button', { name: /Export/ }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'CSV' }));
+    await waitFor(() => expect(exporter).toHaveBeenLastCalledWith('csv'));
+    expect(exporter).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
   });
 });

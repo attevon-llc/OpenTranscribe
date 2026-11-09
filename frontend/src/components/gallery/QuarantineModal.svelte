@@ -10,7 +10,7 @@
    * significant action and ordering matters in an audit log.
    *
    * §B.2's corollary — this modal is deliberately narrow and cannot reach a
-   * GDPR erasure path: it calls only `AdminApi.quarantineFile`, names no user
+   * GDPR erasure path: it calls only `AdminApi.quarantineFile` (through `$lib/gallery/quarantineBatch`), names no user
    * (only files), and offers no destination beyond quarantine + an optional
    * legal hold. See `admin.gdpr.absence.test.ts` for the standing guard.
    *
@@ -28,8 +28,7 @@
   import BaseModal from '$components/ui/BaseModal.svelte';
   import FileSearchPicker from '$components/ui/FileSearchPicker.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import { AdminApi } from '$lib/api/admin';
-  import { mediaRevocationIncomplete } from '$lib/takedownRevocation';
+  import { quarantineFiles } from '$lib/gallery/quarantineBatch';
   import { TakedownNoticesApi } from '$lib/api/takedownNotices';
   import TakedownBasisPicker from '$components/takedown/TakedownBasisPicker.svelte';
   import { emptyBasis, isBasisValid, toNewNotice } from '$lib/takedownBasis';
@@ -121,29 +120,13 @@
       ? { noticeUuid }
       : { operatorActionReason: basis.operatorReason.trim() };
 
-    const succeededUuids: string[] = [];
-    let failedCount = 0;
-    // Taken down, but storage refused to revoke links already handed out (the server says so
-    // in `media_revocation`); never counted as a clean success.
-    let unrevokedCount = 0;
-
     // Sequential, deliberately — see the module docstring.
-    for (const file of files) {
-      try {
-        const result = await AdminApi.quarantineFile(
-          file.uuid,
-          reasonTrimmed,
-          legalHold,
-          takedownBasis
-        );
-        succeededUuids.push(file.uuid);
-        if (mediaRevocationIncomplete(result)) unrevokedCount += 1;
-      } catch (err) {
-        failedCount += 1;
-        // One failed file must not read as a failed batch: log it and carry on.
-        console.error(`Quarantine failed for ${file.uuid}:`, getErrorMessage(err));
-      }
-    }
+    const { succeededUuids, failedCount, unrevokedCount } = await quarantineFiles(
+      files,
+      reasonTrimmed,
+      legalHold,
+      takedownBasis
+    );
 
     submitting = false;
 

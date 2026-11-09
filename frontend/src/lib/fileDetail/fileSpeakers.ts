@@ -12,7 +12,8 @@ import { redactParams } from './segmentPaging';
 import type { SegmentBearingFile } from './segmentSync';
 import { listenForSpeakerEvents } from './speakerEvents';
 import { createSpeakerLoader } from './speakerLoader';
-import { createSpeakerSaveFlow, type SpeakerSaveContext } from './speakerSave';
+import { createSpeakerSaveFlow } from './speakerSave';
+import type { SpeakerSaveContext } from './speakerSaveContext';
 
 export interface FileSpeakersContext extends Omit<SpeakerSaveContext, 'loadSpeakers'> {
   getFileId: () => string;

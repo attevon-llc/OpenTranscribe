@@ -32,8 +32,8 @@ def _record(result: str) -> None:
         from app.core.metrics import cache_operations_total
 
         cache_operations_total.labels(cache="redis", result=result).inc()
-    except Exception:  # noqa: S110 - metrics must never break caching  # nosec B110
-        pass  # pragma: no cover
+    except Exception:  # metrics must never break caching
+        logger.debug("cache metric not recorded", exc_info=True)  # pragma: no cover
 
 
 # Default TTLs in seconds
@@ -117,6 +117,7 @@ class RedisCacheService:
                 "Redis cache unavailable, caching disabled for %.0fs: %s",
                 _UNAVAILABLE_COOLDOWN_SECONDS,
                 e,
+                exc_info=True,
             )
         return self._redis
 
@@ -135,7 +136,7 @@ class RedisCacheService:
                 _record("hit")
                 return json.loads(raw)
         except Exception as e:
-            logger.debug(f"Cache GET error for {key}: {e}")
+            logger.debug(f"Cache GET error for {key}: {e}", exc_info=True)
         _record("miss")
         return None
 
@@ -147,7 +148,7 @@ class RedisCacheService:
         try:
             client.setex(key, ttl, json.dumps(value, default=str))
         except Exception as e:
-            logger.debug(f"Cache SET error for {key}: {e}")
+            logger.debug(f"Cache SET error for {key}: {e}", exc_info=True)
 
     def delete_pattern(self, pattern: str) -> int:
         """Delete every key matching a Redis glob pattern.
@@ -181,7 +182,7 @@ class RedisCacheService:
         except Exception as e:
             # Fakes and some transports raise builtin OSError subclasses, not
             # RedisError; any failure here must leave the caller's write intact.
-            logger.debug(f"Cache DELETE error for {pattern}: {e}")
+            logger.warning(f"Cache DELETE error for {pattern}: {e}", exc_info=True)
             return 0
 
     # ------------------------------------------------------------------
@@ -257,7 +258,7 @@ class RedisCacheService:
             notify_client.publish("websocket_notifications", notification)
             notify_client.close()
         except Exception as e:
-            logger.debug(f"Cache invalidation push error: {e}")
+            logger.debug(f"Cache invalidation push error: {e}", exc_info=True)
 
 
 # Module-level singleton

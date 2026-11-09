@@ -140,7 +140,7 @@ class TaskRecoveryRetryMixin:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to schedule retry for file {media_file_id}: {e}")
+            logger.exception(f"Failed to schedule retry for file {media_file_id}: {e}")
             return False
 
     def recover_user_files(self, db: Session, problem_files: list[MediaFile]) -> dict[str, int]:
@@ -224,7 +224,7 @@ class TaskRecoveryRetryMixin:
                         stats["tasks_retried"] += 1
 
             except Exception as e:
-                logger.error(f"Error recovering file {media_file.id}: {e}")
+                logger.exception(f"Error recovering file {media_file.id}: {e}")
 
         return stats
 
@@ -267,7 +267,7 @@ class TaskRecoveryRetryMixin:
                     logger.info(f"Scheduled download retry for file {media_file.id}")
 
             except Exception as e:
-                logger.error(f"Error recovering stuck download for file {media_file.id}: {e}")
+                logger.exception(f"Error recovering stuck download for file {media_file.id}: {e}")
                 db.rollback()
 
         return stats
@@ -345,7 +345,8 @@ class TaskRecoveryRetryMixin:
                         )
                     except Exception as e:
                         logger.warning(
-                            f"Failed to send notification for OOM retry {media_file.id}: {e}"
+                            f"Failed to send notification for OOM retry {media_file.id}: {e}",
+                            exc_info=True,
                         )
 
                     logger.info(
@@ -356,7 +357,7 @@ class TaskRecoveryRetryMixin:
                     logger.error(f"Failed to schedule OOM retry for file {media_file.id}")
 
             except Exception as e:
-                logger.error(f"Error recovering OOM file {media_file.id}: {e}")
+                logger.exception(f"Error recovering OOM file {media_file.id}: {e}")
 
         return stats
 
@@ -418,7 +419,7 @@ class TaskRecoveryRetryMixin:
 
             except Exception as e:
                 stats["files_failed"] += 1
-                logger.error(f"Error recovering ERROR file {media_file.id}: {e}")
+                logger.exception(f"Error recovering ERROR file {media_file.id}: {e}")
 
         return stats
 
@@ -451,7 +452,7 @@ class TaskRecoveryRetryMixin:
                 stats["files_marked_error"] += 1
 
             except Exception as e:
-                logger.error(f"Error marking stuck PENDING file {media_file.id} as ERROR: {e}")
+                logger.exception(f"Error marking stuck PENDING file {media_file.id} as ERROR: {e}")
                 db.rollback()
 
         if stats["files_marked_error"] > 0:

@@ -398,7 +398,7 @@ def on_tags_changed(
             redis_cache.invalidate_tags(uid)
             redis_cache.invalidate_user_files(uid)
     except Exception as e:
-        logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
+        logger.debug(f"Tag cache invalidation failed (non-critical): {e}", exc_info=True)
 
     if affected:
         try:
@@ -407,5 +407,7 @@ def on_tags_changed(
 
             search_file_field_tasks.update_file_tags_index.delay(affected)
         except Exception as e:
-            logger.warning(f"Could not enqueue the tag reindex for {len(affected)} files: {e}")
+            logger.warning(
+                f"Could not enqueue the tag reindex for {len(affected)} files: {e}", exc_info=True
+            )
     return affected

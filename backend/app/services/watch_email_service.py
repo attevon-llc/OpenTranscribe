@@ -93,7 +93,7 @@ def send_email(
             return _send_m365(config, recipients, subject, html_body, text_body)
         return False, f"Unknown email provider: {config.provider}"
     except Exception as e:
-        logger.error("Email send failed (%s): %s", config.provider, e)
+        logger.exception("Email send failed (%s): %s", config.provider, e)
         return False, str(e)
 
 

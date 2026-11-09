@@ -71,7 +71,7 @@ class TaskRecoveryPostTranscriptionMixin:
                     )
                 except Exception as e:
                     stats["dispatch_errors"] += 1
-                    logger.error(
+                    logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch analytics "
                         f"for file {incomplete.media_file_id}: {e}"
                     )
@@ -90,7 +90,7 @@ class TaskRecoveryPostTranscriptionMixin:
                     )
                 except Exception as e:
                     stats["dispatch_errors"] += 1
-                    logger.error(
+                    logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch speaker ID "
                         f"for file {incomplete.media_file_id}: {e}"
                     )
@@ -109,7 +109,7 @@ class TaskRecoveryPostTranscriptionMixin:
                     )
                 except Exception as e:
                     stats["dispatch_errors"] += 1
-                    logger.error(
+                    logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch summary "
                         f"for file {incomplete.media_file_id}: {e}"
                     )
@@ -128,7 +128,7 @@ class TaskRecoveryPostTranscriptionMixin:
                     )
                 except Exception as e:
                     stats["dispatch_errors"] += 1
-                    logger.error(
+                    logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch topics "
                         f"for file {incomplete.media_file_id}: {e}"
                     )
@@ -151,7 +151,7 @@ class TaskRecoveryPostTranscriptionMixin:
                     )
                 except Exception as e:
                     stats["dispatch_errors"] += 1
-                    logger.error(
+                    logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch search indexing "
                         f"for file {incomplete.media_file_id}: {e}"
                     )
@@ -207,7 +207,7 @@ class TaskRecoveryPostTranscriptionMixin:
                 stats["tasks_marked_failed"] += 1
 
             except Exception as e:
-                logger.error(f"Error marking stuck task {task.id} as failed: {e}")
+                logger.exception(f"Error marking stuck task {task.id} as failed: {e}")
                 db.rollback()
 
         try:
@@ -215,7 +215,7 @@ class TaskRecoveryPostTranscriptionMixin:
             if stats["tasks_marked_failed"] > 0:
                 logger.info(f"Marked {stats['tasks_marked_failed']} stuck LLM tasks as failed")
         except Exception as e:
-            logger.error(f"Error committing stuck task recovery: {e}")
+            logger.exception(f"Error committing stuck task recovery: {e}")
             db.rollback()
             return {"tasks_marked_failed": 0}
 
@@ -280,7 +280,7 @@ class TaskRecoveryPostTranscriptionMixin:
                 stats["tasks_reset"] += 1
 
             except Exception as e:
-                logger.error(f"Error resetting false-positive task {task.id}: {e}")
+                logger.exception(f"Error resetting false-positive task {task.id}: {e}")
                 db.rollback()
 
         try:
@@ -288,7 +288,7 @@ class TaskRecoveryPostTranscriptionMixin:
             if stats["tasks_reset"] > 0:
                 logger.info(f"Reset {stats['tasks_reset']} false-positive failed tasks")
         except Exception as e:
-            logger.error(f"Error committing false-positive task recovery: {e}")
+            logger.exception(f"Error committing false-positive task recovery: {e}")
             db.rollback()
             return {"tasks_reset": 0}
 

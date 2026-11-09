@@ -204,7 +204,7 @@ def record_superseded(task_types: list[str]) -> None:
         for task_type in task_types:
             task_rows_superseded_total.labels(task_type=task_type).inc()
     except Exception as exc:  # telemetry never fails the recovery it describes
-        logger.debug("Could not record task_rows_superseded_total: %s", exc)
+        logger.debug("Could not record task_rows_superseded_total: %s", exc, exc_info=True)
 
 
 def resolve_superseded_task_rows(db: Session, limit: int = SWEEP_BATCH_SIZE) -> dict[str, int]:

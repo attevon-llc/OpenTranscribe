@@ -238,7 +238,12 @@ def fingerprint_object(media_file: MediaFile) -> None:
         if fingerprint:
             media_file.imohash = fingerprint
     except Exception as exc:  # pragma: no cover - defensive, network path
-        logger.debug("imohash compute failed for %s (non-fatal): %s", media_file.storage_path, exc)
+        logger.debug(
+            "imohash compute failed for %s (non-fatal): %s",
+            media_file.storage_path,
+            exc,
+            exc_info=True,
+        )
 
 
 def reingest_objects(
@@ -314,7 +319,7 @@ def reingest_objects(
         except Exception as exc:
             db.rollback()
             summary.errors += 1
-            logger.error("failed to register %s: %s", object_name, exc)
+            logger.exception("failed to register %s: %s", object_name, exc)
             continue
 
         if dispatch:
@@ -334,7 +339,7 @@ def reingest_objects(
                 logger.info("dispatched pipeline for media_file id=%s", media_file.id)
             except Exception as exc:
                 summary.errors += 1
-                logger.error("dispatch failed for media_file id=%s: %s", media_file.id, exc)
+                logger.exception("dispatch failed for media_file id=%s: %s", media_file.id, exc)
 
     return summary
 
@@ -460,7 +465,7 @@ def fetch_youtube_metadata(video_id: str) -> dict[str, Any] | None:
             "source_url": url,
         }
     except Exception as exc:
-        logger.warning("yt-dlp metadata fetch failed for %s: %s", video_id, exc)
+        logger.warning("yt-dlp metadata fetch failed for %s: %s", video_id, exc, exc_info=True)
         return None
 
 

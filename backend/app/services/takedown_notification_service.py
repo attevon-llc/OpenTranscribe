@@ -185,6 +185,6 @@ def _deliver(
     try:
         email_service.send_takedown_notice(str(owner.email), subject, heading, paragraphs)
     except Exception as exc:  # a failed notice must never break the takedown
-        logger.warning("Takedown email failed (%s)", type(exc).__name__)
+        logger.warning("Takedown email failed (%s)", type(exc).__name__, exc_info=True)
         return TakedownNotifyStatus.FAILED
     return TakedownNotifyStatus.SENT

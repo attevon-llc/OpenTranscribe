@@ -502,5 +502,5 @@ def execute_due_requests(
                     executed += 1
         except Exception as e:  # one bad request must not stop the pass
             failures += 1
-            logger.error("Scheduled erasure failed for ledger entry %s: %s", entry_id, e)
+            logger.exception("Scheduled erasure failed for ledger entry %s: %s", entry_id, e)
     return {"due": len(due_ids), "executed": executed, "failures": failures}

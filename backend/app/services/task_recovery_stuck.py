@@ -113,7 +113,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
             return True
 
         except Exception as e:
-            logger.error(f"Error recovering stuck task {task.id}: {str(e)}")
+            logger.exception(f"Error recovering stuck task {task.id}: {str(e)}")
             return False
 
     @staticmethod
@@ -163,7 +163,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
             return self._update_file_based_on_tasks(db, media_file, tasks)
 
         except Exception as e:
-            logger.error(f"Error fixing inconsistent media file {media_file.id}: {str(e)}")
+            logger.exception(f"Error fixing inconsistent media file {media_file.id}: {str(e)}")
             return False
 
     def recover_orphaned_tasks(self, db: Session, orphaned_tasks: list[Task]) -> int:
@@ -192,12 +192,12 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
                 recovered_count += 1
 
             except Exception as e:
-                logger.error(f"Error recovering orphaned task {task.id}: {e}")
+                logger.exception(f"Error recovering orphaned task {task.id}: {e}")
 
         try:
             db.commit()
         except Exception as e:
-            logger.error(f"Error committing orphaned task recovery: {e}")
+            logger.exception(f"Error committing orphaned task recovery: {e}")
             db.rollback()
             return 0
 
@@ -250,7 +250,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
                     stats["files_reset"] += 1
 
             except Exception as e:
-                logger.error(f"Error handling abandoned file {media_file.id}: {e}")
+                logger.exception(f"Error handling abandoned file {media_file.id}: {e}")
                 db.rollback()
 
         return stats
@@ -356,7 +356,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
                     logger.error(f"Failed to schedule retry for stuck file {media_file.id}")
 
             except Exception as e:
-                logger.error(f"Error recovering stuck file {media_file.id}: {e}")
+                logger.exception(f"Error recovering stuck file {media_file.id}: {e}")
 
         return stats
 

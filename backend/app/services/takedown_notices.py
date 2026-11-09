@@ -90,7 +90,7 @@ def notify_owner_takedown(
             },
         )
     except Exception as e:  # the notice must never break the takedown
-        logger.warning(f"Owner takedown notification failed for file {file.id}: {e}")
+        logger.warning(f"Owner takedown notification failed for file {file.id}: {e}", exc_info=True)
 
 
 def notify_owner_release(file: MediaFile, *, link_uuid: str | None = None) -> None:
@@ -119,7 +119,7 @@ def notify_owner_release(file: MediaFile, *, link_uuid: str | None = None) -> No
             },
         )
     except Exception as e:  # the notice must never break the release
-        logger.warning(f"Owner release notification failed for file {file.id}: {e}")
+        logger.warning(f"Owner release notification failed for file {file.id}: {e}", exc_info=True)
 
 
 def audit_takedown(
@@ -178,7 +178,7 @@ def audit_takedown(
             target_user_id=int(file.user_id) if (not refused or in_own_tenant) else None,
         )
     except Exception as e:  # audit must never break the action
-        logger.warning(f"Audit log for {event_type} failed: {e}")
+        logger.warning(f"Audit log for {event_type} failed: {e}", exc_info=True)
 
 
 def audit_unresolved_lookup(
@@ -209,4 +209,4 @@ def audit_unresolved_lookup(
             organization_id=actor.organization_id,
         )
     except Exception as e:  # audit must never break the action
-        logger.warning(f"Audit log for {event_type} failed: {e}")
+        logger.warning(f"Audit log for {event_type} failed: {e}", exc_info=True)

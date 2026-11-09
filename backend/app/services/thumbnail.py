@@ -103,7 +103,7 @@ def generate_thumbnail(
         )
         return None
     except Exception as e:
-        logger.error(f"Error generating thumbnail: {str(e)}")
+        logger.exception(f"Error generating thumbnail: {str(e)}")
         return None
 
 
@@ -165,6 +165,7 @@ def generate_thumbnail_from_url(
                         stderr_msg = line
                         break
             except Exception:
+                logger.debug("could not decode ffmpeg stderr", exc_info=True)
                 stderr_msg = str(e.stderr)
 
         logger.error(f"FFmpeg error: {stderr_msg or str(e)}")
@@ -235,5 +236,5 @@ def generate_and_upload_thumbnail(
         return storage_path
 
     except Exception as e:
-        logger.error(f"Error generating and uploading thumbnail: {str(e)}")
+        logger.exception(f"Error generating and uploading thumbnail: {str(e)}")
         return None

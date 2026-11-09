@@ -313,7 +313,7 @@ class SpeakerEmbeddingService:
         except FileNotFoundError:
             logger.debug("FFmpeg not found, trying torchaudio")
         except Exception as ffmpeg_err:
-            logger.debug(f"FFmpeg failed ({ffmpeg_err}), trying torchaudio")
+            logger.debug(f"FFmpeg failed ({ffmpeg_err}), trying torchaudio", exc_info=True)
 
         # 2. torchaudio. Absent entirely in lite since issue #660, and on torchaudio 2.11
         # `load` goes through torchcodec, whose native library does not load in our images
@@ -368,7 +368,7 @@ class SpeakerEmbeddingService:
             return self._embed(waveform, sample_rate)
 
         except Exception as e:
-            logger.error(f"Error extracting embedding from {audio_path}: {e}")
+            logger.exception(f"Error extracting embedding from {audio_path}: {e}")
             return None
 
     def extract_embedding_from_waveform(
@@ -400,7 +400,7 @@ class SpeakerEmbeddingService:
 
             return self._embed(wav, sample_rate)
         except Exception as e:
-            logger.error(f"Error extracting embedding from waveform segment: {e}")
+            logger.exception(f"Error extracting embedding from waveform segment: {e}")
             return None
 
     def extract_embeddings_for_segments(
@@ -446,7 +446,7 @@ class SpeakerEmbeddingService:
         try:
             waveform, sample_rate = self._load_audio(audio_path)
         except Exception as e:
-            logger.error(f"Error loading audio {audio_path} for segment embeddings: {e}")
+            logger.exception(f"Error loading audio {audio_path} for segment embeddings: {e}")
             return speaker_embeddings
 
         for speaker_id, speaker_segs in grouped.items():

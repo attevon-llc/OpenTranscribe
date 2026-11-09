@@ -411,6 +411,7 @@ class SubtitleService:
                     zf.writestr(f"{base_name}.{ext}", content.encode("utf-8"))
                     exported += 1
                 except Exception:  # one bad file shouldn't abort the batch
+                    logger.exception("Subtitle export skipped file %s", file_id)
                     skipped += 1
         return buf.getvalue(), exported, skipped
 

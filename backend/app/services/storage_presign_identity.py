@@ -294,7 +294,8 @@ def ensure_presign_identity() -> bool:
         logger.error(
             f"Could not provision the restricted presign identity — falling back to the "
             f"root client for presigned media URLs (quarantine will not revoke "
-            f"already-minted URLs while this persists): {e}"
+            f"already-minted URLs while this persists): {e}",
+            exc_info=True,
         )
         _ensure_result = False
         return False
@@ -316,6 +317,7 @@ def _derived_identity_works() -> bool:
         client.presigned_get_object(settings.MEDIA_BUCKET_NAME, "_opentranscribe/probes/identity")
         return True
     except Exception:  # "does not answer" is the answer
+        logger.debug("derived presign identity probe failed", exc_info=True)
         return False
 
 
@@ -500,6 +502,7 @@ def read_native_s3_revocation_policy(
     except Exception as e:  # no policy, or no permission to read it
         code = getattr(e, "code", None) or type(e).__name__
         if code != "NoSuchBucketPolicy":
+            logger.debug("bucket policy read failed: %s", code, exc_info=True)
             return "unreadable", str(code)
         policy_json = None
     return classify_quarantine_policy(policy_json, bucket), None

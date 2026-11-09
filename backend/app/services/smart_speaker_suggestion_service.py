@@ -135,7 +135,9 @@ def _check_opensearch_profiles_exist(
             return False
         return True
     except Exception as e:
-        logger.warning(f"Profile document check failed: {e}, proceeding with KNN query")
+        logger.warning(
+            f"Profile document check failed: {e}, proceeding with KNN query", exc_info=True
+        )
         return True  # Proceed with query if check fails
 
 

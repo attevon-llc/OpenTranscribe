@@ -15,6 +15,8 @@ from datetime import timedelta
 from types import SimpleNamespace
 from unittest import mock
 
+from opensearchpy.exceptions import NotFoundError
+
 from app.services import backup_config
 from app.services import backup_retention
 from app.services import backup_service as bs
@@ -30,8 +32,12 @@ def _fake_client(*, snapshots=None, repo_exists=False, ping=True):
             oss.REPO_NAME: {"type": "fs", "settings": {"location": oss.REPO_LOCATION}}
         }
     else:
-        snap_api.get_repository.side_effect = Exception("repository_missing_exception")
-    client = SimpleNamespace(snapshot=snap_api, ping=mock.MagicMock(return_value=ping))
+        snap_api.get_repository.side_effect = NotFoundError(404, "repository_missing_exception", {})
+    client = SimpleNamespace(
+        snapshot=snap_api,
+        ping=mock.MagicMock(return_value=ping),
+        count=mock.MagicMock(return_value={"count": 0}),
+    )
     return client
 
 

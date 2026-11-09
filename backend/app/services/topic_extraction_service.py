@@ -241,7 +241,7 @@ IMPORTANT GUIDELINES:
         except SQLAlchemyError:
             raise
         except Exception as e:
-            logger.warning(f"Could not create topic extraction service: {e}")
+            logger.warning(f"Could not create topic extraction service: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -478,7 +478,7 @@ IMPORTANT GUIDELINES:
             return True
 
         except Exception as e:
-            logger.error(f"Error applying suggestions: {e}")
+            logger.exception(f"Error applying suggestions: {e}")
             db.rollback()
             return False
 
@@ -627,7 +627,7 @@ IMPORTANT GUIDELINES:
             return self._parse_llm_response(response.content, llm_service.config.provider)
 
         except Exception as e:
-            logger.error(f"Error calling LLM for suggestion extraction: {e}")
+            logger.exception(f"Error calling LLM for suggestion extraction: {e}")
             return None
 
     def _parse_llm_response(
@@ -776,11 +776,11 @@ IMPORTANT GUIDELINES:
                         )
                     logger.info(f"Auto-applied suggestions for file {media_file.id}")
             except Exception as e:
-                logger.warning(f"Auto-apply failed for file {media_file.id}: {e}")
+                logger.warning(f"Auto-apply failed for file {media_file.id}: {e}", exc_info=True)
 
             return suggestion
 
         except Exception as e:
-            logger.error(f"Error storing suggestion: {e}")
+            logger.exception(f"Error storing suggestion: {e}")
             session.rollback()
             return None

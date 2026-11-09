@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
@@ -30,11 +31,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# The documented government CN shape: LAST.FIRST[.MIDDLE][.NUMERIC-ID], dot-separated, no spaces.
+_GOV_DOTTED_CN = re.compile(r"[A-Za-z]+\.[A-Za-z]+(?:\.[A-Za-z]*)?(?:\.\d+)?")
+
+
 def _display_name(pki_data: PKIUserData, email: str) -> str:
     """Readable name for a NEW account (existing accounts are never renamed)."""
     common_name = pki_data["common_name"]
     if not common_name:
         return email.split("@")[0]
+    if not _GOV_DOTTED_CN.fullmatch(common_name):
+        return common_name  # an ordinary name is kept exactly as the certificate gives it
     return extract_display_name_from_gov_dn(f"CN={common_name}")
 
 

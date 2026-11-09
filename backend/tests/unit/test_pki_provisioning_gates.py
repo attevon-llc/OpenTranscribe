@@ -108,6 +108,19 @@ class TestDisplayName:
     def test_plain_common_name_is_kept_as_is(self):
         assert self._created(_data(is_admin=False)).full_name == "Pat Person"
 
+    @pytest.mark.parametrize(
+        ("cn", "expected"),
+        [
+            ("SMITH.JOHN.W.1234567890", "John W. Smith"),
+            ("JONES.JANE.M", "Jane M. Jones"),
+            ("Mary Ann Smith", "Mary Ann Smith"),
+            ("Madonna", "Madonna"),
+            ("Doe John jdoe", "Doe John jdoe"),
+        ],
+    )
+    def test_only_the_government_pattern_is_transformed(self, cn, expected):
+        assert self._created(self._gov(cn)).full_name == expected
+
     def test_existing_user_is_never_renamed(self):
         user = _user(ROLE_USER)
         user.full_name = "Chosen Name"

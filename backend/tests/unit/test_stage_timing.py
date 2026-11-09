@@ -128,7 +128,7 @@ class TestRecorder:
 
     def test_a_broken_collector_never_breaks_the_stage(self, capture, monkeypatch):
         def _broken():
-            raise RuntimeError("registry gone")
+            raise ValueError("Duplicated timeseries in CollectorRegistry")
 
         monkeypatch.setattr(stage_timing, "_get_collectors", _broken)
 

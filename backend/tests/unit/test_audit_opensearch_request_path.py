@@ -14,6 +14,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+from opensearchpy.exceptions import NotFoundError
 
 from app.auth import audit as audit_module
 from app.auth.audit import AuditLogger
@@ -39,6 +40,9 @@ class _RecordingOpenSearch:
 
     def create(self, index: str, body: dict) -> None:
         self.requests.append(("PUT", index))
+
+    def put_mapping(self, index: str, body: dict) -> None:
+        return None
 
     def index(self, index: str, body: dict) -> None:
         self.requests.append(("POST", index))
@@ -98,7 +102,9 @@ def test_a_failed_write_forgets_the_index_so_it_is_rechecked(indexing_on, monkey
     with the proper mapping, not keep trusting a stale cache entry."""
     monkeypatch.setattr(audit_module, "_audit_index_name", lambda: "audit-logs-2026.09")
     logger = AuditLogger()
-    client = _RecordingOpenSearch(index_errors=[RuntimeError("index_not_found"), None])
+    client = _RecordingOpenSearch(
+        index_errors=[NotFoundError(404, "index_not_found_exception"), None]
+    )
 
     with patch.object(logger, "_get_opensearch_client", return_value=client):
         _log(logger)

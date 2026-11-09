@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from limits.errors import ConfigurationError
 from redis import ConnectionPool
 
 from app.auth import rate_limit
@@ -40,7 +41,7 @@ def test_limiter_falls_back_to_memory_when_the_redis_limiter_cannot_be_built():
     def flaky(storage_uri):
         calls.append(storage_uri)
         if storage_uri is not None:
-            raise RuntimeError("no redis client")
+            raise ConfigurationError("no redis client")
         return real(None)
 
     with (

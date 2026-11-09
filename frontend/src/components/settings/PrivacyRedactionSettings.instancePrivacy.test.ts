@@ -18,10 +18,10 @@ vi.mock('$lib/api/privacy', async (importOriginal) => {
 });
 vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('$components/settings/ContentRedactionSettings.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$components/settings/RedactionPolicySettings.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 
 import PrivacyRedactionSettings from './PrivacyRedactionSettings.svelte';

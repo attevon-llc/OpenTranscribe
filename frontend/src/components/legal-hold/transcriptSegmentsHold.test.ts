@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', async () => {
-  const mocks = await import('../../test-mocks/galleryToolbarMocks');
+  const mocks = await import('$testMocks/galleryToolbarMocks');
   const { readable } = await import('svelte/store');
   return { ...mocks.englishLocale(), locale: readable('en') };
 });

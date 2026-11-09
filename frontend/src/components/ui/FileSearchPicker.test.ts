@@ -8,7 +8,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import type { AdminFileHit } from '$lib/api/fileSearch';
 
 vi.mock('$stores/locale', async () => {
-  const mocks = await import('../../test-mocks/galleryToolbarMocks');
+  const mocks = await import('$testMocks/galleryToolbarMocks');
   const { readable } = await import('svelte/store');
   return { ...mocks.englishLocale(), locale: readable('en') };
 });

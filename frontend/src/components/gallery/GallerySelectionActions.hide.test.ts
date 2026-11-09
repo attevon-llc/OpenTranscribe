@@ -8,10 +8,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
+  (await import('$testMocks/galleryToolbarMocks')).englishLocale()
 );
 vi.mock('$stores/gallery', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).galleryStoreMock()
+  (await import('$testMocks/galleryToolbarMocks')).galleryStoreMock()
 );
 const setHiddenMany = vi.hoisted(() => vi.fn());
 vi.mock('$lib/api/hiddenMedia', () => ({
@@ -24,7 +24,7 @@ vi.mock('$stores/toast', () => ({ toastStore: toast }));
 import GallerySelectionActions from './GallerySelectionActions.svelte';
 
 const { galleryTriggers, resetGalleryDouble, selectFiles } = await import(
-  '../../test-mocks/galleryToolbarMocks'
+  '$testMocks/galleryToolbarMocks'
 );
 
 type Row = { uuid: string; status: string; is_hidden?: boolean };

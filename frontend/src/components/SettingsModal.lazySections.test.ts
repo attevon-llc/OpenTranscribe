@@ -60,7 +60,7 @@ import Probe from './settings/LazySectionProbe.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
-import { resetAppStores } from '../test-mocks/app-state.svelte';
+import { resetAppStores } from '$testMocks/app-state.svelte';
 
 beforeEach(() => {
   vi.clearAllMocks();

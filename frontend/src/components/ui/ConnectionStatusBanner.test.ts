@@ -27,11 +27,7 @@ vi.mock('$stores/locale', async () => {
   return { t: readable((key: string) => key) };
 });
 
-import {
-  FakeWebSocket,
-  installFakeWebSocket,
-  restoreWebSocket,
-} from '../../test-mocks/fakeWebSocket';
+import { FakeWebSocket, installFakeWebSocket, restoreWebSocket } from '$testMocks/fakeWebSocket';
 import { authStore } from '$stores/auth';
 import ConnectionStatusBanner from './ConnectionStatusBanner.svelte';
 

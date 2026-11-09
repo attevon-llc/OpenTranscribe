@@ -11,7 +11,7 @@ vi.mock('$stores/locale', async () => {
   return { t: readable((key: string) => key), locale: readable('en') };
 });
 const stub = vi.hoisted(() => async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$components/ConfirmationModal.svelte', stub);
 vi.mock('$components/ui/BaseModal.svelte', stub);

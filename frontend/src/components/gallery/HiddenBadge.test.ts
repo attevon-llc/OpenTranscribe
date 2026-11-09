@@ -6,10 +6,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
+  (await import('$testMocks/galleryToolbarMocks')).englishLocale()
 );
 vi.mock('$stores/gallery', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).galleryStoreMock()
+  (await import('$testMocks/galleryToolbarMocks')).galleryStoreMock()
 );
 const setHidden = vi.hoisted(() => vi.fn());
 vi.mock('$lib/api/hiddenMedia', () => ({ HiddenMediaApi: { setHidden } }));
@@ -18,9 +18,7 @@ vi.mock('$stores/toast', () => ({ toastStore: toast }));
 
 import HiddenBadge from './HiddenBadge.svelte';
 
-const { galleryTriggers, resetGalleryDouble } = await import(
-  '../../test-mocks/galleryToolbarMocks'
-);
+const { galleryTriggers, resetGalleryDouble } = await import('$testMocks/galleryToolbarMocks');
 
 beforeEach(resetGalleryDouble);
 

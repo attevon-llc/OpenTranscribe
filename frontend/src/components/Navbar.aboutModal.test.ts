@@ -52,7 +52,7 @@ vi.mock('$lib/cloud', () => ({
   refreshBilling: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('$components/navbar/UserDropdown.svelte', async () => ({
-  default: (await import('../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 
 import Navbar from './Navbar.svelte';

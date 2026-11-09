@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { IconName } from '$lib/notifications/display';
-  import logoIcon from '../../assets/logo-icon.png';
+  import logoIcon from '$assets/logo-icon.png';
 
   export let name: IconName;
 </script>

@@ -8,12 +8,12 @@ vi.mock('$stores/locale', () => {
 });
 // The full status dashboard has its own suite; this file is about the way back to Settings.
 vi.mock('$components/UserFileStatus.svelte', async () => ({
-  default: (await import('../../test-mocks/SlotHost.svelte')).default,
+  default: (await import('$testMocks/SlotHost.svelte')).default,
 }));
 
 import Page from './+page.svelte';
-import { setPage } from '../../test-mocks/app-state.svelte';
-import { gotoCalls } from '../../test-mocks/app-navigation';
+import { setPage } from '$testMocks/app-state.svelte';
+import { gotoCalls } from '$testMocks/app-navigation';
 import { settingsModalStore } from '$stores/settingsModalStore';
 import { stampSettingsReturn } from '$lib/settings/returnToSettings';
 

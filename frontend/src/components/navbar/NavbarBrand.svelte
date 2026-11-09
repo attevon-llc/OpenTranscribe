@@ -3,7 +3,7 @@
   import { t } from '$stores/locale';
 
   // Import logo asset for proper Vite processing
-  import logoBanner from '../../assets/logo-banner.png';
+  import logoBanner from '$assets/logo-banner.png';
 
   const dispatch = createEventDispatcher<{ about: void }>();
 </script>

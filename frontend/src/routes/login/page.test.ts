@@ -94,7 +94,7 @@ vi.mock('$components/LoginBanner.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/mfa/MfaEnrollment.svelte', () => ({ default: noopComponent() }));
 
 import Page from './+page.svelte';
-import { gotoCalls, preloadCodeCalls } from '../../test-mocks/app-navigation';
+import { gotoCalls, preloadCodeCalls } from '$testMocks/app-navigation';
 
 function authMethods(overrides: Partial<AuthMethods> = {}): AuthMethods {
   return {

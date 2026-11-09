@@ -2,19 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
+  (await import('$testMocks/galleryToolbarMocks')).englishLocale()
 );
 // The toolbar reads the selection from `$stores/gallery`; the double replaces a
 // store vitest cannot load and lets each test set the selection itself.
 vi.mock('$stores/gallery', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).galleryStoreMock()
+  (await import('$testMocks/galleryToolbarMocks')).galleryStoreMock()
 );
 
 import GallerySelectionActions from './GallerySelectionActions.svelte';
 
 // The same per-file instance the gallery factory above returned.
 const { galleryTriggers, resetGalleryDouble, selectFiles } = await import(
-  '../../test-mocks/galleryToolbarMocks'
+  '$testMocks/galleryToolbarMocks'
 );
 
 type ToolbarFiles = { uuid: string; status: string; can_delete?: boolean }[];

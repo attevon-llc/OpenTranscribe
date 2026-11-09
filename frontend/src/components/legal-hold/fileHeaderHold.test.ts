@@ -13,7 +13,7 @@ import type { HoldSummary } from '$lib/types/hold';
 const mockAxios = vi.hoisted(() => ({ put: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
 vi.mock('$stores/locale', async () => {
-  const mocks = await import('../../test-mocks/galleryToolbarMocks');
+  const mocks = await import('$testMocks/galleryToolbarMocks');
   const { readable } = await import('svelte/store');
   return { ...mocks.englishLocale(), locale: readable('en') };
 });

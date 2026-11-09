@@ -78,9 +78,9 @@ import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
-import { resetAppStores } from '../test-mocks/app-state.svelte';
+import { resetAppStores } from '$testMocks/app-state.svelte';
 import { sectionLoaders, startIdlePrefetch } from '$lib/settings/sectionLoaders';
-import { afterNavigateCallbacks } from '../test-mocks/app-navigation';
+import { afterNavigateCallbacks } from '$testMocks/app-navigation';
 import { stampSettingsReturn } from '$lib/settings/returnToSettings';
 import { fullLocalView } from '$lib/settings/pipelineViewFixtures';
 

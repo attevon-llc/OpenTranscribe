@@ -21,7 +21,7 @@ const auth = vi.hoisted(() => ({
 vi.mock('$lib/cloud', () => cloud);
 vi.mock('$stores/auth', () => auth);
 
-import { gotoCalls } from '../../test-mocks/app-navigation';
+import { gotoCalls } from '$testMocks/app-navigation';
 import {
   FIRST_SEEN_KEY,
   UPLOAD_GRACE_MS,

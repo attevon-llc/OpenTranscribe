@@ -54,7 +54,7 @@ vi.mock('$lib/api/transcriptionSettings', () => ({
   getTranscriptionSettings: vi.fn().mockResolvedValue({ diarization_source: 'provider' }),
 }));
 vi.mock('$components/settings/asr/CloudProviderPolicy.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },

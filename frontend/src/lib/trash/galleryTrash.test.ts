@@ -10,7 +10,7 @@ vi.mock('$lib/axios', () => ({ default: axiosMock }));
 import { get } from 'svelte/store';
 import { createUndo, summarizeTrashResults, trashConfirmMessage } from './galleryTrash';
 
-const { englishLocale } = await import('../../test-mocks/galleryToolbarMocks');
+const { englishLocale } = await import('$testMocks/galleryToolbarMocks');
 const t = get(englishLocale().t);
 
 beforeEach(() => {

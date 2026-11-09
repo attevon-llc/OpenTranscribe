@@ -12,10 +12,10 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
+  (await import('$testMocks/galleryToolbarMocks')).englishLocale()
 );
 vi.mock('$stores/gallery', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).galleryStoreMock()
+  (await import('$testMocks/galleryToolbarMocks')).galleryStoreMock()
 );
 vi.mock('$stores/auth', async () => {
   const { writable } = await import('svelte/store');
@@ -36,7 +36,7 @@ vi.mock('$lib/edition', () => ({ isCloudEdition: true }));
 import GallerySelectionActions from './GallerySelectionActions.svelte';
 
 const { galleryTriggers, resetGalleryDouble, selectFiles } = await import(
-  '../../test-mocks/galleryToolbarMocks'
+  '$testMocks/galleryToolbarMocks'
 );
 
 async function openOrganize() {

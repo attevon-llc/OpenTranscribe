@@ -1,279 +1,305 @@
 {
-  "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Each `items` entry is an item id in the shipped bundle's manifest (bundle-v1). A question is asked in its own conversation, followed by its follow-ups. At least half of the conversations are cross-file. The privacy-redaction item id is reserved for the scripted clip that the owner still has to record (bundle-v1/privacy-demo/SCRIPT.md); until it exists in the manifest, the generator reports it as missing. Questions that name specifics (dates, topics) are drawn from the items' titles and must be rechecked against the transcripts once they exist.",
+  "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Each `items` entry is an item id in the shipped bundle's manifest (bundle-v1). A question is asked in its own conversation, followed by its follow-ups. At least half of the conversations are cross-file. The privacy-redaction item id is reserved for the scripted clip that the owner still has to record (bundle-v1/privacy-demo/SCRIPT.md); until it exists in the manifest, the generator reports it as missing. Questions that name specifics (dates, topics) are drawn from the items' opening captions (YouTube auto-captions) or page descriptions and must be rechecked against the transcripts once they exist.",
   "conversations": [
     {
-      "id": "news-midterms-three-languages",
-      "title": "How did VOA cover the 2026 US midterms in three languages?",
+      "id": "news-latin-america-culture-and-ai",
+      "title": "What do the two Spanish-language reports cover?",
       "items": [
-        "voa-en-8219832",
-        "voa-ko-8219646",
-        "voa-uk-8219271"
+        "voa-es-8010993",
+        "voa-es-8011266"
       ],
       "questions": [
-        "Summarize each of these three reports in two sentences and say which language each was in.",
-        "What do the reports say about why the president's party tends to lose midterm elections, and where do they agree or differ?",
-        "Which report gives the most detail about the 2026 result, and what did its speakers say?"
+        "Summarize each Spanish-language report in two sentences.",
+        "What does the first report say about how artificial intelligence is advancing in Latin America, and what does the second describe about the National Museum of Colombia?",
+        "Which report mentions Fernando Botero or Gabriel Garcia Marquez, and in what context?"
       ]
     },
     {
-      "id": "news-china-reports",
-      "title": "What do the two Chinese-language reports cover?",
+      "id": "news-russian-language-features",
+      "title": "What do the Russian-language features explain about life in the US?",
       "items": [
-        "voa-zh-8219630",
-        "voa-zh-8219613"
+        "voa-ru-7171673",
+        "voa-ru-7272032",
+        "voa-ru-7281198"
       ],
       "questions": [
-        "What is each report about, and who is quoted in them?",
-        "What does the Taiwan defense minister say about arms sales, and how does that compare with the energy story in the other report?"
+        "Give a one-line summary of each Russian-language feature.",
+        "What facts does the winemaking feature give, and what facts does the firefighters feature give?",
+        "What does the eco-house report say about cost, and how does it compare to the other two reports in style?"
       ]
     },
     {
-      "id": "news-world-roundup",
-      "title": "Which reports deal with security and conflict?",
+      "id": "news-chinese-gen-z-series",
+      "title": "What do the two Chinese-language Gen Z reports say?",
       "items": [
-        "voa-fr-8008409",
-        "voa-ur-8011556",
-        "voa-my-8006213",
-        "voa-id-8011163",
-        "voa-sw-7846175",
-        "voa-es-8010993"
+        "voa-zh-8157382",
+        "voa-zh-8157388"
       ],
       "questions": [
-        "Which of these reports are about security or conflict, and what does each say? Name the language of each.",
-        "Which report is a fact check, and what claim did it examine?",
-        "Compare the report on the Chagos Islands with the report on armed groups in Afghanistan: what concerns do they raise?"
+        "What is each report about?",
+        "What view of American national parks and of podcast culture does the presenter give?",
+        "How do the two reports differ in tone and structure?"
       ]
     },
     {
-      "id": "news-russian-report",
-      "title": "What did the Russian-language report say?",
+      "id": "news-languages-overview",
+      "title": "Which languages are in the news collection and what are the topics?",
       "items": [
-        "voa-ru-8210891"
+        "voa-es-8010993",
+        "voa-ko-8218258",
+        "voa-pt-8011706",
+        "voa-ru-7171673",
+        "voa-zh-8157388"
       ],
       "questions": [
-        "Summarize this report in three bullet points and say who is speaking."
+        "List each report with its language and a one-sentence topic.",
+        "Which reports are explainers or lessons and which are features?",
+        "Which report concerns inventors turning fallen leaves into paper, and what do they say about their reason?"
       ]
     },
     {
-      "id": "gov-ntsb-bridge-meetings",
-      "title": "How did the NTSB open its bridge investigation meetings?",
+      "id": "gov-nasa-meetings-openings",
+      "title": "How do NASA's public meetings begin?",
       "items": [
-        "ntsb-miami-bridge-collapse-head",
-        "ntsb-fern-hollow-bridge-head",
-        "ntsb-dali-key-bridge-head"
+        "nasa-advisory-council-2019-first-meeting",
+        "nasa-exploration-systems-town-hall",
+        "nasa-smd-peer-review-town-hall"
       ],
       "questions": [
-        "For each meeting, what event was being investigated and what did the Chair say the Board would decide?",
-        "What do the three bridge investigations have in common, according to the staff and Board members who spoke?",
-        "Who presented for the NTSB staff in each meeting?"
+        "Who opens each of these three NASA meetings and what is the stated purpose of each?",
+        "What is the NASA Advisory Council described as, and what administrative announcements precede the agenda?",
+        "Compare the town hall for the Exploration Systems directorate with the Science directorate's peer-review town hall: what does each say it will cover?"
       ]
     },
     {
-      "id": "gov-ntsb-votes",
-      "title": "What did the Board conclude and vote on?",
+      "id": "gov-usgs-earth-science-lectures",
+      "title": "What do the USGS public lectures cover?",
       "items": [
-        "ntsb-southwest-1380-tail",
-        "ntsb-concan-bus-crash-tail"
+        "usgs-pubtalk-earthquakes-desert-2021",
+        "usgs-lecture-geology-up-close-2017",
+        "usgs-lecture-hawaii-erosion-2016"
       ],
       "questions": [
-        "What probable causes, findings or recommendations were discussed or voted on in these two meetings?",
-        "Which Board member raised the strongest concern, and what was it?"
+        "Summarize the topic of each lecture in one or two sentences.",
+        "How do the hosts introduce the series and the next month's talk?",
+        "Which lecture deals with earthquakes in the desert, and what does the speaker say about where they hide?"
       ]
     },
     {
-      "id": "gov-fda-committees",
-      "title": "What were the FDA advisory committees asked to consider?",
+      "id": "gov-usgs-life-and-space",
+      "title": "How do the USGS lectures on wildlife and space differ?",
       "items": [
-        "fda-ctgtac-2026-07-29",
-        "fda-dodac-2026-10-30",
-        "fda-odac-2026-04-30",
-        "fda-vrbpac-2026-10-01",
-        "fda-vrbpac-193rd"
+        "usgs-lecture-waterbirds-2015",
+        "usgs-lecture-ecological-stressors-2016",
+        "usgs-pubtalk-space-exploration-2020"
       ],
       "questions": [
-        "For each meeting, which committee met and what product or question was it asked to consider?",
-        "Which meetings had the most committee members introduced, and what areas of expertise did they list?",
-        "How do the topics across these five meetings differ?"
+        "What does each lecture cover?",
+        "How does the astrogeology talk describe the USGS's role in training Apollo astronauts and in space exploration?",
+        "Which two lectures are about ecology and how do they relate?"
       ]
     },
     {
-      "id": "gov-austin-near-collision",
-      "title": "What happened in the Austin near-collision?",
+      "id": "gov-meetings-vs-lectures",
+      "title": "How do an advisory council meeting and a public lecture open differently?",
       "items": [
-        "ntsb-austin-near-collision-head",
-        "ntsb-ford-bluecruise-head"
+        "nasa-advisory-council-2019-first-meeting",
+        "usgs-pubtalk-communication-science-2024"
       ],
       "questions": [
-        "Describe the incident and the system under review in each of these two meetings in two sentences each.",
-        "What did the Chair say about why each investigation matters for safety?"
+        "Compare how each event opens: who speaks first and what do they announce?",
+        "What does the communication-science talk say about how scientists should communicate?"
       ]
     },
     {
-      "id": "fin-fomc-inflation-trend",
-      "title": "How did the Chair describe inflation across FOMC statements?",
+      "id": "biz-fomc-statements",
+      "title": "What do the Fed Chair's statements say about the economy?",
       "items": [
         "fomc-intro-2022-05-04",
-        "fomc-intro-2024-01-31",
-        "fomc-intro-2025-07-30",
-        "fomc-intro-2025-12-10",
-        "fomc-intro-2026-01-28",
         "fomc-intro-2026-06-17",
-        "fomc-intro-2026-07-29",
         "fomc-intro-2026-10-28"
       ],
       "questions": [
-        "How did the Chair's description of inflation change between 2022 and 2026?",
-        "In which statements did the Chair say the Committee was raising, holding or lowering the policy rate, and what reasons were given?",
-        "What did the Chair say about the labor market in the earliest statement compared with the latest?"
+        "Summarize each introductory statement in two sentences, with its date.",
+        "What did the committee decide about the federal funds rate each time?",
+        "How does the description of inflation and the labour market change across the three?"
       ]
     },
     {
-      "id": "fin-fomc-2026",
-      "title": "What changed in monetary policy during 2026?",
+      "id": "biz-sec-rule-meetings",
+      "title": "What rules did the two SEC meetings consider?",
       "items": [
-        "fomc-intro-2026-01-28",
-        "fomc-intro-2026-06-17",
-        "fomc-intro-2026-07-29",
-        "fomc-intro-2026-10-28"
-      ],
-      "questions": [
-        "Summarize the policy decision announced in each of the four 2026 statements.",
-        "What risks did the Chair say the Committee was weighing in the October statement?"
-      ]
-    },
-    {
-      "id": "fin-sec-open-meetings",
-      "title": "What did the SEC consider at its open meetings?",
-      "items": [
-        "sec-open-meeting-2024-02-06",
-        "sec-open-meeting-2024-03-06",
-        "sec-open-meeting-2024-08-28",
         "sec-open-meeting-2025-06-04",
-        "sec-open-meeting-2026-06-11",
-        "sec-open-meeting-2026-09-30"
+        "sec-open-meeting-2026-06-11"
       ],
       "questions": [
-        "What rules or proposals were on the agenda in each of these open meetings?",
-        "Which Commissioners voiced concerns, and what were they?",
-        "What did the staff say a proposed rule would require of companies or investors?"
+        "What is each open meeting's agenda item?",
+        "What does the first meeting say about the definition of foreign private issuer, and what does the second say about the trade-through rule?"
       ]
     },
     {
-      "id": "fin-fomc-2022",
-      "title": "What did the Chair say in May 2022?",
+      "id": "biz-bls-inflation-measures",
+      "title": "How does the BLS explain measuring prices and pay?",
       "items": [
-        "fomc-intro-2022-05-04"
+        "bls-cpi-data-collection",
+        "bls-chained-cpi",
+        "bls-ways-we-measure-pay"
       ],
       "questions": [
-        "What did the Chair say about the pace of rate increases and why?"
+        "How are prices for the Consumer Price Index collected?",
+        "What is the chained CPI and how does it differ from the CPI-U and CPI-W?",
+        "What ways of measuring pay does the BLS describe?"
       ]
     },
     {
-      "id": "train-fema-tribal",
-      "title": "What are the steps in the FEMA tribal recovery series?",
+      "id": "biz-bls-labour-statistics",
+      "title": "What do the BLS videos say about jobs data?",
       "items": [
-        "fema-tribal-step1-declaration",
-        "fema-tribal-disaster-overview",
-        "fema-tribal-step5-recovery"
+        "bls-unemployment-statistics",
+        "bls-employment-projections",
+        "bls-world-statistics-day"
       ],
       "questions": [
-        "List the main steps each video tells a tribal leader to take.",
-        "How does the declaration process described in step 1 connect to what comes next in step 5?"
+        "Summarize each video.",
+        "What does the BLS say it uses to produce unemployment statistics and employment projections?"
       ]
     },
     {
-      "id": "train-fema-prepare",
+      "id": "biz-fed-and-bls",
+      "title": "How do the Fed statement and BLS explainers fit together?",
+      "items": [
+        "fomc-intro-2026-10-28",
+        "bls-chained-cpi",
+        "bls-unemployment-statistics"
+      ],
+      "questions": [
+        "The Fed statement mentions inflation and unemployment: how do the BLS videos explain the measures behind those words?",
+        "What is the 2 percent inflation goal and which index does the BLS video describe?"
+      ]
+    },
+    {
+      "id": "edu-nasa-earth-explainers",
+      "title": "What do NASA's Earth-science explainers teach?",
+      "items": [
+        "nasa-edu-water-cycle",
+        "nasa-edu-ocean-weather-climate",
+        "nasa-edu-landsat-next"
+      ],
+      "questions": [
+        "Summarize each video in two sentences.",
+        "How does the ocean store and move heat, and how does that affect weather?",
+        "What does the Landsat video say the program records and why it matters?"
+      ]
+    },
+    {
+      "id": "edu-nasa-astronomy-explainers",
+      "title": "What do the astronomy explainers cover?",
+      "items": [
+        "nasa-edu-spectroscopy",
+        "nasa-edu-black-hole-simulation",
+        "nasa-edu-roman-telescope"
+      ],
+      "questions": [
+        "Summarize each video.",
+        "Why does spectroscopy matter if telescopes only capture a smudge of light?",
+        "What do the Roman telescope and black hole videos each want a viewer to take away?"
+      ]
+    },
+    {
+      "id": "edu-preparedness",
       "title": "How does FEMA tell people to prepare?",
       "items": [
         "fema-emergency-kit",
-        "fema-flood-insurance-advocate",
-        "fema-nrcc-response",
-        "fema-registration-intake"
+        "fema-flood-insurance-advocate"
       ],
       "questions": [
-        "What are the key preparedness steps across these videos, and what does the flood insurance advocate say about flood risk?",
-        "What does the National Response Coordination Center do during a disaster?",
-        "What information does the registration intake video say an applicant needs?"
+        "What must-have items does the emergency kit video list?",
+        "How does the flood video say to learn your flood risk, and what is a flood insurance rate map?"
       ]
     },
     {
-      "id": "train-nasa-explainers",
-      "title": "What do the NASA explainers teach?",
+      "id": "edu-bls-career-tools",
+      "title": "How do the BLS career videos help someone choose a job?",
       "items": [
-        "nasa-edu-spectroscopy",
-        "nasa-edu-ocean-weather-climate",
-        "nasa-edu-water-cycle"
+        "bls-career-outlook",
+        "bls-wages-where-you-live",
+        "bls-skills-information"
       ],
       "questions": [
-        "Explain in plain language what each of these three videos teaches.",
-        "What do the ocean and water cycle videos say about weather and climate, and how are they connected?"
-      ]
-    },
-    {
-      "id": "train-roman-telescope",
-      "title": "What is the Roman Space Telescope for?",
-      "items": [
-        "nasa-edu-roman-telescope",
-        "nasa-edu-black-hole-simulation"
-      ],
-      "questions": [
-        "What is the Roman Space Telescope designed to study, according to the video?",
-        "What does the black hole simulation video show, and who explains it?"
+        "What does each video show a viewer how to do?",
+        "How would you combine the three tools to compare occupations?"
       ]
     },
     {
       "id": "sci-nasa-briefings",
-      "title": "What did NASA officials say at the briefings?",
+      "title": "What did NASA announce in these briefings?",
       "items": [
-        "nasa-briefing-moon-base-2026-05-26",
-        "nasa-briefing-roman-postlaunch",
-        "nasa-briefing-nuclear-rocket-2023",
+        "nasa-briefing-artemis-1-pre-test",
         "nasa-briefing-grace-twins",
-        "nasa-briefing-artemis-1-pre-test"
-      ],
-      "questions": [
-        "Summarize each briefing in two bullet points and name the speakers.",
-        "What did the speakers say about risks, schedule or uncertainty across these briefings?",
-        "Which briefing focuses on an Earth-observing mission, and what will it measure?"
-      ]
-    },
-    {
-      "id": "sci-nasa-climate",
-      "title": "What did NASA say about record heat and water data?",
-      "items": [
-        "nasa-briefing-earth-day-climate",
+        "nasa-briefing-roman-postlaunch",
         "nasa-briefing-openet-2021"
       ],
       "questions": [
-        "What did the speakers say about NASA's climate research and what is new?",
-        "How does the OpenET water data platform help farmers or water managers?"
+        "Summarize each briefing in two sentences.",
+        "What does the GRACE Follow-On briefing say the satellites measure?",
+        "Which briefings involve Earth observation and which involve space exploration?"
       ]
     },
     {
-      "id": "sci-atlanta-winter-storm",
-      "title": "How did the Atlanta winter storm forecast change?",
+      "id": "sci-winter-weather-briefings",
+      "title": "How did forecasters brief the January 2026 winter weather?",
       "items": [
         "nws-atlanta-2026-01-15",
         "nws-atlanta-2026-01-22",
-        "nws-atlanta-2026-01-23-ice"
+        "nws-atlanta-2026-01-23-ice",
+        "nws-columbia-2026-01-24"
       ],
       "questions": [
-        "How did the forecast and expected impacts change between the briefings of January 15, 22 and 23?",
-        "What did the forecaster say about ice accumulation and the timing of the worst conditions?",
-        "What did the forecaster tell emergency managers to prepare for?"
+        "Compare how the forecast evolved across the Atlanta briefings.",
+        "What does the Columbia briefing say about the ice storm warning?",
+        "Which time periods does each briefing focus on?"
       ]
     },
     {
-      "id": "sci-hurricane-briefings",
-      "title": "What did the Hurricane Center say?",
+      "id": "sci-hurricane-and-outlooks",
+      "title": "How do the hurricane and seasonal outlook briefings compare?",
       "items": [
         "nws-nhc-2023-06-01",
-        "nws-nhc-2023-08-01",
-        "nws-nhc-erin-2025-08-19"
+        "nws-nhc-erin-2025-08-19",
+        "nws-missoula-winter-outlook-2026"
       ],
       "questions": [
-        "What did each briefing say about the current or expected activity in the Atlantic?",
-        "What uncertainty did the forecasters mention, and who said it?"
+        "Summarize each briefing.",
+        "What does the Erin update say about the storm's position, winds and expected motion?",
+        "How does a seasonal outlook differ from a day-to-day storm update?"
+      ]
+    },
+    {
+      "id": "sci-snowpack-and-water",
+      "title": "What do the water-supply and Earth-observation items say about water?",
+      "items": [
+        "nws-reno-snowpack-2026-03-31",
+        "nasa-briefing-openet-2021",
+        "nasa-edu-water-cycle"
+      ],
+      "questions": [
+        "What does the Reno forecaster say about snowpack and water supply?",
+        "How does OpenET relate to water use?",
+        "How does the water cycle video explain where fresh water is stored?"
+      ]
+    },
+    {
+      "id": "sci-space-weather",
+      "title": "What do the NASA Goddard items say about the Sun and Mars?",
+      "items": [
+        "nasa-escapade-mars-space-weather",
+        "nasa-earth-from-orbit-2013",
+        "nasa-briefing-roman-postlaunch"
+      ],
+      "questions": [
+        "Summarize the ESCAPADE video: what happened to Mars's atmosphere and what will the mission measure?",
+        "What does the Earth-from-orbit video show?",
+        "How do these three space items differ in format?"
       ]
     },
     {

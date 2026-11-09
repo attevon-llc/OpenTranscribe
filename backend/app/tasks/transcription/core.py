@@ -138,14 +138,18 @@ def _claim_gpu_split_diarize_dispatch(task_id: str) -> bool:
     guard risks a rare double-dispatch, but failing closed here would silently drop
     diarization for every gpu-split file whenever Redis hiccups — worse.
     """
+    from redis.exceptions import RedisError
+
     from app.core.redis import get_redis
 
     ttl_s = int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600")) + 3600
     key = f"gpu_split_diarize_dispatched:{task_id}"
     try:
         return bool(get_redis().set(key, "1", nx=True, ex=ttl_s))
-    except Exception as e:
-        logger.warning(f"gpu-split diarize dispatch claim failed for task {task_id}: {e}")
+    except (RedisError, OSError):  # fails open, see docstring
+        logger.warning(
+            "gpu-split diarize dispatch claim failed for task %s", task_id, exc_info=True
+        )
         return True
 
 

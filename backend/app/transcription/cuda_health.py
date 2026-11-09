@@ -125,18 +125,23 @@ def cuda_context_healthy(device_index: int = 0) -> bool:
 
         if not torch.cuda.is_available():
             return True
-    except Exception:
+    except (ImportError, RuntimeError):
+        logger.warning(
+            "CUDA availability could not be read; treating context as healthy", exc_info=True
+        )
         return True
-    last: Exception | None = None
+    last: RuntimeError | None = None
     for _ in range(2):
         try:
             probe = torch.ones(1, device=f"cuda:{device_index}")
             float((probe + 1).sum().item())
             torch.cuda.synchronize(device_index)
             return True
-        except Exception as exc:  # the probe's failure IS the answer
+        except (
+            RuntimeError
+        ) as exc:  # torch.cuda errors incl. OutOfMemoryError; the failure IS the answer
             last = exc
-    logger.error("CUDA context probe failed: %s", last)
+    logger.error("CUDA context probe failed: %s", last, exc_info=last)
     return False
 
 

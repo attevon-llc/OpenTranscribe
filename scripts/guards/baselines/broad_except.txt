@@ -804,8 +804,6 @@ backend/app/tasks/transcript_document.py::prepare_transcript_document_task#1	1	r
 backend/app/tasks/transcription/cloud_asr.py::_run_parallel_cloud_asr_and_diarization#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/cloud_asr.py::_run_parallel_cloud_asr_and_diarization#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/context.py::_handle_outer_exception#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/transcription/context.py::_poisoned_requeue_allowed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/transcription/core.py::_claim_gpu_split_diarize_dispatch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/core.py::_cleanup_wav_quietly#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/core.py::_running_at_retry_priority#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/core.py::transcribe_gpu_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -813,13 +811,11 @@ backend/app/tasks/transcription/diarize_task.py::diarize_gpu_task#1	1	re-keyed p
 backend/app/tasks/transcription/diarize_task.py::diarize_gpu_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/dispatch.py::dispatch_batch_transcription#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/dispatch.py::dispatch_batch_transcription#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/transcription/downstream.py::_get_collection_prompt_uuid#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/downstream.py::_owner_llm_configured#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/downstream.py::trigger_automatic_summarization#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/downstream.py::trigger_automatic_summarization#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/downstream.py::trigger_automatic_summarization#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/embeddings.py::_fetch_existing_v4_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/transcription/embeddings.py::_should_use_native_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/embeddings.py::_store_native_centroids_in_v4_staging#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/embeddings.py::_update_v4_profile_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/enrich.py::_dispatch_redaction#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -885,8 +881,6 @@ backend/app/tasks/youtube_processing.py::process_youtube_url_task#3	1	re-keyed p
 backend/app/transcription/config.py::TranscriptionConfig._resolve_diarizer_backend#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/config.py::TranscriptionConfig._resolve_model_name#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/config.py::TranscriptionConfig._vram_based_concurrency#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/cuda_health.py::cuda_context_healthy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/cuda_health.py::cuda_context_healthy#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/cuda_health.py::free_cached_vram#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/cuda_health.py::mark_context_poisoned#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/diar_sidecar_status.py::_sidecar_healthy_uncached#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -896,7 +890,6 @@ backend/app/transcription/diar_sidecar_status.py::sidecar_status#1	1	re-keyed pe
 backend/app/transcription/diarizer.py::SpeakerDiarizer._run_pipeline_with_oom_retry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/diarizer.py::SpeakerDiarizer.embed_window#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/diarizer.py::SpeakerDiarizer.load_model#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/diarizer.py::SpeakerDiarizer.load_model#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/diarizer_native.py::NativeSpeakerDiarizer.diarize#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/diarizer_native.py::NativeSpeakerDiarizer.diarize#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/engine/audio_loader.py::cleanup_shared_volume_wav#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

@@ -314,7 +314,7 @@ interactive_setup() {
     print_info "Enter the SSH connection string for your remote builder"
     print_info "Format: user@hostname or user@ip-address"
     print_info "Example: user@mac-studio.local or user@192.168.1.100"
-    read -p "Remote host: " remote_host
+    read -r -p "Remote host: " remote_host
 
     if [ -z "${remote_host}" ]; then
         print_error "Remote host cannot be empty"

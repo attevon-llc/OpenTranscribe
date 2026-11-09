@@ -82,7 +82,7 @@ echo "     - User ID: testuser"
 echo "     - Email: testuser@example.com"
 echo "     - Password: testpassword123"
 echo ""
-read -p "Press Enter when you've created the user (or Ctrl+C to exit)..."
+read -r -p "Press Enter when you've created the user (or Ctrl+C to exit)..."
 
 # Test LDAP user login by username
 echo ""

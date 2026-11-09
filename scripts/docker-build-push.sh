@@ -1177,7 +1177,7 @@ Environment Variables:
     VERSION                   Semantic version (e.g., v1.2.3) - overrides VERSION file
     DOCKERHUB_USERNAME        Docker Hub username (default: davidamacey)
     PLATFORMS                 Explicit OVERRIDE of the per-component platform table
-                               (see `$0 list-platforms`) — unset by default, so each
+                               (see \`$0 list-platforms\`) — unset by default, so each
                                component builds only its declared platforms.
     USE_REMOTE_BUILDER        Use remote ARM64 builder for faster builds (default: false)
     REMOTE_BUILDER_NAME       Remote builder name (default: opentranscribe-multiarch)
@@ -1267,7 +1267,7 @@ main() {
         SEMVER="${VERSION}"
     elif [ -f "VERSION" ]; then
         # Read VERSION from file
-        SEMVER=$(cat VERSION | tr -d '[:space:]')
+        SEMVER=$(tr -d '[:space:]' < VERSION)
     else
         # Default version if neither exists
         SEMVER="v0.0.0"

@@ -3,22 +3,22 @@
   "version": 1,
   "groups": {
     "Python (non-test)": {
-      "files": 1493,
+      "files": 1489,
       "median": 205,
-      "p90": 497,
-      "p95": 600,
-      "max": 1457,
-      "over_soft": 145,
-      "over_hard": 4,
+      "p90": 496,
+      "p95": 593,
+      "max": 1367,
+      "over_soft": 143,
+      "over_hard": 2,
       "debt": {
-        "files_over_hard": 4,
-        "lines_above_hard": 1093,
-        "lines_above_soft": 20522
+        "files_over_hard": 2,
+        "lines_above_hard": 538,
+        "lines_above_soft": 18840
       }
     },
     "TypeScript/JS (non-test)": {
-      "files": 357,
-      "median": 78,
+      "files": 358,
+      "median": 76,
       "p90": 260,
       "p95": 383,
       "max": 1400,
@@ -27,7 +27,7 @@
       "debt": {
         "files_over_hard": 1,
         "lines_above_hard": 400,
-        "lines_above_soft": 2649
+        "lines_above_soft": 2622
       }
     },
     "Shell (non-test)": {
@@ -49,9 +49,9 @@
       }
     },
     "Tests (py/ts/js/sh)": {
-      "files": 2912,
+      "files": 2913,
       "median": 173,
-      "p90": 474,
+      "p90": 471,
       "p95": 628,
       "max": 1490,
       "over_soft": 18,
@@ -59,35 +59,35 @@
       "debt": {
         "files_over_hard": 0,
         "lines_above_hard": 0,
-        "lines_above_soft": 4008
+        "lines_above_soft": 4011
       }
     },
     "Svelte <script> logic": {
       "files": 436,
       "median": 54,
-      "p90": 228,
-      "p95": 339,
-      "max": 1362,
+      "p90": 229,
+      "p95": 336,
+      "max": 1311,
       "over_soft": 11,
       "over_hard": 4,
       "debt": {
         "files_over_hard": 4,
-        "lines_above_hard": 1521,
-        "lines_above_soft": 2976
+        "lines_above_hard": 1460,
+        "lines_above_soft": 2898
       }
     },
     "Svelte total file": {
       "files": 436,
       "median": 210,
       "p90": 643,
-      "p95": 924,
-      "max": 1965,
+      "p95": 919,
+      "max": 1959,
       "over_soft": 18,
       "over_hard": 0,
       "debt": {
         "files_over_hard": 0,
         "lines_above_hard": 0,
-        "lines_above_soft": 6118
+        "lines_above_soft": 6046
       }
     },
     "CLAUDE.md": {
@@ -101,7 +101,7 @@
       "debt": {
         "files_over_hard": 0,
         "lines_above_hard": 0,
-        "lines_above_soft": 1107
+        "lines_above_soft": 1103
       }
     }
   }

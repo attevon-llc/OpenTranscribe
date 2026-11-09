@@ -87,7 +87,7 @@ def _case(name):
 class TestUnusableActiveConfig:
     def _patched(self, name, monkeypatch):
         monkeypatch.setattr("app.services.bedrock_settings.resolve_region", lambda _b: None)
-        monkeypatch.setattr("app.services.llm_service.resolve_region", lambda _b: None)
+        monkeypatch.setattr("app.services.llm_factory.resolve_region", lambda _b: None)
         rows, reason = _case(name)
         return rows, reason
 
@@ -250,7 +250,7 @@ class TestDescribeAgreesWithFactory:
 
 class TestConfigIdBedrockRegion:
     def test_no_region_refused(self, cloud_system_provider, monkeypatch):
-        monkeypatch.setattr("app.services.llm_service.resolve_region", lambda _b: None)
+        monkeypatch.setattr("app.services.llm_factory.resolve_region", lambda _b: None)
         row = _config(provider="bedrock", base_url=None, api_key=None)
         with patch("app.db.base.SessionLocal", return_value=_db(row)):
             with pytest.raises(LLMConfigurationError) as caught:
@@ -258,7 +258,7 @@ class TestConfigIdBedrockRegion:
         assert caught.value.reason == LLMConfigFailure.BEDROCK_REGION
 
     def test_control_with_region_not_refused_for_region(self, cloud_system_provider, monkeypatch):
-        monkeypatch.setattr("app.services.llm_service.resolve_region", lambda _b: "us-east-1")
+        monkeypatch.setattr("app.services.llm_factory.resolve_region", lambda _b: "us-east-1")
         row = _config(provider="bedrock", base_url=None, api_key=None)
         with patch("app.db.base.SessionLocal", return_value=_db(row)):
             try:

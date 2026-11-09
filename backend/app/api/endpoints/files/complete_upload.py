@@ -44,6 +44,7 @@ from app.legal.processing_gate import refusal_error
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.file_route_queries import get_owned_file_by_uuid
 from app.services.privacy import file_consent
 from app.utils import benchmark_timing
 from app.utils.whisper_model_choice import require_servable_whisper_model
@@ -293,11 +294,7 @@ def complete_upload(
     _record_client_markers(request.task_id, request)
 
     # Locate the prepared MediaFile — must belong to the caller.
-    db_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.uuid == request.file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
+    db_file = get_owned_file_by_uuid(db, request.file_id, current_user.id)
     if not db_file:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

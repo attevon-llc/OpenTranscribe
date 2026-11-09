@@ -299,7 +299,7 @@ def test_colleague_cannot_manage_shares_of_an_org_collection(client, org_world):
 
 
 def test_import_adds_files_only_to_collections_of_the_files_tenant(org_world):
-    from app.api.endpoints.files.prepare_upload import add_file_to_collections
+    from app.services.upload_prepare_queries import add_file_to_collections
 
     w = org_world
     personal = _mk_collection(w.db, _unique("Mine"), w.bob, None)

@@ -23,9 +23,6 @@ from sqlalchemy.orm import selectinload
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.detail_response import set_file_urls
-from app.api.endpoints.files.filtering import LIST_SPEAKER_COLUMNS
-from app.api.endpoints.files.filtering import apply_all_filters
-from app.api.endpoints.files.filtering import hidden_speaker_name_clause
 from app.api.endpoints.media_collections_access import _hold_refusal
 from app.api.hold_refusal import refuse_if_frozen
 from app.auth.audit_events import AuditEventType
@@ -51,6 +48,9 @@ from app.services.content_hold_queries import held_by_collection_hold
 from app.services.content_hold_queries import list_hold_summaries
 from app.services.file_availability import exclude_unavailable
 from app.services.file_availability import unavailable_list_exempt
+from app.services.file_list_filters import LIST_SPEAKER_COLUMNS
+from app.services.file_list_filters import apply_all_filters
+from app.services.file_list_filters import hidden_speaker_name_clause
 from app.services.formatting_service import FormattingService
 from app.services.hidden_media_service import HIDDEN_MODE_PATTERN
 from app.services.hidden_media_service import apply_hidden_mode

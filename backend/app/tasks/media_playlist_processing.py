@@ -375,8 +375,8 @@ def _handle_playlist_result(
 
     # Apply collections and tags to each playlist video
     if collection_ids or tag_names:
-        from app.api.endpoints.files.prepare_upload import add_file_to_collections
-        from app.api.endpoints.files.prepare_upload import add_tags_to_file
+        from app.services.upload_prepare_queries import add_file_to_collections
+        from app.services.upload_prepare_queries import add_tags_to_file
 
         if collection_ids:
             from uuid import UUID as _UUID

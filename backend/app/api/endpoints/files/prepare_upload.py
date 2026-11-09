@@ -1,15 +1,11 @@
 import logging
 import uuid as uuid_lib
 from typing import Any
-from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
-from sqlalchemy import select
-from sqlalchemy import update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -17,22 +13,20 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.files.upload import create_media_file_record
 from app.api.error_handlers import ErrorHandler
-from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed
-from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.tag import FileTag
-from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.processing_request import PrepareUploadRequest
-from app.services.collection_visibility import usable_collections
 from app.services.privacy import file_consent
 from app.services.request_context import RequestContext
-from app.services.tag_service import on_tags_changed
-from app.services.tag_service import resolve_or_create_tags
+from app.services.upload_prepare_queries import UploadBatchInUseError
+from app.services.upload_prepare_queries import add_file_to_collections
+from app.services.upload_prepare_queries import add_tags_to_file
+from app.services.upload_prepare_queries import bump_upload_batch_file_count
+from app.services.upload_prepare_queries import get_or_create_upload_batch
 from app.utils import benchmark_timing
 from app.utils.file_hash import check_duplicate_by_fingerprint
 from app.utils.file_hash import cleanup_failed_duplicates
@@ -65,160 +59,6 @@ class FileMetadata:
         self.content_type = content_type
         self.file_hash: str | None = None
         self.extracted_from_video = extracted_from_video
-
-
-def get_or_create_upload_batch(
-    db: Session, batch_uuid: UUID, user_id: int, source: str = "multi_upload"
-) -> UploadBatch:
-    """Get an existing UploadBatch by UUID or create a new one.
-
-    Uses the client-provided UUID as the batch identifier. If a batch with
-    that UUID already exists for this user, returns it. Otherwise creates a new one.
-    Raises HTTP 409 if the UUID belongs to a different user.
-
-    Args:
-        db: Database session
-        batch_uuid: Client-generated UUID for the batch
-        user_id: Owner user ID
-        source: Upload source type (multi_upload, playlist, url_batch)
-
-    Returns:
-        UploadBatch record
-    """
-    # Atomic: parallel prepare requests of one multi-file upload share this uuid, so a
-    # read-then-insert would let two requests both miss and the loser hit the unique index.
-    # A concurrent uncommitted insert makes this statement wait for it, then do nothing.
-    inserted = db.execute(
-        pg_insert(UploadBatch)
-        .values(uuid=batch_uuid, user_id=user_id, source=source, file_count=0)
-        .on_conflict_do_nothing(index_elements=[UploadBatch.uuid])
-        .returning(UploadBatch.id)
-    ).first()
-    batch = db.query(UploadBatch).filter(UploadBatch.uuid == batch_uuid).one()
-    if batch.user_id != user_id:
-        # Never link a file to a batch another user owns.
-        raise HTTPException(status_code=409, detail="Upload batch id is already in use")
-    if inserted is not None:
-        logger.info(f"Created upload batch {batch_uuid} for user {user_id}")
-    return batch
-
-
-def increment_upload_batch_file_count(db: Session, batch_id: int) -> None:
-    """Atomically bump ``file_count`` (no read-modify-write, safe under concurrency)."""
-    db.execute(
-        update(UploadBatch)
-        .where(UploadBatch.id == batch_id)
-        .values(file_count=UploadBatch.file_count + 1)
-    )
-
-
-def add_file_to_collections(
-    db: Session, file_id: int, user_id: int, collection_ids: list[UUID]
-) -> None:
-    """Add a media file to the named collections of the file's tenant.
-
-    Only collections of the FILE's tenant qualify (issue #1051): for a personal
-    file, ``user_id``'s own personal collections; for an organization file, the
-    organization's collections, provided ``user_id`` is still a member. Anything
-    else — another tenant's collection, a stranger's — is silently skipped, so an
-    import can never put one tenant's recording into another tenant's collection.
-
-    Two queries regardless of how many collections are named (issue #284 A2.8). This
-    used to run a `Collection` lookup and a `CollectionMember` existence check per
-    UUID — 2N round trips on the upload-prep path, which the SPA calls once per file
-    in a multi-file upload, so a 50-file batch across 5 collections paid 500 queries.
-    Bounded N is not unbounded, but it is on the hot upload path and the batched form
-    is no harder to read.
-    """
-    if not collection_ids:
-        return
-
-    wanted = [str(coll_uuid) for coll_uuid in collection_ids]
-
-    # The file's tenant is a correlated subquery, not a separate SELECT, so the lookup stays
-    # one round trip (the batching contract above); a collection qualifies when it belongs to
-    # that tenant and ``user_id`` may edit it (collection_visibility.usable_collections).
-    file_org = select(MediaFile.organization_id).where(MediaFile.id == file_id).scalar_subquery()
-    collections = usable_collections(db, user_id, file_org, collection_uuids=wanted)
-    by_uuid = {str(collection.uuid): collection for collection in collections}
-
-    for coll_uuid in wanted:
-        if coll_uuid not in by_uuid:
-            logger.warning(f"Collection {coll_uuid} not found for user {user_id}, skipping")
-
-    resolved_ids = [collection.id for collection in collections]
-    if not resolved_ids:
-        db.flush()
-        return
-
-    already_member = {
-        row[0]
-        for row in db.query(CollectionMember.collection_id).filter(
-            CollectionMember.collection_id.in_(resolved_ids),
-            CollectionMember.media_file_id == file_id,
-        )
-    }
-
-    # dict.fromkeys keeps insertion order while de-duplicating a repeated UUID —
-    # the per-UUID loop relied on the just-added row being visible to the next
-    # existence check, which autoflush=False sessions do not guarantee.
-    for collection_id in dict.fromkeys(resolved_ids):
-        if collection_id not in already_member:
-            db.add(CollectionMember(collection_id=collection_id, media_file_id=file_id))
-
-    db.flush()
-
-
-def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: int) -> None:
-    """Add tags to a media file, creating tags if they don't exist.
-
-    ``user_id`` owns (or, on an organization file, is credited with) any tag
-    this creates. Background importers (watch sources, yt-dlp playlists) must
-    pass the **file owner**, never leave it unset — a tag with neither owner nor
-    tenant is a system tag and would be published to every account.
-    Tags resolve in the **file's tenant** (``MediaFile.organization_id``), read
-    here rather than taken from each caller, so no importer can land an org
-    file's tags in someone's personal vocabulary (issue #1050). A same-named
-    system tag is reused rather than forked, so applying a seeded default still
-    attaches the shared row.
-
-    Resolving the names (normalize, match normalized-exact, insert under a
-    SAVEPOINT) runs through the one implementation all tag creation shares, in
-    ``app/services/tag_service.py``, and stays batched — a constant number of
-    SELECTs regardless of list length (issue #284 A2.8), not 2N. These names
-    were typed by a person, so the fuzzy suggestion lookup is deliberately not
-    consulted.
-    """
-    # Session.get, not a query: every caller has the row in the identity map
-    # already, so this costs no SELECT (#284 A2.8 pins the count).
-    media_file = db.get(MediaFile, file_id)
-    organization_id = media_file.organization_id if media_file is not None else None
-    tag_ids = [
-        tag.id
-        for tag in resolve_or_create_tags(
-            db, tag_names, user_id=user_id, organization_id=organization_id
-        )
-    ]
-
-    if not tag_ids:
-        db.flush()
-        return
-
-    # ON CONFLICT DO NOTHING on (media_file_id, tag_id): an already-attached tag, or one
-    # a concurrent caller attaches first, is skipped instead of failing the insert.
-    db.flush()
-    db.execute(
-        pg_insert(FileTag)
-        .values(
-            [
-                {"media_file_id": file_id, "tag_id": tag_id, "source": TAG_SOURCE_MANUAL}
-                for tag_id in dict.fromkeys(tag_ids)
-            ]
-        )
-        .on_conflict_do_nothing(index_elements=[FileTag.media_file_id, FileTag.tag_id])
-    )
-
-    on_tags_changed(db, [file_id], user_id=user_id)
 
 
 def create_prepared_record(
@@ -288,11 +128,14 @@ def create_prepared_record(
 
     # Link file to upload batch if a batch UUID was provided
     if request.upload_batch_id:
-        batch = get_or_create_upload_batch(
-            db, request.upload_batch_id, current_user.id, source="multi_upload"
-        )
+        try:
+            batch = get_or_create_upload_batch(
+                db, request.upload_batch_id, current_user.id, source="multi_upload"
+            )
+        except UploadBatchInUseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         db_file.upload_batch_id = batch.id
-        increment_upload_batch_file_count(db, batch.id)
+        bump_upload_batch_file_count(db, batch.id)
         db.flush()
         logger.info(f"Linked file {db_file.id} to upload batch {request.upload_batch_id}")
 

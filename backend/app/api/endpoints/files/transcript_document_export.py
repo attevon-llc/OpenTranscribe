@@ -33,11 +33,11 @@ from app.api.endpoints.auth import get_current_active_user
 from app.core.capabilities import require_capability
 from app.core.constants import DOCUMENT_EXPORT_GUARD_TTL_S
 from app.db.base import get_db
-from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.transcript_export import DocumentExportAccepted
 from app.schemas.transcript_export import TranscriptDocumentExportRequest
 from app.services.download_events import document_export_guard_key
+from app.services.file_route_queries import file_has_segments
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -125,12 +125,7 @@ def request_document_export(
             ),
         )
 
-    has_transcript = (
-        db.query(TranscriptSegment.id)
-        .filter(TranscriptSegment.media_file_id == media_file.id)
-        .first()
-    )
-    if has_transcript is None:
+    if not file_has_segments(db, media_file.id):
         raise HTTPException(status_code=404, detail="No transcript available for this file")
 
     job_id, guard_key, is_new = _claim_or_existing_job(current_user.id, media_file.id, body)

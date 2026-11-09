@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 from typing import Final
 from typing import Literal
+from uuid import UUID
 
 from sqlalchemy import ColumnElement
 from sqlalchemy import Select
@@ -219,3 +220,15 @@ def tenant_key(tag: Any) -> tuple[Any, ...]:
     if tag.user_id is None:
         return ("system",)
     return ("user", tag.user_id)
+
+
+def visible_tag_id(
+    db: Session, tag_uuid: UUID, user_id: int, organization_id: int | None
+) -> int | None:
+    """The internal id of a tag the caller may read, or None when it is absent or invisible."""
+    tag_id: int | None = (
+        db.query(Tag.id)
+        .filter(Tag.uuid == tag_uuid, visible_to(db, user_id, organization_id))
+        .scalar()
+    )
+    return tag_id

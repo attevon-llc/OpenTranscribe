@@ -23,33 +23,10 @@ orm_call_in_api::backend/app/api/endpoints/asr_local_model.py	3	layering: remova
 orm_call_in_api::backend/app/api/endpoints/asr_provider_catalog.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/asr_provider_policy.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/asr_settings.py	10	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/comments.py	9	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/custom_vocabulary.py	8	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/diarization_settings.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/engine_settings.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/erasure_receipts.py	14	v0.6.1 merge: release route queries the ORM directly; move to a service planned
-orm_call_in_api::backend/app/api/endpoints/files/bulk_action_handlers.py	3	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/bulk_rework_actions.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/cancel_upload.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/complete_upload.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/crud.py	3	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/detail_response.py	4	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/filtering.py	9	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/listing.py	6	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/multipart.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/prepare_upload.py	6	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/redaction_gate.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/reprocess_clear.py	10	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/reprocess_dispatch.py	1	v0.6.1 merge: release legal-gate hunk ported into the split module; move to a service planned
-orm_call_in_api::backend/app/api/endpoints/files/subtitles.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/transcript_document_export.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/transcript_export.py	3	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/transcript_view.py	4	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/upload.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/upload_dispatch.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/url_video_import.py	3	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/voiceprint_consent.py	1	v0.6.1 merge: release route queries the ORM directly; move to a service planned
-orm_call_in_api::backend/app/api/endpoints/files/waveform.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/legal.py	4	v0.6.1 merge: release legal routes query the ORM directly; move to a service planned
 orm_call_in_api::backend/app/api/endpoints/llm_config_helpers.py	5	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/llm_connection_tests.py	4	layering: removal planned
@@ -79,14 +56,11 @@ orm_call_in_api::backend/app/api/endpoints/speakers_profile_workflow.py	10	layer
 orm_call_in_api::backend/app/api/endpoints/speakers_suggestions.py	7	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/summarization.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/support_access.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/tags/discovery.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/tags/sharing.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tasks.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tasks_file_repair.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tasks_recovery.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tasks_system_health.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/topics.py	6	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/transcript_segments.py	5	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/usage.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/user_files.py	6	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/user_settings.py	1	layering: removal planned

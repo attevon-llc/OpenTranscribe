@@ -18,6 +18,7 @@ from app.core.env import env_bool
 from app.core.exceptions import DomainError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.services.file_route_queries import get_file_by_id
 from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
@@ -191,7 +192,7 @@ def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: E
     text = str(exc) if isinstance(exc, DomainError) else getattr(exc, "message", None)
     message = text or str(exc) or exc.__class__.__name__
     try:
-        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+        media_file = get_file_by_id(db, file_id)
         if media_file is None:
             return
         media_file.last_error_message = message

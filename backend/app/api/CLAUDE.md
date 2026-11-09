@@ -47,6 +47,11 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 - `endpoints/files/` — the oversized files router split into a package (`upload`, `crud`,
   `filtering`, `listing`, `single_file`, `media_delivery`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
   `management.py` exports a second router (same `/files` prefix) that includes `bulk_actions`; verbs in `bulk_action_handlers` and `bulk_rework_actions`.
+  No ORM call lives in these modules (the `orm_call_in_api` guard): row lookups and writes are in
+  `services/file_route_queries.py` and `services/upload_prepare_queries.py`, the gallery filters in
+  `services/file_list_filters.py` (`files/filtering.py` only re-exports them under the stable import path).
+  The helpers never commit; each route keeps its own commit. Comments use `services/comment_queries.py`,
+  speaker-segment lookups `services/transcript_segment_queries.py`, tag lookups `tag_scope.visible_tag_id` / `tag_sharing.get_tag`.
 
 ## Conventions / patterns
 

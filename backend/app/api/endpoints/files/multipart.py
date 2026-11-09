@@ -30,6 +30,7 @@ from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services import multipart_upload
+from app.services.file_route_queries import get_owned_file_by_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +62,7 @@ def _load_pending_file(db: Session, file_id: str, user: User) -> MediaFile:
     into the object key of that row, so handing one out for someone else's row
     would let a caller overwrite another user's media.
     """
-    db_file = (
-        db.query(MediaFile).filter(MediaFile.uuid == file_id, MediaFile.user_id == user.id).first()
-    )
+    db_file = get_owned_file_by_uuid(db, file_id, user.id)
     if not db_file or not db_file.storage_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

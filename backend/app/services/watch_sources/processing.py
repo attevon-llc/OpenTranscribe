@@ -370,7 +370,7 @@ def _finalize_media_ingest(
     db_file.storage_path = storage_path
 
     # 6. Collections + tags (owned by / shared with the source user).
-    from app.api.endpoints.files.prepare_upload import add_file_to_collections
+    from app.services.upload_prepare_queries import add_file_to_collections
 
     if source.collection_ids:
         add_file_to_collections(db, int(db_file.id), owner_id, source.collection_ids)
@@ -507,7 +507,7 @@ def import_single_file(
 
 def _add_tags(db: Session, file_id: int, tag_names: list[str], user_id: int) -> None:
     """Apply a watch source's tags to an imported file, owned by ``user_id``."""
-    from app.api.endpoints.files.prepare_upload import add_tags_to_file
+    from app.services.upload_prepare_queries import add_tags_to_file
 
     add_tags_to_file(db, file_id, tag_names, user_id)
 

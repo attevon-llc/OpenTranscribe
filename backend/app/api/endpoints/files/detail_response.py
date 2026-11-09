@@ -11,7 +11,6 @@ from typing import Any
 from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import selectinload
 
 from app.api.error_handlers import ErrorHandler
 from app.core.db_overload import reraise_db_overload
@@ -25,8 +24,6 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
-from app.models.tag import FileTag
-from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.collection import Collection as CollectionSchema
 from app.schemas.media import MediaFileDetail
@@ -34,13 +31,17 @@ from app.schemas.speaker import Speaker as SpeakerResponseSchema
 from app.schemas.tag import Tag as TagSchema
 from app.services.content_hold_queries import file_hold_summary
 from app.services.file_provenance_view import build_processing_steps
+from app.services.file_route_queries import count_speaker_turns
+from app.services.file_route_queries import get_file_analytics
+from app.services.file_route_queries import list_file_speakers_with_profile
+from app.services.file_route_queries import list_file_tags
+from app.services.file_route_queries import page_transcript_segments
 from app.services.formatting_service import FormattingService
 from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_scope import TagWriteRights
 from app.services.tag_scope import tag_ownership
-from app.services.tag_scope import tenant_bound_or_system
 from app.utils.audio_stream import language_mismatch
 from app.utils.audio_stream import transcribed_track
 
@@ -48,9 +49,7 @@ from .crud import get_media_file_by_uuid
 from .redaction_gate import _redaction_pending
 from .redaction_gate import _resolve_redaction_for_request
 from .transcript_view import _build_grouped_segments
-from .transcript_view import _count_speaker_segments
 from .transcript_view import _format_transcript_segments
-from .transcript_view import _get_transcript_segments
 from .transcript_view import redact_response_speakers
 
 logger = logging.getLogger(__name__)
@@ -94,12 +93,7 @@ def get_file_tags(
     Returns:
         Tag schemas for the file.
     """
-    tags = (
-        db.query(Tag)
-        .join(FileTag, FileTag.tag_id == Tag.id)
-        .filter(FileTag.media_file_id == file_id, tenant_bound_or_system(organization_id))
-        .all()
-    )
+    tags = list_file_tags(db, file_id, organization_id)
     return [
         TagSchema.model_validate(
             {
@@ -220,7 +214,7 @@ def _get_or_compute_analytics(
     Returns:
         Analytics object or None
     """
-    analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+    analytics = get_file_analytics(db, file_id)
 
     # Enum comparison — the old str-based form compared "FileStatus.COMPLETED"
     # against "completed" and was always True, so the on-demand computation
@@ -234,7 +228,7 @@ def _get_or_compute_analytics(
     logger.info(f"Computing missing analytics on-demand for file {file_id}")
     success = AnalyticsService.compute_and_save_analytics(db, file_id)
     if success:
-        analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+        analytics = get_file_analytics(db, file_id)
 
     return analytics
 
@@ -361,12 +355,7 @@ def _load_file_speakers(db: Session, file_id: int) -> list[Speaker]:
     The profile is eager-loaded so add_computed_status (which reads speaker.profile)
     doesn't fire one lazy SELECT per speaker.
     """
-    return (
-        db.query(Speaker)
-        .options(selectinload(Speaker.profile))
-        .filter(Speaker.media_file_id == file_id)
-        .all()
-    )
+    return list_file_speakers_with_profile(db, file_id)
 
 
 def _redact_and_decorate_speakers(
@@ -473,12 +462,12 @@ def get_media_file_detail(
         speakers = _load_file_speakers(db, file_id)
 
         # Get transcript segments with pagination
-        transcript_segments, total_segments = _get_transcript_segments(
+        transcript_segments, total_segments = page_transcript_segments(
             db, file_id, segment_limit, segment_offset
         )
 
         # Count merged speaker segments (adjacent same-speaker groups)
-        total_speaker_segments = _count_speaker_segments(db, file_id)
+        total_speaker_segments = count_speaker_turns(db, file_id)
 
         # Compute caller's effective permission for frontend
         if db_file.user_id == current_user.id:

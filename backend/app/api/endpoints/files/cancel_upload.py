@@ -11,9 +11,8 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_user
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import FileStatus
-from app.models.media import MediaFile
 from app.models.user import User
+from app.services.file_route_queries import get_pending_upload
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -55,21 +54,7 @@ def cancel_upload(
 
     # Get the media file by UUID (tenant-gated: org scope only sees same-org
     # rows; personal scope only org-less rows — mirrors scope_to_context).
-    org_pred = (
-        MediaFile.organization_id == ctx.org_id
-        if ctx.org_id is not None
-        else MediaFile.organization_id.is_(None)
-    )
-    db_file = (
-        db.query(MediaFile)
-        .filter(
-            MediaFile.uuid == file_uuid,
-            MediaFile.user_id == current_user.id,
-            MediaFile.status == FileStatus.PENDING,
-            org_pred,
-        )
-        .first()
-    )
+    db_file = get_pending_upload(db, file_uuid, user_id=current_user.id, organization_id=ctx.org_id)
 
     if not db_file:
         # Not a pending upload owned by the caller: move it to the trash.

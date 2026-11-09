@@ -91,7 +91,7 @@ def test_the_writer_stamps_an_org_file_and_leaves_a_personal_one_bare(org_id, st
 
 @pytest.mark.parametrize("org_id", [7, None])
 def test_the_gallery_reader_sends_the_tenant_gate(org_id, monkeypatch, db_session):
-    from app.api.endpoints.files import filtering
+    from app.services import file_list_filters as filtering
 
     fake = _RecordingClient()
     monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: fake)
@@ -176,7 +176,7 @@ def _write_through_the_writer(world, scopes=SCOPES) -> None:
 
 
 def _gallery_hits(db_session, world, scope) -> set[str]:
-    from app.api.endpoints.files import filtering
+    from app.services import file_list_filters as filtering
 
     ungated = db_session.query(MediaFile).filter(MediaFile.id.in_(world.all_file_ids))
     filtered = filtering.apply_transcript_search_filter(

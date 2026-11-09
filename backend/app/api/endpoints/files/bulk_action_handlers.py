@@ -28,6 +28,7 @@ from app.models.tag import Tag
 from app.models.user import User
 from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
 from app.services.dispatch_priority import nlp_priority
+from app.services.file_route_queries import get_file_by_id
 from app.services.llm_settings_outage import LLM_SETTINGS_UNREADABLE_MESSAGE
 from app.services.platform_bypass import PlatformBypass
 from app.services.tag_bulk import BulkTagOutcome
@@ -228,7 +229,7 @@ def _handle_summarize_action(
         return unavailable
 
     # Check file status - must be completed
-    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    db_file = get_file_by_id(db, file_id)
     if not db_file or db_file.status != FileStatus.COMPLETED:
         return BulkActionResult(
             file_uuid=file_uuid,
@@ -270,7 +271,7 @@ def _handle_identify_speakers_action(
     if unavailable is not None:
         return unavailable
 
-    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    db_file = get_file_by_id(db, file_id)
     if not db_file or db_file.status != FileStatus.COMPLETED:
         return BulkActionResult(
             file_uuid=file_uuid,
@@ -314,7 +315,7 @@ def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActi
 
     from app.api.endpoints.files.redaction_gate import claim_and_dispatch_redaction_scan
 
-    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    db_file = get_file_by_id(db, file_id)
     if not db_file or db_file.status != FileStatus.COMPLETED:
         return BulkActionResult(
             file_uuid=file_uuid,

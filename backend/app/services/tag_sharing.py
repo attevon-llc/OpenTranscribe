@@ -40,6 +40,16 @@ class TagShareError(OpenTranscribeError):
     """A share could not be created as asked."""
 
 
+def get_tag(db: Session, tag_id: int) -> Tag:
+    """The tag row for an id the caller already proved writable (raises if it is gone)."""
+    return db.query(Tag).filter(Tag.id == tag_id).one()
+
+
+def get_share(db: Session, tag_id: int, share_uuid: UUID) -> TagShare | None:
+    """One grant on a tag by its public id, or None."""
+    return db.query(TagShare).filter(TagShare.tag_id == tag_id, TagShare.uuid == share_uuid).first()
+
+
 def list_shares(db: Session, tag_id: int) -> list[TagShare]:
     """Every grant on a tag, newest first."""
     return (
@@ -206,9 +216,7 @@ def revoke_share(db: Session, tag_id: int, share_uuid: UUID) -> bool:
     ``visible_to``, which is correct: they can still see the word on their own
     media.
     """
-    share = (
-        db.query(TagShare).filter(TagShare.tag_id == tag_id, TagShare.uuid == share_uuid).first()
-    )
+    share = get_share(db, tag_id, share_uuid)
     if share is None:
         return False
     db.delete(share)

@@ -116,7 +116,7 @@ class _RecordingClient:
 
 def test_the_gallery_transcript_filter_excludes_the_trash(monkeypatch):
     """The legacy whole-transcript index (gallery "search in transcripts")."""
-    from app.api.endpoints.files import filtering
+    from app.services import file_list_filters as filtering
 
     client = _RecordingClient()
     monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: client)

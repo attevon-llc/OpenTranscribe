@@ -45,6 +45,8 @@ from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.processing_request import ReprocessRequest
 from app.schemas.transcript import TranscriptSegment
 from app.schemas.transcript import TranscriptSegmentUpdate
+from app.services.file_list_filters import apply_all_filters
+from app.services.file_list_filters import get_metadata_filters
 from app.services.request_context import RequestContext
 from app.services.storage_versions import StorageDeleteIncompleteError
 from app.utils.whisper_model_choice import require_servable_whisper_model
@@ -67,8 +69,6 @@ from .crud import update_media_file
 from .crud import update_single_transcript_segment
 from .detail_response import _get_or_compute_analytics
 from .detail_response import get_media_file_detail
-from .filtering import apply_all_filters
-from .filtering import get_metadata_filters
 from .listing import list_media_files
 from .post_processing import router as post_processing_router
 from .reprocess import process_file_reprocess

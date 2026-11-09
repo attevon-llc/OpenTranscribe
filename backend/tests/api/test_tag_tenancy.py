@@ -313,7 +313,7 @@ def test_auto_label_on_a_personal_file_stays_personal(org_world):
 
 def test_upload_import_tags_land_in_the_files_tenant(org_world):
     """The batched importer (upload / URL / watch sources) resolves in the file's tenant."""
-    from app.api.endpoints.files.prepare_upload import add_tags_to_file
+    from app.services.upload_prepare_queries import add_tags_to_file
 
     w = org_world
     name = _unique("Imported")

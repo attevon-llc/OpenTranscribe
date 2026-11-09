@@ -20,6 +20,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.transcript import TranscriptSegmentsPage
+from app.services.file_route_queries import page_transcript_segments
 from app.services.request_context import RequestContext
 from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_status_service import SpeakerStatusService
@@ -29,7 +30,6 @@ from .redaction_gate import _redaction_pending
 from .redaction_gate import _resolve_redaction_for_request
 from .transcript_view import _build_grouped_segments
 from .transcript_view import _format_transcript_segments
-from .transcript_view import _get_transcript_segments
 from .transcript_view import redact_response_speakers
 
 router = APIRouter()
@@ -87,7 +87,7 @@ def get_file_segments(
         }
 
     # 2 queries: count + paginated select with joinedload (vs 8+ in full detail)
-    transcript_segments, total_segments = _get_transcript_segments(
+    transcript_segments, total_segments = page_transcript_segments(
         db, file_id, segment_limit, segment_offset
     )
 

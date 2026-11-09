@@ -31,6 +31,13 @@ from app.schemas.user import UserSearchResult
 from app.services.content_hold_queries import list_hold_summaries
 from app.services.delete_permissions import can_delete_file
 from app.services.file_availability import unavailable_list_exempt
+from app.services.file_list_filters import LIST_SPEAKER_COLUMNS
+from app.services.file_list_filters import apply_all_filters
+from app.services.file_list_filters import get_accessible_owners
+from app.services.file_list_filters import get_metadata_filters
+from app.services.file_list_filters import hidden_speaker_name_clause
+from app.services.file_list_filters import resolve_owner_user_ids
+from app.services.file_route_queries import gallery_base_query
 from app.services.formatting_service import FormattingService
 from app.services.hidden_media_service import HIDDEN_MODE_PATTERN
 from app.services.hidden_media_service import apply_hidden_mode
@@ -39,12 +46,6 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
 
 from .detail_response import set_file_urls
-from .filtering import LIST_SPEAKER_COLUMNS
-from .filtering import apply_all_filters
-from .filtering import get_accessible_owners
-from .filtering import get_metadata_filters
-from .filtering import hidden_speaker_name_clause
-from .filtering import resolve_owner_user_ids
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -204,62 +205,21 @@ def list_media_files(
     - 'all': Both owned and shared files
     """
     current_user = ctx.user
-    from app.services.permission_service import PermissionService
-
     list_options = _list_load_options()
 
     user_id = current_user.id
     org_scope = ctx.org_id  # int -> org scope, None -> personal scope (org-less rows)
 
-    # Tenant gate for the admin "see all" and the owned-file branches. In org
-    # context only same-org rows; in personal scope only org-less rows. Community
-    # edition: org_scope is None and rows are org-less, so this is a no-op.
-    if org_scope is not None:
-        org_pred = MediaFile.organization_id == org_scope
-    else:
-        org_pred = MediaFile.organization_id.is_(None)
-
     from app.services.file_availability import exclude_unavailable
 
-    # Admin users can see all files regardless of ownership param (still org-gated).
-    # Admins also see quarantined (taken-down) files so they can review them; for
-    # every other caller the abuse/DMCA exclusion hides taken-down files.
-    if ctx.bypass.sees_all_in_scope:
-        base_query = db.query(MediaFile).options(*list_options).filter(org_pred)
-        effective_user_id = None
-    elif ownership == "mine":
-        # Default: only owned files (within tenant scope)
-        base_query = (
-            db.query(MediaFile)
-            .options(*list_options)
-            .filter(MediaFile.user_id == user_id, org_pred)
-        )
-        effective_user_id = user_id
-    elif ownership == "shared":
-        # Only files from shared collections (not owned by user)
-        accessible_subquery = PermissionService.get_accessible_file_ids_subquery(
-            db, user_id, organization_id=org_scope
-        )
-        base_query = (
-            db.query(MediaFile)
-            .options(*list_options)
-            .filter(
-                MediaFile.id.in_(db.query(accessible_subquery.c.id)),
-                MediaFile.user_id != user_id,  # Exclude owned files
-            )
-        )
-        effective_user_id = None  # Don't filter by user_id in apply_all_filters
-    else:
-        # All: owned + shared
-        accessible_subquery = PermissionService.get_accessible_file_ids_subquery(
-            db, user_id, organization_id=org_scope
-        )
-        base_query = (
-            db.query(MediaFile)
-            .options(*list_options)
-            .filter(MediaFile.id.in_(db.query(accessible_subquery.c.id)))
-        )
-        effective_user_id = None
+    base_query, effective_user_id = gallery_base_query(
+        db,
+        list_options,
+        user_id=user_id,
+        org_scope=org_scope,
+        ownership=ownership,
+        sees_all=ctx.bypass.sees_all_in_scope,
+    )
 
     # Abuse/DMCA: hide taken-down files from the gallery for non-admins.
     include_quarantined = unavailable_list_exempt(ctx.bypass)

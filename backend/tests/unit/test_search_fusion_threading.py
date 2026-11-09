@@ -57,6 +57,9 @@ class _Recorder:
         self.calls.append({"index": index, "body": body, "params": params or {}})
         return {"hits": {"hits": [], "total": {"value": 0}}}
 
+    def count(self, index: str | None = None, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {"count": 1}
+
     @property
     def attached_pipelines(self) -> list[str | None]:
         return [call["params"].get("search_pipeline") for call in self.calls]

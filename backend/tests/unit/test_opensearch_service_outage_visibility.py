@@ -136,12 +136,6 @@ SOFT_WRITERS: list[tuple[str, Any, Callable[[], Any], Any]] = [
         None,
     ),
     (
-        "find_speaker_across_media",
-        speaker_metadata,
-        lambda: speaker_metadata.find_speaker_across_media("Ann", 1, organization_id=None),
-        [],
-    ),
-    (
         "store_profile_embedding",
         profiles,
         lambda: profiles.store_profile_embedding(1, "p", "Ann", _EMB, 1, 1),
@@ -221,14 +215,6 @@ STRICT_READERS: list[tuple[str, Any, Callable[[bool], Any], Any]] = [
         [],
     ),
     (
-        "batch_find_matching_speakers",
-        matching,
-        lambda s: matching.batch_find_matching_speakers(
-            [{"id": 1, "embedding": _EMB}], 1, strict=s
-        ),
-        [],
-    ),
-    (
         "msearch_speaker_similarities",
         matching,
         lambda s: matching.msearch_speaker_similarities(
@@ -260,12 +246,3 @@ def test_missing_profile_is_not_an_outage(caplog):
         result = _call_with(exc, profiles, lambda: profiles.get_profile_embedding("p", strict=True))
     assert result is None
     assert not _tracebacks(caplog)
-
-
-def test_collection_speaker_lookup_raises_instead_of_returning_empty():
-    with pytest.raises(OpenSearchUnavailableError):
-        _call_with(
-            _outage(),
-            speaker_collections,
-            lambda: speaker_collections.get_speakers_in_collection(1, 1),
-        )

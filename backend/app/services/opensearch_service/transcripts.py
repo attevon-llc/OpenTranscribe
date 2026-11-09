@@ -41,8 +41,7 @@ import datetime
 import logging
 from typing import Any
 
-from opensearchpy.exceptions import NotFoundError
-from opensearchpy.exceptions import OpenSearchException
+from opensearchpy import exceptions as os_exceptions
 
 from app.core.config import settings
 from app.services.opensearch_service import client as _client
@@ -129,7 +128,7 @@ def index_transcript(
         logger.info(f"Indexed transcript for file {file_uuid} (ID: {file_id}): {response}")
         return response
 
-    except OpenSearchException as e:
+    except os_exceptions.OpenSearchException as e:
         logger.exception(f"Error indexing transcript for file {file_uuid} (ID: {file_id}): {e}")
         return None
 
@@ -159,12 +158,12 @@ def update_transcript_title(file_uuid: str, new_title: str) -> dict[str, Any] | 
         logger.info(f"Updated transcript title for file {file_uuid}: {response}")
         return response
 
-    except NotFoundError:
+    except os_exceptions.NotFoundError:
         # The document doesn't exist yet, that's okay - it will be indexed later
         logger.info(
             f"Document not found for file {file_uuid}, will be indexed when transcription completes"
         )
         return None
-    except OpenSearchException as e:
+    except os_exceptions.OpenSearchException as e:
         logger.exception(f"Error updating transcript title for file {file_uuid}: {e}")
         return None

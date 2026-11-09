@@ -27,13 +27,6 @@ _SITES = [
         "SPEAKER_CONFIDENCE_MEDIUM",
     ),
     (
-        "app.services.opensearch_service.matching",
-        "batch_find_matching_speakers",
-        "threshold",
-        0.5,
-        "SPEAKER_CONFIDENCE_MEDIUM",
-    ),
-    (
         "app.services.opensearch_service.profiles",
         "msearch_profile_knn_batch",
         "threshold",

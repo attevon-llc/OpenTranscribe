@@ -92,11 +92,10 @@ def test_every_knn_body_excludes_the_trash():
 
 
 def test_the_known_knn_readers_are_all_found():
-    """The sweep must see the nine speaker-plane kNN readers, or it is checking nothing."""
+    """The sweep must see the eight speaker-plane kNN readers, or it is checking nothing."""
     sites = _all_sites()
     for expected in (
         "services/opensearch_service/matching.py::find_matching_speaker",
-        "services/opensearch_service/matching.py::batch_find_matching_speakers",
         "services/opensearch_service/matching.py::msearch_speaker_similarities",
         "services/opensearch_service/profiles.py::msearch_profile_knn_batch",
         "services/opensearch_service/profiles.py::find_matching_profiles",

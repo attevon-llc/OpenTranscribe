@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 from app.core.exceptions import ServiceUnavailableError
 from app.services.search.collapsed_search import _search_with_collapse
@@ -41,7 +42,9 @@ def _service(client: MagicMock) -> MagicMock:
 def test_keyword_search_outage_raises_instead_of_an_empty_page():
     client = MagicMock()
     service = _service(client)
-    service._execute_split_bm25_collapse.side_effect = ConnectionError("down")
+    service._execute_split_bm25_collapse.side_effect = OpenSearchConnectionError(
+        "N/A", "down", Exception()
+    )
 
     with pytest.raises(ServiceUnavailableError):
         _collapse(service, use_neural=False)
@@ -49,7 +52,7 @@ def test_keyword_search_outage_raises_instead_of_an_empty_page():
 
 def test_hybrid_search_outage_with_failed_bm25_fallback_raises():
     client = MagicMock()
-    client.search.side_effect = ConnectionError("down")
+    client.search.side_effect = OpenSearchConnectionError("N/A", "down", Exception())
     service = _service(client)
 
     with pytest.raises(ServiceUnavailableError):
@@ -61,7 +64,7 @@ def test_available_filters_outage_raises_instead_of_empty_facets():
     from app.services.search import suggestions
 
     client = MagicMock()
-    client.search.side_effect = ConnectionError("down")
+    client.search.side_effect = OpenSearchConnectionError("N/A", "down", Exception())
     with (
         patch.object(suggestions._client, "opensearch_client", client),
         patch.object(suggestions, "_chunks_index_verified", return_value=True),

@@ -5,9 +5,8 @@ dev OpenSearch cluster, and (for ``sync_speaker_profiles_to_opensearch``) a
 real Postgres ``Speaker``/``SpeakerProfile`` row via the savepoint-rolled-back
 ``db_session`` fixture.
 
-No kNN ``_score`` is ever read in this module — ``find_speaker_across_media``
-does a plain ``get`` by id followed by a ``term`` search, never a kNN query —
-so the cosinesimil conversion rule does not apply here.
+No kNN ``_score`` is ever read in this module, so the cosinesimil conversion
+rule does not apply here.
 """
 
 from __future__ import annotations
@@ -70,9 +69,8 @@ def _speaker_doc(speaker_uuid: str, user_id: int, name: str, **overrides) -> dic
 def indices(monkeypatch):
     """A throwaway speaker index (alias -> v4) AND a throwaway transcript index.
 
-    ``find_speaker_across_media`` reads both planes, so both must be real —
-    a stand-in for either would leave the join it performs (speaker name ->
-    transcript ``speakers`` term match) completely unverified.
+    Both planes must be real; a stand-in for either would leave the
+    speaker/transcript join unverified.
     """
     from app.core.config import settings
     from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
@@ -128,80 +126,6 @@ def indices(monkeypatch):
     finally:
         for idx in (v3, v4, transcript_index):
             client.indices.delete(index=idx, ignore=[404])
-
-
-# --------------------------------------------------------------------------- #
-# find_speaker_across_media
-# --------------------------------------------------------------------------- #
-
-
-def test_find_speaker_across_media_returns_only_this_users_matching_files(indices):
-    client = indices.client
-    speaker_uuid = str(uuid_pkg.uuid4())
-    user_id = 42
-    client.index(
-        index=indices.alias, id=speaker_uuid, body=_speaker_doc(speaker_uuid, user_id, "Dana")
-    )
-
-    matching_uuid = str(uuid_pkg.uuid4())
-    other_speaker_uuid = str(uuid_pkg.uuid4())
-    other_user_file_uuid = str(uuid_pkg.uuid4())
-    client.index(
-        index=indices.transcript_index,
-        id="1",
-        body={
-            "file_id": 1,
-            "file_uuid": matching_uuid,
-            "user_id": user_id,
-            "title": "Pricing sync",
-            "speakers": ["Dana", "Ravi"],
-            "upload_time": "2026-08-01T00:00:00+00:00",
-        },
-    )
-    # Different speaker name entirely — excluded.
-    client.index(
-        index=indices.transcript_index,
-        id="2",
-        body={
-            "file_id": 2,
-            "file_uuid": other_speaker_uuid,
-            "user_id": user_id,
-            "title": "Unrelated meeting",
-            "speakers": ["Ravi"],
-            "upload_time": "2026-08-02T00:00:00+00:00",
-        },
-    )
-    # Same speaker name, but a DIFFERENT user — must not leak across users.
-    client.index(
-        index=indices.transcript_index,
-        id="3",
-        body={
-            "file_id": 3,
-            "file_uuid": other_user_file_uuid,
-            "user_id": 9999,
-            "title": "Someone else's meeting",
-            "speakers": ["Dana"],
-            "upload_time": "2026-08-03T00:00:00+00:00",
-        },
-    )
-    client.indices.refresh(index=indices.transcript_index)
-
-    results = speaker_metadata.find_speaker_across_media(
-        speaker_uuid, user_id, organization_id=None
-    )
-
-    assert len(results) == 1
-    assert results[0]["file_id"] == 1
-    assert results[0]["file_uuid"] == matching_uuid
-    assert results[0]["title"] == "Pricing sync"
-
-
-def test_find_speaker_across_media_unknown_speaker_returns_empty(indices):
-    results = speaker_metadata.find_speaker_across_media(
-        str(uuid_pkg.uuid4()), 42, organization_id=None
-    )
-
-    assert results == []
 
 
 # --------------------------------------------------------------------------- #

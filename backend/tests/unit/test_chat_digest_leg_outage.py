@@ -5,6 +5,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
+
 
 def _digest_patches(client):
     from app.services.search import chunk_retrieval
@@ -23,7 +25,7 @@ def test_digest_retrieval_failure_is_flagged_not_just_empty():
     from app.services.search.chunk_retrieval import retrieve_digests
 
     client = MagicMock()
-    client.search.side_effect = ConnectionError("down")
+    client.search.side_effect = OpenSearchConnectionError("N/A", "down", Exception())
     diagnostics: dict = {}
     p1, p2, p3 = _digest_patches(client)
     with p1, p2, p3:

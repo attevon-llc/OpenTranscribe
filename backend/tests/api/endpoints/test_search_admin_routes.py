@@ -198,7 +198,7 @@ class _StandInMLService:
     def find_model_by_name(self, model_name: str) -> str:
         return f"ml-id-for-{model_name}"
 
-    def get_model_status(self, model_id: str) -> dict:
+    def get_model_status(self, model_id: str, *, raise_on_error: bool = False) -> dict:
         return {"model_id": model_id, "deployed": True}
 
     def set_active_model_id(self, model_id: str) -> None:

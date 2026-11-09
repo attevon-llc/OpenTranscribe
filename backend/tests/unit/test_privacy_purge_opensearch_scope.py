@@ -555,9 +555,6 @@ def test_every_personal_speaker_search_carries_the_organization_file_exclusion(
 
     embedding = [0.1, 0.2, 0.3, 0.4]
     matching.find_matching_speaker(embedding, normal_user.id, organization_id=None)
-    matching.batch_find_matching_speakers(
-        [{"id": 1, "embedding": embedding}], normal_user.id, organization_id=None
-    )
     matching.msearch_speaker_similarities(
         [{"speaker_uuid": "u", "embedding": embedding}], normal_user.id, organization_id=None
     )
@@ -573,7 +570,7 @@ def test_every_personal_speaker_search_carries_the_organization_file_exclusion(
     bodies = [c.kwargs["body"] for c in recording_cluster.search.call_args_list]
     bodies += [c.kwargs["body"] for c in recording_cluster.msearch.call_args_list]
     bodies.append(built)
-    assert len(bodies) == 5
+    assert len(bodies) == 4
     for body in bodies:
         assert '"media_file_id": [901, 902]' in _filters_of(body), body
 

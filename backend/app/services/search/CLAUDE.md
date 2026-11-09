@@ -16,7 +16,7 @@ instead of failing loudly. Any new kNN read must convert. The 10 existing conver
 in the sibling speaker/voiceprint plane, none in this package):
 
 - `../opensearch_service/matching.py` — `_extract_speaker_match` ·
-  `batch_find_matching_speakers` · `msearch_speaker_similarities`
+  `msearch_speaker_similarities`
 - `../opensearch_service/profiles.py` — `msearch_profile_knn_batch` · `find_matching_profiles`
 - `../opensearch_service/clusters.py` — `find_matching_clusters`
 - `../speaker_matching/` — `match_queries.match_speaker_to_known_speakers` · `match_storage.process_match_hit`
@@ -109,7 +109,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
   `must_not exists organization_id`, so org docs can never leak into personal results.
   That includes the legacy whole-document `transcripts` index (#1027): `index_transcript` takes
   a required `organization_id` and stamps org files only, and its readers (the gallery's
-  `apply_transcript_search_filter`, `find_speaker_across_media`) gate on it instead of relying
+  `apply_transcript_search_filter`) gate on it instead of relying
   only on the SQL query they are intersected with. Docs written before that carry no stamp —
   `tasks/tenant_backfill_task.py` stamps them (its runbook covers both indices). An index
   created before the field existed gets the `organization_id: integer` mapping on bootstrap

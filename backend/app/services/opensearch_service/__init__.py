@@ -54,7 +54,6 @@ from app.services.opensearch_service.indices import create_speaker_index_v4
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.opensearch_service.indices import ensure_v4_index_exists
 from app.services.opensearch_service.matching import _extract_speaker_match
-from app.services.opensearch_service.matching import batch_find_matching_speakers
 from app.services.opensearch_service.matching import find_matching_speaker
 from app.services.opensearch_service.matching import msearch_speaker_similarities
 from app.services.opensearch_service.profiles import find_matching_profiles
@@ -67,13 +66,11 @@ from app.services.opensearch_service.repair import _repair_index
 from app.services.opensearch_service.repair import check_and_repair_indices
 from app.services.opensearch_service.repair import rebuild_speaker_index
 from app.services.opensearch_service.speaker_collections import bulk_update_collection_assignments
-from app.services.opensearch_service.speaker_collections import get_speakers_in_collection
 from app.services.opensearch_service.speaker_collections import move_speaker_to_profile_collection
 from app.services.opensearch_service.speaker_collections import update_speaker_collections
 from app.services.opensearch_service.speaker_maintenance import cleanup_orphaned_speaker_embeddings
 from app.services.opensearch_service.speaker_maintenance import merge_speaker_embeddings
 from app.services.opensearch_service.speaker_maintenance import remove_speaker_embedding
-from app.services.opensearch_service.speaker_metadata import find_speaker_across_media
 from app.services.opensearch_service.speaker_metadata import sync_speaker_profiles_to_opensearch
 from app.services.opensearch_service.speaker_metadata import update_speaker_display_name
 from app.services.opensearch_service.speaker_metadata import update_speaker_profile
@@ -123,7 +120,6 @@ __all__ = [
     "reset_knn_health_cache",
     "add_speaker_embedding",
     "add_speaker_embedding_v4",
-    "batch_find_matching_speakers",
     "bulk_add_speaker_embeddings_v4",
     "bulk_update_collection_assignments",
     "check_and_repair_indices",
@@ -135,7 +131,6 @@ __all__ = [
     "find_matching_clusters",
     "find_matching_profiles",
     "find_matching_speaker",
-    "find_speaker_across_media",
     "get_active_speaker_index",
     "get_active_versioned_index",
     "get_all_speaker_embeddings",
@@ -145,7 +140,6 @@ __all__ = [
     "get_speaker_embedding",
     "get_speaker_embedding_dimension",
     "get_speaker_embeddings_batch",
-    "get_speakers_in_collection",
     "get_write_index",
     "index_transcript",
     "invalidate_active_speaker_index_cache",

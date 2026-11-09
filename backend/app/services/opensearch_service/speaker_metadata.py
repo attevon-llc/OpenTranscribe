@@ -9,96 +9,13 @@ from typing import Any
 
 from opensearchpy.exceptions import OpenSearchException
 
-from app.core.config import settings
 from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
-from app.services.opensearch_service.indices import ensure_indices_exist
-from app.services.search.availability_field import exclude_unavailable_clause
-from app.services.search.tenant_scope import org_filter_clauses
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
-
-
-def find_speaker_across_media(
-    speaker_uuid: str, user_id: int, *, organization_id: int | None
-) -> list[dict[str, Any]]:
-    """
-    Find all media files where a specific speaker appears
-
-    Args:
-        speaker_uuid: UUID of the speaker
-        user_id: ID of the user
-        organization_id: Tenant scope (None = personal) — gates the transcript index
-            alongside ``user_id`` (#1027)
-
-    Returns:
-        List of media files where this speaker appears
-    """
-    if not _client.opensearch_client:
-        logger.warning("OpenSearch client not initialized")
-        return []
-
-    try:
-        # Ensure indices exist before searching
-        ensure_indices_exist()
-
-        # First, get the speaker's name from the speaker index using UUID
-        speaker_doc = _client.opensearch_client.get(index=get_speaker_index(), id=str(speaker_uuid))
-
-        if not speaker_doc or "_source" not in speaker_doc:
-            return []
-
-        speaker_name = speaker_doc["_source"]["name"]
-
-        # Search for transcripts containing this speaker
-        size_limit = 100
-        query = {
-            "query": {
-                "bool": {
-                    "must": [
-                        {"term": {"user_id": user_id}},
-                        {"term": {"speakers": speaker_name}},
-                    ],
-                    "filter": [*org_filter_clauses(organization_id), exclude_unavailable_clause()],
-                }
-            },
-            "size": size_limit,  # Max media files returned; increase if users have very large libraries
-            "_source": ["file_id", "file_uuid", "title", "upload_time"],
-        }
-
-        response = _client.opensearch_client.search(
-            index=settings.OPENSEARCH_TRANSCRIPT_INDEX, body=query
-        )
-
-        total_hits = response["hits"]["total"]["value"]
-        if total_hits > size_limit:
-            logger.warning(
-                "Results truncated: %d hits but size limit is %d",
-                total_hits,
-                size_limit,
-            )
-
-        # Process results
-        results = []
-        for hit in response["hits"]["hits"]:
-            source = hit["_source"]
-            results.append(
-                {
-                    "file_id": source["file_id"],
-                    "file_uuid": source.get("file_uuid"),
-                    "title": source["title"],
-                    "upload_time": source["upload_time"],
-                }
-            )
-
-        return results
-
-    except OpenSearchException as e:
-        logger.exception(f"Error finding speaker across media: {e}")
-        return []
 
 
 def update_speaker_segment_count(speaker_uuid: str, segment_count: int) -> bool:

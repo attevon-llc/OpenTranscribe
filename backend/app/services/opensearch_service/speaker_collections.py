@@ -8,9 +8,6 @@ from opensearchpy.exceptions import OpenSearchException
 
 from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
-from app.services.opensearch_service.client import OpenSearchUnavailableError
-from app.services.opensearch_service.indices import ensure_indices_exist
-from app.services.search.availability_field import exclude_unavailable_clause
 
 logger = logging.getLogger(__name__)
 
@@ -151,79 +148,3 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]) -> dict[st
     except OpenSearchException as e:
         logger.exception(f"Error bulk updating collection assignments: {e}")
         return None
-
-
-def get_speakers_in_collection(collection_id: int, user_id: int) -> list[dict[str, Any]]:
-    """
-    Get all speakers in a specific collection
-
-    Args:
-        collection_id: Collection ID
-        user_id: User ID
-
-    Returns:
-        List of speaker documents in the collection
-    """
-    if not _client.opensearch_client:
-        logger.warning("OpenSearch client not initialized")
-        return []
-
-    try:
-        # Ensure indices exist before searching
-        ensure_indices_exist()
-
-        size_limit = 1000
-        query = {
-            "query": {
-                "bool": {
-                    "must": [
-                        {"term": {"user_id": user_id}},
-                        {"term": {"collection_ids": collection_id}},
-                    ],
-                    "filter": [exclude_unavailable_clause()],
-                }
-            },
-            "size": size_limit,  # Upper bound for speakers per collection; log warning if exceeded
-            "_source": [
-                "speaker_id",
-                "speaker_uuid",
-                "profile_id",
-                "profile_uuid",
-                "name",
-                "media_file_id",
-                "segment_count",
-                "created_at",
-            ],
-        }
-
-        response = _client.opensearch_client.search(index=get_speaker_index(), body=query)
-
-        total_hits = response["hits"]["total"]["value"]
-        if total_hits > size_limit:
-            logger.warning(
-                "Results truncated: %d hits but size limit is %d",
-                total_hits,
-                size_limit,
-            )
-
-        speakers = []
-        for hit in response["hits"]["hits"]:
-            source = hit["_source"]
-            speakers.append(
-                {
-                    "speaker_id": source["speaker_id"],
-                    "speaker_uuid": source.get("speaker_uuid"),
-                    "profile_id": source.get("profile_id"),
-                    "profile_uuid": source.get("profile_uuid"),
-                    "name": source["name"],
-                    "media_file_id": source.get("media_file_id"),
-                    "segment_count": source.get("segment_count", 1),
-                    "created_at": source.get("created_at"),
-                }
-            )
-
-        return speakers
-
-    except OpenSearchException as e:
-        logger.exception(f"Error getting speakers in collection: {e}")
-        raise OpenSearchUnavailableError(f"collection speaker lookup failed: {e}") from e

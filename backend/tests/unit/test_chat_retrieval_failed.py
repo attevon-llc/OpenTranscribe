@@ -25,6 +25,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 from app.services.chat import service as chat_service
 from app.services.chat.settings import ChatSettings
@@ -45,7 +46,7 @@ def test_no_opensearch_client_sets_retrieval_failed():
 
 def test_a_raising_search_sets_retrieval_failed():
     client = MagicMock()
-    client.search.side_effect = RuntimeError("opensearch down")
+    client.search.side_effect = OpenSearchConnectionError("N/A", "down", Exception())
     diagnostics: dict = {}
     with patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client):
         assert retrieve_chunks("q", user_id=1, diagnostics=diagnostics) == []
@@ -78,7 +79,7 @@ def test_an_empty_resolved_scope_never_touches_diagnostics():
 def test_diagnostics_is_optional_and_a_failure_still_degrades_to_empty():
     """The pre-existing #438 contract (fail soft, never raise) survives with no out-param."""
     client = MagicMock()
-    client.search.side_effect = RuntimeError("opensearch down")
+    client.search.side_effect = OpenSearchConnectionError("N/A", "down", Exception())
     with patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client):
         assert retrieve_chunks("q", user_id=1) == []
 
@@ -92,7 +93,7 @@ def test_retrieve_context_surfaces_retrieval_failed():
     from app.services.chat.retrieval import retrieve_context
 
     client = MagicMock()
-    client.search.side_effect = RuntimeError("opensearch down")
+    client.search.side_effect = OpenSearchConnectionError("N/A", "down", Exception())
     with (
         patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client),
         patch("app.services.chat.retrieval_cache.get_cached", return_value=None),

@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 from opensearchpy.exceptions import OpenSearchException
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
@@ -78,12 +77,10 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                 # the outer handler would report the whole digest index as failed.
                 try:
                     resolve_recorded_date_for_file(db, file_id)
-                except SQLAlchemyError as date_exc:  # enrichment, never fatal
-                    logger.warning(
-                        "Could not resolve recorded_date for file %s: %s",
-                        file_id,
-                        date_exc,
-                        exc_info=True,
+                except Exception as date_exc:  # enrichment, never fatal
+                    # Boundary on purpose: a date-extraction bug must not cost the digest plane.
+                    logger.exception(
+                        "Could not resolve recorded_date for file %s: %s", file_id, date_exc
                     )
 
                 row = generate_file_artifacts(db, file_id)

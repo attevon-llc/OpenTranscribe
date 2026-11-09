@@ -32,6 +32,7 @@ from app.core.queues import CPUPriority
 from app.core.queues import GPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.tasks.embedding_consistency_run import LOCK_TTL as _LOCK_TTL
 from app.tasks.embedding_consistency_run import ORCHESTRATOR_MAX_HOLD
 from app.tasks.embedding_consistency_run import REDIS_LOCK_KEY as _REDIS_LOCK_KEY
@@ -129,8 +130,8 @@ def _get_opensearch_speaker_uuids(index_name: str) -> set[str] | None:
         )
         buckets = resp.get("aggregations", {}).get("speaker_uuids", {}).get("buckets", [])
         return {b["key"] for b in buckets}
-    except Exception as e:
-        logger.warning("Failed to query speaker UUIDs from %s: %s", index_name, e)
+    except CLUSTER_UNAVAILABLE_ERRORS as e:
+        logger.warning("Failed to query speaker UUIDs from %s: %s", index_name, e, exc_info=True)
         return None
 
 
@@ -534,8 +535,8 @@ def _check_and_dispatch(r: Any, run_id: str, manual: bool, user_id: int) -> dict
                 try:
                     remove_speaker_embedding(uuid)
                     cleaned += 1
-                except Exception as e:
-                    logger.warning("Failed to remove stale speaker %s: %s", uuid, e)
+                except CLUSTER_UNAVAILABLE_ERRORS as e:
+                    logger.warning("Failed to remove stale speaker %s: %s", uuid, e, exc_info=True)
 
             logger.info(
                 "Cleaned %d stale/orphan speaker embeddings from OS (%d no-segment, %d orphan)",

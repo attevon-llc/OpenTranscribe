@@ -20,6 +20,7 @@ import logging
 from typing import Any
 
 from celery.exceptions import Retry
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -113,8 +114,8 @@ def _build_metadata_context(media_file) -> str:
                 f"Extracted {len(extraction_result.hints)} speaker hints from metadata "
                 f"(format: {extraction_result.content_format})"
             )
-    except Exception as e:
-        logger.warning(f"Metadata speaker extraction failed: {e}")
+    except Exception as e:  # advisory hints only; the LLM call proceeds without them
+        logger.warning(f"Metadata speaker extraction failed: {e}", exc_info=True)
 
     # Original flat metadata context
     if media_file.title:
@@ -211,8 +212,8 @@ def _store_metadata_hints_as_suggestions(db: Session, file_id: int, media_file) 
             f"in file {file_id}"
         )
 
-    except Exception as e:
-        logger.debug(f"Metadata hint storage skipped: {e}")
+    except SQLAlchemyError as e:
+        logger.warning(f"Metadata hint storage skipped: {e}", exc_info=True)
 
 
 def _store_alignment_results(db: Session, file_id: int, cross_refs: list[dict]) -> None:
@@ -256,8 +257,8 @@ def _store_alignment_results(db: Session, file_id: int, cross_refs: list[dict]) 
         logger.info(
             f"Stored alignment results for {len(best_per_speaker)} speakers in file {file_id}"
         )
-    except Exception as e:
-        logger.debug(f"Alignment storage skipped: {e}")
+    except SQLAlchemyError as e:
+        logger.warning(f"Alignment storage skipped: {e}", exc_info=True)
 
 
 def _create_llm_service(user_id: int | None) -> LLMService | None:
@@ -445,8 +446,8 @@ def _gender_cross_reference_context(
         if cross_refs:
             _store_alignment_results(db, file_id, cross_refs)
         return xref_context
-    except Exception as e:
-        logger.debug(f"Cross-reference enrichment skipped: {e}")
+    except Exception as e:  # advisory context only; the LLM call proceeds without it
+        logger.warning(f"Cross-reference enrichment skipped: {e}", exc_info=True)
         return ""
 
 
@@ -501,8 +502,8 @@ def _load_identification_inputs(file_uuid: str, task_id: str) -> dict[str, Any]:
         _store_metadata_hints_as_suggestions(db, file_id, media_file)
         try:
             db.commit()
-        except Exception as e:
-            logger.debug(f"Metadata hints commit skipped: {e}")
+        except SQLAlchemyError as e:
+            logger.warning(f"Metadata hints commit skipped: {e}", exc_info=True)
             db.rollback()
 
         # ``joinedload`` rather than a lazy load per row: the transcript builders
@@ -589,8 +590,8 @@ def _mark_identification_failed(task_id: str, error_msg: str) -> None:
     try:
         with session_scope() as db:
             update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
-    except Exception as cleanup_err:
-        logger.error(f"Could not record speaker-identification failure: {cleanup_err}")
+    except SQLAlchemyError:
+        logger.exception("Could not record speaker-identification failure")
 
 
 @celery_app.task(bind=True, name="ai.identify_speakers", priority=NLPPriority.USER_TRIGGERED)
@@ -688,12 +689,12 @@ def identify_speakers_llm_task(self, file_uuid: str):
         except Retry:
             raise
         except Exception as fatal:
-            logger.error(f"Speaker identification cannot proceed for {file_uuid}: {fatal}")
+            logger.exception(f"Speaker identification cannot proceed for {file_uuid}")
             _mark_identification_failed(task_id, str(fatal))
             return {"status": "error", "message": str(fatal)}
         raise  # unreachable — defer_for_redaction always raises
     except Exception as e:
-        logger.error(f"Error in speaker identification task for file {file_id}: {str(e)}")
+        logger.exception(f"Error in speaker identification task for file {file_id}")
         error_msg = task_error_text(e)
         _mark_identification_failed(task_id, error_msg)
         return {"status": "error", "message": error_msg}

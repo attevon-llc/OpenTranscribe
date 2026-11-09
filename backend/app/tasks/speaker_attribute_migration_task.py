@@ -505,8 +505,9 @@ def detect_speaker_attributes_batch_task(
                 logger.debug("%s… no speakers, skipped", file_uuid[:12])
                 continue
             prepared_files.append((file_uuid, prepared))
-        except Exception as e:
-            logger.error("Failed to prepare %s: %s", file_uuid, e)
+        except Exception:
+            # Per-file isolation: the file is counted failed and the batch carries on.
+            logger.exception("Failed to prepare %s", file_uuid)
             attribute_migration_progress.increment_processed(success=False, file_uuid=file_uuid)
             _emit_attr_progress(tracker, target_user, total_files, failed_item=file_uuid)
 

@@ -4,6 +4,8 @@ import contextlib
 import logging
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_CLUSTERING_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_CLUSTERING_FILE_COMPLETE
@@ -140,13 +142,13 @@ def cluster_speakers_for_file(self: Any, file_uuid: str, user_id: int) -> dict[s
             return result
 
         except Exception as e:
-            logger.error(f"Error clustering speakers for file {file_uuid}: {e}")
+            logger.exception(f"Error clustering speakers for file {file_uuid}")
             try:
                 from app.utils.task_utils import update_task_status
 
                 update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-            except Exception as status_err:
-                logger.debug(f"Could not record clustering failure status: {status_err}")
+            except SQLAlchemyError:
+                logger.exception("Could not record clustering failure status")
             raise self.retry(exc=e) from e
 
 

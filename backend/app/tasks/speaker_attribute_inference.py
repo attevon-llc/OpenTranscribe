@@ -138,8 +138,10 @@ def _run_gender_inference_parallel(
         for speaker_id, fut in futures:
             try:
                 audio_np = fut.result(timeout=30)
-            except Exception as e:
-                logger.debug("Segment fetch failed for speaker %s: %s", speaker_id, e)
+            except (TimeoutError, OSError) as e:
+                logger.warning(
+                    "Segment fetch failed for speaker %s: %s", speaker_id, e, exc_info=True
+                )
                 continue
 
             if audio_np is None or len(audio_np) < 16000:

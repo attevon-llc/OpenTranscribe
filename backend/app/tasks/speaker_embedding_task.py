@@ -15,6 +15,8 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from minio.error import S3Error
+
 from app.core.celery import celery_app
 from app.core.queues import GPUPriority
 from app.db.session_utils import session_scope
@@ -164,8 +166,10 @@ def _stage_audio_for_embeddings(file_uuid: str, inputs: dict, temp_dir: str) -> 
             download_temp_audio(file_uuid, audio_file_path)
             logger.info("Using preprocessed WAV for speaker embedding extraction")
             return audio_file_path
-        except Exception as temp_err:
-            logger.warning(f"Temp WAV fetch failed ({temp_err}); falling back to original")
+        except (S3Error, OSError) as temp_err:
+            logger.warning(
+                f"Temp WAV fetch failed ({temp_err}); falling back to original", exc_info=True
+            )
 
     logger.info(f"Downloading original {inputs['storage_path']} for speaker embedding extraction")
     file_data, _, _ = download_file(inputs["storage_path"])
@@ -339,8 +343,8 @@ def _skip_for_policy(
         from app.tasks.transcription.notifications import send_completion_notification
 
         send_completion_notification(inputs["user_id"], file_id)
-    except Exception as notify_err:
-        logger.warning(f"Failed to send completion notification: {notify_err}")
+    except Exception as notify_err:  # best-effort: a failed notice must not fail the stage
+        logger.warning(f"Failed to send completion notification: {notify_err}", exc_info=True)
     with contextlib.suppress(Exception):
         cleanup_temp_audio(file_uuid)
     _close_pipeline_task(pipeline_task_id if closes_pipeline else None)
@@ -424,16 +428,19 @@ def extract_speaker_embeddings_task(
             from app.tasks.transcription.notifications import send_completion_notification
 
             send_completion_notification(inputs["user_id"], inputs["file_id"])
-        except Exception as notify_err:
-            logger.warning(f"Failed to send completion notification: {notify_err}")
+        except Exception as notify_err:  # best-effort: a failed notice must not fail the stage
+            logger.warning(f"Failed to send completion notification: {notify_err}", exc_info=True)
 
         benchmark_timing.mark(pipeline_task_id, "speaker_upsert_end")
         # We were the deferred consumer of the temp WAV — clean it up
         # now that we're done. No-op if postprocess already cleaned it.
         try:
             cleanup_temp_audio(file_uuid)
-        except Exception as cleanup_err:
-            logger.debug(f"Temp audio cleanup after embedding extraction failed: {cleanup_err}")
+        except (S3Error, OSError) as cleanup_err:
+            logger.warning(
+                f"Temp audio cleanup after embedding extraction failed: {cleanup_err}",
+                exc_info=True,
+            )
         _close_pipeline_task(close_id)
         return {
             "status": "success",
@@ -471,7 +478,9 @@ def _fail_embedding_task(
     benchmark_timing.mark(pipeline_task_id, "speaker_upsert_end")
     try:
         cleanup_temp_audio(file_uuid)
-    except Exception as cleanup_err:
-        logger.debug(f"Temp audio cleanup after embedding error failed: {cleanup_err}")
+    except (S3Error, OSError) as cleanup_err:
+        logger.warning(
+            f"Temp audio cleanup after embedding error failed: {cleanup_err}", exc_info=True
+        )
     _close_pipeline_task(close_id, error=str(e))
     return {"status": "error", "message": str(e)}

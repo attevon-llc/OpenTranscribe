@@ -16,7 +16,10 @@ from __future__ import annotations
 import threading
 import time
 import uuid as uuid_pkg
+from contextlib import AbstractContextManager
+from contextlib import nullcontext
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import text
@@ -139,6 +142,7 @@ def _restore_in_thread(
                 s.execute(text("SELECT 1"))
                 begun.set()
                 assert begin_then_wait.wait(15), "the test never let the restore go"
+            commit_gate: AbstractContextManager[object] = nullcontext()
             if hold_commit is not None:
                 real_commit = s.commit
 
@@ -147,14 +151,15 @@ def _restore_in_thread(
                     assert hold_commit.wait(15), "the test never released the restore"
                     real_commit()
 
-                s.commit = gated_commit  # type: ignore[method-assign]
-            media_file, actor = s.get(MediaFile, file_id), s.get(User, user_id)
-            assert media_file is not None and actor is not None
-            restored, refused = trash_service.restore_files(
-                s, [media_file], actor=actor, request=None, bypass=None
-            )
-            result["restored"] = [int(f.id) for f in restored]
-            result["refused"] = [int(f.id) for f in refused]
+                commit_gate = patch.object(s, "commit", gated_commit)
+            with commit_gate:
+                media_file, actor = s.get(MediaFile, file_id), s.get(User, user_id)
+                assert media_file is not None and actor is not None
+                restored, refused = trash_service.restore_files(
+                    s, [media_file], actor=actor, request=None, bypass=None
+                )
+                result["restored"] = [int(f.id) for f in restored]
+                result["refused"] = [int(f.id) for f in refused]
         except Exception as exc:  # surfaced by the assertions
             result["error"] = exc
             s.rollback()

@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import uuid as uuid_pkg
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from opensearchpy.exceptions import NotFoundError
@@ -164,7 +165,8 @@ def test_add_speaker_embedding_v4_rejects_none_embedding(speaker_indices):
         speaker_uuid=speaker_uuid,
         user_id=42,
         name="SPEAKER_03",
-        embedding=None,  # type: ignore[arg-type]
+        # Deliberately off-contract: the function must refuse a missing embedding.
+        embedding=cast(list[float], None),
     )
 
     assert response is None

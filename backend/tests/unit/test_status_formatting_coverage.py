@@ -9,6 +9,8 @@ and file-detail UI as the literal text "FileStatus.QUARANTINED", with an unstyle
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from app.core.enums import FileStatus
@@ -46,4 +48,5 @@ def test_known_status_labels():
 
 def test_unmapped_status_falls_back_to_the_value_not_the_repr():
     """A status added to the enum but not the map must still render readably."""
-    assert FormattingService.format_status("some_new_state") == "Some New State"  # type: ignore[arg-type]
+    # Off-contract on purpose: a value the enum does not declare must still render.
+    assert FormattingService.format_status(cast("FileStatus", "some_new_state")) == "Some New State"

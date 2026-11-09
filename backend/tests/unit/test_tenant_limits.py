@@ -129,7 +129,9 @@ def test_redaction_floor_is_frozen_and_defaults_to_no_addition():
     assert floor.force_redact_before_llm is False
 
     with pytest.raises(dataclasses.FrozenInstanceError):
-        floor.force_export_redacted = True  # type: ignore[misc]
+        # Same as above: a variable field name keeps the runtime refusal under test.
+        field = "force_export_redacted"
+        setattr(floor, field, True)
 
 
 def test_resolver_error_falls_back_to_global():

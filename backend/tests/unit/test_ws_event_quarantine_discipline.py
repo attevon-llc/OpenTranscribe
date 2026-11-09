@@ -276,7 +276,7 @@ class _EnclosingFunctionWalker(ast.NodeVisitor):
     def configure(self, send_aliases: frozenset[str]) -> None:
         self._send_aliases = send_aliases
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         self._stack.append(node.name)
         self.generic_visit(node)
         self._stack.pop()
@@ -285,7 +285,7 @@ class _EnclosingFunctionWalker(ast.NodeVisitor):
     # `ast.NodeVisitor.generic_visit` ("visit_" + node.__class__.__name__), and
     # `ast.AsyncFunctionDef` is itself mixedCase in the stdlib `ast` module — a
     # snake_case alias here would simply never be called.
-    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815 - ast.NodeVisitor dispatches visit_<NodeClass> by name
+    visit_AsyncFunctionDef = visit_FunctionDef  # noqa: N815 - ast.NodeVisitor dispatches visit_<NodeClass> by name
 
     def visit_Call(self, node: ast.Call) -> None:
         func = node.func

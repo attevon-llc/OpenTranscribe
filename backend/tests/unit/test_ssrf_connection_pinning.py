@@ -54,13 +54,21 @@ FIRST_ANSWER = "127.0.0.1"
 SECOND_ANSWER = "127.0.0.2"
 
 
+class _PinServer(http.server.HTTPServer):
+    """An HTTPServer that records the address it was bound to, for the handler to echo."""
+
+    which: str
+
+
 class _RecordingHandler(http.server.BaseHTTPRequestHandler):
     """Answers every GET with the address it is bound to and the Host header it saw."""
 
     server_version = "PinTest/1.0"
 
     def do_GET(self) -> None:  # BaseHTTPRequestHandler API
-        which: str = self.server.which  # type: ignore[attr-defined]
+        server = self.server
+        assert isinstance(server, _PinServer)
+        which = server.which
         host = self.headers.get("Host", "")
         if self.path.startswith("/redirect-to-metadata"):
             # The second half of an SSRF: pass validation, then bounce the client at IMDS.
@@ -94,8 +102,8 @@ class _RecordingHandler(http.server.BaseHTTPRequestHandler):
 
 def _serve(bind_address: str, port: int = 0, ssl_context: ssl.SSLContext | None = None):
     """Start a throwaway HTTP(S) server on *bind_address*, return (server, port)."""
-    server = http.server.HTTPServer((bind_address, port), _RecordingHandler)
-    server.which = bind_address  # type: ignore[attr-defined]
+    server = _PinServer((bind_address, port), _RecordingHandler)
+    server.which = bind_address
     if ssl_context is not None:
         server.socket = ssl_context.wrap_socket(server.socket, server_side=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()

@@ -16,6 +16,7 @@ import pytest
 
 from app.core import celery_worker_lifecycle as lifecycle_module
 from app.services.local_models import worker_report
+from tests.helpers import make_stub_module
 
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("local_model_redis")]
 
@@ -85,21 +86,26 @@ class TestPreloadReportsAfterPinning:
     @staticmethod
     def _stub_heavy_dependencies(monkeypatch) -> None:
         """Make the GPU branch of ``preload_models`` runnable with no GPU, torch or models."""
-        torch = types.ModuleType("torch")
-        torch.backends = types.SimpleNamespace(  # type: ignore[attr-defined]
-            cuda=types.SimpleNamespace(matmul=types.SimpleNamespace()),
-            cudnn=types.SimpleNamespace(),
+        torch = make_stub_module(
+            "torch",
+            backends=types.SimpleNamespace(
+                cuda=types.SimpleNamespace(matmul=types.SimpleNamespace()),
+                cudnn=types.SimpleNamespace(),
+            ),
         )
         monkeypatch.setitem(sys.modules, "torch", torch)
 
         import app.transcription as transcription_pkg
 
-        manager = types.ModuleType("app.transcription.model_manager")
-        manager.ModelManager = types.SimpleNamespace(  # type: ignore[attr-defined]
-            get_instance=lambda: types.SimpleNamespace(ensure_models_loaded=lambda cfg: None)
+        manager = make_stub_module(
+            "app.transcription.model_manager",
+            ModelManager=types.SimpleNamespace(
+                get_instance=lambda: types.SimpleNamespace(ensure_models_loaded=lambda cfg: None)
+            ),
         )
-        budget = types.ModuleType("app.transcription.vram_budget")
-        budget.configure_from_device = lambda index: None  # type: ignore[attr-defined]
+        budget = make_stub_module(
+            "app.transcription.vram_budget", configure_from_device=lambda index: None
+        )
         for name, module in (("model_manager", manager), ("vram_budget", budget)):
             monkeypatch.setitem(sys.modules, f"app.transcription.{name}", module)
             monkeypatch.setattr(transcription_pkg, name, module, raising=False)

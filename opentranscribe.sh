@@ -1315,8 +1315,15 @@ preflight_fix_scratch_permissions() {
     if command -v fix_pipeline_scratch_permissions > /dev/null 2>&1; then
         fix_pipeline_scratch_permissions
     elif command -v docker > /dev/null 2>&1; then
-        local scratch_vol
-        scratch_vol=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E '_pipeline_scratch$' | head -1)
+        # Same compose-label scoping as common.sh's fix_pipeline_scratch_permissions (a
+        # test pins both): this project's volume only, never the first match of any project.
+        # Normalised like compose-go: lowercase, [a-z0-9_-] only, no leading separators.
+        local scratch_project scratch_vol
+        scratch_project=$(printf '%s' "${COMPOSE_PROJECT_NAME:-${PWD##*/}}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-' | sed 's/^[-_]*//')
+        [ -n "$scratch_project" ] || return 0
+        scratch_vol=$(docker volume ls -q \
+            --filter "label=com.docker.compose.project=${scratch_project}" \
+            --filter "label=com.docker.compose.volume=pipeline_scratch" 2>/dev/null | head -1)
         if [ -n "$scratch_vol" ]; then
             docker run --rm -v "$scratch_vol:/scratch" alpine:3 \
                 sh -c "mkdir -p /scratch/engine /scratch/diar && chown -R $CONTAINER_UID_GID /scratch && chmod 775 /scratch/engine /scratch/diar" \
@@ -2304,7 +2311,8 @@ update_download_artifact() {
     artifact_dir=$(dirname "$artifact_path")
     [ "$artifact_dir" = "." ] || mkdir -p "$artifact_dir"
 
-    if curl -fsSL "$github_raw/$artifact_path" -o "${artifact_path}.new"; then
+    # -s: an empty 200 body must not replace a working file (the installer checks the same).
+    if curl -fsSL "$github_raw/$artifact_path" -o "${artifact_path}.new" && [ -s "${artifact_path}.new" ]; then
         mv "${artifact_path}.new" "$artifact_path"
         case ",$artifact_flags," in *,exec,*) chmod +x "$artifact_path" ;; esac
         echo -e "  ${GREEN}✓${NC} $artifact_path"
@@ -2544,7 +2552,12 @@ cmd_config() {
         | sed -E 's/^([A-Za-z0-9_]*(PASSWORD|SECRET|TOKEN|_KEY|KEY_|CREDENTIAL|DATABASE_URL)[A-Za-z0-9_]*)=.+/\1=********/'
     echo ""
     echo "Docker Compose configuration:"
-    if docker compose config > /dev/null 2>&1; then
+    # Validate the chain `start` would use, not the default file set.
+    apply_deployment_pins
+    local compose_files
+    compose_files=$(get_compose_files)
+    read -r -a compose_chain <<< "$compose_files"
+    if docker compose "${compose_chain[@]}" config > /dev/null 2>&1; then
         echo "  ✅ Valid"
     else
         echo "  ❌ Invalid"

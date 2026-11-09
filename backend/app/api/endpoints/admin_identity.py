@@ -8,8 +8,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
-from sqlalchemy import func
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
@@ -24,13 +22,17 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.db.base import get_db
 from app.models.user import User
-from app.models.user_mfa import UserMFA
 from app.schemas.admin import LinkExternalIdentityRequest
 from app.schemas.admin import LinkExternalIdentityResponse
 from app.schemas.admin import UpdateExternalEmailRequest
 from app.schemas.admin import UpdateExternalEmailResponse
 from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions
+from app.services.mfa_queries import get_user_mfa
+from app.services.user_lookup import find_other_user_by_column
+from app.services.user_lookup import find_other_user_by_email_ci
+from app.services.user_lookup import get_user_by_uuid
+from app.services.user_lookup import search_users_paginated
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -106,7 +108,7 @@ def admin_link_external_identity(
     """
     client_ip, user_agent = _get_client_info(request)
 
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -120,12 +122,7 @@ def admin_link_external_identity(
         )
 
     column = _LINK_IDENTITY_COLUMN[payload.provider]
-    conflict = (
-        db.query(User)
-        .filter(getattr(User, column) == payload.identifier)
-        .filter(User.id != user.id)
-        .first()
-    )
+    conflict = find_other_user_by_column(db, column, payload.identifier, user.id)
     if conflict:
         raise HTTPException(
             status_code=409,
@@ -241,7 +238,7 @@ def admin_update_external_email(
     """
     client_ip, user_agent = _get_client_info(request)
 
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -293,12 +290,7 @@ def admin_update_external_email(
     # `user.email`: `emails_agree` treats `Alice@x` and `alice@x` as one mailbox, so
     # letting two rows hold both would make the account a login resolves to depend on
     # which comparison ran. Refusing is the safe direction; the admin can pick another.
-    conflict = (
-        db.query(User)
-        .filter(func.lower(User.email) == new_email.lower())
-        .filter(User.id != user.id)
-        .first()
-    )
+    conflict = find_other_user_by_email_ci(db, new_email, user.id)
     if conflict:
         raise HTTPException(
             status_code=409,
@@ -381,11 +373,11 @@ def admin_reset_user_mfa(
     """
     client_ip, user_agent = _get_client_info(request)
 
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    mfa_settings = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
+    mfa_settings = get_user_mfa(db, user.id)
     # A row that exists with `totp_enabled` already false is the same non-event as
     # no row at all: nothing was in force, so nothing was disabled.
     was_enabled = bool(mfa_settings and mfa_settings.totp_enabled)
@@ -437,23 +429,15 @@ def admin_search_users(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """Advanced user search with filtering and pagination."""
-    from app.utils.pagination import paginate
-
-    q = db.query(User)
-
-    if query:
-        q = q.filter(or_(User.email.ilike(f"%{query}%"), User.full_name.ilike(f"%{query}%")))
-
-    if role:
-        q = q.filter(User.role == role)
-
-    if auth_type:
-        q = q.filter(User.auth_type == auth_type)
-
-    if is_active is not None:
-        q = q.filter(User.is_active == is_active)
-
-    users, total = paginate(q, offset, limit)
+    users, total = search_users_paginated(
+        db,
+        text_query=query,
+        role=role,
+        auth_type=auth_type,
+        is_active=is_active,
+        offset=offset,
+        limit=limit,
+    )
 
     return {
         "total": total,

@@ -44,6 +44,7 @@ from app.db.base import get_db
 from app.db.session_utils import end_read_transaction
 from app.models.user import User
 from app.schemas.user import TokenPayload
+from app.services.user_lookup import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def _load_token_user(
     """Load the account a decoded access token names, failing closed on a denial."""
     try:
         # Look up user by UUID (indexed for performance)
-        user = db.query(User).filter(User.uuid == user_uuid).first()
+        user = get_user_by_uuid(db, user_uuid)
         if user is None:
             raise credentials_exception
         if not user.is_active:
@@ -363,7 +364,7 @@ def get_optional_current_user(
             return None
 
         # Look up user by UUID
-        user = db.query(User).filter(User.uuid == user_uuid).first()
+        user = get_user_by_uuid(db, user_uuid)
         if user is None or not user.is_active or not admitted_on_optional_auth(user, request, db):
             return None
 

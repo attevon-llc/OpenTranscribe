@@ -48,6 +48,7 @@ from app.schemas.approval import ApprovalDecisionRequest
 from app.schemas.approval import ApprovalDecisionResponse
 from app.schemas.approval import PendingAccount
 from app.services.account_security_service import revoke_all_sessions
+from app.services.user_lookup import list_users_by_approval_status
 from app.services.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -130,15 +131,7 @@ def list_pending_accounts(
     is the one to deal with next. Paginated on the same shape as
     ``GET /admin/users``.
     """
-    accounts = (
-        db.query(User)
-        .filter(User.approval_status == APPROVAL_PENDING)
-        .order_by(User.created_at, User.id)
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    return accounts
+    return list_users_by_approval_status(db, APPROVAL_PENDING, offset, limit)
 
 
 @router.post("/{user_uuid}/approve", response_model=ApprovalDecisionResponse)

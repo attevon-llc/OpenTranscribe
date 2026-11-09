@@ -41,6 +41,7 @@ from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import reissue_current_session
 from app.services.account_security_service import revoke_all_sessions
+from app.services.user_lookup import get_user_by_email
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ def _validate_email_change(
     db: Session, current_user: User, new_email: str, current_password: str | None
 ) -> None:
     """Refuse a taken address, and require the current password for the change."""
-    existing_user = db.query(User).filter(User.email == new_email).first()
+    existing_user = get_user_by_email(db, new_email)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

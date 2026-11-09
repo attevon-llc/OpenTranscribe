@@ -9,7 +9,6 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from fastapi import status
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.direct_auth import direct_authenticate_user
@@ -25,6 +24,9 @@ from app.core.exceptions import DomainError
 from app.core.security import authenticate_user
 from app.db.session_utils import end_read_transaction
 from app.models.user import User
+from app.services.user_lookup import get_user_by_email_or_ldap_uid
+from app.services.user_lookup import get_user_by_id
+from app.services.user_lookup import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +148,7 @@ def _ensure_user_uuid(db: Session, user_data: dict) -> str:
         return str(user_data["uuid"])
 
     # Direct auth returned integer ID, look up UUID
-    user = db.query(User).filter(User.id == user_data["id"]).first()
+    user = get_user_by_id(db, user_data["id"])
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -291,9 +293,7 @@ def _authenticate_production_user(
     Raises:
         HTTPException: If authentication fails
     """
-    local_user = (
-        db.query(User).filter(or_(User.email == username, User.ldap_uid == username)).first()
-    )
+    local_user = get_user_by_email_or_ldap_uid(db, username)
 
     # Determine if user can use local (password) authentication
     can_use_local_auth = local_user and (
@@ -367,5 +367,5 @@ def _get_user_role(db: Session, user_uuid_str: str, user_data: dict | None = Non
 
     # Get role from database if not available in direct auth
     user_uuid = UUID(user_uuid_str)
-    user_db = db.query(User).filter(User.uuid == user_uuid).first()
+    user_db = get_user_by_uuid(db, user_uuid)
     return str(user_db.role) if user_db else ""

@@ -29,8 +29,6 @@ from app.api.endpoints.scim.filters import parse_eq_filter
 from app.api.endpoints.scim.filters import parse_pagination
 from app.api.endpoints.scim.patch_ops import build_user_update
 from app.db.base import get_db
-from app.models.group import UserGroup
-from app.models.group import UserGroupMember
 from app.models.scim_token import SCIMToken
 from app.models.user import User
 from app.schemas.scim import SCIMPatchRequest
@@ -38,6 +36,9 @@ from app.schemas.scim import SCIMUserRequest
 from app.schemas.scim import list_response
 from app.schemas.scim import user_resource
 from app.services import scim_service
+from app.services.scim_queries import get_groups_of_user
+from app.services.scim_queries import list_users_page
+from app.services.user_lookup import get_user_by_uuid
 from app.utils.uuid_parse import parse_uuid_or_none
 
 router = APIRouter()
@@ -55,18 +56,13 @@ def _scim_json(body: dict[str, Any], status_code: int = status.HTTP_200_OK) -> J
 
 def _group_refs(db: Session, user: User) -> list[dict[str, str]]:
     """The user's group memberships, as SCIM resource references."""
-    rows = (
-        db.query(UserGroup)
-        .join(UserGroupMember, UserGroupMember.group_id == UserGroup.id)
-        .filter(UserGroupMember.user_id == user.id)
-        .all()
-    )
+    rows = get_groups_of_user(db, user.id)
     return [{"value": str(g.uuid), "display": str(g.name)} for g in rows]
 
 
 def _load_user(db: Session, user_id: str) -> User:
     """Resolve a SCIM ``id`` (our account UUID) or raise 404."""
-    user = db.query(User).filter(User.uuid == user_id).first() if _is_uuid(user_id) else None
+    user = get_user_by_uuid(db, user_id) if _is_uuid(user_id) else None
     if user is None:
         raise not_found("User", user_id)
     return user
@@ -100,18 +96,20 @@ def list_users(
     """List or search users. Supports ``userName eq`` / ``externalId eq``."""
     del request
     offset, limit = parse_pagination(startIndex, count)
-    query = db.query(User)
+    email: str | None = None
+    external_id: str | None = None
 
     parsed = parse_eq_filter(filter, allowed=USER_FILTER_ATTRS)
     if parsed:
         attribute, value = parsed
         if attribute == "userName":
-            query = query.filter(User.email == value.strip().lower())
+            email = value.strip().lower()
         else:
-            query = query.filter(User.external_id == value)
+            external_id = value
 
-    total = query.order_by(None).count()
-    rows = query.order_by(User.id).offset(offset).limit(limit).all()
+    rows, total = list_users_page(
+        db, email=email, external_id=external_id, offset=offset, limit=limit
+    )
     return _scim_json(
         list_response(
             [user_resource(u, groups=_group_refs(db, u)) for u in rows],

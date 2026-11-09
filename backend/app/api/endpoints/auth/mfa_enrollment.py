@@ -47,6 +47,7 @@ from app.core.security import accepted_algorithms
 from app.db.base import get_db
 from app.models.user import User
 from app.models.user_mfa import UserMFA
+from app.services.user_lookup import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +211,7 @@ def _enrollment_context_from_half_token(db: Session, token: str) -> EnrollmentCo
     """Resolve an enrolment-scoped half-token into an :class:`EnrollmentContext`."""
     user_uuid_str, token_role, jti = _verify_mfa_token(token, expected_scope=MFA_SCOPE_ENROLL)
 
-    user = db.query(User).filter(User.uuid == UUID(user_uuid_str)).first()
+    user = get_user_by_uuid(db, UUID(user_uuid_str))
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

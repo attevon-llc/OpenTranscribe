@@ -11,7 +11,6 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import Response
 from sqlalchemy import false as sa_false
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
@@ -20,7 +19,8 @@ from app.auth.password_policy import password_expiry_cutoff
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.user import User
-from app.models.user_mfa import UserMFA
+from app.services.mfa_queries import count_totp_enabled
+from app.services.user_lookup import count_user_accounts
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -46,14 +46,10 @@ def get_account_status_report(
     # means expiry is not enforced, so nothing is expired.
     expiry_threshold = password_expiry_cutoff()
     expired_filter = User.password_changed_at < expiry_threshold if expiry_threshold else sa_false()
-    user_row = db.query(
-        func.count().label("total"),
-        func.count().filter(User.is_active.is_(True)).label("active"),
-        func.count().filter(expired_filter).label("pwd_expired"),
-    ).one()
+    user_row = count_user_accounts(db, expired_filter)
 
     # MFA is a separate table, so one more query
-    mfa_enabled = db.query(func.count(UserMFA.id)).filter(UserMFA.totp_enabled.is_(True)).scalar()
+    mfa_enabled = count_totp_enabled(db)
 
     total = user_row.total
     active = user_row.active

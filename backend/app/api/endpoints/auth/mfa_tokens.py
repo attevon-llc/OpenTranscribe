@@ -47,6 +47,8 @@ from app.core.security import accepted_algorithms
 from app.core.security import signing_algorithm
 from app.models.user import User
 from app.models.user_mfa import UserMFA
+from app.services.mfa_queries import get_user_mfa
+from app.services.user_lookup import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -395,7 +397,7 @@ def _get_user_for_mfa(db: Session, mfa_token: str) -> tuple[User, UserMFA, str, 
 
     # Get user from database
     user_uuid = UUID(user_uuid_str)
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
 
     if not user:
         raise HTTPException(
@@ -414,7 +416,7 @@ def _get_user_for_mfa(db: Session, mfa_token: str) -> tuple[User, UserMFA, str, 
         )
 
     # Get user's MFA record
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
+    user_mfa = get_user_mfa(db, user.id)
 
     if not user_mfa or not user_mfa.totp_enabled:
         raise HTTPException(

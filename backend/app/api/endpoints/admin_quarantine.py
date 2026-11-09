@@ -9,13 +9,10 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi import status
-from sqlalchemy import func
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_admin_user
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.admin import QuarantineActionResponse
 from app.schemas.admin import QuarantinedFile
@@ -23,6 +20,7 @@ from app.schemas.admin import QuarantinedFilesList
 from app.schemas.admin import QuarantineNoticeRef
 from app.schemas.admin import QuarantineRequest
 from app.schemas.admin import ReleaseRequest
+from app.services.admin_file_queries import list_quarantined_files as query_quarantined_files
 from app.services.platform_bypass import audit_metadata_access
 
 # No basicConfig here — this module is imported via the API router before
@@ -71,9 +69,7 @@ def list_quarantined_files(
     an admin who deliberately kept a hold on a released file had no way to find
     it again through the API a review-queue client would use.
     """
-    from sqlalchemy.orm import aliased
 
-    from app.models.organization import Organization
     from app.services.takedown_authority import origin_value
     from app.services.takedown_notice_queries import live_notice_refs
 
@@ -81,33 +77,9 @@ def list_quarantined_files(
     # so this needs two aliased OUTER joins, not a per-row lookup (issue #576).
     # Both are OUTER: `quarantined_by` is nullable (pre-v371 rows), and
     # an INNER join there would silently drop legacy rows from the queue entirely.
-    owner_alias = aliased(User)
-    quarantined_by_alias = aliased(User)
-
-    if include_legal_holds:
-        condition = or_(MediaFile.is_quarantined.is_(True), MediaFile.legal_hold.is_(True))
-    else:
-        condition = MediaFile.is_quarantined.is_(True)
-
-    rows = (
-        db.query(MediaFile, owner_alias, quarantined_by_alias, Organization)
-        .filter(condition)
-        .outerjoin(owner_alias, owner_alias.id == MediaFile.user_id)
-        .outerjoin(quarantined_by_alias, quarantined_by_alias.id == MediaFile.quarantined_by)
-        .outerjoin(Organization, Organization.id == MediaFile.organization_id)
-        .order_by(MediaFile.quarantined_at.desc().nullslast())
-        .offset(offset)
-        .limit(limit)
-        .all()
+    rows, total = query_quarantined_files(
+        db, include_legal_holds=include_legal_holds, offset=offset, limit=limit
     )
-    # A short page already tells the total; only a full or empty-past-the-end page counts (#1337).
-    if len(rows) < limit and (rows or offset == 0):
-        total = offset + len(rows)
-    else:
-        total = (
-            db.query(MediaFile).filter(condition).with_entities(func.count(MediaFile.id)).scalar()
-            or 0
-        )
     audit_metadata_access(
         db,
         current_user,

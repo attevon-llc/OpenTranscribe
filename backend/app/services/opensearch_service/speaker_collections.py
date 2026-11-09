@@ -4,8 +4,11 @@ import datetime
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.search.availability_field import exclude_unavailable_clause
 
@@ -48,8 +51,8 @@ def update_speaker_collections(
         logger.info(f"Updated speaker {speaker_uuid} collections: {collection_ids}")
         return response
 
-    except Exception as e:
-        logger.error(f"Error updating speaker collections: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error updating speaker collections: {e}")
         return None
 
 
@@ -92,8 +95,8 @@ def move_speaker_to_profile_collection(
         logger.info(f"Moved speaker {unlabeled_speaker_uuid} to profile {target_profile_uuid}")
         return response
 
-    except Exception as e:
-        logger.error(f"Error moving speaker to profile collection: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error moving speaker to profile collection: {e}")
         return None
 
 
@@ -145,8 +148,8 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]) -> dict[st
 
         return response
 
-    except Exception as e:
-        logger.error(f"Error bulk updating collection assignments: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error bulk updating collection assignments: {e}")
         return None
 
 
@@ -221,6 +224,6 @@ def get_speakers_in_collection(collection_id: int, user_id: int) -> list[dict[st
 
         return speakers
 
-    except Exception as e:
-        logger.error(f"Error getting speakers in collection: {e}")
-        return []
+    except OpenSearchException as e:
+        logger.exception(f"Error getting speakers in collection: {e}")
+        raise OpenSearchUnavailableError(f"collection speaker lookup failed: {e}") from e

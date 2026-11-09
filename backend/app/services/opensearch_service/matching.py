@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.services.opensearch_service import client as _client
@@ -173,6 +175,8 @@ def batch_find_matching_speakers(
     threshold: float = SPEAKER_CONFIDENCE_MEDIUM,
     max_candidates: int = 5,
     organization_id: int | None = None,
+    *,
+    strict: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Find matching speakers for multiple embeddings in a single query (efficient batch operation)
@@ -183,11 +187,18 @@ def batch_find_matching_speakers(
         threshold: Minimum similarity threshold
         max_candidates: Maximum candidates per embedding
         organization_id: Active org id (None = personal) — tenant gate.
+        strict: Raise instead of returning ``[]`` when the cluster could not
+            answer, so "no matches" and "could not look" differ.
 
     Returns:
         List of match results for each input embedding
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the search failed.
     """
     if not _client.opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         logger.warning("OpenSearch client not initialized")
         return []
 
@@ -266,8 +277,10 @@ def batch_find_matching_speakers(
 
         return results
 
-    except Exception as e:
-        logger.error(f"Error in batch speaker matching: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error in batch speaker matching: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"batch speaker matching failed: {e}") from e
         return []
 
 
@@ -277,6 +290,8 @@ def msearch_speaker_similarities(
     k: int = 10,
     batch_size: int = 50,
     organization_id: int | None = None,
+    *,
+    strict: bool = False,
 ) -> list[list[dict]]:
     """Batch kNN search for building a similarity graph.
 
@@ -286,11 +301,18 @@ def msearch_speaker_similarities(
         k: Number of nearest neighbors per query.
         batch_size: Number of speakers per msearch request.
         organization_id: Active org id (None = personal) — tenant gate.
+        strict: Raise instead of returning empty lists when the cluster could
+            not answer, so "no neighbours" and "could not look" differ.
 
     Returns:
         List of result lists, one per input embedding.
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the search failed.
     """
     if not _client.opensearch_client or not speaker_data:
+        if strict and speaker_data and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         return [[] for _ in speaker_data]
 
     try:
@@ -361,6 +383,8 @@ def msearch_speaker_similarities(
 
         return all_results
 
-    except Exception as e:
-        logger.error(f"Error in msearch speaker similarities: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error in msearch speaker similarities: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"speaker similarity search failed: {e}") from e
         return [[] for _ in speaker_data]

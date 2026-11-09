@@ -11,6 +11,9 @@ import datetime
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
 from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.core.embedding_models import get_speaker_index
@@ -147,8 +150,8 @@ def add_speaker_embedding_v4(
         )
         return response
 
-    except Exception as e:
-        logger.error(
+    except (OpenSearchException, SQLAlchemyError) as e:
+        logger.exception(
             f"Error indexing speaker embedding to v4 for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
         )
     return None
@@ -273,8 +276,8 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
                 f"Bulk-indexed {accepted} v4 speaker embeddings into {v4_index} in one request"
             )
         return response
-    except Exception as e:
-        logger.error(f"Error bulk-indexing v4 speaker embeddings: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error bulk-indexing v4 speaker embeddings: {e}")
         return None
 
 
@@ -381,7 +384,7 @@ def add_speaker_embedding(
         )
         return response
 
-    except Exception as e:
+    except (OpenSearchException, SQLAlchemyError) as e:
         # Retry once for transient connection errors before falling through
         # to the index corruption check below. opensearchpy's ConnectionError does
         # NOT subclass the builtin ConnectionError, so both must be listed explicitly.
@@ -400,8 +403,8 @@ def add_speaker_embedding(
                     f"Retry succeeded: indexed speaker {speaker_uuid} after transient error"
                 )
                 return response
-            except Exception as retry_err:
-                logger.error(f"Retry failed for speaker {speaker_uuid}: {retry_err}")
+            except OpenSearchException as retry_err:
+                logger.exception(f"Retry failed for speaker {speaker_uuid}: {retry_err}")
                 # Fall through to index corruption check with the retry error
                 e = retry_err
         if _is_index_corruption_error(e):
@@ -435,12 +438,13 @@ def add_speaker_embedding(
                     )
                     logger.info(f"Retry succeeded: indexed speaker {speaker_uuid} after repair")
                     return response
-                except Exception as retry_err:
-                    logger.error(
+                except (OpenSearchException, SQLAlchemyError) as retry_err:
+                    logger.exception(
                         f"Retry after repair failed for speaker {speaker_uuid}: {retry_err}"
                     )
         else:
             logger.error(
-                f"Error indexing speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
+                f"Error indexing speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {e}",
+                exc_info=True,
             )
     return None

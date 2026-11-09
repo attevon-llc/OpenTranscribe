@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.core.embedding_models import SENTENCE_TRANSFORMER_DIMENSION
@@ -279,8 +281,8 @@ def ensure_indices_exist() -> None:
                     _client.opensearch_client, settings.OPENSEARCH_TRANSCRIPT_INDEX
                 )
                 _tenant_mapping_checked.add(settings.OPENSEARCH_TRANSCRIPT_INDEX)
-            except Exception as e:
-                logger.error(f"Could not verify the transcripts index tenant mapping: {e}")
+            except OpenSearchException as e:
+                logger.exception(f"Could not verify the transcripts index tenant mapping: {e}")
 
         # Migrate concrete 'speakers' index to alias-based scheme (0.3.3 upgrade)
         migration_result = migrate_to_alias_based_indices()

@@ -4,6 +4,9 @@ import datetime
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import settings
 from app.core.embedding_models import get_speaker_index
 from app.core.embedding_models import get_speaker_index_v4
@@ -90,8 +93,10 @@ def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
                 invalidate_active_speaker_index_cache()
                 logger.info(f"Recreated index {index_name} with knn_vector mapping")
                 return True
-        except Exception as e:
-            logger.warning(f"Wrong-mapping detection/fix failed for {index_name}: {e}")
+        except OpenSearchException as e:
+            logger.warning(
+                f"Wrong-mapping detection/fix failed for {index_name}: {e}", exc_info=True
+            )
 
     # Strategy 1: Close and reopen to force re-acquisition of file handles
     try:
@@ -102,8 +107,8 @@ def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
             _client.reset_knn_health_cache()
             return True
         logger.warning(f"Close/reopen left {index_name} still unable to answer a kNN query")
-    except Exception as e:
-        logger.warning(f"Close/reopen failed for {index_name}: {e}")
+    except OpenSearchException as e:
+        logger.warning(f"Close/reopen failed for {index_name}: {e}", exc_info=True)
 
     # Strategy 2: Force merge to compact corrupted segments
     try:
@@ -113,8 +118,8 @@ def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
             _client.reset_knn_health_cache()
             return True
         logger.warning(f"Force merge left {index_name} still unable to answer a kNN query")
-    except Exception as e:
-        logger.warning(f"Force merge failed for {index_name}: {e}")
+    except OpenSearchException as e:
+        logger.warning(f"Force merge failed for {index_name}: {e}", exc_info=True)
 
     # Strategy 3: For kNN indices, rebuild from PostgreSQL data (last resort)
     try:
@@ -133,8 +138,8 @@ def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
                     f"Index {index_name} rebuilt from DB: {result.get('speakers_indexed', 0)} speakers"
                 )
                 return True
-    except Exception as rebuild_err:
-        logger.error(f"Rebuild from DB failed for {index_name}: {rebuild_err}")
+    except (OpenSearchException, SQLAlchemyError) as rebuild_err:
+        logger.exception(f"Rebuild from DB failed for {index_name}: {rebuild_err}")
 
     logger.error(f"All repair strategies failed for {index_name}")
     return False
@@ -151,8 +156,8 @@ def _drop_rebuild_index(rebuild_index: str) -> None:
             index=rebuild_index
         ):
             _client.opensearch_client.indices.delete(index=rebuild_index)
-    except Exception as cleanup_err:  # cleanup must not mask the real error
-        logger.debug("Failed to clean up rebuild index: %s", cleanup_err)
+    except OpenSearchException:  # cleanup must not mask the real error
+        logger.warning("Failed to clean up rebuild index %s", rebuild_index, exc_info=True)
 
 
 def _rebuild_document(source: dict[str, Any]) -> dict[str, Any]:
@@ -318,9 +323,9 @@ def _verify_rebuild_index(
     try:
         os_client.indices.refresh(index=rebuild_index)
         rebuild_count = int(os_client.count(index=rebuild_index)["count"])
-    except Exception as count_err:
+    except (OpenSearchException, KeyError, TypeError, ValueError) as count_err:
         _drop_rebuild_index(rebuild_index)
-        logger.error(f"Rebuild: could not verify {rebuild_index}: {count_err}")
+        logger.exception(f"Rebuild: could not verify {rebuild_index}: {count_err}")
         # "message" is dead: search.py and this module's own caller read only
         # status/speakers_indexed (#914 STEP 7). Deleted rather than
         # sanitized -- nothing reads it, so there is nothing to sanitize for.
@@ -426,8 +431,8 @@ def _cleanup_after_failed_rebuild(os_client: Any, speaker_index: str, rebuild_in
                 f"Speaker index rebuild failed after '{speaker_index}' was deleted. "
                 f"KEEPING '{rebuild_index}': it holds the recovered embeddings."
             )
-    except Exception as cleanup_err:
-        logger.debug("Failed to clean up rebuild index: %s", cleanup_err)
+    except OpenSearchException:
+        logger.warning("Failed to clean up rebuild index %s", rebuild_index, exc_info=True)
 
 
 def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[str, Any]:
@@ -529,8 +534,10 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
         }
 
     except Exception as e:
+        # Top-level boundary: any failure leaves the original index intact and is
+        # reported to the caller as status="error".
         _cleanup_after_failed_rebuild(os_client, speaker_index, rebuild_index)
-        logger.error(f"Speaker index rebuild failed: {e}")
+        logger.exception(f"Speaker index rebuild failed: {e}")
         # "message" is dead here too -- see the verification refusal above.
         return {
             "status": "error",
@@ -593,8 +600,8 @@ def check_and_repair_indices() -> list[str]:
                     else:
                         logger.error(f"Index {index_name} mapping repair failed")
                     continue  # Skip query check — already handled
-            except Exception as e:
-                logger.warning(f"Mapping check failed for {index_name}: {e}")
+            except OpenSearchException as e:
+                logger.warning(f"Mapping check failed for {index_name}: {e}", exc_info=True)
 
         # Check 2: Query health, in the plane the index actually serves.
         #
@@ -628,14 +635,16 @@ def check_and_repair_indices() -> list[str]:
                 index=index_name, body={"query": {"match_all": {}}, "size": 0}
             )
             logger.info(f"Index health check passed: {index_name}")
-        except Exception as e:
+        except OpenSearchException as e:
             if _is_index_corruption_error(e):
-                logger.warning(f"Index {index_name} unhealthy, attempting repair: {e}")
+                logger.warning(
+                    f"Index {index_name} unhealthy, attempting repair: {e}", exc_info=True
+                )
                 if _repair_index(index_name):
                     repaired.append(index_name)
                 else:
                     logger.error(f"Index {index_name} could not be repaired automatically")
             else:
-                logger.error(f"Index health check failed for {index_name}: {e}")
+                logger.error(f"Index health check failed for {index_name}: {e}", exc_info=True)
 
     return repaired

@@ -7,6 +7,8 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
@@ -94,8 +96,8 @@ def find_speaker_across_media(
 
         return results
 
-    except Exception as e:
-        logger.error(f"Error finding speaker across media: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error finding speaker across media: {e}")
         return []
 
 
@@ -131,8 +133,8 @@ def update_speaker_segment_count(speaker_uuid: str, segment_count: int) -> bool:
         logger.info(f"Updated segment_count for speaker {speaker_uuid} to {segment_count}")
         return True
 
-    except Exception as e:
-        logger.warning(f"Error updating speaker segment count: {e}")
+    except OpenSearchException as e:
+        logger.warning(f"Error updating speaker segment count: {e}", exc_info=True)
         return False
 
 
@@ -169,8 +171,8 @@ def update_speaker_display_name(
         logger.info(f"Updated display name for speaker {speaker_uuid} to '{display_name}'")
         return response
 
-    except Exception as e:
-        logger.error(f"Error updating speaker display name: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error updating speaker display name: {e}")
         return None
 
 
@@ -218,8 +220,8 @@ def update_speaker_profile(
         )
         return response
 
-    except Exception as e:
-        logger.error(f"Error updating speaker profile assignment: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error updating speaker profile assignment: {e}")
         return None
 
 

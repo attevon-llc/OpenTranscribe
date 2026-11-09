@@ -5,6 +5,9 @@ from collections.abc import Generator
 from collections.abc import Iterable
 from typing import Any
 
+from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
@@ -18,17 +21,25 @@ from app.services.search.availability_field import exclude_unavailable_clause
 logger = logging.getLogger(__name__)
 
 
-def get_speaker_document(speaker_uuid: str) -> dict[str, Any] | None:
+def get_speaker_document(speaker_uuid: str, *, strict: bool = False) -> dict[str, Any] | None:
     """
     Get full speaker document (embedding + segment_count) from OpenSearch.
 
     Args:
         speaker_uuid: UUID of the speaker
+        strict: Raise instead of returning None when the cluster could not
+            answer. Callers that act on "this speaker has no document"
+            (embedding reassignment) must pass it.
 
     Returns:
         Dict with 'embedding' and 'segment_count' keys, or None if not found
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the lookup failed.
     """
     if not _client.opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         logger.warning("OpenSearch client not initialized")
         return None
 
@@ -49,8 +60,12 @@ def get_speaker_document(speaker_uuid: str) -> dict[str, Any] | None:
 
         return None
 
-    except Exception as e:
-        logger.error(f"Error getting speaker document for {speaker_uuid}: {e}")
+    except NotFoundError:
+        return None
+    except OpenSearchException as e:
+        logger.exception(f"Error getting speaker document for {speaker_uuid}: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"speaker document lookup failed: {e}") from e
         return None
 
 
@@ -124,16 +139,27 @@ def get_speaker_embedding(speaker_uuid: str, *, strict: bool = False) -> list[fl
         return None
 
 
-def get_speaker_embeddings_batch(speaker_uuids: list[str]) -> dict[str, list[float]]:
+def get_speaker_embeddings_batch(
+    speaker_uuids: list[str], *, strict: bool = False
+) -> dict[str, list[float]]:
     """Get embeddings for multiple speakers in a single mget request.
 
     Args:
         speaker_uuids: List of speaker UUIDs
+        strict: Raise instead of returning ``{}`` when the cluster could not
+            answer, so "no voiceprints" and "could not look" differ.
 
     Returns:
         Dict mapping speaker_uuid -> embedding vector (only for found speakers)
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the lookup failed.
     """
-    if not _client.opensearch_client or not speaker_uuids:
+    if not speaker_uuids:
+        return {}
+    if not _client.opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         return {}
 
     try:
@@ -151,8 +177,10 @@ def get_speaker_embeddings_batch(speaker_uuids: list[str]) -> dict[str, list[flo
                     results[doc["_id"]] = list(embedding)
         return results
 
-    except Exception as e:
-        logger.error(f"Error batch-fetching speaker embeddings: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error batch-fetching speaker embeddings: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"speaker embedding batch fetch failed: {e}") from e
         return {}
 
 
@@ -177,7 +205,10 @@ def _embedding_batch(sources: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 def _iter_embeddings_by_uuid(
     os_client: Any, active_index: str, speaker_uuids: list[str], batch_size: int
 ) -> Generator[list[dict[str, Any]], None, None]:
-    """Fetch the given speakers via mget in batches; a failed batch is skipped."""
+    """Fetch the given speakers via mget in batches.
+
+    A failed batch raises: skipping it would hand the caller a silently partial set.
+    """
     for i in range(0, len(speaker_uuids), batch_size):
         chunk = speaker_uuids[i : i + batch_size]
         try:
@@ -189,9 +220,9 @@ def _iter_embeddings_by_uuid(
             )
             if batch:
                 yield batch
-        except Exception as e:
-            logger.warning("mget batch failed: %s", e)
-            continue
+        except OpenSearchException as e:
+            logger.exception("mget batch failed: %s", e)
+            raise OpenSearchUnavailableError(f"speaker mget batch failed: {e}") from e
 
 
 def _iter_user_embeddings(
@@ -225,9 +256,9 @@ def _iter_user_embeddings(
 
         try:
             response = os_client.search(index=active_index, body=query)
-        except Exception as e:
-            logger.error("Scroll failed: %s", e)
-            break
+        except OpenSearchException as e:
+            logger.exception("Scroll failed: %s", e)
+            raise OpenSearchUnavailableError(f"speaker scroll failed: {e}") from e
 
         hits = response["hits"]["hits"]
         if not hits:
@@ -272,6 +303,8 @@ def iter_speaker_embeddings(
 def get_all_speaker_embeddings(
     user_id: int,
     page_size: int = 500,
+    *,
+    strict: bool = False,
 ) -> list[dict]:
     """Fetch all speaker embeddings for a user from OpenSearch.
 
@@ -281,11 +314,17 @@ def get_all_speaker_embeddings(
     Args:
         user_id: Owner user ID.
         page_size: Number of documents per page (scroll batch size).
+        strict: Raise instead of returning ``[]`` when the cluster could not answer.
 
     Returns:
         List of dicts with speaker_uuid and embedding.
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the scan failed.
     """
     if not _client.opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         logger.warning("OpenSearch client not initialized")
         return []
 
@@ -353,6 +392,8 @@ def get_all_speaker_embeddings(
         )
         return results
 
-    except Exception as e:
-        logger.error(f"Error fetching speaker embeddings: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error fetching speaker embeddings: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"speaker embedding scan failed: {e}") from e
         return []

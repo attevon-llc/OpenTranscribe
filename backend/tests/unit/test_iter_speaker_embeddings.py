@@ -1,9 +1,14 @@
 """``speaker_read.iter_speaker_embeddings``: mget batching, scroll paging, failure handling."""
 
+import logging
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
+
 from app.services.opensearch_service import speaker_read
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 
 _CLIENT_PATH = "app.services.opensearch_service.client.opensearch_client"
 _INDEX_PATH = "app.services.opensearch_service.speaker_read.get_active_speaker_index"
@@ -63,17 +68,30 @@ def test_mget_batches_by_batch_size_and_keeps_only_complete_found_docs():
     ]
 
 
-def test_failed_mget_batch_is_skipped_and_empty_batch_not_yielded():
+def test_empty_mget_batch_is_not_yielded():
     client = MagicMock()
     client.mget.side_effect = [
-        RuntimeError("boom"),
         {"docs": [{"found": False}]},
         {"docs": [{"found": True, "_source": _src("z")}]},
     ]
 
-    batches = _run(client, speaker_uuids=["a", "b", "z"], batch_size=1)
+    batches = _run(client, speaker_uuids=["b", "z"], batch_size=1)
 
     assert [b[0]["speaker_uuid"] for b in batches] == ["z"]
+
+
+def test_failed_mget_batch_raises_instead_of_yielding_a_partial_set(caplog):
+    client = MagicMock()
+    client.mget.side_effect = [
+        {"docs": [{"found": True, "_source": _src("a")}]},
+        OpenSearchConnectionError("N/A", "boom", Exception()),
+    ]
+
+    with caplog.at_level(logging.ERROR, logger=speaker_read.logger.name):
+        with pytest.raises(OpenSearchUnavailableError):
+            _run(client, speaker_uuids=["a", "b"], batch_size=1)
+
+    assert [r for r in caplog.records if r.exc_info]
 
 
 def test_scroll_pages_with_search_after_and_stops_on_a_short_page():
@@ -93,8 +111,12 @@ def test_scroll_pages_with_search_after_and_stops_on_a_short_page():
     assert {"term": {"user_id": 1}} in bodies[0]["query"]["bool"]["filter"]
 
 
-def test_scroll_failure_ends_the_iteration():
+def test_scroll_failure_raises_instead_of_ending_the_iteration(caplog):
     client = MagicMock()
-    client.search.side_effect = RuntimeError("down")
+    client.search.side_effect = OpenSearchConnectionError("N/A", "down", Exception())
 
-    assert _run(client) == []
+    with caplog.at_level(logging.ERROR, logger=speaker_read.logger.name):
+        with pytest.raises(OpenSearchUnavailableError):
+            _run(client)
+
+    assert [r for r in caplog.records if r.exc_info]

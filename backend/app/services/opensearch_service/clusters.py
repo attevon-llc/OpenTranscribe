@@ -3,6 +3,9 @@
 import datetime
 import logging
 
+from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.constants import SPEAKER_CONFIDENCE_HIGH
 from app.services.opensearch_service import client as _client
@@ -97,8 +100,8 @@ def store_cluster_embedding(
         logger.info(f"Stored cluster {cluster_uuid} centroid in OpenSearch")
         return True
 
-    except Exception as e:
-        logger.error(f"Error storing cluster embedding: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error storing cluster embedding: {e}")
         return False
 
 
@@ -124,8 +127,11 @@ def delete_cluster_embedding(cluster_uuid: str) -> bool:
         logger.info(f"Removed cluster {cluster_uuid} embedding from OpenSearch")
         return True
 
-    except Exception as e:
-        logger.warning(f"Error removing cluster embedding (may not exist): {e}")
+    except NotFoundError:
+        logger.warning(f"Cluster {cluster_uuid} embedding not present in OpenSearch")
+        return False
+    except OpenSearchException as e:
+        logger.exception(f"Error removing cluster embedding: {e}")
         return False
 
 
@@ -249,7 +255,7 @@ def update_cluster_embedding(
             user_id = existing["_source"].get("user_id")
             existing_label = existing["_source"].get("label")
             existing_org = existing["_source"].get("organization_id")
-        except Exception:
+        except NotFoundError:
             logger.error(f"Cannot update cluster {cluster_uuid}: document not found")
             return False
 
@@ -280,6 +286,6 @@ def update_cluster_embedding(
         logger.info(f"Updated cluster {cluster_uuid} embedding in OpenSearch")
         return True
 
-    except Exception as e:
-        logger.error(f"Error updating cluster embedding for {cluster_uuid}: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error updating cluster embedding for {cluster_uuid}: {e}")
         return False

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { onMount, onDestroy, tick } from 'svelte';
+  import type { FileDetailState } from '$lib/types/media';
   import type { Collection } from '$lib/types/collection';
   import type { Tag } from '$lib/types/tag';
   import { guardUnsavedChanges } from '$lib/navigation/unsavedChangesGuard';
@@ -74,7 +75,7 @@
   export let data;
   $: id = data.id;
 
-  let file: any = null;
+  let file: FileDetailState | null = null;
   // Legal hold: every edit control below reads this through context (legal-hold plan, Lane D).
   const fileFrozenStore = provideFileFrozen();
   $: fileFrozenStore.set(file?.hold?.held === true);
@@ -118,7 +119,7 @@
   // modules; `TranscriptActionsBar`, which triggers it, renders on this page.
   const downloadManager = createDownloadStreamManager();
   $: downloadState = $downloadStore;
-  $: currentDownload = downloadState[file?.uuid];
+  $: currentDownload = (file ? downloadState[file.uuid] : undefined);
   $: isDownloading = !!currentDownload && ['preparing', 'processing', 'downloading'].includes(currentDownload.status);
   $: isVideoFile = file?.content_type?.startsWith('video/') ?? false;
   $: canEmbedSubtitles = isVideoFile && file?.status === 'completed';
@@ -141,7 +142,7 @@
   const speakers = createFileSpeakers({
     getFileId: () => fileId,
     getFile: () => file,
-    setFile: (f) => (file = f),
+    setFile: (f) => (file = f as FileDetailState),
     getShowOriginal: () => showOriginal,
     getSpeakerList: () => speakerList,
     setSpeakerList: (list) => (speakerList = list),
@@ -154,7 +155,7 @@
     refreshCaptionTrack,
     refreshAnalytics: () => handleAnalyticsRefreshNeeded(),
     applyReloadedFile: (data) => {
-      file = data;
+      file = data as FileDetailState;
       collections = (data.collections as Collection[]) || [];
       processTranscriptData();
     },
@@ -291,7 +292,7 @@
       if (!data || typeof data !== 'object') throw new Error('Invalid response format');
 
       const detail = data as FileDetailPayload;
-      file = detail;
+      file = detail as FileDetailState;
       collections = (detail.collections as Collection[]) || [];
       // The ONLY source of the caller's permission; every gate above derives from it.
       myPermission = (detail.my_permission as string | null | undefined) ?? null;
@@ -302,7 +303,7 @@
       segmentLimit = pagination.segmentLimit;
 
       // Set up video URL only if file might have media available
-      if (file.status !== 'error' && file.status !== 'cancelled') {
+      if (detail.status !== 'error' && detail.status !== 'cancelled') {
         setupVideoUrl(targetFileId, fromPrefetch);
       }
 
@@ -326,7 +327,7 @@
   const { toggleShowOriginal } = createRedactionView({
     getFileId: () => fileId,
     getFile: () => file,
-    setFile: (f) => (file = f),
+    setFile: (f) => (file = f as FileDetailState),
     getShowOriginal: () => showOriginal,
     setShowOriginal: (value) => (showOriginal = value),
     isToggleBusy: () => redactionToggleBusy,
@@ -346,7 +347,7 @@
   const segmentPager = createSegmentPager({
     getFileId: () => fileId,
     getFile: () => file,
-    setFile: (f) => (file = f),
+    setFile: (f) => (file = f as FileDetailState),
     getShowOriginal: () => showOriginal,
     getSegmentLimit: () => segmentLimit,
     getTotalSegments: () => totalSegments,
@@ -435,7 +436,7 @@
   const segmentEditor = createSegmentEditor({
     getFileId: () => fileId,
     getFile: () => file,
-    setFile: (f) => (file = f),
+    setFile: (f) => (file = f as FileDetailState),
     getEdit: () => ({ id: editingSegmentId, text: editingSegmentText, originalText: editingSegmentOriginalText }),
     setEdit: (edit) => {
       editingSegmentId = edit.id;
@@ -537,7 +538,7 @@
       getLlmAvailable: () => llmAvailable,
       getRedactionStatus: () => redactionStatus,
       getVideoPlayerComponent: () => filePlayer,
-      setFile: (f) => (file = f),
+      setFile: (f) => (file = f as FileDetailState),
       setCurrentProcessingStep: (s) => (currentProcessingStep = s),
       setSummaryGenerating: (v) => (summaryGenerating = v),
       setGeneratingSummary: (v) => (generatingSummary = v),

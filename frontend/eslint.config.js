@@ -60,11 +60,10 @@ export default tseslint.config(
     },
   },
   {
-    // Lenient baseline — downgrade pre-existing legacy-debt rules to warnings so the
-    // gate is green today; specific rules are ratcheted back to 'error' as the debt
-    // is cleared (Phase 6 keys each → require-each-key; Phase 4.7 → no-explicit-any).
+    // Rules that were once ratcheted legacy debt. Every judgement rule below is now an
+    // error; the baseline in scripts/guards/baselines/eslint.txt holds no entry for them.
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
@@ -74,23 +73,19 @@ export default tseslint.config(
       'no-case-declarations': 'warn',
       'no-empty': 'error',
       'prefer-const': 'error',
-      // New in this codebase's eslint.config.js as of the eslint 9->10 bump (@eslint/js
-      // 10 added it to `recommended`). False-positives across ~25 files on the standard
-      // `let x = initial; $: x = ...` idiom: the declaration's initial value looks
-      // "unused" to a plain-JS analyzer, but Svelte's reactive statement doesn't run
-      // synchronously right after it — it's a separate reactive effect, not the next
-      // line of imperative code. Same class of gap as the svelte/* rules below.
-      'no-useless-assignment': 'warn',
-      // Svelte legacy-debt → warn for now (real, but pre-existing; fixed in later phases).
-      'svelte/require-each-key': 'warn', // Phase 6.2 adds keys
+      // Added to `recommended` by the eslint 9->10 bump. It cannot see that a `$:` block re-runs,
+      // so the legacy edge-detect idiom (`let seen; $: if (x !== seen) { seen = x; ... }`) reads
+      // as a dead store. That bookkeeping lives in a named function called as `$: sync(x)`.
+      'no-useless-assignment': 'error',
+      'svelte/require-each-key': 'error',
       'svelte/no-navigation-without-resolve': 'error',
-      'svelte/prefer-svelte-reactivity': 'warn',
-      'svelte/infinite-reactive-loop': 'warn',
+      'svelte/prefer-svelte-reactivity': 'error',
+      'svelte/infinite-reactive-loop': 'error',
       'svelte/no-unused-svelte-ignore': 'error',
-      'svelte/no-at-html-tags': 'warn', // all {@html} sites audited as DOMPurify-sanitized
+      'svelte/no-at-html-tags': 'error', // only SanitizedHtml, ChatMarkdown and LegalProse hold one, each with a written reason
       'svelte/no-useless-mustaches': 'error',
-      'svelte/no-immutable-reactive-statements': 'warn',
-      'svelte/no-reactive-reassign': 'warn',
+      'svelte/no-immutable-reactive-statements': 'error',
+      'svelte/no-reactive-reassign': 'error',
       // Repo convention is the $lib/$components/$stores aliases. Assets and the build scripts
       // in frontend/scripts (imported by the src/bundleBudget*.test.ts gate tests) have no alias, and
       // neither has the project-root vite.config / kit.config.js (imported by src/viteConfig.test.ts).

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   /**
    * One dialog size for the gallery's three big modals (upload, tag manager,
    * collections). The upload wizard's six steps have very different natural
@@ -87,9 +88,9 @@
   let error: string | null = null;
 
   // Animation and smooth update state
-  const fileMap = new Map<string, MediaFile>();
-  let pendingNewFiles = new Set<string>();
-  let pendingDeletions = new Set<string>();
+  const fileMap = new SvelteMap<string, MediaFile>();
+  let pendingNewFiles = new SvelteSet<string>();
+  let pendingDeletions = new SvelteSet<string>();
   const refresher = createThrottledRefresher(() => fetchFiles());
   const throttledRefresh = refresher.refresh;
 
@@ -114,7 +115,7 @@
   $: selectedFiles = $galleryState.selectedFiles;
 
   // Component refs
-  let filterPanelRef: any;
+  let filterPanelRef: ReturnType<typeof GalleryFilterPanel> | undefined;
 
   // WebSocket subscription
   let stopRealtime: (() => void) | undefined;
@@ -241,7 +242,7 @@
     if ($galleryState.currentPage === 1) {
       // Add new file to the beginning
       pendingNewFiles.add(newFile.uuid);
-      pendingNewFiles = new Set(pendingNewFiles);
+      pendingNewFiles = new SvelteSet(pendingNewFiles);
       files = [newFile, ...files];
       fileMap.set(newFile.uuid, newFile);
       galleryStore.setFiles(files);
@@ -251,7 +252,7 @@
       // Clear new file marker after animation
       setTimeout(() => {
         pendingNewFiles.delete(newFile.uuid);
-        pendingNewFiles = new Set(pendingNewFiles);
+        pendingNewFiles = new SvelteSet(pendingNewFiles);
       }, 600);
     } else {
       toastStore.info($t('gallery.newFileAvailable'));
@@ -266,7 +267,7 @@
     actualDeletions.forEach(id => {
       pendingDeletions.add(id);
     });
-    pendingDeletions = new Set(pendingDeletions);
+    pendingDeletions = new SvelteSet(pendingDeletions);
 
     // Wait for exit animation to complete, then remove from array
     setTimeout(() => {
@@ -275,7 +276,7 @@
         fileMap.delete(id);
         pendingDeletions.delete(id);
       });
-      pendingDeletions = new Set(pendingDeletions);
+      pendingDeletions = new SvelteSet(pendingDeletions);
       galleryStore.setFiles(files);
 
       if (actualDeletions.length > 0) {

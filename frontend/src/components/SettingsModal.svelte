@@ -92,7 +92,7 @@
   // (capabilities/edition) or the locale changes; desktop + mobile instances share it.
   let desktopSearchActive = false;
   let mobileSearchActive = false;
-  let settingsSearchIndex: FuzzyIndex<SettingsSearchItem> | null = null;
+  let settingsSearchIndex: FuzzyIndex<SettingsSearchItem> | null;
 
   // Browser Back onto a page this modal was open over (it closes itself on every route change)
   // reopens it on the section it was left on. Here, not in the root layout: the layout's static
@@ -102,14 +102,14 @@
   });
 
   // Close modal when the user navigates to a different page
-  let _prevPath = '';
-  $: {
-    const newPath = page.url.pathname;
-    if (isOpen && _prevPath && newPath !== _prevPath) {
+  let previousPath = '';
+  function closeOnRouteChange(newPath: string, open: boolean) {
+    if (open && previousPath && newPath !== previousPath) {
       closeModal();
     }
-    _prevPath = newPath;
+    previousPath = newPath;
   }
+  $: closeOnRouteChange(page.url.pathname, isOpen);
   $: isAdmin = $userStore?.role === 'admin' || $userStore?.role === 'super_admin';
   $: isSuperAdmin = $userStore?.role === 'super_admin';
 
@@ -350,11 +350,11 @@
   // The pipeline overview is derived from other sections' settings; a save elsewhere makes the
   // remembered copy wrong, so drop it (the overview still refreshes on every visit).
   let hadDirty = false;
-  $: {
-    const anyDirty = settingsModalStore.hasAnyDirty($settingsModalStore);
+  function dropPipelineOverviewAfterSave(anyDirty: boolean) {
     if (hadDirty && !anyDirty) invalidateSectionData(SectionDataKey.pipeline);
     hadDirty = anyDirty;
   }
+  $: dropPipelineOverviewAfterSave(settingsModalStore.hasAnyDirty($settingsModalStore));
 
   // Track previous open state to detect when modal opens
   let previousOpenState = false;
@@ -612,11 +612,11 @@
           class="sidebar-scroll"
           on:scroll={(event) => (sidebarScrolled = event.currentTarget.scrollTop > 0)}
         >
-        {#each sidebarSections as section}
+        {#each sidebarSections as section (section.title)}
           <div class="sidebar-section">
             <h3 class="section-heading">{section.title}</h3>
             <nav class="section-nav">
-              {#each section.items as item}
+              {#each section.items as item (item.id)}
                 <button
                   class="nav-item"
                   class:active={effectiveActiveSection === item.id}
@@ -670,9 +670,9 @@
           value={effectiveActiveSection}
           on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
         >
-          {#each sidebarSections as section}
+          {#each sidebarSections as section (section.title)}
             <optgroup label={section.title}>
-              {#each section.items as item}
+              {#each section.items as item (item.id)}
                 <option value={item.id} disabled={item.locked}>
                   {item.locked
                     ? `${item.label} — ${lockReason(item.id)}`

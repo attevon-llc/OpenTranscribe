@@ -2,32 +2,12 @@
   import { slide } from 'svelte/transition';
   import SpeakerStats from './SpeakerStats.svelte';
   import { t } from '$stores/locale';
-
-  interface OverallAnalytics {
-    word_count?: number;
-    duration_seconds?: number;
-    talk_time?: {
-      by_speaker: Record<string, number>;
-      total: number;
-    };
-    turn_taking?: {
-      by_speaker: Record<string, number>;
-      total_turns: number;
-    };
-    interruptions?: {
-      by_speaker: Record<string, number>;
-      total: number;
-    };
-    questions?: {
-      by_speaker: Record<string, number>;
-      total: number;
-    };
-  }
+  import type { OverallAnalytics } from '$lib/types/analytics';
 
   interface FileAnalytics {
     analytics?: {
       overall_analytics?: OverallAnalytics;
-    };
+    } | null;
     overall_analytics?: OverallAnalytics;
     status?: string;
   }

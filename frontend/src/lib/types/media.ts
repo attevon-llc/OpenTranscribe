@@ -1,4 +1,5 @@
 import type { FileVoiceprintConsentState } from '$lib/api/privacy';
+import type { OverallAnalytics } from '$lib/types/analytics';
 /**
  * Where a derived value came from — deliberately NOT specific to dates.
  *
@@ -211,7 +212,8 @@ export interface MediaFileDetail extends MediaFile {
   total_segments?: number;
   speakers?: unknown[];
   collections?: unknown[];
-  analytics?: Record<string, unknown> | null;
+  analytics?: { overall_analytics?: OverallAnalytics } | null;
+  overall_analytics?: OverallAnalytics;
 
   // Summary / enrichment
   has_summary?: boolean;
@@ -375,3 +377,11 @@ export interface TranscriptSourceFile {
   grouped_segments?: GroupedTranscriptSegment[];
   [key: string]: unknown;
 }
+
+/**
+ * What the file-detail page holds in `file`. The fileDetail helpers pass the file through
+ * structurally (each declares only the fields it reads, plus an index signature) and hand back
+ * the same object they were given, so the page maps their narrow shapes back onto this type
+ * with one assertion at each setter.
+ */
+export type FileDetailState = MediaFileDetail & Record<string, unknown>;

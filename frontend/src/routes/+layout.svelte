@@ -40,7 +40,6 @@
 
   // Import components
   import Navbar from "$components/Navbar.svelte";
-  import SupportAccessBanner from "$components/supportAccess/SupportAccessBanner.svelte";
   import { demoMode, loadDemoAttributions } from "$stores/demo";
   import NotificationsPanel from "$components/NotificationsPanel.svelte";
   import ToastContainer from "$components/ToastContainer.svelte";
@@ -74,7 +73,7 @@
   $: ensureSettingsModal($isAuthenticated && !lifecycleHold && $settingsModalStore.isOpen);
 
   // The real modal skips its enter animation when it takes over from the shell.
-  function syncShellShown(open: boolean, shell: Component<any> | null, modal: Component<any> | null) {
+  function syncShellShown(open: boolean, shell: Component<never> | null, modal: Component<never> | null) {
     if (!open) shellShown = false;
     else if (shell && !modal) shellShown = true;
   }
@@ -115,6 +114,15 @@
     void import("../components/FirstRunWizard.svelte").then((m) => (FirstRunWizard = m.default));
   }
   $: ensureFirstRunWizard($isAuthenticated && !lifecycleHold && $user?.role === 'super_admin');
+  // Lazy: only rendered during an active support-access session.
+  let SupportAccessBanner: typeof import("$components/supportAccess/SupportAccessBanner.svelte").default | null = null;
+  function ensureSupportBanner(wanted: boolean) {
+    if (!wanted || SupportAccessBanner) return;
+    void import("$components/supportAccess/SupportAccessBanner.svelte").then(
+      (m) => (SupportAccessBanner = m.default)
+    );
+  }
+  $: ensureSupportBanner($supportSession.active);
   // Lazy: the banner only matters while an erasure request is open (self-service erasure, #1354).
   function ensureErasureBanner(wanted: boolean) {
     if (!wanted || ErasureRequestBanner) return;
@@ -346,7 +354,7 @@
     <ToastContainer />
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
-      {#if $supportSession.active}<SupportAccessBanner />{/if}
+      {#if $supportSession.active && SupportAccessBanner}<svelte:component this={SupportAccessBanner} />{/if}
       {#if $demoMode && DemoBanner}<svelte:component this={DemoBanner} />{/if}
       {#if ErasureRequestBanner}<svelte:component this={ErasureRequestBanner} />{/if}
       <NotificationsPanel />

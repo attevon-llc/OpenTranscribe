@@ -1,11 +1,7 @@
 """Security-control settings: FIPS, password policy, rate limits, tokens, lockout,
 audit, banner, account expiry, session limits, SMTP and abuse intake.
 
-Split out of ``app.core.config`` (v0.7.0 L07) as one cohesive concern, following the
-``settings_*`` mixin pattern. ``Settings`` inherits these fields, so ``settings.<NAME>`` and
-the environment variable names are unchanged. The env source, ``env_ignore_empty`` and
-``extra="ignore"`` come from ``Settings``' own ``model_config``; this class is never
-instantiated on its own.
+See ``settings_proxy_auth`` for why these are mixins of ``Settings``.
 """
 
 import os

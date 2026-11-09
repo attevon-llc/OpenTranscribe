@@ -110,7 +110,7 @@ export interface Speaker {
 }
 
 /** One transcript segment of a speaker, as `GET /files/{uuid}/speakers` lists them. */
-export interface SpeakerSegmentTimestamp {
+interface SpeakerSegmentTimestamp {
   uuid?: string;
   segment_index?: number;
   start_time: number;

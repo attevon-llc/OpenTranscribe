@@ -2,7 +2,7 @@ import type { Translate } from '$lib/i18n';
 import type { Notification } from '$stores/websocket';
 
 /** The slice of the page's file object that notifications read and write; the rest passes through. */
-export interface NotificationFile {
+interface NotificationFile {
   uuid?: string;
   status?: string;
   progress?: unknown;

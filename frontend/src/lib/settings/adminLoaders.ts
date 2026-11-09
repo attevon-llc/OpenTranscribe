@@ -11,7 +11,7 @@ import { UserApprovalsApi } from '$lib/api/userApprovals';
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 /** A model entry of the stats payload. Only `name` is guaranteed; the rest is per-model detail. */
-export interface ModelStats {
+interface ModelStats {
   name: string;
   description?: string;
   purpose?: string;
@@ -26,7 +26,7 @@ export interface DiarizationModelStats extends ModelStats {
 }
 
 /** A recently finished or running task row in the stats payload. */
-export interface RecentTaskStats {
+interface RecentTaskStats {
   id: string;
   type: string;
   status: string;

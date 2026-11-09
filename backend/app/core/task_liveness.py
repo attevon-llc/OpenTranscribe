@@ -252,9 +252,11 @@ def _parse_lease(raw: bytes | str | None) -> tuple[datetime | None, str | None]:
     if isinstance(decoded, dict):
         started = decoded.get("started")
         owner = decoded.get("owner") or None
+    if not isinstance(started, int | float | str):
+        return None, owner
     try:
-        return datetime.fromtimestamp(float(started), tz=UTC), owner  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        return datetime.fromtimestamp(float(started), tz=UTC), owner
+    except ValueError:
         return None, owner
 
 

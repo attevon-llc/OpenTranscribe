@@ -57,7 +57,7 @@ def _handle_model_switch(model_id: str) -> dict[str, Any] | None:
 
     if model_id in OPENSEARCH_EMBEDDING_MODELS:
         model_info = OPENSEARCH_EMBEDDING_MODELS[model_id]
-        new_dimension: int = model_info["dimension"]  # type: ignore[assignment]
+        new_dimension = model_info["dimension"]
 
         # Recreate index with new dimension if needed
         if not recreate_index_for_dimension(new_dimension):

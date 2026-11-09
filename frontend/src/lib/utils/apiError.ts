@@ -55,12 +55,6 @@ function holdRefusalMessage(detail: unknown): string | null {
   return key ? get(t)(key) : null;
 }
 
-/**
- * Extracts a human-readable message from an unknown error, preferring the FastAPI
- * `response.data.detail` shape, then `response.data.message`, then `error.message`,
- * then the fallback. The default fallback is resolved per call, so it follows the
- * active locale rather than the one that was active when this module was imported.
- */
 /** The translated sentence for a legal processing gate refusal (``detail.code``), else null. */
 function legalRefusalMessage(detail: unknown): string | null {
   const code = (detail as { code?: unknown } | null | undefined)?.code;
@@ -69,12 +63,13 @@ function legalRefusalMessage(detail: unknown): string | null {
   return key ? get(t)(key) : null;
 }
 
-export function getErrorMessage(
-  error: unknown,
-  fallback = get(t)('common.somethingWentWrong')
-): string {
-  const e = error as AxiosLikeError;
-  const detail = e?.response?.data?.detail;
+/** A non-empty string, else undefined. */
+function nonBlank(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+// The refusals the client translates itself, from a stable code or the holder.
+function translatedRefusal(error: unknown, detail: unknown): string | null {
   // A legal hold refusal (issue #1276) is translated here, once, from WHO holds the item: the
   // server's own sentence is English, and every delete, remove and reprocess site reads this.
   const held = holdRefusalMessage(detail);
@@ -84,28 +79,50 @@ export function getErrorMessage(
   const supportKey = SUPPORT_ERROR_TOAST[supportGrantErrorCode(error) ?? ''];
   if (supportKey) return get(t)(supportKey);
   // A legal processing gate refusal carries a stable code; the sentence is ours, translated.
-  const legal = legalRefusalMessage(detail);
-  if (legal) return legal;
-  if (typeof detail === 'string' && detail.trim()) return detail;
-  // FastAPI's default 422 shape is an ARRAY of validation-error objects
-  // (`detail: [{msg: "field required", ...}, ...]`). Without this the chain fell
-  // through to the generic fallback and dropped the actual field error.
-  if (Array.isArray(detail)) {
-    const joined = detail
-      .map((d) => (d as { msg?: unknown })?.msg)
-      .filter((msg): msg is string => typeof msg === 'string' && msg.trim() !== '')
-      .join('. ');
-    if (joined) return joined;
-  }
-  // An account-lifecycle refusal carries an OBJECT detail (`{code, message}`).
-  // Without this the chain fell through to `error.message` and surfaced the raw,
-  // untranslated "Request failed with status code 403" instead of the reason.
-  const detailMessage = (detail as { message?: unknown } | null | undefined)?.message;
-  if (typeof detailMessage === 'string' && detailMessage.trim()) return detailMessage;
-  const message = e?.response?.data?.message;
-  if (typeof message === 'string' && message.trim()) return message;
-  if (typeof e?.message === 'string' && e.message.trim()) return e.message;
-  return fallback;
+  return legalRefusalMessage(detail);
+}
+
+// FastAPI's default 422 shape is an ARRAY of validation-error objects
+// (`detail: [{msg: "field required", ...}, ...]`). Without this the chain fell
+// through to the generic fallback and dropped the actual field error.
+function validationMessages(detail: unknown): string | undefined {
+  if (!Array.isArray(detail)) return undefined;
+  const joined = detail
+    .map((d) => (d as { msg?: unknown })?.msg)
+    .filter((msg): msg is string => typeof msg === 'string' && msg.trim() !== '')
+    .join('. ');
+  return joined || undefined;
+}
+
+// What the server said, in order of preference: a string or validation-array `detail`, an
+// object detail's `message`, then a top-level `message`.
+function serverMessage(e: AxiosLikeError | null | undefined, detail: unknown): string | undefined {
+  return (
+    nonBlank(detail) ??
+    validationMessages(detail) ??
+    // An account-lifecycle refusal carries an OBJECT detail (`{code, message}`).
+    // Without this the chain fell through to `error.message` and surfaced the raw,
+    // untranslated "Request failed with status code 403" instead of the reason.
+    nonBlank((detail as { message?: unknown } | null | undefined)?.message) ??
+    nonBlank(e?.response?.data?.message)
+  );
+}
+
+/**
+ * Extracts a human-readable message from an unknown error, preferring the FastAPI
+ * `response.data.detail` shape, then `response.data.message`, then `error.message`,
+ * then the fallback. The default fallback is resolved per call, so it follows the
+ * active locale rather than the one that was active when this module was imported.
+ */
+export function getErrorMessage(
+  error: unknown,
+  fallback = get(t)('common.somethingWentWrong')
+): string {
+  const e = error as AxiosLikeError;
+  const detail = e?.response?.data?.detail;
+  return (
+    translatedRefusal(error, detail) ?? serverMessage(e, detail) ?? nonBlank(e?.message) ?? fallback
+  );
 }
 
 /**

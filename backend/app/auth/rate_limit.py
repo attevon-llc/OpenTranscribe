@@ -20,6 +20,10 @@ import hashlib
 import logging
 import time
 from collections.abc import Callable
+from urllib.parse import parse_qsl
+from urllib.parse import urlencode
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
 
 from fastapi import Request
 from fastapi import Response
@@ -165,6 +169,39 @@ def demo_default_limits() -> list[str]:
     return [f"{settings.DEMO_RATE_LIMIT_PER_MINUTE}/minute"]
 
 
+def _with_request_timeouts(redis_url: str) -> str:
+    """``redis_url`` with the request socket timeouts as query options.
+
+    slowapi checks limits synchronously, on the event loop for an async route, so an
+    unbounded read on a hung Redis would stall every request in the process. A timeout
+    raises, and the in-memory fallback takes over. redis-py parses ``socket_timeout`` and
+    ``socket_connect_timeout`` from the URL query as floats; ``Limiter(storage_options=)``
+    is typed ``dict[str, str]``, which cannot carry them.
+    """
+    parts = urlsplit(redis_url)
+    query = dict(parse_qsl(parts.query))
+    query["socket_timeout"] = str(settings.REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS)
+    query["socket_connect_timeout"] = str(settings.REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS)
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _new_limiter(storage_uri: str | None) -> Limiter:
+    """The app's limiter over ``storage_uri`` (``None``: per-process memory)."""
+    return Limiter(
+        key_func=_client_ip_key,
+        enabled=settings.RATE_LIMIT_ENABLED,
+        # Empty outside the public demo: limits are per-endpoint (see demo_default_limits).
+        default_limits=[*demo_default_limits()],
+        headers_enabled=True,  # Add rate limit headers to responses
+        strategy="fixed-window",  # Simple fixed window strategy
+        storage_uri=storage_uri,
+        # Without this, a dead storage raises out of the limiter instead of degrading;
+        # with it and an empty fallback list, slowapi re-evaluates the route's OWN
+        # limits against in-memory storage, so limits stay enforced while degraded.
+        in_memory_fallback_enabled=True,
+    )
+
+
 def _create_limiter() -> Limiter:
     """
     Create and configure the rate limiter instance.
@@ -190,34 +227,11 @@ def _create_limiter() -> Limiter:
     """
     _redis_reachable()
 
-    kwargs = {
-        "key_func": _client_ip_key,
-        "enabled": settings.RATE_LIMIT_ENABLED,
-        # None outside the public demo: limits are per-endpoint (see demo_default_limits).
-        "default_limits": demo_default_limits(),
-        "headers_enabled": True,  # Add rate limit headers to responses
-        "strategy": "fixed-window",  # Simple fixed window strategy
-        # Without this, a dead storage raises out of the limiter instead of degrading;
-        # with it and an empty fallback list, slowapi re-evaluates the route's OWN
-        # limits against in-memory storage, so limits stay enforced while degraded.
-        "in_memory_fallback_enabled": True,
-    }
-
     try:
         # Building the storage does NOT connect (limits is lazy), so an unreachable
         # Redis lands here happily and degrades at first use. This only catches a
         # genuinely unusable URI or a missing redis client library.
-        # storage_options reach redis.from_url: slowapi checks limits synchronously, on the
-        # event loop for an async route, so an unbounded read on a hung Redis would stall
-        # every request in the process. A timeout raises, and the in-memory fallback takes over.
-        redis_kwargs = {
-            **kwargs,
-            "storage_options": {
-                "socket_timeout": settings.REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS,
-                "socket_connect_timeout": settings.REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS,
-            },
-        }
-        limiter = Limiter(storage_uri=settings.REDIS_URL, **redis_kwargs)  # type: ignore[arg-type]
+        limiter = _new_limiter(_with_request_timeouts(settings.REDIS_URL))
     except Exception as e:
         logger.error(
             "Cannot build a Redis-backed rate limiter (%s); falling back to per-process "
@@ -225,7 +239,7 @@ def _create_limiter() -> Limiter:
             e,
         )
         record_degradation("rate_limit", "local")
-        limiter = Limiter(**kwargs)  # type: ignore[arg-type]
+        limiter = _new_limiter(None)
 
     if not settings.RATE_LIMIT_ENABLED:
         logger.info("Rate limiting is DISABLED via configuration")
@@ -332,7 +346,7 @@ def get_search_rate_limit() -> str:
     return f"{settings.RATE_LIMIT_SEARCH_PER_MINUTE}/minute"
 
 
-def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
+def rate_limit_exceeded_handler(request: Request, exc: Exception) -> Response:
     """
     Exception handler for rate limit exceeded errors.
 
@@ -345,6 +359,8 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Res
     Returns:
         JSONResponse with 429 status code and error details.
     """
+    if not isinstance(exc, RateLimitExceeded):
+        raise exc
     # Same resolver as key_func, so the logged address matches the bucketed one.
     from app.utils.client_ip import resolve_client_ip
 

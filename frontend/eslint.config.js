@@ -119,12 +119,12 @@ export default tseslint.config(
   {
     // Function-size gates (code-debt plan G-b). Thresholds: complexity 15 matches the backend
     // ratchet (ESLint's own default is 20), max-depth 4 is the ESLint default, and
-    // max-lines-per-function 150 counts code only. `warn` + scripts/guards/check_eslint_ratchet.py
-    // means no new finding can appear; each rule flips to 'error' when its count reaches 0.
+    // max-lines-per-function 150 counts code only. All three are errors: the baseline reached 0
+    // and the fix for a finding is to extract a named function or module, not to suppress it.
     rules: {
-      complexity: ['warn', 15],
-      'max-depth': ['warn', 4],
-      'max-lines-per-function': ['warn', { max: 150, skipBlankLines: true, skipComments: true }],
+      complexity: ['error', 15],
+      'max-depth': ['error', 4],
+      'max-lines-per-function': ['error', { max: 150, skipBlankLines: true, skipComments: true }],
     },
   },
   {

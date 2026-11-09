@@ -212,5 +212,5 @@ class SpeakerStatusService:
             else:  # a plain object standing in for a row: nothing to dirty
                 setattr(speaker, field, status_info[field])
         # Not columns at all: plain response attributes.
-        speaker.profile_name = status_info["profile_name"]  # type: ignore[attr-defined]
-        speaker.profile_status = status_info["profile_status"]  # type: ignore[attr-defined]
+        speaker.profile_name = status_info["profile_name"]
+        speaker.profile_status = status_info["profile_status"]

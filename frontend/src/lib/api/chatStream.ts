@@ -16,7 +16,7 @@ import { parseRetryAfter } from '$lib/utils/retryAfter';
 import { getAuthHeaders } from '$lib/axios';
 import { refreshSession } from '$lib/auth/sessionRefresh';
 import { isCloudEdition } from '$lib/edition';
-import type { ChatStreamEvent, SendMessageRequest } from '$lib/types/chat';
+import type { ChatErrorCode, ChatStreamEvent, SendMessageRequest } from '$lib/types/chat';
 
 /** Watchdog: no bytes at all for this long means the stream is wedged. */
 const INACTIVITY_TIMEOUT_MS = 120_000;
@@ -170,7 +170,10 @@ async function readStream(
   }
 }
 
-async function errorFromResponse(response: Response): Promise<ChatStreamEvent> {
+// The human message and the coded detail of an error response body; either may be absent.
+async function readErrorBody(
+  response: Response
+): Promise<{ message: string; detailCode: string | null }> {
   let message = `Request failed (${response.status})`;
   let detailCode: string | null = null;
   try {
@@ -186,25 +189,26 @@ async function errorFromResponse(response: Response): Promise<ChatStreamEvent> {
   } catch {
     // Non-JSON error body — keep the status-based message.
   }
+  return { message, detailCode };
+}
 
-  if (response.status === 402) return { type: 'error', code: 'quota_exceeded', message };
+function errorCodeFor(status: number, message: string, detailCode: string | null): ChatErrorCode {
+  if (status === 402) return 'quota_exceeded';
+  if (status === 429) return 'rate_limited';
+  if (status === 503) return 'provider_unavailable';
+  if (status === 400 && detailCode === 'llm_config_unusable') return 'llm_config_unusable';
+  if (status === 400 && /llm/i.test(message)) return 'llm_unconfigured';
+  return 'provider_error';
+}
+
+async function errorFromResponse(response: Response): Promise<ChatStreamEvent> {
+  const { message, detailCode } = await readErrorBody(response);
+  const code = errorCodeFor(response.status, message, detailCode);
   if (response.status === 429) {
     const retryAfter = parseRetryAfter(response.headers?.get?.('Retry-After'));
-    return {
-      type: 'error',
-      code: 'rate_limited',
-      message,
-      ...(retryAfter !== null && { retryAfter }),
-    };
+    return { type: 'error', code, message, ...(retryAfter !== null && { retryAfter }) };
   }
-  if (response.status === 503) return { type: 'error', code: 'provider_unavailable', message };
-  if (response.status === 400 && detailCode === 'llm_config_unusable') {
-    return { type: 'error', code: 'llm_config_unusable', message };
-  }
-  if (response.status === 400 && /llm/i.test(message)) {
-    return { type: 'error', code: 'llm_unconfigured', message };
-  }
-  return { type: 'error', code: 'provider_error', message };
+  return { type: 'error', code, message };
 }
 
 async function streamPost(

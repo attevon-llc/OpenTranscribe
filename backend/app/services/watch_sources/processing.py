@@ -32,6 +32,7 @@ from app.models.watch_source import WatchSource
 from app.models.watch_source import WatchSourceFile
 from app.services.imohash_service import compute_from_path
 from app.services.watch_sources.base import RemoteFileInfo
+from app.services.watch_sources.local_client import LocalWatchClient
 from app.utils.file_hash import check_duplicate_by_imohash
 from app.utils.file_hash import import_tenant_predicate
 from app.utils.file_validation import validate_uploaded_file
@@ -485,9 +486,9 @@ def import_single_file(
 
         # Phase 4 — delete the local original if configured. NO session held;
         # remote originals are never deleted.
-        if status == "imported" and source_type == "local" and delete_after_import:
+        if status == "imported" and isinstance(client, LocalWatchClient) and delete_after_import:
             try:
-                client.delete_file(file_info.path)  # type: ignore[attr-defined]
+                client.delete_file(file_info.path)
             except Exception as e:
                 logger.warning("delete_after_import failed for %s: %s", file_info.path, e)
 

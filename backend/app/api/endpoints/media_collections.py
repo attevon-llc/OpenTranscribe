@@ -48,6 +48,7 @@ from app.schemas.collection import CollectionUpdate
 from app.schemas.collection import CollectionVisibilityUpdate
 from app.schemas.collection import CollectionWithCount
 from app.schemas.media import CollectionResponse
+from app.schemas.media import MediaFile as MediaFileSchema
 from app.services import audit_outbox
 from app.services.collection_visibility import members_without_access
 from app.services.content_audit import AuditedResource
@@ -216,8 +217,7 @@ def get_collection(
 
     # Build response with prompt info
     result = CollectionResponse.model_validate(collection)
-    # ORM MediaFile list coerced to schema via response_model serialization
-    result.media_files = media_files  # type: ignore[assignment]
+    result.media_files = [MediaFileSchema.model_validate(f) for f in media_files]
     prompt_uuid, prompt_name = _get_prompt_info(collection)
     result.default_prompt_id = prompt_uuid
     result.default_prompt_name = prompt_name

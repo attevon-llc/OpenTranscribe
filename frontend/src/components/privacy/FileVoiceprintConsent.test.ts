@@ -130,7 +130,9 @@ describe('FileVoiceprintConsent', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(screen.getByTestId('file-voiceprint-consent-state').textContent).toMatch(/agreed/);
   });
+});
 
+describe('FileVoiceprintConsent: server refusals', () => {
   const reject = (status: number, detail: unknown) =>
     api.setFileVoiceprintConsent.mockRejectedValue({ response: { status, data: { detail } } });
   const en = (key: string) => (enMessages as Record<string, string>)[key];

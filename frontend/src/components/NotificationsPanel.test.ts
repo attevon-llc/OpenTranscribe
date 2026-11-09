@@ -294,30 +294,62 @@ describe('retention controls (issue #1217)', () => {
   });
 });
 
+const NOW = Date.now();
+
+function fileRecord(type: NotificationType, status: string, over: Partial<Notification> = {}) {
+  return baseNotification({
+    id: `${type}-${status}`,
+    type,
+    status: status as Notification['status'],
+    dismissible: status !== 'processing',
+    timestamp: new Date(NOW),
+    ...over,
+    data: { file_id: 'f1', filename: 'meeting.mp3', status, ...(over.data ?? {}) },
+  });
+}
+
+const txDone = (over: Partial<Notification> = {}) =>
+  fileRecord('transcription_status', 'completed', {
+    startedAt: NOW - 200_000,
+    finishedAt: NOW - 1_000,
+    progress: { current: 100, total: 100, percentage: 100 },
+    ...over,
+    data: { duration_seconds: 140, ...(over.data ?? {}) },
+  });
+
+/** The backend's post-processing run for f1: a plan at server time 100, then outcomes. */
+const postProcessing = (
+  tasks: Record<string, 'queued' | 'started' | 'done' | 'failed' | 'skipped'>
+) =>
+  baseNotification({
+    id: 'post_processing_status-f1',
+    type: 'post_processing_status',
+    progressId: 'post_processing_status_f1',
+    status: Object.values(tasks).some((s) => s === 'queued' || s === 'started')
+      ? 'processing'
+      : 'completed',
+    dismissible: true,
+    timestamp: new Date(NOW),
+    data: { file_id: 'f1' },
+    postProcessing: {
+      runAt: 100,
+      tasks: Object.fromEntries(Object.entries(tasks).map(([k, state]) => [k, { state, at: 101 }])),
+      updatedAt: NOW,
+    },
+  });
+
+const ALL_FINISHED = {
+  search_indexing: 'done',
+  file_facts: 'done',
+  analytics: 'done',
+  redaction: 'skipped',
+  speaker_attributes: 'done',
+  speaker_clustering: 'done',
+  summary: 'skipped',
+  topics: 'skipped',
+} as const;
+
 describe('processing card: one card per file', () => {
-  const NOW = Date.now();
-
-  function fileRecord(type: NotificationType, status: string, over: Partial<Notification> = {}) {
-    return baseNotification({
-      id: `${type}-${status}`,
-      type,
-      status: status as Notification['status'],
-      dismissible: status !== 'processing',
-      timestamp: new Date(NOW),
-      ...over,
-      data: { file_id: 'f1', filename: 'meeting.mp3', status, ...(over.data ?? {}) },
-    });
-  }
-
-  const txDone = (over: Partial<Notification> = {}) =>
-    fileRecord('transcription_status', 'completed', {
-      startedAt: NOW - 200_000,
-      finishedAt: NOW - 1_000,
-      progress: { current: 100, total: 100, percentage: 100 },
-      ...over,
-      data: { duration_seconds: 140, ...(over.data ?? {}) },
-    });
-
   it('renders one card and one badge count for four events of one file', async () => {
     setNotifications([
       fileRecord('topic_extraction_status', 'processing'),
@@ -333,40 +365,6 @@ describe('processing card: one card per file', () => {
     expect(container.querySelector('.unread-badge')?.textContent).toBe('1');
     expect(container.querySelector('.job-file')?.textContent).toBe('meeting.mp3');
   });
-
-  /** The backend's post-processing run for f1: a plan at server time 100, then outcomes. */
-  const postProcessing = (
-    tasks: Record<string, 'queued' | 'started' | 'done' | 'failed' | 'skipped'>
-  ) =>
-    baseNotification({
-      id: 'post_processing_status-f1',
-      type: 'post_processing_status',
-      progressId: 'post_processing_status_f1',
-      status: Object.values(tasks).some((s) => s === 'queued' || s === 'started')
-        ? 'processing'
-        : 'completed',
-      dismissible: true,
-      timestamp: new Date(NOW),
-      data: { file_id: 'f1' },
-      postProcessing: {
-        runAt: 100,
-        tasks: Object.fromEntries(
-          Object.entries(tasks).map(([k, state]) => [k, { state, at: 101 }])
-        ),
-        updatedAt: NOW,
-      },
-    });
-
-  const ALL_FINISHED = {
-    search_indexing: 'done',
-    file_facts: 'done',
-    analytics: 'done',
-    redaction: 'skipped',
-    speaker_attributes: 'done',
-    speaker_clustering: 'done',
-    summary: 'skipped',
-    topics: 'skipped',
-  } as const;
 
   it('a finished transcript with post-processing still running reads "Finishing up"', async () => {
     setNotifications([
@@ -465,7 +463,9 @@ describe('processing card: one card per file', () => {
     expect(detail).toContain('notifications.job.task.search_indexing');
     expect(detail).toContain('notifications.job.task.analytics');
   });
+});
 
+describe('processing card: details, dismissal and announcements', () => {
   it('the details toggle is wired for assistive tech and lists task durations', async () => {
     setNotifications([txDone()]);
 

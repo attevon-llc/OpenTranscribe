@@ -13,7 +13,7 @@ import type { UploadTranscriptionParams } from '$lib/services/uploadService';
  * `import()` moves it to its own chunk, fetched the first time a user actually
  * extracts. The module caches itself, so repeat calls are free.
  */
-export async function loadAudioExtractionService() {
+async function loadAudioExtractionService() {
   const { audioExtractionService } = await import('$lib/services/audioExtractionService');
   return audioExtractionService;
 }

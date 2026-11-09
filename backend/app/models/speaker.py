@@ -197,6 +197,11 @@ class Speaker(Base):
     identity: dict[str, Any] | None = None
     suggestion: dict[str, Any] | None = None
 
+    # Response-only decoration set by SpeakerStatusService.add_computed_status from the linked
+    # profile; plain attributes, never columns, so they are never flushed.
+    profile_name: str | None = None
+    profile_status: str | None = None
+
     # Computed status fields (calculated by SpeakerStatusService)
     computed_status: Mapped[str | None] = mapped_column(
         String, nullable=True

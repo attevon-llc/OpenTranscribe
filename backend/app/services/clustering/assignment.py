@@ -294,8 +294,6 @@ def bulk_add_speakers_to_cluster(
     Returns:
         Number of speakers added.
     """
-    per_member = isinstance(confidence, dict)
-
     # Filter out speakers already in this cluster
     existing_speaker_ids = {
         int(r.speaker_id)
@@ -307,7 +305,7 @@ def bulk_add_speakers_to_cluster(
 
     count = 0
     for speaker in speakers:
-        conf = confidence.get(int(speaker.id), 0.0) if per_member else confidence  # type: ignore[union-attr]
+        conf = confidence.get(int(speaker.id), 0.0) if isinstance(confidence, dict) else confidence
         member = SpeakerClusterMember(
             uuid=uuid4(),
             cluster_id=cluster.id,

@@ -114,7 +114,8 @@ class GenderModelAdapter:
         if len(audio_np) < sample_rate:  # Skip clips under 1s
             return None
         try:
-            return self._service._run_inference(audio_np)  # type: ignore[no-any-return]
+            result: tuple[str, float] | None = self._service._run_inference(audio_np)
+            return result
         except Exception as e:
             logger.debug("Gender inference failed: %s", e)
             return None

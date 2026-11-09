@@ -488,9 +488,7 @@ async def publish_notification(user_id: int, notification_type: str, data: dict[
         logger.error(f"Failed to publish notification to Redis: {e}")
 
 
-def _try_authenticate_token(
-    token: str, db: Session, websocket: WebSocket | None = None
-) -> User | None:
+def _try_authenticate_token(token: str, db: Session, websocket: WebSocket) -> User | None:
     """Validate a token (local JWT or external provider) and return the User, or None.
 
     Cloud-edition seam: an external session token authenticates the socket via the
@@ -509,10 +507,9 @@ def _try_authenticate_token(
             from app.auth.external_sync import sync_external_user_to_db
             from app.auth.provider_registry import verify_external_token
 
-            # The TokenVerifier protocol only needs the token to verify; the WS
-            # object exposes the same headers/cookies a verifier might read, so
-            # it is a safe stand-in for the HTTP Request on this path.
-            external_identity = verify_external_token(token, websocket)  # type: ignore[arg-type]
+            # TokenVerifier takes an HTTPConnection, the shared base of Request and
+            # WebSocket, so the handshake's headers/cookies reach the verifier.
+            external_identity = verify_external_token(token, websocket)
             if external_identity is not None:
                 if external_session_expired(external_identity):
                     return None

@@ -20,7 +20,8 @@
   import { modelCapability } from '$lib/settings/asrCapabilities';
   import { changeMessages, type ChangeMessage } from '$lib/settings/asrOutcome';
   import { pipelineFailureKey } from '$lib/settings/pipelineIssues';
-  import { getTranscriptionSettings, type DiarizationSource } from '$lib/api/transcriptionSettings';
+  import type { DiarizationSource } from '$lib/api/transcriptionSettings';
+  import { loadAsrSettings } from '$lib/settings/asrSettingsLoader';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -123,27 +124,23 @@
   async function loadData() {
     loading = true;
     try {
-      const noSettings = { configurations: [], shared_configurations: [], active_configuration_id: undefined, total: 0 };
-      const [providersResp, settingsResp, localModelResp, statusResp, speakerSettings] = await Promise.all([
-        userProvidersCap ? ASRSettingsApi.getProviders() : Promise.resolve({ providers: [] }),
-        userProvidersCap ? ASRSettingsApi.getSettings().catch(() => noSettings) : Promise.resolve(noSettings),
-        modelSelectionCap ? ASRSettingsApi.getActiveLocalModel().catch(() => null) : Promise.resolve(null),
-        userProvidersCap ? ASRSettingsApi.getStatus().catch(() => null) : Promise.resolve(null),
-        getTranscriptionSettings().catch(() => null),
-      ]);
-      isLite = statusResp?.deployment_mode === 'lite';
-      diarizationSource = speakerSettings?.diarization_source ?? null;
-      diarizerConfigUuid = speakerSettings?.diarization_asr_config_uuid ?? null;
-      providers = providersResp.providers;
-      configurations = settingsResp.configurations;
-      sharedConfigurations = settingsResp.shared_configurations || [];
-      activeConfigurationId = settingsResp.active_configuration_id || null;
-      usingLocalDefault = configurations.length === 0 || !activeConfigurationId;
+      const loaded = await loadAsrSettings({
+        userProviders: userProvidersCap,
+        modelSelection: modelSelectionCap,
+      });
+      isLite = loaded.isLite;
+      diarizationSource = loaded.diarizationSource;
+      diarizerConfigUuid = loaded.diarizerConfigUuid;
+      providers = loaded.providers;
+      configurations = loaded.configurations;
+      sharedConfigurations = loaded.sharedConfigurations;
+      activeConfigurationId = loaded.activeConfigurationId;
+      usingLocalDefault = loaded.usingLocalDefault;
 
       // Load local model info (visible to all users)
-      if (localModelResp) {
-        activeLocalModel = localModelResp.active_model;
-        localModelInfo = localModelResp.model_info || null;
+      if (loaded.localModel) {
+        activeLocalModel = loaded.localModel.active_model;
+        localModelInfo = loaded.localModel.model_info || null;
       }
     } catch (err: unknown) {
       console.error('Error loading ASR settings:', err);

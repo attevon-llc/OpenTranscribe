@@ -159,32 +159,38 @@ describe('effectiveBudgets and evaluate', () => {
   });
 });
 
-describe('run() against a fixture dist', () => {
-  let root: string;
+let root: string;
+
+/** A fresh empty dist tree per test; `root` names it. */
+function useFixtureRoot() {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'ot-budget-'));
     mkdirSync(join(root, 'nodes'));
     mkdirSync(join(root, 'chunks'));
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
+}
 
-  /** Incompressible payload, so the gzip size tracks the length. */
-  const noise = (bytes: number) => randomBytes(bytes).toString('base64');
+/** Incompressible payload, so the gzip size tracks the length. */
+const noise = (bytes: number) => randomBytes(bytes).toString('base64');
 
-  function build(nodeName = '0.abc.js') {
-    const nodeSrc = `import"../chunks/a.js";/*${noise(600)}*/`;
-    const chunkSrc = `export const a=1;/*${noise(900)}*/`;
-    writeFileSync(join(root, 'nodes', nodeName), nodeSrc);
-    writeFileSync(join(root, 'chunks', 'a.js'), chunkSrc);
-    const node = gzipSize(Buffer.from(nodeSrc));
-    return { node, closure: node + gzipSize(Buffer.from(chunkSrc)) };
-  }
-  const text = (r: { stdout: string[]; stderr: string[] }) => [...r.stdout, ...r.stderr].join('\n');
-  const allowanceEnv = (node: number, closure: number) => ({
-    [ENV_ALLOWANCE_NODE]: String(node),
-    [ENV_ALLOWANCE_CLOSURE]: String(closure),
-    [ENV_ALLOWANCE_REASON]: REASON,
-  });
+function build(nodeName = '0.abc.js') {
+  const nodeSrc = `import"../chunks/a.js";/*${noise(600)}*/`;
+  const chunkSrc = `export const a=1;/*${noise(900)}*/`;
+  writeFileSync(join(root, 'nodes', nodeName), nodeSrc);
+  writeFileSync(join(root, 'chunks', 'a.js'), chunkSrc);
+  const node = gzipSize(Buffer.from(nodeSrc));
+  return { node, closure: node + gzipSize(Buffer.from(chunkSrc)) };
+}
+const text = (r: { stdout: string[]; stderr: string[] }) => [...r.stdout, ...r.stderr].join('\n');
+const allowanceEnv = (node: number, closure: number) => ({
+  [ENV_ALLOWANCE_NODE]: String(node),
+  [ENV_ALLOWANCE_CLOSURE]: String(closure),
+  [ENV_ALLOWANCE_REASON]: REASON,
+});
+
+describe('run() against a fixture dist: headroom and allowances', () => {
+  useFixtureRoot();
 
   it('passes and prints exact headroom for BOTH metrics', () => {
     const size = build();
@@ -257,6 +263,10 @@ describe('run() against a fixture dist', () => {
     expect(result.code).toBe(1);
     expect(result.stdout[0]).toMatch(/OVER BY 50 B\s+allowance exhausted \(all 100 B used\)/);
   });
+});
+
+describe('run() against a fixture dist: configuration and layout', () => {
+  useFixtureRoot();
 
   it('warns that an allowance which is not needed should be removed', () => {
     const size = build();

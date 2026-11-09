@@ -17,12 +17,23 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from starlette.requests import Request
+from starlette.websockets import WebSocket
 
 from app.core.exceptions import DomainError
 from app.models.media import MediaFile
 
 #: A globally-routable literal, used as the answer for stubbed documentation hostnames.
 PUBLIC_TEST_ADDRESS = "93.184.216.34"
+
+
+def fake_websocket() -> WebSocket:
+    """A real, unconnected Starlette WebSocket: the type the handshake passes in production."""
+
+    async def _unused(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("the handshake object is only read, never driven")
+
+    scope = {"type": "websocket", "headers": [], "query_string": b"", "state": {}}
+    return WebSocket(scope, receive=_unused, send=_unused)
 
 
 def fake_request(scheme: str = "https") -> Request:

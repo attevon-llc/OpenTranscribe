@@ -63,6 +63,13 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+const runToTheEnd = async () => {
+  render(PurgeConfirmDialog, props());
+  await fireEvent.click(understood());
+  await fireEvent.input(typedBox(), { target: { value: 'PURGE' } });
+  await fireEvent.click(deleteButton());
+};
+
 describe('PurgeConfirmDialog', () => {
   it('says what is deleted, what is kept, who is affected and that it is irreversible', () => {
     render(PurgeConfirmDialog, props({ targets: ['voiceprints', 'inferred_gender'] }));
@@ -198,167 +205,158 @@ describe('PurgeConfirmDialog', () => {
     // The focus trap defers to the next frame.
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
   });
+});
 
-  describe('what the server measured', () => {
-    const runToTheEnd = async () => {
-      render(PurgeConfirmDialog, props());
-      await fireEvent.click(understood());
-      await fireEvent.input(typedBox(), { target: { value: 'PURGE' } });
-      await fireEvent.click(deleteButton());
-    };
+describe('what the server measured', () => {
+  it('shows the count removed per store, the clean check and the audit events', async () => {
+    status.mockResolvedValue(
+      done({ postgres: { a: 3, b: 2 }, opensearch: { speaker_docs_deleted: 7 } })
+    );
+    await runToTheEnd();
 
-    it('shows the count removed per store, the clean check and the audit events', async () => {
-      status.mockResolvedValue(
-        done({ postgres: { a: 3, b: 2 }, opensearch: { speaker_docs_deleted: 7 } })
-      );
-      await runToTheEnd();
+    const results = await screen.findByTestId('purge-results');
+    expect(results).toHaveTextContent('Database records removed: 5');
+    expect(results).toHaveTextContent('Search index documents removed: 7');
+    expect(screen.getByTestId('purge-verification')).toHaveTextContent(
+      'nothing from this deletion remains'
+    );
+    expect(screen.getByTestId('purge-audit')).toHaveTextContent('t-1');
+    expect(screen.getByTestId('purge-audit')).toHaveTextContent('privacy.voiceprints.purge');
+  });
 
-      const results = await screen.findByTestId('purge-results');
-      expect(results).toHaveTextContent('Database records removed: 5');
-      expect(results).toHaveTextContent('Search index documents removed: 7');
-      expect(screen.getByTestId('purge-verification')).toHaveTextContent(
-        'nothing from this deletion remains'
-      );
-      expect(screen.getByTestId('purge-audit')).toHaveTextContent('t-1');
-      expect(screen.getByTestId('purge-audit')).toHaveTextContent('privacy.voiceprints.purge');
-    });
+  it('lists recordings kept for a legal hold or takedown', async () => {
+    status.mockResolvedValue(
+      done({
+        postgres: {
+          speakers: 4,
+          files_skipped_held: 2,
+          files_skipped_quarantined: 1,
+          profiles_retained: 1,
+        },
+        opensearch: {},
+      })
+    );
+    await runToTheEnd();
 
-    it('lists recordings kept for a legal hold or takedown', async () => {
-      status.mockResolvedValue(
-        done({
-          postgres: {
-            speakers: 4,
-            files_skipped_held: 2,
-            files_skipped_quarantined: 1,
-            profiles_retained: 1,
-          },
-          opensearch: {},
-        })
-      );
-      await runToTheEnd();
+    const kept = await screen.findByTestId('purge-protected');
+    expect(kept).toHaveTextContent('Kept because of a legal hold or takedown: 3 recordings');
+    // The skip counters are not deletions.
+    expect(screen.getByTestId('purge-results')).toHaveTextContent('Database records removed: 4');
+  });
+});
 
-      const kept = await screen.findByTestId('purge-protected');
-      expect(kept).toHaveTextContent('Kept because of a legal hold or takedown: 3 recordings');
-      // The skip counters are not deletions.
-      expect(screen.getByTestId('purge-results')).toHaveTextContent('Database records removed: 4');
-    });
+describe('what the server measured: protected recordings and verification', () => {
+  it('never says nothing remains when recordings were kept', async () => {
+    status.mockResolvedValue(
+      done({ postgres: { speakers: 4, files_skipped_held: 2 }, opensearch: {} })
+    );
+    await runToTheEnd();
 
-    it('never says nothing remains when recordings were kept', async () => {
-      status.mockResolvedValue(
-        done({ postgres: { speakers: 4, files_skipped_held: 2 }, opensearch: {} })
-      );
-      await runToTheEnd();
+    const verification = await screen.findByTestId('purge-verification');
+    expect(verification).toHaveTextContent('except the recordings kept above');
+    expect(verification).not.toHaveTextContent(
+      'nothing from this deletion remains in the affected scope'
+    );
+  });
 
-      const verification = await screen.findByTestId('purge-verification');
-      expect(verification).toHaveTextContent('except the recordings kept above');
-      expect(verification).not.toHaveTextContent(
-        'nothing from this deletion remains in the affected scope'
-      );
-    });
-
-    it('says nothing was deleted when every recording was protected', async () => {
-      status.mockResolvedValue(
-        done(null, {
-          status: 'failed',
-          reason: 'files_protected',
-          residual: null,
-          residual_ok: null,
-          audit: [],
-        })
-      );
-      await runToTheEnd();
-
-      expect(await screen.findByTestId('purge-all-protected')).toHaveTextContent(
-        'Nothing was deleted: every recording in scope is under a legal hold or has been taken down.'
-      );
-      expect(screen.getByRole('dialog')).not.toHaveTextContent('The deletion failed');
-    });
-
-    it('tells the admin to run an interrupted purge again', async () => {
-      status.mockResolvedValue(
-        done(null, {
-          status: 'failed',
-          reason: 'interrupted',
-          residual: null,
-          residual_ok: null,
-          audit: [],
-        })
-      );
-      await runToTheEnd();
-
-      expect(await screen.findByTestId('purge-interrupted')).toHaveTextContent(
-        'Run the deletion again.'
-      );
-      expect(screen.getByRole('dialog')).not.toHaveTextContent('The deletion failed');
-    });
-
-    it('behaves as before when the skip counters are zero', async () => {
-      status.mockResolvedValue(
-        done({
-          postgres: { speakers: 4, files_skipped_held: 0, files_skipped_quarantined: 0 },
-          opensearch: {},
-        })
-      );
-      await runToTheEnd();
-
-      expect(await screen.findByTestId('purge-verification')).toHaveTextContent(
-        'nothing from this deletion remains in the affected scope'
-      );
-      expect(screen.queryByTestId('purge-protected')).toBeNull();
-    });
-
-    it('reports anything left behind as a failure, with the number, never as a clean result', async () => {
-      status.mockResolvedValue(
-        done(
-          { postgres: { a: 1 } },
-          {
-            status: 'failed',
-            residual: { speaker_docs: 0, profile_docs: 2 },
-            residual_ok: false,
-          }
-        )
-      );
-      await runToTheEnd();
-
-      expect(await screen.findByText(/2 items still remain/)).toBeInTheDocument();
-      expect(screen.getByTestId('purge-verification')).toHaveAttribute('role', 'alert');
-      expect(screen.getByRole('dialog')).not.toHaveTextContent(
-        'nothing from this deletion remains'
-      );
-    });
-
-    it('says a check that could not run is not verified, rather than clean', async () => {
-      status.mockResolvedValue(
-        done(
-          { opensearch: { a: 1 } },
-          {
-            status: 'failed',
-            residual: { speaker_docs: 0 },
-            residual_ok: false,
-            residual_unverified: ['profile_docs', 'cluster_docs'],
-          }
-        )
-      );
-      await runToTheEnd();
-
-      expect(await screen.findByText(/2 checks could not be completed/)).toBeInTheDocument();
-      expect(screen.getByRole('dialog')).not.toHaveTextContent(
-        'nothing from this deletion remains'
-      );
-    });
-
-    it('shows no verdict while the purge is still running', async () => {
-      status.mockResolvedValue({
-        ...done(),
-        status: 'in_progress',
-        residual_ok: null,
+  it('says nothing was deleted when every recording was protected', async () => {
+    status.mockResolvedValue(
+      done(null, {
+        status: 'failed',
+        reason: 'files_protected',
         residual: null,
-      });
-      await runToTheEnd();
+        residual_ok: null,
+        audit: [],
+      })
+    );
+    await runToTheEnd();
 
-      await waitFor(() => expect(status).toHaveBeenCalled());
-      expect(screen.queryByTestId('purge-verification')).toBeNull();
-      expect(screen.queryByTestId('purge-results')).toBeNull();
+    expect(await screen.findByTestId('purge-all-protected')).toHaveTextContent(
+      'Nothing was deleted: every recording in scope is under a legal hold or has been taken down.'
+    );
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('The deletion failed');
+  });
+
+  it('tells the admin to run an interrupted purge again', async () => {
+    status.mockResolvedValue(
+      done(null, {
+        status: 'failed',
+        reason: 'interrupted',
+        residual: null,
+        residual_ok: null,
+        audit: [],
+      })
+    );
+    await runToTheEnd();
+
+    expect(await screen.findByTestId('purge-interrupted')).toHaveTextContent(
+      'Run the deletion again.'
+    );
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('The deletion failed');
+  });
+
+  it('behaves as before when the skip counters are zero', async () => {
+    status.mockResolvedValue(
+      done({
+        postgres: { speakers: 4, files_skipped_held: 0, files_skipped_quarantined: 0 },
+        opensearch: {},
+      })
+    );
+    await runToTheEnd();
+
+    expect(await screen.findByTestId('purge-verification')).toHaveTextContent(
+      'nothing from this deletion remains in the affected scope'
+    );
+    expect(screen.queryByTestId('purge-protected')).toBeNull();
+  });
+
+  it('reports anything left behind as a failure, with the number, never as a clean result', async () => {
+    status.mockResolvedValue(
+      done(
+        { postgres: { a: 1 } },
+        {
+          status: 'failed',
+          residual: { speaker_docs: 0, profile_docs: 2 },
+          residual_ok: false,
+        }
+      )
+    );
+    await runToTheEnd();
+
+    expect(await screen.findByText(/2 items still remain/)).toBeInTheDocument();
+    expect(screen.getByTestId('purge-verification')).toHaveAttribute('role', 'alert');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('nothing from this deletion remains');
+  });
+
+  it('says a check that could not run is not verified, rather than clean', async () => {
+    status.mockResolvedValue(
+      done(
+        { opensearch: { a: 1 } },
+        {
+          status: 'failed',
+          residual: { speaker_docs: 0 },
+          residual_ok: false,
+          residual_unverified: ['profile_docs', 'cluster_docs'],
+        }
+      )
+    );
+    await runToTheEnd();
+
+    expect(await screen.findByText(/2 checks could not be completed/)).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('nothing from this deletion remains');
+  });
+
+  it('shows no verdict while the purge is still running', async () => {
+    status.mockResolvedValue({
+      ...done(),
+      status: 'in_progress',
+      residual_ok: null,
+      residual: null,
     });
+    await runToTheEnd();
+
+    await waitFor(() => expect(status).toHaveBeenCalled());
+    expect(screen.queryByTestId('purge-verification')).toBeNull();
+    expect(screen.queryByTestId('purge-results')).toBeNull();
   });
 });

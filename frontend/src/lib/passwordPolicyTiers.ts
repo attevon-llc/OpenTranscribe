@@ -64,22 +64,28 @@ export interface EffectiveRules {
   blocklist: boolean;
 }
 
+function tierMinLength(tier: PasswordTier, values: PolicyValues): number {
+  if (tier === 'basic') return BASIC_MIN;
+  return tier === 'standard' ? STANDARD_MIN : values.password_min_length;
+}
+
+// A preset never allows less than PRESET_MIN_ACCEPTED_MAX, and defaults when none is set.
+function effectiveMaxLength(preset: boolean, configuredMax: number): number {
+  if (!preset) return configuredMax;
+  return configuredMax > 0 ? Math.max(configuredMax, PRESET_MIN_ACCEPTED_MAX) : PRESET_DEFAULT_MAX;
+}
+
 export function effectiveRules(tier: PasswordTier, values: PolicyValues): EffectiveRules {
   const preset = isPreset(tier);
   const override = String(values.password_blocklist_enabled ?? '')
     .trim()
     .toLowerCase();
-  const configuredMax = Number(values.password_max_length) || 0;
-  const minLength =
-    tier === 'basic' ? BASIC_MIN : tier === 'standard' ? STANDARD_MIN : values.password_min_length;
+  const maxLength = effectiveMaxLength(preset, Number(values.password_max_length) || 0);
+  const minLength = tierMinLength(tier, values);
   return {
     minLength,
     minLengthWithMfa: tier === 'standard' ? STANDARD_MIN_WITH_MFA : minLength,
-    maxLength: preset
-      ? configuredMax > 0
-        ? Math.max(configuredMax, PRESET_MIN_ACCEPTED_MAX)
-        : PRESET_DEFAULT_MAX
-      : configuredMax,
+    maxLength,
     uppercase: !preset && values.password_require_uppercase,
     lowercase: !preset && values.password_require_lowercase,
     digit: !preset && values.password_require_digit,

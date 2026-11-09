@@ -49,7 +49,7 @@ _ALWAYS_REFUSED_STEPS: frozenset[str] = frozenset({"transcription"})
 class SwitchOutcome:
     """What a switch would do. ``refusal`` is ``None`` when it may go ahead."""
 
-    plan: PipelinePlan
+    plan: PipelinePlan | None
     refusal: PlanIssue | None
 
 

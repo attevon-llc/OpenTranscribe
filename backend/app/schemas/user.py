@@ -5,7 +5,6 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import EmailStr
 from pydantic import Field
-from pydantic import computed_field
 from pydantic import field_validator
 from pydantic import model_validator
 
@@ -373,21 +372,22 @@ class AuthMethodsResponse(BaseModel):
     session_idle_timeout_minutes: int = 0
     session_absolute_timeout_minutes: int = 0
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def keycloak_enabled(self) -> bool:
-        """DEPRECATED duplicate of :attr:`oidc_enabled`.
+    #: DEPRECATED duplicate of :attr:`oidc_enabled`.
+    #:
+    #: A browser holding a cached SPA bundle from before the rename against a
+    #: freshly-upgraded backend is a real deployment state, and that bundle reads
+    #: this key to decide whether to render the SSO button. Emitted for **one minor
+    #: release**; removal ticket: "drop AuthMethodsResponse.keycloak_enabled".
+    #:
+    #: Never supplied by a caller: ``_mirror_oidc_enabled`` overwrites it from
+    #: ``oidc_enabled`` on every construction, so the two cannot report different values
+    #: and deletion is this field plus that validator.
+    keycloak_enabled: bool = False
 
-        A browser holding a cached SPA bundle from before the rename against a
-        freshly-upgraded backend is a real deployment state, and that bundle reads
-        this key to decide whether to render the SSO button. Emitted for **one minor
-        release**; removal ticket: "drop AuthMethodsResponse.keycloak_enabled".
-
-        Computed rather than a second stored field on purpose — the two can never
-        report different values, and deletion is one block rather than a hunt for
-        every constructor call site.
-        """
-        return self.oidc_enabled
+    @model_validator(mode="after")
+    def _mirror_oidc_enabled(self) -> "AuthMethodsResponse":
+        self.keycloak_enabled = self.oidc_enabled
+        return self
 
 
 # ===== Admin Password Reset Schema =====

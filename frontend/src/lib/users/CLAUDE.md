@@ -17,7 +17,10 @@ component so each rule is testable without rendering it.
 - `accountActions.ts` — `createAccountActions(confirmDialog, onRefresh)`: the per-row mutations
   (role, delete, local-fallback flag, expiry, lock/unlock, force logout, MFA reset). Each reports
   through a toast, surfaces the backend `detail` verbatim, and refetches only when the rendered row
-  is now wrong. Which actions a row _offers_ is `rowPermissions.ts`, not this module.
+  is now wrong. Which actions a row _offers_ is `rowPermissions.ts`, not this module. The
+  lock/unlock/force-logout/MFA-reset group lives in `accountSessionActions.ts`; both share the
+  `AccountActionContext` (translator, dialog, pending-row marker, refetch) from
+  `accountActionContext.ts`.
 - `invitationsController.ts` — `createInvitationsController(confirmDialog)`: the invite form, the
   pending list and revocation. The invitation `status` is server-computed and rendered, never
   re-derived from `expires_at` / `used_at`.

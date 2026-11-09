@@ -121,8 +121,13 @@ def _llm_step(db: Session, user_id: int) -> PipelineStepOut:
     )
 
 
-def plan_issues_out(plan: PipelinePlan) -> list[PipelineIssueOut]:
-    """A plan's issues in their wire form (also the ASR switches' ``pipeline_issues``)."""
+def plan_issues_out(plan: PipelinePlan | None) -> list[PipelineIssueOut]:
+    """A plan's issues in their wire form (also the ASR switches' ``pipeline_issues``).
+
+    ``None`` (a refused ASR switch has no plan) has no issues to report.
+    """
+    if plan is None:
+        return []
     return [
         PipelineIssueOut(
             code=issue.code, severity=issue.severity, step=issue.step, message=issue.message

@@ -17,6 +17,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from sqlalchemy import ColumnElement
 from sqlalchemy import and_
 from sqlalchemy import not_
 from sqlalchemy import or_
@@ -150,12 +151,12 @@ def get_prompts(
         conditions.append(models.SummaryPrompt.content_type == content_type)
 
     # Filter by ownership
-    ownership_conditions = []
+    ownership_conditions: list[ColumnElement[bool]] = []
     if include_system:
-        ownership_conditions.append(models.SummaryPrompt.is_system_default)
+        ownership_conditions.append(models.SummaryPrompt.is_system_default.is_(True))
     if include_user:
         ownership_conditions.append(
-            and_(  # type: ignore[arg-type]
+            and_(
                 models.SummaryPrompt.user_id == current_user.id,
                 not_(models.SummaryPrompt.is_system_default),
             )

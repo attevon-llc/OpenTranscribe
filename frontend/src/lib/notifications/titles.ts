@@ -7,84 +7,57 @@
 import type { Translate } from '$lib/i18n';
 import type { NotificationData } from '$lib/notifications/types';
 
-// Get a suitable title based on notification type
+/**
+ * Notification type -> i18n key. `download_progress` resurrects a key that shipped in all 12
+ * locales but was dead (issue #569's currency review); `downloadNotifications.ts` is the first
+ * caller.
+ */
+export const TITLE_KEYS: Readonly<Record<string, string>> = {
+  transcription_status: 'notifications.transcriptionUpdate',
+  summarization_status: 'notifications.summarizationUpdate',
+  redaction_status: 'notifications.redactionUpdate',
+  topic_extraction_status: 'notifications.topicExtraction',
+  auto_label_status: 'notifications.autoLabeling',
+  youtube_processing_status: 'notifications.youtubeProcessing',
+  playlist_processing_status: 'notifications.playlistProcessing',
+  analytics_status: 'notifications.analyticsUpdate',
+  backup_status: 'notifications.backupUpdate',
+  media_mirror_status: 'notifications.mediaMirrorUpdate',
+  monitoring_alert: 'notifications.monitoringAlert',
+  audio_extraction_status: 'notifications.audioExtraction',
+  download_progress: 'notifications.downloadProgress',
+  file_upload: 'notifications.fileUpload',
+  file_created: 'notifications.fileCreated',
+  file_updated: 'notifications.fileUpdated',
+  file_deleted: 'notifications.fileDeleted',
+  file_takedown: 'notifications.fileTakedown',
+  file_takedown_released: 'notifications.fileTakedownReleased',
+  collection_shared: 'notifications.collectionShared',
+  collection_share_revoked: 'notifications.collectionShareRevoked',
+  collection_share_updated: 'notifications.collectionShareUpdated',
+  collection_access_changed: 'notifications.collectionAccessChanged',
+  group_member_added: 'notifications.groupMemberAdded',
+  group_member_removed: 'notifications.groupMemberRemoved',
+  reindex_progress: 'notifications.searchReindexing',
+  reindex_complete: 'notifications.searchReindexing',
+  reindex_stopped: 'notifications.searchReindexing',
+  migration_progress: 'notifications.embeddingMigration',
+  migration_complete: 'notifications.embeddingMigration',
+  migration_finalized: 'notifications.embeddingMigration',
+  attribute_migration_progress: 'notifications.speakerAttributeMigration',
+  attribute_migration_complete: 'notifications.speakerAttributeMigration',
+  clustering_progress: 'notifications.speakerClustering',
+  clustering_complete: 'notifications.speakerClustering',
+  data_integrity_progress: 'notifications.dataIntegrity',
+  data_integrity_complete: 'notifications.dataIntegrity',
+  embedding_consistency_progress: 'notifications.embeddingConsistency',
+  embedding_consistency_complete: 'notifications.embeddingConsistency',
+};
+
+/** The localised title for a notification `type`. */
 export function notificationTitle(type: string, translate: Translate): string {
-  switch (type) {
-    case 'transcription_status':
-      return translate('notifications.transcriptionUpdate');
-    case 'summarization_status':
-      return translate('notifications.summarizationUpdate');
-    case 'redaction_status':
-      return translate('notifications.redactionUpdate');
-    case 'topic_extraction_status':
-      return translate('notifications.topicExtraction');
-    case 'auto_label_status':
-      return translate('notifications.autoLabeling');
-    case 'youtube_processing_status':
-      return translate('notifications.youtubeProcessing');
-    case 'playlist_processing_status':
-      return translate('notifications.playlistProcessing');
-    case 'analytics_status':
-      return translate('notifications.analyticsUpdate');
-    case 'backup_status':
-      return translate('notifications.backupUpdate');
-    case 'media_mirror_status':
-      return translate('notifications.mediaMirrorUpdate');
-    case 'monitoring_alert':
-      return translate('notifications.monitoringAlert');
-    case 'audio_extraction_status':
-      return translate('notifications.audioExtraction');
-    case 'download_progress':
-      // Resurrects a key that shipped in all 12 locales but was dead (issue
-      // #569's currency review) — `downloadNotifications.ts` is the first caller.
-      return translate('notifications.downloadProgress');
-    case 'file_upload':
-      return translate('notifications.fileUpload');
-    case 'file_created':
-      return translate('notifications.fileCreated');
-    case 'file_updated':
-      return translate('notifications.fileUpdated');
-    case 'file_deleted':
-      return translate('notifications.fileDeleted');
-    case 'file_takedown':
-      return translate('notifications.fileTakedown');
-    case 'file_takedown_released':
-      return translate('notifications.fileTakedownReleased');
-    case 'collection_shared':
-      return translate('notifications.collectionShared');
-    case 'collection_share_revoked':
-      return translate('notifications.collectionShareRevoked');
-    case 'collection_share_updated':
-      return translate('notifications.collectionShareUpdated');
-    case 'collection_access_changed':
-      return translate('notifications.collectionAccessChanged');
-    case 'group_member_added':
-      return translate('notifications.groupMemberAdded');
-    case 'group_member_removed':
-      return translate('notifications.groupMemberRemoved');
-    case 'reindex_progress':
-    case 'reindex_complete':
-    case 'reindex_stopped':
-      return translate('notifications.searchReindexing');
-    case 'migration_progress':
-    case 'migration_complete':
-    case 'migration_finalized':
-      return translate('notifications.embeddingMigration');
-    case 'attribute_migration_progress':
-    case 'attribute_migration_complete':
-      return translate('notifications.speakerAttributeMigration');
-    case 'clustering_progress':
-    case 'clustering_complete':
-      return translate('notifications.speakerClustering');
-    case 'data_integrity_progress':
-    case 'data_integrity_complete':
-      return translate('notifications.dataIntegrity');
-    case 'embedding_consistency_progress':
-    case 'embedding_consistency_complete':
-      return translate('notifications.embeddingConsistency');
-    default:
-      return translate('notifications.notification');
-  }
+  const key = Object.hasOwn(TITLE_KEYS, type) ? TITLE_KEYS[type] : 'notifications.notification';
+  return translate(key);
 }
 
 /**

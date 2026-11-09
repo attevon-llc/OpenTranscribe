@@ -59,23 +59,23 @@ async function loadLocaleStore() {
   return import('$stores/locale');
 }
 
+beforeEach(() => {
+  localStorage.clear();
+  document.documentElement.removeAttribute('lang');
+  document.documentElement.removeAttribute('dir');
+  mockI18next.t.mockClear();
+  mockI18next.on.mockClear();
+  mockI18next.changeLanguage.mockClear();
+  mockI18next.isInitialized = false;
+  mockInitI18n.mockClear();
+  mockEnsureLocaleLoaded.mockClear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('locale store', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    document.documentElement.removeAttribute('lang');
-    document.documentElement.removeAttribute('dir');
-    mockI18next.t.mockClear();
-    mockI18next.on.mockClear();
-    mockI18next.changeLanguage.mockClear();
-    mockI18next.isInitialized = false;
-    mockInitI18n.mockClear();
-    mockEnsureLocaleLoaded.mockClear();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   describe('getInitialLocale fallback chain', () => {
     it('uses a valid saved locale from localStorage first', async () => {
       localStorage.setItem('locale', 'fr');
@@ -193,52 +193,6 @@ describe('locale store', () => {
     });
   });
 
-  describe('t() translation function', () => {
-    it('returns the raw key when i18next is not initialized', async () => {
-      mockI18next.isInitialized = false;
-      await loadLocaleStore();
-      const { t } = await import('$stores/locale');
-
-      expect(get(t)('greeting.hello')).toBe('greeting.hello');
-      expect(mockI18next.t).not.toHaveBeenCalled();
-    });
-
-    it('returns the resolved translation when i18next has one', async () => {
-      mockI18next.isInitialized = true;
-      mockI18next.t.mockReturnValue('Hola');
-      await loadLocaleStore();
-      const { t } = await import('$stores/locale');
-
-      expect(get(t)('greeting.hello')).toBe('Hola');
-    });
-
-    it('passes interpolation options through to i18next.t', async () => {
-      mockI18next.isInitialized = true;
-      mockI18next.t.mockReturnValue('Hello, David');
-      await loadLocaleStore();
-      const { t } = await import('$stores/locale');
-
-      const result = get(t)('greeting.named', { name: 'David' });
-
-      expect(result).toBe('Hello, David');
-      expect(mockI18next.t).toHaveBeenCalledWith('greeting.named', { name: 'David' });
-    });
-
-    it('BC-31 PIN: a genuinely empty-string translation is masked by the raw key', async () => {
-      // Documents current, deliberately-unchanged behavior: `i18next.t(...) || key`
-      // cannot distinguish "missing key" from "resolved to ''". No key in
-      // en.json resolves to '' today (audited), so this is not a live bug — but
-      // if one ever does, this test turns the silent substitution into a loud,
-      // intentional failure instead of an unnoticed regression.
-      mockI18next.isInitialized = true;
-      mockI18next.t.mockReturnValue('');
-      await loadLocaleStore();
-      const { t } = await import('$stores/locale');
-
-      expect(get(t)('some.emptyValue')).toBe('some.emptyValue');
-    });
-  });
-
   describe('set()', () => {
     it('ignores an invalid locale code entirely', async () => {
       const { locale } = await loadLocaleStore();
@@ -280,6 +234,52 @@ describe('locale store', () => {
       expect(document.documentElement.lang).toBe('de');
       expect(mockEnsureLocaleLoaded).toHaveBeenCalledWith('de');
     });
+  });
+});
+
+describe('t() translation function', () => {
+  it('returns the raw key when i18next is not initialized', async () => {
+    mockI18next.isInitialized = false;
+    await loadLocaleStore();
+    const { t } = await import('$stores/locale');
+
+    expect(get(t)('greeting.hello')).toBe('greeting.hello');
+    expect(mockI18next.t).not.toHaveBeenCalled();
+  });
+
+  it('returns the resolved translation when i18next has one', async () => {
+    mockI18next.isInitialized = true;
+    mockI18next.t.mockReturnValue('Hola');
+    await loadLocaleStore();
+    const { t } = await import('$stores/locale');
+
+    expect(get(t)('greeting.hello')).toBe('Hola');
+  });
+
+  it('passes interpolation options through to i18next.t', async () => {
+    mockI18next.isInitialized = true;
+    mockI18next.t.mockReturnValue('Hello, David');
+    await loadLocaleStore();
+    const { t } = await import('$stores/locale');
+
+    const result = get(t)('greeting.named', { name: 'David' });
+
+    expect(result).toBe('Hello, David');
+    expect(mockI18next.t).toHaveBeenCalledWith('greeting.named', { name: 'David' });
+  });
+
+  it('BC-31 PIN: a genuinely empty-string translation is masked by the raw key', async () => {
+    // Documents current, deliberately-unchanged behavior: `i18next.t(...) || key`
+    // cannot distinguish "missing key" from "resolved to ''". No key in
+    // en.json resolves to '' today (audited), so this is not a live bug — but
+    // if one ever does, this test turns the silent substitution into a loud,
+    // intentional failure instead of an unnoticed regression.
+    mockI18next.isInitialized = true;
+    mockI18next.t.mockReturnValue('');
+    await loadLocaleStore();
+    const { t } = await import('$stores/locale');
+
+    expect(get(t)('some.emptyValue')).toBe('some.emptyValue');
   });
 });
 

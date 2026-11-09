@@ -83,6 +83,39 @@ export interface SelectionNotice {
   severity: PipelineSeverity;
 }
 
+// Another saved provider: a full transcription is billed for its speakers alone, unless it
+// is the very provider and model that transcribes, whose own speakers are then used.
+function otherProviderNotice(
+  chosen: Pick<DiarizerChoice, 'provider' | 'modelName'>,
+  facts: TranscriptionFacts | null
+): SelectionNotice {
+  const same = chosen.provider === facts?.provider && chosen.modelName === facts?.model;
+  return same
+    ? { code: 'diarizer_same_as_transcription', severity: 'info' }
+    : { code: 'diarizer_double_billing', severity: 'warning' };
+}
+
+// The notices that depend on which source is chosen.
+function sourceNotices(
+  source: DiarizationSource,
+  facts: TranscriptionFacts | null,
+  mode: Mode,
+  chosen?: Pick<DiarizerChoice, 'provider' | 'modelName'>
+): SelectionNotice[] {
+  if (source === 'local' && mode === 'lite') {
+    return [{ code: 'local_diarization_unavailable', severity: 'error' }];
+  }
+  if (source === 'provider' && facts && !facts.returnsSpeakers) {
+    return [
+      mode === 'lite'
+        ? { code: 'automatic_needs_speaker_provider', severity: 'error' }
+        : { code: 'automatic_uses_server', severity: 'info' },
+    ];
+  }
+  if (source === 'asr_config' && chosen) return [otherProviderNotice(chosen, facts)];
+  return [];
+}
+
 /**
  * Notices for choosing `source` with a transcription model that returns `facts`, in the order
  * to show them (blocking first). Empty when the combination is fine or speaker detection is off.
@@ -94,30 +127,10 @@ export function selectionNotices(
   chosen?: Pick<DiarizerChoice, 'provider' | 'modelName'>
 ): SelectionNotice[] {
   if (source === 'off') return [];
-  const notices: SelectionNotice[] = [];
   if (facts?.timing === 'none') {
     return [{ code: 'asr_no_timing_for_speakers', severity: 'error' }];
   }
-  if (source === 'local' && mode === 'lite') {
-    notices.push({ code: 'local_diarization_unavailable', severity: 'error' });
-  }
-  if (source === 'provider' && facts && !facts.returnsSpeakers) {
-    notices.push(
-      mode === 'lite'
-        ? { code: 'automatic_needs_speaker_provider', severity: 'error' }
-        : { code: 'automatic_uses_server', severity: 'info' }
-    );
-  }
-  if (source === 'asr_config' && chosen) {
-    // Another saved provider: a full transcription is billed for its speakers alone, unless it
-    // is the very provider and model that transcribes, whose own speakers are then used.
-    const same = chosen.provider === facts?.provider && chosen.modelName === facts?.model;
-    notices.push(
-      same
-        ? { code: 'diarizer_same_as_transcription', severity: 'info' }
-        : { code: 'diarizer_double_billing', severity: 'warning' }
-    );
-  }
+  const notices = sourceNotices(source, facts, mode, chosen);
   // The model's own speaker labels need no merge, so its coarse timing costs nothing there.
   const labelsFromModel = source === 'provider' && facts?.returnsSpeakers === true;
   if (facts?.timing === 'segment' && !labelsFromModel) {

@@ -55,6 +55,20 @@ export async function loadPerFileFacts(): Promise<PerFileFacts | null> {
   }
 }
 
+/** The provider and model that "use the admin's setting" resolves to. */
+function defaultTarget(
+  status: PerFileFacts['status'] | undefined,
+  adminModel: string
+): { cloud: boolean; providerId: string; model: string } {
+  const cloud = status?.is_cloud_provider === true && !!status.active_provider;
+  if (!cloud) return { cloud, providerId: 'local', model: adminModel };
+  return {
+    cloud,
+    providerId: status?.active_provider as string,
+    model: status?.active_model ?? '',
+  };
+}
+
 /**
  * The options in display order. Lite transcribes in the cloud only, so it has no Fast option
  * (the server refuses a per-file model there).
@@ -62,9 +76,7 @@ export async function loadPerFileFacts(): Promise<PerFileFacts | null> {
 export function perFileOptions(facts: PerFileFacts | null, adminModel: string): PerFileOption[] {
   const status = facts?.status;
   const providers = facts?.providers ?? [];
-  const cloud = status?.is_cloud_provider === true && !!status.active_provider;
-  const providerId = cloud ? (status?.active_provider as string) : 'local';
-  const model = cloud ? status?.active_model ?? '' : adminModel;
+  const { cloud, providerId, model } = defaultTarget(status, adminModel);
   const info = providers.find((p) => p.id === providerId);
   const options: PerFileOption[] = [
     {

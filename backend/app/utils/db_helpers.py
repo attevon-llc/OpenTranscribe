@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy import and_
 from sqlalchemy import exists
+from sqlalchemy.orm import QueryableAttribute
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -14,7 +15,9 @@ from app.models.media import TranscriptSegment
 logger = logging.getLogger(__name__)
 
 
-def org_stamp_is(org_col: Any, organization_id: int | None) -> ColumnElement[bool]:
+def org_stamp_is(
+    org_col: QueryableAttribute[Any] | ColumnElement[Any], organization_id: int | None
+) -> ColumnElement[bool]:
     """NULL-safe predicate: a row's ``organization_id`` stamp names the active tenant.
 
     An org id matches that org's rows only; ``None`` (personal scope) matches org-less
@@ -22,8 +25,8 @@ def org_stamp_is(org_col: Any, organization_id: int | None) -> ColumnElement[boo
     in personal scope, so this is always true there.
     """
     if organization_id is None:
-        return org_col.is_(None)  # type: ignore[no-any-return]
-    return org_col == organization_id  # type: ignore[no-any-return]
+        return org_col.is_(None)
+    return org_col == organization_id
 
 
 def owned_in_tenant(

@@ -418,7 +418,9 @@ describe('websocket message dispatch', () => {
     expect(ns[0].progress?.percentage).toBe(60);
     expect(ns[0].status).toBe('processing');
   });
+});
 
+describe('websocket message dispatch: progressive notifications and caps', () => {
   it('keeps a progressive notification non-dismissible until it finishes', () => {
     const socket = openSocket();
 
@@ -765,10 +767,10 @@ describe('notification management', () => {
 // Consolidated processing card: what the store must record for it
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('processing card data (one card per file)', () => {
-  const T0 = Date.UTC(2026, 9, 21, 12, 0, 0);
-  const tx = () => notifications().find((n) => n.type === 'transcription_status');
+const T0 = Date.UTC(2026, 9, 21, 12, 0, 0);
+const tx = () => notifications().find((n) => n.type === 'transcription_status');
 
+describe('processing card data (one card per file)', () => {
   it('counts one file with several processing events as ONE unread item', () => {
     const socket = openSocket();
     socket.deliver({
@@ -845,7 +847,9 @@ describe('processing card data (one card per file)', () => {
       { p: 100, at: T0 + 20_000, stage: 'diarize' },
     ]);
   });
+});
 
+describe('processing card data: post-processing record', () => {
   const pp = () => notifications().find((n) => n.progressId === 'post_processing_status_f1');
 
   it('keeps post-processing on a record of its own that the card folds in', () => {

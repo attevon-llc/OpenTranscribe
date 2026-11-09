@@ -20,6 +20,10 @@ import logging
 from app.core.config import settings
 from app.core.request_context import get_request_id
 
+#: Name of the root handler this module installs (``Handler.set_name``), so a test or a
+#: later caller can tell it from a default handler another module added.
+OBS_HANDLER_NAME = "opentranscribe.obs"
+
 _JSON_FMT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 _TEXT_FMT = "%(asctime)s %(levelname)s:%(name)s:[%(request_id)s] %(message)s"
 
@@ -70,7 +74,7 @@ def configure_logging() -> None:
         root.removeHandler(existing)
 
     handler = _build_handler()
-    handler._obs_managed = True  # type: ignore[attr-defined]
+    handler.set_name(OBS_HANDLER_NAME)
     root.addHandler(handler)
 
     _configured = True

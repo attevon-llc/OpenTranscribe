@@ -105,8 +105,8 @@ def supported_rag_languages(db: Session | None = None) -> frozenset[str] | None:
         from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
         from app.services.search.settings_service import get_search_embedding_model
 
-        info = OPENSEARCH_EMBEDDING_MODELS.get(get_search_embedding_model()) or {}
-        if info.get("language_type") == "multilingual":
+        info = OPENSEARCH_EMBEDDING_MODELS.get(get_search_embedding_model())
+        if info is not None and info["language_type"] == "multilingual":
             return ALL_LANGUAGES
     except Exception:  # a diagnostic must never fail a chat turn
         logger.exception("Could not resolve the active embedding model; assuming English-only")

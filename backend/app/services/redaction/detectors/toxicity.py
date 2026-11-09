@@ -133,7 +133,7 @@ def preload() -> bool:
     return _get_pipe(redaction_defaults.REDACTION_TOXICITY_MODEL_EN) is not None
 
 
-def _normalize_scores(raw: Any, model_name: str) -> dict:
+def _normalize_scores(raw: Any, model_name: str) -> dict[str, float | str]:
     """Convert a transformers output into a {label: score} dict + a 'toxic' summary."""
     scores: dict[str, float] = {}
     # raw is typically list[list[{label,score}]] or list[{label,score}] for one input
@@ -150,8 +150,7 @@ def _normalize_scores(raw: Any, model_name: str) -> dict:
         or 0.0
     )
     scores["toxic"] = float(toxic)
-    scores["model"] = model_name  # type: ignore[assignment]
-    return scores
+    return {**scores, "model": model_name}
 
 
 def score_text(text: str, language: str | None = None) -> dict | None:

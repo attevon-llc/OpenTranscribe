@@ -56,6 +56,33 @@ export interface AdvanceResult {
   newRun: boolean;
 }
 
+function firstMark(terminal: boolean, progress: number, now: number, stage?: string): RunTiming {
+  return {
+    startedAt: terminal ? undefined : now,
+    finishedAt: terminal ? now : undefined,
+    stepLog: [stage ? { p: progress, at: now, stage } : { p: progress, at: now }],
+  };
+}
+
+// Adds a mark when the progress value or the stage changed, keeping the log bounded: the first
+// mark is always kept so the run's origin survives.
+function appendMark(
+  previous: RunTiming['stepLog'],
+  progress: number,
+  now: number,
+  stage?: string
+): NonNullable<RunTiming['stepLog']> {
+  let stepLog = previous ? [...previous] : [];
+  const last = stepLog.length ? stepLog[stepLog.length - 1] : undefined;
+  const markStage = stage || last?.stage;
+  if (last && last.p === progress && markStage === last.stage) return stepLog;
+  stepLog.push(markStage ? { p: progress, at: now, stage: markStage } : { p: progress, at: now });
+  if (stepLog.length > STEP_LOG_LIMIT) {
+    stepLog = [stepLog[0], ...stepLog.slice(stepLog.length - (STEP_LOG_LIMIT - 1))];
+  }
+  return stepLog;
+}
+
 /**
  * Fold one frame into a record's timing. A non-terminal frame on a record whose previous
  * status was terminal is a new run (retry or reprocess), so its timing starts over. A mark is
@@ -73,32 +100,14 @@ export function advanceRunTiming(
   const prevTerminal = prevStatus !== undefined && isTerminalState(taskStateFromStatus(prevStatus));
   const newRun = prev === undefined || prevStatus === undefined || (prevTerminal && !terminal);
 
-  if (newRun) {
-    return {
-      newRun,
-      timing: {
-        startedAt: terminal ? undefined : now,
-        finishedAt: terminal ? now : undefined,
-        stepLog: [stage ? { p: progress, at: now, stage } : { p: progress, at: now }],
-      },
-    };
-  }
+  if (newRun) return { newRun, timing: firstMark(terminal, progress, now, stage) };
 
-  let stepLog = prev.stepLog ? [...prev.stepLog] : [];
-  const last = stepLog.length ? stepLog[stepLog.length - 1] : undefined;
-  const markStage = stage || last?.stage;
-  if (!last || last.p !== progress || markStage !== last.stage) {
-    stepLog.push(markStage ? { p: progress, at: now, stage: markStage } : { p: progress, at: now });
-    if (stepLog.length > STEP_LOG_LIMIT) {
-      stepLog = [stepLog[0], ...stepLog.slice(stepLog.length - (STEP_LOG_LIMIT - 1))];
-    }
-  }
   return {
     newRun,
     timing: {
       startedAt: prev.startedAt,
       finishedAt: terminal ? prev.finishedAt ?? now : undefined,
-      stepLog,
+      stepLog: appendMark(prev.stepLog, progress, now, stage),
     },
   };
 }

@@ -398,17 +398,17 @@ describe('main processing', () => {
   });
 });
 
-describe('transcription steps and durations', () => {
-  const t0 = NOW - 200 * S;
-  const marks = [
-    { p: 5, at: t0, stage: 'prepare' },
-    { p: 25, at: t0 + 10 * S, stage: 'transcribe' },
-    { p: 43, at: t0 + 20 * S, stage: 'transcribe' },
-    { p: 52, at: t0 + 80 * S, stage: 'diarize' },
-    { p: 65, at: t0 + 110 * S, stage: 'finalize' },
-    { p: 80, at: t0 + 120 * S, stage: 'speakers' },
-  ];
+const t0 = NOW - 200 * S;
+const marks = [
+  { p: 5, at: t0, stage: 'prepare' },
+  { p: 25, at: t0 + 10 * S, stage: 'transcribe' },
+  { p: 43, at: t0 + 20 * S, stage: 'transcribe' },
+  { p: 52, at: t0 + 80 * S, stage: 'diarize' },
+  { p: 65, at: t0 + 110 * S, stage: 'finalize' },
+  { p: 80, at: t0 + 120 * S, stage: 'speakers' },
+];
 
+describe('transcription steps and durations', () => {
   it('derives each step duration from when the next step began', () => {
     const tx = rec('transcription_status', 'completed', {
       startedAt: t0,
@@ -454,7 +454,9 @@ describe('transcription steps and durations', () => {
     expect(m.currentStep).toBe('Analyzing speaker patterns');
     expect(m.etaDisplay).toBe('1m 30s');
   });
+});
 
+describe('transcription failures and stage attribution', () => {
   it('a failure inside diarization fails that step and skips the rest, with the message', () => {
     const tx = rec('transcription_status', 'error', {
       startedAt: t0,
@@ -560,7 +562,9 @@ describe('transcription steps and durations', () => {
       'pending',
     ]);
   });
+});
 
+describe('task durations', () => {
   it('THE TRAP: uses duration_seconds, never data.duration (the recording length)', () => {
     const m = model(
       [

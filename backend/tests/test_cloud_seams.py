@@ -14,6 +14,7 @@ from typing import cast
 import pytest
 from fastapi import HTTPException
 from fastapi import Request
+from starlette.requests import HTTPConnection
 
 from app.auth.constants import CLOUD_SEAM_VERSION
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
@@ -30,6 +31,7 @@ from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.usage_event import UsageEvent
 from app.models.user import User
+from tests.helpers import fake_websocket
 
 # Provider name used by the generic-registry seam tests. The registry + JIT sync
 # are vendor-neutral and map ANY provider onto the generic external_id /
@@ -48,13 +50,13 @@ class FakeVerifier:
         self.identity = identity
         self.calls = 0
 
-    def verify(self, token: str, request: Request) -> ExternalIdentity | None:
+    def verify(self, token: str, request: HTTPConnection) -> ExternalIdentity | None:
         self.calls += 1
         return self.identity if token == self.accept_token else None
 
 
 class CrashingVerifier:
-    def verify(self, token: str, request: Request):
+    def verify(self, token: str, request: HTTPConnection):
         raise RuntimeError("boom")
 
 
@@ -391,7 +393,7 @@ class TestWebSocketAuthExternalBranch:
         ident = _identity()
         register_verifier(EXTERNAL_PROVIDER, FakeVerifier("ws-ext-token", ident))
 
-        user = _try_authenticate_token("ws-ext-token", db_session, websocket=None)
+        user = _try_authenticate_token("ws-ext-token", db_session, websocket=fake_websocket())
 
         assert user is not None
         assert user.external_id == ident.external_id
@@ -402,7 +404,9 @@ class TestWebSocketAuthExternalBranch:
         register_verifier(EXTERNAL_PROVIDER, FakeVerifier("only-this", _identity()))
 
         # Not an external match and not a valid local JWT -> None (caller closes 4003).
-        assert _try_authenticate_token("garbage-token", db_session, websocket=None) is None
+        assert (
+            _try_authenticate_token("garbage-token", db_session, websocket=fake_websocket()) is None
+        )
 
     def test_inactive_external_user_returns_none(self, db_session):
         from app.api.websockets import _try_authenticate_token
@@ -413,7 +417,7 @@ class TestWebSocketAuthExternalBranch:
         db_session.commit()
         register_verifier(EXTERNAL_PROVIDER, FakeVerifier("tok", ident))
 
-        assert _try_authenticate_token("tok", db_session, websocket=None) is None
+        assert _try_authenticate_token("tok", db_session, websocket=fake_websocket()) is None
 
     def test_community_path_no_verifier_local_only(self, db_session):
         from app.api.websockets import _try_authenticate_token
@@ -421,7 +425,9 @@ class TestWebSocketAuthExternalBranch:
         # No verifier registered (community edition): an external-looking token
         # that isn't a valid local JWT yields None.
         assert not has_verifiers()
-        assert _try_authenticate_token("ws-ext-token", db_session, websocket=None) is None
+        assert (
+            _try_authenticate_token("ws-ext-token", db_session, websocket=fake_websocket()) is None
+        )
 
 
 class TestAuthMethodsDiscovery:

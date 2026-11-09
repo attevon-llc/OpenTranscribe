@@ -2,6 +2,8 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { OIDCConfig, AuthMethodTestResponse } from '$lib/api/authConfig';
+  import { OIDC_FORM_DEFAULTS } from '$lib/settings/authFormDefaults';
+  import { withDefaults } from '$lib/utils/withDefaults';
   import {
     OIDC_PROVIDER_PRESETS,
     findOIDCPreset,
@@ -39,26 +41,7 @@
    * `oidc_client_secret` is deliberately absent — see `clientSecretInput`.
    */
   function buildFormData(source: Partial<OIDCConfig>): OIDCConfig {
-    return {
-      oidc_enabled: source.oidc_enabled ?? false,
-      oidc_server_url: source.oidc_server_url ?? '',
-      oidc_internal_url: source.oidc_internal_url ?? '',
-      oidc_discovery_url: source.oidc_discovery_url ?? '',
-      oidc_realm: source.oidc_realm ?? '',
-      oidc_client_id: source.oidc_client_id ?? '',
-      oidc_callback_url: source.oidc_callback_url ?? '',
-      oidc_admin_role: source.oidc_admin_role ?? 'admin',
-      oidc_roles_claim: source.oidc_roles_claim ?? 'realm_access.roles',
-      oidc_issuer: source.oidc_issuer ?? '',
-      oidc_scopes: source.oidc_scopes ?? 'openid email profile',
-      oidc_allowed_groups: source.oidc_allowed_groups ?? '',
-      oidc_blocked_groups: source.oidc_blocked_groups ?? '',
-      oidc_timeout: source.oidc_timeout ?? 30,
-      oidc_verify_audience: source.oidc_verify_audience ?? true,
-      oidc_audience: source.oidc_audience ?? '',
-      oidc_use_pkce: source.oidc_use_pkce ?? true,
-      oidc_verify_issuer: source.oidc_verify_issuer ?? true
-    };
+    return withDefaults(OIDC_FORM_DEFAULTS, source);
   }
 
   let formData: OIDCConfig = buildFormData(config);

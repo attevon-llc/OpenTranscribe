@@ -265,14 +265,14 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
         return None
 
     try:
-        response = _client.opensearch_client.bulk(body=bulk_body)
+        response: dict[str, Any] = _client.opensearch_client.bulk(body=bulk_body)
         if response.get("errors"):
             logger.error(f"Bulk v4 speaker embedding indexing had errors: {response}")
         else:
             logger.info(
                 f"Bulk-indexed {accepted} v4 speaker embeddings into {v4_index} in one request"
             )
-        return response  # type: ignore[no-any-return]
+        return response
     except Exception as e:
         logger.error(f"Error bulk-indexing v4 speaker embeddings: {e}")
         return None

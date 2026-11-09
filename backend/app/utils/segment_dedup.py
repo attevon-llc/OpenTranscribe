@@ -335,7 +335,7 @@ def _compute_coverage(
     ce = clipped_ends[valid]
 
     # Merge overlapping intervals
-    covered = 0.0
+    covered: float = 0.0
     merge_start = cs[0]
     merge_end = ce[0]
 
@@ -352,7 +352,7 @@ def _compute_coverage(
     # Add last merged interval
     covered += merge_end - merge_start
 
-    return covered / target_dur  # type: ignore[no-any-return]
+    return covered / target_dur
 
 
 def _map_words_to_sentence(

@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import NotRequired
+from typing import TypedDict
 
 from app.core.celery import celery_app
 from app.core.queues import CeleryQueues
@@ -36,6 +38,17 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+
+class _RecomputeSummary(TypedDict):
+    files_found: int
+    files_recomputed: int
+    files_skipped: int
+    files_failed: int
+    has_more: bool
+    last_id: int
+    error: NotRequired[str]
+
 
 # Separate progress namespace so it never collides with the embedding migration.
 recompute_progress = MigrationProgressService(key_prefix="imohash_recompute")
@@ -145,7 +158,7 @@ def recompute_all(self: Any, batch_size: int = 100, after_id: int = 0) -> dict:
     Returns:
         Per-batch statistics dict.
     """
-    summary = {
+    summary: _RecomputeSummary = {
         "files_found": 0,
         "files_recomputed": 0,
         "files_skipped": 0,
@@ -206,9 +219,9 @@ def recompute_all(self: Any, batch_size: int = 100, after_id: int = 0) -> dict:
 
     except Exception as e:
         logger.error("imohash recompute task error: %s", e)
-        summary["error"] = str(e)  # type: ignore[assignment]
+        summary["error"] = str(e)
 
-    return summary
+    return dict(summary)
 
 
 def _finalize_recompute() -> None:

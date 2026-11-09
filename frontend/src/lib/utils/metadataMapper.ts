@@ -82,6 +82,112 @@ function parseMediaDate(dateStr: string | undefined): string | undefined {
   return dateStr.trim();
 }
 
+type Tags = Record<string, string | undefined>;
+type FFmpegStreamData = NonNullable<FFmpegProbeData['streams']>[number];
+
+function videoSpecs(stream: FFmpegStreamData): VideoMetadata {
+  const specs: VideoMetadata = {
+    VideoFormat: stream.codec_name,
+    VideoWidth: stream.width,
+    VideoHeight: stream.height,
+    VideoCodec: stream.codec_name,
+  };
+  const frameRate = parseFrameRate(stream.r_frame_rate || stream.avg_frame_rate);
+  if (frameRate) {
+    specs.FrameRate = frameRate;
+    specs.VideoFrameRate = frameRate;
+  }
+  // Calculate aspect ratio if we have dimensions
+  if (stream.width && stream.height) {
+    const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+    const divisor = gcd(stream.width, stream.height);
+    specs.AspectRatio = `${stream.width / divisor}:${stream.height / divisor}`;
+  }
+  return specs;
+}
+
+function audioSpecs(stream: FFmpegStreamData): VideoMetadata {
+  return {
+    AudioFormat: stream.codec_name,
+    AudioChannels: stream.channels,
+    AudioSampleRate: stream.sample_rate ? parseInt(stream.sample_rate) : undefined,
+    AudioBitsPerSample: stream.bits_per_sample,
+  };
+}
+
+// Prefer the container's duration, fall back to the video stream's.
+function durationSeconds(
+  format: FFmpegProbeData['format'],
+  videoStream: FFmpegStreamData | undefined
+): number | undefined {
+  if (format?.duration) return parseFloat(format.duration);
+  if (videoStream?.duration) return parseFloat(videoStream.duration);
+  return undefined;
+}
+
+// Different containers use different tag names for the creation date.
+const CREATION_DATE_FIELDS = [
+  'creation_time',
+  'date',
+  'creation_date',
+  'content_create_date',
+  'datetime_original',
+  'year',
+];
+
+function creationDate(formatTags: Tags, videoTags: Tags): string | undefined {
+  for (const field of CREATION_DATE_FIELDS) {
+    const parsed = parseMediaDate(formatTags[field] || videoTags[field]);
+    if (parsed) return parsed;
+  }
+  return undefined;
+}
+
+// ISO 6709 (e.g. "+40.6894-074.0447+002.000/") concatenates signed lat/lon with no
+// delimiter between them, so a delimiter split can't separate the two coordinates.
+// The trailing coordinate's sign is required (it's what marks where longitude starts);
+// the leading one is optional to still accept a plain "40.7128,-74.0060" tag.
+function gpsFromTags(formatTags: Tags): Pick<VideoMetadata, 'GPSLatitude' | 'GPSLongitude'> {
+  const match = formatTags.location?.match(/^([+-]?\d+\.?\d*)[,\s]*([+-]\d+\.?\d*)/);
+  return { GPSLatitude: match?.[1], GPSLongitude: match?.[2] };
+}
+
+function contentTags(formatTags: Tags, videoTags: Tags): VideoMetadata {
+  return {
+    DeviceManufacturer: formatTags.make || videoTags.make,
+    DeviceModel: formatTags.model || videoTags.model,
+    Software: formatTags.encoder || formatTags.software,
+    Title: formatTags.title || videoTags.title,
+    Artist: formatTags.artist || videoTags.artist,
+    Author: formatTags.author || videoTags.author || formatTags.artist,
+    Comment: formatTags.comment || videoTags.comment,
+    Description: formatTags.description || videoTags.description,
+    LongDescription: formatTags.synopsis || formatTags.summary,
+  };
+}
+
+function datesOf(file: File, formatTags: Tags, videoTags: Tags): VideoMetadata {
+  const dates: VideoMetadata = {
+    // Fall back to File.lastModified if no creation date is found
+    CreateDate: creationDate(formatTags, videoTags) ?? new Date(file.lastModified).toISOString(),
+  };
+  if (formatTags.modification_time) {
+    dates.ModifyDate = parseMediaDate(formatTags.modification_time);
+  }
+  return dates;
+}
+
+const EXTRA_TAG_TERMS = ['creator', 'copyright', 'language', 'genre', 'album', 'track'];
+
+// Other tags that might be useful, kept when no mapped field already holds them.
+function addExtraTags(metadata: VideoMetadata, formatTags: Tags): void {
+  for (const [key, value] of Object.entries(formatTags)) {
+    if (!metadata[key] && EXTRA_TAG_TERMS.some((term) => key.toLowerCase().includes(term))) {
+      metadata[key] = value;
+    }
+  }
+}
+
 /**
  * Map FFmpeg probe data to backend's VideoMetadata schema
  *
@@ -93,124 +199,25 @@ export function mapFFmpegMetadata(probeData: FFmpegProbeData, file: File): Video
   const videoStream = probeData.streams?.find((s) => s.codec_type === 'video');
   const audioStream = probeData.streams?.find((s) => s.codec_type === 'audio');
   const format = probeData.format;
-  const formatTags = format?.tags || {};
-  const videoTags = videoStream?.tags || {};
+  const formatTags: Tags = format?.tags || {};
+  const videoTags: Tags = videoStream?.tags || {};
 
-  const metadata: VideoMetadata = {};
+  const metadata: VideoMetadata = {
+    FileName: file.name,
+    FileSize: file.size,
+    MIMEType: file.type,
+    FileType: format?.format_name,
+    FileTypeExtension: file.name.split('.').pop(),
+    ...(videoStream ? videoSpecs(videoStream) : {}),
+    ...(audioStream ? audioSpecs(audioStream) : {}),
+  };
 
-  // Basic file info
-  metadata.FileName = file.name;
-  metadata.FileSize = file.size;
-  metadata.MIMEType = file.type;
-  metadata.FileType = format?.format_name;
-  metadata.FileTypeExtension = file.name.split('.').pop();
+  const duration = durationSeconds(format, videoStream);
+  if (duration !== undefined) metadata.Duration = duration;
 
-  // Video specs
-  if (videoStream) {
-    metadata.VideoFormat = videoStream.codec_name;
-    metadata.VideoWidth = videoStream.width;
-    metadata.VideoHeight = videoStream.height;
-    metadata.VideoCodec = videoStream.codec_name;
-
-    const frameRate = parseFrameRate(videoStream.r_frame_rate || videoStream.avg_frame_rate);
-    if (frameRate) {
-      metadata.FrameRate = frameRate;
-      metadata.VideoFrameRate = frameRate;
-    }
-
-    // Calculate aspect ratio if we have dimensions
-    if (videoStream.width && videoStream.height) {
-      const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
-      const divisor = gcd(videoStream.width, videoStream.height);
-      metadata.AspectRatio = `${videoStream.width / divisor}:${videoStream.height / divisor}`;
-    }
-  }
-
-  // Audio specs
-  if (audioStream) {
-    metadata.AudioFormat = audioStream.codec_name;
-    metadata.AudioChannels = audioStream.channels;
-    metadata.AudioSampleRate = audioStream.sample_rate
-      ? parseInt(audioStream.sample_rate)
-      : undefined;
-    metadata.AudioBitsPerSample = audioStream.bits_per_sample;
-  }
-
-  // Duration (prefer format duration, fallback to stream duration)
-  if (format?.duration) {
-    metadata.Duration = parseFloat(format.duration);
-  } else if (videoStream?.duration) {
-    metadata.Duration = parseFloat(videoStream.duration);
-  }
-
-  // Creation and modification dates
-  // Check multiple possible tag names (different containers use different names)
-  const creationDateFields = [
-    'creation_time',
-    'date',
-    'creation_date',
-    'content_create_date',
-    'datetime_original',
-    'year',
-  ];
-
-  for (const field of creationDateFields) {
-    const dateValue = formatTags[field] || videoTags[field];
-    if (dateValue) {
-      const parsed = parseMediaDate(dateValue);
-      if (parsed && !metadata.CreateDate) {
-        metadata.CreateDate = parsed;
-        break;
-      }
-    }
-  }
-
-  // Fallback to File.lastModified if no creation date found
-  if (!metadata.CreateDate) {
-    metadata.CreateDate = new Date(file.lastModified).toISOString();
-  }
-
-  // Modification date
-  if (formatTags.modification_time) {
-    metadata.ModifyDate = parseMediaDate(formatTags.modification_time);
-  }
-
-  // Device information
-  metadata.DeviceManufacturer = formatTags.make || videoTags.make;
-  metadata.DeviceModel = formatTags.model || videoTags.model;
-
-  // GPS information (if present)
-  // ISO 6709 (e.g. "+40.6894-074.0447+002.000/") concatenates signed lat/lon with no
-  // delimiter between them, so a delimiter split can't separate the two coordinates.
-  // The trailing coordinate's sign is required (it's what marks where longitude starts);
-  // the leading one is optional to still accept a plain "40.7128,-74.0060" tag.
-  const gpsMatch = formatTags.location?.match(/^([+-]?\d+\.?\d*)[,\s]*([+-]\d+\.?\d*)/);
-  metadata.GPSLatitude = gpsMatch?.[1];
-  metadata.GPSLongitude = gpsMatch?.[2];
-
-  // Software used
-  metadata.Software = formatTags.encoder || formatTags.software;
-
-  // Content information
-  metadata.Title = formatTags.title || videoTags.title;
-  metadata.Artist = formatTags.artist || videoTags.artist;
-  metadata.Author = formatTags.author || videoTags.author || formatTags.artist;
-  metadata.Comment = formatTags.comment || videoTags.comment;
-  metadata.Description = formatTags.description || videoTags.description;
-  metadata.LongDescription = formatTags.synopsis || formatTags.summary;
-
-  // Add any other tags that might be useful
-  for (const [key, value] of Object.entries(formatTags)) {
-    if (
-      !metadata[key] &&
-      ['creator', 'copyright', 'language', 'genre', 'album', 'track'].some((term) =>
-        key.toLowerCase().includes(term)
-      )
-    ) {
-      metadata[key] = value;
-    }
-  }
-
+  Object.assign(metadata, datesOf(file, formatTags, videoTags));
+  Object.assign(metadata, gpsFromTags(formatTags), contentTags(formatTags, videoTags));
+  addExtraTags(metadata, formatTags);
   return metadata;
 }
 

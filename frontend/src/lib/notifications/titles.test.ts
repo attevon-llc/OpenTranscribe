@@ -5,60 +5,40 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { Translate } from '$lib/i18n';
-import { composeClientMessage, notificationTitle } from './titles';
+import en from '$lib/i18n/locales/en.json';
+import { TITLE_KEYS, composeClientMessage, notificationTitle } from './titles';
+
+const english = en as Record<string, string>;
 
 const echo: Translate = (key, opts) => (opts ? `${key}:${JSON.stringify(opts)}` : key);
 
-const EXPECTED_TITLE_KEYS: Record<string, string> = {
-  transcription_status: 'notifications.transcriptionUpdate',
-  summarization_status: 'notifications.summarizationUpdate',
-  redaction_status: 'notifications.redactionUpdate',
-  topic_extraction_status: 'notifications.topicExtraction',
-  auto_label_status: 'notifications.autoLabeling',
-  youtube_processing_status: 'notifications.youtubeProcessing',
-  playlist_processing_status: 'notifications.playlistProcessing',
-  analytics_status: 'notifications.analyticsUpdate',
-  backup_status: 'notifications.backupUpdate',
-  media_mirror_status: 'notifications.mediaMirrorUpdate',
-  monitoring_alert: 'notifications.monitoringAlert',
-  audio_extraction_status: 'notifications.audioExtraction',
-  download_progress: 'notifications.downloadProgress',
-  file_upload: 'notifications.fileUpload',
-  file_created: 'notifications.fileCreated',
-  file_updated: 'notifications.fileUpdated',
-  file_deleted: 'notifications.fileDeleted',
-  file_takedown: 'notifications.fileTakedown',
-  file_takedown_released: 'notifications.fileTakedownReleased',
-  collection_shared: 'notifications.collectionShared',
-  collection_share_revoked: 'notifications.collectionShareRevoked',
-  collection_share_updated: 'notifications.collectionShareUpdated',
-  collection_access_changed: 'notifications.collectionAccessChanged',
-  group_member_added: 'notifications.groupMemberAdded',
-  group_member_removed: 'notifications.groupMemberRemoved',
-  reindex_progress: 'notifications.searchReindexing',
-  reindex_complete: 'notifications.searchReindexing',
-  reindex_stopped: 'notifications.searchReindexing',
-  migration_progress: 'notifications.embeddingMigration',
-  migration_complete: 'notifications.embeddingMigration',
-  migration_finalized: 'notifications.embeddingMigration',
-  attribute_migration_progress: 'notifications.speakerAttributeMigration',
-  attribute_migration_complete: 'notifications.speakerAttributeMigration',
-  clustering_progress: 'notifications.speakerClustering',
-  clustering_complete: 'notifications.speakerClustering',
-  data_integrity_progress: 'notifications.dataIntegrity',
-  data_integrity_complete: 'notifications.dataIntegrity',
-  embedding_consistency_progress: 'notifications.embeddingConsistency',
-  embedding_consistency_complete: 'notifications.embeddingConsistency',
-};
+// Spot pins by type, not a copy of the table: the exhaustive check below is against the
+// locale file, which is what actually fails when a key is wrong.
+const PINNED_TITLES: [string, string][] = [
+  ['transcription_status', 'notifications.transcriptionUpdate'],
+  ['download_progress', 'notifications.downloadProgress'],
+  ['file_takedown', 'notifications.fileTakedown'],
+  ['reindex_complete', 'notifications.searchReindexing'],
+  ['migration_finalized', 'notifications.embeddingMigration'],
+];
 
 describe('notificationTitle', () => {
-  it.each(Object.entries(EXPECTED_TITLE_KEYS))('%s -> %s', (type, key) => {
+  it.each(PINNED_TITLES)('%s -> %s', (type, key) => {
     expect(notificationTitle(type, echo)).toBe(key);
+  });
+
+  it('titles every known type with a key that exists in the English locale', () => {
+    const entries = Object.entries(TITLE_KEYS);
+    expect(entries.length).toBeGreaterThan(30);
+    const missing = entries.filter(([, key]) => !(key in english));
+    expect(missing).toEqual([]);
+    for (const [type, key] of entries) expect(notificationTitle(type, echo)).toBe(key);
   });
 
   it('falls back to the generic title for an unknown type', () => {
     expect(notificationTitle('post_processing_status', echo)).toBe('notifications.notification');
     expect(notificationTitle('no_such_type', echo)).toBe('notifications.notification');
+    expect('notifications.notification' in english).toBe(true);
   });
 });
 

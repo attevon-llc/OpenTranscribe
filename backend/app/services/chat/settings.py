@@ -12,6 +12,7 @@ import logging
 from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import replace
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -213,8 +214,12 @@ def get_chat_settings(db: Session) -> ChatSettings:
         logger.warning(f"Falling back to default chat settings: {exc}")
         return ChatSettings()
 
-    values = {field: _coerce(field, stored.get(key)) for field, key in SETTING_KEYS.items()}
-    return ChatSettings(**values)  # type: ignore[arg-type]
+    # Keyed by field name, so the value types cannot be related to the field types statically;
+    # `_coerce` returns the type of the field's own default.
+    values: dict[str, Any] = {
+        field: _coerce(field, stored.get(key)) for field, key in SETTING_KEYS.items()
+    }
+    return replace(ChatSettings(), **values)
 
 
 def apply_user_preferences(

@@ -28,7 +28,7 @@ def generate_thumbnail(
     output_path: str | Path | None = None,
     timestamp: float = 1.0,
     max_dimension: int = THUMBNAIL_MAX_DIMENSION,
-    output_format: Literal["webp", "jpeg"] = THUMBNAIL_FORMAT,  # type: ignore[assignment]
+    output_format: Literal["webp", "jpeg"] = THUMBNAIL_FORMAT,
     quality: int | None = None,
 ) -> str | bytes | None:
     """
@@ -179,7 +179,7 @@ def generate_and_upload_thumbnail(
     media_file_id: int,
     video_path: str | Path,
     timestamp: float = 1.0,
-    output_format: Literal["webp", "jpeg"] = THUMBNAIL_FORMAT,  # type: ignore[assignment]
+    output_format: Literal["webp", "jpeg"] = THUMBNAIL_FORMAT,
 ) -> str | None:
     """
     Generate a thumbnail from a video file and upload it to storage.

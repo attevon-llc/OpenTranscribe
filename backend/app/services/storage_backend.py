@@ -219,8 +219,10 @@ def clamp_presigned_expiry(expires: int | None) -> int:
         A lifetime between :data:`MIN_PRESIGNED_SECONDS` and :func:`max_presigned_seconds`.
     """
     ceiling = max_presigned_seconds()
+    if expires is None:
+        return ceiling
     try:
-        requested = int(expires)  # type: ignore[arg-type]
+        requested = int(expires)
     except (TypeError, ValueError):
         return ceiling
     if requested <= 0:

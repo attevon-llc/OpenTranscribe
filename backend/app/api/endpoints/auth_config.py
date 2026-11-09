@@ -414,7 +414,9 @@ def get_audit_log(
             old_value=audit.old_value,
             new_value=audit.new_value,
             change_type=audit.change_type,
-            changed_by_email=actor_emails.get(audit.changed_by),  # type: ignore[arg-type]
+            changed_by_email=(
+                actor_emails.get(audit.changed_by) if audit.changed_by is not None else None
+            ),
             ip_address=audit.ip_address,
             created_at=audit.created_at,
         )

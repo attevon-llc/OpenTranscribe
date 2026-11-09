@@ -9,7 +9,6 @@ Tests isolate themselves with a unique key namespace instead of flushing.
 from __future__ import annotations
 
 import shutil
-import socket
 import time
 import uuid
 
@@ -18,14 +17,9 @@ import redis
 
 from tests.docker_ops import remove_container
 from tests.docker_ops import run_container
+from tests.fixtures.net import free_port
 
 READY_TIMEOUT_SECONDS = 20
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
 
 
 @pytest.fixture(scope="session")
@@ -33,7 +27,7 @@ def local_model_redis():
     """A client for a throwaway Redis container, valid for the whole worker session."""
     if shutil.which("docker") is None:
         pytest.skip("docker is not on PATH - cannot start a throwaway Redis for this suite")
-    port = _free_port()
+    port = free_port()
     name = f"ot-test-redis-lm-{uuid.uuid4().hex[:10]}"
     client: redis.Redis | None = None
     try:

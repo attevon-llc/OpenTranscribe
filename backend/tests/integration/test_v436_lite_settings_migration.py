@@ -26,7 +26,6 @@ import importlib
 import os
 import re
 import shutil
-import socket
 import time
 import uuid
 from collections.abc import Iterator
@@ -40,6 +39,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from tests.docker_ops import TEST_ARTIFACT_LABEL
+from tests.fixtures.net import free_port
 from tests.integration.throwaway_pg import _READY_TIMEOUT
 from tests.integration.throwaway_pg import run as _run
 
@@ -72,12 +72,6 @@ def _postgres_image_tag() -> str:
     return match.group(1)
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 def _url(port: int, password: str, db: str) -> str:
     return f"postgresql+psycopg2://{_DB_USER}:{password}@127.0.0.1:{port}/{db}"
 
@@ -108,7 +102,7 @@ def _wait_ready(port: int, password: str) -> None:
 def throwaway_pg() -> Iterator[dict[str, Any]]:
     name = f"ot-migration-tcp-{uuid.uuid4().hex[:12]}"
     password = uuid.uuid4().hex
-    port = _free_port()
+    port = free_port()
     live = {5176, 5276, 5376, int(os.environ.get("POSTGRES_PORT", "5176"))}
     assert port not in live, f"allocated port {port} collides with a live stack's port"
     try:

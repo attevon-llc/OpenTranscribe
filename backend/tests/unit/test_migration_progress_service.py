@@ -33,7 +33,6 @@ through.
 from __future__ import annotations
 
 import shutil
-import socket
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -44,6 +43,7 @@ import redis
 from app.services.migration_progress_service import MigrationProgressService
 from tests.docker_ops import remove_container
 from tests.docker_ops import run_container
+from tests.fixtures.net import free_port
 
 # All tests in this file share ONE module-scoped throwaway Redis container
 # (see redis_container below). Without xdist_group, pytest-xdist's default
@@ -57,19 +57,13 @@ pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("migration_progress_serv
 # =============================================================================
 # Throwaway Redis container — isolated from the dev stack, never touches it.
 # =============================================================================
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
 @pytest.fixture(scope="module")
 def redis_container():
     """A throwaway, unauthenticated Redis on a private port for this module only."""
     if shutil.which("docker") is None:
         pytest.skip("docker is not on PATH — cannot start a throwaway Redis for this suite")
 
-    port = _free_port()
+    port = free_port()
     name = f"ot-test-redis-mps-{uuid.uuid4().hex[:10]}"
     # No `except` here: the precondition check above is the intended skip path
     # (docker missing entirely). If the docker CLI IS present but this invocation

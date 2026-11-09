@@ -16,17 +16,10 @@ noticing.
 
 from __future__ import annotations
 
-import socket
-
 import pytest
 from fastapi import status
 
-
-def _free_port() -> int:
-    """A real TCP port on localhost, bound then released — guaranteed unreachable."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
+from tests.fixtures.net import free_port
 
 
 def _db_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -60,7 +53,7 @@ def test_admin_and_system_stats_agree_on_a_bad_config_value(
     # effective/fallback fields identically on both endpoints.
     monkeypatch.setattr(
         "app.transcription.diar_sidecar_status._DEFAULT_URL",
-        f"http://127.0.0.1:{_free_port()}",
+        f"http://127.0.0.1:{free_port()}",
     )
 
     admin_resp = client.get("/api/admin/stats", headers=admin_token_headers)
@@ -105,7 +98,7 @@ def test_admin_and_system_stats_agree_when_native_is_configured_and_reachable(
 
     @contextlib.contextmanager
     def _sidecar() -> Iterator[str]:
-        port = _free_port()
+        port = free_port()
         httpd = http.server.HTTPServer(("127.0.0.1", port), _make_handler())
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()

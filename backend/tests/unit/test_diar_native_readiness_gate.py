@@ -27,7 +27,6 @@ from __future__ import annotations
 import contextlib
 import http.server
 import json
-import socket
 import threading
 from collections.abc import Iterator
 
@@ -37,12 +36,13 @@ from app.services.native_embedding_client import native_embedding_available
 from app.transcription.diar_sidecar_status import sidecar_healthy
 from app.transcription.diar_sidecar_status import sidecar_ready
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
+from tests.fixtures.net import free_port
 from tests.state_resets import reset_readiness_cache
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.
 #:
-#: `_free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
+#: `free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
 #: between that close and the caller's `HTTPServer((host, port))` bind, another worker can be
 #: handed the same ephemeral port. Seven modules use that helper and none were grouped, which
 #: is why a DIFFERENT diar test failed on each full-suite run while every one of them passed in
@@ -50,12 +50,6 @@ from tests.state_resets import reset_readiness_cache
 #: (backend/tests/CLAUDE.md's `--dist loadgroup` note); here the shared state is the machine's
 #: ephemeral-port pool plus diarizer_native's readiness caches.
 pytestmark = pytest.mark.xdist_group("diar_native_state")
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
 
 
 # The three sidecar states that matter. `readyz` is the status code /readyz returns;
@@ -76,7 +70,7 @@ def _clear_probe_cache():
     ``sidecar_ready``/``sidecar_healthy`` memoise per (endpoint, url) for several seconds.
     Every test here stands up its own server on an ephemeral port, so today the keys happen
     to differ — but that is the OS's port allocation protecting the suite, not the suite
-    protecting itself: pin ``_free_port`` to one value and
+    protecting itself: pin ``free_port`` to one value and
     ``test_embedding_path_agrees_with_the_diarization_path`` fails on a stale verdict.
     Clearing explicitly makes the isolation the module's own property.
     """
@@ -111,7 +105,7 @@ def _make_handler(readyz: int | None, health_body: dict):
 @contextlib.contextmanager
 def _sidecar(readyz: int | None, health_body: dict) -> Iterator[str]:
     """A real HTTP sidecar stand-in; yields its base URL."""
-    port = _free_port()
+    port = free_port()
     httpd = http.server.HTTPServer(("127.0.0.1", port), _make_handler(readyz, health_body))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -257,7 +251,7 @@ def _make_embed_handler(health_body: dict, embed_requests: list[dict]):
 
 @contextlib.contextmanager
 def _embed_sidecar(health_body: dict, embed_requests: list[dict]) -> Iterator[str]:
-    port = _free_port()
+    port = free_port()
     httpd = http.server.HTTPServer(
         ("127.0.0.1", port), _make_embed_handler(health_body, embed_requests)
     )

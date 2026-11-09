@@ -58,7 +58,7 @@ backend/tests/api/test_speaker_unassign_blacklist_routes.py	2	pre-existing dupli
 backend/tests/api/test_speaker_update.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_speaker_write_path_offloading.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_summary_export_endpoint.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/api/test_tag_tenancy.py	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+backend/tests/api/test_tag_tenancy.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_transcript_segments_quarantine.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_trash_purge.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_trash_retention_and_duplicates.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -71,8 +71,6 @@ backend/tests/e2e/test_tag_management.py	1	pre-existing duplicated blocks of 100
 backend/tests/e2e/test_watch_sources_e2e.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/eval/test_eval_benchmark_injection_identity.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/eval/test_eval_fusion_arm.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/fixtures/mock_asr.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/fixtures/mock_llm.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/fixtures/tag_world.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/integration/test_audit_org_scope_opensearch.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/integration/test_cleanup_test_data_isolated.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

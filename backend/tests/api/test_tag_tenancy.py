@@ -18,7 +18,6 @@ happens to carry.
 from __future__ import annotations
 
 import uuid as uuid_pkg
-from contextlib import contextmanager
 
 import pytest
 
@@ -29,6 +28,7 @@ from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.topic import TopicSuggestion
 from app.models.user import User
+from tests.fixtures.tag_world import acting_as
 
 
 def _unique(prefix: str) -> str:
@@ -85,25 +85,6 @@ def _mk_file(db, user: User, org_id: int | None) -> MediaFile:
     return media_file
 
 
-@contextmanager
-def _acting_as(user: User, org_id: int | None, org_role: str | None = None):
-    """Run requests as ``user`` in tenant ``org_id`` (None = personal workspace)."""
-    from app.api.deps_context import get_current_context
-    from app.api.endpoints.auth import get_current_active_user
-    from app.main import app
-    from app.services.request_context import RequestContext
-
-    app.dependency_overrides[get_current_active_user] = lambda: user
-    app.dependency_overrides[get_current_context] = lambda: RequestContext(
-        user=user, org_id=org_id, org_role=org_role if org_id is not None else None
-    )
-    try:
-        yield
-    finally:
-        app.dependency_overrides.pop(get_current_active_user, None)
-        app.dependency_overrides.pop(get_current_context, None)
-
-
 def _listed_names(client) -> set[str]:
     response = client.get("/api/tags")
     assert response.status_code == 200, response.text
@@ -134,11 +115,11 @@ def test_org_members_see_and_reuse_the_same_tag(client, org_world):
     name = _unique("Board Q3")
     bob_file = _mk_file(w.db, w.bob, w.org_a.id)
 
-    with _acting_as(w.alice, w.org_a.id, "org:admin"):
+    with acting_as(w.alice, w.org_a.id, "org:admin"):
         created = client.post("/api/tags", json={"name": name})
         assert created.status_code == 200, created.text
 
-    with _acting_as(w.bob, w.org_a.id):
+    with acting_as(w.bob, w.org_a.id):
         assert name in _listed_names(client), "a member must see the org's tag"
         attached = client.post(f"/api/tags/files/{bob_file.uuid}/tags", json={"name": name})
         assert attached.status_code == 200, attached.text
@@ -155,10 +136,10 @@ def test_org_member_bulk_add_reuses_the_org_tag(client, org_world):
     name = _unique("Pipeline")
     bob_file = _mk_file(w.db, w.bob, w.org_a.id)
 
-    with _acting_as(w.alice, w.org_a.id, "org:admin"):
+    with acting_as(w.alice, w.org_a.id, "org:admin"):
         assert client.post("/api/tags", json={"name": name}).status_code == 200
 
-    with _acting_as(w.bob, w.org_a.id):
+    with acting_as(w.bob, w.org_a.id):
         response = client.post(
             "/api/files/management/bulk-action",
             json={"file_uuids": [str(bob_file.uuid)], "action": "add_tag", "tag_name": name},
@@ -181,17 +162,17 @@ def test_tag_created_in_one_org_is_not_listed_in_another_or_personal(client, org
     w = org_world
     name = _unique("Falcon Layoffs")
 
-    with _acting_as(w.alice, w.org_a.id, "org:admin"):
+    with acting_as(w.alice, w.org_a.id, "org:admin"):
         assert client.post("/api/tags", json={"name": name}).status_code == 200
         assert name in _listed_names(client)
 
-    with _acting_as(w.alice, w.org_b.id):
+    with acting_as(w.alice, w.org_b.id):
         assert name not in _listed_names(client)
         unused = client.get("/api/tags/unused")
         assert unused.status_code == 200
         assert name not in {row["name"] for row in unused.json()}
 
-    with _acting_as(w.alice, None):
+    with acting_as(w.alice, None):
         assert name not in _listed_names(client)
 
 
@@ -199,11 +180,11 @@ def test_personal_tag_is_not_listed_in_an_org(client, org_world):
     w = org_world
     name = _unique("Private Diary")
 
-    with _acting_as(w.alice, None):
+    with acting_as(w.alice, None):
         assert client.post("/api/tags", json={"name": name}).status_code == 200
         assert name in _listed_names(client)
 
-    with _acting_as(w.alice, w.org_a.id, "org:admin"):
+    with acting_as(w.alice, w.org_a.id, "org:admin"):
         assert name not in _listed_names(client)
 
 
@@ -213,10 +194,10 @@ def test_same_name_in_two_tenants_is_two_rows(client, org_world):
     name = _unique("Interview")
     org_file = _mk_file(w.db, w.alice, w.org_a.id)
 
-    with _acting_as(w.alice, None):
+    with acting_as(w.alice, None):
         personal = client.post("/api/tags", json={"name": name}).json()
 
-    with _acting_as(w.alice, w.org_a.id, "org:admin"):
+    with acting_as(w.alice, w.org_a.id, "org:admin"):
         attached = client.post(f"/api/tags/files/{org_file.uuid}/tags", json={"name": name})
         assert attached.status_code == 200, attached.text
 
@@ -229,10 +210,10 @@ def test_tag_from_another_tenant_cannot_be_mutated(client, org_world):
     w = org_world
     name = _unique("Secret")
 
-    with _acting_as(w.alice, w.org_a.id, "org:admin"):
+    with acting_as(w.alice, w.org_a.id, "org:admin"):
         created = client.post("/api/tags", json={"name": name}).json()
 
-    with _acting_as(w.alice, w.org_b.id):
+    with acting_as(w.alice, w.org_b.id):
         response = client.patch(f"/api/tags/{created['uuid']}", json={"name": name + " renamed"})
         assert response.status_code == 404
 
@@ -241,16 +222,16 @@ def test_member_cannot_rename_a_colleagues_org_tag_but_org_admin_can(client, org
     w = org_world
     name = _unique("Roadmap")
 
-    with _acting_as(w.bob, w.org_a.id):
+    with acting_as(w.bob, w.org_a.id):
         created = client.post("/api/tags", json={"name": name}).json()
 
     carol = _mk_user(w.db, "carol")
     _join(w.db, w.org_a, carol)
-    with _acting_as(carol, w.org_a.id, "org:member"):
+    with acting_as(carol, w.org_a.id, "org:member"):
         denied = client.patch(f"/api/tags/{created['uuid']}", json={"name": name + " x"})
         assert denied.status_code == 404
 
-    with _acting_as(w.alice, w.org_a.id, "org:admin"):
+    with acting_as(w.alice, w.org_a.id, "org:admin"):
         allowed = client.patch(f"/api/tags/{created['uuid']}", json={"name": name + " y"})
         assert allowed.status_code == 200, allowed.text
 
@@ -419,10 +400,10 @@ def test_unattributed_org_tag_is_not_system_vocabulary(client, org_world):
     w.db.add(Tag(name=name, user_id=None, organization_id=w.org_a.id))
     w.db.commit()
 
-    with _acting_as(w.alice, w.org_b.id):
+    with acting_as(w.alice, w.org_b.id):
         assert name not in _listed_names(client)
-    with _acting_as(w.alice, None):
+    with acting_as(w.alice, None):
         assert name not in _listed_names(client)
-    with _acting_as(w.bob, w.org_a.id):
+    with acting_as(w.bob, w.org_a.id):
         rows = {r["name"]: r for r in client.get("/api/tags").json()}
         assert rows[name]["ownership"] == "shared_with_me"

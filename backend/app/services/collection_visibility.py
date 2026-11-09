@@ -140,6 +140,20 @@ def _may_hold_rank_pred(user_id: int) -> ColumnElement[bool]:
     )
 
 
+def _member_org_pred(user_id: int) -> ColumnElement[bool]:
+    """``collection.organization_id`` is an organization the caller belongs to.
+
+    ``_org_base_rank`` is 0 for an organization collection whose org the caller is not a member
+    of, so this only narrows the candidates the rank CASE (a correlated subplan per row) is
+    evaluated on, letting PostgreSQL start from ``organization_membership`` (issue #1337).
+    """
+    return Collection.organization_id.in_(
+        select(OrganizationMembership.organization_id).where(
+            OrganizationMembership.user_id == user_id
+        )
+    )
+
+
 def collection_permission_ranks(db: Session, user_id: int) -> dict[int, str]:
     """Permission name by collection id, for every collection ``user_id`` may see (any tenant).
 
@@ -230,7 +244,11 @@ def org_collection_file_ids_stmt(user_id: int, organization_id: OrgScope) -> Sel
                 MediaFile.organization_id == Collection.organization_id,
             ),
         )
-        .where(Collection.organization_id.is_not(None), _org_base_rank(user_id) > 0)
+        .where(
+            Collection.organization_id.is_not(None),
+            _member_org_pred(user_id),
+            _org_base_rank(user_id) > 0,
+        )
     )
     gate = org_scope_pred(Collection.organization_id, organization_id)
     return stmt.where(gate) if gate is not None else stmt
@@ -252,7 +270,9 @@ def org_readable_collection_ids(db: Session, user_id: int, organization_id: int)
     """
     rows = db.execute(
         select(Collection.id).where(
-            Collection.organization_id == organization_id, _org_base_rank(user_id) > 0
+            Collection.organization_id == organization_id,
+            _member_org_pred(user_id),
+            _org_base_rank(user_id) > 0,
         )
     ).scalars()
     return [int(cid) for cid in rows]

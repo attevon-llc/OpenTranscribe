@@ -10,8 +10,6 @@ from __future__ import annotations
 import uuid as uuid_pkg
 
 import pytest
-from sqlalchemy import func
-from sqlalchemy import select
 from sqlalchemy import text
 
 from app.models.collection import Collection
@@ -62,20 +60,45 @@ def test_ranks_statement_avoids_seq_scan_and_keeps_results(db_session):
     )
     db.flush()
 
-    ranks = cv.collection_permission_ranks(db, me.id)
+    captured = []
+    real_execute = db.execute
+
+    def spy(stmt, *a, **k):
+        captured.append(stmt)
+        return real_execute(stmt, *a, **k)
+
+    db.execute = spy
+    try:
+        ranks = cv.collection_permission_ranks(db, me.id)
+    finally:
+        del db.execute
     assert set(ranks) >= {mine.id, in_org.id, shared.id}
     assert hidden.id not in ranks
 
-    rank = func.greatest(cv._org_base_rank(me.id), cv._share_rank(me.id))
-    stmt = select(Collection.id, rank).where(cv._may_hold_rank_pred(me.id), rank > 0)
     db.execute(text("SET LOCAL enable_seqscan = off"))
-    plan = "\n".join(
-        r[0]
-        for r in db.execute(
-            text(
-                "EXPLAIN "
-                + str(stmt.compile(db.get_bind(), compile_kwargs={"literal_binds": True}))
-            )
-        )
-    )
+    sql = str(captured[-1].compile(db.get_bind(), compile_kwargs={"literal_binds": True}))
+    plan = "\n".join(r[0] for r in db.execute(text("EXPLAIN " + sql)))
     assert "Seq Scan on collection " not in plan, plan
+
+
+def test_org_collection_reads_start_from_the_callers_memberships(db_session):
+    from app.core.tenancy import UNSCOPED
+
+    db = db_session
+    me, other = _user(db, "m2"), _user(db, "o2")
+    org = Organization(name=f"rankplan-{uuid_pkg.uuid4().hex[:8]}", slug=uuid_pkg.uuid4().hex[:12])
+    foreign = Organization(
+        name=f"rankplan-{uuid_pkg.uuid4().hex[:8]}", slug=uuid_pkg.uuid4().hex[:12]
+    )
+    db.add_all([org, foreign])
+    db.flush()
+    db.add(OrganizationMembership(organization_id=org.id, user_id=me.id, role="member"))
+    mine = Collection(user_id=other.id, organization_id=org.id, name="o", description="")
+    theirs = Collection(user_id=other.id, organization_id=foreign.id, name="f", description="")
+    db.add_all([mine, theirs])
+    db.flush()
+
+    sql = str(cv.org_collection_file_ids_stmt(me.id, UNSCOPED).compile())
+    assert "collection.organization_id IN (SELECT organization_membership.organization_id" in sql
+    assert cv.org_readable_collection_ids(db, me.id, org.id) == [mine.id]
+    assert cv.org_readable_collection_ids(db, me.id, foreign.id) == []

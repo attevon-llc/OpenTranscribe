@@ -203,9 +203,9 @@ Waves are about 2.5 working days, overlapping: wave N+1 codes while wave N's swe
 | W8 | Dec 10-14 | readability | B7 (S), B8 (S), S2a (S), (Q) A1 (S) |
 | W9 | Dec 14-16 | readability | B9 (S), B10 (S), S2b (S), (Q) A2 (S) |
 | W10 | Dec 16-18 | readability | A3 (S), A4 (S), S2c (S), (Q) B11 scripts broad-except (S) |
-| W11 | Dec 18-22 | readability | A5 (S), A6 (S), S2d (S), (Q) L17 opentr.sh split (S) |
-| W12 | Dec 22-24 | style | S2e (S), S3a (S), S3b (S), (Q) L18 common/build/scan split (S) |
-| W13 | Dec 28-30 | style | S3c (S), S3d (S), S3e (S), (Q) L19 release-test + misc shell split (S) |
+| W11 | Dec 18-22 | readability | A5 (S), A6 (S), S2d (S), SH shell review in place (S) |
+| W12 | Dec 22-24 | style | S2e (S), S3a (S), S3b (S) |
+| W13 | Dec 28-30 | style | S3c (S), S3d (S), S3e (S) |
 | W14 | Dec 30-Jan 4 | style close-out, all-files gate | S3f (S), S4 (H), S5 (S), then the final all-guards `--all-files` check |
 | Eval | Jan 5-11 | evaluation | C1 final load pass (#37, ~8 h machine, night window), C3 mutation, C4 integration + GPU gate (GPU 1, +2 if idle, never 0), rehearse (all four scenarios, incl. D for the split downloader), C5 review, C6 docs, C7 browser/locale pass; small fixes in one lane |
 | Release | Jan 12-13 | release | `./scripts/release.sh run` stages, owner approvals |
@@ -230,10 +230,8 @@ If a wave's (Q) lane cannot run, it moves to the next wave's (Q) slot; nothing i
 | L08 script splits | sonnet | `scripts/download-models.py`, `scripts/cleanup-test-data.py`, `scripts/download-models.sh`, `release-manifest.txt`, `backend/Dockerfile.*` lines naming the downloader, tests loading either by path | 1.5 |
 | L09a / L09b frontend splits | sonnet | a: `lib/services/uploadService.ts`, `components/FileUploader.svelte`; b: `components/FilterSidebar.svelte`, `components/SettingsModal.svelte`, `routes/+page.svelte`; new modules (4.4) | 1.5 + 1.5 |
 | L16 installers cleaned in place | sonnet | `opentranscribe.sh`, `setup-opentranscribe.sh` (internal cleanup only, still one file each), `allowlists/file_size.txt`, their tests | 1.5 |
-| L17 opentr.sh | sonnet | `opentr.sh`, new `scripts/lib/opentr/` | 2.5 |
-| L18 common + build + scan | sonnet | `scripts/common.sh` (split into `scripts/lib/common/*.sh`, each listed in `release-manifest.txt` because installs fetch common.sh), `release-manifest.txt`, `scripts/docker-build-push.sh`, `scripts/security-scan.sh`, new module dirs | 2 |
+| SH shell review in place | sonnet | every `*.sh` (installers, `scripts/common.sh`, `opentr.sh`, build/release/e2e scripts): fix errors and issues in place, no split, `allowlists/file_size.txt` entry per file | 2 |
 | T1 test code | sonnet | `backend/tests/fixtures/**`, `conftest.py` files, test helper modules (`backend/tests/**/helpers*.py`, `_*.py` support modules), frontend `src/test-mocks/**` and `*.test.ts` helpers flagged by vulture/knip/jscpd | 2 |
-| L19 release-test + misc shell | sonnet | `scripts/release-tests/test-upgrade.sh`, `scripts/release-tests/lib/guardrails.sh`, `scripts/e2e/update-visual-baselines.sh`, `scripts/fetch-rag-eval-data.sh`, `scripts/run-mutation-tests.sh`, new module dirs | 2.5 |
 | L10 A22 | sonnet | `api/endpoints/asr_settings.py`, `services/asr/{aws,gladia,pyannote}_provider.py`, tests, `baselines/{complexity,suppressions}.txt` | 1.5 |
 | L11 backend complexity | sonnet | the other 11 `backend/app` complexity functions' files (4.3) | 2 |
 | L20 scripts complexity | sonnet | the 18 `scripts/` complexity functions' files | 1.5 |
@@ -544,7 +542,7 @@ already in the table (W12 to W13).
   behaviour; anything uncertain stays at the documented top-level-boundary shape (section 1.2,
   rule 4) rather than guessed narrow.
 - **Distributed files**: a missed `release-manifest.txt` line breaks fresh installs silently.
-  Guarded by the manifest tests (L08 for `scripts/model_download/`, L18 for `scripts/lib/common/`)
+  Guarded by the manifest tests (L08 for `scripts/model_download/`)
   and the rehearsal in evaluation. The two installers are not split, so their download path is
   unchanged.
 - **ORM extraction across 129 routers**: transaction boundaries must not move (a router that
@@ -755,29 +753,17 @@ value = the cleaned line count). Keep `release-manifest.txt` paths unchanged. Ve
 end-to-end proof. Docs: shellcheck wiki (each SC code you fix); bash manual for any construct you
 change. **[footer]**
 
-### L17 opentr.sh split (sonnet, W11 (Q))
-`opentr.sh` -> `scripts/lib/opentr/` (layout 4.5), sourced at runtime, `start_app` and
-`reset_and_init` decomposed into named step functions. First capture golden outputs on HEAD:
-`./opentr.sh` (usage) and `./opentr.sh start <mode> --dry-run` for dev, prod, `--fresh x`,
-`--gpu-scale`, `--nas`, `--no-nas`, each `--with-*` flag; after the split they must be
-byte-identical. Keep `backend/tests/unit/test_opentr_*` green. `bash -n`, `shellcheck -x`.
-Never run a non-dry-run command. **[footer]**
+### SH shell review in place (sonnet, W11) — replaces L17, L18 and L19 (owner decision 2026-11-09)
+Shell scripts are reviewed and fixed, but they are NOT split and NOT under the file-size cap. Scripts that ship to users must stay single files, so an install never has to fetch many loose files. Scope: every tracked `*.sh`: `opentranscribe.sh`, `setup-opentranscribe.sh`, `scripts/common.sh`, `opentr.sh`, `scripts/docker-build-push.sh`, `scripts/security-scan.sh`, `scripts/release-tests/**`, `scripts/e2e/*.sh` and the rest.
 
-### L18 common.sh, docker-build-push.sh, security-scan.sh (sonnet, W12 (Q))
-Split per plan 4.5: `scripts/common.sh` keeps its path and sources `scripts/lib/common/*.sh`
-(shellcheck `source=` directives); because installs fetch `common.sh` through
-`release-manifest.txt`, add every new module there and a unit test that every
-`scripts/lib/common/*.sh` is listed. `docker-build-push.sh` -> `scripts/lib/docker_build/`,
-`security-scan.sh` -> `scripts/lib/security_scan/`. Proof: `--help` and
-`./scripts/docker-build-push.sh list-platforms` output identical to HEAD; existing tests that read
-these scripts green; `bash -n`, `shellcheck -x`. No builds, no scans. **[footer]**
+For each file:
+- `shellcheck -x` clean, with no `disable` directives unless one is justified on that line;
+- `bash -n`;
+- no dead functions (`rg` by name across the repo, CI, docs and tests);
+- long `case` arms and functions broken into named steps where that genuinely helps reading;
+- `set -e` semantics unchanged. The upgrade test once lost phases to a `set -e` harness bug: see `scripts/CLAUDE.md`.
 
-### L19 release-test and misc shell splits (sonnet, W13 (Q))
-`release-tests/test-upgrade.sh`, `release-tests/lib/guardrails.sh`, `e2e/update-visual-baselines.sh`,
-`fetch-rag-eval-data.sh`, `run-mutation-tests.sh` split per 4.5. Keep `set -e` semantics identical
-(the upgrade test once lost phases to a `set -e` harness bug: `scripts/CLAUDE.md`). Proof:
-`--help`/usage output identical, phase list identical (`grep -o 'phase_[0-9a-z_]*'` before/after),
-existing tests green, `bash -n`, `shellcheck -x`. Never run a rehearsal; the lead does in evaluation. **[footer]**
+Proof: `--help`/usage and the `./opentr.sh start <mode> --dry-run` outputs are byte-identical to HEAD, and the existing tests that read these scripts stay green. Add each file to `scripts/guards/allowlists/file_size.txt` with class `single-file-installer` (shipped) or `shell-script` (repo-only). Never run an install, upgrade, build or scan. **[footer]**
 
 ### L10 A22 complexity (sonnet, W3)
 `update_asr_config` (26), `AWSTranscribeProvider.transcribe` (43), `GladiaProvider.transcribe`

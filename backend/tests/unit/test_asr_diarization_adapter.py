@@ -246,7 +246,7 @@ def _aws(tmp_path, model, monkeypatch):
         result_data=data,
     )
     tc.get_medical_transcription_job.return_value = {
-        "MedicalTranscriptionJob": {"MedicalTranscriptionJobStatus": "COMPLETED"}
+        "MedicalTranscriptionJob": {"TranscriptionJobStatus": "COMPLETED"}
     }
     _wire_provider(provider, monkeypatch, s3, tc)
     result = _adapter(provider, "aws", model).diarize(_audio(tmp_path), CONFIG)

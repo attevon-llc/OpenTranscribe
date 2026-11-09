@@ -58,8 +58,6 @@ backend/tests/api/test_speaker_update.py	2	pre-existing duplicated blocks of 100
 backend/tests/api/test_speaker_write_path_offloading.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_summary_export_endpoint.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_transcript_segments_quarantine.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/api/test_trash_purge.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/api/test_trash_retention_and_duplicates.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/e2e/test_auth_flow.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/e2e/test_collection_management.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/e2e/test_file_detail_transcript.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -94,7 +92,7 @@ backend/tests/test_admin_security.py	4	pre-existing duplicated blocks of 100+ to
 backend/tests/test_chat_context_resolver.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/test_chat_permissions_context_resolver.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/test_chat_scope_digest_permissions.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/test_fedramp_controls.py	6	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+backend/tests/test_fedramp_controls.py	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/test_mediacms_provider.py	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/test_org_admin_gdpr.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/test_speaker_tenant_gating.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

@@ -21,10 +21,19 @@ import pytest
 from alembic.script import ScriptDirectory
 
 from app.db.migrations import get_alembic_config
+from tests import state_resets
 
 #: The issue's contract, stated independently of the constant that implements it so
 #: raising the constant past it is a visible test change, not a silent drift.
 _MAX_PROBE_TIMEOUT_S = 2.0
+
+
+@pytest.fixture(autouse=True)
+def _fresh_readiness_snapshot():
+    """/health/ready answers from a short-lived cached snapshot; no test may read another's."""
+    state_resets.reset_readiness_state()
+    yield
+    state_resets.reset_readiness_state()
 
 
 @pytest.fixture

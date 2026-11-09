@@ -376,6 +376,11 @@ class AWSTranscribeProvider(ASRProvider):
             aws_lang = _aws_language_code(config.language)
             if aws_lang:
                 job_kw["LanguageCode"] = aws_lang
+            elif self._model_name == "medical":
+                # StartMedicalTranscriptionJob requires LanguageCode and has no
+                # IdentifyLanguage; Amazon Transcribe Medical supports en-US only, so
+                # "auto" has exactly one possible answer.
+                job_kw["LanguageCode"] = "en-US"
             else:
                 job_kw["IdentifyLanguage"] = True
         settings_kw = self._job_settings(config)

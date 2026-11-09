@@ -371,3 +371,23 @@ def test_parse_diarized_groups_by_speaker_and_attaches_punctuation(monkeypatch, 
         ("hi!", "SPEAKER_00", 0.0, 0.5),
         ("yo ok", "SPEAKER_01", 1.0, 2.5),
     ]
+
+
+@pytest.mark.parametrize("language", ["auto", ""])
+def test_medical_model_with_auto_language_sends_en_us_not_identify_language(
+    monkeypatch, audio, language
+):
+    provider, stub, _ = _setup(monkeypatch, model_name="medical")
+    stub.add_response(
+        "start_medical_transcription_job",
+        {"MedicalTranscriptionJob": {"MedicalTranscriptionJobName": "j"}},
+        _medical_start_params(),
+    )
+    stub.add_response(
+        "get_medical_transcription_job",
+        _job("COMPLETED", medical=True),
+        {"MedicalTranscriptionJobName": ANY},
+    )
+    with stub:
+        _run(provider, audio, language=language, enable_diarization=False)
+    stub.assert_no_pending_responses()

@@ -3,7 +3,8 @@
   "entry": [
     "src/routes/**/+{page,layout,error}.{svelte,ts,js}",
     "src/app.html",
-    "scripts/**/*.{js,mjs}"
+    "scripts/**/*.{js,mjs}",
+    "src/test-mocks/**/*.{ts,svelte}"
   ],
   "project": ["src/**/*.{ts,js,svelte}"],
   "ignoreDependencies": [],

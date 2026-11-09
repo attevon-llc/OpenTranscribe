@@ -2045,7 +2045,7 @@ fresh_list() {
       n="$(basename "$f" .yml)"
       if $names_only; then echo "$n"; continue; fi
       proj="$(fresh_project_name "$n")"
-      running="$(docker ps --filter "name=^${proj}-" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')"
+      running="$(docker ps --filter "label=com.docker.compose.project=${proj}" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')"
       offset="$(fresh_read_offset "$n")"
       if [ "$offset" -ne 0 ]; then
         ports="port offset +${offset} → frontend $((${FRONTEND_PORT:-5173} + offset)), backend $((${BACKEND_PORT:-5174} + offset))"
@@ -2083,7 +2083,7 @@ fresh_destroy() {
   local vols
   vols="$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep "^${proj}_" || true)"
   local containers
-  containers="$(docker ps -a --filter "name=^${proj}-" --format '{{.Names}}' 2>/dev/null || true)"
+  containers="$(docker ps -a --filter "label=com.docker.compose.project=${proj}" --format '{{.Names}}' 2>/dev/null || true)"
 
   echo "⚠️  About to DESTROY fresh deployment '${name}' (project ${proj})."
   echo ""
@@ -3999,10 +3999,25 @@ purge_system() {
   echo "🗑️ Stopping and removing containers, volumes, and images..."
   stop_all_containers down -v --rmi all
 
-  # Remove any remaining OpenTranscribe images
+  # Remove any remaining images of THIS project. A bare `reference=*opentranscribe*`
+  # glob also matched every --fresh stack's `:otfresh-<name>` tags and unrelated projects'
+  # images, so the set is limited to (1) the refs this checkout's compose chains resolve
+  # (minus --fresh tags) and (2) images compose labelled with this project's names.
   echo "🗑️ Removing any remaining OpenTranscribe images..."
-  docker images --filter "reference=transcribe-app*" -q | xargs -r docker rmi -f
-  docker images --filter "reference=*opentranscribe*" -q | xargs -r docker rmi -f
+  local _imgs _chain _p
+  _imgs="$( {
+    for _chain in "-f docker-compose.yml -f docker-compose.override.yml" \
+                  "-f docker-compose.yml -f docker-compose.prod.yml"; do
+      # shellcheck disable=SC2086
+      COMPOSE_PROFILES="*" docker compose $_chain config --images 2>/dev/null || true
+    done
+    for _p in "${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" "${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}"; do
+      docker images --filter "label=com.docker.compose.project=${_p}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true
+    done
+  } | grep -v ':otfresh-' | grep -v ':<none>' | sort -u || true)"
+  if [ -n "$_imgs" ]; then
+    echo "$_imgs" | xargs -r docker rmi -f || true
+  fi
 
   echo "✅ Complete purge finished. Everything removed."
 }

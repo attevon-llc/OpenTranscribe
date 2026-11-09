@@ -46,7 +46,7 @@ _FINDING = re.compile(r"^(?P<path>.+?):(?P<line>\d+): unused (?P<kind>[\w ]+?) '
 
 
 def _vulture(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # nosec B603  fixed argv, our own interpreter
+    return subprocess.run(  # fixed argv, our own interpreter  # nosec B603
         [sys.executable, '-m', 'vulture', *args],
         cwd=root,
         capture_output=True,

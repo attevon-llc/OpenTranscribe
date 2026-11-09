@@ -1,6 +1,0 @@
-.github/workflows/release-validate.yml	1	reword planned
-backend/Dockerfile.lite	1	reword planned
-backend/Dockerfile.prod	1	reword planned
-scripts/release/65-rehearse.sh	1	reword planned
-scripts/release/70-tag.sh	1	reword planned
-scripts/release/patch-lib.sh	1	reword planned

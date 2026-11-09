@@ -170,7 +170,7 @@ async def _probe_local_endpoint(spec: _LocalEndpointSpec) -> dict[str, Any]:
 @limiter.limit(get_llm_outbound_rate_limit(), key_func=user_or_ip_key)
 async def get_local_endpoints(
     request: Request,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Report which of this repo's own dev/test LLM overlay services are up right now.

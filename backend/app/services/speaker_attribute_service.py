@@ -94,15 +94,15 @@ class SpeakerAttributeService:
             if hf_offline_requested():
                 from_pretrained_kwargs["local_files_only"] = True
 
-            # nosec B615 - MODEL_NAME is a fixed, trusted repo (Apache-2.0, ~380MB)
+            # MODEL_NAME is a fixed, trusted repo (Apache-2.0, ~380MB)
             # pre-downloaded into the controlled MODEL_CACHE_DIR by scripts/download-models.py;
             # not user-controlled. Same posture as the diarizer/embedding from_pretrained calls.
-            self._feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(  # nosec B615
+            self._feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
                 MODEL_NAME, **from_pretrained_kwargs
             )
             # Typed as a plain Module: transformers 5's decorated PreTrainedModel.to() makes
             # mypy expect a model as its first argument; the call still dispatches to it.
-            model: torch.nn.Module = Wav2Vec2ForSequenceClassification.from_pretrained(  # nosec B615
+            model: torch.nn.Module = Wav2Vec2ForSequenceClassification.from_pretrained(
                 MODEL_NAME, **from_pretrained_kwargs
             )
             model.eval()

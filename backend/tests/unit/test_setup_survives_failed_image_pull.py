@@ -9,7 +9,7 @@ when MinIO's quay.io repository began refusing anonymous pulls.
 from __future__ import annotations
 
 import re
-import subprocess  # nosec B404 - runs the repo's own script with stubbed functions
+import subprocess  # runs the repo's own script with stubbed functions  # nosec B404
 from pathlib import Path
 
 import pytest
@@ -46,7 +46,7 @@ main() {{
 }}
 main
 """
-    proc = subprocess.run(  # nosec B603 B607 - fixed argv, no untrusted input
+    proc = subprocess.run(  # fixed argv, no untrusted input  # nosec B603 B607
         ["bash", "-c", driver], capture_output=True, text=True, timeout=30, check=False
     )
 

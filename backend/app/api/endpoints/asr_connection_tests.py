@@ -92,7 +92,7 @@ def _create_asr_provider(
 def test_asr_connection(
     request: Request,
     settings_in: schemas.ASRConnectionTestRequest,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Test an ad-hoc ASR connection without saving configuration."""
@@ -140,7 +140,7 @@ def test_asr_connection(
 def test_saved_asr_config(
     request: Request,
     config_uuid: UUID,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> Any:

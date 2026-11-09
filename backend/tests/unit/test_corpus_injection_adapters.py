@@ -351,7 +351,7 @@ class TestAgainstTheRealCorpus:
 
 
 def _count_ami_segments(meeting_id: str) -> int:
-    import xml.etree.ElementTree as ET  # nosec B405 — local corpus fixture
+    import xml.etree.ElementTree as ET  # local corpus fixture  # nosec B405
 
     base = NAS_ROOT / "ami" / "ami_public_manual_1.6.2" / "segments"
     total = 0

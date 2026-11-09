@@ -74,7 +74,7 @@ EXCLUDED_PREFIXES = (
 
 def tracked_files(repo_root: Path) -> list[str]:
     try:
-        out = subprocess.run(  # nosec B603 B607  fixed argv, git from PATH
+        out = subprocess.run(  # fixed argv, git from PATH  # nosec B603 B607
             ['git', 'ls-files', '-z'],
             cwd=repo_root,
             capture_output=True,

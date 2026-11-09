@@ -32,7 +32,7 @@ import importlib
 import json
 import os
 import signal
-import subprocess  # nosec B404 - starts a celery worker under test, fixed argv
+import subprocess  # starts a celery worker under test, fixed argv  # nosec B404
 import sys
 import time
 import uuid
@@ -132,7 +132,7 @@ def workers():
             "PYTHONPATH": str(BACKEND),
             **extra_env,
         }
-        proc = subprocess.Popen(  # nosec B603 - fixed argv, test-owned process
+        proc = subprocess.Popen(  # fixed argv, test-owned process  # nosec B603
             [
                 sys.executable,
                 "-m",

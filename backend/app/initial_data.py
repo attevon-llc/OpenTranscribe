@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 #: The well-known development credential. NEVER seeded in a hardened environment.
 _DEV_ADMIN_EMAIL = "admin@example.com"
-_DEV_ADMIN_PASSWORD = "password"  # noqa: S105  # nosec B105  # gitleaks:allow
+_DEV_ADMIN_PASSWORD = "password"  # noqa: S105  # gitleaks:allow  # nosec B105
 
 
 def _resolve_bootstrap_admin() -> tuple[str, str, bool]:

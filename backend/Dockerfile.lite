@@ -73,7 +73,7 @@ FROM diar-native-bin-${TARGETARCH} AS diar-native-bin
 # **It was measured, and it came back clean**: on NATIVE aarch64 (Apple M2 Max; QEMU cannot
 # answer this, it dispatches the wrong kernels) 0.3.29 scored **0.0669 DER, identical to a
 # 0.3.26 control and to amd64**, with a 2,016-case `cblas_?gemm` probe over the forwarding
-# shapes finding 0 mismatches. Do not describe this stage as repairing a live 48.7% defect.
+# shapes show 0 mismatches. Do not describe this stage as repairing a live 48.7% defect.
 #
 # What it does close: the **unpinned drift** (nothing pins `libopenblas0`, so a future
 # Debian bump silently re-forms the pairing) and the **Graviton3/4 SVE** kernels that no

@@ -22,7 +22,7 @@ KMS = "MINIO_KMS_SECRET_KEY=opentranscribe-key:abc\nMINIO_KMS_AUTO_ENCRYPTION=on
 def _run(tmp_path: Path, env_text: str) -> subprocess.CompletedProcess[str]:
     env_file = tmp_path / "scratch.env"
     env_file.write_text(env_text)
-    return subprocess.run(  # nosec B603 B607  fixed argv, hermetic temp file
+    return subprocess.run(  # fixed argv, hermetic temp file  # nosec B603 B607
         ["bash", "-c", f'. "{LIB}"; ot_require_service_credentials "{env_file}"'],
         capture_output=True,
         text=True,

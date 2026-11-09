@@ -160,7 +160,7 @@ def search_users(
     *,
     request: Request,
     q: str = Query(..., min_length=2, max_length=100, description="Search query (min 2 chars)"),
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> Any:

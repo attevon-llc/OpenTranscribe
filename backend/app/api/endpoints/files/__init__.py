@@ -163,11 +163,11 @@ router.include_router(post_processing_router, prefix="", tags=["files"])
 
 @router.post("", response_model=MediaFileSchema, dependencies=[Depends(refuse_under_support_grant)])
 async def upload_media_file(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
-    request: Request = None,  # type: ignore[assignment]
 ) -> JSONResponse:
     """Upload a media file for transcription"""
     current_user = ctx.user

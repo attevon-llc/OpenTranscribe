@@ -137,7 +137,7 @@ fi
 record changelog-section pass
 
 echo -e "${YELLOW}About to create and PUSH annotated tag $VERSION${NC}" >&2
-# ⚠️ Both of these were UNCHECKED (issue #784 finding N4) — this file is
+# ⚠️ Both of these were UNCHECKED (issue #784) — this file is
 # `set -uo pipefail` with no `-e`, so a failed `git tag`/`git push` fell
 # through to `record ... pass` and `exit 0`. Adding the branch cut below on top
 # of that unchecked pair would have doubled the hole, so it is closed first.

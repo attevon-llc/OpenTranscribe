@@ -62,7 +62,7 @@ source "$SCRIPT_DIR/criteria-lib.sh"
 # live-stack check for why a naive prefix match false-positives on unrelated
 # containers (e.g. "opentranscribe-homepage").
 #
-# ⚠️ BOTH project labels, not just one (issue #783 finding N1) -- reusing the SAME
+# ⚠️ BOTH project labels, not just one (issue #783) -- reusing the SAME
 # ${OPENTR_STOP_PROJECT_LABEL:-opentranscribe} / ${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}
 # mechanism 10-preflight.sh's live-stack check already uses, not a second definition of
 # "what are the two legitimate project names" to drift out of sync. A repo clone's

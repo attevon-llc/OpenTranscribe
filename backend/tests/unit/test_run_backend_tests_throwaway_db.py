@@ -17,7 +17,7 @@ import os
 import re
 import shutil
 import signal
-import subprocess  # nosec B404 - runs the checked-in script against stubbed docker
+import subprocess  # runs the checked-in script against stubbed docker  # nosec B404
 import sys
 from pathlib import Path
 from types import ModuleType

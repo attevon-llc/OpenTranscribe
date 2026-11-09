@@ -7,7 +7,7 @@ image built" and ``release.sh build`` passed with no arm64 image; only ``scan`` 
 
 from __future__ import annotations
 
-import subprocess  # nosec B404 - runs the repo's own script with a stubbed leg builder
+import subprocess  # runs the repo's own script with a stubbed leg builder  # nosec B404
 from pathlib import Path
 
 import pytest
@@ -29,7 +29,7 @@ if {fn}; then echo "FN_OK"; else echo "FN_FAILED"; fi
 
 
 def _run(fn: str) -> subprocess.CompletedProcess:
-    return subprocess.run(  # nosec B603 B607 - fixed argv
+    return subprocess.run(  # fixed argv  # nosec B603 B607
         ["bash", "-c", _DRIVER.format(script=SCRIPT, fn=fn)],
         capture_output=True,
         cwd=SCRIPT.parents[1],

@@ -344,7 +344,7 @@ def get_metadata_filters_endpoint(
 @limiter.limit(get_directory_rate_limit(), key_func=user_or_ip_key)
 def list_file_owners(
     request: Request,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate

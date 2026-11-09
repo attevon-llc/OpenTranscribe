@@ -187,7 +187,7 @@ def test_diarize_capable_worker_actually_reaches_native_sidecar(
             "service in docker-compose.diar-native.yml"
         )
 
-        completed = subprocess.run(  # nosec B603 -- fixed argv, no shell
+        completed = subprocess.run(  # fixed argv, no shell  # nosec B603
             ["docker", "logs", worker_container, "--since", start_time],
             capture_output=True,
             text=True,

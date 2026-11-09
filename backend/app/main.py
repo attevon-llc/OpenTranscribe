@@ -429,14 +429,14 @@ app.add_exception_handler(StarletteHTTPException, handle_http_exception)
 app.add_exception_handler(HoldRefusedError, hold_refused_handler)
 
 # FastAPI's default 422, with any echoed credential removed from the body (core/validation_errors).
-app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
+app.add_exception_handler(RequestValidationError, validation_error_handler)
 
 # Include the API router
 app.include_router(api_router, prefix=settings.API_PREFIX)
 
 # Set up rate limiting
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 # Prometheus scrape endpoint, mounted at ROOT (no API_PREFIX) next to /health.

@@ -84,10 +84,7 @@ def get_user_configurations(
                 active_config_uuid = UUID(str(active_config.uuid))
 
     # Convert to public schemas
-    public_configs: list[schemas.UserLLMSettingsPublic] = []
-    for config in configurations:
-        # Let FastAPI handle the conversion automatically
-        public_configs.append(config)  # type: ignore[arg-type]
+    public_configs = [schemas.UserLLMSettingsPublic.model_validate(c) for c in configurations]
 
     # Fetch shared configs from OTHER users in the caller's active tenant
     shared_configs = (

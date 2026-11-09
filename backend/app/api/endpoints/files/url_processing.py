@@ -33,6 +33,7 @@ from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed
 from app.models.media import MediaFile
 from app.models.user import User
+from app.schemas.media import MediaFile as MediaFileSchema
 from app.services.request_context import RequestContext
 from app.tasks.media_playlist_processing import process_youtube_playlist_task
 from app.tasks.transcription.requested_options import apply_requested_options
@@ -331,8 +332,7 @@ def process_media_url(
         _notify_url_file_created(media_file, current_user.id)
 
         logger.info(f"Created placeholder MediaFile {media_file.id} for media URL processing")
-        # ORM MediaFile serialized to the schema via response_model (from_attributes)
-        return media_file  # type: ignore[return-value]
+        return MediaFileSchema.model_validate(media_file)
 
     except (HTTPException, DomainError):
         raise

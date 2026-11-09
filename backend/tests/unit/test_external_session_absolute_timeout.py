@@ -45,6 +45,7 @@ from app.auth.provider_registry import register_verifier
 from app.auth.provider_registry import unregister_verifier
 from app.core.config import settings
 from app.models.user import User
+from tests.helpers import fake_websocket
 
 PROVIDER = "oidc"
 TOKEN = "an-external-token"  # an opaque test string  # nosec B105
@@ -240,12 +241,12 @@ class TestTheOtherTwoCallSites:
     def test_the_websocket_refuses_an_expired_session(self, db_session):
         register_verifier(PROVIDER, _Verifier(_identity(auth_time=_stale())))
 
-        assert ws_module._try_authenticate_token(TOKEN, db_session) is None
+        assert ws_module._try_authenticate_token(TOKEN, db_session, fake_websocket()) is None
 
     def test_the_websocket_accepts_a_fresh_session(self, db_session):
         identity = _register(auth_time=_fresh())
 
-        user = ws_module._try_authenticate_token(TOKEN, db_session)
+        user = ws_module._try_authenticate_token(TOKEN, db_session, fake_websocket())
 
         assert user is not None and user.external_id == identity.external_id
 

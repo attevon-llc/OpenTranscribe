@@ -28,6 +28,7 @@ from app.models.speaker import Speaker
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.user import User
+from app.schemas.collection import Collection as CollectionSchema
 from app.schemas.media import MediaFileDetail
 from app.schemas.speaker import Speaker as SpeakerResponseSchema
 from app.schemas.tag import Tag as TagSchema
@@ -295,7 +296,7 @@ def _build_media_file_response(
     response.audio_language_mismatch = language_mismatch(
         db_file.language, response.audio_track_language
     )
-    response.collections = collections  # type: ignore[assignment]
+    response.collections = [CollectionSchema.model_validate(c) for c in collections]
     # Validated into the response schema here, while the instances are loaded: that is
     # what maps the internal user/file ids to UUIDs. Assigning the ORM rows directly
     # left serialization to whatever the instance held at response time.

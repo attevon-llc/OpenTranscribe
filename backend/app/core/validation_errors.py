@@ -43,8 +43,10 @@ def scrub_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """FastAPI's default 422 body, minus any echoed credential."""
+    if not isinstance(exc, RequestValidationError):
+        raise exc
     return JSONResponse(
         status_code=422,
         content={"detail": jsonable_encoder(scrub_errors(list(exc.errors())))},

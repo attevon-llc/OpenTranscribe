@@ -249,7 +249,7 @@ def create_prepared_record(
     # Create the database record
     db_file = create_media_file_record(
         db,
-        file_metadata,  # type: ignore[arg-type]
+        file_metadata,
         current_user,
         request.file_size,
         organization_id,

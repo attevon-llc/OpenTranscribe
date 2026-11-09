@@ -240,6 +240,14 @@ class UserASRSettingsUpdate(BaseModel):
     is_active: bool | None = None
     is_shared: bool | None = None
 
+    @field_validator("name", "provider", "model_name", "is_active", "is_shared", mode="before")
+    @classmethod
+    def reject_explicit_null(cls, v: object) -> object:
+        """Omit these to leave them alone; their columns are NOT NULL, so null has no meaning."""
+        if v is None:
+            raise ValueError("may be omitted but not null")
+        return v
+
     @field_validator("api_key")
     @classmethod
     def validate_api_key(cls, v: str | None) -> str | None:

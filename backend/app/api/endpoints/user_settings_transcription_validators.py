@@ -7,12 +7,12 @@ from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app import models
 from app.core.constants import DEFAULT_DIARIZATION_SOURCE
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
 from app.core.languages import LLM_OUTPUT_LANGUAGES
 from app.core.languages import WHISPER_LANGUAGES
 from app.schemas.transcription_settings import TranscriptionSettings
+from app.services.user_setting_queries import user_setting_values
 
 
 def _validate_speaker_range(
@@ -131,16 +131,7 @@ def _refuse_unusable_speaker_selection(
     from app.services.pipeline_plan_inputs import SOURCE_KEY
     from app.services.pipeline_plan_inputs import plan_for_user
 
-    stored = {
-        str(key): str(value)
-        for key, value in db.query(models.UserSetting.setting_key, models.UserSetting.setting_value)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key.in_([SOURCE_KEY, DIARIZER_CONFIG_KEY]),
-        )
-        .all()
-        if value
-    }
+    stored = user_setting_values(db, user_id, [SOURCE_KEY, DIARIZER_CONFIG_KEY])
     stored_source = stored.get(SOURCE_KEY, DEFAULT_DIARIZATION_SOURCE)
     source = str(update_data.get("diarization_source", stored_source))
     config_uuid = (

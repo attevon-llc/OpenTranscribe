@@ -11,11 +11,15 @@ from app import schemas
 from app.services.bedrock_settings import connection_from_encrypted
 from app.services.bedrock_settings import merge_stored
 from app.services.bedrock_settings import pack_stored
+from app.services.llm_config_queries import deactivate_other_llm_configs
+from app.services.llm_config_queries import find_own_llm_config
+from app.services.llm_config_queries import llm_config_is_visible
 from app.services.request_context import RequestContext
+from app.services.user_setting_queries import delete_settings_holding_value
+from app.services.user_setting_queries import upsert_user_setting
 from app.services.uuid_helpers import get_llm_config_by_uuid
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
-from app.utils.tenant_sharing import shared_visible_in_tenant
 
 _AWS_FIELDS = (
     "aws_region",
@@ -89,27 +93,14 @@ def _enrich_with_owner(
     }
 
 
-def _visible_to(ctx: RequestContext) -> Any:
-    """Configs the caller may see or use: their own, or shared within their active tenant."""
-    return shared_visible_in_tenant(
-        models.UserLLMSettings.user_id,
-        models.UserLLMSettings.is_shared,
-        ctx.user.id,
-        ctx.org_id,
-    )
-
-
 def _get_accessible_config(db: Session, config_uuid: UUID | str, ctx: RequestContext) -> Any:
     """Load a config the caller owns or that is shared within the caller's tenant.
 
     Another tenant's shared config answers exactly like another user's private one.
     """
     user_config = get_llm_config_by_uuid(db, config_uuid)
-    if user_config.user_id != ctx.user.id and (
-        db.query(models.UserLLMSettings.id)
-        .filter(models.UserLLMSettings.id == user_config.id, _visible_to(ctx))
-        .first()
-        is None
+    if user_config.user_id != ctx.user.id and not llm_config_is_visible(
+        db, user_config.id, ctx.user.id, ctx.org_id
     ):
         raise HTTPException(status_code=403, detail="Not authorized to access this configuration")
     return user_config
@@ -119,13 +110,7 @@ def _clear_shared_active_references(
     db: Session, config_id: int, setting_key: str, *, exclude_user_id: int | None = None
 ) -> None:
     """Remove UserSetting rows pointing to a deleted/unshared config (for non-owners)."""
-    q = db.query(models.UserSetting).filter(
-        models.UserSetting.setting_key == setting_key,
-        models.UserSetting.setting_value == str(config_id),
-    )
-    if exclude_user_id is not None:
-        q = q.filter(models.UserSetting.user_id != exclude_user_id)
-    q.delete(synchronize_session=False)
+    delete_settings_holding_value(db, setting_key, str(config_id), exclude_user_id=exclude_user_id)
 
 
 def _set_active_configuration(db: Session, user_id: int, config_id: int) -> None:
@@ -156,49 +141,20 @@ def _set_active_configuration(db: Session, user_id: int, config_id: int) -> None
     by a non-owner (issue #620 item 8d).
     """
     # Check if setting already exists
-    existing_setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == "active_llm_config_id",
-        )
-        .first()
-    )
-
-    if existing_setting:
-        existing_setting.setting_value = str(config_id)
-        db.add(existing_setting)
-    else:
-        new_setting = models.UserSetting(
-            user_id=user_id,
-            setting_key="active_llm_config_id",
-            setting_value=str(config_id),
-        )
-        db.add(new_setting)
+    upsert_user_setting(db, user_id, "active_llm_config_id", config_id)
 
     # Exclusive toggle: every OTHER config of this user's own is deactivated in the same
     # transaction. `synchronize_session=False` matches this file's existing bulk-update
     # convention (`_clear_shared_active_references`) — cheap here since a user's LLM
     # config count is always small, and `config_id` is excluded so it can never stomp the
     # explicit activation below.
-    db.query(models.UserLLMSettings).filter(
-        models.UserLLMSettings.user_id == user_id,
-        models.UserLLMSettings.id != config_id,
-        models.UserLLMSettings.is_active.is_(True),
-    ).update({"is_active": False}, synchronize_session=False)
+    deactivate_other_llm_configs(db, user_id, config_id)
 
     # Set the target row True via the ORM (not the bulk statement above) so an
     # already-loaded instance in THIS session — e.g. the caller's own `user_config` —
     # picks up the change through SQLAlchemy's identity map, rather than returning a
     # stale `is_active` in the response the caller builds right after this call.
-    target = (
-        db.query(models.UserLLMSettings)
-        .filter(
-            models.UserLLMSettings.user_id == user_id,
-            models.UserLLMSettings.id == config_id,
-        )
-        .first()
-    )
+    target = find_own_llm_config(db, user_id, config_id)
     if target is not None and not target.is_active:
         target.is_active = True
         db.add(target)

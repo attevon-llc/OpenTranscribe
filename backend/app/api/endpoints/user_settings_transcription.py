@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.user_settings_common import _upsert_user_setting
 from app.api.endpoints.user_settings_transcription_validators import (
     _refuse_unusable_speaker_selection,
 )
@@ -49,11 +48,33 @@ from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
 from app.services import system_settings_service
 from app.services.transcription_defaults import get_deployment_vad_defaults
+from app.services.user_setting_queries import delete_user_settings
+from app.services.user_setting_queries import list_user_settings
+from app.services.user_setting_queries import upsert_user_setting
 from app.utils.lite_mode import is_lite_deployment
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_TRANSCRIPTION_DB_KEYS = [
+    "transcription_min_speakers",
+    "transcription_max_speakers",
+    "transcription_speaker_prompt_behavior",
+    "transcription_garbage_cleanup_enabled",
+    "transcription_garbage_cleanup_threshold",
+    "transcription_source_language",
+    "transcription_translate_to_english",
+    "transcription_llm_output_language",
+    "transcription_vad_threshold",
+    "transcription_vad_min_silence_ms",
+    "transcription_vad_min_speech_ms",
+    "transcription_vad_speech_pad_ms",
+    "transcription_hallucination_silence_threshold",
+    "transcription_repetition_penalty",
+    "transcription_diarization_source",
+    "transcription_diarization_asr_config_uuid",
+]
 
 
 # Default values for transcription settings
@@ -89,33 +110,7 @@ def get_transcription_settings(
         source_language, translate_to_english, and llm_output_language
     """
     # Get all transcription-related settings for the user
-    transcription_settings = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(
-                [
-                    "transcription_min_speakers",
-                    "transcription_max_speakers",
-                    "transcription_speaker_prompt_behavior",
-                    "transcription_garbage_cleanup_enabled",
-                    "transcription_garbage_cleanup_threshold",
-                    "transcription_source_language",
-                    "transcription_translate_to_english",
-                    "transcription_llm_output_language",
-                    "transcription_vad_threshold",
-                    "transcription_vad_min_silence_ms",
-                    "transcription_vad_min_speech_ms",
-                    "transcription_vad_speech_pad_ms",
-                    "transcription_hallucination_silence_threshold",
-                    "transcription_repetition_penalty",
-                    "transcription_diarization_source",
-                    "transcription_diarization_asr_config_uuid",
-                ]
-            ),
-        )
-        .all()
-    )
+    transcription_settings = list_user_settings(db, current_user.id, _TRANSCRIPTION_DB_KEYS)
 
     # Build settings map from database results. A value the deployment has locked
     # (issue #1109) is dropped so the response reports the default that applies.
@@ -317,7 +312,7 @@ def update_transcription_settings(
     for frontend_key, value in update_data.items():
         db_key, transform = setting_mappings[frontend_key]
         db_value = transform(value) if transform else value
-        _upsert_user_setting(db, current_user.id, db_key, db_value)
+        upsert_user_setting(db, current_user.id, db_key, db_value)
 
     db.commit()
 
@@ -348,13 +343,8 @@ def reset_transcription_settings(
         if group is not None
         else tuple(f for grp in TRANSCRIPTION_SETTING_GROUPS.values() for f in grp)
     )
-    deleted_count = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_([f"transcription_{f}" for f in fields]),
-        )
-        .delete(synchronize_session=False)
+    deleted_count = delete_user_settings(
+        db, current_user.id, [f"transcription_{f}" for f in fields]
     )
 
     db.commit()

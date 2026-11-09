@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from app import models
 from app.api.deps_context import get_base_context
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.user_settings_common import _upsert_user_setting
 from app.core.env import env_bool
 from app.core.env import is_truthy
 from app.db.base import get_db
@@ -21,6 +20,9 @@ from app.services.auto_llm_settings import SPEAKER_ID_USER_KEY
 from app.services.auto_llm_settings import resolve_auto_llm_flags
 from app.services.request_context import RequestContext
 from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
+from app.services.user_setting_queries import delete_user_settings
+from app.services.user_setting_queries import list_user_settings
+from app.services.user_setting_queries import upsert_user_setting
 
 router = APIRouter()
 
@@ -49,14 +51,7 @@ def get_speaker_attribute_settings(
     layer. The user's own stored choice is untouched, so it applies again once the
     restriction is lifted.
     """
-    user_settings = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(_SPEAKER_ATTR_DB_KEYS),
-        )
-        .all()
-    )
+    user_settings = list_user_settings(db, current_user.id, _SPEAKER_ATTR_DB_KEYS)
 
     settings_map: dict[str, str] = {str(s.setting_key): str(s.setting_value) for s in user_settings}
     # The same resolver the pipeline uses (user > system default > default), so the form
@@ -101,7 +96,7 @@ def update_speaker_attribute_settings(
     }
 
     for frontend_key, value in update_data.items():
-        _upsert_user_setting(db, current_user.id, setting_mappings[frontend_key], value)
+        upsert_user_setting(db, current_user.id, setting_mappings[frontend_key], value)
 
     db.commit()
 
@@ -114,14 +109,7 @@ def reset_speaker_attribute_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Reset speaker attribute settings to defaults."""
-    deleted_count = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(_SPEAKER_ATTR_DB_KEYS),
-        )
-        .delete(synchronize_session=False)
-    )
+    deleted_count = delete_user_settings(db, current_user.id, _SPEAKER_ATTR_DB_KEYS)
 
     db.commit()
 

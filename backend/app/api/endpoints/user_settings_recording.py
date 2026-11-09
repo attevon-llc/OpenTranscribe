@@ -15,8 +15,13 @@ from app.core.constants import DEFAULT_RECORDING_QUALITY
 from app.core.constants import VALID_RECORDING_DURATIONS
 from app.core.constants import VALID_RECORDING_QUALITIES
 from app.db.base import get_db
+from app.services.user_setting_queries import delete_user_settings
+from app.services.user_setting_queries import list_user_settings
+from app.services.user_setting_queries import upsert_user_setting
 
 router = APIRouter()
+
+_RECORDING_DB_KEYS = ["recording_max_duration", "recording_quality", "recording_auto_stop"]
 
 
 # Default values for recording settings (when user hasn't set custom values)
@@ -42,16 +47,7 @@ def get_recording_settings(
         Dict containing max_recording_duration, recording_quality, and auto_stop_enabled
     """
     # Get all recording-related settings for the user
-    recording_settings = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(
-                ["recording_max_duration", "recording_quality", "recording_auto_stop"]
-            ),
-        )
-        .all()
-    )
+    recording_settings = list_user_settings(db, current_user.id, _RECORDING_DB_KEYS)
 
     # Build settings map from database results
     settings_map: dict[str, str] = {
@@ -143,23 +139,7 @@ def update_recording_settings(
         db_value = ("true" if value else "false") if isinstance(value, bool) else str(value)
 
         # Check if setting already exists
-        existing_setting = (
-            db.query(models.UserSetting)
-            .filter(
-                models.UserSetting.user_id == current_user.id,
-                models.UserSetting.setting_key == db_key,
-            )
-            .first()
-        )
-
-        if existing_setting:
-            existing_setting.setting_value = db_value
-            db.add(existing_setting)
-        else:
-            new_setting = models.UserSetting(
-                user_id=current_user.id, setting_key=db_key, setting_value=db_value
-            )
-            db.add(new_setting)
+        upsert_user_setting(db, current_user.id, db_key, db_value)
 
     db.commit()
 
@@ -175,16 +155,7 @@ def reset_recording_settings(
     """
     Reset user's recording settings to defaults (delete from database)
     """
-    deleted_count = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(
-                ["recording_max_duration", "recording_quality", "recording_auto_stop"]
-            ),
-        )
-        .delete(synchronize_session=False)
-    )
+    deleted_count = delete_user_settings(db, current_user.id, _RECORDING_DB_KEYS)
 
     db.commit()
 

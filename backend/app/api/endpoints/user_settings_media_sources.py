@@ -18,7 +18,11 @@ from app.schemas.media_source import UserMediaSourcesList
 from app.schemas.media_source import UserMediaSourceUpdate
 from app.services.media_source_access import own_source_with_origin
 from app.services.request_context import RequestContext
-from app.utils.tenant_sharing import owner_in_tenant
+from app.services.user_media_source_queries import count_media_sources
+from app.services.user_media_source_queries import find_own_media_source
+from app.services.user_media_source_queries import list_own_media_sources
+from app.services.user_media_source_queries import list_shared_media_sources
+from app.services.user_setting_queries import users_by_id
 
 router = APIRouter()
 
@@ -70,35 +74,14 @@ def get_media_sources(
     """Get user's own media sources and sources shared within the caller's active tenant."""
     current_user = ctx.user
     # Own sources
-    own_sources = (
-        db.query(models.UserMediaSource)
-        .filter(models.UserMediaSource.user_id == current_user.id)
-        .order_by(models.UserMediaSource.created_at.desc())
-        .all()
-    )
+    own_sources = list_own_media_sources(db, current_user.id)
 
     # Shared sources from other active users in the caller's tenant
-    shared_sources = (
-        db.query(models.UserMediaSource)
-        .join(models.User, models.User.id == models.UserMediaSource.user_id)
-        .filter(
-            models.UserMediaSource.is_shared.is_(True),
-            models.UserMediaSource.is_active.is_(True),
-            models.UserMediaSource.user_id != current_user.id,
-            models.User.is_active.is_(True),
-            owner_in_tenant(models.UserMediaSource.user_id, ctx.org_id),
-        )
-        .order_by(models.UserMediaSource.shared_at.desc().nullslast())
-        .all()
-    )
+    shared_sources = list_shared_media_sources(db, current_user.id, ctx.org_id)
 
     # Batch-fetch owners for shared source attribution
     owner_ids = {s.user_id for s in shared_sources}
-    owners = {}
-    if owner_ids:
-        owners = {
-            u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()
-        }
+    owners = users_by_id(db, owner_ids)
 
     return {
         "sources": [_media_source_to_response(s, current_user, is_own=True) for s in own_sources],
@@ -128,11 +111,7 @@ def create_media_source(
     from app.utils.encryption import test_encryption
 
     # Per-user rows (unlike admin's system-wide JSON list); enforce the per-user limit
-    existing_count = (
-        db.query(models.UserMediaSource)
-        .filter(models.UserMediaSource.user_id == current_user.id)
-        .count()
-    )
+    existing_count = count_media_sources(db, current_user.id)
     if existing_count >= 50:
         raise HTTPException(status_code=400, detail="Maximum number of media sources reached (50)")
     _reject_duplicate_origin(db, current_user.id, data.hostname)
@@ -189,14 +168,7 @@ def update_media_source(
     from app.utils.encryption import encrypt_api_key
     from app.utils.encryption import test_encryption
 
-    source = (
-        db.query(models.UserMediaSource)
-        .filter(
-            models.UserMediaSource.uuid == source_uuid,
-            models.UserMediaSource.user_id == current_user.id,
-        )
-        .first()
-    )
+    source = find_own_media_source(db, source_uuid, current_user.id)
     if not source:
         raise HTTPException(status_code=404, detail="Media source not found")
 
@@ -253,14 +225,7 @@ def delete_media_source(
     current_user: models.User = Depends(get_current_active_user),
 ) -> dict:
     """Delete a user media source. Owner only."""
-    source = (
-        db.query(models.UserMediaSource)
-        .filter(
-            models.UserMediaSource.uuid == source_uuid,
-            models.UserMediaSource.user_id == current_user.id,
-        )
-        .first()
-    )
+    source = find_own_media_source(db, source_uuid, current_user.id)
     if not source:
         raise HTTPException(status_code=404, detail="Media source not found")
 

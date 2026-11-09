@@ -11,8 +11,17 @@ from app import models
 from app.api.endpoints.auth import get_current_active_user
 from app.core.capabilities import require_capability
 from app.db.base import get_db
+from app.services.user_setting_queries import list_user_settings
+from app.services.user_setting_queries import upsert_user_setting
 
 router = APIRouter()
+
+_AUDIO_EXTRACTION_DB_KEYS = [
+    "audio_extraction_auto_extract",
+    "audio_extraction_threshold_mb",
+    "audio_extraction_remember_choice",
+    "audio_extraction_show_modal",
+]
 
 
 # Default values for audio extraction settings
@@ -42,21 +51,7 @@ def get_audio_extraction_settings(
         Dict containing auto_extract_enabled, extraction_threshold_mb, remember_choice, show_modal
     """
     # Get all audio extraction-related settings for the user
-    extraction_settings = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(
-                [
-                    "audio_extraction_auto_extract",
-                    "audio_extraction_threshold_mb",
-                    "audio_extraction_remember_choice",
-                    "audio_extraction_show_modal",
-                ]
-            ),
-        )
-        .all()
-    )
+    extraction_settings = list_user_settings(db, current_user.id, _AUDIO_EXTRACTION_DB_KEYS)
 
     # Build settings map from database results
     settings_map: dict[str, str] = {
@@ -149,23 +144,7 @@ def update_audio_extraction_settings(
         db_value = ("true" if value else "false") if isinstance(value, bool) else str(value)
 
         # Check if setting already exists
-        existing_setting = (
-            db.query(models.UserSetting)
-            .filter(
-                models.UserSetting.user_id == current_user.id,
-                models.UserSetting.setting_key == db_key,
-            )
-            .first()
-        )
-
-        if existing_setting:
-            existing_setting.setting_value = db_value
-            db.add(existing_setting)
-        else:
-            new_setting = models.UserSetting(
-                user_id=current_user.id, setting_key=db_key, setting_value=db_value
-            )
-            db.add(new_setting)
+        upsert_user_setting(db, current_user.id, db_key, db_value)
 
     db.commit()
 

@@ -26,18 +26,25 @@ from app.api.endpoints.llm_config_helpers import _encrypt_bedrock_fields
 from app.api.endpoints.llm_config_helpers import _enrich_with_owner
 from app.api.endpoints.llm_config_helpers import _get_accessible_config
 from app.api.endpoints.llm_config_helpers import _set_active_configuration
-from app.api.endpoints.llm_config_helpers import _visible_to
 from app.api.endpoints.llm_endpoint_safety import _assert_safe_llm_endpoint
 from app.db.base import get_db
 from app.services import llm_reasoning
+from app.services.llm_config_queries import count_own_llm_configs
+from app.services.llm_config_queries import delete_all_own_llm_configs
+from app.services.llm_config_queries import find_other_own_llm_config
+from app.services.llm_config_queries import find_own_llm_config_by_name
+from app.services.llm_config_queries import find_visible_llm_config
+from app.services.llm_config_queries import list_own_llm_configs
+from app.services.llm_config_queries import list_shared_llm_configs
 from app.services.request_context import RequestContext
+from app.services.user_setting_queries import find_user_setting
+from app.services.user_setting_queries import users_by_id
 from app.services.uuid_helpers import get_llm_config_by_uuid
 from app.services.uuid_helpers import require_resource_owner
 from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
-from app.utils.tenant_sharing import owner_in_tenant
 
 _config_router = APIRouter()
 _api_key_router = APIRouter()
@@ -54,32 +61,18 @@ def get_user_configurations(
     """
     current_user = ctx.user
     # Get all user configurations
-    configurations = (
-        db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.user_id == current_user.id)
-        .order_by(models.UserLLMSettings.created_at.desc())
-        .all()
-    )
+    configurations = list_own_llm_configs(db, current_user.id)
 
     # Get active configuration ID
-    active_setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key == "active_llm_config_id",
-        )
-        .first()
-    )
+    active_setting = find_user_setting(db, current_user.id, "active_llm_config_id")
 
     active_config_uuid: UUID | None = None
     if active_setting and active_setting.setting_value:
         with contextlib.suppress(ValueError):
             active_config_id = int(active_setting.setting_value)
             # Convert integer ID to UUID by finding the config
-            active_config = (
-                db.query(models.UserLLMSettings)
-                .filter(models.UserLLMSettings.id == active_config_id, _visible_to(ctx))
-                .first()
+            active_config = find_visible_llm_config(
+                db, active_config_id, current_user.id, ctx.org_id
             )
             if active_config:
                 active_config_uuid = UUID(str(active_config.uuid))
@@ -88,24 +81,11 @@ def get_user_configurations(
     public_configs = [schemas.UserLLMSettingsPublic.model_validate(c) for c in configurations]
 
     # Fetch shared configs from OTHER users in the caller's active tenant
-    shared_configs = (
-        db.query(models.UserLLMSettings)
-        .filter(
-            models.UserLLMSettings.is_shared.is_(True),
-            models.UserLLMSettings.user_id != current_user.id,
-            owner_in_tenant(models.UserLLMSettings.user_id, ctx.org_id),
-        )
-        .order_by(models.UserLLMSettings.shared_at.desc())
-        .all()
-    )
+    shared_configs = list_shared_llm_configs(db, current_user.id, ctx.org_id)
 
     # Batch-fetch owners for attribution
     owner_ids = {c.user_id for c in shared_configs}
-    owners = (
-        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()}
-        if owner_ids
-        else {}
-    )
+    owners = users_by_id(db, owner_ids)
     public_shared = [
         _enrich_with_owner(c, owners.get(c.user_id), is_own=False) for c in shared_configs
     ]
@@ -147,30 +127,17 @@ def get_llm_settings_status(
     """
     current_user = ctx.user
     # Get all own configurations
-    total_configs = (
-        db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.user_id == current_user.id)
-        .count()
-    )
+    total_configs = count_own_llm_configs(db, current_user.id)
 
     # Get active configuration (may be own or shared)
-    active_setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key == "active_llm_config_id",
-        )
-        .first()
-    )
+    active_setting = find_user_setting(db, current_user.id, "active_llm_config_id")
 
     active_config = None
     if active_setting and active_setting.setting_value:
         try:
             active_config_id = int(active_setting.setting_value)
-            active_config = (
-                db.query(models.UserLLMSettings)
-                .filter(models.UserLLMSettings.id == active_config_id, _visible_to(ctx))
-                .first()
+            active_config = find_visible_llm_config(
+                db, active_config_id, current_user.id, ctx.org_id
             )
         except ValueError:
             pass
@@ -219,14 +186,7 @@ def create_user_llm_configuration(
     _assert_safe_llm_endpoint(settings_in.base_url, "LLM configuration create")
 
     # Check if user already has a configuration with this name
-    existing_config = (
-        db.query(models.UserLLMSettings)
-        .filter(
-            models.UserLLMSettings.user_id == current_user.id,
-            models.UserLLMSettings.name == settings_in.name,
-        )
-        .first()
-    )
+    existing_config = find_own_llm_config_by_name(db, current_user.id, settings_in.name)
 
     if existing_config:
         raise HTTPException(
@@ -270,11 +230,7 @@ def create_user_llm_configuration(
     db.refresh(user_config)
 
     # If this is the user's first configuration, make it active
-    existing_count = (
-        db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.user_id == current_user.id)
-        .count()
-    )
+    existing_count = count_own_llm_configs(db, current_user.id)
 
     if existing_count == 1:  # This is the first config
         _set_active_configuration(db, current_user.id, user_config.id)
@@ -313,14 +269,8 @@ def update_user_llm_configuration(
 
     # Check for name conflicts if name is being updated
     if settings_in.name and settings_in.name != user_config.name:
-        existing_config = (
-            db.query(models.UserLLMSettings)
-            .filter(
-                models.UserLLMSettings.user_id == current_user.id,
-                models.UserLLMSettings.name == settings_in.name,
-                models.UserLLMSettings.id != config_id,
-            )
-            .first()
+        existing_config = find_own_llm_config_by_name(
+            db, current_user.id, settings_in.name, exclude_id=config_id
         )
 
         if existing_config:
@@ -437,14 +387,7 @@ def delete_user_llm_configuration(
         )
 
     # Check if this is the active configuration
-    active_setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key == "active_llm_config_id",
-        )
-        .first()
-    )
+    active_setting = find_user_setting(db, current_user.id, "active_llm_config_id")
 
     is_active = False
     if active_setting and active_setting.setting_value == str(config_id):
@@ -457,14 +400,7 @@ def delete_user_llm_configuration(
     # or set another configuration as active if available
     if is_active:
         # Find another configuration to set as active
-        remaining_config = (
-            db.query(models.UserLLMSettings)
-            .filter(
-                models.UserLLMSettings.user_id == current_user.id,
-                models.UserLLMSettings.id != config_id,
-            )
-            .first()
-        )
+        remaining_config = find_other_own_llm_config(db, current_user.id, config_id)
 
         if remaining_config:
             # Set the first remaining config as active
@@ -488,21 +424,10 @@ def delete_all_user_configurations(
     Delete all user's LLM configurations (revert to system defaults)
     """
     # Delete all configurations
-    deleted_count = (
-        db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.user_id == current_user.id)
-        .delete()
-    )
+    deleted_count = delete_all_own_llm_configs(db, current_user.id)
 
     # Delete active setting
-    active_setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key == "active_llm_config_id",
-        )
-        .first()
-    )
+    active_setting = find_user_setting(db, current_user.id, "active_llm_config_id")
 
     if active_setting:
         db.delete(active_setting)

@@ -18,20 +18,8 @@ fastapi_import::backend/app/tasks/transcription/hooks.py	1	layering: removal pla
 fastapi_import::backend/app/utils/client_ip.py	1	layering: removal planned
 fastapi_import::backend/app/utils/pagination.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/deps_context.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/asr_config_state.py	7	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/asr_local_model.py	3	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/asr_provider_catalog.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/asr_provider_policy.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/asr_settings.py	10	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/custom_vocabulary.py	8	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/diarization_settings.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/engine_settings.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/erasure_receipts.py	14	v0.6.1 merge: release route queries the ORM directly; move to a service planned
 orm_call_in_api::backend/app/api/endpoints/legal.py	4	v0.6.1 merge: release legal routes query the ORM directly; move to a service planned
-orm_call_in_api::backend/app/api/endpoints/llm_config_helpers.py	5	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/llm_connection_tests.py	4	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/llm_model_discovery.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/llm_settings.py	15	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin_holds.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin_takedown.py	3	layering: removal planned
@@ -40,7 +28,6 @@ orm_call_in_api::backend/app/api/endpoints/prompts.py	9	layering: removal planne
 orm_call_in_api::backend/app/api/endpoints/prompts_access.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/prompts_active.py	7	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/prompts_sharing.py	5	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/redaction_settings.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speaker_clusters.py	8	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speaker_profiles.py	10	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speaker_profiles_attributes.py	1	layering: removal planned
@@ -63,16 +50,6 @@ orm_call_in_api::backend/app/api/endpoints/tasks_system_health.py	2	layering: re
 orm_call_in_api::backend/app/api/endpoints/topics.py	6	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/usage.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/user_files.py	6	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings_audio_extraction.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings_common.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings_download.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings_media_sources.py	6	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings_organization_context.py	9	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings_recording.py	3	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings_speaker_attributes.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings_transcription.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings_transcription_validators.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/watch_sources.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/watch_sources_access.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/watch_sources_email_configs.py	4	layering: removal planned

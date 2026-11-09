@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.user_settings_common import _upsert_user_setting
 from app.core.constants import AUDIO_QUALITY_OPTIONS
 from app.core.constants import DEFAULT_AUDIO_ONLY
 from app.core.constants import DEFAULT_AUDIO_QUALITY
@@ -22,8 +21,13 @@ from app.db.base import get_db
 from app.schemas.download_settings import DownloadSettings
 from app.schemas.download_settings import DownloadSettingsUpdate
 from app.schemas.download_settings import DownloadSystemDefaults
+from app.services.user_setting_queries import delete_user_settings
+from app.services.user_setting_queries import list_user_settings
+from app.services.user_setting_queries import upsert_user_setting
 
 router = APIRouter()
+
+_DOWNLOAD_DB_KEYS = ["download_video_quality", "download_audio_only", "download_audio_quality"]
 
 
 # Default values for download settings
@@ -58,20 +62,7 @@ def get_download_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> DownloadSettings:
     """Get user's download quality settings."""
-    download_settings = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(
-                [
-                    "download_video_quality",
-                    "download_audio_only",
-                    "download_audio_quality",
-                ]
-            ),
-        )
-        .all()
-    )
+    download_settings = list_user_settings(db, current_user.id, _DOWNLOAD_DB_KEYS)
 
     settings_map: dict[str, str] = {
         str(setting.setting_key): str(setting.setting_value) for setting in download_settings
@@ -113,7 +104,7 @@ def update_download_settings(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Unknown download setting field: '{frontend_key}'",
             )
-        _upsert_user_setting(db, current_user.id, db_key, value)
+        upsert_user_setting(db, current_user.id, db_key, value)
 
     db.commit()
 
@@ -126,20 +117,7 @@ def reset_download_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Reset user's download settings to defaults."""
-    deleted_count = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key.in_(
-                [
-                    "download_video_quality",
-                    "download_audio_only",
-                    "download_audio_quality",
-                ]
-            ),
-        )
-        .delete(synchronize_session=False)
-    )
+    deleted_count = delete_user_settings(db, current_user.id, _DOWNLOAD_DB_KEYS)
 
     db.commit()
 

@@ -82,6 +82,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Password sign-in records `auth.login.success` and `auth.session.created` through the audit outbox, in the same transaction as the new session and its `last_login_at` stamp, and delivers them after the response is sent (scale foundations Lane E). Sign-in no longer waits on two OpenSearch writes (0.6-1.95 s each under load); if the audit log is down the relay delivers them within a minute instead of writing the fallback file. Every sign-in path now stamps `last_login_at` in the session's own commit, so a session and its stamp land together.
+- No database connection is held while sign-in hashes the password (PBKDF2, 600,000 iterations): the request's read transaction ends first, the account row is read on a connection returned before the hash, and the ORM fallback check releases its connection too.
+
 - The API waits at most 5 s for a database connection before answering 503 (`DB_POOL_TIMEOUT_SECONDS`, was 10 s): with the overload answered 503 and `Retry-After`, a longer wait only holds a thread and a socket.
 - An API request that has done 55 s of work gets no further database queries and is answered 503 (`REQUEST_DEADLINE_SECONDS`; 0 turns it off). Under load, work for requests whose clients had given up at 60 s kept running, and holding connections, for up to 292 s. Uploads, chat replies, streaming downloads and exports, and `/metrics` are exempt.
 - The API bounds every database statement with a Postgres `statement_timeout` of 30 s (`DB_STATEMENT_TIMEOUT_MS`, set on the backend service in `docker-compose.yml`; 0 turns it off). Nothing bounded a statement before. Celery workers and the migrate step are unaffected: the coded default is 0. A cancelled statement is answered 503.
@@ -156,6 +159,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Plyr media player library. Both players now run on Video.js 10, so `plyr` and four packages only it needed (`loadjs`, `rangetouch`, `url-polyfill`, `custom-event-polyfill`) leave the frontend dependencies and the licence inventory, along with the Plyr icon sprite and placeholder video and the script step that downloaded them. A test keeps `plyr` from being imported again (#1327).
 
 ### Fixed
+
+- Sign-in answers 503 with `Retry-After` when the database cannot answer (no free connection, a statement timeout, the request deadline, or the database down), instead of 401 "Incorrect username or password" or 500 (scale foundations Lane E, #1337 M2: the 401s sent the SPA into a sign-in retry storm). No lockout attempt is recorded for it; a wrong password with the database healthy is still the same counted 401. An overload while reading the session limits or the LDAP settings at sign-in is a 503 too, rather than a fallback to the `.env` values, and the existing "Sign-in is temporarily unavailable" 503 now carries `Retry-After`.
+- A database overload is answered 503 instead of a partial result on four read paths: the admin embedding-migration status (was "not stalled"), the collections on the file detail (was none), the lazy redaction-scan claim (was "not queued"), and the retroactive speaker-matching suggestion sync (now raised as the overload, after the matches already committed are pushed to the index).
 
 - `./opentr.sh` resolves a relative `MODEL_CACHE_DIR` (the `./models` default) against the main checkout, so a git worktree no longer bind-mounts an empty model directory.
 - `./opentr.sh start --with-pki --dry-run` no longer runs `scripts/pki/generate-test-env.sh`, so a dry run writes nothing.

@@ -228,9 +228,11 @@ type. Starting a step again supersedes the file's older active row of that step.
 ### Governance audit outbox
 
 Governance audit events (a comment added to a held file, placing or releasing a legal hold, a
-collection's visibility or membership changing) are written to the `audit_outbox` table in the
-same transaction as the change, then delivered to the audit log. Delivery is tried right after
-the request and then by the `audit.outbox_relay` task every minute, with a delay that doubles
+collection's visibility or membership changing) and the password sign-in's `auth.login.success`
+and `auth.session.created` events are written to the `audit_outbox` table in the same
+transaction as the change, then delivered to the audit log. Delivery is tried right after the
+request (for a sign-in, after the response is sent, so the user does not wait on OpenSearch)
+and then by the `audit.outbox_relay` task every minute, with a delay that doubles
 from 30 seconds up to an hour while the audit log is unavailable. Delivered rows are kept for 7
 days, then deleted (the audit log holds them).
 

@@ -20,6 +20,7 @@ from minio.error import S3Error
 from app.core.config import settings
 from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
 from app.core.constants import STORAGE_QUARANTINE_TAG_KEY
+from app.core.env import env_str
 from app.core.exceptions import StorageError
 from app.core.exceptions import StorageUnavailableError
 from app.core.threadpool import api_threadpool_size
@@ -67,7 +68,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # See app/services/storage_backend.py for the backend differences.
 def _ca_bundle_path() -> str:
     """CA bundle for storage TLS: ``SSL_CERT_FILE`` if set, else certifi's (minio-py's rule)."""
-    return os.environ.get("SSL_CERT_FILE") or certifi.where()
+    return env_str("SSL_CERT_FILE") or certifi.where()
 
 
 def shared_http_pool() -> urllib3.PoolManager:

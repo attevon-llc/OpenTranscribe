@@ -173,6 +173,10 @@ should import `app.api` or `app.services` at module scope.
 - `auth_settings.py`'s `proxy_*` properties are the layered readers for trusted-header auth;
   the `.env` fallbacks (`PROXY_*` in `config.py`) exist mainly so `main.py`'s fail-closed
   boot guard can see `PROXY_ENABLED`/`PROXY_TRUSTED_PROXIES` before a DB session exists.
+- `env.py` — the one reader for env-driven tuning knobs (`env_int/env_float/env_bool/env_str`,
+  `env_raw` for unstripped values, `env_publish` for the sanctioned write that hands a value to a
+  library or child process). A malformed value warns and uses the default (never aborts startup).
+  `scripts/guards/check_raw_env.py` holds raw `os.environ`/`os.getenv` reads in `backend/app` at 0.
 - `legacy_auth_env.py` — **input adapter, not a second implementation.** It translates the
   historical `KEYCLOAK_*` environment names onto the canonical `OIDC_*` ones *before* `Settings`
   is built, so nothing downstream (including `auth_config_keys.ENV_TO_CONFIG_MAPPING`) ever

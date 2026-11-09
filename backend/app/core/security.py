@@ -1,5 +1,4 @@
 import contextlib
-import os
 import unicodedata
 from collections.abc import Callable
 from typing import Any
@@ -15,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.auth.utils import local_password_allowed
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
+from app.core.env import env_str
 from app.core.env import testing_mode
 from app.core.exceptions import AuthenticationError
 from app.models.user import User
@@ -194,7 +194,7 @@ def _bcrypt_rounds() -> int:
     """
     if not settings.is_hardened and testing_mode():
         with contextlib.suppress(ValueError):
-            return max(4, int(os.environ.get("TEST_BCRYPT_ROUNDS", BCRYPT_TEST_ROUNDS)))
+            return max(4, int(env_str("TEST_BCRYPT_ROUNDS", str(BCRYPT_TEST_ROUNDS))))
     return BCRYPT_DEFAULT_ROUNDS
 
 

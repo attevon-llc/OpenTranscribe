@@ -9,7 +9,6 @@ word_timestamps off in its batched pipeline.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
@@ -18,6 +17,7 @@ from typing import Any
 import numpy as np
 
 from app.core import stage_timing
+from app.core.env import env_int
 from app.core.pipeline_constants import MAX_WORD_DURATION
 from app.transcription import cuda_health
 from app.transcription import vram_budget
@@ -175,11 +175,7 @@ _OOM_BACKOFFS: dict[str, int] = {}
 
 
 def _max_oom_halvings() -> int:
-    raw = os.getenv("GPU_OOM_MAX_HALVINGS", "2").strip()
-    try:
-        return max(0, int(raw))
-    except ValueError:
-        return 2
+    return max(0, env_int("GPU_OOM_MAX_HALVINGS", 2))
 
 
 def _collect_segments(

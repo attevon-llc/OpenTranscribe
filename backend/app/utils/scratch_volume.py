@@ -36,6 +36,7 @@ import shutil
 import time
 from pathlib import Path
 
+from app.core.env import env_str
 from app.core.scratch_paths import PIPELINE_SCRATCH_DEFAULT
 from app.core.scratch_paths import RESERVED_SCRATCH_NAMESPACES
 from app.core.scratch_paths import pipeline_scratch_shared
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 # Root of the shared volume inside any container that mounts it. Override
 # via ``PIPELINE_SCRATCH_DIR`` for non-standard deployments.
-SCRATCH_DIR = Path(os.environ.get("PIPELINE_SCRATCH_DIR", PIPELINE_SCRATCH_DEFAULT))
+SCRATCH_DIR = Path(env_str("PIPELINE_SCRATCH_DIR", PIPELINE_SCRATCH_DEFAULT))
 
 # Resolved once: the containment boundary for ``is_on_scratch_volume``. It is the VOLUME ROOT,
 # not a subdirectory such as ``engine/``: both the engine's WAV (``.../engine/<task>.wav``) and

@@ -37,7 +37,6 @@ so CPU-only workers and bare pytest pay nothing for importing this module.
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import time
 from collections import deque
@@ -46,6 +45,7 @@ from contextlib import contextmanager
 
 from app.core.env import env_bool
 from app.core.env import env_float
+from app.core.env import env_str
 from app.core.worker_shutdown import TranscriptionAbortedError
 
 logger = logging.getLogger(__name__)
@@ -184,9 +184,9 @@ def admission_timeout_s() -> float:
 def _stage_override_raw(stage: str) -> str:
     # Literal names, one per stage, so the env-documentation checks can see every read.
     if stage == "asr":
-        return os.getenv("GPU_STAGE_VRAM_MB_ASR", "").strip()
+        return env_str("GPU_STAGE_VRAM_MB_ASR")
     if stage == "diarization":
-        return os.getenv("GPU_STAGE_VRAM_MB_DIARIZATION", "").strip()
+        return env_str("GPU_STAGE_VRAM_MB_DIARIZATION")
     return ""
 
 

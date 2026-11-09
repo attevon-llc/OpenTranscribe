@@ -52,6 +52,8 @@ from app.core.constants import DIAR_SIDECAR_MIN_RTF
 from app.core.constants import DIAR_SIDECAR_TIMEOUT_FLOOR_S
 from app.core.env import celery_visibility_timeout_s
 from app.core.env import env_bool
+from app.core.env import env_float
+from app.core.env import env_str
 from app.core.scratch_paths import DIAR_NATIVE_SHARED_DIR_DEFAULT
 from app.core.scratch_paths import resolve_engine_shared_volume_path
 from app.transcription import diar_sidecar_status
@@ -77,7 +79,7 @@ NATIVE_MODEL_NAME = "pyannote/speaker-diarization-community-1"
 # Directory shared (bind/volume) between this worker and the sidecar container — the sidecar's
 # own-copy fallback namespace inside pipeline_scratch (issue #661 E2). Still a documented,
 # independently overridable env var; only the default changed.
-_SHARED_DIR = os.environ.get("DIAR_NATIVE_SHARED_DIR", DIAR_NATIVE_SHARED_DIR_DEFAULT)
+_SHARED_DIR = env_str("DIAR_NATIVE_SHARED_DIR", DIAR_NATIVE_SHARED_DIR_DEFAULT)
 
 # The engine's Stage-1 shared-volume WAV mount, as seen from THIS container (the worker, not
 # the sidecar). Same env var EngineConfig reads for shared_volume_path — deliberately not a
@@ -127,7 +129,7 @@ def _log_reuse_decision(wav_path: str | None, reused: bool) -> None:
 # retry) holds a Celery slot for 3600s, comfortably under 25% of the default 21600s
 # CELERY_VISIBILITY_TIMEOUT (see _warn_if_timeout_risks_redelivery below). Raise on a
 # CPU-mode sidecar — CPU throughput is unmeasured in this repo.
-_TIMEOUT_S = float(os.environ.get("DIAR_NATIVE_TIMEOUT_S", "1800"))
+_TIMEOUT_S = env_float("DIAR_NATIVE_TIMEOUT_S", 1800.0)
 
 
 def _diarize_budget_s(audio: np.ndarray) -> float:

@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 from app.core.celery import celery_app
+from app.core.env import env_str
 from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
@@ -13,7 +14,7 @@ from app.utils.transcript_comparison import export_baseline
 
 logger = logging.getLogger(__name__)
 
-BENCHMARKS_DIR = os.environ.get("BENCHMARKS_DIR", "/tmp/benchmarks")  # noqa: S108 - default scratch path for a diagnostic tool  # nosec B108
+BENCHMARKS_DIR = env_str("BENCHMARKS_DIR", "/tmp/benchmarks")  # noqa: S108 - default scratch path for a diagnostic tool  # nosec B108
 
 
 @celery_app.task(name="export_transcript_baseline", priority=UtilityPriority.DEV_TOOLS)

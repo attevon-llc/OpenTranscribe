@@ -10,11 +10,11 @@ these lookups.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.env import env_str
 from app.services.media_source_access import query_user_media_sources
 from app.utils.media_origin import host_matches
 from app.utils.media_origin import source_base_url
@@ -109,7 +109,7 @@ class MediaSourceResolver:
             if h:
                 hosts.add(h)
         # Env fallback (legacy)
-        raw = os.getenv("MEDIACMS_ALLOWED_HOSTS", "")
+        raw = env_str("MEDIACMS_ALLOWED_HOSTS")
         for h in raw.split(","):
             h = h.strip()
             if h:
@@ -124,7 +124,7 @@ class MediaSourceResolver:
             if host_matches(s.get("hostname", ""), hostname, scheme):
                 return bool(s.get("verify_ssl", True))
         # Env fallback
-        return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
+        return env_str("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
     def _get_stored_credentials(
         self, hostname: str, user_id: int | None = None, *, scheme: str
@@ -144,7 +144,7 @@ class MediaSourceResolver:
     @property
     def verify_ssl(self) -> bool:
         """Global SSL verification fallback (used when host is unknown)."""
-        return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
+        return env_str("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
     def _configured_base_url(self, parsed: Any, user_id: int | None) -> str | None:
         """The configured origin a parsed URL is on, built from the configuration, or None.

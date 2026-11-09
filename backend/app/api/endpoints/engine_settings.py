@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 from typing import Literal
 
@@ -19,6 +18,7 @@ from app import models
 # Deployment configuration is the super_admin tier: this router
 # changes the transcription engine and GPU topology.
 from app.api.endpoints.auth import get_current_active_superuser
+from app.core.env import env_raw
 from app.core.env import is_truthy
 from app.db.base import get_db
 from app.services.system_setting_queries import find_system_setting
@@ -111,7 +111,7 @@ def _resolve_setting(db: Session, field: str) -> dict[str, Any]:
     if db_value is not None:
         return {"value": _coerce(field, db_value), "source": "db"}
 
-    env_value = os.getenv(env_var)
+    env_value = env_raw(env_var)
     if env_value is not None:
         return {"value": _coerce(field, env_value), "source": "env"}
 

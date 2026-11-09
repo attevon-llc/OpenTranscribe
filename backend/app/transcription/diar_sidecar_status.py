@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import http.client
 import logging
-import os
 import threading
 import time
 import urllib.error
@@ -22,6 +21,9 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.env import env_float
+from app.core.env import env_int
+from app.core.env import env_str
 from app.core.env import is_truthy
 from app.services.asr.errors import retry_after_from_headers
 
@@ -30,7 +32,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_URL = os.environ.get("DIAR_NATIVE_URL", "http://diar-native:8701")
+_DEFAULT_URL = env_str("DIAR_NATIVE_URL", "http://diar-native:8701")
 
 
 # Probe TTL cache (issue #661 probe-cost fix). A bare live GET costs the full connect timeout
@@ -54,7 +56,7 @@ _PROBE_TIMEOUT_S = 5.0
 
 #: urllib raises OSError subclasses (URLError, timeouts); a torn response raises HTTPException.
 _PROBE_ERRORS = (OSError, http.client.HTTPException)
-_READY_CACHE_TTL_S_CONFIGURED = float(os.environ.get("DIAR_NATIVE_READY_CACHE_TTL_S", "8"))
+_READY_CACHE_TTL_S_CONFIGURED = env_float("DIAR_NATIVE_READY_CACHE_TTL_S", 8.0)
 _READY_CACHE_TTL_S = max(_READY_CACHE_TTL_S_CONFIGURED, _PROBE_TIMEOUT_S + 1.0)
 if _READY_CACHE_TTL_S != _READY_CACHE_TTL_S_CONFIGURED:
     # Once, at import time — never per-call, this module has no per-call logging budget
@@ -391,7 +393,7 @@ def sidecar_diagnostics(base_url: str | None = None) -> dict[str, Any]:
         "ready": ready,
         "models_state": status.get("models_state"),
         "models_reason": status.get("models_reason"),
-        "max_inflight": int(os.environ.get("DIAR_NATIVE_MAX_INFLIGHT", "2")),
+        "max_inflight": env_int("DIAR_NATIVE_MAX_INFLIGHT", 2),
     }
 
 
@@ -455,7 +457,7 @@ def diarizer_require_sidecar() -> bool:
     making the fail-hard policy #572 will eventually make the ONLY policy exercisable in
     production before that fallback is deleted.
     """
-    raw = os.getenv("ENGINE_DIARIZER_REQUIRE_SIDECAR", "false")
+    raw = env_str("ENGINE_DIARIZER_REQUIRE_SIDECAR", "false")
     try:
         from app.db.session_utils import session_scope
         from app.models.system_settings import SystemSettings

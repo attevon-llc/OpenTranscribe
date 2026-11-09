@@ -27,7 +27,6 @@ backend/app/api/endpoints/files/crud.py::update_media_file#1	1	re-keyed per hand
 backend/app/api/endpoints/files/crud.py::update_media_file#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/crud.py::update_media_file#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/detail_response.py::set_file_urls#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/api/endpoints/files/media_delivery.py::download_stream.<locals>.event_stream#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/post_processing.py::get_post_processing_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/redaction_gate.py::claim_and_dispatch_redaction_scan#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/redaction_gate.py::claim_and_dispatch_redaction_scan#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out

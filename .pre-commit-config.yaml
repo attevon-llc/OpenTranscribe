@@ -397,6 +397,17 @@ repos:
         files: ^(frontend/(src/|eslint\.config\.js$|package\.json$)|scripts/guards/.*)
         stages: [pre-push]
         verbose: true
+      # typescript-eslint's no-unused-vars crashes on svelte-eslint-parser nodes (still true on
+      # typescript-eslint 8.72.1 + eslint-plugin-svelte 3.24.1), so the TypeScript compiler's
+      # noUnusedLocals/noUnusedParameters (tsconfig.unused.json) covers .svelte files instead.
+      - id: guard-svelte-unused
+        name: unused locals in .svelte files ratchet (baselined)
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_svelte_unused.py'
+        language: system
+        pass_filenames: false
+        files: ^(frontend/(src/|tsconfig[^/]*\.json$|package\.json$)|scripts/guards/.*)
+        stages: [pre-push]
+        verbose: true
 
   # Version consistency — VERSION, pyproject.toml, frontend/package.json,
   # frontend/package-lock.json (BOTH version fields), the Alembic single-head

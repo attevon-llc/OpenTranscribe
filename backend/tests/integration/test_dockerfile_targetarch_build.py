@@ -13,69 +13,12 @@ a test that cannot run looks identical to one that passes.
 
 from __future__ import annotations
 
-import re
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
 
 import pytest
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DOCKERFILES = [
-    REPO_ROOT / "backend" / "Dockerfile.prod",
-    REPO_ROOT / "backend" / "Dockerfile.lite",
-]
-
-# A global `ARG TARGETARCH` — one with no default value, which is the shadowing form.
-# `ARG TARGETARCH=something` would supply a value and is not this bug.
-_SHADOWING_ARG = re.compile(r"^\s*ARG\s+TARGETARCH\s*$")
-
-
-def _selects_by_targetarch(path: Path) -> bool:
-    return any(
-        "${TARGETARCH}" in line and line.lstrip().upper().startswith("FROM")
-        for line in path.read_text(encoding="utf-8").splitlines()
-    )
-
-
-# --------------------------------------------------------------------- static (fast suite)
-
-
-@pytest.mark.parametrize("dockerfile", DOCKERFILES, ids=lambda p: p.name)
-def test_no_global_arg_targetarch_shadows_the_builtin(dockerfile: Path):
-    if not dockerfile.is_file():
-        pytest.skip(f"{dockerfile.name} is not in this checkout")
-    if not _selects_by_targetarch(dockerfile):
-        pytest.skip(f"{dockerfile.name} no longer selects a stage by TARGETARCH")
-
-    offenders = [
-        f"{dockerfile.name}:{n}: {line.strip()}"
-        for n, line in enumerate(dockerfile.read_text(encoding="utf-8").splitlines(), 1)
-        if _SHADOWING_ARG.match(line)
-    ]
-    assert not offenders, (
-        "a bare `ARG TARGETARCH` shadows BuildKit's built-in with an empty string, so "
-        "`FROM diar-native-bin-${TARGETARCH}` resolves to `diar-native-bin-` and the image "
-        "cannot build at all:\n  " + "\n  ".join(offenders)
-    )
-
-
-@pytest.mark.parametrize("dockerfile", DOCKERFILES, ids=lambda p: p.name)
-def test_the_per_arch_stages_the_selection_needs_still_exist(dockerfile: Path):
-    """Non-vacuity: removing the ARG is only right while the two named stages exist."""
-    if not dockerfile.is_file():
-        pytest.skip(f"{dockerfile.name} is not in this checkout")
-    text = dockerfile.read_text(encoding="utf-8")
-    if not _selects_by_targetarch(dockerfile):
-        pytest.skip(f"{dockerfile.name} no longer selects a stage by TARGETARCH")
-    for arch in ("amd64", "arm64"):
-        assert f"AS diar-native-bin-{arch}" in text, (
-            f"{dockerfile.name} selects by TARGETARCH but defines no "
-            f"`diar-native-bin-{arch}` stage — the substitution would resolve to a stage "
-            "that does not exist"
-        )
-
 
 # ------------------------------------------------------- behavioural: build both forms
 

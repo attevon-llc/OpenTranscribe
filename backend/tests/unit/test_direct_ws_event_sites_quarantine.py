@@ -335,266 +335,123 @@ class TestFileCreatedSites:
 # --------------------------------------------------------------------------- #
 
 
+def _run_speaker_merge(db, monkeypatch, *, quarantined: bool) -> list[tuple]:
+    """Run the real merge background task for one file; return the WS events it sent."""
+    from app.models.speaker import Speaker
+    from app.tasks import speaker_merge_task as smt
+
+    owner = _mk_user(db)
+    file = _mk_file(db, owner=owner, quarantined=quarantined)
+    target = Speaker(
+        uuid=str(uuid_pkg.uuid4()),
+        media_file_id=file.id,
+        user_id=owner.id,
+        name="SPEAKER_00",
+        display_name="Ada Lovelace",
+    )
+    db.add(target)
+    db.commit()
+
+    for name, stub in (
+        ("_clear_speaker_video_cache", lambda *a: None),
+        ("_merge_speaker_embeddings", lambda *a, **k: None),
+        ("_update_opensearch_speaker_merge", lambda *a, **k: None),
+        ("_reconcile_speakers_after_merge", lambda *a, **k: None),
+        ("_refresh_analytics_after_merge", lambda *a, **k: None),
+    ):
+        monkeypatch.setattr(f"app.api.endpoints.speakers_merge.{name}", stub)
+    monkeypatch.setattr(smt, "session_scope", lambda: _yield_session(db))
+    sent: list[tuple] = []
+    monkeypatch.setattr("app.utils.websocket_notify.send_ws_event", _capturing_send_ws_event(sent))
+
+    smt.process_speaker_merge_background(
+        source_speaker_uuid=str(uuid_pkg.uuid4()),
+        target_speaker_uuid=str(target.uuid),
+        user_id=owner.id,
+        source_speaker_id=999,
+        source_profile_id=None,
+        target_profile_id=None,
+        media_file_ids=[file.id],
+    )
+    return sent
+
+
 class TestSpeakerMergeDisplayNameLeak:
     def test_speaker_merge_does_not_leak_a_display_name_for_a_quarantined_file(
         self, bridge_session, monkeypatch
     ):
-        from app.tasks import speaker_merge_task as smt
-
-        db = bridge_session
-        owner = _mk_user(db)
-        file = _mk_file(db, owner=owner, quarantined=True)
-
-        from app.models.speaker import Speaker
-
-        target = Speaker(
-            uuid=str(uuid_pkg.uuid4()),
-            media_file_id=file.id,
-            user_id=owner.id,
-            name="SPEAKER_00",
-            display_name="Ada Lovelace",
-        )
-        db.add(target)
-        db.commit()
-
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._clear_speaker_video_cache", lambda *a: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._merge_speaker_embeddings", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._update_opensearch_speaker_merge",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._reconcile_speakers_after_merge",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._refresh_analytics_after_merge", lambda *a, **k: None
-        )
-        monkeypatch.setattr(smt, "session_scope", lambda: _yield_session(db))
-
-        sent: list[tuple] = []
-        monkeypatch.setattr(
-            "app.utils.websocket_notify.send_ws_event",
-            _capturing_send_ws_event(sent),
-        )
-
-        smt.process_speaker_merge_background(
-            source_speaker_uuid=str(uuid_pkg.uuid4()),
-            target_speaker_uuid=str(target.uuid),
-            user_id=owner.id,
-            source_speaker_id=999,
-            source_profile_id=None,
-            target_profile_id=None,
-            media_file_ids=[file.id],
-        )
+        sent = _run_speaker_merge(bridge_session, monkeypatch, quarantined=True)
 
         assert sent == [], "the target speaker's display name must not leak for a quarantined file"
 
     def test_speaker_merge_delivers_the_display_name_for_a_clean_file(
         self, bridge_session, monkeypatch
     ):
-        from app.tasks import speaker_merge_task as smt
-
-        db = bridge_session
-        owner = _mk_user(db)
-        file = _mk_file(db, owner=owner, quarantined=False)
-
-        from app.models.speaker import Speaker
-
-        target = Speaker(
-            uuid=str(uuid_pkg.uuid4()),
-            media_file_id=file.id,
-            user_id=owner.id,
-            name="SPEAKER_00",
-            display_name="Ada Lovelace",
-        )
-        db.add(target)
-        db.commit()
-
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._clear_speaker_video_cache", lambda *a: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._merge_speaker_embeddings", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._update_opensearch_speaker_merge",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._reconcile_speakers_after_merge",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_merge._refresh_analytics_after_merge", lambda *a, **k: None
-        )
-        monkeypatch.setattr(smt, "session_scope", lambda: _yield_session(db))
-
-        sent: list[tuple] = []
-        monkeypatch.setattr(
-            "app.utils.websocket_notify.send_ws_event",
-            _capturing_send_ws_event(sent),
-        )
-
-        smt.process_speaker_merge_background(
-            source_speaker_uuid=str(uuid_pkg.uuid4()),
-            target_speaker_uuid=str(target.uuid),
-            user_id=owner.id,
-            source_speaker_id=999,
-            source_profile_id=None,
-            target_profile_id=None,
-            media_file_ids=[file.id],
-        )
+        sent = _run_speaker_merge(bridge_session, monkeypatch, quarantined=False)
 
         assert len(sent) == 1
         user_id, ntype, data = sent[0]
         assert data["display_name"] == "Ada Lovelace"
 
 
+def _run_speaker_update(db, monkeypatch, *, quarantined: bool) -> list[tuple]:
+    """Run the real speaker-update background task for one file; return the WS events it sent."""
+    from app.models.speaker import Speaker
+    from app.tasks import speaker_update_task as sut
+
+    owner = _mk_user(db)
+    file = _mk_file(db, owner=owner, quarantined=quarantined)
+    speaker = Speaker(
+        uuid=str(uuid_pkg.uuid4()),
+        media_file_id=file.id,
+        user_id=owner.id,
+        name="SPEAKER_00",
+        display_name="Grace Hopper",
+    )
+    db.add(speaker)
+    db.commit()
+
+    workflow = "app.api.endpoints.speakers_profile_workflow"
+    for name, stub in (
+        ("_handle_profile_embedding_updates", lambda *a, **k: None),
+        ("_update_opensearch_speaker_name", lambda *a, **k: None),
+        ("_push_speaker_profile_info", lambda *a, **k: None),
+        ("_push_speaker_display_names", lambda *a, **k: None),
+        ("_handle_speaker_labeling_workflow", lambda *a, **k: None),
+        ("_load_profile_speaker_names", lambda *a, **k: []),
+        ("_clear_video_cache_for_speaker", lambda *a, **k: None),
+    ):
+        monkeypatch.setattr(f"{workflow}.{name}", stub)
+    monkeypatch.setattr(sut, "session_scope", lambda: _yield_session(db))
+    sent: list[tuple] = []
+    monkeypatch.setattr("app.utils.websocket_notify.send_ws_event", _capturing_send_ws_event(sent))
+
+    sut.process_speaker_update_background(
+        speaker_uuid=str(speaker.uuid),
+        user_id=owner.id,
+        display_name="Grace Hopper",
+        speaker_id=speaker.id,
+        old_profile_id=None,
+        new_profile_id=None,
+        was_auto_labeled=False,
+        display_name_changed=False,
+        media_file_id=file.id,
+    )
+    return sent
+
+
 class TestSpeakerUpdateDisplayNameLeak:
     def test_speaker_update_does_not_leak_a_display_name_for_a_quarantined_file(
         self, bridge_session, monkeypatch
     ):
-        from app.tasks import speaker_update_task as sut
-
-        db = bridge_session
-        owner = _mk_user(db)
-        file = _mk_file(db, owner=owner, quarantined=True)
-
-        from app.models.speaker import Speaker
-
-        speaker = Speaker(
-            uuid=str(uuid_pkg.uuid4()),
-            media_file_id=file.id,
-            user_id=owner.id,
-            name="SPEAKER_00",
-            display_name="Grace Hopper",
-        )
-        db.add(speaker)
-        db.commit()
-
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._handle_profile_embedding_updates",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._update_opensearch_speaker_name",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._push_speaker_profile_info",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._push_speaker_display_names",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._handle_speaker_labeling_workflow",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._load_profile_speaker_names",
-            lambda *a, **k: [],
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._clear_video_cache_for_speaker",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(sut, "session_scope", lambda: _yield_session(db))
-
-        sent: list[tuple] = []
-        monkeypatch.setattr(
-            "app.utils.websocket_notify.send_ws_event",
-            _capturing_send_ws_event(sent),
-        )
-
-        sut.process_speaker_update_background(
-            speaker_uuid=str(speaker.uuid),
-            user_id=owner.id,
-            display_name="Grace Hopper",
-            speaker_id=speaker.id,
-            old_profile_id=None,
-            new_profile_id=None,
-            was_auto_labeled=False,
-            display_name_changed=False,
-            media_file_id=file.id,
-        )
+        sent = _run_speaker_update(bridge_session, monkeypatch, quarantined=True)
 
         assert sent == [], "the speaker's display name must not leak for a quarantined file"
 
     def test_speaker_update_delivers_the_display_name_for_a_clean_file(
         self, bridge_session, monkeypatch
     ):
-        from app.tasks import speaker_update_task as sut
-
-        db = bridge_session
-        owner = _mk_user(db)
-        file = _mk_file(db, owner=owner, quarantined=False)
-
-        from app.models.speaker import Speaker
-
-        speaker = Speaker(
-            uuid=str(uuid_pkg.uuid4()),
-            media_file_id=file.id,
-            user_id=owner.id,
-            name="SPEAKER_00",
-            display_name="Grace Hopper",
-        )
-        db.add(speaker)
-        db.commit()
-
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._handle_profile_embedding_updates",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._update_opensearch_speaker_name",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._push_speaker_profile_info",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._push_speaker_display_names",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._handle_speaker_labeling_workflow",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._load_profile_speaker_names",
-            lambda *a, **k: [],
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers_profile_workflow._clear_video_cache_for_speaker",
-            lambda *a, **k: None,
-        )
-        monkeypatch.setattr(sut, "session_scope", lambda: _yield_session(db))
-
-        sent: list[tuple] = []
-        monkeypatch.setattr(
-            "app.utils.websocket_notify.send_ws_event",
-            _capturing_send_ws_event(sent),
-        )
-
-        sut.process_speaker_update_background(
-            speaker_uuid=str(speaker.uuid),
-            user_id=owner.id,
-            display_name="Grace Hopper",
-            speaker_id=speaker.id,
-            old_profile_id=None,
-            new_profile_id=None,
-            was_auto_labeled=False,
-            display_name_changed=False,
-            media_file_id=file.id,
-        )
+        sent = _run_speaker_update(bridge_session, monkeypatch, quarantined=False)
 
         assert len(sent) == 1
         user_id, ntype, data = sent[0]

@@ -288,8 +288,10 @@ def _normalize_backend_path(path: str) -> tuple[str, ...]:
 #: multi-line/nested-generic call invisible to the scanner. Whitespace is allowed
 #: before the `.` for the same reason: prettier breaks a promise chain as
 #: `axiosInstance\n  .get('/x')\n  .then(...)`, which a bare `\.` never matched.
+# `client` is the AxiosInstance that components/comments/commentRequests.ts receives as a
+# parameter, so its calls are real calls to the same /api routes.
 _AXIOS_CALL_RE = re.compile(
-    r"axiosInstance\s*\.(?:get|post|put|patch|delete)(?:<[\s\S]*?>)?\("
+    r"(?:axiosInstance|client)\s*\.(?:get|post|put|patch|delete)(?:<[\s\S]*?>)?\("
     r"\s*(?:[`'\"]([^`'\"]*)[`'\"]|(\w+))"
 )
 

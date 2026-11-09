@@ -9,6 +9,8 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
+from kombu.exceptions import KombuError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -359,9 +361,14 @@ def _reject_speaker_suggestion(
 
             file_uuid = _get_media_file_uuid(speaker, db)
             dispatch_speaker_rename([(file_uuid, before)], after, speaker_id=speaker_id)
-        except Exception as exc:  # a rejection must not fail on dispatch
+        except (
+            KombuError,
+            OSError,
+            SQLAlchemyError,
+        ) as exc:  # a rejection must not fail on dispatch
             logger.warning(
-                f"Could not queue chunk-plane label sync for rejected speaker {speaker_id}: {exc}"
+                f"Could not queue chunk-plane label sync for rejected speaker {speaker_id}: {exc}",
+                exc_info=True,
             )
 
     # The profile and clusters the speaker leaves stop averaging its voice (#1214).

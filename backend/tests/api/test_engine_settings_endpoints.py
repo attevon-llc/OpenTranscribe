@@ -119,7 +119,7 @@ def test_get_reports_unknown_when_the_probe_errors_without_echoing_it(
     """A probe that raises degrades to 'unknown' and its text never reaches the response."""
 
     def boom() -> bool:
-        raise RuntimeError("secret-internal-host:5171 refused")
+        raise OSError("secret-internal-host:5171 refused")
 
     monkeypatch.setattr("app.transcription.diar_sidecar_status.sidecar_ready", boom)
     resp = client.get(_BASE, headers=super_admin_token_headers)

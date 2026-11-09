@@ -10,6 +10,8 @@ from typing import Any
 from typing import NamedTuple
 
 from fastapi import HTTPException
+from kombu.exceptions import KombuError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core import redaction_defaults
@@ -18,6 +20,7 @@ from app.core.db_overload import reraise_db_overload
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
+from app.db.request_deadline import RequestDeadlineExceededError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -191,13 +194,17 @@ def claim_and_dispatch_redaction_scan(
     try:
         db_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
         db.commit()
-    except Exception as e:
+    except (SQLAlchemyError, RequestDeadlineExceededError) as e:
         db.rollback()
         # An overload is the request's 503; nothing was claimed, so the retry finds the
         # file exactly as it was.
         reraise_db_overload(e)
         logger.warning(
-            "Could not mark file %s pending for redaction (%s): %s", db_file.id, surface, e
+            "Could not mark file %s pending for redaction (%s): %s",
+            db_file.id,
+            surface,
+            e,
+            exc_info=True,
         )
         return RedactionScanDispatch(queued=False, task_id=None)
 
@@ -205,8 +212,10 @@ def claim_and_dispatch_redaction_scan(
         from app.tasks.redaction_task import redaction_detect_task
 
         task = redaction_detect_task.delay(file_id=int(db_file.id), user_id=int(db_file.user_id))
-    except Exception as e:
-        logger.warning("Redaction dispatch failed for file %s (%s): %s", db_file.id, surface, e)
+    except (KombuError, OSError) as e:
+        logger.warning(
+            "Redaction dispatch failed for file %s (%s): %s", db_file.id, surface, e, exc_info=True
+        )
         _withdraw_redaction_claim(db, db_file, previous_status)
         return RedactionScanDispatch(queued=False, task_id=None)
 

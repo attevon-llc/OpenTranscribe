@@ -54,5 +54,7 @@ def send_bulk_update_notification(
         logger.info(
             f"Sent WebSocket notification for bulk speaker update: {auto_applied_count} speakers"
         )
-    except Exception as e:
-        logger.warning(f"Failed to send WebSocket notification for bulk speaker update: {e}")
+    except (KeyError, RuntimeError) as e:
+        logger.warning(
+            f"Failed to send WebSocket notification for bulk speaker update: {e}", exc_info=True
+        )

@@ -78,8 +78,9 @@ def get_providers(
                 for m in p.get("models", []):
                     m["downloaded"] = m["id"] in downloaded
                 break
-    except Exception:
-        logger.debug("Model discovery unavailable, skipping download annotations")
+    except (OSError, ValueError, KeyError):
+        # Cosmetic annotation only: the catalog is still correct without "downloaded".
+        logger.warning("Model discovery unavailable, skipping download annotations", exc_info=True)
 
     return {"providers": providers}
 

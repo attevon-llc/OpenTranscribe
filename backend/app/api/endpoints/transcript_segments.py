@@ -7,6 +7,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -200,9 +201,11 @@ def _handle_speaker_change(
 
         AnalyticsService.refresh_analytics(db, media_file_id)
         logger.info(f"Refreshed analytics for file {media_file_id} after segment speaker change")
-    except Exception as e:
+    except SQLAlchemyError as e:
         # Don't fail the operation if analytics refresh fails
-        logger.warning(f"Failed to refresh analytics after segment speaker change: {e}")
+        logger.warning(
+            f"Failed to refresh analytics after segment speaker change: {e}", exc_info=True
+        )
 
     # Dispatch background task to update speaker embeddings. It stays on the
     # GPU-preferred route (issue #1083 review): unlike recluster it runs the neural

@@ -25,6 +25,8 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
+from kombu.exceptions import KombuError
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app import models
@@ -99,8 +101,10 @@ def _current_download() -> LocalModelDownloadState | None:
         if not raw or "model_id" not in raw or "status" not in raw:
             return None
         return _state_model(raw, store.current_lock() is not None)
-    except Exception as exc:
-        logger.warning("Could not read the model download state: %s", type(exc).__name__)
+    except (RedisError, ValueError) as exc:
+        logger.warning(
+            "Could not read the model download state: %s", type(exc).__name__, exc_info=True
+        )
         return None
 
 
@@ -174,8 +178,10 @@ def start_local_model_download(
     try:
         store = _store()
         acquired = store.try_acquire(entry.id, task_id, current_user.id)
-    except Exception as exc:  # fail closed: without the lock two downloads could collide
-        logger.error("Could not take the model download lock: %s", type(exc).__name__)
+    except (RedisError, ValueError) as exc:  # fail closed: without the lock two downloads collide
+        logger.error(
+            "Could not take the model download lock: %s", type(exc).__name__, exc_info=True
+        )
         raise _error(503, "model_download_unavailable") from None
     if not acquired:
         held = store.current_lock() or {}
@@ -192,8 +198,8 @@ def start_local_model_download(
             user_id=current_user.id,
         )
         download_local_model_task.apply_async(args=[entry.id, current_user.id], task_id=task_id)
-    except Exception as exc:
-        logger.error("Could not queue the model download: %s", type(exc).__name__)
+    except (RedisError, KombuError, OSError, ValueError) as exc:
+        logger.error("Could not queue the model download: %s", type(exc).__name__, exc_info=True)
         store.release(task_id)
         raise _error(503, "model_download_unavailable") from None
     _audit(request, current_user, "download_started", entry.id)
@@ -212,8 +218,10 @@ def cancel_local_model_download(
     try:
         store = _store()
         lock = store.current_lock()
-    except Exception as exc:
-        logger.error("Could not read the model download lock: %s", type(exc).__name__)
+    except (RedisError, ValueError) as exc:
+        logger.error(
+            "Could not read the model download lock: %s", type(exc).__name__, exc_info=True
+        )
         raise _error(503, "model_download_unavailable") from None
     if lock is None:
         raise _error(404, "no_model_download")

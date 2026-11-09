@@ -30,6 +30,7 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.exc import OperationalError
 
 from app.api.endpoints.files.detail_response import _redact_and_decorate_speakers
 from app.api.endpoints.files.detail_response import get_media_file_detail
@@ -172,7 +173,9 @@ def _fail_commit_number(monkeypatch, db_session, n: int) -> list[str]:
     def _commit() -> None:
         calls["n"] += 1
         if calls["n"] == n:
-            raise RuntimeError("could not serialize access due to concurrent update")
+            raise OperationalError(
+                "COMMIT", {}, Exception("could not serialize access due to concurrent update")
+            )
         real_commit()
 
     def _rollback() -> None:

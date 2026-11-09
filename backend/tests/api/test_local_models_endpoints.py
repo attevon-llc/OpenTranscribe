@@ -13,6 +13,8 @@ import json
 import pytest
 from fixtures.hf_cache import make_complete_repo
 from fixtures.hf_cache import make_partial_repo
+from kombu.exceptions import OperationalError as KombuOperationalError
+from redis.exceptions import RedisError
 
 from app.api.endpoints import local_models
 from app.core import local_whisper_catalog as catalog
@@ -189,7 +191,7 @@ class TestCatalog:
         self, client, super_admin_token_headers, monkeypatch
     ):
         def boom():
-            raise ConnectionError("redis is down")
+            raise RedisError("redis is down")
 
         monkeypatch.setattr(local_models, "_store", boom)
 
@@ -328,7 +330,7 @@ class TestStartDownload:
         self, client, super_admin_token_headers, dispatched, monkeypatch
     ):
         def boom():
-            raise ConnectionError("redis is down")
+            raise RedisError("redis is down")
 
         monkeypatch.setattr(local_models, "_store", boom)
 
@@ -342,7 +344,7 @@ class TestStartDownload:
         self, client, super_admin_token_headers, store, monkeypatch
     ):
         def broken(args=None, kwargs=None, **options):
-            raise RuntimeError("broker is down")
+            raise KombuOperationalError("broker is down")
 
         monkeypatch.setattr(local_model_download.download_local_model_task, "apply_async", broken)
 

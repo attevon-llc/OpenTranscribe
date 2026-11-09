@@ -17,6 +17,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -117,8 +118,10 @@ def _fs_events_status(
     try:
         parsed: FsEventsStatus = FsEventsStatus.model_validate(raw)
         return parsed
-    except Exception as e:  # a stale blob must not 500 the list
-        logger.debug("Ignoring unreadable FS-event status for source %s: %s", source.id, e)
+    except ValidationError as e:  # a stale blob must not 500 the list
+        logger.warning(
+            "Ignoring unreadable FS-event status for source %s: %s", source.id, e, exc_info=True
+        )
         return None
 
 

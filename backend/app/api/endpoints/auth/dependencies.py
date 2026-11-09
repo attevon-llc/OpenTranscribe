@@ -23,6 +23,7 @@ from joserfc import jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import OctKey
 from joserfc.jwt import JWTClaimsRegistry
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.external_token import _authenticate_external_token
@@ -324,12 +325,13 @@ def get_optional_current_user(
                 request.state.org_id = getattr(external_user, "external_org_id", None)
                 end_read_transaction(db, external_user)
                 return external_user
-        except Exception as e:
+        except SQLAlchemyError as e:
             # Never let an external-auth problem fail an optional-auth route;
-            # fall through to local JWT (and ultimately None). An overload is not an
-            # auth problem: it is answered 503, not as an anonymous caller.
+            # fall through to local JWT (and ultimately None, i.e. anonymous: the
+            # restrictive direction). An overload is not an auth problem: it is
+            # answered 503, not as an anonymous caller.
             reraise_db_overload(e)
-            logger.debug(f"Error in optional external auth: {e}")
+            logger.warning(f"Error in optional external auth: {e}", exc_info=True)
 
     try:
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
@@ -370,9 +372,9 @@ def get_optional_current_user(
 
     except JoseError:
         return None
-    except Exception as e:
+    except SQLAlchemyError as e:
         reraise_db_overload(e)
-        logger.debug(f"Error in optional auth: {e}")
+        logger.warning(f"Error in optional auth: {e}", exc_info=True)
         return None
 
 

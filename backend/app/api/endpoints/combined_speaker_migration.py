@@ -5,7 +5,6 @@ Allows admins to trigger bulk processing of all files for both
 embedding extraction and gender detection in a single pass.
 """
 
-import json
 import logging
 from typing import Any
 
@@ -15,6 +14,9 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.api.endpoints.migration_stop import BATCH_REVOCATION_FAILED
+from app.api.endpoints.migration_stop import clear_stop_tracker
+from app.api.endpoints.migration_stop import revoke_batch_tasks
 from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.core.redis import get_request_redis
@@ -105,56 +107,36 @@ def stop_combined_migration(
         success = combined_migration_progress.force_stop()
 
         # Revoke pending batch tasks
-        revoked_count = 0
-        try:
-            r = get_request_redis()
-            batch_ids_raw = r.get("combined_speaker_migration:batch_task_ids")
-            if batch_ids_raw:
-                batch_ids = json.loads(batch_ids_raw)
-                from app.core.celery import celery_app
-
-                for tid in batch_ids:
-                    celery_app.control.revoke(tid, terminate=True)
-                    revoked_count += 1
-                r.delete("combined_speaker_migration:batch_task_ids")
-        except Exception as e:
-            logger.warning("Failed to revoke batch tasks: %s", e)
+        revoked_count, revoke_failed = revoke_batch_tasks(
+            get_request_redis(), "combined_speaker_migration:batch_task_ids"
+        )
 
         # Clear ProgressTracker so queue status clears immediately
-        try:
-            from app.services.progress_tracker import ProgressTracker
-
-            tracker = ProgressTracker(
-                task_type="combined_speaker_migration",
-                user_id=current_user.id,
-                total=0,
-            )
-            tracker.complete(message="Stopped by user")
-        except Exception as e:
-            logger.warning("Failed to clear progress tracker: %s", e)
+        clear_stop_tracker("combined_speaker_migration", current_user.id)
 
         # Notify frontend via WebSocket
-        try:
-            from app.core.constants import NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE
-            from app.utils.websocket_notify import send_ws_event
+        from app.core.constants import NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE
+        from app.utils.websocket_notify import send_ws_event
 
-            send_ws_event(
-                current_user.id,
-                NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE,
-                {"status": "stopped", "message": "Migration stopped by user"},
-            )
-        except Exception as e:
-            logger.warning("Failed to send stop WS event: %s", e)
+        # send_ws_event logs its own failures and never raises.
+        send_ws_event(
+            current_user.id,
+            NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE,
+            {"status": "stopped", "message": "Migration stopped by user"},
+        )
 
         if success:
             logger.warning(
                 "Combined speaker migration stopped by user (revoked %d batch tasks)",
                 revoked_count,
             )
-            return {
+            stopped: dict[str, Any] = {
                 "status": "stopped",
                 "message": "Combined speaker migration stopped.",
             }
+            if revoke_failed:
+                stopped["warnings"] = [BATCH_REVOCATION_FAILED]
+            return stopped
         else:
             return {"status": "error", "message": "Failed to stop migration"}
 

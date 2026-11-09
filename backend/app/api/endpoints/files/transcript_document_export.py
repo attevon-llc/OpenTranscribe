@@ -24,6 +24,7 @@ import logging
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -68,9 +69,9 @@ def _claim_or_existing_job(
         if existing:
             value = existing.decode() if isinstance(existing, bytes) else str(existing)
             return value, guard_key, False
-    except Exception as e:
+    except RedisError as e:
         # The guard only saves duplicate work; failing to take it must not refuse the export.
-        logger.warning("Document export guard unavailable: %s", type(e).__name__)
+        logger.warning("Document export guard unavailable: %s", type(e).__name__, exc_info=True)
     return job_id, None, True
 
 

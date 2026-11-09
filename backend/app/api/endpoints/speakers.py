@@ -7,6 +7,8 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Response
 from fastapi import status
+from kombu.exceptions import KombuError
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -283,8 +285,10 @@ def _propagate_speaker_rename_to_chunks(
         if file_uuid and previous_chunk_name:
             renames.append((file_uuid, previous_chunk_name))
         dispatch_speaker_rename(renames, new_display_name, speaker_id=speaker_id)
-    except Exception as exc:
-        logger.warning(f"Could not queue chunk-plane speaker rename propagation: {exc}")
+    except (KombuError, OSError) as exc:
+        logger.warning(
+            f"Could not queue chunk-plane speaker rename propagation: {exc}", exc_info=True
+        )
 
 
 @router.put("/{speaker_uuid}", response_model=SpeakerSchema)
@@ -412,8 +416,8 @@ def update_speaker(
 
         redis_cache.invalidate_speakers(current_user.id)
         redis_cache.invalidate_user_files(current_user.id)
-    except Exception as e:
-        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+    except RedisError as e:
+        logger.warning(f"Cache invalidation failed (non-critical): {e}", exc_info=True)
 
     # Add computed status for immediate response
     redact_speaker_rows(db, [speaker])

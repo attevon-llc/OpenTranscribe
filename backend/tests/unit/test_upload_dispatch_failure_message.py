@@ -34,7 +34,17 @@ def _db_with_row(row):
 )
 def test_stored_message(monkeypatch, exc, expected):
     monkeypatch.setattr("app.utils.task_utils.update_media_file_status", lambda *a, **k: None)
-    row = SimpleNamespace(last_error_message=None)
+    row = SimpleNamespace(
+        last_error_message=None,
+        uuid="u-1",
+        filename="f.wav",
+        file_size=1,
+        content_type="audio/wav",
+        duration=None,
+        id=1,
+        status="error",
+        upload_time=None,
+    )
 
     upload_dispatch._mark_upload_dispatch_failed(_db_with_row(row), 1, 1, exc)
 

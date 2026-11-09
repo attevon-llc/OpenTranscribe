@@ -375,3 +375,9 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   404s there exactly like every other resource lookup.
 - Middleware order is load-bearing: `ObservabilityMiddleware` is added **last** in `main.py` so
   it runs outermost.
+- Exception handling in handlers: an HTTP handler is not a top-level boundary, FastAPI's own
+  exception handlers are. Catch only what the try body can raise and log with `exc_info=True`;
+  an outage must not read as "no data" (`admin_timing` answers 503 via
+  `benchmark_timing.fetch_all_strict`, never 404). The shared "stop migration" clean-up lives in
+  `endpoints/migration_stop.py` and reports a failed revoke as `warnings`, not silence.
+  WebSocket loops and per-item loops may catch `Exception`, but with `logger.exception`.

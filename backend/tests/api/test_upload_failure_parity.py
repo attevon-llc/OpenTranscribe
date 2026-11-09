@@ -130,6 +130,10 @@ def test_presigned_complete_keeps_the_row_at_error_when_asr_is_refused(
         db_session, normal_user.id, f"complete-asr-refused-{uuid.uuid4().hex[:8]}.wav"
     )
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda *a, **k: 4096)
+    monkeypatch.setattr(
+        "app.services.minio_service.range_read",
+        lambda *a, **k: b"RIFF" + (4096).to_bytes(4, "little") + b"WAVEfmt " + bytes(240),
+    )
     monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
 
     response = client.post(
@@ -203,6 +207,10 @@ def test_presigned_complete_keeps_the_row_at_error_on_a_generic_dispatch_failure
         db_session, normal_user.id, f"complete-generic-failure-{uuid.uuid4().hex[:8]}.wav"
     )
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda *a, **k: 4096)
+    monkeypatch.setattr(
+        "app.services.minio_service.range_read",
+        lambda *a, **k: b"RIFF" + (4096).to_bytes(4, "little") + b"WAVEfmt " + bytes(240),
+    )
     monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_generic_failure)
 
     response = app_for_raising_client.post(
@@ -243,6 +251,10 @@ def test_both_upload_paths_report_the_same_outcome_for_one_refusal(
         db_session, owner_id, f"parity-presigned-{uuid.uuid4().hex[:8]}.wav"
     )
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda *a, **k: 4096)
+    monkeypatch.setattr(
+        "app.services.minio_service.range_read",
+        lambda *a, **k: b"RIFF" + (4096).to_bytes(4, "little") + b"WAVEfmt " + bytes(240),
+    )
     presigned = client.post(
         "/api/files/complete",
         headers=user_token_headers,
@@ -391,7 +403,7 @@ def test_dispatch_failure_still_invalidates_cache_when_the_ws_push_fails(
     cache_mock = mock.Mock()
 
     def _raise_ws_failure(*_args, **_kwargs):
-        raise RuntimeError("redis publish exploded")
+        raise ValueError("redis publish exploded")
 
     monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
     monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)

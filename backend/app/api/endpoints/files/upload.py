@@ -549,8 +549,8 @@ async def process_file_upload(
             imohash = compute_from_stream(file_content, size=file_size)
             file_content.seek(0)
             benchmark_timing.mark(task_id, "imohash_end")
-        except Exception as im_err:
-            logger.debug(f"imohash compute failed (non-fatal): {im_err}")
+        except (OSError, ValueError) as im_err:
+            logger.warning(f"imohash compute failed (non-fatal): {im_err}", exc_info=True)
 
         # Upload to storage. No transaction is open here.
         with benchmark_timing.stage(task_id, "minio_put"):

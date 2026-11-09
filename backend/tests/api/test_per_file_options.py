@@ -240,16 +240,16 @@ def test_selective_rediarize_still_forwards_the_speaker_range(
 
 @pytest.fixture
 def complete_seams(monkeypatch):
-    """Let /complete run without MinIO: the object "exists", its header cannot be read."""
+    """Let /complete run without MinIO: the object "exists" and has a WAV header."""
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda path: 4096)
     monkeypatch.setattr(
         "app.api.endpoints.files.complete_upload._fingerprint_object", lambda *a, **k: None
     )
 
-    def _no_header(*a, **k):
-        raise OSError("no storage in this test")
-
-    monkeypatch.setattr("app.services.minio_service.range_read", _no_header)
+    monkeypatch.setattr(
+        "app.services.minio_service.range_read",
+        lambda *a, **k: b"RIFF" + (4096).to_bytes(4, "little") + b"WAVEfmt " + bytes(240),
+    )
 
 
 def _prepare(client, headers, **extra) -> str:

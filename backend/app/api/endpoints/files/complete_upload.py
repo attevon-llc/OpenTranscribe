@@ -25,9 +25,13 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
+from minio.error import MinioException
+from minio.error import S3Error
 from pydantic import BaseModel
 from pydantic import Field
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
+from urllib3.exceptions import HTTPError
 
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
@@ -178,9 +182,30 @@ def _fingerprint_object(task_id: str | None, storage_path: str, size: int) -> st
     try:
         with benchmark_timing.stage(task_id, "imohash"):
             return compute_from_minio(storage_path, size=size)
-    except Exception as e:
-        logger.debug(f"imohash for {storage_path} failed (non-fatal): {e}")
+    except S3Error as e:
+        logger.warning(f"imohash for {storage_path} failed (non-fatal): {e}", exc_info=True)
         return None
+
+
+def _read_header_or_503(file_id: str, storage_path: str) -> bytes:
+    """Range-read the object header for signature validation; storage failure is a 503.
+
+    Content that could not be validated is not accepted (OWASP file upload guidance).
+    The row survives so the documented idempotent retry of /complete can validate it.
+    """
+    from app.api.overload_response import retry_after_headers
+    from app.services.minio_service import range_read
+    from app.utils.file_validation import HEADER_READ_SIZE
+
+    try:
+        return range_read(storage_path, 0, HEADER_READ_SIZE)
+    except (MinioException, HTTPError, OSError) as read_err:
+        logger.error(f"header read for validation of {file_id} failed: {read_err}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not validate the upload against storage. Please retry.",
+            headers=retry_after_headers(),
+        ) from read_err
 
 
 def _verify_object_landed(
@@ -192,7 +217,6 @@ def _verify_object_landed(
     storage outage (the row survives for a retry of /complete) and 400, after
     dropping the orphan row, when the presigned PUT never completed.
     """
-    from minio.error import S3Error
     from urllib3.exceptions import MaxRetryError
 
     from app.services.minio_service import object_exists_and_size
@@ -339,20 +363,9 @@ def complete_upload(
     # browser→MinIO directly, so verify the object's real signature matches
     # its declared content_type before dispatching it to the GPU pipeline.
     # We range-read only a small header (never the whole object). Fail closed
-    # on a CONFIRMED mismatch (delete object + row, 400); on a transient read
-    # error, log and proceed — the object verified-exists, so we don't reject
-    # a legitimate upload over a MinIO hiccup.
-    header_bytes: bytes | None = None
-    try:
-        from app.services.minio_service import range_read
-        from app.utils.file_validation import HEADER_READ_SIZE
-
-        header_bytes = range_read(storage_path, 0, HEADER_READ_SIZE)
-    except Exception as read_err:
-        logger.warning(
-            f"header read for validation of {request.file_id} failed "
-            f"(non-fatal, proceeding): {read_err}"
-        )
+    # on a CONFIRMED mismatch (delete object + row, 400), and on a header we could
+    # not read (retryable 503, row kept): unvalidated content is not accepted.
+    header_bytes = _read_header_or_503(request.file_id, storage_path)
     if header_bytes is not None and declared_content_type:
         from app.utils.file_validation import validate_uploaded_file
 
@@ -366,8 +379,8 @@ def complete_upload(
             logger.warning(f"Rejecting presigned upload {request.file_id}: {validation_detail}")
             try:
                 delete_file(storage_path)
-            except Exception as del_err:
-                logger.warning(f"cleanup of rejected object failed (non-fatal): {del_err}")
+            except Exception:  # delete_file wraps every storage failure in a bare Exception
+                logger.exception("cleanup of rejected object failed (non-fatal)")
             db.delete(db_file)
             db.commit()
             raise HTTPException(
@@ -429,8 +442,8 @@ def complete_upload(
         from app.services.redis_cache_service import redis_cache
 
         redis_cache.invalidate_user_files(current_user.id)
-    except Exception as cache_err:
-        logger.debug(f"Cache invalidation failed (non-critical): {cache_err}")
+    except RedisError as cache_err:
+        logger.warning(f"Cache invalidation failed (non-critical): {cache_err}", exc_info=True)
 
     return {
         "file_id": str(db_file.uuid),

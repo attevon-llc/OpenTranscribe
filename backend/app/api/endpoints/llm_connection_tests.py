@@ -13,6 +13,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app import models
@@ -132,9 +133,10 @@ def _run_connection_test(
                     message="The stored API key cannot be decrypted. Re-enter it.",
                     response_time_ms=int((time.time() - start_time) * 1000),
                 )
-            except Exception as e:
+            except (SQLAlchemyError, ValueError) as e:
                 logger.warning(
-                    f"Could not retrieve stored API key for config {test_request.config_id}: {e}"
+                    f"Could not retrieve stored API key for config {test_request.config_id}: {e}",
+                    exc_info=True,
                 )
 
         # Map schema enum to service enum

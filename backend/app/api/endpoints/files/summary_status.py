@@ -63,9 +63,6 @@ async def get_summary_status(
         logger.error(f"LLM settings unreadable for file {file_id}", exc_info=True)
         llm_available = False
         settings_unavailable = True
-    except Exception as e:
-        logger.warning(f"Failed to check LLM availability for file {file_id}: {e}")
-        llm_available = False
 
     # Determine if retry is possible (not for disabled status)
     summary_status_str = state["summary_status"]

@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import DomainError
@@ -351,5 +352,5 @@ def _notify_url_file_created(media_file: MediaFile, user_id: int) -> None:
                 },
             },
         )
-    except Exception as e:
-        logger.warning(f"Failed to send file_created notification: {e}")
+    except (SQLAlchemyError, ValueError) as e:
+        logger.warning(f"Failed to send file_created notification: {e}", exc_info=True)

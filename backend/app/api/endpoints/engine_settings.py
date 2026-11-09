@@ -149,8 +149,10 @@ def _sidecar_status() -> Literal["reachable", "unreachable", "unknown"]:
         from app.transcription.diar_sidecar_status import sidecar_ready
 
         return "reachable" if sidecar_ready() else "unreachable"
-    except Exception as exc:
-        logger.warning("Diarizer sidecar status probe failed (%s)", type(exc).__name__)
+    except (ImportError, OSError, ValueError) as exc:
+        logger.warning(
+            "Diarizer sidecar status probe failed (%s)", type(exc).__name__, exc_info=True
+        )
         return "unknown"
 
 

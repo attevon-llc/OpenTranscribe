@@ -13,6 +13,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
 from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
+from app.core.exceptions import ServiceUnavailableError
 from app.models.user import User
 from app.schemas.search import SetEmbeddingModelSchema
 from app.services.request_context import RequestContext
@@ -85,9 +86,10 @@ def _deployed_model_names() -> set[str]:
 
         return {
             str(model.get("name", ""))
-            for model in get_ml_model_service().list_models(deployed_only=True)
+            for model in get_ml_model_service().list_models(deployed_only=True, raise_on_error=True)
         }
-    except Exception:
+    except ServiceUnavailableError:
+        # Fail direction stated above: an unreachable registry reads as nothing ready.
         logger.warning("Could not resolve deployed models; reporting none as ready", exc_info=True)
         return set()
 

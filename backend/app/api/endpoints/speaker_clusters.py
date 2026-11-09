@@ -132,23 +132,19 @@ def trigger_recluster(
 
         # Send immediate "queued" notification so the UI shows status while
         # the task waits for a worker to pick it up.
-        try:
-            from app.tasks.speaker_clustering import _send_clustering_progress
+        from app.tasks.speaker_clustering import _send_clustering_progress
 
-            _send_clustering_progress(
-                user_id,
-                step=0,
-                total_steps=0,
-                message=(
-                    "Queued — waiting for GPU..."
-                    if queue == queues.CeleryQueues.GPU
-                    else "Queued..."
-                ),
-                progress=0.0,
-                running=True,
-            )
-        except Exception as e:
-            logger.debug("Initial progress notification failed (non-critical): %s", e)
+        # Logs its own delivery failures and never raises.
+        _send_clustering_progress(
+            user_id,
+            step=0,
+            total_steps=0,
+            message=(
+                "Queued — waiting for GPU..." if queue == queues.CeleryQueues.GPU else "Queued..."
+            ),
+            progress=0.0,
+            running=True,
+        )
 
         return {
             "status": "started",
@@ -272,8 +268,8 @@ def get_speaker_media_preview(
                 expires=ctx.bypass.presign_ttl(settings.MEDIA_URL_EXPIRE_SECONDS),
                 content_type=source.content_type,
             )
-        except Exception as e:
-            logger.warning("Failed to generate presigned URL for %s: %s", source.object_name, e)
+        except Exception:  # get_file_url wraps every failure in a bare Exception
+            logger.exception("Failed to generate presigned URL for %s", source.object_name)
 
     # Longest transcript segment for this speaker
     from app.models.media import TranscriptSegment

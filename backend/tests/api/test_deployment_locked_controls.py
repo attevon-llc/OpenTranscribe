@@ -35,13 +35,13 @@ from app.models.media import MediaFile
 
 @pytest.fixture
 def complete_without_storage(monkeypatch):
-    """Let ``/files/complete`` run with no object store: the object "exists", no header reads."""
+    """Let ``/files/complete`` run with no object store: the object "exists" and has a WAV header."""
 
-    def _no_header(*args, **kwargs):
-        raise RuntimeError("no s3")
+    def _wav_header(*args, **kwargs):
+        return b"RIFF" + (4096).to_bytes(4, "little") + b"WAVEfmt " + bytes(240)
 
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda path: 4096)
-    monkeypatch.setattr("app.services.minio_service.range_read", _no_header)
+    monkeypatch.setattr("app.services.minio_service.range_read", _wav_header)
     monkeypatch.setattr(
         "app.api.endpoints.files.complete_upload._fingerprint_object", lambda *a, **k: None
     )
@@ -155,7 +155,10 @@ class TestModelChoice:
         dispatch = MagicMock()
         with (
             patch("app.services.minio_service.object_exists_and_size", return_value=4096),
-            patch("app.services.minio_service.range_read", side_effect=RuntimeError("no s3")),
+            patch(
+                "app.services.minio_service.range_read",
+                return_value=b"RIFF" + (4096).to_bytes(4, "little") + b"WAVEfmt " + bytes(240),
+            ),
             patch("app.api.endpoints.files.complete_upload._fingerprint_object", return_value=None),
             patch(
                 "app.api.endpoints.files.upload_dispatch.dispatch_upload_pipeline_or_mark_error",

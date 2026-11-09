@@ -49,6 +49,7 @@ never touches the DB — or one gutted into returning a constant — cannot pass
 from types import SimpleNamespace
 
 import pytest
+from opensearchpy.exceptions import TransportError
 
 from app.core.embedding_models import get_speaker_index
 from app.models.media import MediaFile
@@ -143,7 +144,7 @@ class _FakeOpenSearchClient:
     def search(self, index, body):
         self._tracker.observe("opensearch_search")
         if not self._healthy:
-            raise RuntimeError("index is corrupt")
+            raise TransportError(500, "index is corrupt")
         return {"hits": {"total": {"value": 0}}}
 
 

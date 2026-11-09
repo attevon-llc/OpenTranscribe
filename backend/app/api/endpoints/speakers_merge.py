@@ -8,6 +8,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -18,6 +19,7 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.speaker import Speaker as SpeakerSchema
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import capture_speaker_impact
@@ -173,8 +175,8 @@ def merge_speakers(
 
         redis_cache.invalidate_speakers(current_user.id)
         redis_cache.invalidate_user_files(current_user.id)
-    except Exception as e:
-        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+    except RedisError as e:
+        logger.warning(f"Cache invalidation failed (non-critical): {e}", exc_info=True)
 
     raise_if_incomplete(source_residual)
 
@@ -269,10 +271,11 @@ def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uu
                     index=get_speaker_index(), id=str(target_speaker_uuid)
                 )
                 target_collection_ids = existing.get("_source", {}).get("collection_ids") or []
-        except Exception as lookup_exc:
-            logger.debug(
+        except CLUSTER_UNAVAILABLE_ERRORS as lookup_exc:
+            logger.warning(
                 f"Could not read existing collection_ids for target speaker "
-                f"{target_speaker_uuid}, defaulting to empty: {lookup_exc}"
+                f"{target_speaker_uuid}, defaulting to empty: {lookup_exc}",
+                exc_info=True,
             )
 
         merge_speaker_embeddings(source_speaker_uuid, target_speaker_uuid, target_collection_ids)

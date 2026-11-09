@@ -1,5 +1,5 @@
 {
-  "_comment": "Candidate sources for the public demo's seed bundle (issue #628). Each seeded file lands in the named `collection` (ids in app.scripts.demo_seed.bundle.COLLECTIONS). Every item built from these must pass `python -m app.scripts.demo_seed validate`, and each source's licence page must be re-read and dated in license_checked_on at bundle build (docs-site/docs/operations/public-demo.md). Only the speech of people speaking in an official or professional public capacity is used; no private individual. `exclusions` are rules the curator applies when choosing recordings; FCC and OSHA were dropped on 2026-11-08 because their licence pages could not be read (see `excluded`); every remaining source's licence page was re-read that day except LibriVox, which stays out pending the owner's decision. The owner approves the final item list.",
+  "_comment": "Candidate sources for the public demo's seed bundle (issue #628). Each seeded file lands in the named `collection` (ids in app.scripts.demo_seed.bundle.COLLECTIONS). Every item built from these must pass `python -m app.scripts.demo_seed validate`, and each source's licence page must be re-read and dated in license_checked_on at bundle build (docs-site/docs/operations/public-demo.md). Only the speech of people speaking in an official or professional public capacity is used; no private individual. `exclusions` are rules the curator applies when choosing recordings; FCC and OSHA were dropped on 2026-11-08 because their licence pages could not be read (see `excluded`); every remaining source's licence page was re-read that day except LibriVox, which stays out pending the owner's decision. The owner approves the final item list. Neutrality review 2026-11-08: the owner rejected the first picks as not politically neutral; the list now covers science, space, weather, technology, culture, education, how-to and statistics explainers only. The government-meetings collection is filled with NASA meetings and USGS public lectures, so a rename to 'Government meetings & public talks' is proposed for the owner (COLLECTIONS unchanged).",
   "collections": [
     {
       "id": "news",
@@ -28,7 +28,7 @@
   ],
   "sources": [
     {
-      "name": "Voice of America news reports in several languages",
+      "name": "Voice of America features in several languages (science, technology, culture, lifestyle, economy explainers)",
       "collection": "news",
       "url": "https://www.voanews.com/",
       "license": "US-GOV-PD",
@@ -37,7 +37,8 @@
       "why_allowed": "VOA's copyright page: \"All text, audio and video material produced exclusively by the Voice of America is in the public domain.\" Page checked 2026-11-08.",
       "exclusions": [
         "Exclude any segment not produced exclusively by VOA: the page says some material is licensed for VOA programming only and is not public domain, and AFP, AP and Reuters material may not be redistributed.",
-        "Exclude street interviews and vox pops with private individuals; keep only VOA staff, officials and named experts speaking in a professional capacity."
+        "Exclude street interviews and vox pops with private individuals; keep only VOA staff, officials and named experts speaking in a professional capacity.",
+        "Neutral topics only: no elections, politics, conflict, crime, immigration or individuals' cases; sports and entertainment items were not taken because they usually carry third-party game, film or music footage that VOA's public-domain statement does not cover."
       ],
       "shows": [
         "multi-language transcripts",
@@ -48,41 +49,57 @@
       "license_checked_on": "2026-11-08"
     },
     {
-      "name": "NTSB board meetings",
+      "name": "NASA Advisory Council and NASA town hall meetings",
       "collection": "government-meetings",
-      "url": "https://www.ntsb.gov/news/Pages/Board-Meetings.aspx",
+      "url": "https://www.nasa.gov/",
       "license": "US-GOV-PD",
-      "license_url": "https://www.ntsb.gov/about/Pages/Website-Policies.aspx",
-      "attribution": "National Transportation Safety Board",
-      "why_allowed": "NTSB website policies: content \"prepared by federal employees\" is \"not protected by copyright\" and \"may be freely copied\"; copyrighted third-party items are identified as such. Checked 2026-11-08.",
+      "license_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "attribution": "Courtesy NASA",
+      "why_allowed": "NASA media guidelines (re-read 2026-11-08): NASA content 'generally [is] not subject to copyright in the United States'.",
       "exclusions": [
-        "Exclude any third-party text, image, audio or video the NTSB marks as copyrighted.",
-        "Exclude family-member or private-citizen statements; keep Board members and NTSB investigators in their official roles."
+        "Opening ~13 minutes only; Q&A cut.",
+        "The Exploration Systems town hall touches the proposed federal budget in its opening; owner to confirm it is neutral enough."
       ],
       "shows": [
-        "technical vocabulary",
-        "long recordings",
-        "who-said-what questions"
+        "diarization",
+        "long-form summaries"
       ],
       "contains_private_individuals": false,
       "license_checked_on": "2026-11-08"
     },
     {
-      "name": "FDA advisory committee meetings",
+      "name": "USGS public lecture series (PubTalks)",
       "collection": "government-meetings",
-      "url": "https://www.fda.gov/advisory-committees/advisory-committee-calendar",
+      "url": "https://www.usgs.gov/centers/menlo-park-science-center/science/public-lecture-series",
       "license": "US-GOV-PD",
-      "license_url": "https://www.fda.gov/about-fda/about-website/website-policies",
-      "attribution": "US Food and Drug Administration",
-      "why_allowed": "FDA website policies: \"Unless otherwise noted\" the contents of fda.gov \"are in the public domain and may be republished, reprinted and otherwise used freely\". Checked 2026-11-08.",
+      "license_url": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+      "attribution": "US Geological Survey",
+      "why_allowed": "USGS Copyrights and Credits (re-read 2026-11-08): 'USGS-authored or produced data and information are considered to be in the U.S. Public Domain'; non-USGS images used with permission are marked, and USGS staff voice or likeness may carry publicity rights for commercial use.",
       "exclusions": [
-        "Exclude the open public hearing segment (private citizens, patients, and industry or advocacy speakers).",
-        "Exclude sponsor (company) presentations and slides; keep FDA staff and the committee's members. Committee members include non-federal academics: confirm each is speaking in the official committee role, and drop meetings where the recording notes a copyright."
+        "Opening ~13 minutes only; audience Q&A with members of the public cut.",
+        "Verify from transcripts that no guest speaker or copyrighted slide-only content is relied on."
       ],
       "shows": [
-        "many speakers",
-        "medical vocabulary",
-        "voting and decision summaries"
+        "science talks",
+        "cross-file search"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": "2026-11-08"
+    },
+    {
+      "name": "Bureau of Labor Statistics explainer videos",
+      "collection": "business-finance",
+      "url": "https://www.bls.gov/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.bls.gov/opub/copyright-information.htm",
+      "attribution": "US Bureau of Labor Statistics",
+      "why_allowed": "BLS Copyright Information: 'everything that we publish, both in hard copy and electronically, is in the public domain, except for previously copyrighted photographs and illustrations.' Read 2026-11-08 from the Internet Archive copy (bls.gov returns 403 to scripts).",
+      "exclusions": [
+        "Short narrated explainers; no members of the public."
+      ],
+      "shows": [
+        "short-form summaries",
+        "economics vocabulary search"
       ],
       "contains_private_individuals": false,
       "license_checked_on": "2026-11-08"
@@ -96,8 +113,7 @@
       "attribution": "Board of Governors of the Federal Reserve System",
       "why_allowed": "Board website: its information \"is in the public domain and may be copied and distributed without permission\"; credit the Board. Checked 2026-11-08.",
       "exclusions": [
-        "Only the Chair's prepared introductory statement is used (a single public official speaking); the reporter Q&A is not part of the clip, so no journalist is named or heard.",
-        "Exclude any photo, graphic or material the Board marks as from a non-Board source."
+        "Chair's prepared introductory statement only; only statements without tariff, immigration or other policy-contested passages."
       ],
       "shows": [
         "numbers and dates",
@@ -116,12 +132,45 @@
       "attribution": "US Securities and Exchange Commission",
       "why_allowed": "The SEC's website dissemination policy is the 'Website Dissemination' section of the page titled Privacy Information (there is no separate copyright page): information may be copied or further distributed without the SEC's permission, cite the SEC as the source, and do not use the SEC seal or other logos and artwork. Re-read 2026-11-08. Commission-produced recordings only.",
       "exclusions": [
-        "Exclude any segment from a non-SEC source and the SEC seal, logos and EDGAR marks as artwork.",
-        "Exclude public-comment speakers; keep Commissioners and staff."
+        "Opening minutes only; only technical rule topics (foreign private issuer definition, market-structure rule); no climate-disclosure, enforcement or crypto meetings."
       ],
       "shows": [
         "finance vocabulary",
         "votes and rulemaking summaries"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": "2026-11-08"
+    },
+    {
+      "name": "Bureau of Labor Statistics career-information videos",
+      "collection": "training-education",
+      "url": "https://www.bls.gov/careeroutlook/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.bls.gov/opub/copyright-information.htm",
+      "attribution": "US Bureau of Labor Statistics",
+      "why_allowed": "Same BLS Copyright Information page: public domain except previously copyrighted photographs and illustrations.",
+      "exclusions": [
+        "How-to-use-the-tool videos only."
+      ],
+      "shows": [
+        "how-to content"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": "2026-11-08"
+    },
+    {
+      "name": "NOAA National Ocean Service education video",
+      "collection": "training-education",
+      "url": "https://oceanservice.noaa.gov/",
+      "license": "US-GOV-PD",
+      "license_url": "https://oceanservice.noaa.gov/disclaimer.html",
+      "attribution": "NOAA National Ocean Service",
+      "why_allowed": "NOS disclaimers (re-read 2026-11-08): 'Information presented on this website is considered public information and may be distributed or copied, unless specifically noted otherwise.' Wording is 'public information', not 'public domain'.",
+      "exclusions": [
+        "NOAA seal and initials not used as branding."
+      ],
+      "shows": [
+        "education content"
       ],
       "contains_private_individuals": false,
       "license_checked_on": "2026-11-08"
@@ -147,7 +196,7 @@
       "license_checked_on": "2026-11-08"
     },
     {
-      "name": "FEMA training and preparedness videos",
+      "name": "FEMA preparedness how-to videos",
       "collection": "training-education",
       "url": "https://training.fema.gov/",
       "license": "US-GOV-PD",
@@ -155,9 +204,7 @@
       "attribution": "Federal Emergency Management Agency",
       "why_allowed": "FEMA website information page, re-read 2026-11-08: 'Most material on FEMA.gov is free of copyright and may be copied and distributed without permission'; licensed or restricted photos and graphics carry a credit or copyright notice and need the source's permission; use of the DHS seal and marks is restricted.",
       "exclusions": [
-        "Exclude anything with a copyright notice or photo credit (licensed or restricted).",
-        "Exclude survivor and community interviews (private individuals); keep FEMA staff and instructors.",
-        "FEMA and DHS names and logos are not reused as branding."
+        "Preparedness how-to and risk explainers only; no survivors, disaster footage, recovery or disaster-response operations."
       ],
       "shows": [
         "procedural vocabulary",
@@ -167,26 +214,39 @@
       "license_checked_on": "2026-11-08"
     },
     {
-      "name": "LibriVox public-domain audiobook readings",
-      "collection": "training-education",
-      "url": "https://librivox.org/",
-      "license": "PDM-1.0",
-      "license_url": "https://librivox.org/pages/public-domain/",
-      "attribution": "LibriVox volunteer readers; recordings dedicated to the public domain",
-      "why_allowed": "LibriVox: \"all our recordings are public domain\" and volunteers' recordings \"will be donated to the public domain\" (public domain in the USA; other countries may differ). The underlying books are US public domain. Checked 2026-11-08.",
+      "name": "National Weather Service forecast-office briefings (outlook and water supply)",
+      "collection": "science-briefings",
+      "url": "https://www.weather.gov/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.weather.gov/disclaimer",
+      "attribution": "NOAA / National Weather Service",
+      "why_allowed": "NWS disclaimer (re-read 2026-11-08): NWS web information 'is in the public domain, unless specifically noted otherwise'.",
       "exclusions": [
-        "Use only short chapters whose catalogue page shows the recording dedicated to the public domain and a pre-1930 text.",
-        "Keep to English-language chapters read by one volunteer, with the reader credited as listed on LibriVox."
+        "Outlooks and water-supply briefings only."
       ],
       "shows": [
-        "single-speaker long form",
-        "literary vocabulary",
-        "search over prose"
+        "weather vocabulary",
+        "cross-file chat"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null,
-      "notes": "Decision on contains_private_individuals: the policy page says nothing about reader identity or consent, and a volunteer is a private individual who uses a (possibly real) name. Every other source here is an official speaking in a public role, which is the standard the validator's flag encodes. We therefore do NOT mark LibriVox items false on the strength of the public-domain dedication, which settles copyright, not the person's privacy. Ship LibriVox only if the owner accepts a licensed-by-dedication volunteer voice, or choose readers who publish under a clear public credit; until then the items stay out of the bundle (open_owner_decision). If approved, the curator sets the flag deliberately for each item.",
-      "open_owner_decision": true
+      "license_checked_on": "2026-11-08"
+    },
+    {
+      "name": "NASA Goddard explainer videos",
+      "collection": "science-briefings",
+      "url": "https://www.nasa.gov/goddard/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "attribution": "Courtesy NASA",
+      "why_allowed": "NASA media guidelines (re-read 2026-11-08): generally not subject to copyright in the US; third-party material is marked.",
+      "exclusions": [
+        "Narrated explainers, no one on camera; background-music provenance to confirm."
+      ],
+      "shows": [
+        "space and Earth science"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": "2026-11-08"
     },
     {
       "name": "NASA mission briefings and NASA TV programmes",
@@ -197,8 +257,7 @@
       "attribution": "Courtesy NASA",
       "why_allowed": "NASA media guidelines: content \"generally [is] not subject to copyright in the United States\". Checked 2026-11-08.",
       "exclusions": [
-        "Exclude items labelled with a third-party copyright holder's name and any commercial-partner presentation.",
-        "Exclude reporters' questions from private individuals' voices where the speaker is not a named media professional; keep NASA officials, scientists and astronauts in their official roles."
+        "Opening part of each briefing only; reporter Q&A cut. No climate-policy, budget-politics or defence-programme briefings."
       ],
       "shows": [
         "multi-speaker diarization",
@@ -216,8 +275,7 @@
       "attribution": "NOAA / National Weather Service",
       "why_allowed": "NWS disclaimer: its information \"is in the public domain, unless specifically noted otherwise\"; do not imply endorsement or alter it as official. Checked 2026-11-08.",
       "exclusions": [
-        "Exclude third-party information and imagery, which the page says is used under the provider's licence.",
-        "Exclude the NWS name and logo as branding (trademark); and media-partner or broadcaster segments."
+        "Forecaster briefings only; hurricane briefings limited to track and intensity forecasts, no damage reports."
       ],
       "shows": [
         "long recordings",
@@ -245,6 +303,26 @@
     }
   ],
   "excluded": [
+    {
+      "name": "FDA advisory committee meetings",
+      "reason": "Dropped 2026-11-08 (owner neutrality rule): drugs, vaccines and medical controversy."
+    },
+    {
+      "name": "NTSB board meetings",
+      "reason": "Dropped 2026-11-08 (owner neutrality rule): accident and fatality investigations."
+    },
+    {
+      "name": "VOA reports on elections, conflict, security, immigration, politics and individual legal cases",
+      "reason": "Dropped 2026-11-08 (owner neutrality rule); 11 of 13 previous VOA items."
+    },
+    {
+      "name": "FEMA disaster-response, registration and tribal-recovery videos; NASA climate, budget-politics and defence briefings; Fed statements and SEC meetings touching tariffs, immigration, climate rules, enforcement or crypto; a hurricane briefing quoting fatality figures",
+      "reason": "Dropped 2026-11-08 (owner neutrality rule); see the archive README's removed list."
+    },
+    {
+      "name": "NSF National Science Board, NOAA Library talks, Library of Congress talks, ESA videos",
+      "reason": "Not taken: no licence page could be read for NSF (404) or NOAA Library content, Library of Congress rights are item-by-item, and no ESA item was verified as CC BY or CC BY-SA IGO."
+    },
     {
       "name": "AMI Meeting Corpus",
       "reason": "CC BY 4.0, but the speakers are private individuals; the demo carries no private individual's voice."

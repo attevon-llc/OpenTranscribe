@@ -11,6 +11,7 @@
     </LazySection>
 -->
 <script lang="ts">
+  import type { Component } from 'svelte';
   import { t } from '$stores/locale';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import type { ComponentLoader } from '$lib/settings/sectionLoaders';
@@ -21,7 +22,7 @@
   /** Shape of the skeleton; match what the panel will look like. */
   export let variant: 'form' | 'rows' | 'chips' | 'dashboard' = 'form';
 
-  let loaded: { loader: ComponentLoader; component: any } | null = null;
+  let loaded: { loader: ComponentLoader; component: Component<never> } | null = null;
   let failedLoader: ComponentLoader | null = null;
   let attempt = 0;
 

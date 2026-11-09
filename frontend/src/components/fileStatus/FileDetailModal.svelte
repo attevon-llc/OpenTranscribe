@@ -9,13 +9,14 @@
   } from '$lib/utils/formatting';
   import { translateFileStatus } from '$lib/fileStatus/statusLabel';
   import ProcessingProvenance from '$components/ProcessingProvenance.svelte';
+  import type { DetailedFileStatus } from '$lib/types/fileStatus';
   import BaseModal from '$components/ui/BaseModal.svelte';
 
-  export let detailedStatus: any;
-  export let selectedFile: any;
-  export let retryingFiles: Set<any>;
+  export let detailedStatus: DetailedFileStatus | null;
+  export let selectedFile: string | null;
+  export let retryingFiles: Set<string>;
 
-  const dispatch = createEventDispatcher<{ close: void; retry: any }>();
+  const dispatch = createEventDispatcher<{ close: void; retry: string }>();
 
   function closeModal() {
     dispatch('close');

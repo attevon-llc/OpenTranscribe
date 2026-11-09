@@ -31,7 +31,7 @@ interface SegmentLike {
   speaker_label?: string | null;
   resolved_speaker_name?: string | null;
   speaker?: { uuid?: string; name?: string; display_name?: string } | null;
-  [key: string]: unknown;
+  text?: string;
 }
 
 /** Anything carrying the file-detail transcript payload. */

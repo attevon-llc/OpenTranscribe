@@ -23,18 +23,11 @@ vi.mock('$stores/locale', async () =>
 );
 
 import TasksGrid from './TasksGrid.svelte';
+import type { UserTask } from '$lib/types/fileStatus';
 
-interface TaskRow {
-  id: number;
-  task_type: string;
-  status: string;
-  progress?: number | null;
-  media_file?: { uuid: string; filename: string };
-}
-
-function task(overrides: Partial<TaskRow> = {}): TaskRow {
+function task(overrides: Partial<UserTask> = {}): UserTask {
   return {
-    id: 1,
+    id: 'task-1',
     task_type: 'transcription',
     status: 'in_progress',
     progress: 0.42,
@@ -43,7 +36,7 @@ function task(overrides: Partial<TaskRow> = {}): TaskRow {
   };
 }
 
-function renderGrid(tasks: TaskRow[]) {
+function renderGrid(tasks: UserTask[]) {
   return render(TasksGrid, {
     props: { tasks, filteredTasks: tasks, tasksLoading: false, tasksError: null },
   });
@@ -100,9 +93,9 @@ describe('TasksGrid — progress rendering', () => {
 
   it('labels each task by task_type — the other recently-changed backend field', () => {
     const { container } = renderGrid([
-      task({ id: 1, task_type: 'transcription' }),
-      task({ id: 2, task_type: 'search_indexing' }),
-      task({ id: 3, task_type: 'summarization' }),
+      task({ id: 'task-1', task_type: 'transcription' }),
+      task({ id: 'task-2', task_type: 'search_indexing' }),
+      task({ id: 'task-3', task_type: 'summarization' }),
     ]);
 
     // Real copy, so a renamed task_type shows up as a wrong label rather than a

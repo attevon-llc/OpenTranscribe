@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { TranscriptSourceFile } from '$lib/types/media';
+  import type { CrossVideoMatch, SpeakerEditorEntry } from '$lib/types/speaker';
   import { resolve } from '$app/paths';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
@@ -15,8 +17,8 @@
   import { RENAME_PROPAGATION_TIMEOUT_MS } from '$lib/api/speakerClusters';
   import { isPlaceholderSpeakerName } from '$lib/utils/speakerNames';
 
-  export let file: any = null;
-  export let speakerList: any[] = [];
+  export let file: TranscriptSourceFile | null = null;
+  export let speakerList: SpeakerEditorEntry[] = [];
   export let speakerNamesChanged: boolean = false;
   export let savingSpeakers: boolean = false;
 
@@ -93,7 +95,7 @@
   }
 
 
-  function handleSpeakerTimestampClick(startTime: number, segmentUuid: string, segmentIndex: number) {
+  function handleSpeakerTimestampClick(startTime: number, segmentUuid: string | undefined, segmentIndex: number | undefined) {
     // Seek the media player to this timestamp
     dispatch('segmentClick', { startTime });
 
@@ -120,7 +122,9 @@
   }
 
   // Helper function to check if speaker has cross-video matches to display
-  function hasCrossVideoMatches(speaker: any): boolean {
+  function hasCrossVideoMatches(
+    speaker: SpeakerEditorEntry
+  ): speaker is SpeakerEditorEntry & { cross_video_matches: CrossVideoMatch[] } {
     if (!speaker.cross_video_matches || speaker.cross_video_matches.length === 0) {
       return false;
     }
@@ -275,11 +279,11 @@
                   {formatClock(ts.start_time)}
                 </button>
               {/each}
-              {#if speaker.segment_count > speaker.segment_timestamps.length}
+              {#if (speaker.segment_count ?? 0) > speaker.segment_timestamps.length}
                 <span class="timestamp-more">
-                  {speaker.segment_count - speaker.segment_timestamps.length === 1
+                  {(speaker.segment_count ?? 0) - speaker.segment_timestamps.length === 1
                     ? $t('transcript.moreSegmentsSingular')
-                    : $t('transcript.moreSegments', { count: speaker.segment_count - speaker.segment_timestamps.length })}
+                    : $t('transcript.moreSegments', { count: (speaker.segment_count ?? 0) - speaker.segment_timestamps.length })}
                 </span>
               {/if}
             </div>
@@ -344,17 +348,17 @@
                           <span class="chip-label">{$t('transcript.aiSuggestion')}</span>
                           <button
                             class="suggestion-chip llm-chip"
-                            class:high-confidence={speaker.confidence >= 0.75}
-                            class:medium-confidence={speaker.confidence >= 0.5 && speaker.confidence < 0.75}
-                            class:low-confidence={speaker.confidence < 0.5}
+                            class:high-confidence={(speaker.confidence ?? 0) >= 0.75}
+                            class:medium-confidence={(speaker.confidence ?? 0) >= 0.5 && (speaker.confidence ?? 0) < 0.75}
+                            class:low-confidence={(speaker.confidence ?? 0) < 0.5}
                             on:click={() => {
                               // Unlike the metadata/profile chips beside it, this one only
                               // mutated `speaker.display_name` in place and never told the
                               // parent — `speakerNamesChanged` never flipped true, so Save
                               // stayed disabled until the user separately typed into the
                               // input. One click was supposed to be enough.
-                              speaker.display_name = speaker.suggested_name;
-                              dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: speaker.suggested_name });
+                              speaker.display_name = speaker.suggested_name ?? '';
+                              dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: speaker.suggested_name ?? '' });
                             }}
                             title={speaker.suggestion_source === 'llm_analysis' ? $t('transcript.aiSuggestedBasedOnContent') : $t('transcript.aiSuggestedBasedOnSimilarity')}
                           >
@@ -384,7 +388,7 @@
                                 ? $t('transcript.sourceContentAnalysis')
                                   : $t('transcript.sourceVoiceSimilarity')}
                             </span>
-                            <span class="chip-confidence" dir="ltr">{Math.round(speaker.confidence * 100)}%</span>
+                            <span class="chip-confidence" dir="ltr">{Math.round((speaker.confidence ?? 0) * 100)}%</span>
                           </button>
                         </div>
                       {/if}

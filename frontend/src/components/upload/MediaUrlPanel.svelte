@@ -50,8 +50,16 @@
     }
   })();
 
-  export function getUrlPayloadExtras(): Record<string, any> {
-    const extras: Record<string, any> = {};
+  type UrlPayloadExtras = {
+    media_username?: string;
+    media_password?: string;
+    video_quality?: string;
+    audio_only?: boolean;
+    audio_quality?: string;
+  };
+
+  export function getUrlPayloadExtras(): UrlPayloadExtras {
+    const extras: UrlPayloadExtras = {};
     if (mediaUsername) extras.media_username = mediaUsername;
     if (mediaPassword) extras.media_password = mediaPassword;
     if (downloadVideoQuality !== downloadInitialVideoQuality) extras.video_quality = downloadVideoQuality;

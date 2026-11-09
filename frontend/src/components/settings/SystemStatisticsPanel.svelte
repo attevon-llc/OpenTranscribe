@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import type { SystemStats } from '$lib/settings/adminLoaders';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { taskStatusIcon } from '$lib/ui/menuIcons';
   import { createEventDispatcher } from 'svelte';
@@ -19,7 +20,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import InfoTip from '$components/settings/transcription/InfoTip.svelte';
 
-  export let stats: any;
+  export let stats: SystemStats;
   export let statsLoading = false;
   export let statsRefreshing = false;
   export let searchIndexStatus: SearchIndexStatus | null = null;
@@ -124,7 +125,7 @@
           <li>
             <strong>{$t('settings.statistics.cpuMode.modelLabel')}:</strong>
             <code>{stats.system?.whisper_model || '—'}</code>
-            {#if ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en'].includes(stats.system?.whisper_model)}
+            {#if ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en'].includes(stats.system?.whisper_model ?? '')}
               — {$t('settings.statistics.cpuMode.modelHintGood')}
             {:else}
               — {$t('settings.statistics.cpuMode.modelHintHeavy')}

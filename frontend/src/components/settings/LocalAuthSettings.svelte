@@ -2,10 +2,11 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import PasswordPolicySettings from './PasswordPolicySettings.svelte';
+  import type { AuthConfigValues } from '$lib/api/authConfig';
   import { normalizeTier } from '$lib/passwordPolicyTiers';
 
   // All fields come from a single config object (saved under "local" category)
-  export let config: Record<string, any> = {};
+  export let config: AuthConfigValues = {};
   // Bumped by the parent after a save so the panel re-reads the policy the server enforces.
   export let refreshKey = 0;
 
@@ -14,7 +15,7 @@
   // Helper to get value with default - only use default if value is truly undefined
   function getVal<T>(key: string, defaultVal: T): T {
     const val = config[key];
-    return val !== undefined ? val : defaultVal;
+    return val !== undefined ? (val as T) : defaultVal;
   }
 
   // Every key below must be the name the BACKEND reads (app/core/auth_settings.py).

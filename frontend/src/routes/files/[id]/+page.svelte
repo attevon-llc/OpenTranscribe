@@ -396,7 +396,7 @@
     }
   }
 
-  function handleSegmentClick(event: any) {
+  function handleSegmentClick(event: CustomEvent<{ startTime: number }>) {
     const startTime = event.detail.startTime;
     seekToTime(startTime);
   }
@@ -453,8 +453,9 @@
     exportDialogs.openExport(event.detail.format, commentCount > 0);
   }
 
-  function handleSeekTo(event: any) {
-    const time = event.detail.time || event.detail;
+  function handleSeekTo(event: CustomEvent<{ time: number } | number>) {
+    const detail = event.detail;
+    const time = typeof detail === 'number' ? detail : detail.time;
     seekToTime(time);
   }
 
@@ -471,7 +472,7 @@
     }
   }
 
-  function handleCollectionsUpdated(event: any) {
+  function handleCollectionsUpdated(event: CustomEvent<{ collections: Collection[] }>) {
     const { collections: updatedCollections } = event.detail;
 
     collections = updatedCollections;

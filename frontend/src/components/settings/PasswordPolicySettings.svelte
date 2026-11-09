@@ -8,11 +8,12 @@
     isPreset,
     normalizeTier,
     type PasswordTier,
+    type PasswordPolicyFormData,
     type PolicyValues,
   } from '$lib/passwordPolicyTiers';
 
   /** The form object owned by LocalAuthSettings; this panel edits the password_* keys. */
-  export let data: Record<string, any>;
+  export let data: PasswordPolicyFormData;
   /** True while local password login is off: the whole panel is inert. */
   export let disabled = false;
   /** Bump to re-read the policy the server enforces (after a save). */

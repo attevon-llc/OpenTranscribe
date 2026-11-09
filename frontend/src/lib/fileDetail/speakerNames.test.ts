@@ -83,9 +83,9 @@ describe('renameProfileSuggestions', () => {
   it('renames matching profile suggestions only', () => {
     const s = speaker({
       profile_suggestions: [
-        { name: 'Alice', suggestion_type: 'profile' },
-        { name: 'Alice', suggestion_type: 'voice' },
-        { name: 'Bob', suggestion_type: 'profile' },
+        { name: 'Alice', confidence: 0.9, suggestion_type: 'profile' },
+        { name: 'Alice', confidence: 0.9, suggestion_type: 'voice' },
+        { name: 'Bob', confidence: 0.9, suggestion_type: 'profile' },
       ],
     });
     const [out] = renameProfileSuggestions(

@@ -82,7 +82,7 @@ export interface SummaryData {
   metadata?: SummaryMetadata;
 
   // Allow any additional fields from custom prompts
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // `GET /files/{uuid}/summary`. The `source` / `document_id` / `created_at` /

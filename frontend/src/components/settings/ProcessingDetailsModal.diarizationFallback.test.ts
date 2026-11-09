@@ -8,8 +8,18 @@ vi.mock('$stores/locale', () => ({
 }));
 
 import ProcessingDetailsModal from './ProcessingDetailsModal.svelte';
+import {
+  initialSystemStats,
+  type DiarizationModelStats,
+  type SystemStats,
+} from '$lib/settings/adminLoaders';
 
-function diarizationModel(overrides: Record<string, unknown> = {}) {
+function statsWithDiarization(diarization: DiarizationModelStats): SystemStats {
+  const base = initialSystemStats((key) => key);
+  return { ...base, models: { ...base.models, diarization } };
+}
+
+function diarizationModel(overrides: Partial<DiarizationModelStats> = {}): DiarizationModelStats {
   return {
     name: 'pyannote/speaker-diarization-community-1',
     description: 'PyAnnote (in-process fallback)',
@@ -27,7 +37,7 @@ describe('ProcessingDetailsModal — diarization configured-vs-effective (issue 
     render(ProcessingDetailsModal, {
       isOpen: true,
       section: 'models',
-      stats: { models: { diarization: diarizationModel() } },
+      stats: statsWithDiarization(diarizationModel()),
     });
 
     // The warning must name BOTH what was asked for and what is actually running —
@@ -43,15 +53,13 @@ describe('ProcessingDetailsModal — diarization configured-vs-effective (issue 
     render(ProcessingDetailsModal, {
       isOpen: true,
       section: 'models',
-      stats: {
-        models: {
-          diarization: diarizationModel({
-            description: 'Native diarization sidecar',
-            effective_backend: 'native',
-            using_fallback: false,
-          }),
-        },
-      },
+      stats: statsWithDiarization(
+        diarizationModel({
+          description: 'Native diarization sidecar',
+          effective_backend: 'native',
+          using_fallback: false,
+        })
+      ),
     });
 
     expect(screen.getByText('settings.statistics.diarizationConfigured')).toBeInTheDocument();

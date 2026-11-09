@@ -45,10 +45,16 @@ export interface AuthConfigAuditResponse {
   changed_by_email?: string | null;
 }
 
+/** A single stored auth setting as the API serialises it. */
+export type AuthConfigValue = string | number | boolean | null;
+
+/** One category's settings flattened to key -> value. */
+export type AuthConfigValues = Record<string, AuthConfigValue>;
+
 export interface AuthMethodTestResponse {
   success: boolean;
   message: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 export interface LDAPConfig {
@@ -263,12 +269,12 @@ export class AuthConfigApi {
     return response.data;
   }
 
-  static async getConfigByCategory(category: string): Promise<Record<string, any>> {
+  static async getConfigByCategory(category: string): Promise<AuthConfigValues> {
     const response = await axiosInstance.get(`/admin/auth-config/${category}`);
     return response.data;
   }
 
-  static async updateCategory(category: string, config: Record<string, any>): Promise<void> {
+  static async updateCategory(category: string, config: AuthConfigValues): Promise<void> {
     await axiosInstance.put(`/admin/auth-config/${category}`, config);
     // The public /auth/methods answer is derived from this config and is shared for a few seconds.
     invalidateAuthMethods();
@@ -276,7 +282,7 @@ export class AuthConfigApi {
 
   static async testConnection(
     category: string,
-    config: Record<string, any>
+    config: AuthConfigValues
   ): Promise<AuthMethodTestResponse> {
     const response = await axiosInstance.post(`/admin/auth-config/${category}/test`, config);
     return response.data;

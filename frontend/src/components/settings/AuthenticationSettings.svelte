@@ -3,6 +3,9 @@
   import { onMount } from 'svelte';
   import {
     AuthConfigApi,
+    type AuthConfigResponse,
+    type AuthConfigValue,
+    type AuthConfigValues,
     type AuthMailDesignation,
     type AuthMailReadiness,
     type AuthMethodTestResponse,
@@ -29,7 +32,7 @@
   // slowness this replaced. Starts true so the Local form is never mounted with coded defaults
   // while the stored values are still on the way.
   let configsReady = false;
-  let configs: Record<string, any> = {};
+  let configs: Record<string, AuthConfigValues> = {};
   let policyRefresh = 0;
   const backendNotReady = false; // Backend is fully implemented
 
@@ -102,8 +105,8 @@
    * Picking by key (rather than spreading whole categories) also keeps stale
    * alias rows still sitting in `local` from reappearing in the form.
    */
-  function collectLocalTabConfig(all: Record<string, any>): Record<string, any> {
-    const merged: Record<string, any> = {};
+  function collectLocalTabConfig(all: Record<string, AuthConfigValues>): AuthConfigValues {
+    const merged: AuthConfigValues = {};
     for (const [category, keys] of Object.entries(LOCAL_TAB_CATEGORY_KEYS)) {
       const stored = all[category] || {};
       for (const key of keys) {
@@ -180,9 +183,8 @@
   $: if (activeTab === 'mail' && !emailConfigsLoaded) loadEmailConfigs();
 
   // Transform array of config objects to key-value dictionary
-  function transformConfigArray(configArray: any[]): Record<string, any> {
-    if (!Array.isArray(configArray)) return configArray || {};
-    const result: Record<string, any> = {};
+  function transformConfigArray(configArray: AuthConfigResponse[]): AuthConfigValues {
+    const result: AuthConfigValues = {};
     for (const item of configArray) {
       if (!item.config_key) continue;
 
@@ -194,12 +196,12 @@
 
       if (item.config_value !== undefined && item.config_value !== null) {
         // Convert string values to appropriate types
-        let value = item.config_value;
+        let value: AuthConfigValue = item.config_value;
         if (item.data_type === 'bool') {
-          value = value === 'true' || value === true;
+          value = value === 'true';
         } else if (item.data_type === 'int') {
           // `|| 0` would coerce a legitimate stored 0 — parse, then fall back.
-          const parsed = parseInt(value, 10);
+          const parsed = parseInt(item.config_value, 10);
           value = Number.isNaN(parsed) ? 0 : parsed;
         }
         result[item.config_key] = value;
@@ -212,11 +214,11 @@
     return result;
   }
 
-  function applyConfigs(allConfigs: Record<string, unknown>) {
+  function applyConfigs(allConfigs: Record<string, AuthConfigResponse[]>) {
     // Transform each category's array to key-value dictionary
-    const next: Record<string, any> = {};
+    const next: Record<string, AuthConfigValues> = {};
     for (const [category, configArray] of Object.entries(allConfigs)) {
-      next[category] = transformConfigArray(configArray as any[]);
+      next[category] = Array.isArray(configArray) ? transformConfigArray(configArray) : {};
     }
     configs = next;
   }
@@ -230,7 +232,7 @@
     if (afterSave) invalidateSectionData(SectionDataKey.authConfig);
     const cached = afterSave
       ? undefined
-      : peekSectionData<Record<string, unknown>>(SectionDataKey.authConfig);
+      : peekSectionData<Record<string, AuthConfigResponse[]>>(SectionDataKey.authConfig);
     if (cached) {
       applyConfigs(cached);
       configsReady = true;
@@ -248,7 +250,7 @@
     }
   }
 
-  async function handleSave(category: string, config: Record<string, any>) {
+  async function handleSave(category: string, config: AuthConfigValues) {
     try {
       await AuthConfigApi.updateCategory(category, config);
       toastStore.success($t('settings.authentication.configSaved', { category }));
@@ -266,10 +268,10 @@
    * reported as such — claiming blanket success would leave the admin believing
    * a setting landed when the server rejected it.
    */
-  async function handleLocalSave(config: Record<string, any>) {
+  async function handleLocalSave(config: AuthConfigValues) {
     const targets = Object.entries(LOCAL_TAB_CATEGORY_KEYS)
       .map(([category, keys]) => {
-        const payload: Record<string, any> = {};
+        const payload: AuthConfigValues = {};
         for (const key of keys) {
           if (config[key] !== undefined) payload[key] = config[key];
         }
@@ -310,7 +312,7 @@
    */
   let oidcTestResult: AuthMethodTestResponse | undefined = undefined;
 
-  async function handleTestConnection(category: string, config: Record<string, any>) {
+  async function handleTestConnection(category: string, config: AuthConfigValues) {
     try {
       const result = await AuthConfigApi.testConnection(category, config);
       if (result.success) {
@@ -396,7 +398,7 @@
             <Component
               config={localTabConfig}
               refreshKey={policyRefresh}
-              on:save={(e: CustomEvent<any>) => handleLocalSave(e.detail)}
+              on:save={(e: CustomEvent<AuthConfigValues>) => handleLocalSave(e.detail)}
             />
           {:else}
             <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
@@ -407,8 +409,8 @@
           {#if configsReady}
             <Component
               config={configs.ldap || {}}
-              on:save={(e: CustomEvent<any>) => handleSave('ldap', e.detail)}
-              on:test={(e: CustomEvent<any>) => handleTestConnection('ldap', e.detail)}
+              on:save={(e: CustomEvent<AuthConfigValues>) => handleSave('ldap', e.detail)}
+              on:test={(e: CustomEvent<AuthConfigValues>) => handleTestConnection('ldap', e.detail)}
             />
           {:else}
             <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
@@ -421,8 +423,8 @@
               config={configs.oidc || {}}
               secretIsSet={configs.oidc?.oidc_client_secret_is_set}
               testResult={oidcTestResult}
-              on:save={(e: CustomEvent<any>) => handleSave('oidc', e.detail)}
-              on:test={(e: CustomEvent<any>) => handleTestConnection('oidc', e.detail)}
+              on:save={(e: CustomEvent<AuthConfigValues>) => handleSave('oidc', e.detail)}
+              on:test={(e: CustomEvent<AuthConfigValues>) => handleTestConnection('oidc', e.detail)}
             />
           {:else}
             <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
@@ -433,7 +435,7 @@
           {#if configsReady}
             <Component
               config={configs.pki || {}}
-              on:save={(e: CustomEvent<any>) => handleSave('pki', e.detail)}
+              on:save={(e: CustomEvent<AuthConfigValues>) => handleSave('pki', e.detail)}
             />
           {:else}
             <SettingsSkeleton variant="form" count={4} label={$t('settings.authentication.loadingConfig')} />
@@ -445,7 +447,7 @@
             <Component
               config={configs.proxy || {}}
               sharedSecretIsSet={configs.proxy?.proxy_shared_secret_is_set}
-              on:save={(e: CustomEvent<any>) => handleSave('proxy', e.detail)}
+              on:save={(e: CustomEvent<AuthConfigValues>) => handleSave('proxy', e.detail)}
             />
           {:else}
             <SettingsSkeleton variant="form" count={4} label={$t('settings.authentication.loadingConfig')} />
@@ -457,7 +459,7 @@
             <Component
               config={configs.saml || {}}
               privateKeyIsSet={configs.saml?.saml_sp_private_key_is_set}
-              on:save={(e: CustomEvent<any>) => handleSave('saml', e.detail)}
+              on:save={(e: CustomEvent<AuthConfigValues>) => handleSave('saml', e.detail)}
             />
           {:else}
             <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
@@ -480,7 +482,7 @@
           {#if configsReady}
             <Component
               config={configs.session || {}}
-              on:save={(e: CustomEvent<any>) => handleSave('session', e.detail)}
+              on:save={(e: CustomEvent<AuthConfigValues>) => handleSave('session', e.detail)}
             />
           {:else}
             <SettingsSkeleton variant="form" count={3} label={$t('settings.authentication.loadingConfig')} />

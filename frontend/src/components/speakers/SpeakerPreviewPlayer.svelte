@@ -5,7 +5,7 @@
 
   export let speakerPreviewData: SpeakerMediaPreviewData | null = null;
   export let previewCurrentTime = 0;
-  export let playerRef: any = null;
+  export let playerRef: ReturnType<typeof import('$components/FloatingPreviewPlayer.svelte').default> | null = null;
 
   // Dynamic import, browser only: this route has no ssr=false guard and the player needs the
   // DOM. The Video.js modules import cleanly in Node, so the guard can go once a refresh of

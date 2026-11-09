@@ -4,7 +4,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import { buildEmailConfigPayload } from '$lib/settings/emailConfigPayload';
+  import { buildEmailConfigPayload, type EmailConfigForm } from '$lib/settings/emailConfigPayload';
   import {
     createEmailConfig,
     updateEmailConfig,
@@ -20,7 +20,7 @@
   let saving = false;
   let lastId: string | null = null;
 
-  function blank(): any {
+  function blank(): EmailConfigForm {
     return {
       name: '',
       provider: 'smtp' as EmailProvider,
@@ -42,7 +42,7 @@
     };
   }
 
-  let form: any = blank();
+  let form: EmailConfigForm = blank();
 
   $: if (show) {
     if (editingConfig && editingConfig.uuid !== lastId) {

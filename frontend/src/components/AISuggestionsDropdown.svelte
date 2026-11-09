@@ -3,7 +3,9 @@
   import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
 
-  export let suggestions: Array<{name: string, confidence: number, rationale?: string}> = [];
+  type Suggestion = { name: string; confidence: number; rationale?: string };
+
+  export let suggestions: Suggestion[] = [];
   export let type: 'tag' | 'collection' = 'tag';
   export let loading = false;
   export let autoAppliedTags: string[] = [];
@@ -31,11 +33,11 @@
     return 'rgba(239, 68, 68, 0.1)'; // Light red
   }
 
-  function handleAccept(suggestion: any) {
+  function handleAccept(suggestion: Suggestion) {
     dispatch('accept', { suggestion });
   }
 
-  function startEdit(suggestion: any) {
+  function startEdit(suggestion: Suggestion) {
     editingSuggestion = suggestion;
     editedName = suggestion.name;
   }

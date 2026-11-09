@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import type { Component } from 'svelte';
 
 vi.mock('$stores/locale', () => ({
   t: {
@@ -25,7 +26,7 @@ function deferred<T>() {
 
 describe('LazySection', () => {
   it('shows a labelled skeleton until the chunk lands, then the panel with its props', async () => {
-    const chunk = deferred<{ default: unknown }>();
+    const chunk = deferred<{ default: Component<never> }>();
     render(LazySectionTestHost, { props: { load: () => chunk.promise, label: 'x' } });
 
     expect(
@@ -58,8 +59,8 @@ describe('LazySection', () => {
   });
 
   it('drops the previous panel when switched to another loader', async () => {
-    const first = deferred<{ default: unknown }>();
-    const second = deferred<{ default: unknown }>();
+    const first = deferred<{ default: Component<never> }>();
+    const second = deferred<{ default: Component<never> }>();
     const view = render(LazySectionTestHost, {
       props: { load: () => first.promise, label: 'one' },
     });
@@ -75,8 +76,8 @@ describe('LazySection', () => {
   });
 
   it('ignores a stale chunk that resolves after the loader changed', async () => {
-    const slow = deferred<{ default: unknown }>();
-    const fast = deferred<{ default: unknown }>();
+    const slow = deferred<{ default: Component<never> }>();
+    const fast = deferred<{ default: Component<never> }>();
     const view = render(LazySectionTestHost, {
       props: { load: () => slow.promise, label: 'slow' },
     });

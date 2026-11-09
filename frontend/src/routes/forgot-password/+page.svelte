@@ -22,7 +22,7 @@
     try {
       await axiosInstance.post('/auth/password-reset/request', { email: email.trim() });
       submitted = true;
-    } catch (err: any) {
+    } catch {
       // Always show success to prevent email enumeration
       submitted = true;
     } finally {

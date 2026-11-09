@@ -6,6 +6,8 @@
   import {
     ASRSettingsApi,
     type UserASRSettingsResponse,
+    type UserASRSettingsCreate,
+    type ASRConnectionTestRequest,
     type ASRProviderInfo,
     type ASRProvider,
   } from '$lib/api/asrSettings';
@@ -186,10 +188,10 @@
   }
 
   async function handleSave() {
-    if (!isFormValid) return;
+    if (!isFormValid || !formData.provider) return;
     saving = true;
     try {
-      const payload: any = {
+      const payload: UserASRSettingsCreate = {
         name: formData.name.trim(),
         provider: formData.provider,
         model_name: formData.model_name.trim(),
@@ -234,7 +236,7 @@
     testing = true;
     testResult = null;
     try {
-      const params: any = {
+      const params: ASRConnectionTestRequest = {
         provider: formData.provider,
         model_name: formData.model_name,
       };

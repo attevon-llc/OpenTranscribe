@@ -1,6 +1,15 @@
 import type { Translate } from '$lib/i18n';
 import type { Notification } from '$stores/websocket';
 
+/** The slice of the page's file object that notifications read and write; the rest passes through. */
+export interface NotificationFile {
+  uuid?: string;
+  status?: string;
+  progress?: unknown;
+  has_summary?: boolean;
+  [key: string]: unknown;
+}
+
 /**
  * Context object the file-detail page passes into {@link handleFileNotification}.
  *
@@ -16,13 +25,13 @@ import type { Notification } from '$stores/websocket';
 export interface FileNotificationContext {
   // --- current-file identity & state reads ---
   getFileId: () => string;
-  getFile: () => any;
+  getFile: () => NotificationFile | null;
   getLlmAvailable: () => boolean;
   getRedactionStatus: () => string;
-  getVideoPlayerComponent: () => any;
+  getVideoPlayerComponent: () => { updateSubtitles?: () => Promise<unknown> } | null;
 
   // --- file object mutation (must do the real `file = ...` assignment) ---
-  setFile: (f: any) => void;
+  setFile: (f: NotificationFile) => void;
 
   // --- flag setters ---
   setCurrentProcessingStep: (s: string) => void;

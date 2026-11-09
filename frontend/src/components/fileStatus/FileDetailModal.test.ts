@@ -26,14 +26,10 @@ vi.mock('$stores/locale', async () => {
 
 import FileDetailModal from './FileDetailModal.svelte';
 
-interface TaskDetail {
-  task_type: string;
-  status: string;
-  progress?: number | null;
-  created_at: string;
-}
+import type { ProcessingStep } from '$lib/types/media';
+import type { DetailedFileStatus, TaskDetail } from '$lib/types/fileStatus';
 
-function detailedStatus(taskOverrides: Partial<TaskDetail> = {}) {
+function detailedStatus(taskOverrides: Partial<TaskDetail> = {}): DetailedFileStatus {
   return {
     file: {
       uuid: 'file-1',
@@ -46,6 +42,7 @@ function detailedStatus(taskOverrides: Partial<TaskDetail> = {}) {
     can_retry: false,
     task_details: [
       {
+        id: 'task-1',
         task_type: 'transcription',
         status: 'in_progress',
         progress: 0.37,
@@ -120,7 +117,7 @@ describe('FileDetailModal — task progress guard', () => {
 });
 
 describe('FileDetailModal — how the file was processed (#1229)', () => {
-  function renderWithSteps(steps: unknown[] | undefined) {
+  function renderWithSteps(steps: ProcessingStep[] | undefined) {
     const status = detailedStatus();
     return render(FileDetailModal, {
       props: {

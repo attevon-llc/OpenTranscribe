@@ -7,12 +7,13 @@
  *
  * Imported by the modal chunk only, never by the root layout: see `settingsModalLoader.ts`.
  */
+import type { Component } from 'svelte';
 import type { SettingsSection } from '$stores/settingsModalStore';
 import { runIdleQueue } from '$lib/settings/idleQueue';
 import { hasSectionPrefetch, prefetchSectionData } from '$lib/settings/sectionData';
 
 /** A dynamic import of a Svelte component module. */
-export type ComponentLoader = () => Promise<{ default: any }>;
+export type ComponentLoader = () => Promise<{ default: Component<never> }>;
 
 export const sectionLoaders = {
   profile: () => import('$components/settings/UserProfileSettings.svelte'),

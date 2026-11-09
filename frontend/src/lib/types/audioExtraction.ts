@@ -18,7 +18,8 @@ export interface VideoMetadata {
 
   // Video specs
   VideoFormat?: string;
-  Duration?: number;
+  /** Seconds when probed from the container; the raw `H:MM:SS.ss` clock string when captured from the FFmpeg log. */
+  Duration?: number | string;
   FrameRate?: number;
   FrameCount?: number;
   VideoFrameRate?: number;
@@ -60,10 +61,10 @@ export interface VideoMetadata {
   Encoder?: string;
 
   // Raw metadata from FFmpeg (including audio_codec)
-  RawMetadata?: Record<string, any>;
+  RawMetadata?: Record<string, string>;
 
   // Any additional metadata fields
-  [key: string]: string | number | Record<string, any> | undefined;
+  [key: string]: string | number | Record<string, string> | undefined;
 }
 
 /**

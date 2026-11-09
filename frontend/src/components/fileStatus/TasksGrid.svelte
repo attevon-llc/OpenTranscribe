@@ -1,19 +1,20 @@
 <script lang="ts">
+  import type { UserTask } from '$lib/types/fileStatus';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import SearchPagination from '$components/search/SearchPagination.svelte';
   import { taskProgressPercent } from '$lib/utils/formatting';
 
-  export let tasks: any[] = [];
-  export let filteredTasks: any[] = [];
+  export let tasks: UserTask[] = [];
+  export let filteredTasks: UserTask[] = [];
   export let tasksLoading = false;
-  export let tasksError: any = null;
+  export let tasksError: string | null = null;
   export let taskFilter = 'all';
   export let taskTypeFilter = 'all';
   export let taskPage = 1;
   export let taskTotalPages = 0;
 
-  const dispatch = createEventDispatcher<{ viewDetails: any; pageChange: number }>();
+  const dispatch = createEventDispatcher<{ viewDetails: string; pageChange: number }>();
 </script>
 
 {#if tasksLoading && tasks.length === 0}
@@ -104,9 +105,10 @@
             </td>
             <td class="task-actions-cell">
               {#if task.media_file}
+                {@const mediaFileUuid = task.media_file.uuid}
                 <button
                   class="info-button small"
-                  on:click={() => dispatch('viewDetails', task.media_file.uuid)}
+                  on:click={() => dispatch('viewDetails', mediaFileUuid)}
                   title={$t('fileStatus.viewDetailsTooltip')}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

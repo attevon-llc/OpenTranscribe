@@ -17,6 +17,7 @@
   import SummarySearch from './SummarySearch.svelte';
   import SummaryActions from './SummaryActions.svelte';
   import { fileFrozen } from '$lib/legalHold/fileHoldContext';
+  import { isRecord } from '$lib/utils/typeGuards';
 
   // NOTE: despite the name, this is the file's UUID, not its integer id — every
   // real caller (`routes/files/[id]/+page.svelte`) passes `file.uuid`, and
@@ -214,7 +215,7 @@
     return countMatchesRecursive(summaryData, searchTerm);
   }
 
-  function countMatchesRecursive(obj: any, searchTerm: string): number {
+  function countMatchesRecursive(obj: unknown, searchTerm: string): number {
     if (!obj) return 0;
 
     let count = 0;
@@ -225,7 +226,7 @@
       obj.forEach(item => {
         count += countMatchesRecursive(item, searchTerm);
       });
-    } else if (typeof obj === 'object') {
+    } else if (isRecord(obj)) {
       // Skip metadata field
       Object.entries(obj).forEach(([key, value]) => {
         if (key !== 'metadata') {

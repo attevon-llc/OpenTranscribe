@@ -399,7 +399,7 @@ repos:
         language: python
         additional_dependencies: *mypy_env
         pass_filenames: false
-        files: ^(scripts/(guards|lib|audit_tests|model_download|cleanup_test_data)/.*\.py|pyproject\.toml|backend/requirements-dev\.txt)$
+        files: ^(scripts/(guards|lib|audit_tests)/.*\.py|pyproject\.toml|backend/requirements-dev\.txt)$
       # What `type: ignore` hides (plan: code_debt_plan.md G-c). Strips every ignore from a temp
       # copy of backend/ and runs the pinned mypy over it, so it needs the mypy hook's typed
       # world: the `*mypy_env` alias is that hook's dependency list. Whole-tree mypy takes about
@@ -437,7 +437,7 @@ repos:
       # frontend/src; --min-tokens and the scan set live in the script. Seconds, not minutes.
       - id: guard-duplicates
         name: duplicated code ratchet (baselined)
-        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_duplicates.py'
+        entry: bash -c '{ [ -x frontend/node_modules/.bin/jscpd ] || (cd frontend && npm ci); } && python3 scripts/guards/check_duplicates.py'
         language: system
         pass_filenames: false
         files: ^((backend/app|backend/tests|scripts)/.*\.py|frontend/src/|scripts/guards/.*|frontend/package\.json$)

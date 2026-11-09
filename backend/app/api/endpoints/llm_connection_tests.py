@@ -94,6 +94,17 @@ def test_llm_connection(
     caller-supplied ``base_url`` and sits behind ``get_current_active_user``, not an
     admin gate — see ``get_llm_outbound_rate_limit``.
     """
+    return _run_connection_test(db, current_user, test_request)
+
+
+def _run_connection_test(
+    db: Session, current_user: models.User, test_request: schemas.ConnectionTestRequest
+) -> schemas.ConnectionTestResponse:
+    """Dial the provider a test request describes.
+
+    Shared by every test route so no route handler calls another: a rate-limited
+    handler needs the ``request``/``response`` objects only the framework supplies.
+    """
     _assert_safe_llm_endpoint(test_request.base_url, "LLM test-connection")
     start_time = time.time()
 
@@ -218,7 +229,6 @@ def _test_request_from_row(user_config: models.UserLLMSettings) -> schemas.Conne
 
 @router.post("/test-current", response_model=schemas.ConnectionTestResponse)
 def test_active_configuration(
-    request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
@@ -261,16 +271,7 @@ def test_active_configuration(
 
     test_request = _test_request_from_row(user_config)
 
-    # `db=db` is not optional: `test_llm_connection` declares `db: Session = Depends(get_db)`,
-    # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
-    # Harmless only while these two callers never set `config_id` on the request they build —
-    # the first one that does gets an AttributeError on a Depends instance.
-    # `request=request` is required for the same reason (issue #676 made it keyword-only, for
-    # the outbound rate limiter's per-user/per-IP key); omitting it is a TypeError at call time,
-    # which is what broke both of these endpoints.
-    result = test_llm_connection(
-        request=request, test_request=test_request, current_user=current_user, db=db
-    )
+    result = _run_connection_test(db, current_user, test_request)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -287,7 +288,6 @@ def test_active_configuration(
 @router.post("/test-config/{config_uuid}", response_model=schemas.ConnectionTestResponse)
 def test_specific_configuration(
     config_uuid: str,
-    request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
@@ -299,16 +299,7 @@ def test_specific_configuration(
 
     test_request = _test_request_from_row(user_config)
 
-    # `db=db` is not optional: `test_llm_connection` declares `db: Session = Depends(get_db)`,
-    # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
-    # Harmless only while these two callers never set `config_id` on the request they build —
-    # the first one that does gets an AttributeError on a Depends instance.
-    # `request=request` is required for the same reason (issue #676 made it keyword-only, for
-    # the outbound rate limiter's per-user/per-IP key); omitting it is a TypeError at call time,
-    # which is what broke both of these endpoints.
-    result = test_llm_connection(
-        request=request, test_request=test_request, current_user=current_user, db=db
-    )
+    result = _run_connection_test(db, current_user, test_request)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:

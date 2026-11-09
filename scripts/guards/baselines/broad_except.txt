@@ -40,7 +40,7 @@ backend/app/api/endpoints/files/upload_dispatch.py::_mark_upload_dispatch_failed
 backend/app/api/endpoints/files/upload_dispatch.py::_mark_upload_dispatch_failed#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/upload_dispatch.py::dispatch_thumbnail_for_video#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/url_video_import.py::_notify_url_file_created#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/api/endpoints/llm_connection_tests.py::test_llm_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/llm_connection_tests.py::_run_connection_test#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/llm_local_endpoints.py::_probe_local_endpoint#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/llm_model_discovery.py::_get_stored_api_key#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/llm_status.py::get_llm_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

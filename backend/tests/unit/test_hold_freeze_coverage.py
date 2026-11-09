@@ -374,7 +374,7 @@ ROUTE_FREEZE_GUARDED: dict[str, tuple[str, ...]] = {
         _r("speaker_profiles.py::delete_speaker_profile"),
     ),
     _r("speaker_profiles_attributes.py::confirm_profile_gender"): (
-        _r("speaker_profiles_attributes.py::confirm_profile_gender"),
+        "services/speaker_label_queries.py::set_gender_on_profile_speakers",
     ),
     _r("speaker_clusters.py::batch_verify"): (
         "services/clustering/verification.py::batch_verify_speakers",
@@ -956,6 +956,7 @@ TASK_FREEZE_GUARDED: dict[str, tuple[str, ...]] = {
         "tasks/speaker_update_task.py::_rescore_against_profile",
         "api/endpoints/speaker_update.py::trigger_retroactive_matching",
         "api/endpoints/speaker_update.py::_load_candidates",
+        "services/speaker_label_queries.py::candidate_speaker_rows",
     ),
     # Recovered titles never overwrite a held file's.
     "tasks/recovery_tasks.py::youtube_metadata_backfill": (

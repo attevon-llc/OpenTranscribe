@@ -80,15 +80,17 @@ def _dispatch(media_file, owner_id):
 def test_rediarize_publish_is_refused_when_the_owner_has_not_accepted(
     db_session, normal_user, owner_file, published
 ):
-    from fastapi import HTTPException
+    from app.core.exceptions import DomainError
+    from app.tasks.transcription.hooks import LegalAcceptanceRequiredError
 
     _require(db_session, TERMS)
-    with pytest.raises(HTTPException) as caught:
+    # A DomainError reaches the wire through main.py's handler as the same 403 body an
+    # HTTPException carried, so the status and detail are the wire contract.
+    with pytest.raises(LegalAcceptanceRequiredError) as caught:
         _dispatch(owner_file, normal_user.id)
+    assert isinstance(caught.value, DomainError)
     assert caught.value.status_code == 403
-    # HTTPException types ``detail`` as str; the gate's refusal carries a dict.
-    detail: object = caught.value.detail
-    assert detail == {"code": "legal_acceptance_required", "documents": [TERMS]}
+    assert caught.value.detail == {"code": "legal_acceptance_required", "documents": [TERMS]}
     assert published == []
 
 

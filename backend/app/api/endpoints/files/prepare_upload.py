@@ -133,7 +133,9 @@ def create_prepared_record(
                 db, request.upload_batch_id, current_user.id, source="multi_upload"
             )
         except UploadBatchInUseError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=409, detail="Upload batch id is already in use"
+            ) from exc
         db_file.upload_batch_id = batch.id
         bump_upload_batch_file_count(db, batch.id)
         db.flush()

@@ -127,7 +127,7 @@ ALLOWLIST: dict[str, str] = {
         "A: reloads, with its members, the collection get_collection_by_uuid_with_permission "
         "already authorized for this caller"
     ),
-    "api/endpoints/prompts.py::_linked_collections_by_prompt": (
+    "services/summary_prompt_queries.py::linked_collection_rows": (
         "O: lists the collections linked to the caller's own prompts and filters on "
         "Collection.user_id == the caller, so it can only show collections they created"
     ),

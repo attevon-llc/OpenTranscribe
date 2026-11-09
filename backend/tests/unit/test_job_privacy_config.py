@@ -14,6 +14,7 @@ and the two engines that honour it.
 from __future__ import annotations
 
 import contextlib
+from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -337,7 +338,9 @@ class _NativeRecorder(NativeSpeakerDiarizer):
     def __init__(self):
         self.calls: list[dict] = []
 
-    def diarize(self, audio, **kwargs):  # type: ignore[override]
+    def diarize(self, audio: Any, wav_path: str | None = None, **kwargs: Any) -> Any:
+        # The recorder stands in for the engine and returns a stub triple, not a real
+        # DiarizeResult, so the return type is not checked here; the parameters are.
         self.calls.append(kwargs)
         return ("df", {}, {})
 

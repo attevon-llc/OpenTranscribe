@@ -295,7 +295,7 @@ def thumbnail_env(db_session, normal_user, monkeypatch):
     monkeypatch.setattr(thumb, "upload_file", lambda **kwargs: tracker.observe("upload_thumbnail"))
     monkeypatch.setattr(thumb, "delete_file", lambda path: tracker.observe("delete_old"))
 
-    tracker.ours = ours  # type: ignore[attr-defined]
+    monkeypatch.setattr(tracker, "ours", ours, raising=False)
     return tracker
 
 
@@ -390,7 +390,7 @@ def purge_env(db_session, monkeypatch):
     monkeypatch.setattr(fcs, "delete_file_storage_artifacts", _storage)
     monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", _opensearch)
     monkeypatch.setattr(fcs, "_refresh_surviving_centroids", lambda db, owner_id, plan: [])
-    tracker.captured = captured  # type: ignore[attr-defined]
+    monkeypatch.setattr(tracker, "captured", captured, raising=False)
     return tracker
 
 

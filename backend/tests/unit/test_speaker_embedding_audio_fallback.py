@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import types
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +20,7 @@ import torch
 from scipy.io import wavfile
 
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
+from tests.helpers import make_stub_module
 
 SR = 16000
 
@@ -48,8 +48,7 @@ def _torchaudio_load_raises(monkeypatch, exc: BaseException) -> list[str]:
         calls.append(path)
         raise exc
 
-    fake = types.ModuleType("torchaudio")
-    fake.load = load  # type: ignore[attr-defined]
+    fake = make_stub_module("torchaudio", load=load)
     monkeypatch.setitem(sys.modules, "torchaudio", fake)
     return calls
 

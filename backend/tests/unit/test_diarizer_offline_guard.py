@@ -28,14 +28,13 @@ import pytest
 
 from app.transcription import diarizer as diarizer_mod
 from app.transcription.config import TranscriptionConfig
+from tests.helpers import make_stub_module
 
 
 def _install_fake_pyannote(monkeypatch, from_pretrained):
-    stub_audio = types.ModuleType("pyannote.audio")
     fake_pipeline_cls = types.SimpleNamespace(from_pretrained=from_pretrained)
-    stub_audio.Pipeline = fake_pipeline_cls  # type: ignore[attr-defined]
-    stub_pyannote = types.ModuleType("pyannote")
-    stub_pyannote.audio = stub_audio  # type: ignore[attr-defined]
+    stub_audio = make_stub_module("pyannote.audio", Pipeline=fake_pipeline_cls)
+    stub_pyannote = make_stub_module("pyannote", audio=stub_audio)
     monkeypatch.setitem(sys.modules, "pyannote", stub_pyannote)
     monkeypatch.setitem(sys.modules, "pyannote.audio", stub_audio)
 

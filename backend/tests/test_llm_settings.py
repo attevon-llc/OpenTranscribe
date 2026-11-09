@@ -10,6 +10,7 @@ Every class runs by default: nothing here needs a provider, a key or the network
 no external LLM call is made. (The `RUN_LLM_TESTS` gate these once sat behind is gone.)
 """
 
+from typing import cast
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -51,7 +52,7 @@ class TestEncryption:
         assert encrypt_api_key("") is None
         assert encrypt_api_key("   ") is None
 
-        assert decrypt_api_key(None) is None  # type: ignore[call-overload]
+        assert decrypt_api_key(cast("str", None)) is None
         assert decrypt_api_key("") is None
         assert decrypt_api_key("   ") is None
 

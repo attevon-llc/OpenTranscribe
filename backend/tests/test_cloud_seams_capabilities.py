@@ -8,6 +8,7 @@ surfaces, hooks are no-ops, and a broken cloud layer can never break core.
 import uuid
 from types import SimpleNamespace
 from typing import Any
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -43,7 +44,8 @@ from tests.helpers import does_not_raise
 
 
 def _fake_request(**state: Any) -> Request:
-    return SimpleNamespace(state=SimpleNamespace(**state))  # type: ignore[return-value]
+    # Partial stand-in: the capability code reads only request.state.
+    return cast(Request, SimpleNamespace(state=SimpleNamespace(**state)))
 
 
 def _identity(**overrides: Any) -> ExternalIdentity:

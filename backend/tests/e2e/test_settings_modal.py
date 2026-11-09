@@ -30,6 +30,7 @@ from typing import Any
 import pytest
 import requests
 from conftest import E2E_STORAGE_STATE_PREFIX
+from page_state import console_errors
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 from timeouts import LOGIN_FORM_READY_MS
@@ -159,7 +160,7 @@ def app_page(browser, auth_storage_state: str, base_url: str):
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-    page._console_errors = errors
+    console_errors.attach(page, errors)
     page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=30000)
     yield page
@@ -218,7 +219,7 @@ class TestSettingsModal:
             f"Expected to switch through all {len(SECTIONS_TO_SWITCH)} settings sections, did {switched}"
         )
 
-        unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
+        unexpected = _unexpected_console_errors(console_errors.of(app_page))
         assert not unexpected, f"Unexpected console errors while switching sections: {unexpected}"
 
     def test_settings_modal_closes(self, app_page: Page) -> None:
@@ -493,5 +494,5 @@ class TestSettingsSearch:
             # Deterministic settle rather than a guessed 400 ms before the console-error
             # assertion, whose subject is an absence (issue #431).
             app_page.wait_for_load_state("networkidle")
-        unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
+        unexpected = _unexpected_console_errors(console_errors.of(app_page))
         assert not unexpected, f"Unexpected console errors during settings search: {unexpected}"

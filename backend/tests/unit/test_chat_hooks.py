@@ -113,7 +113,9 @@ def test_completion_context_carries_metering_fields():
 def test_contexts_are_frozen_so_hooks_cannot_mutate_them():
     ctx = _dispatch_ctx()
     with pytest.raises(dataclasses.FrozenInstanceError):
-        ctx.user_id = 999  # type: ignore[misc]
+        # Same as above: a variable field name keeps the runtime refusal under test.
+        field = "user_id"
+        setattr(ctx, field, 999)
 
 
 def test_clear_hooks_removes_everything():

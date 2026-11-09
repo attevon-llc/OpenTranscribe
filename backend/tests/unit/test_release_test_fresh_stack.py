@@ -67,7 +67,9 @@ def test_ports_come_from_opentr_and_move_with_the_offset() -> None:
     real = REAL_OPENTR.read_text(encoding="utf-8")
 
     def stock_of(arr: str) -> dict[str, str]:
-        block = re.search(rf"^{arr}=\((.*?)^\)", real, re.S | re.M).group(1)  # type: ignore[union-attr]
+        found = re.search(rf"^{arr}=\((.*?)^\)", real, re.S | re.M)
+        assert found is not None, f"{arr} is not defined in opentr.sh"
+        block = found.group(1)
         return dict(re.findall(r'"([A-Z_]+)=(\d+)"', block))
 
     main = stock_of("FRESH_PORT_VARS")
@@ -221,13 +223,17 @@ def test_models_are_seeded_into_the_isolated_dir_before_start(tmp_path: Path) ->
 
 
 def _gb(token: str) -> int:
-    return int(re.match(r"(\d+)", token).group(1))  # type: ignore[union-attr]
+    found = re.match(r"(\d+)", token)
+    assert found is not None, f"no leading number in {token!r}"
+    return int(found.group(1))
 
 
 def test_opensearch_tmpfs_is_larger_than_the_low_disk_watermark() -> None:
     """A cap below the watermark makes OpenSearch block index creation cluster-wide at boot."""
     compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-    low = _gb(re.search(r"watermark\.low=(\d+)gb", compose).group(1) + "gb")  # type: ignore[union-attr]
+    watermark = re.search(r"watermark\.low=(\d+)gb", compose)
+    assert watermark is not None, "docker-compose.yml sets no OpenSearch watermark.low"
+    low = _gb(watermark.group(1) + "gb")
     spec = _bash("fresh_stack_fast_volumes", REPO_ROOT).split()
     size = next(_gb(s.split(":")[1]) for s in spec if s.startswith("opensearch_data:"))
     assert size > low, f"opensearch_data tmpfs {size}g must exceed the {low}gb low watermark"
@@ -417,8 +423,9 @@ def test_route_discovery_follows_the_routes_directory(tmp_path: Path) -> None:
     spec = importlib.util.spec_from_file_location(
         "warm_frontend", REPO_ROOT / "scripts/release/warm_frontend.py"
     )
-    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
     for rel in (
         "+page.svelte",
         "speakers/+page.svelte",

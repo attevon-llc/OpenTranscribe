@@ -10,11 +10,11 @@ result was permanently degraded retrieval with no signal after one warning.
 from __future__ import annotations
 
 import sys
-import types
 
 import pytest
 
 from app.services.chat import reranker as reranker_mod
+from tests.helpers import make_stub_module
 
 
 @pytest.fixture(autouse=True)
@@ -52,8 +52,7 @@ def _patch_load(monkeypatch, *, results):
             raise outcome
         return outcome
 
-    stub = types.ModuleType("sentence_transformers")
-    stub.CrossEncoder = _factory  # type: ignore[attr-defined]
+    stub = make_stub_module("sentence_transformers", CrossEncoder=_factory)
     monkeypatch.setitem(sys.modules, "sentence_transformers", stub)
     return calls
 

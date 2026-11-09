@@ -343,7 +343,7 @@ class _TaintWalker(ast.NodeVisitor):
         self.raise_findings: list[tuple[str, int]] = []
         self.return_findings: list[tuple[str, int]] = []
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         self._func_stack.append(node.name)
         self._fn_taint.append(set())
         self.generic_visit(node)
@@ -353,7 +353,7 @@ class _TaintWalker(ast.NodeVisitor):
     # Why the N815 suppression below: dispatched by name from ast.NodeVisitor.generic_visit
     # ("visit_" + node.__class__.__name__); ast.AsyncFunctionDef is itself
     # mixedCase in the stdlib ast module, so a snake_case alias is never called.
-    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815 - ast.NodeVisitor dispatches visit_<NodeClass> by name
+    visit_AsyncFunctionDef = visit_FunctionDef  # noqa: N815 - ast.NodeVisitor dispatches visit_<NodeClass> by name
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         tainted = _taint_from_except_handler(node, self._taint_stack[-1])
@@ -447,7 +447,7 @@ class _ContainerTaintWalker(ast.NodeVisitor):
                 leaked.update(mutations)
         self.container_findings.extend((self._func_stack[-1], lineno) for lineno in sorted(leaked))
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         self._func_stack.append(node.name)
         self._fn_taint.append(set())
         self._containers.append({})
@@ -461,7 +461,7 @@ class _ContainerTaintWalker(ast.NodeVisitor):
 
     # Why the N815 suppression below: dispatched by name from ast.NodeVisitor.generic_visit, exactly as in
     # _TaintWalker above — a snake_case alias would never be called.
-    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815 - ast.NodeVisitor dispatches visit_<NodeClass> by name
+    visit_AsyncFunctionDef = visit_FunctionDef  # noqa: N815 - ast.NodeVisitor dispatches visit_<NodeClass> by name
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         tainted = _taint_from_except_handler(node, self._taint_stack[-1])

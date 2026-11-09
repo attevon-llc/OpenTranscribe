@@ -83,8 +83,8 @@ class _StandInMLService:
 
 
 @contextmanager
-def _standin_ml_service(**kwargs: object):
-    service = _StandInMLService(**kwargs)  # type: ignore[arg-type]
+def _standin_ml_service(*, deployed: bool = False, registered: bool = True):
+    service = _StandInMLService(deployed=deployed, registered=registered)
     with patch("app.services.search.ml_model_service.get_ml_model_service", return_value=service):
         yield service
 

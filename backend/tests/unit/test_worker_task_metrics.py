@@ -57,7 +57,7 @@ def recorder(monkeypatch):
     clock = SimpleNamespace(now=0.0)
     rec = worker_metrics.WorkerTaskMetrics(clock=lambda: clock.now)
     monkeypatch.setattr(worker_metrics, "_metrics", rec)
-    rec.clock_state = clock  # type: ignore[attr-defined]
+    monkeypatch.setattr(rec, "clock_state", clock, raising=False)
     return rec
 
 

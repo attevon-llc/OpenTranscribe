@@ -25,6 +25,7 @@ import ast
 import re
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from opensearchpy.exceptions import TransportError
@@ -537,13 +538,11 @@ def test_the_structure_lock_is_scoped_to_the_index_name():
 
     import app.utils.task_lock as tl
 
-    original = tl.task_lock_manager
-    tl.task_lock_manager = _Manager()  # type: ignore[assignment]
-    try:
-        with reindex_index_ops._index_structure_lock():
-            pass
-    finally:
-        tl.task_lock_manager = original
+    with (
+        patch.object(tl, "task_lock_manager", _Manager()),
+        reindex_index_ops._index_structure_lock(),
+    ):
+        pass
 
     assert captured == [f"opensearch_index_structure_lock:{settings.OPENSEARCH_CHUNKS_INDEX}"]
 

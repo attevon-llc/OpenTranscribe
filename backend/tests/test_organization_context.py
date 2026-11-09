@@ -8,6 +8,7 @@ Tests verify that organization context is correctly:
 - Respects system vs custom prompt toggles
 """
 
+from typing import cast
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -103,7 +104,7 @@ class TestOrgContextSystemPromptInjection:
         from app.services.llm_service import LLMService
 
         service = LLMService.__new__(LLMService)
-        assert service._build_org_context_block(None) == ""  # type: ignore[arg-type]
+        assert service._build_org_context_block(cast("str", None)) == ""
 
 
 class TestOrgContextPromptTypeToggle:

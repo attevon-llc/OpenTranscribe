@@ -94,10 +94,16 @@ def _deadlock_media_file() -> MediaFile:
     return media_file
 
 
+class _PgDriverError(Exception):
+    """The driver exception SQLAlchemy wraps; production reads its ``pgcode`` attribute."""
+
+    pgcode: str
+
+
 def _deadlock_error() -> OperationalError:
     """A real-shaped OperationalError: SQLSTATE 40P01, same attribute path production reads."""
-    orig = Exception("deadlock detected")
-    orig.pgcode = "40P01"  # type: ignore[attr-defined]
+    orig = _PgDriverError("deadlock detected")
+    orig.pgcode = "40P01"
     return OperationalError("UPDATE media_file ...", {}, orig)
 
 
@@ -159,8 +165,8 @@ def test_a_non_deadlock_operational_error_is_not_retried() -> None:
 
     def _connection_failure():
         calls["n"] += 1
-        orig = Exception("connection lost")
-        orig.pgcode = "08006"  # type: ignore[attr-defined]  # connection_failure SQLSTATE
+        orig = _PgDriverError("connection lost")
+        orig.pgcode = "08006"  # connection_failure SQLSTATE
         raise OperationalError("UPDATE media_file ...", {}, orig)
 
     db.commit_side_effect = _connection_failure

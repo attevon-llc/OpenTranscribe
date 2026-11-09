@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import sys
 import time
-import types
 
 import pytest
 
 from app.services.chat import reranker as reranker_mod
+from tests.helpers import make_stub_module
 
 
 @pytest.fixture(autouse=True)
@@ -29,8 +29,7 @@ def _clean_reranker_state():
 
 
 def _install_fake_cross_encoder(monkeypatch, factory):
-    stub = types.ModuleType("sentence_transformers")
-    stub.CrossEncoder = factory  # type: ignore[attr-defined]
+    stub = make_stub_module("sentence_transformers", CrossEncoder=factory)
     monkeypatch.setitem(sys.modules, "sentence_transformers", stub)
 
 

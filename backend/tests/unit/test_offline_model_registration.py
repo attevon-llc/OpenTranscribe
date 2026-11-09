@@ -71,7 +71,7 @@ def service(monkeypatch):
     svc = ml_model_service.OpenSearchMLModelService()
     monkeypatch.setattr(svc, "configure_ml_settings", lambda: True)
     monkeypatch.setattr(svc, "_wait_for_registration", lambda task_id: "model-1")
-    svc.sent = sent  # type: ignore[attr-defined]
+    monkeypatch.setattr(svc, "sent", sent, raising=False)
     return svc
 
 

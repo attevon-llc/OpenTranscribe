@@ -126,7 +126,9 @@ def test_download_to_temp_file_cleans_up_and_reraises_on_read_error():
         with pytest.raises(OSError, match="simulated read failure"):
             # ExplodingReader only implements the subset of BinaryIO the function
             # actually calls (.read()) — a minimal duck-typed fake, not a real one.
-            download_to_temp_file(ExplodingReader())  # type: ignore[arg-type]
+            # cast() because download_to_temp_file is typed BinaryIO and the fake is
+            # deliberately partial; the read() it relies on is the only one exercised.
+            download_to_temp_file(cast(BinaryIO, ExplodingReader()))
     finally:
         mod.tempfile.mkstemp = orig
 

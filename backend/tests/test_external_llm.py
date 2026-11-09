@@ -505,14 +505,14 @@ class TestResourceManagement:
             # Should handle all requests without crashing
             assert len(results) == 5
 
-            for result in results:  # type: ignore[assignment]
-                if isinstance(result, Exception):
+            for outcome in results:
+                if isinstance(outcome, Exception):
                     # Exceptions are acceptable for failed connections
                     continue
-                # At this point, result must be tuple[bool, str]
-                if not isinstance(result, tuple):
+                # At this point, outcome must be tuple[bool, str]
+                if not isinstance(outcome, tuple):
                     continue
-                success, message = result
+                success, message = outcome
                 assert isinstance(success, bool)
                 assert isinstance(message, str)
         finally:

@@ -24,6 +24,7 @@ S3; it proves we ask for the right thing.**
 from __future__ import annotations
 
 import datetime
+from typing import cast
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -223,7 +224,8 @@ def test_clamp_treats_non_positive_and_invalid_input_as_the_ceiling():
     assert sb.clamp_presigned_expiry(0) == 21600
     assert sb.clamp_presigned_expiry(-1) == 21600
     assert sb.clamp_presigned_expiry(None) == 21600
-    assert sb.clamp_presigned_expiry("nonsense") == 21600  # type: ignore[arg-type]
+    # Off-contract input on purpose: garbage must fall back to the ceiling, not raise.
+    assert sb.clamp_presigned_expiry(cast("int | None", "nonsense")) == 21600
 
 
 def test_clamp_enforces_a_usable_floor():

@@ -139,9 +139,8 @@ def tracking_env(db_session, monkeypatch):
 
 def _task_row_for(db_session, media_file_id: int) -> Task | None:
     db_session.expire_all()
-    return (  # type: ignore[no-any-return]
-        db_session.query(Task).filter(Task.media_file_id == media_file_id).first()
-    )
+    row: Task | None = db_session.query(Task).filter(Task.media_file_id == media_file_id).first()
+    return row
 
 
 def test_normal_completion_creates_and_completes_task_row(db_session, normal_user, tracking_env):

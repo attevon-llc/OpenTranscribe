@@ -15,7 +15,6 @@ from __future__ import annotations
 import sys
 import threading
 import time
-import types
 from typing import Any
 
 import pytest
@@ -24,6 +23,7 @@ from app.core.worker_shutdown import TranscriptionAbortedError
 from app.transcription import vram_budget
 from app.transcription.vram_budget import VramAdmissionTimeoutError
 from app.transcription.vram_budget import VramBudget
+from tests.helpers import make_stub_module
 
 
 @pytest.fixture(autouse=True)
@@ -181,9 +181,7 @@ def _fake_torch(*, total_mb: int, free_mb: int, available: bool = True) -> Any:
         def mem_get_info(_index: int = 0) -> tuple[int, int]:
             return free_mb * 1024**2, total_mb * 1024**2
 
-    module = types.ModuleType("torch")
-    module.cuda = _Cuda()  # type: ignore[attr-defined]
-    return module
+    return make_stub_module("torch", cuda=_Cuda())
 
 
 class TestCapacityFromDevice:

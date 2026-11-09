@@ -691,7 +691,10 @@ class TestLdapConfigFromDb:
         config = LdapConfig.from_db(db_session)
 
         with pytest.raises(AttributeError):
-            config.server = "mutated.example.com"  # type: ignore[misc]  # Testing immutability
+            # The frozen-field write is the point: the field name is a variable so the
+            # checker does not reject the assignment before the runtime refusal is tested.
+            field = "server"
+            setattr(config, field, "mutated.example.com")
 
 
 # ===== OIDCConfig.from_db() Integration Tests =====
@@ -801,7 +804,9 @@ class TestOIDCConfigFromDb:
         config = OIDCConfig.from_db(db_session)
 
         with pytest.raises(AttributeError):
-            config.server_url = "https://mutated.example.com"  # type: ignore[misc]  # Testing immutability
+            # Same as above: a variable field name keeps the runtime refusal under test.
+            field = "server_url"
+            setattr(config, field, "https://mutated.example.com")
 
 
 # ===== Config Status Tests =====

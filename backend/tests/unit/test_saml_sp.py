@@ -18,19 +18,29 @@ from app.auth.saml.sp import build_settings
 from app.auth.saml.sp import saml_request_data
 
 
-def _cfg(**overrides) -> SAMLConfig:
-    base: dict[str, object] = {
-        "enabled": True,
-        "sp_entity_id": "https://sp.example.com",
-        "sp_acs_url": "https://sp.example.com/api/auth/saml/acs",
-        "sp_sls_url": "https://sp.example.com/api/auth/saml/sls",
-        "idp_entity_id": "https://idp.example.com",
-        "idp_sso_url": "https://idp.example.com/sso",
-        "idp_slo_url": "https://idp.example.com/slo",
-        "idp_x509_cert": "MIIC...fake...cert",
-    }
-    base.update(overrides)
-    return SAMLConfig(**base)  # type: ignore[arg-type]
+def _cfg(
+    *,
+    want_assertions_signed: bool = True,
+    want_messages_signed: bool = True,
+    sign_authn_requests: bool = False,
+    sp_x509_cert: str = "",
+    sp_private_key: str = "",
+) -> SAMLConfig:
+    return SAMLConfig(
+        enabled=True,
+        sp_entity_id="https://sp.example.com",
+        sp_acs_url="https://sp.example.com/api/auth/saml/acs",
+        sp_sls_url="https://sp.example.com/api/auth/saml/sls",
+        idp_entity_id="https://idp.example.com",
+        idp_sso_url="https://idp.example.com/sso",
+        idp_slo_url="https://idp.example.com/slo",
+        idp_x509_cert="MIIC...fake...cert",
+        want_assertions_signed=want_assertions_signed,
+        want_messages_signed=want_messages_signed,
+        sign_authn_requests=sign_authn_requests,
+        sp_x509_cert=sp_x509_cert,
+        sp_private_key=sp_private_key,
+    )
 
 
 class TestBuildSettings:

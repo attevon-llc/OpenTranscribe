@@ -50,18 +50,23 @@ from tests.integration.test_diar_native_smoke_live import classify_gpu_residency
 _NON_CUDA_MODES = ("cpu", "mps", "")
 
 
-def _classify(**overrides: object) -> tuple[str, str]:
+def _classify(
+    *,
+    configured_mode: str = "cuda",
+    has_device_reservation: bool = True,
+    host_nvidia_runtime: bool = True,
+    force_cpu_mode: bool = False,
+    expect_cpu_optout: bool = False,
+) -> tuple[str, str]:
     """The real classifier with an all-benign baseline, so each test states only the
     one or two signals it is actually about."""
-    kwargs: dict[str, object] = {
-        "configured_mode": "cuda",
-        "has_device_reservation": True,
-        "host_nvidia_runtime": True,
-        "force_cpu_mode": False,
-        "expect_cpu_optout": False,
-    }
-    kwargs.update(overrides)
-    return classify_gpu_residency_precondition(**kwargs)  # type: ignore[arg-type]
+    return classify_gpu_residency_precondition(
+        configured_mode=configured_mode,
+        has_device_reservation=has_device_reservation,
+        host_nvidia_runtime=host_nvidia_runtime,
+        force_cpu_mode=force_cpu_mode,
+        expect_cpu_optout=expect_cpu_optout,
+    )
 
 
 # --------------------------------------------------------------------------- #

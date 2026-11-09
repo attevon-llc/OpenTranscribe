@@ -19,13 +19,13 @@ import types
 import pytest
 
 from app.services.watch_sources.smb_client import SMBWatchClient
+from tests.helpers import make_stub_module
 
 REMOTE = "\\\\server\\share\\clip.mp4"
 
 
 def _install_fake_smbclient(monkeypatch, *, payload: bytes, stat_size, stat_raises=False):
     """Install a fake `smbclient` module returning *payload* bytes and *stat_size*."""
-    fake = types.ModuleType("smbclient")
 
     def open_file(path, mode="rb", **kwargs):
         return io.BytesIO(payload)
@@ -35,10 +35,13 @@ def _install_fake_smbclient(monkeypatch, *, payload: bytes, stat_size, stat_rais
             raise OSError("stat unsupported on this server")
         return types.SimpleNamespace(st_size=stat_size, st_mtime=0)
 
-    fake.open_file = open_file  # type: ignore[attr-defined]
-    fake.stat = stat  # type: ignore[attr-defined]
-    fake.register_session = lambda *a, **k: None  # type: ignore[attr-defined]
-    fake.ClientConfig = lambda *a, **k: None  # type: ignore[attr-defined]
+    fake = make_stub_module(
+        "smbclient",
+        open_file=open_file,
+        stat=stat,
+        register_session=lambda *a, **k: None,
+        ClientConfig=lambda *a, **k: None,
+    )
 
     monkeypatch.setitem(sys.modules, "smbclient", fake)
     return fake

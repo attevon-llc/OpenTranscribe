@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from typing import NoReturn
 
 from celery.exceptions import Reject
+from redis.exceptions import RedisError
 
 from app.core import redis as redis_core
 from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
@@ -209,8 +210,8 @@ def _poisoned_requeue_allowed(task_id: str) -> bool:
         client = redis_core.get_redis()
         count = int(client.incr(key))
         client.expire(key, _POISONED_REQUEUE_TTL_S)
-    except Exception as exc:  # see docstring
-        logger.warning("Could not count poisoned-context requeues for %s: %s", task_id, exc)
+    except (RedisError, OSError):  # fails open, see docstring
+        logger.warning("Could not count poisoned-context requeues for %s", task_id, exc_info=True)
         return True
     return count <= cap
 

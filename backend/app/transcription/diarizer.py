@@ -109,7 +109,8 @@ class SpeakerDiarizer:
         except Exception as e:
             logger.warning(
                 f"Failed to load v4 model '{PYANNOTE_V4_MODEL}': {e}. "
-                f"Trying fallback: {PYANNOTE_V3_FALLBACK}"
+                f"Trying fallback: {PYANNOTE_V3_FALLBACK}",
+                exc_info=True,
             )
             try:
                 with force_offline_if_requested():

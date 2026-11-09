@@ -5,6 +5,8 @@ Summarization, topic extraction, analytics, and speaker clustering.
 
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.enums import PostProcessingState
 from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
@@ -128,9 +130,10 @@ def _get_collection_prompt_uuid(file_id: int) -> str | None:
                 return str(result[0])
 
         return None
-    except Exception as e:
-        logger.warning(f"Failed to get collection prompt for file {file_id}: {e}")
-        return None
+    except SQLAlchemyError:
+        # A lookup outage is not "no collection prompt": that would summarize with the wrong prompt.
+        logger.exception("Failed to get collection prompt for file %s", file_id)
+        raise
 
 
 # Import for automatic summarization, speaker identification, and analytics

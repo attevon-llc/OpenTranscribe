@@ -8,6 +8,8 @@ import logging
 import time
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core import stage_timing
 from app.core.embedding_models import get_speaker_index_v4
 from app.core.env import env_bool
@@ -460,9 +462,7 @@ def _should_use_native_embeddings(result: dict) -> bool:
         )
         return False
 
-    except Exception as e:
-        logger.warning(
-            f"Error checking embedding dimension compatibility: {e}. "
-            "Falling back to traditional path."
-        )
+    except OpenSearchException:
+        # An OpenSearch outage must be visible: the legacy path writes 512-dim vectors.
+        logger.exception("Error checking embedding dimension compatibility; using traditional path")
         return False

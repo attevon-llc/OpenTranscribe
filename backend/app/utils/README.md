@@ -108,9 +108,6 @@ def update_file(
 def get_user_files_query(db: Session, user_id: int, *, organization_id=UNSCOPED) -> Query:
     """Standard query for a user's (or organization's) files."""
 
-def apply_tenant_scope(...):
-    """SQL-plane default-deny tenant filter; mirrors api/deps_context.scope_to_context."""
-
 def safe_get_by_id[T](db, model, obj_id, user_id=None) -> T | None
 ```
 Tag creation and attachment live in `services/tag_service.py` and `services/tag_bulk.py`, not here.

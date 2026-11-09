@@ -27,6 +27,7 @@ from app.services.privacy.policy import reset_privacy_ceiling_resolver
 from app.services.privacy.redact_view import PrivacyView
 from tests.fixtures.speaker_cleanup_seams import make_file
 from tests.fixtures.speaker_cleanup_seams import make_speaker
+from tests.helpers import persist_speaker_status
 
 
 @pytest.fixture(autouse=True)
@@ -603,7 +604,7 @@ def test_a_stored_status_describes_the_data_and_a_response_the_policy(db_session
     )
     db_session.commit()
 
-    assert SpeakerStatusService.update_speaker_status_in_db(db_session, int(speaker.id))
+    assert persist_speaker_status(db_session, int(speaker.id))
     db_session.expire_all()
     stored = db_session.get(Speaker, speaker.id)
     assert stored.resolved_display_name == "Alice"

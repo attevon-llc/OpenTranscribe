@@ -555,7 +555,6 @@ backend/app/services/speaker_matching/match_storage.py::create_speaker_match_rec
 backend/app/services/speaker_matching/processing.py::process_single_speaker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_matching/propagation.py::propagate_profile_assignment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_rename_tracker.py::SpeakerRenameTracker.flush#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/speaker_status_service.py::SpeakerStatusService.update_speaker_status_in_db#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/storage_backend.py::ensure_bucket_cors#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/storage_presign_identity.py::_derived_identity_works#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/storage_presign_identity.py::ensure_presign_identity#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

@@ -2,8 +2,8 @@
 two real ffmpeg subprocess wrappers.
 
 The merge/select/group functions are pure (no I/O), so they get exact-value assertions on
-hand-computed boundary cases rather than mocks. ``extract_audio_segment_np`` and
-``load_full_audio_np`` shell out to ffmpeg; ffmpeg is present on this host (and inside the
+hand-computed boundary cases rather than mocks. ``extract_audio_segment_np`` shells out to ffmpeg and
+``transcription.audio.load_audio`` decodes through faster-whisper's PyAV; ffmpeg is present on this host (and inside the
 CI image), so those are exercised against tiny real WAV fixtures generated with the stdlib
 ``wave`` module — that proves the actual subprocess plumbing (seek flags, sample-rate
 conversion, byte layout) rather than a mocked stand-in for it.
@@ -22,7 +22,6 @@ import pytest
 
 from app.services.audio_segment_utils import extract_audio_segment_np
 from app.services.audio_segment_utils import group_segments_by_speaker
-from app.services.audio_segment_utils import load_full_audio_np
 from app.services.audio_segment_utils import merge_adjacent_segments
 from app.services.audio_segment_utils import select_top_segments
 
@@ -225,29 +224,32 @@ class TestExtractAudioSegmentNp:
 
 
 # ---------------------------------------------------------------------------
-# load_full_audio_np — real ffmpeg subprocess
+# transcription.audio.load_audio — the full-file loader production uses
 # ---------------------------------------------------------------------------
 
 
-class TestLoadFullAudioNp:
+class TestLoadAudio:
     def test_loads_expected_length_and_dtype(self, tmp_path):
+        from app.transcription.audio import load_audio
+
         wav_path = tmp_path / "full.wav"
         _write_wav(wav_path, duration_s=2.0, sample_rate=16000)
 
-        result = load_full_audio_np(str(wav_path), target_sr=16000)
+        result = load_audio(str(wav_path))
 
         assert result.dtype == np.float32
-        assert abs(len(result) - 32000) <= 160  # 2s @ 16kHz, small ffmpeg-boundary tolerance
+        assert abs(len(result) - 32000) <= 160  # 2s @ 16kHz, small decoder-boundary tolerance
 
-    def test_resamples_when_target_sr_differs(self, tmp_path):
-        wav_path = tmp_path / "full16.wav"
-        _write_wav(wav_path, duration_s=2.0, sample_rate=16000)
+    def test_resamples_to_16khz(self, tmp_path):
+        from app.transcription.audio import load_audio
 
-        result = load_full_audio_np(str(wav_path), target_sr=8000)
+        wav_path = tmp_path / "full8.wav"
+        _write_wav(wav_path, duration_s=2.0, sample_rate=8000)
 
-        assert abs(len(result) - 16000) <= 80  # 2s @ 8kHz
+        assert abs(len(load_audio(str(wav_path))) - 32000) <= 160
 
-    def test_missing_file_raises_called_process_error(self, tmp_path):
-        missing = tmp_path / "nope.wav"
-        with pytest.raises(subprocess.CalledProcessError):
-            load_full_audio_np(str(missing))
+    def test_missing_file_raises_value_error(self, tmp_path):
+        from app.transcription.audio import load_audio
+
+        with pytest.raises(ValueError, match="Unable to load audio"):
+            load_audio(str(tmp_path / "nope.wav"))

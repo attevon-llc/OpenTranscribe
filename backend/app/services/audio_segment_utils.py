@@ -156,45 +156,6 @@ def extract_audio_segment_np(
     return None
 
 
-def load_full_audio_np(
-    audio_path: str,
-    target_sr: int = 16000,
-    audio_stream_index: int | None = None,
-) -> np.ndarray:
-    """Load entire audio file to float32 numpy array via ffmpeg.
-
-    Args:
-        audio_path: Path to the audio file.
-        target_sr: Target sample rate.
-        audio_stream_index: Audio track to read (``-map 0:a:N``); None = the first.
-
-    Returns:
-        1-D float32 numpy array (mono, normalized).
-
-    Raises:
-        subprocess.CalledProcessError: If ffmpeg fails.
-    """
-    cmd = [
-        "ffmpeg",
-        "-i",
-        audio_path,
-        *audio_map_args(audio_stream_index),
-        "-f",
-        "f32le",
-        "-acodec",
-        "pcm_f32le",
-        "-ac",
-        "1",
-        "-ar",
-        str(target_sr),
-        "-v",
-        "quiet",
-        "pipe:1",
-    ]
-    result = subprocess.run(cmd, capture_output=True, check=True, timeout=300)  # noqa: S603 - argv list, no shell  # nosec B603
-    return np.frombuffer(result.stdout, dtype=np.float32).copy()
-
-
 def group_segments_by_speaker(
     segments: list[dict[str, Any]],
     speaker_mapping: dict[str, int],

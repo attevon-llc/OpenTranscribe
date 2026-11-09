@@ -551,13 +551,17 @@ class TestZeroArgProductionForm:
         """
         import app.main as main
 
-        source = inspect.getsource(main.lifespan)
-        tree = ast.parse(source)
-        called_names = {
-            node.func.id
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        }
+        def _called(fn) -> set[str]:
+            return {
+                node.func.id
+                for node in ast.walk(ast.parse(inspect.getsource(fn)))
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            }
+
+        # ``lifespan`` wraps ``_lifespan_body`` in the event-loop lag monitor; the startup
+        # work lives in the body, so the wrapper must still delegate to it.
+        assert "_lifespan_body" in _called(main.lifespan)
+        called_names = _called(main._lifespan_body)
         assert "_provision_native_diarizer" in called_names, (
             "app.main.lifespan no longer calls _provision_native_diarizer() -- a fresh "
             "install's native-model export would silently never run"

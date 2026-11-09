@@ -1,3 +1,4 @@
+import { resolve } from '$app/paths';
 /**
  * The support-access session: "this tab is acting inside someone else's workspace" (issue #1122).
  *
@@ -163,7 +164,7 @@ async function start(uuid: string, redirect: boolean): Promise<boolean> {
   writeStored(grant.uuid);
   state.set(next);
   timer = setInterval(tick, 1000);
-  if (redirect) await goto('/');
+  if (redirect) await goto(resolve('/'));
   return true;
 }
 
@@ -202,7 +203,7 @@ async function end(reason: EndReason): Promise<void> {
     const message = get(t)(SUPPORT_SESSION_END_KEYS[reason]);
     if (reason === 'user') toastStore.info(message);
     else toastStore.error(message);
-    await goto('/');
+    await goto(resolve('/'));
   }
 }
 

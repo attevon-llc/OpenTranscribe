@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   /**
    * /accept-invite?token=… — redeem an admin invitation.
    *
@@ -136,7 +137,7 @@
       </div>
       <div class="error-message" role="alert">{errorMessage}</div>
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
+        <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else if phase === 'done' && accepted}
       <div class="auth-header">
@@ -150,7 +151,7 @@
       </div>
 
       {#if accepted.can_login_with_password}
-        <button type="button" class="auth-button" on:click={() => goto('/login')}>
+        <button type="button" class="auth-button" on:click={() => goto(resolve('/login'))}>
           {$t('auth.signIn')}
         </button>
       {:else if accepted.auth_type === 'oidc' || accepted.auth_type === 'pki'}
@@ -166,7 +167,7 @@
         </button>
       {:else}
         <!-- LDAP authenticates through the ordinary sign-in form. -->
-        <button type="button" class="auth-button" on:click={() => goto('/login')}>
+        <button type="button" class="auth-button" on:click={() => goto(resolve('/login'))}>
           {$t('auth.signIn')}
         </button>
       {/if}
@@ -264,7 +265,7 @@
       </form>
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
+        <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {/if}
   </div>

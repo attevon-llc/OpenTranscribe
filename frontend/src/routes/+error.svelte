@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { pageStore } from '$stores/pageStore';
   import { t } from '$stores/locale';
 
@@ -26,7 +27,7 @@
     <h1 class="error-heading">{heading}</h1>
     <p class="error-body">{body}</p>
     <div class="error-actions">
-      <a class="error-home" href="/">{$t('errorPage.goHome')}</a>
+      <a class="error-home" href={resolve('/')}>{$t('errorPage.goHome')}</a>
       <button type="button" class="error-reload" on:click={reload}>
         {$t('errorPage.reload')}
       </button>

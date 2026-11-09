@@ -1,3 +1,4 @@
+import { resolve } from '$app/paths';
 /**
  * Session timeouts for sessions owned by an external identity provider (issue #1106).
  *
@@ -191,7 +192,7 @@ async function endExpiredSessionOnce(reason: IdleReason): Promise<void> {
   } catch {
     /* ignore */
   }
-  await goto('/login');
+  await goto(resolve('/login'));
 }
 
 /**

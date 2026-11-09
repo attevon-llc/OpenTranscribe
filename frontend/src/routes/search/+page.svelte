@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount, onDestroy, tick } from 'svelte';
   import { pageStore } from '$stores/pageStore';
   import { goto, beforeNavigate } from '$app/navigation';
@@ -264,7 +265,7 @@
     // Update URL without navigation
     const params = buildPageUrlParams(query, pageNum, $searchStore);
 
-    goto(`/search?${params.toString()}`, { replace: true, reset: false });
+    goto(resolve(`/search?${params.toString()}`), { replace: true, reset: false });
 
     try {
       const res = await axiosInstance.get('/search', {
@@ -560,7 +561,7 @@
       <!-- Search Header -->
       <header class="search-header">
         <div class="search-title-row">
-          <a href="/" class="back-to-gallery" title={$t('nav.backToGallery')}>
+          <a href={resolve('/')} class="back-to-gallery" title={$t('nav.backToGallery')}>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="15 18 9 12 15 6"></polyline>
             </svg>

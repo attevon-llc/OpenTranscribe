@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { register, login, getAuthMethods } from "$stores/auth";
@@ -31,7 +32,7 @@
 
       if (!registrationAllowed) {
         toastStore.error($t('auth.registrationDisabled'));
-        goto('/login', { replace: true });
+        goto(resolve('/login'), { replace: true });
       }
     })();
   });
@@ -96,7 +97,7 @@
         const loginResult = await login(email, password);
         if (loginResult.success) {
           toastStore.success($t('auth.registrationSuccess'));
-          goto("/");
+          goto(resolve("/"));
         } else {
           toastStore.error($t('auth.registrationSuccessLoginFailed'));
         }
@@ -283,7 +284,7 @@
       <div class="auth-footer">
         <p class="auth-link-text">
           {$t('auth.haveAccountPrefix')} <a
-            href="/login"
+            href={resolve('/login')}
             class="auth-link"
           >{$t('auth.login')}</a>
         </p>

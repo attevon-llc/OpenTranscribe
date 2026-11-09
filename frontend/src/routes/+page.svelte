@@ -15,21 +15,14 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { get } from 'svelte/store';
 
-  import { websocketStore } from '$stores/websocket';
   import { toastStore } from '$stores/toast';
-  import { uploadsStore } from '$stores/uploads';
   import { isAuthenticated } from '$stores/auth';
   import { galleryStore, galleryState, hasMoreFiles, isLoadingMore } from '$stores/gallery';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorCode } from '$lib/utils/apiError';
-  import { bulkLlmFailureKey } from '$lib/utils/bulkLlmOutcome';
-  import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
-  import { triggerAnchorDownload } from '$lib/export/anchorDownload';
-  import { openExportJobStream, type ExportJobStream } from '$lib/export/exportJobStream';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { createConfirmDialog } from '$lib/confirmDialog';
-  import { moveFilesToTrash } from '$lib/api/trash';
-  import { createUndo, summarizeTrashResults, trashConfirmMessage } from '$lib/trash/galleryTrash';
+  import { trashConfirmMessage, trashSelection } from '$lib/trash/galleryTrash';
   import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
@@ -37,10 +30,10 @@
   import BulkTagModal from '$components/gallery/BulkTagModal.svelte';
   import QuarantineModal from '$components/gallery/QuarantineModal.svelte';
   import GalleryLegalHold from '$components/gallery/GalleryLegalHold.svelte';
-  import { markHeld } from '$lib/legalHold/summary';
-  import { buildGalleryQuery } from '$lib/gallery/galleryQuery';
+  import { buildGalleryQuery, hasActiveFilters, type FilterPanelDetail } from '$lib/gallery/galleryQuery';
+  import { showFileErrorToast } from '$lib/gallery/fileErrorToast';
   import BaseModal from '$components/ui/BaseModal.svelte';
-  import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
+  import type { MediaFile } from '$lib/types/media';
   import type { BulkTagAction } from '$lib/types/tag';
 
   // Modal state
@@ -66,26 +59,21 @@
   let bulkReprocessFiles: MediaFile[] = [];
   let bulkReprocessing = false;
 
-  // Define types
-  interface FilterEvent {
-    detail: {
-      search: string;
-      tags: string[];
-      speaker: string[];
-      collectionId: string | null;  // UUID
-      dates: DateRange;
-      durationRange?: DurationRange;
-      fileTypes?: string[];
-      statuses?: string[];
-      ownership?: 'all' | 'mine' | 'shared';
-      owners?: string[]; // Owner UUIDs (issue #966)
-    };
-  }
-
-
-  import axiosInstance from '$lib/axios';
-  import { postBulkAction, type BulkFileResult } from '$lib/api/bulkActions';
-  import { apiCache } from '$lib/apiCache';
+  import { BULK_ACTIONS, BulkExporter, eligibleFiles, runBulkAction } from '$lib/gallery/bulkActions';
+  import { fetchFilesPage, pageMeta } from '$lib/gallery/filesPage';
+  import {
+    applyNotificationBatch,
+    createNotificationBatcher,
+    createThrottledRefresher,
+    markHeldRows,
+    markQuarantinedRows,
+    totalsAfterAdd,
+    totalsAfterRemove,
+    type GalleryNotification,
+  } from '$lib/gallery/fileMapUpdates';
+  import { listenForUploadRequests } from '$lib/gallery/uploadModalEvents';
+  import { createInfiniteScrollObserver, createScrollSaver, restoreScrollTop } from '$lib/gallery/galleryScroll';
+  import { bindGalleryTriggers, listenForTrashEvents } from '$lib/gallery/galleryTriggers';
 
   // Import components
   import FileUploader from '$components/FileUploader.svelte';
@@ -102,22 +90,15 @@
   const fileMap = new Map<string, MediaFile>();
   let pendingNewFiles = new Set<string>();
   let pendingDeletions = new Set<string>();
-  const refreshTimeouts = new Map<string, number>();
+  const refresher = createThrottledRefresher(() => fetchFiles());
+  const throttledRefresh = refresher.refresh;
 
   // Scroll container ref for virtual scrolling
   let scrollableContentEl: HTMLElement | null = null;
 
   // Continuously save scroll position for back-nav restoration
-  let scrollSaveRaf: number | null = null;
-  function onGalleryScroll() {
-    if (scrollSaveRaf !== null) return;
-    scrollSaveRaf = requestAnimationFrame(() => {
-      scrollSaveRaf = null;
-      if (scrollableContentEl) {
-        galleryStore.setScrollTop(scrollableContentEl.scrollTop);
-      }
-    });
-  }
+  const scrollSaver = createScrollSaver(() => scrollableContentEl, (top) => galleryStore.setScrollTop(top));
+  const onGalleryScroll = scrollSaver.onScroll;
 
   // Infinite scroll state
   let infiniteScrollSentinel: HTMLElement | null = null;
@@ -136,7 +117,8 @@
   let filterPanelRef: any;
 
   // WebSocket subscription
-  let unsubscribeFileStatus: (() => void) | undefined;
+  let stopRealtime: (() => void) | undefined;
+  const bulkExporter = new BulkExporter();
 
   // Filter state — restore from gallery store for navigation persistence
   let searchQuery: string = $galleryState.filterSearchQuery;
@@ -150,19 +132,10 @@
   let selectedOwners: string[] = [...$galleryState.filterSelectedOwners];
   $: showFilters = $galleryState.showFilters;
 
-  // Whether any filter is currently narrowing the list — including the toolbar
-  // search box (issue #747). Drives GalleryGrid's empty-state copy: an empty
-  // result set with a filter active means "no matches", not "your library is
-  // empty" (§4.1 defect 3).
-  $: filtersActive =
-    searchQuery !== '' ||
-    selectedTags.length > 0 ||
-    selectedSpeakers.length > 0 ||
-    selectedFileTypes.length > 0 ||
-    selectedStatuses.length > 0 ||
-    dateRange.from !== null || dateRange.to !== null ||
-    durationRange.min !== null || durationRange.max !== null ||
-    ownershipFilter !== 'all' || $galleryState.filterHiddenMode !== 'exclude' || $galleryState.filterHeld;
+  $: filtersActive = hasActiveFilters({
+    searchQuery, selectedTags, selectedSpeakers, dateRange, durationRange, selectedFileTypes,
+    selectedStatuses, ownershipFilter, hiddenMode: $galleryState.filterHiddenMode, held: $galleryState.filterHeld,
+  });
 
   // Sort state — restore from gallery store
   let sortBy: string = $galleryState.filterSortBy;
@@ -194,59 +167,12 @@
     error = null;
 
     try {
-      const params = buildQueryParams(1);
-
-      let response: any;
-
-      // If a collection is selected, fetch files from that collection
-      if (selectedCollectionId !== null) {
-        response = await axiosInstance.get(`/collections/${selectedCollectionId}/media`, { params });
-        // Collections endpoint might not have pagination yet, handle both formats
-        const newFiles = response.data.items || response.data;
-        files = newFiles;
-        galleryStore.setFiles(newFiles);
-
-        // Update pagination metadata if available
-        if (response.data.items) {
-          galleryStore.appendFiles(newFiles, {
-            page: response.data.page || 1,
-            pageSize: response.data.page_size || newFiles.length,
-            total: response.data.total || newFiles.length,
-            totalPages: response.data.total_pages || 1,
-            hasMore: response.data.has_more || false,
-          });
-        }
-      } else {
-        response = await axiosInstance.get('/files', { params });
-        const data = response.data;
-
-        // Handle both paginated response (object with items) and flat list (legacy/fallback)
-        if (data && data.items) {
-          files = data.items;
-          galleryStore.setFiles(data.items);
-          galleryStore.appendFiles(data.items, {
-            page: data.page,
-            pageSize: data.page_size,
-            total: data.total,
-            totalPages: data.total_pages,
-            hasMore: data.has_more,
-          });
-        } else if (Array.isArray(data)) {
-          // Fallback for non-paginated response
-          files = data;
-          galleryStore.setFiles(data);
-          galleryStore.appendFiles(data, {
-            page: 1,
-            pageSize: data.length,
-            total: data.length,
-            totalPages: 1,
-            hasMore: false,
-          });
-        } else {
-          files = [];
-          galleryStore.setFiles([]);
-        }
-      }
+      const page = await fetchFilesPage(selectedCollectionId, buildQueryParams(1));
+      files = page.items;
+      galleryStore.setFiles(page.items);
+      const len = page.items.length;
+      const meta = pageMeta(page, { page: 1, pageSize: len, total: len, totalPages: 1, hasMore: false });
+      if (meta) galleryStore.appendFiles(page.items, meta);
 
       updateFileMap();
 
@@ -273,50 +199,16 @@
 
     try {
       const nextPage = $galleryState.currentPage + 1;
-      const params = buildQueryParams(nextPage);
-
-      let response: any;
-
-      if (selectedCollectionId !== null) {
-        response = await axiosInstance.get(`/collections/${selectedCollectionId}/media`, { params });
-        const newFiles = (response.data.items || response.data) as MediaFile[];
-        // Deduplicate: only add files not already loaded (prevents duplicate key errors)
-        const uniqueNew = newFiles.filter((f: MediaFile) => !fileMap.has(f.uuid));
-        files = [...files, ...uniqueNew];
-        galleryStore.setFiles(files);
-
-        if (response.data.items) {
-          galleryStore.appendFiles(newFiles, {
-            page: response.data.page || nextPage,
-            pageSize: response.data.page_size || newFiles.length,
-            total: response.data.total || files.length,
-            totalPages: response.data.total_pages || nextPage,
-            hasMore: response.data.has_more || false,
-          });
-        }
-      } else {
-        response = await axiosInstance.get('/files', { params });
-        const data = response.data;
-
-        if (data && data.items) {
-          // Deduplicate: only add files not already loaded (prevents duplicate key errors)
-          const uniqueItems = data.items.filter((f: MediaFile) => !fileMap.has(f.uuid));
-          files = [...files, ...uniqueItems];
-          galleryStore.setFiles(files);
-          galleryStore.appendFiles(data.items, {
-            page: data.page,
-            pageSize: data.page_size,
-            total: data.total,
-            totalPages: data.total_pages,
-            hasMore: data.has_more,
-          });
-        } else if (Array.isArray(data)) {
-          // Fallback for non-paginated response
-          const uniqueItems = data.filter((f: MediaFile) => !fileMap.has(f.uuid));
-          files = [...files, ...uniqueItems];
-          galleryStore.setFiles(files);
-        }
-      }
+      const page = await fetchFilesPage(selectedCollectionId, buildQueryParams(nextPage));
+      // Deduplicate: only add files not already loaded (prevents duplicate key errors)
+      files = [...files, ...page.items.filter((f) => !fileMap.has(f.uuid))];
+      galleryStore.setFiles(files);
+      const meta = pageMeta(
+        page,
+        { page: nextPage, pageSize: page.items.length, total: files.length, totalPages: nextPage, hasMore: false },
+        false
+      );
+      if (meta) galleryStore.appendFiles(page.items, meta);
 
       updateFileMap();
     } catch (err) {
@@ -354,14 +246,7 @@
       fileMap.set(newFile.uuid, newFile);
       galleryStore.setFiles(files);
 
-      // Increment total count
-      galleryStore.appendFiles([], {
-        page: $galleryState.currentPage,
-        pageSize: $galleryState.pageSize,
-        total: $galleryState.totalFiles + 1,
-        totalPages: $galleryState.totalPages,
-        hasMore: $galleryState.hasMoreFiles,
-      });
+      galleryStore.appendFiles([], totalsAfterAdd($galleryState));
 
       // Clear new file marker after animation
       setTimeout(() => {
@@ -369,32 +254,9 @@
         pendingNewFiles = new Set(pendingNewFiles);
       }, 600);
     } else {
-      // Show toast notification instead
       toastStore.info($t('gallery.newFileAvailable'));
-
-      // Increment total count only
-      galleryStore.appendFiles([], {
-        page: $galleryState.currentPage,
-        pageSize: $galleryState.pageSize,
-        total: $galleryState.totalFiles + 1,
-        totalPages: Math.ceil(($galleryState.totalFiles + 1) / $galleryState.pageSize),
-        hasMore: true, // New file means there might be more
-      });
+      galleryStore.appendFiles([], totalsAfterAdd($galleryState));
     }
-  }
-
-  // Throttled refresh function to prevent spam
-  function throttledRefresh(key: string, delay: number = 500) {
-    if (refreshTimeouts.has(key)) {
-      clearTimeout(refreshTimeouts.get(key) as any);
-    }
-
-    const timeoutId = setTimeout(() => {
-      fetchFiles();
-      refreshTimeouts.delete(key);
-    }, delay);
-
-    refreshTimeouts.set(key, timeoutId as any);
   }
 
   // Remove files smoothly with animation
@@ -416,16 +278,8 @@
       pendingDeletions = new Set(pendingDeletions);
       galleryStore.setFiles(files);
 
-      // Decrement total count
       if (actualDeletions.length > 0) {
-        const newTotal = Math.max(0, $galleryState.totalFiles - actualDeletions.length);
-        galleryStore.appendFiles([], {
-          page: $galleryState.currentPage,
-          pageSize: $galleryState.pageSize,
-          total: newTotal,
-          totalPages: Math.ceil(newTotal / $galleryState.pageSize),
-          hasMore: $galleryState.currentPage < Math.ceil(newTotal / $galleryState.pageSize),
-        });
+        galleryStore.appendFiles([], totalsAfterRemove($galleryState, actualDeletions.length));
       }
     }, 250); // Match fade out animation duration
   }
@@ -436,7 +290,7 @@
   }
 
   // Handle filter changes
-  function applyFilters(event: FilterEvent) {
+  function applyFilters(event: { detail: FilterPanelDetail }) {
     const { search, tags, speaker, collectionId, dates, durationRange: duration, fileTypes, statuses, ownership, owners } = event.detail;
 
     searchQuery = search;
@@ -471,8 +325,6 @@
     fetchFiles();
   }
 
-
-
   // Clear selection
   function clearSelection() {
     galleryStore.clearSelection();
@@ -491,7 +343,6 @@
   function toggleUploadModal() {
     showUploadModal = !showUploadModal;
   }
-
 
   // Reset all filters
   function resetFilters() {
@@ -521,37 +372,15 @@
     confirmDialog.request(
       $t('gallery.trashConfirmTitle'),
       await trashConfirmMessage($t),
-      () => executeDeleteSelectedFiles(),
+      () =>
+        trashSelection(selectedFiles, {
+          t: $t,
+          removeFiles: removeFilesSmooth,
+          refetch: fetchFiles,
+          clearSelection,
+        }),
       $t('gallery.trashConfirmButton')
     );
-  }
-
-  async function executeDeleteSelectedFiles() {
-    try {
-      const outcome = summarizeTrashResults(await moveFilesToTrash(Array.from(selectedFiles)));
-      if (outcome.trashed.length > 0) {
-        removeFilesSmooth(outcome.trashed);
-        const undo = createUndo(outcome.trashed);
-        const onUndo = async () => {
-          const restored = await undo();
-          if (restored === null) return;
-          if (restored) toastStore.success($t('gallery.undoDone'));
-          else toastStore.error($t('gallery.undoFailed'));
-          fetchFiles();
-        };
-        toastStore.show($t('gallery.trashedSuccess', { count: outcome.trashed.length }), 'success', 8000, {
-          action: { label: $t('gallery.undo'), onClick: () => void onUndo() },
-        });
-      }
-      // Files the caller may see but not delete, and files a legal hold keeps (issue #1276).
-      if (outcome.forbidden > 0) toastStore.error($t('gallery.deleteForbidden', { count: outcome.forbidden }));
-      if (outcome.held > 0) toastStore.error($t('gallery.deleteHeld', { count: outcome.held }));
-      if (outcome.other > 0) toastStore.error($t('gallery.deleteFailed', { count: outcome.other }));
-      clearSelection();
-    } catch (err: unknown) {
-      console.error('Error deleting files:', err);
-      toastStore.error(getErrorMessage(err, $t('gallery.deleteError')));
-    }
   }
 
   // Bulk reprocess selected files — opens SelectiveReprocessModal in bulk mode
@@ -559,7 +388,7 @@
     const selected = $galleryState.selectedFiles;
     if (selected.size === 0) return;
 
-    const reprocessable = files.filter(f => selected.has(f.uuid) && ['completed', 'error', 'cancelled'].includes(f.status));
+    const reprocessable = eligibleFiles(files, selected, ['completed', 'error', 'cancelled']);
     if (reprocessable.length === 0) {
       toastStore.warning($t('gallery.bulk.noCompletedFiles'));
       return;
@@ -602,14 +431,12 @@
    * like it works until the next refetch puts it back.
    */
   function handleQuarantined(event: CustomEvent<{ uuids: string[] }>) {
-    const changed = new Set(event.detail.uuids);
-    files = files.map((f) => (changed.has(f.uuid) ? { ...f, is_quarantined: true } : f));
+    files = markQuarantinedRows(files, event.detail.uuids);
   }
 
   // A hold placed from the selection: badge the rows now (legal-hold plan, Lane D).
   function handleHoldPlaced(event: CustomEvent<{ uuids: string[]; authority: 'organization' | 'platform' }>) {
-    const held = new Set(event.detail.uuids);
-    files = files.map((f) => (held.has(f.uuid) ? { ...f, hold: markHeld(f.hold, [event.detail.authority]) } : f));
+    files = markHeldRows(files, event.detail.uuids, event.detail.authority);
   }
 
   // Rows carry no tags, so only an active tag filter can change; a refetch resets pagination.
@@ -619,230 +446,13 @@
     }
   }
 
-
-  // Bulk summarize selected files
-  async function bulkSummarize() {
-    const selected = $galleryState.selectedFiles;
-    if (selected.size === 0) return;
-
-    const completed = files.filter(f => selected.has(f.uuid) && f.status === 'completed');
-    if (completed.length === 0) {
-      toastStore.warning($t('gallery.bulk.noCompletedFiles'));
-      return;
-    }
-
-    try {
-      const results = await postBulkAction<BulkFileResult>({
-        file_uuids: completed.map(f => f.uuid),
-        action: 'summarize'
-      });
-      const successful = results.filter((r: any) => r.success);
-      const failed = results.filter((r: any) => !r.success);
-
-      // "Unusable configuration" and "none configured" call for different next steps
-      const llmFailureKey = bulkLlmFailureKey(results);
-      if (llmFailureKey) {
-        toastStore.error($t(llmFailureKey));
-        return;
-      }
-
-      if (successful.length > 0) {
-        toastStore.success($t('gallery.bulk.summarizeStarted', { count: successful.length }));
-      }
-      if (failed.length > 0) {
-        toastStore.error($t('gallery.bulk.summarizeFailed', { count: failed.length }));
-      }
-    } catch (err) {
-      console.error('Bulk summarize error:', err);
-      toastStore.error(getErrorMessage(err, $t('gallery.bulk.summarizeFailed', { count: completed.length })));
-    }
-  }
-
-  // Bulk content-redaction (re)scan of selected files
-  async function bulkRedact() {
-    const selected = $galleryState.selectedFiles;
-    if (selected.size === 0) return;
-
-    const completed = files.filter(f => selected.has(f.uuid) && f.status === 'completed');
-    if (completed.length === 0) {
-      toastStore.warning($t('gallery.bulk.noCompletedFiles'));
-      return;
-    }
-
-    try {
-      const results = await postBulkAction<BulkFileResult>({
-        file_uuids: completed.map(f => f.uuid),
-        action: 'redact'
-      });
-      const successful = results.filter((r: any) => r.success);
-      const failed = results.filter((r: any) => !r.success);
-
-      if (successful.length > 0) {
-        toastStore.success($t('gallery.bulk.redactStarted', { count: successful.length }));
-      }
-      if (failed.length > 0) {
-        toastStore.error($t('gallery.bulk.redactFailed', { count: failed.length }));
-      }
-    } catch (err) {
-      console.error('Bulk redact error:', err);
-      toastStore.error(getErrorMessage(err, $t('gallery.bulk.redactFailed', { count: completed.length })));
-    }
-  }
-
-  // Bulk retry failed files
-  async function bulkRetryFailed() {
-    const selected = $galleryState.selectedFiles;
-    if (selected.size === 0) return;
-
-    const failedFiles = files.filter(f => selected.has(f.uuid) && f.status === 'error');
-    if (failedFiles.length === 0) {
-      toastStore.warning($t('gallery.bulk.noFailedFiles'));
-      return;
-    }
-
-    try {
-      const results = await postBulkAction<BulkFileResult>({
-        file_uuids: failedFiles.map(f => f.uuid),
-        action: 'retry'
-      });
-      const successful = results.filter((r: any) => r.success);
-      const failed = results.filter((r: any) => !r.success);
-
-      if (successful.length > 0) {
-        toastStore.success($t('gallery.bulk.retryStarted', { count: successful.length }));
-      }
-      if (failed.length > 0) {
-        toastStore.error($t('gallery.bulk.retryFailedError', { count: failed.length }));
-      }
-    } catch (err) {
-      console.error('Bulk retry error:', err);
-      toastStore.error($t('gallery.bulk.retryFailedError', { count: failedFiles.length }));
-    }
-  }
-
-  // The in-flight bulk subtitle export (async + presigned ZIP), read through the one job-stream consumer
-  let bulkExportStream: ExportJobStream | null = null;
-
-  // Bulk export selected files as a single ZIP — built on the download worker and
-  // delivered as a presigned URL over SSE (no archive bytes proxied through the API).
-  async function bulkExport(format: string) {
-    const selected = $galleryState.selectedFiles;
-    if (selected.size === 0) return;
-
-    const completed = files.filter(f => selected.has(f.uuid) && f.status === 'completed');
-    if (completed.length === 0) {
-      toastStore.warning($t('gallery.bulk.noCompletedFiles'));
-      return;
-    }
-
-    const ext = format === 'webvtt' ? 'vtt' : format;
-    const total = completed.length;
-
-    toastStore.info($t('gallery.bulk.exportStarted', { count: total, format: ext.toUpperCase() }));
-
-    try {
-      const { data } = await axiosInstance.post('/files/bulk-export/prepare', {
-        file_uuids: completed.map(f => f.uuid),
-        subtitle_format: format,
-        include_speakers: true,
-      });
-
-      bulkExportStream?.close();
-      const stream = openExportJobStream(data.job_id);
-      bulkExportStream = stream;
-
-      try {
-        const d = await stream.result;
-        triggerAnchorDownload(d.url, d.filename ?? `transcripts_${format}.zip`);
-        toastStore.success($t('gallery.bulk.exportComplete', {
-          count: d.exported || total,
-          format: ext.toUpperCase(),
-        }));
-        if (d.skipped > 0) {
-          toastStore.warning($t('gallery.bulk.exportSkipped', { count: d.skipped }));
-        }
-      } catch {
-        toastStore.error($t('gallery.bulk.exportFailed', { count: total }));
-      } finally {
-        if (bulkExportStream === stream) bulkExportStream = null;
-      }
-    } catch (err) {
-      console.error('Bulk export failed to start:', err);
-      toastStore.error($t('gallery.bulk.exportFailed', { count: total }));
-    }
-    // Don't clear selection — user may want to export in multiple formats
-  }
-
-  // Bulk speaker identification
-  async function bulkSpeakerId() {
-    const selected = $galleryState.selectedFiles;
-    if (selected.size === 0) return;
-
-    const completed = files.filter(f => selected.has(f.uuid) && f.status === 'completed');
-    if (completed.length === 0) {
-      toastStore.warning($t('gallery.bulk.noCompletedFiles'));
-      return;
-    }
-
-    try {
-      // One request for the whole selection, like every other bulk action here. This was
-      // N serial round trips with no progress indication.
-      const results = await postBulkAction<BulkFileResult>({
-        file_uuids: completed.map(f => f.uuid),
-        action: 'identify_speakers'
-      });
-
-      const successCount = results.filter((r: { success: boolean }) => r.success).length;
-      const failCount = results.length - successCount;
-
-      const llmFailureKey = bulkLlmFailureKey(results);
-      if (llmFailureKey) {
-        toastStore.error($t(llmFailureKey));
-        return;
-      }
-
-      if (successCount > 0) {
-        toastStore.success($t('gallery.bulk.speakerIdStarted', { count: successCount }));
-      }
-      if (failCount > 0) {
-        toastStore.error($t('gallery.bulk.speakerIdFailed', { count: failCount }));
-      }
-    } catch (err) {
-      console.error('Bulk speaker ID error:', err);
-      toastStore.error(getErrorMessage(err, $t('gallery.bulk.speakerIdFailed', { count: completed.length })));
-    }
-  }
-
-  // Bulk cancel processing
-  async function bulkCancelProcessing() {
-    const selected = $galleryState.selectedFiles;
-    if (selected.size === 0) return;
-
-    const processing = files.filter(f => selected.has(f.uuid) && f.status === 'processing');
-    if (processing.length === 0) {
-      toastStore.warning($t('gallery.bulk.noProcessingFiles'));
-      return;
-    }
-
-    try {
-      const results = await postBulkAction<BulkFileResult>({
-        file_uuids: processing.map(f => f.uuid),
-        action: 'cancel'
-      });
-      const successful = results.filter((r: any) => r.success);
-      const failed = results.filter((r: any) => !r.success);
-
-      if (successful.length > 0) {
-        toastStore.success($t('gallery.bulk.cancelStarted', { count: successful.length }));
-      }
-      if (failed.length > 0) {
-        toastStore.error($t('gallery.bulk.cancelFailed', { count: failed.length }));
-      }
-    } catch (err) {
-      console.error('Bulk cancel error:', err);
-      toastStore.error($t('gallery.bulk.cancelFailed', { count: processing.length }));
-    }
-  }
+  const selectedUuids = () => $galleryState.selectedFiles;
+  const bulkSummarize = () => runBulkAction(BULK_ACTIONS.summarize, files, selectedUuids(), $t);
+  const bulkRedact = () => runBulkAction(BULK_ACTIONS.redact, files, selectedUuids(), $t);
+  const bulkRetryFailed = () => runBulkAction(BULK_ACTIONS.retry, files, selectedUuids(), $t);
+  const bulkSpeakerId = () => runBulkAction(BULK_ACTIONS.speakerId, files, selectedUuids(), $t);
+  const bulkCancelProcessing = () => runBulkAction(BULK_ACTIONS.cancel, files, selectedUuids(), $t);
+  const bulkExport = (format: string) => bulkExporter.run(format, files, selectedUuids(), $t);
 
   // File upload completed handler
   function handleUploadComplete(event: CustomEvent) {
@@ -864,182 +474,17 @@
     }
   }
 
-
-
-  // Enhanced error notification using backend categorization
-  function showEnhancedErrorNotification(file: MediaFile) {
-    // Use backend-provided error categorization
-    if (file.error_reason && file.error_suggestions) {
-      const suggestions = file.error_suggestions.map(s => `• ${s}`).join('\n');
-      // GH #960: translate the fixed backend reason client-side; fall back to the
-      // server-authored English `user_message` only for a reason this client doesn't know.
-      const mediaErrorI18nKey = resolveMediaErrorI18nKey(file.error_reason);
-      const message = mediaErrorI18nKey
-        ? $t(mediaErrorI18nKey)
-        : file.user_message || $t('gallery.processingFailed', { filename: file.title || file.filename });
-      toastStore.error(
-        $t('gallery.processingFailedWithSuggestions', {
-          message,
-          suggestions: suggestions
-        }),
-        file.error_reason === 'file_quality' ? 10000 : 8000
-      );
-    } else {
-      // Minimal fallback for unexpected cases
-      toastStore.error($t('gallery.processingFailed', { filename: file.title || file.filename }));
-    }
-  }
-
-  // Subscribe to WebSocket file status updates to update file status in real-time
-  // Track processed notifications to avoid duplicate processing
-  const processedNotificationIds = new Set<string>();
-  let previousActiveUploadCount = 0;
-  let pendingNotifications: any[] = [];
-  let wsFlushTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Periodic cleanup to prevent processedNotificationIds from growing too large
-  const notificationCleanupInterval = setInterval(() => {
-    if (processedNotificationIds.size > 1000) {
-      processedNotificationIds.clear();
-    }
-  }, 300000); // Clean up every 5 minutes
-
-  // Flush pending notifications in a single batched update
-  function flushPendingNotifications() {
-    wsFlushTimer = null;
-    if (pendingNotifications.length === 0) return;
-    const batch = pendingNotifications;
-    pendingNotifications = [];
-    processNotificationBatch(batch);
-  }
-
-  function processNotificationBatch(unprocessedNotifications: any[]) {
-    // Process all notifications, collecting updates into fileMap without
-    // triggering Svelte reactivity per-notification (prevents freeze with bulk processing)
-    let filesUpdated = false;
-    const needsRefreshIds: string[] = [];
-
-    unprocessedNotifications.forEach(notification => {
-      if (notification.type === 'file_deleted' && notification.data?.file_id) {
-        const fileId = String(notification.data.file_id);
-        removeFileSmooth(fileId);
-      }
-      else if (notification.type === 'transcription_status' && notification.data?.file_id) {
-        const fileId = String(notification.data.file_id);
-        const status = notification.data.status;
-        const existing = fileMap.get(fileId);
-
-        if (existing) {
-          const updatedFile = {
-            ...existing,
-            status: status,
-            display_status: status === 'processing' ? $t('common.processing') :
-                           status === 'completed' ? $t('common.completed') :
-                           status === 'pending' ? $t('common.pending') :
-                           status === 'error' ? $t('common.error') : status
-          };
-          fileMap.set(fileId, updatedFile);
-          filesUpdated = true;
-        }
-
-        if (status === 'error') {
-          needsRefreshIds.push(fileId);
-        }
-      }
-      else if (notification.type === 'cache_invalidate') {
-        // Push-based cache invalidation from backend
-        const scope = notification.data?.scope;
-        if (scope === 'files' || scope === 'all') {
-          apiCache.invalidate('files:');
-          throttledRefresh('cache-invalidate', 500);
-        }
-      }
-      else if (notification.type === 'file_upload' || notification.type === 'file_created') {
-        if (notification.data?.file) {
-          addNewFileSmooth(notification.data.file);
-        } else {
-          throttledRefresh('new-file', 500);
-        }
-      }
-      else if (notification.type === 'file_updated' && notification.data?.file_id) {
-        const fileId = String(notification.data.file_id);
-        const existing = fileMap.get(fileId);
-
-        if (existing) {
-          let updatedFile;
-          if (notification.data.file) {
-            updatedFile = { ...existing, ...notification.data.file };
-          } else {
-            const newStatus = notification.data.status || existing.status;
-            updatedFile = {
-              ...existing,
-              status: newStatus,
-              display_status: notification.data.display_status || existing.display_status,
-              thumbnail_url: notification.data.thumbnail_url || existing.thumbnail_url,
-            };
-          }
-          fileMap.set(fileId, updatedFile);
-          filesUpdated = true;
-        }
-        // File not in currently loaded pages — ignore silently.
-      }
+  function processNotificationBatch(batch: GalleryNotification[]) {
+    const filesUpdated = applyNotificationBatch(batch, fileMap, $t, {
+      removeFile: removeFileSmooth,
+      addNewFile: addNewFileSmooth,
+      refresh: throttledRefresh,
     });
-
-    // Single batched update: rebuild files array from fileMap once
+    // Single batched update: rebuild the files array from fileMap once.
     if (filesUpdated) {
-      files = files.map(f => fileMap.get(f.uuid) || f);
+      files = files.map((f) => fileMap.get(f.uuid) || f);
       galleryStore.setFiles(files);
     }
-
-    // Schedule refreshes for error files (batched)
-    if (needsRefreshIds.length > 0) {
-      throttledRefresh('error-batch', 1000);
-    }
-  }
-
-  function setupWebSocketUpdates() {
-    unsubscribeFileStatus = websocketStore.subscribe(($ws) => {
-      if ($ws.notifications.length > 0) {
-        const unprocessedNotifications = $ws.notifications.filter(notification =>
-          !processedNotificationIds.has(notification.id)
-        );
-
-        if (unprocessedNotifications.length > 0) {
-          unprocessedNotifications.forEach(notification => {
-            processedNotificationIds.add(notification.id);
-          });
-
-          // Queue notifications and debounce processing to batch updates
-          // This prevents per-notification re-renders during bulk processing
-          pendingNotifications.push(...unprocessedNotifications);
-          if (wsFlushTimer) clearTimeout(wsFlushTimer);
-          wsFlushTimer = setTimeout(flushPendingNotifications, 250);
-        }
-      }
-    });
-
-    // Also subscribe to upload store to detect when uploads finish
-    const unsubscribeUploads = uploadsStore.subscribe(($uploads) => {
-      const currentActiveUploadCount = $uploads.uploads.filter(u =>
-        ['uploading', 'processing', 'preparing'].includes(u.status)
-      ).length;
-
-      // If active upload count decreased to 0, do a smooth refresh
-      if (previousActiveUploadCount > 0 && currentActiveUploadCount === 0) {
-        throttledRefresh('uploads-complete', 800); // Slightly longer delay for upload completion
-      }
-
-      previousActiveUploadCount = currentActiveUploadCount;
-    });
-
-    // Return cleanup function for uploads subscription
-    const originalUnsubscribe = unsubscribeFileStatus;
-    unsubscribeFileStatus = () => {
-      if (originalUnsubscribe) originalUnsubscribe();
-      if (unsubscribeUploads) unsubscribeUploads();
-      // Clear processed notification IDs to prevent memory leaks
-      processedNotificationIds.clear();
-    };
   }
 
   onMount(() => {
@@ -1051,7 +496,6 @@
       return;
     }
 
-    // Update document title
     document.title = $t('gallery.pageTitle');
 
     // Collapse filter sidebar on mobile to avoid covering the content
@@ -1059,55 +503,15 @@
       galleryStore.toggleFilters();
     }
 
-    // Setup WebSocket subscription for real-time updates
-    setupWebSocketUpdates();
+    stopRealtime = createNotificationBatcher(processNotificationBatch, () =>
+      throttledRefresh('uploads-complete', 800)
+    );
 
-    // Listen for events to open Add Media modal
-    const handleOpenModalEvent = (event: CustomEvent) => {
-      showUploadModal = true;
-      // Dispatch a separate `window` event for the FileUploader once it has
-      // actually mounted and registered its own listener. `window` events
-      // aren't buffered, so a fixed sleep here is a race, not a safety
-      // margin: if FileUploader's `onMount` (which is what subscribes to
-      // `setFileUploaderTab`) hadn't run yet, the event was silently dropped
-      // and the tab request lost. `tick()` resolves once Svelte has flushed
-      // the DOM update that mounts FileUploader — including its `onMount` —
-      // so this fires as soon as the listener genuinely exists, not after a
-      // guessed delay (#649).
-      tick().then(() => {
-        if (event.detail?.activeTab) {
-          window.dispatchEvent(new CustomEvent('setFileUploaderTab', {
-            detail: { activeTab: event.detail.activeTab }
-          }));
-        }
-      });
-    };
-
-    // Listen for direct file upload from recording popup
-    const handleUploadRecordedFile = (event: CustomEvent) => {
-      if (event.detail?.file) {
-        showUploadModal = true;
-        // Trigger file upload directly once FileUploader has mounted and
-        // registered its `directFileUpload` listener — same race as above,
-        // same fix (#649).
-        tick().then(() => {
-          window.dispatchEvent(new CustomEvent('directFileUpload', {
-            detail: { file: event.detail.file }
-          }));
-        });
-      }
-    };
-
-    window.addEventListener('openAddMediaModal', handleOpenModalEvent as EventListener);
-    window.addEventListener('uploadRecordedFile', handleUploadRecordedFile as EventListener);
-    // Trashed or restored by another tab, person or the Undo ($lib/websocket/frameRouting).
-    const handleFileTrashed = (event: Event) => {
-      const id = (event as CustomEvent<{ file_id?: string }>).detail?.file_id;
-      if (id && fileMap.has(String(id))) removeFileSmooth(String(id));
-    };
-    const handleFileRestored = () => fetchFiles();
-    window.addEventListener('file-trashed', handleFileTrashed);
-    window.addEventListener('file-restored', handleFileRestored);
+    const stopUploadRequests = listenForUploadRequests(() => (showUploadModal = true));
+    const stopTrashEvents = listenForTrashEvents(
+      (id) => fileMap.has(id) && removeFileSmooth(id),
+      fetchFiles
+    );
 
     // On back navigation, restore files from store instead of re-fetching
     const savedScrollTop = $galleryState.scrollTop;
@@ -1118,47 +522,19 @@
       updateFileMap();
       loading = false;
 
-      // Repeatedly attempt scroll restoration until VirtualGrid has
-      // computed its full height and the scroll actually takes effect.
-      let attempts = 0;
-      const tryRestore = () => {
-        if (!scrollableContentEl || attempts > 30) return;
-        attempts++;
-        scrollableContentEl.scrollTop = savedScrollTop;
-        if (Math.abs(scrollableContentEl.scrollTop - savedScrollTop) > 10) {
-          requestAnimationFrame(tryRestore);
-        }
-      };
-      tick().then(() => requestAnimationFrame(tryRestore));
+      restoreScrollTop(() => scrollableContentEl, savedScrollTop);
     } else {
       fetchFiles();
     }
 
-    // Setup infinite scroll observer (will observe sentinel via reactive statement)
-    intersectionObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && $hasMoreFiles && !$isLoadingMore) {
-            loadMoreFiles();
-          }
-        });
-      },
-      {
-        root: null,
-        rootMargin: '200px',  // Trigger 200px before bottom
-        threshold: 0.1,
-      }
-    );
+    intersectionObserver = createInfiniteScrollObserver(() => {
+      if ($hasMoreFiles && !$isLoadingMore) loadMoreFiles();
+    });
 
-    // Return cleanup function
     return () => {
-      window.removeEventListener('openAddMediaModal', handleOpenModalEvent as EventListener);
-      window.removeEventListener('uploadRecordedFile', handleUploadRecordedFile as EventListener);
-      window.removeEventListener('file-trashed', handleFileTrashed);
-      window.removeEventListener('file-restored', handleFileRestored);
-      if (intersectionObserver) {
-        intersectionObserver.disconnect();
-      }
+      stopUploadRequests();
+      stopTrashEvents();
+      intersectionObserver?.disconnect();
     };
   });
 
@@ -1183,133 +559,44 @@
       sortOrder,
     });
 
-    // Clean up WebSocket subscription when component is destroyed
-    if (unsubscribeFileStatus) {
-      unsubscribeFileStatus();
-    }
+    stopRealtime?.();
 
-    // Clean up periodic notification cleanup interval
-    clearInterval(notificationCleanupInterval);
+    scrollSaver.cancel();
+    refresher.cancelAll();
 
-    // Clean up scroll save rAF
-    if (scrollSaveRaf !== null) {
-      cancelAnimationFrame(scrollSaveRaf);
-    }
-
-    // Clean up any pending refresh timeouts
-    refreshTimeouts.forEach((timeoutId) => {
-      clearTimeout(timeoutId);
-    });
-    refreshTimeouts.clear();
-
-    // Clean up pending notification flush timer
-    if (wsFlushTimer) {
-      clearTimeout(wsFlushTimer);
-      wsFlushTimer = null;
-    }
-
-    // Close any in-flight bulk export SSE stream
-    bulkExportStream?.close();
+    bulkExporter.close();
   });
 
-  // Set up store-based action triggers
-  onMount(() => {
-    // Subscribe to gallery action triggers (initial values are now handled in store)
-    const unsubscribeUpload = galleryStore.onUploadTrigger(() => {
-      toggleUploadModal();
-    });
-
-    const unsubscribeCollections = galleryStore.onCollectionsTrigger(() => {
-      showCollectionsModal = true;
-    });
-
-    const unsubscribeAddToCollection = galleryStore.onAddToCollectionTrigger(() => {
-      showCollectionsModal = true;
-    });
-
-    const unsubscribeAddTags = galleryStore.onAddTagsTrigger(() => {
-      openBulkTagModal('add_tag');
-    });
-
-
-    // One Tags button, two modes — the same contract CollectionsPanel uses:
-    // a selection means "apply to these", no selection means "manage the
-    // library". Keeping it on one control avoids a second entry point that
-    // would have to explain which one to reach for.
-    const unsubscribeTags = galleryStore.onTagsTrigger(() => {
-      if ($galleryState.selectedFiles.size > 0) {
-        openBulkTagModal('add_tag');
-      } else {
-        showTagManagerModal = true;
-      }
-    });
-
-    const unsubscribeRemoveTags = galleryStore.onRemoveTagsTrigger(() => {
-      openBulkTagModal('remove_tag');
-    });
-
-
-    const unsubscribeQuarantine = galleryStore.onQuarantineTrigger(() => {
-      openQuarantineModal();
-    });
-    // A hide, an unhide or a new hidden-files mode (#1102) changes which files this list shows.
-    const unsubscribeHidden = galleryStore.onHiddenChanged(() => fetchFiles());
-    // The computed "Legal hold" collection replaces a selected real one (the store cleared its copy).
-    const unsubscribeHeld = galleryStore.onHeldChanged((held) => { if (held) selectedCollectionId = null; fetchFiles(); });
-
-    const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
-      deleteSelectedFiles();
-    });
-
-    const unsubscribeReprocess = galleryStore.onReprocessTrigger(() => {
-      bulkReprocess();
-    });
-
-    const unsubscribeSummarize = galleryStore.onSummarizeTrigger(() => {
-      bulkSummarize();
-    });
-
-    const unsubscribeRedact = galleryStore.onRedactTrigger(() => {
-      bulkRedact();
-    });
-
-    const unsubscribeRetryFailed = galleryStore.onRetryFailedTrigger(() => {
-      bulkRetryFailed();
-    });
-
-    const unsubscribeExport = galleryStore.onExportTrigger((format) => {
-      bulkExport(format);
-    });
-
-    const unsubscribeSpeakerId = galleryStore.onSpeakerIdTrigger(() => {
-      bulkSpeakerId();
-    });
-
-    const unsubscribeCancelProcessing = galleryStore.onCancelProcessingTrigger(() => {
-      bulkCancelProcessing();
-    });
-
-    // Cleanup subscriptions
-    return () => {
-      unsubscribeUpload();
-      unsubscribeCollections();
-      unsubscribeTags();
-      unsubscribeAddToCollection();
-      unsubscribeAddTags();
-      unsubscribeRemoveTags();
-      unsubscribeDeleteSelected();
-      unsubscribeReprocess();
-      unsubscribeSummarize();
-      unsubscribeRedact();
-      unsubscribeRetryFailed();
-      unsubscribeExport();
-      unsubscribeSpeakerId();
-      unsubscribeCancelProcessing();
-      unsubscribeQuarantine();
-      unsubscribeHidden();
-      unsubscribeHeld();
-    };
-  });
+  onMount(() =>
+    bindGalleryTriggers({
+      upload: toggleUploadModal,
+      collections: () => (showCollectionsModal = true),
+      addToCollection: () => (showCollectionsModal = true),
+      addTags: () => openBulkTagModal('add_tag'),
+      // One Tags button, two modes (the contract CollectionsPanel uses): a selection means
+      // "apply to these", none means "manage the library".
+      tags: () => {
+        if ($galleryState.selectedFiles.size > 0) openBulkTagModal('add_tag');
+        else showTagManagerModal = true;
+      },
+      removeTags: () => openBulkTagModal('remove_tag'),
+      quarantine: openQuarantineModal,
+      hiddenChanged: fetchFiles,
+      // The computed "Legal hold" collection replaces a selected real one (the store cleared its copy).
+      heldChanged: (held) => {
+        if (held) selectedCollectionId = null;
+        fetchFiles();
+      },
+      deleteSelected: deleteSelectedFiles,
+      reprocess: bulkReprocess,
+      summarize: bulkSummarize,
+      redact: bulkRedact,
+      retryFailed: bulkRetryFailed,
+      exportSelected: bulkExport,
+      speakerId: bulkSpeakerId,
+      cancelProcessing: bulkCancelProcessing,
+    })
+  );
 </script>
 
 <!-- Main container with fixed height -->
@@ -1363,7 +650,7 @@
           scrollContainer={scrollableContentEl}
           on:sentinel={(e) => (infiniteScrollSentinel = e.detail)}
           on:retry={() => fetchFiles()}
-          on:errorclick={(e) => showEnhancedErrorNotification(e.detail)}
+          on:errorclick={(e) => showFileErrorToast(e.detail, $t)}
         />
       </div>
     </div>

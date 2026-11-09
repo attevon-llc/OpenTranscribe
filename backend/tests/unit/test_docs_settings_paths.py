@@ -3,7 +3,7 @@
 The sidebar was regrouped repeatedly (Speech Processing became a tab, Auto-Label was
 renamed and moved, "Transcription & AI" never existed) and the docs kept pointing at
 labels a reader cannot find. The sidebar's English labels are the source of truth: every
-``label: $t('…')`` and group ``title: $t('settings.sections.…')`` in ``SettingsModal.svelte``,
+``label: t('…')`` and group ``title: t('settings.sections.…')`` in ``sidebarSections.ts`` / ``settingsSearch.ts``,
 resolved through ``en.json``. Only the FIRST segment after ``Settings →`` is checked — tab
 names below it are checked by the frontend tests that render the tabs.
 
@@ -18,7 +18,10 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-MODAL = REPO_ROOT / "frontend" / "src" / "components" / "SettingsModal.svelte"
+#: The sidebar table and the legacy-alias search entries moved out of the modal into
+#: ``$lib/settings``; together they hold every label the modal shows.
+_SETTINGS_LIB = REPO_ROOT / "frontend" / "src" / "lib" / "settings"
+MODAL_SOURCES = (_SETTINGS_LIB / "sidebarSections.ts", _SETTINGS_LIB / "settingsSearch.ts")
 EN_JSON = REPO_ROOT / "frontend" / "src" / "lib" / "i18n" / "locales" / "en.json"
 DOCS = REPO_ROOT / "docs-site" / "docs"
 
@@ -52,11 +55,13 @@ PATH_RE = re.compile(rf"Settings\s*{ARROW}\s*(.+)")
 
 def sidebar_labels() -> set[str]:
     en: dict[str, str] = json.loads(EN_JSON.read_text(encoding="utf-8"))
-    source = MODAL.read_text(encoding="utf-8")
+    source = "\n".join(path.read_text(encoding="utf-8") for path in MODAL_SOURCES)
     keys: list[str] = []
-    for line in source.splitlines():
-        if "label:" in line or re.search(r"title: \$t\('settings\.sections\.", line):
-            keys += re.findall(r"\$t\('([^']+)'\)", line)
+    # Prettier wraps a long label across lines, so match the label expression up to the object's
+    # next brace instead of one source line.
+    for span in re.findall(r"\blabel:([^{}]*)", source):
+        keys += re.findall(r"\bt\('([^']+)'\)", span)
+    keys += re.findall(r"title:\s*t\('(settings\.sections\.[^']+)'\)", source)
     labels = {en[key].lower() for key in keys if key in en}
     return labels | LEGACY_LABELS
 

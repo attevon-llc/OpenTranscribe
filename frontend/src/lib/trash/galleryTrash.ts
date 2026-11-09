@@ -1,5 +1,7 @@
 import type { BulkFileResult } from '$lib/api/bulkActions';
-import { getTrashRetentionDays, restoreFiles } from '$lib/api/trash';
+import { getTrashRetentionDays, moveFilesToTrash, restoreFiles } from '$lib/api/trash';
+import { getErrorMessage } from '$lib/utils/apiError';
+import { toastStore } from '$stores/toast';
 
 /**
  * The gallery's "delete" (issue #1101): the selection moves to the trash, the confirmation says
@@ -59,4 +61,55 @@ export function createUndo(fileUuids: string[]): () => Promise<boolean | null> {
       return false;
     }
   };
+}
+
+export interface TrashSelectionHooks {
+  t: Translate;
+  /** The files just trashed, to animate out of the grid. */
+  removeFiles: (uuids: string[]) => void;
+  /** Refetch the list after an Undo restored files. */
+  refetch: () => void;
+  clearSelection: () => void;
+}
+
+/**
+ * Move `selected` to the trash (#1101) and report the outcome: a success toast with an Undo, and an
+ * error toast per refusal class (files the caller may see but not delete, and files a legal hold
+ * keeps, issue #1276).
+ */
+export async function trashSelection(
+  selected: Set<string>,
+  hooks: TrashSelectionHooks
+): Promise<void> {
+  const { t } = hooks;
+  try {
+    const outcome = summarizeTrashResults(await moveFilesToTrash(Array.from(selected)));
+    if (outcome.trashed.length > 0) {
+      hooks.removeFiles(outcome.trashed);
+      const undo = createUndo(outcome.trashed);
+      const onUndo = async () => {
+        const restored = await undo();
+        if (restored === null) return;
+        if (restored) toastStore.success(t('gallery.undoDone'));
+        else toastStore.error(t('gallery.undoFailed'));
+        hooks.refetch();
+      };
+      toastStore.show(
+        t('gallery.trashedSuccess', { count: outcome.trashed.length }),
+        'success',
+        8000,
+        {
+          action: { label: t('gallery.undo'), onClick: () => void onUndo() },
+        }
+      );
+    }
+    if (outcome.forbidden > 0)
+      toastStore.error(t('gallery.deleteForbidden', { count: outcome.forbidden }));
+    if (outcome.held > 0) toastStore.error(t('gallery.deleteHeld', { count: outcome.held }));
+    if (outcome.other > 0) toastStore.error(t('gallery.deleteFailed', { count: outcome.other }));
+    hooks.clearSelection();
+  } catch (err: unknown) {
+    console.error('Error deleting files:', err);
+    toastStore.error(getErrorMessage(err, t('gallery.deleteError')));
+  }
 }

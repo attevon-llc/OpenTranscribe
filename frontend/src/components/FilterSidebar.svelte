@@ -5,10 +5,26 @@
   import '$styles/range-slider-dual.css';
   import DateRangePicker from '$components/ui/DateRangePicker.svelte';
   import FilterChipButton from '$components/ui/FilterChipButton.svelte';
-  import axiosInstance from '$lib/axios';
-  import { listTags } from '$lib/api/tags';
-  import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
-  import { fetchMetadataFilters } from '$lib/api/metadataFilters';
+  import {
+    describeError,
+    loadLibraryMetadata,
+    loadOwners,
+    loadSpeakers,
+    loadTags,
+    ownerLabel,
+    speakerLabel,
+    SPEAKER_FILTER_PAGE_SIZE,
+    type FilterSpeaker,
+    type OwnerOption
+  } from '$lib/gallery/filterData';
+  import {
+    isDurationChipActive as chipActive,
+    rangeFromValues,
+    toggleItem,
+    chipRange,
+    visibleDurationChips as visibleChipsFor,
+    type DurationChip
+  } from '$lib/gallery/filterChips';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
@@ -18,40 +34,6 @@
   import { DURATION_CHIP_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { createDebouncedHandler } from '$lib/utils/debounce';
   import { formatClock } from '$lib/utils/formatting';
-
-  // Type definitions for props and state
-  /**
-   * @typedef {Object} Tag
-   * @property {number} id - Tag ID
-   * @property {string} name - Tag name
-   */
-
-  /**
-   * @typedef {Object} Speaker
-   * @property {number} id - Speaker ID
-   * @property {string} name - Speaker name (original name like SPEAKER_01)
-   * @property {string|null} display_name - Display name set by user
-   */
-
-  /**
-   * @typedef {Object} DateRange
-   * @property {Date|null} from - Start date
-   * @property {Date|null} to - End date
-   */
-
-  /**
-   * @typedef {Object} DurationRange
-   * @property {number|null} min - Minimum duration in seconds
-   * @property {number|null} max - Maximum duration in seconds
-   */
-
-  /**
-   * @typedef {Object} ResolutionRange
-   * @property {number|null} minWidth - Minimum width in pixels
-   * @property {number|null} maxWidth - Maximum width in pixels
-   * @property {number|null} minHeight - Minimum height in pixels
-   * @property {number|null} maxHeight - Maximum height in pixels
-   */
 
   // Props
   // The filename/title search lives in the gallery toolbar (`GalleryHeader`)
@@ -143,16 +125,10 @@
     .filter(tag => selectedTags.includes(tag.name))
     .map(tag => tag.uuid);
 
-  // Owners the caller can already see (issue #966) — the closed-enumeration
-  // list `GET /files/owners` returns, in the same `{uuid, full_name,
-  // masked_email}` shape `UserSearchResult` uses for the sharing picker.
-  type OwnerOption = { uuid: string; full_name: string | null; masked_email: string };
+  // Owners the caller can already see (issue #966).
   let allOwners: OwnerOption[] = [];
   let loadingOwners = false;
   let errorOwners: string | null = null;
-
-  /** Prefer the display name; fall back to the masked email, never a raw one. */
-  const ownerLabel = (owner: OwnerOption): string => owner.full_name || owner.masked_email;
 
   $: dropdownOwners = allOwners.map(owner => ({
     id: owner.uuid,
@@ -163,11 +139,8 @@
   let collectionsFilterRef: any;
 
   /** @type {Speaker[]} */
-  let allSpeakers: any[] = [];
-  let dropdownSpeakers: any[] = [];  // Named speakers for multiselect dropdown
-
-  /** The string the API offers a speaker under, and the value sent back as `?speaker=`. */
-  const speakerLabel = (speaker: any): string => speaker.display_name || speaker.name;
+  let allSpeakers: FilterSpeaker[] = [];
+  let dropdownSpeakers: { id: string; name: string; count: number }[] = [];  // Named speakers for multiselect dropdown
 
   // Named people vs. unlabeled diarization placeholders (#743).
   //
@@ -194,16 +167,12 @@
     .filter(speaker => selectedSpeakers.includes(speakerLabel(speaker)))
     .map(speaker => speaker.uuid);
 
-  /** @type {boolean} */
   let loadingTags = false;
 
-  /** @type {boolean} */
   let loadingSpeakers = false;
 
-  /** @type {string|null} */
   let errorTags: string | null = null;
 
-  /** @type {string|null} */
   let errorSpeakers: string | null = null;
 
   // Available options for filters
@@ -250,24 +219,11 @@
     triggerFiltersImmediate();
   }
 
-  /**
-   * Turn a caught value into something renderable, without swallowing it.
-   *
-   * Every facet fetch below FAILS VISIBLY: an empty list is indistinguishable
-   * from "you have none of these", so a 500 used to render as a normal, empty
-   * filter with no error and no way to retry (#743a).
-   */
-  function describeError(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
-  }
-
-  // Fetch all tags (cached with TTL, invalidated via WebSocket push)
   async function fetchTags() {
     loadingTags = true;
     errorTags = null;
-
     try {
-      allTags = await apiCache.getOrFetch(cacheKey.tags(), () => listTags(), CacheTTL.TAGS);
+      allTags = await loadTags();
     } catch (err) {
       console.error('[FilterSidebar] Error fetching tags:', err);
       allTags = [];
@@ -277,29 +233,12 @@
     }
   }
 
-  // Fetch the owners of files the caller can already see (issue #966).
-  //
-  // `GET /files/owners` is a CLOSED enumeration — no `q`/search parameter — so
-  // this fetches the (capped) full list once and `SearchableMultiSelect`
-  // filters it client-side, exactly like the tags dropdown above. There is
-  // deliberately no server-side type-to-search here the way `fetchSpeakers`
-  // has one: a free-text parameter on this endpoint would turn an authorized
-  // "owners of files you can see" list into an account-probing oracle.
   async function fetchOwners() {
     if (!showOwnerFilter) return;
     loadingOwners = true;
     errorOwners = null;
-
     try {
-      const rows = await apiCache.getOrFetch(
-        cacheKey.owners(),
-        async () => {
-          const response = await axiosInstance.get('/files/owners');
-          return response.data;
-        },
-        CacheTTL.OWNERS
-      );
-      allOwners = Array.isArray(rows) ? rows : [];
+      allOwners = await loadOwners();
     } catch (err) {
       console.error('[FilterSidebar] Error fetching owners:', err);
       allOwners = [];
@@ -309,51 +248,15 @@
     }
   }
 
-  // Fetch speakers for filtering (cached with TTL, invalidated via WebSocket push).
-  //
-  // Server-side type-to-search (`GET /speakers?for_filter=true&q=...`), the same
-  // upgrade `PickerSpeakersTab.svelte` (the chat file-scope picker) already made:
-  // this endpoint no longer expects the caller to fetch every filterable speaker
-  // once and narrow client-side — the backend declines to build that full list
-  // past ~500 distinct names for the same reason
-  // (`services/chat/speaker_resolver.py`). `q` is optional, so calling this with
-  // no argument (initial load, WebSocket-pushed re-fetch) is unchanged.
-  //
-  // `include_unnamed` asks for speakers nobody has named yet (#743). Without it
-  // the roster is people-only, so a library that has been diarized but never
-  // renamed — which is every library until someone does the work — offered
-  // nothing at all to filter by.
-  //
-  // `limit` is passed explicitly, one MORE than we display: the server caps the
-  // roster, and an over-full page is the only exact way to tell "this was cut"
-  // from "this is all of them". Previously neither was sent and a capped list
-  // silently omitted speakers (#743b).
-  const SPEAKER_FILTER_PAGE_SIZE = 200;
   let speakersTruncated = false;
 
   async function fetchSpeakers(q = '') {
     loadingSpeakers = true;
     errorSpeakers = null;
-
     try {
-      const rows = await apiCache.getOrFetch(
-        cacheKey.speakers(q || undefined),
-        async () => {
-          const response = await axiosInstance.get('/speakers', {
-            params: {
-              for_filter: true,
-              q: q.trim() || undefined,
-              include_unnamed: true,
-              limit: SPEAKER_FILTER_PAGE_SIZE + 1
-            }
-          });
-          return response.data;
-        },
-        CacheTTL.SPEAKERS
-      );
-      const list = Array.isArray(rows) ? rows : [];
-      speakersTruncated = list.length > SPEAKER_FILTER_PAGE_SIZE;
-      allSpeakers = list.slice(0, SPEAKER_FILTER_PAGE_SIZE);
+      const result = await loadSpeakers(q);
+      speakersTruncated = result.truncated;
+      allSpeakers = result.speakers;
     } catch (err) {
       console.error('Error fetching speakers:', err);
       allSpeakers = [];
@@ -380,18 +283,8 @@
 
   onDestroy(() => debouncedSpeakerSearch.cleanup());
 
-  /**
-   * Handle tag selection
-   * @param {string} tag - The tag to toggle
-   */
   function toggleTag(tag: string) {
-    const index = selectedTags.indexOf(tag);
-
-    if (index === -1) {
-      selectedTags = [...selectedTags, tag];
-    } else {
-      selectedTags = selectedTags.filter(t => t !== tag);
-    }
+    selectedTags = toggleItem(selectedTags, tag);
     triggerFiltersImmediate();
   }
 
@@ -443,18 +336,8 @@
     triggerFiltersImmediate();
   }
 
-  /**
-   * Handle speaker selection (multi-select like tags)
-   * @param {string} speaker - The speaker to toggle
-   */
   function toggleSpeaker(speaker: string) {
-    const index = selectedSpeakers.indexOf(speaker);
-
-    if (index === -1) {
-      selectedSpeakers = [...selectedSpeakers, speaker];
-    } else {
-      selectedSpeakers = selectedSpeakers.filter(s => s !== speaker);
-    }
+    selectedSpeakers = toggleItem(selectedSpeakers, speaker);
     triggerFiltersImmediate();
   }
 
@@ -528,27 +411,20 @@
   async function fetchMediaMetadata() {
     errorMetadata = null;
     try {
-      const data = await fetchMetadataFilters();
-
-      if (data.duration) {
-        const minDur = Math.floor(data.duration.min ?? 0);
-        const maxDur = Math.ceil(data.duration.max ?? 0);
-        durationBounds = { min: minDur, max: Math.max(maxDur, minDur + 60) };
+      const data = await loadLibraryMetadata();
+      if (data.durationBounds) {
+        durationBounds = data.durationBounds;
         // Only reset slider if user hasn't set a filter
         if (durationRange.min === null && durationRange.max === null) {
           durationSliderValues = [durationBounds.min, durationBounds.max];
         }
       }
-
-      availableLanguages = Array.isArray(data.languages) ? data.languages : [];
-
+      availableLanguages = data.languages;
       metadataLoaded = true;
     } catch (error) {
       console.error('Error fetching media metadata:', error);
-      // Deliberately NOT `metadataLoaded = true` (#744): the range sliders are
-      // meaningless without the library's real bounds, and rendering them
-      // against the 0–3600 / 0–1024 seed is what made a moved handle silently
-      // match every file. Show the failure and offer a retry instead.
+      // Deliberately NOT `metadataLoaded = true` (#744): sliders drawn against the seed bounds
+      // silently match every file. Show the failure and offer a retry instead.
       metadataLoaded = false;
       errorMetadata = describeError(error);
     }
@@ -556,58 +432,20 @@
 
   function handleDurationSliderChange(e: CustomEvent<{ values: number[] }>) {
     const [min, max] = e.detail.values;
-    const isAtMin = min <= durationBounds.min;
-    const isAtMax = max >= durationBounds.max;
-    durationRange = {
-      min: isAtMin ? null : min,
-      max: isAtMax ? null : max,
-    };
+    durationRange = rangeFromValues(min, max, durationBounds);
     triggerFiltersDebounced();
   }
 
-  // Duration quick chips (#750 item 8). Wire format is seconds
-  // (routes/+page.svelte builds min_duration/max_duration from this same
-  // durationRange), so the four named buckets map to fixed second ranges.
-  // `max: null` means "no upper bound" — the same null-at-bounds convention
-  // the slider already uses, so a chip click and a slider drag never disagree.
-  const DURATION_CHIPS: { code: string; min: number; max: number | null }[] = [
-    { code: 'duration1to10', min: 60, max: 600 },
-    { code: 'duration11to30', min: 660, max: 1800 },
-    { code: 'duration31to60', min: 1860, max: 3600 },
-    { code: 'duration60plus', min: 3600, max: null },
-  ];
+  $: visibleDurationChips = visibleChipsFor(durationBounds);
 
-  /** Clamp a chip's nominal range into the library's real bounds. */
-  function chipRange(chip: { min: number; max: number | null }): [number, number] {
-    const min = Math.max(chip.min, durationBounds.min);
-    const max = chip.max === null ? durationBounds.max : Math.min(chip.max, durationBounds.max);
-    return [min, max];
-  }
+  const isDurationChipActive = (chip: DurationChip): boolean =>
+    chipActive(chip, durationBounds, durationRange);
 
-  // A chip that provably matches nothing in this library is the same class of
-  // defect #744 fixed — only render chips whose nominal range overlaps the
-  // real bounds.
-  $: visibleDurationChips = DURATION_CHIPS.filter(
-    (chip) => chip.min <= durationBounds.max && (chip.max === null || chip.max >= durationBounds.min)
-  );
-
-  function isDurationChipActive(chip: { min: number; max: number | null }): boolean {
-    const [min, max] = chipRange(chip);
-    const isAtMin = min <= durationBounds.min;
-    const isAtMax = max >= durationBounds.max;
-    const effMin = isAtMin ? null : min;
-    const effMax = isAtMax ? null : max;
-    return durationRange.min === effMin && durationRange.max === effMax;
-  }
-
-  function selectDurationChip(chip: { min: number; max: number | null }) {
-    const [min, max] = chipRange(chip);
+  function selectDurationChip(chip: DurationChip) {
+    const [min, max] = chipRange(chip, durationBounds);
     durationSliderValues = [min, max];
-    const isAtMin = min <= durationBounds.min;
-    const isAtMax = max >= durationBounds.max;
-    durationRange = { min: isAtMin ? null : min, max: isAtMax ? null : max };
-    // Discrete choice, like the other quick-select facets — not the free-drag
-    // debounce the slider itself uses.
+    durationRange = rangeFromValues(min, max, durationBounds);
+    // Discrete choice, unlike the debounced free-drag slider.
     triggerFiltersImmediate();
   }
 
@@ -619,33 +457,13 @@
     triggerFiltersImmediate();
   }
 
-  /**
-   * Toggle a file type in the filter
-   * @param {string} fileType - The file type to toggle
-   */
   function toggleFileType(fileType: string) {
-    const index = selectedFileTypes.indexOf(fileType);
-
-    if (index === -1) {
-      selectedFileTypes = [...selectedFileTypes, fileType];
-    } else {
-      selectedFileTypes = selectedFileTypes.filter(ft => ft !== fileType);
-    }
+    selectedFileTypes = toggleItem(selectedFileTypes, fileType);
     triggerFiltersImmediate();
   }
 
-  /**
-   * Toggle a status in the filter
-   * @param {string} status - The status to toggle
-   */
   function toggleStatus(status: string) {
-    const index = selectedStatuses.indexOf(status);
-
-    if (index === -1) {
-      selectedStatuses = [...selectedStatuses, status];
-    } else {
-      selectedStatuses = selectedStatuses.filter(s => s !== status);
-    }
+    selectedStatuses = toggleItem(selectedStatuses, status);
     triggerFiltersImmediate();
   }
 

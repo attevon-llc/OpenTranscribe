@@ -48,6 +48,16 @@ const EXEMPT: Record<string, string> = {
     'Holds the cross-tab refresh coordinator: a timestamp of the last refresh any tab made and ' +
     'the in-flight refresh promise. No user data; a timestamp from a previous session only ' +
     'means "a refresh already happened since then", which is still true after a sign-in.',
+  'lib/gallery/fileMapUpdates':
+    'Stateless helpers and constant tables. The detector matched `clearInterval`, but the ' +
+    'interval and the processed-id set live in a closure created per page mount and are torn ' +
+    'down by the returned stop function, so nothing survives a session change.',
+  'lib/settings/recordingSettings':
+    'Stateless API wrappers; the name `resetRecording` matched the detector, but it resets ' +
+    'the server-side setting and holds no module-level data.',
+  'lib/trash/galleryTrash':
+    'Stateless helpers; `clearSelection` is a hook parameter passed by the caller, not a ' +
+    'store held here. The Undo closure is per delete and unreachable after the toast ends.',
   // ── Reset by a different, deliberate mechanism in logout() ──
   'stores/auth':
     'authStore.reset() is called explicitly by logout() and every failed-login path; ' +

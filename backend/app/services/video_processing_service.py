@@ -18,13 +18,10 @@ import asyncio
 import json
 import logging
 import re
-import subprocess
-from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.core.config import settings
-from app.core.constants import VIDEO_CHUNK_SIZE
 from app.core.redis import get_async_redis
 from app.db.session_utils import session_scope
 from app.services.audio_extraction import AudioExtractionMixin
@@ -33,56 +30,9 @@ from app.services.minio_bucket_admin import MinIOService
 from app.services.video_subtitle_burn import VideoSubtitleBurnMixin
 
 if TYPE_CHECKING:
-    from urllib3 import BaseHTTPResponse
-
     from app.services.storage_versions import RemovalResult
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_range_header(range_header: str, total_length: int | None) -> tuple[int, int | None]:
-    """
-    Parse HTTP Range header and return start and end bytes.
-
-    Args:
-        range_header: The Range header value (e.g., "bytes=0-1023")
-        total_length: Total file size in bytes, or None if unknown
-
-    Returns:
-        Tuple of (start_byte, end_byte) where end_byte may be None
-    """
-    if not range_header or not range_header.startswith("bytes="):
-        return 0, total_length - 1 if total_length else None
-
-    try:
-        range_value = range_header.replace("bytes=", "")
-        parts = range_value.split("-")
-
-        # Format: bytes=start-end
-        if parts[0] and parts[1]:
-            start_byte = int(parts[0])
-            end_byte = min(int(parts[1]), total_length - 1) if total_length else int(parts[1])
-            return start_byte, end_byte
-
-        # Format: bytes=start-
-        if parts[0]:
-            start_byte = int(parts[0])
-            end_byte_value: int | None = total_length - 1 if total_length else None
-            return start_byte, end_byte_value
-
-        # Format: bytes=-end (last N bytes)
-        if parts[1]:
-            requested_length = int(parts[1])
-            if total_length:
-                start_byte = max(0, total_length - requested_length)
-                return start_byte, total_length - 1
-            return 0, None
-
-    except Exception as e:
-        logger.error(f"Error parsing range header '{range_header}': {e}")
-
-    # Default fallback
-    return 0, total_length - 1 if total_length else None
 
 
 class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
@@ -259,95 +209,6 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
         except Exception:
             return False
 
-    def get_cached_video_stream(
-        self, cache_key: str
-    ) -> tuple[Iterator[bytes], int, int | None, int | None]:
-        """Get streaming response for a cached video."""
-        try:
-            # Use our custom cache bucket streaming function
-            return self._get_cache_file_stream(cache_key)
-        except Exception as e:
-            logger.error(f"Error getting cached video stream: {e}")
-            raise
-
-    def _get_object_size(self, object_name: str) -> int | None:
-        """Get the size of a cached object, or None if unavailable."""
-        try:
-            stats = self.minio_service.stat_object(self.cache_bucket, object_name)
-            logger.info(f"Cached file size for {object_name}: {stats.size} bytes")
-            return int(stats.size) if stats.size is not None else None
-        except Exception as e:
-            logger.error(f"Error getting cached object stats: {e}")
-            return None
-
-    def _create_chunk_generator(
-        self, response: BaseHTTPResponse, max_bytes: int | None
-    ) -> Iterator[bytes]:
-        """Create a generator that yields chunks from the MinIO response."""
-        chunk_size = VIDEO_CHUNK_SIZE
-
-        def generate_chunks() -> Iterator[bytes]:
-            try:
-                bytes_read = 0
-                while True:
-                    # Adjust final chunk size if we're at the end of requested range
-                    if max_bytes is not None and bytes_read + chunk_size > max_bytes:
-                        final_chunk_size = max_bytes - bytes_read
-                        if final_chunk_size <= 0:
-                            break
-                        chunk = response.read(final_chunk_size)
-                    else:
-                        chunk = response.read(chunk_size)
-
-                    if not chunk:
-                        break
-
-                    bytes_read += len(chunk)
-                    yield chunk
-            finally:
-                try:
-                    response.close()
-                    response.release_conn()
-                except Exception as e:
-                    logger.error(f"Error closing MinIO response: {e}")
-
-        return generate_chunks()
-
-    def _get_cache_file_stream(
-        self, object_name: str, range_header: str | None = None
-    ) -> tuple[Iterator[bytes], int, int | None, int | None]:
-        """Get a file stream from the cache bucket."""
-        try:
-            total_length = self._get_object_size(object_name)
-            start_byte, end_byte = _parse_range_header(range_header or "", total_length)
-
-            # Build MinIO request kwargs
-            kwargs: dict[str, str | int] = {
-                "bucket_name": self.cache_bucket,
-                "object_name": object_name,
-            }
-            if range_header and range_header.startswith("bytes="):
-                kwargs["offset"] = start_byte
-                if end_byte is not None:
-                    kwargs["length"] = end_byte - start_byte + 1
-
-                logger.info(
-                    f"Streaming cached video with range: start={start_byte}, "
-                    f"end={end_byte if end_byte is not None else 'EOF'}, total={total_length}"
-                )
-
-            response = self.minio_service.client.get_object(**kwargs)  # type: ignore[arg-type]
-            length_value = kwargs.get("length")
-            chunks = self._create_chunk_generator(
-                response, int(length_value) if length_value is not None else None
-            )
-
-            return chunks, start_byte, end_byte, total_length
-
-        except Exception as e:
-            logger.error(f"Error setting up cached file stream for {object_name}: {e}")
-            raise Exception(f"Error streaming cached file: {e}") from e
-
     @staticmethod
     def _media_filename(file_id: int) -> str:
         """Read the file's original name in a short session of its own.
@@ -496,28 +357,3 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
         removed = self.minio_service.delete_objects(self.cache_bucket, keys)
         logger.info(f"Cleared {removed} derived cache object(s) for file {file_id}")
         return removed
-
-    def check_ffmpeg_availability(self) -> bool:
-        """Check if ffmpeg is available on the system."""
-        import shutil
-
-        try:
-            # Use shutil.which to find the full path to ffmpeg
-            ffmpeg_path = shutil.which("ffmpeg")
-            if not ffmpeg_path:
-                logger.warning("ffmpeg not found in system PATH")
-                return False
-
-            # Using validated ffmpeg executable path from shutil.which() with hardcoded -version flag
-            # No user input involved - only checking if ffmpeg is available on the system
-            result = subprocess.run(  # noqa: S603 - hardcoded, no user input
-                [ffmpeg_path, "-version"],  # nosec B603
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,  # Don't raise exception on non-zero return code
-            )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
-            logger.warning(f"Failed to check ffmpeg availability: {e}")
-            return False

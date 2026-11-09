@@ -127,16 +127,6 @@ class SpeakerAttributeService:
             logger.error(f"Failed to load gender model: {e}")
             raise
 
-    @staticmethod
-    def _load_audio_ffmpeg(audio_path: str, target_sr: int = 16000) -> np.ndarray:
-        """Load audio to float32 numpy array at target_sr via ffmpeg.
-
-        Delegates to audio_segment_utils.load_full_audio_np().
-        """
-        from app.services.audio_segment_utils import load_full_audio_np
-
-        return load_full_audio_np(audio_path, target_sr)
-
     def _run_inference(self, audio_np: np.ndarray) -> tuple[str, float]:
         """Run model inference on a 1-D float32 audio array at 16kHz.
 

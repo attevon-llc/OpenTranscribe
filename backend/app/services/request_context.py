@@ -6,12 +6,8 @@ resolver consumes it; ``app.api.deps_context`` builds it per request.
 
 from dataclasses import dataclass
 
-from sqlalchemy.orm import Query
-from sqlalchemy.orm import Session
-
 from app.models.user import User
 from app.services.platform_bypass import PlatformBypass
-from app.utils.db_helpers import get_user_files_query
 
 
 @dataclass(frozen=True)
@@ -43,8 +39,3 @@ class RequestContext:
             and self.org_owner_user_id is not None
             and self.org_owner_user_id == self.user.id
         )
-
-
-def get_user_files_query_for_context(db: Session, ctx: RequestContext) -> Query:
-    """``get_user_files_query`` using a :class:`RequestContext` for tenant scope."""
-    return get_user_files_query(db, ctx.user.id, organization_id=ctx.org_id)

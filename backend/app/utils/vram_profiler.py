@@ -11,7 +11,6 @@ Enable with ENABLE_VRAM_PROFILING=true environment variable.
 
 import json
 import logging
-import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -208,14 +207,6 @@ class VRAMProfiler:
             logger.info(f"VRAM profile saved to Redis: {key}")
         except Exception as e:
             logger.warning(f"Failed to save VRAM profile to Redis: {e}")
-
-    def save_report(self, output_path: str) -> None:
-        """Save profiling report to JSON file."""
-        report = self.get_report()
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, "w") as f:
-            json.dump(report, f, indent=2)
-        logger.info(f"VRAM profile saved to {output_path}")
 
     def log_report(self) -> None:
         """Log the full profiling report at INFO level."""

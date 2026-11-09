@@ -301,18 +301,6 @@ class ASRConnectionTestRequest(BaseModel):
         return self
 
 
-class ASRConnectionTestResult(BaseModel):
-    success: bool
-    message: str
-    # response_time_ms is the canonical field name used internally
-    response_time_ms: float | None = None
-
-    # latency_ms is an alias for API consumers that expect the spec name
-    @property
-    def latency_ms(self) -> float | None:
-        return self.response_time_ms
-
-
 class SetActiveASRConfigRequest(BaseModel):
     # Both fields are optional so callers can send either name.
     # At least one must be provided; endpoint validation enforces this.

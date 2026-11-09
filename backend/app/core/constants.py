@@ -219,7 +219,6 @@ LLM_CONTEXT_WINDOW_MAX = 2_000_000
 
 # Stream processing constants
 DEFAULT_CHUNK_SIZE = 16384  # 16KB default chunk size
-VIDEO_CHUNK_SIZE = 65536  # 64KB for video streaming
 AUDIO_CHUNK_SIZE = 8192  # 8KB for audio streaming
 
 # Speaker analysis pipeline segment duration thresholds

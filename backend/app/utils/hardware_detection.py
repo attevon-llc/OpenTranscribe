@@ -444,29 +444,6 @@ class HardwareConfig:
             f"{device_str})"
         )
 
-    def reset_peak_stats(self) -> None:
-        """Reset CUDA peak memory statistics for fresh measurement."""
-        if not self.torch_available:
-            return
-        import torch
-
-        if self.device == "cuda" and torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats(self.device_index)
-
-    def get_peak_vram_mb(self) -> float:
-        """Get peak VRAM usage in MB since last reset.
-
-        Returns:
-            Peak VRAM in MB, or 0.0 if not using CUDA.
-        """
-        if not self.torch_available:
-            return 0.0
-        import torch
-
-        if self.device == "cuda" and torch.cuda.is_available():
-            return float(torch.cuda.max_memory_allocated(self.device_index)) / (1024**2)
-        return 0.0
-
     def optimize_memory_usage(self, aggressive: bool = True) -> None:
         """
         Optimize memory usage based on device.

@@ -94,9 +94,6 @@ Most services are plain modules of functions that take a `Session`; a few are cl
 
 ## 🧩 Notable Modules
 
-### Protocol interfaces (`interfaces.py`)
-`Protocol` classes `StorageService`, `SearchService`, `CacheService` and `NotificationService` describe the service boundaries that `minio_service`, `opensearch_service`, `redis_cache_service` and `utils/websocket_notify` satisfy. Depend on the Protocol for new seams and for type hints in tests.
-
 ### Notification service (`notification_service.py`)
 `send_task_notification()` is the unified wrapper used by tasks and services. Import it instead of calling the WebSocket layer directly. If an event names a media file, route it through `utils/websocket_notify.send_ws_event_for_file` so quarantined files are not disclosed.
 

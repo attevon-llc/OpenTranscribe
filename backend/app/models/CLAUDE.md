@@ -44,8 +44,6 @@ authority. See `backend/app/db/CLAUDE.md`.
   durations are plain subtraction.
 - `organization.py`, `usage_event.py` — cloud-edition seam tables; empty in self-host.
   Authorization reads `OrganizationMembership`, never the token's org claim alone.
-- `mixins.py` — `TimestampMixin` and `UUIDMixin`; UUIDMixin is currently unadopted (each model
-  declares its own `uuid` column).
 - `chat.py` — `ChatProject`, `ChatConversation`, `ChatMessage`. `ChatConversation.project_id`
   is **nullable** (NULL = ungrouped, which is every conversation created before `v376`) and its
   FK is **ON DELETE SET NULL, not CASCADE** — deleting a project must leave its conversations

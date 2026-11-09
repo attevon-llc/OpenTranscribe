@@ -75,7 +75,6 @@ PAGINATOR_ACTIONS = {"list_objects_v2": {"s3:ListBucket"}}
 # client call (its body is scanned in its own right).
 APP_WRAPPERS = {
     "set_object_legal_hold",
-    "_get_object_size",
     "get_presigned_url",
     "presigned_download_url",
     "upload_file",

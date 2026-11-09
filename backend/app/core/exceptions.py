@@ -28,10 +28,6 @@ class OpenTranscribeError(Exception):
         super().__init__(message)
 
 
-class TranscriptionError(OpenTranscribeError):
-    """Errors during the transcription pipeline."""
-
-
 class StorageError(OpenTranscribeError):
     """MinIO/S3 storage operation failures."""
 

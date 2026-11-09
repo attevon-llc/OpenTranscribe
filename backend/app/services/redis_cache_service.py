@@ -233,16 +233,6 @@ class RedisCacheService:
         self.delete_pattern(f"cache:speakers:{user_id}")
         self._push_invalidation(user_id, "speakers")
 
-    def invalidate_metadata(self, user_id: int) -> None:
-        """Invalidate metadata filter caches for a user."""
-        self.delete_pattern(f"cache:metadata:{user_id}")
-        self._push_invalidation(user_id, "metadata")
-
-    def invalidate_collections(self, user_id: int) -> None:
-        """Invalidate collection caches for a user."""
-        self.delete_pattern(f"cache:collections:{user_id}")
-        self._push_invalidation(user_id, "collections")
-
     def invalidate_all_for_user(self, user_id: int) -> None:
         """Nuclear option — clear every cache entry for a user."""
         self.delete_pattern(f"cache:*:{user_id}*")

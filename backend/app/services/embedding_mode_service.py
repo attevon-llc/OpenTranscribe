@@ -56,8 +56,6 @@ class EmbeddingModeService:
     Example:
         >>> mode = EmbeddingModeService.detect_mode()
         >>> dim = EmbeddingModeService.get_embedding_dimension()
-        >>> if EmbeddingModeService.validate_embedding_dimension(embedding):
-        ...     # Embedding is valid for current mode
     """
 
     # (mode, cached_at_monotonic) — Redis-outage fallback only. Never trusted
@@ -302,31 +300,6 @@ class EmbeddingModeService:
             return "pyannote/wespeaker-voxceleb-resnet34-LM"
 
     @classmethod
-    def validate_embedding_dimension(cls, embedding: list[float]) -> bool:
-        """
-        Validate that an embedding has the correct dimension for current mode.
-
-        Args:
-            embedding: The embedding vector to validate.
-
-        Returns:
-            True if the embedding dimension matches the current mode, False otherwise.
-        """
-        if not embedding:
-            return False
-
-        expected_dim = cls.get_embedding_dimension()
-        actual_dim = len(embedding)
-
-        if actual_dim != expected_dim:
-            logger.warning(
-                f"Embedding dimension mismatch: expected {expected_dim}, got {actual_dim}"
-            )
-            return False
-
-        return True
-
-    @classmethod
     def get_current_mode(cls) -> EmbeddingMode:
         """
         Get the current embedding mode (cached).
@@ -362,26 +335,6 @@ class EmbeddingModeService:
                 f"{_REDIS_MODE_CACHE_TTL_SECONDS}s TTL expires): {e}"
             )
         logger.info("Embedding mode cache cleared")
-
-    @classmethod
-    def is_v3_mode(cls) -> bool:
-        """
-        Check if the current mode is v3 (512-dim).
-
-        Returns:
-            True if using v3 mode, False otherwise.
-        """
-        return cls.detect_mode() == MODE_V3
-
-    @classmethod
-    def is_v4_mode(cls) -> bool:
-        """
-        Check if the current mode is v4 (256-dim).
-
-        Returns:
-            True if using v4 mode, False otherwise.
-        """
-        return cls.detect_mode() == MODE_V4
 
     @classmethod
     def get_mode_info(cls) -> dict[str, str | int]:

@@ -6,7 +6,6 @@ This package contains validation schemas for request/response models.
 
 from .asr_settings import ASRConfigDeleted
 from .asr_settings import ASRConnectionTestRequest
-from .asr_settings import ASRConnectionTestResult
 from .asr_settings import ASRProvider
 from .asr_settings import ASRProviderCatalog
 from .asr_settings import ASRSettingsList

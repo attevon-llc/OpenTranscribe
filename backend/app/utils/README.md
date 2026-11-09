@@ -112,11 +112,6 @@ def apply_tenant_scope(...):
     """SQL-plane default-deny tenant filter; mirrors api/deps_context.scope_to_context."""
 
 def safe_get_by_id[T](db, model, obj_id, user_id=None) -> T | None
-def bulk_update[T](db, model, updates, id_field="id") -> bool
-
-def get_file_with_transcript_count(...)
-def get_user_speakers(db, user_id) -> list[Speaker]
-def get_unique_speakers_for_file(db, file_id) -> list[Speaker]
 ```
 Tag creation and attachment live in `services/tag_service.py` and `services/tag_bulk.py`, not here.
 

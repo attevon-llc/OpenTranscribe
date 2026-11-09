@@ -185,47 +185,6 @@ class SpeakerStatusService:
         return canonical_speaker_label_for_row(speaker, voiceprint_names=voiceprint_names)
 
     @staticmethod
-    def compute_status_for_speakers(db: Session, speakers: list[Speaker]) -> list[dict]:
-        """
-        Compute status for multiple speakers efficiently.
-
-        Args:
-            db: Database session
-            speakers: List of Speaker objects
-
-        Returns:
-            List of speaker data with computed status information
-        """
-        enriched_speakers = []
-
-        for speaker in speakers:
-            # Convert speaker to dict
-            speaker_data = {
-                "id": speaker.id,
-                "name": speaker.name,
-                "display_name": speaker.display_name,
-                "verified": speaker.verified,
-                "confidence": speaker.confidence,
-                "media_file_id": speaker.media_file_id,
-            }
-
-            # Add profile information if available
-            if speaker.profile:
-                speaker_data["profile"] = {
-                    "id": speaker.profile.id,
-                    "name": speaker.profile.name,
-                    "description": speaker.profile.description,
-                }
-
-            # Compute and add status information
-            status_info = SpeakerStatusService.compute_speaker_status(speaker)
-            speaker_data.update(status_info)
-
-            enriched_speakers.append(speaker_data)
-
-        return enriched_speakers
-
-    @staticmethod
     def update_speaker_status_in_db(db: Session, speaker_id: int) -> bool:
         """
         Update computed status fields for a speaker in the database.
@@ -265,37 +224,6 @@ class SpeakerStatusService:
             logger.error(f"Error updating speaker status for {speaker_id}: {e}")
             db.rollback()
             return False
-
-    @staticmethod
-    def refresh_all_speaker_statuses(db: Session, media_file_id: int | None = None) -> int:
-        """
-        Refresh computed status for all speakers or speakers in a specific file.
-
-        Args:
-            db: Database session
-            media_file_id: Optional file ID to limit updates to specific file
-
-        Returns:
-            Number of speakers updated
-        """
-        try:
-            query = db.query(Speaker)
-            if media_file_id:
-                query = query.filter(Speaker.media_file_id == media_file_id)
-
-            speakers = query.all()
-            updated_count = 0
-
-            for speaker in speakers:
-                if SpeakerStatusService.update_speaker_status_in_db(db, int(speaker.id)):
-                    updated_count += 1
-
-            logger.info(f"Refreshed status for {updated_count} speakers")
-            return updated_count
-
-        except Exception as e:
-            logger.error(f"Error refreshing speaker statuses: {e}")
-            return 0
 
     @staticmethod
     def add_computed_status(speaker: Speaker, *, voiceprint_names: bool | None = None) -> None:

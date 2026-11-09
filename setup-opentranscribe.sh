@@ -2077,8 +2077,13 @@ prepare_model_cache_dirs() {
         chown -R "$current_uid:$current_gid" models 2>/dev/null || true
     fi
 
-    # Set proper permissions (755 for directories)
-    chmod -R 755 models
+    # Directories 755, files 644 (a blanket 755 made model files executable). Files owned
+    # by another user cannot be changed by a non-root installer; report that instead of
+    # aborting silently under set -e.
+    if ! { find models -type d -exec chmod 755 {} + && find models -type f -exec chmod 644 {} +; } 2>/dev/null; then
+        print_warning "Could not change permissions on some files under models/ (owned by another user?)"
+        echo "  If you encounter permission errors, run: ./scripts/fix-model-permissions.sh"
+    fi
 
     # Verify directories are writable
     if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ] && [ -w models/diar-native ] && [ -w models/password-blocklist ]; then

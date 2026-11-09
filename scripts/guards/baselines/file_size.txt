@@ -1,4 +1,4 @@
-opentr.sh	4919	v0.6.1 merge: release growth; +1 for #628 (--demo sets the lite flag; the lite/demo overlay moved to scripts/lib/lite-demo-overlay.sh, deduplicating start and reset); +1 for reset_and_init declaring DEMO_FLAG, which it now passes to that overlay; +5 for its --demo arm (flag parity with start_app); split by concern planned; +5 for the migrate one-shot (verify_stack_health accepts an exited-0 one-shot; --fresh re-pins migrate)
+opentr.sh	4934	v0.6.1 merge: release growth; +1 for #628 (--demo sets the lite flag; the lite/demo overlay moved to scripts/lib/lite-demo-overlay.sh, deduplicating start and reset); +1 for reset_and_init declaring DEMO_FLAG, which it now passes to that overlay; +5 for its --demo arm (flag parity with start_app); split by concern planned; +5 for the migrate one-shot (verify_stack_health accepts an exited-0 one-shot; --fresh re-pins migrate)
 scripts/docker-build-push.sh	1565	oversize: split by concern planned; +3 for help answering before any Docker check
 scripts/e2e/update-visual-baselines.sh	1326	oversize: split by concern planned
 scripts/fetch-rag-eval-data.sh	1282	oversize: split by concern planned

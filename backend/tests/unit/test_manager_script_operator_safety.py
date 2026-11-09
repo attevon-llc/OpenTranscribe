@@ -205,3 +205,118 @@ def test_migrate_step_runs_even_when_compose_config_gets_sigpipe(tmp_path):
     result = _bash(script, tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "run --rm --no-deps migrate" in (tmp_path / "docker.log").read_text()
+
+
+# --- SHe: purge scoping, fresh-destroy exact project match, model perms, NLTK status ---
+
+SETUP = REPO_ROOT / "setup-opentranscribe.sh"
+
+
+def _fake_docker(tmp_path: Path, body: str) -> dict[str, str]:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    fake = bindir / "docker"
+    fake.write_text("#!/bin/bash\n" + body)
+    fake.chmod(0o755)
+    return {"PATH": f"{bindir}:/usr/bin:/bin"}
+
+
+def _run_with_env(script: str, cwd: Path, env: dict[str, str]):
+    return subprocess.run(
+        ["bash", "-c", script], cwd=cwd, capture_output=True, text=True, check=False, env=env
+    )
+
+
+def test_purge_system_never_removes_fresh_stack_or_foreign_images(tmp_path):
+    env = _fake_docker(
+        tmp_path,
+        'echo "$@" >> docker.log\n'
+        'case "$1 $2" in\n'
+        '  "compose -f") echo "davidamacey/opentranscribe-backend:latest";;\n'
+        '  "images --filter")\n'
+        '    case "$*" in\n'
+        '      *reference=*) echo "SHOULD-NOT-BE-ASKED-FOR-GLOBS";;\n'
+        '      *label=com.docker.compose.project=opentranscribe*) echo "opentranscribe-frontend:otfresh-t1"; echo "opentranscribe-docs:dev";;\n'
+        "    esac;;\n"
+        "esac\n",
+    )
+    script = "\n".join(
+        [
+            "stop_all_containers() { :; }",
+            extract_function(OPENTR, "purge_system"),
+            "purge_system",
+        ]
+    )
+    _run_with_env(script, tmp_path, env)
+    log = (tmp_path / "docker.log").read_text()
+    rmi = [ln for ln in log.splitlines() if ln.startswith("rmi")]
+    assert rmi, log
+    removed = " ".join(rmi)
+    assert "davidamacey/opentranscribe-backend:latest" in removed
+    assert "opentranscribe-docs:dev" in removed
+    assert "otfresh-t1" not in removed
+    assert "SHOULD-NOT" not in removed
+    assert "reference=" not in log
+
+
+def test_fresh_destroy_selects_containers_by_exact_compose_project_label():
+    src = extract_function(OPENTR, "fresh_destroy")
+    assert "name=^${proj}-" not in src
+    assert 'docker ps -a --filter "label=com.docker.compose.project=${proj}"' in src
+
+
+def test_model_cache_perms_are_dirs_755_files_644_and_do_not_abort(tmp_path):
+    models = tmp_path / "models"
+    for d in (
+        "huggingface",
+        "torch",
+        "nltk_data",
+        "sentence-transformers",
+        "opensearch-ml",
+        "diar-native",
+        "password-blocklist",
+    ):
+        (models / d).mkdir(parents=True)
+    f = models / "torch" / "w.bin"
+    f.write_text("x")
+    f.chmod(0o600)
+    script = "\n".join(
+        [
+            "set -e",
+            "print_warning() { echo WARN: $*; }",
+            "print_info() { :; }",
+            extract_function(SETUP, "prepare_model_cache_dirs"),
+            "prepare_model_cache_dirs >/dev/null",
+            "echo REACHED",
+        ]
+    )
+    proc = subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, capture_output=True, text=True, check=False
+    )
+    assert "REACHED" in proc.stdout, proc.stdout + proc.stderr
+    assert oct(f.stat().st_mode & 0o777) == "0o644"
+    assert oct((models / "torch").stat().st_mode & 0o777) == "0o755"
+
+
+def test_nltk_downloader_failure_is_surfaced_even_if_dir_has_content(tmp_path):
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "download-models.py").write_text("")
+    env = _fake_docker(
+        tmp_path,
+        'case "$1" in\n'
+        "  run) mkdir -p models/nltk_data/tokenizers/x; echo ERROR boom; exit 3;;\n"
+        "esac\n"
+        "exit 0\n",
+    )
+    script = "\n".join(
+        [
+            "set -eo pipefail",
+            "read_env_value() { :; }",
+            extract_function(COMMON, "ensure_nltk_corpora"),
+            "rc=0; ensure_nltk_corpora || rc=$?",
+            'echo "RC=$rc"',
+        ]
+    )
+    proc = _run_with_env(script, tmp_path, env)
+    assert "RC=1" in proc.stdout, proc.stdout + proc.stderr
+    assert "exited 3" in proc.stdout

@@ -675,15 +675,19 @@ ensure_nltk_corpora() {
   # NLTK_DATA is passed explicitly and the downloader honours it, so the corpora
   # land in the mounted directory whatever the image's $HOME happens to be —
   # Dockerfile.blackwell runs as `user`, not `appuser`.
+  local _nltk_rc=0
   docker run --rm \
       -e NLTK_DATA=/nltk_data \
       -v "$(realpath "$nltk_dir"):/nltk_data" \
       -v "./scripts/download-models.py:/app/download-models.py:ro" \
       -v "./scripts/model_download:/app/model_download:ro" \
       davidamacey/opentranscribe-backend:latest \
-      python /app/download-models.py --only nltk 2>&1 | grep -E "(Downloading|Downloaded|ERROR|WARNING|Success)" || true
+      python /app/download-models.py --only nltk 2>&1 | { grep -E "(Downloading|Downloaded|ERROR|WARNING|Success)" || true; } || _nltk_rc="${PIPESTATUS[0]}"
 
-  if [ -d "$nltk_dir/tokenizers" ] && [ -n "$(ls -A "$nltk_dir/tokenizers" 2>/dev/null)" ]; then
+  if [ "$_nltk_rc" -ne 0 ]; then
+    echo "⚠️  NLTK downloader exited ${_nltk_rc}."
+  fi
+  if [ "$_nltk_rc" -eq 0 ] && [ -d "$nltk_dir/tokenizers" ] && [ -n "$(ls -A "$nltk_dir/tokenizers" 2>/dev/null)" ]; then
     echo "✅ NLTK corpora cached"
     return 0
   fi

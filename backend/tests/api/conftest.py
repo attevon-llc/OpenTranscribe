@@ -229,3 +229,19 @@ def caps_off():
 
     yield _install
     reset_capability_resolver()
+
+
+@pytest.fixture
+def uncached_metrics_page(monkeypatch):
+    """Make every ``GET /metrics`` render the page again.
+
+    The endpoint reuses a rendered page for ``METRICS_PAGE_TTL_SECONDS`` (covered by
+    ``tests/unit/test_metrics_page_ttl.py``). A test that scrapes to observe what changed
+    between two scrapes (a gauge, a TTL-gated refresh) must see each scrape's own render.
+    A zero TTL disables the reuse (the check is a strict ``<``) and the cached page is
+    dropped so a scrape from an earlier test cannot answer this one.
+    """
+    from app.api.endpoints import metrics as metrics_endpoint
+
+    monkeypatch.setattr(metrics_endpoint, "METRICS_PAGE_TTL_SECONDS", 0.0)
+    monkeypatch.setattr(metrics_endpoint, "_page", None)

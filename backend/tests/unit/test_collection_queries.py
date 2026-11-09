@@ -139,6 +139,6 @@ def test_shares_and_their_lookups(db_session, world):
     }
     assert {s.id for s in cq.shares_reaching_user(db_session, [coll.id], other.id)} == {to_user.id}
     assert {s.id for s in cq.shares_reaching_user(db_session, [coll.id], owner.id)} == {to_group.id}
-    assert cq.share_target_user_ids(db_session, to_user, None) == [other.id]
-    assert cq.share_target_user_ids(db_session, to_group, None) == [owner.id]
+    assert cq.share_target_user_ids(db_session, to_user, coll) == [other.id]
+    assert cq.share_target_user_ids(db_session, to_group, coll) == [owner.id]
     assert cq.group_member_user_ids(db_session, group.id) == {owner.id}

@@ -341,12 +341,12 @@ def collection_files_query(db: Session, collection_id: int, options: list[Any]) 
 # --- shares ------------------------------------------------------------------------------
 
 
-def share_target_user_ids(
-    db: Session, share: CollectionShare, organization_id: int | None
-) -> list[int]:
+def share_target_user_ids(db: Session, share: CollectionShare, collection: Collection) -> list[int]:
     """User ids a share reaches: the target user, or every member of the target group.
 
-    For an organization collection only members of that organization are returned.
+    For an organization collection, only members of that organization are returned: a group
+    can outlive (or predate) a member's time in the organization, and such a user must not be
+    told about the org's collection.
     """
     if share.target_type == "user" and share.target_user_id:
         query = db.query(User.id).filter(User.id == share.target_user_id)
@@ -356,6 +356,7 @@ def share_target_user_ids(
         )
     else:
         return []
+    organization_id = collection.organization_id
     if organization_id is not None:
         user_col = User.id if share.target_type == "user" else UserGroupMember.user_id
         query = query.filter(

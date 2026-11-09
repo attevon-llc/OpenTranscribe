@@ -461,7 +461,7 @@ def _group_share(db, collection: Collection, group: UserGroup, sharer: User) -> 
 
 
 def test_org_collection_share_notifies_only_org_members(world):
-    from app.api.endpoints.media_collections_shares import _get_share_target_user_ids
+    from app.services.collection_queries import share_target_user_ids
 
     w = world
     group = _mk_group(w.db, w.alice, [w.bob, w.carol])
@@ -471,14 +471,14 @@ def test_org_collection_share_notifies_only_org_members(world):
     w.db.commit()
     share = _group_share(w.db, collection, group, w.alice)
 
-    assert set(_get_share_target_user_ids(w.db, share, collection)) == {w.alice.id, w.bob.id}
+    assert set(share_target_user_ids(w.db, share, collection)) == {w.alice.id, w.bob.id}
 
     _leave(w.db, w.org_a, w.bob)
-    assert set(_get_share_target_user_ids(w.db, share, collection)) == {w.alice.id}
+    assert set(share_target_user_ids(w.db, share, collection)) == {w.alice.id}
 
 
 def test_personal_collection_share_notifies_every_group_member(world):
-    from app.api.endpoints.media_collections_shares import _get_share_target_user_ids
+    from app.services.collection_queries import share_target_user_ids
 
     w = world
     group = _mk_group(w.db, w.carol, [w.dave, w.bob])
@@ -487,7 +487,7 @@ def test_personal_collection_share_notifies_every_group_member(world):
     w.db.commit()
     share = _group_share(w.db, collection, group, w.carol)
 
-    assert set(_get_share_target_user_ids(w.db, share, collection)) == {
+    assert set(share_target_user_ids(w.db, share, collection)) == {
         w.carol.id,
         w.dave.id,
         w.bob.id,

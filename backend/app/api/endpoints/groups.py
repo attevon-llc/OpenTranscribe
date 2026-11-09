@@ -101,11 +101,6 @@ def _same_tenant(db: Session, user_id: int, ctx: RequestContext) -> bool:
     return user_in_tenant(db, user_id, ctx.org_id)
 
 
-def _get_membership(db: Session, group_id: int, user_id: int) -> UserGroupMember | None:
-    """Get a user's membership record in a group."""
-    return get_membership(db, group_id, user_id)
-
-
 def _require_group_admin(db: Session, group: UserGroup, user_id: int) -> UserGroupMember:
     """Require that the user is an owner or admin of the group.
 
@@ -114,7 +109,7 @@ def _require_group_admin(db: Session, group: UserGroup, user_id: int) -> UserGro
     Raises:
         HTTPException: 403 if user lacks owner/admin role.
     """
-    membership = _get_membership(db, group.id, user_id)
+    membership = get_membership(db, group.id, user_id)
     if not membership or membership.role not in ("owner", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -137,7 +132,7 @@ def _reindex_group_shared_files(db: Session, group_id: int) -> None:
 def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -> GroupSchema:
     """Build a Group response schema with computed fields."""
     member_count = count_members(db, group.id)
-    my_membership = _get_membership(db, group.id, current_user_id)
+    my_membership = get_membership(db, group.id, current_user_id)
     my_role = my_membership.role if my_membership else None
 
     owner_brief = UserBrief(
@@ -263,7 +258,7 @@ def get_group(
     group = _get_group_in_scope(db, group_uuid, ctx)
 
     # Verify user is a member
-    my_membership = _get_membership(db, group.id, current_user.id)
+    my_membership = get_membership(db, group.id, current_user.id)
     if not my_membership:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -394,7 +389,7 @@ def add_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     # Check not already a member
-    existing = _get_membership(db, group.id, target_user.id)
+    existing = get_membership(db, group.id, target_user.id)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -468,7 +463,7 @@ def update_member_role(
     caller_membership = _require_group_admin(db, group, current_user.id)
 
     target_user = get_by_uuid(db, User, user_uuid, "User not found")
-    target_membership = _get_membership(db, group.id, target_user.id)
+    target_membership = get_membership(db, group.id, target_user.id)
 
     if not target_membership:
         raise HTTPException(
@@ -549,7 +544,7 @@ def remove_member(
     group = _get_group_in_scope(db, group_uuid, ctx)
     target_user = get_by_uuid(db, User, user_uuid, "User not found")
 
-    target_membership = _get_membership(db, group.id, target_user.id)
+    target_membership = get_membership(db, group.id, target_user.id)
     if not target_membership:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

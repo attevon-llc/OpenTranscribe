@@ -39,7 +39,7 @@ from app.services.collection_queries import page_matching_ids
 from app.services.collection_queries import page_own_collection_ids
 from app.services.collection_queries import share_counts
 from app.services.collection_queries import shares_reaching_user
-from app.services.collection_queries import visible_media_counts as _visible_media_counts
+from app.services.collection_queries import visible_media_counts
 from app.services.content_hold_queries import collection_hold_summaries
 from app.services.file_availability import is_unavailable_for
 from app.services.file_availability import unavailable_list_exempt
@@ -99,7 +99,7 @@ def list_shared_collections(
     filtered_ids = [c.id for c in collections]
 
     # Batch: media counts per collection (quarantined files hidden for non-admins)
-    media_counts = _visible_media_counts(
+    media_counts = visible_media_counts(
         db, filtered_ids, include_quarantined=unavailable_list_exempt(ctx.bypass)
     )
 
@@ -215,7 +215,7 @@ def _ownership_page(
             skip=skip,
             limit=limit,
         )
-        counts_dict = _visible_media_counts(
+        counts_dict = visible_media_counts(
             db, collection_ids, include_quarantined=include_quarantined
         )
         perm_dict: dict[int, str] = {cid: accessible_perms[cid] for cid in collection_ids}
@@ -232,7 +232,7 @@ def _ownership_page(
 
         if collection_ids:
             collection_ids = page_matching_ids(db, collection_ids, org_pred, skip=skip, limit=limit)
-            counts_dict = _visible_media_counts(
+            counts_dict = visible_media_counts(
                 db, collection_ids, include_quarantined=include_quarantined
             )
 
@@ -248,7 +248,7 @@ def _ownership_page(
 
         if all_ids:
             collection_ids = page_matching_ids(db, all_ids, org_pred, skip=skip, limit=limit)
-            counts_dict = _visible_media_counts(
+            counts_dict = visible_media_counts(
                 db, collection_ids, include_quarantined=include_quarantined
             )
 

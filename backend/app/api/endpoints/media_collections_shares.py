@@ -57,21 +57,6 @@ from app.utils.websocket_notify import send_ws_event
 router = APIRouter()
 
 
-def _get_share_target_user_ids(
-    db: Session, share: CollectionShare, collection: Collection
-) -> list[int]:
-    """Return the user IDs affected by a share.
-
-    For user-targeted shares this is a single-element list.
-    For group-targeted shares this is all group members.
-
-    For an organization collection, only members of that organization are
-    returned: a group can outlive (or predate) a member's time in the
-    organization, and such a user must not be told about the org's collection.
-    """
-    return share_target_user_ids(db, share, collection.organization_id)
-
-
 def _notify_share_event(
     db: Session,
     share: CollectionShare,
@@ -80,7 +65,7 @@ def _notify_share_event(
     extra_data: dict | None = None,
 ) -> None:
     """Send a WebSocket notification for a sharing event to all affected users."""
-    target_ids = _get_share_target_user_ids(db, share, collection)
+    target_ids = share_target_user_ids(db, share, collection)
     data: dict = {
         "collection_uuid": str(collection.uuid),
         "collection_name": collection.name,
@@ -435,7 +420,7 @@ def delete_collection_share(
         )
 
     # Capture notification/audit data before deletion -- gone from the row after.
-    target_user_ids = _get_share_target_user_ids(db, share, collection)
+    target_user_ids = share_target_user_ids(db, share, collection)
     revoked_target_user_id = share.target_user_id
     revoked_target_group_id = share.target_group_id
     revoked_permission = share.permission

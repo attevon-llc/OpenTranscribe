@@ -102,7 +102,6 @@ WHITELIST = (
     _.reset_privacy_ceiling_resolver,
     # [test-observation] Retained pending a decision, not because they are right as they are: a test asserts the invariant through each, and no production path was found that does the same job differently (reviewed in L04b).
     _.assert_real_timings,
-    _.cleanup_expired_lockouts,
     _.needs_rehash_for_fips_v3,
     _.extract_display_name_from_gov_dn,
     _.generic_guard_tables,

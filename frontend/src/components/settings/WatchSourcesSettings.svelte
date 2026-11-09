@@ -10,7 +10,7 @@
   import { onMount } from 'svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Tabs, { type TabItem } from '$components/ui/Tabs.svelte';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import WatchSourceModal from './WatchSourceModal.svelte';
   import EmailConfigModal from './EmailConfigModal.svelte';
   import WatchSourceCard from './watchSources/WatchSourceCard.svelte';

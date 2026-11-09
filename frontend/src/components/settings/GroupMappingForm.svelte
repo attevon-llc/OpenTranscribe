@@ -1,7 +1,7 @@
 <script lang="ts">
   import { GROUP_MAPPING_ROLE_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher } from 'svelte';
-  import BaseModal from '../ui/BaseModal.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   /**
    * Condensed File Status, the Settings face of `/file-status`.
    *
@@ -114,7 +115,7 @@
       <p class="section-description">{$t('settings.fileStatus.description')}</p>
     </div>
     <a
-      href={`/file-status?${settingsReturnQuery('file-status')}`}
+      href={resolve(`/file-status?${settingsReturnQuery('file-status')}`)}
       class="btn btn-secondary open-full"
       data-testid="file-status-open-full"
       on:click={() => stampSettingsReturn('file-status')}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount, onDestroy, tick } from 'svelte';
   import type { Collection } from '$lib/types/collection';
   import type { Tag } from '$lib/types/tag';
@@ -613,7 +614,7 @@
     <div class="error-container">
       <p class="error-message">{pageErrorMessage}</p>
       {#if fileNotFound}
-        <a href="/" class="back-to-gallery-link">{$t('nav.backToGallery')}</a>
+        <a href={resolve('/')} class="back-to-gallery-link">{$t('nav.backToGallery')}</a>
       {:else}
         <button
           on:click={() => fetchFileDetails()}

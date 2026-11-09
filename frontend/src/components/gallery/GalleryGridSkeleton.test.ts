@@ -146,7 +146,7 @@ describe('both skeletons sweep left to right, not just pulse', () => {
     const grid = readFileSync(resolve(__dirname, '../ui/CardGridSkeleton.svelte'), 'utf8');
     const list = readFileSync(resolve(__dirname, './FileListSkeleton.svelte'), 'utf8');
     expect(grid).toMatch(/import '\.\/skeleton-shimmer\.css'/);
-    expect(list).toMatch(/import '\.\.\/ui\/skeleton-shimmer\.css'/);
+    expect(list).toMatch(/import '\$components\/ui\/skeleton-shimmer\.css'/);
     // ...and neither redefines it locally.
     expect(grid).not.toMatch(/@keyframes\s+shimmerSlide/);
     expect(list).not.toMatch(/@keyframes\s+shimmerSlide/);

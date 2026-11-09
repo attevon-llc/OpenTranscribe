@@ -1,3 +1,4 @@
+import { resolve } from '$app/paths';
 /**
  * RAG chat store (issue #52).
  *
@@ -570,7 +571,7 @@ function createChatStore() {
       }));
       if (wasActive) {
         this.newConversation();
-        await goto('/chat', { replace: true });
+        await goto(resolve('/chat/[[conversationId]]', {}), { replace: true });
       }
     },
 
@@ -687,7 +688,10 @@ function createChatStore() {
               ...s.conversations,
             ],
           }));
-          await goto(`/chat/${created.uuid}`, { replace: true, reset: false });
+          await goto(resolve('/chat/[[conversationId]]', { conversationId: created.uuid }), {
+            replace: true,
+            reset: false,
+          });
         } catch {
           setStatus('error');
           update((s) => ({ ...s, error: 'send' }));

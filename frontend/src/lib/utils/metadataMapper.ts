@@ -4,8 +4,8 @@
  * Maps FFmpeg/FFprobe output to match backend/app/tasks/transcription/metadata_extractor.py
  */
 
-import { DEFAULT_EXTRACTION_CONFIG } from '../types/audioExtraction';
-import type { VideoMetadata } from '../types/audioExtraction';
+import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
+import type { VideoMetadata } from '$lib/types/audioExtraction';
 
 /**
  * Parse FFmpeg metadata from JSON output

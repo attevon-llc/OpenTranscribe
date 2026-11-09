@@ -2,7 +2,7 @@
  * API service for organization context settings
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export interface OrganizationContextSettings {
   context_text: string;

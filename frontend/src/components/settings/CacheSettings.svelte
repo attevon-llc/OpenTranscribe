@@ -2,9 +2,9 @@
   import { formatFileSize } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import axiosInstance from '$lib/axios';
-  import { toastStore } from '../../stores/toast';
+  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
 
   /**

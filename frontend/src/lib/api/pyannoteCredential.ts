@@ -7,7 +7,7 @@
  * `asr.user_providers` capability.
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 const BASE = '/user-settings/diarization/pyannote';
 

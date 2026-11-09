@@ -31,7 +31,7 @@
   } from '$lib/settings/speakerSources';
   import type { SettingsSection } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
-  import Chip from '../ui/Chip.svelte';
+  import Chip from '$components/ui/Chip.svelte';
   import CapabilityBadges from './CapabilityBadges.svelte';
   import SettingsCard from './transcription/SettingsCard.svelte';
   import PyannoteCredentialForm from './PyannoteCredentialForm.svelte';

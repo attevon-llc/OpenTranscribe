@@ -3,7 +3,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import {
     getDownloadSettings,
     updateDownloadSettings,

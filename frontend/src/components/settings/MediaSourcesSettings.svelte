@@ -3,7 +3,7 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import {
     getMediaSources,
     addMediaSource,

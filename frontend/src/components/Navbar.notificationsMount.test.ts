@@ -67,7 +67,7 @@ vi.mock('$components/navbar/UserDropdown.svelte', async () => ({
 
 import Navbar from './Navbar.svelte';
 import NotificationsPanel from './NotificationsPanel.svelte';
-import { showNotificationsPanel } from '../stores/notificationsPanel';
+import { showNotificationsPanel } from '$stores/notificationsPanel';
 
 beforeEach(() => {
   showNotificationsPanel.set(false);

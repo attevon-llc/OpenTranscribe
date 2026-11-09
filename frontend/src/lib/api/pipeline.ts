@@ -7,7 +7,7 @@
  * an issue code and is only a fallback for a code this build has no translation for.
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export type PipelineStepName = 'transcription' | 'diarization' | 'speaker_id' | 'llm';
 export type PipelineSeverity = 'error' | 'warning' | 'info';

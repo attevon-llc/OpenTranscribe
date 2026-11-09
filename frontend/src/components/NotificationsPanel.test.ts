@@ -17,7 +17,7 @@ import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writable, get } from 'svelte/store';
-import type { Notification, NotificationType } from '../stores/websocket';
+import type { Notification, NotificationType } from '$stores/websocket';
 import { resetProgressFloor } from '$lib/notifications/progressFloor';
 
 vi.mock('../stores/auth', () => ({ token: writable(null) }));
@@ -86,8 +86,8 @@ vi.mock('../stores/websocket', () => ({
   },
 }));
 
-import { showNotificationsPanel } from '../stores/notificationsPanel';
-import { clearedNotice, notificationRetention } from '../stores/notificationRetention';
+import { showNotificationsPanel } from '$stores/notificationsPanel';
+import { clearedNotice, notificationRetention } from '$stores/notificationRetention';
 import NotificationsPanel from './NotificationsPanel.svelte';
 
 function baseNotification(overrides: Partial<Notification> = {}): Notification {

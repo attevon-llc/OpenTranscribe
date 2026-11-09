@@ -8,7 +8,7 @@
   import { getErrorMessage } from '$lib/utils/apiError';
   import { formatDate, getInitials } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
   export let members: GroupMember[] = [];
   export let groupUuid: string;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount, onDestroy } from 'svelte';
   import { galleryStore, galleryState, selectedCount, allFilesSelected } from '$stores/gallery';
   import { chatStore } from '$stores/chat';
@@ -153,7 +154,7 @@
 
     chatStore.setPendingContext(capped);
     closeAllMenus();
-    await goto('/chat');
+    await goto(resolve('/chat/[[conversationId]]', {}));
   }
 </script>
 

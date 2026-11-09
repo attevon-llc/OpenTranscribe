@@ -4,7 +4,7 @@ import {
   type UploadItem,
   type UploadEvent,
   type UploadTranscriptionParams,
-} from '../lib/services/uploadService';
+} from '$lib/services/uploadService';
 import type { ExtractedAudioMetadata } from '$lib/types/audioExtraction';
 
 // Upload store state

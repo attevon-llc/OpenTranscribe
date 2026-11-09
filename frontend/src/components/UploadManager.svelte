@@ -10,8 +10,8 @@
     isExpanded,
     hasNewActivity,
     uploadStats
-  } from '../stores/uploads';
-  import { t } from '../stores/locale';
+  } from '$stores/uploads';
+  import { t } from '$stores/locale';
   import UploadProgress from './UploadProgress.svelte';
   import EmptyState from './ui/EmptyState.svelte';
 

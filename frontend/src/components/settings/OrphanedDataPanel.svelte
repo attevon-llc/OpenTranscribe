@@ -12,8 +12,8 @@
     type StorageOrphanReport,
   } from '$lib/api/dataIntegrity';
   import { formatFileSize } from '$lib/utils/formatting';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
-  import Spinner from '../ui/Spinner.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
 
   const LISTED_FILE_IDS = 8;
   const POLL_MS = 4000;

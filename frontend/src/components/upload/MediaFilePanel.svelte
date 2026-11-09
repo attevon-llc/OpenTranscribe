@@ -132,7 +132,6 @@
 
 <div class="file-panel">
   {#if !file}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
     <div
       id="drop-zone"
       bind:this={dropZoneEl}

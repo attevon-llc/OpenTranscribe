@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   /**
    * /verify-email?token=… — redeem an email-verification token.
    *
@@ -92,7 +93,7 @@
         <span>{outcomeMessage}</span>
       </div>
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
+        <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else}
       <div class="error-message" role="alert">{outcomeMessage}</div>
@@ -128,7 +129,7 @@
       {/if}
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
+        <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {/if}
   </div>

@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import type { ProviderDefaults, LocalEndpointsResponse } from '../../lib/api/llmSettings';
+import type { ProviderDefaults, LocalEndpointsResponse } from '$lib/api/llmSettings';
 
 const api = vi.hoisted(() => ({
   getLocalEndpoints: vi.fn(),

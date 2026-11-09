@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount, onDestroy } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { page } from '$app/state';
@@ -237,7 +238,7 @@
 
 <div class="speakers-page">
   <div class="page-header">
-    <a href="/" class="back-to-gallery" title={$t('nav.backToGallery')}>
+    <a href={resolve('/')} class="back-to-gallery" title={$t('nav.backToGallery')}>
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="15 18 9 12 15 6"></polyline>
       </svg>

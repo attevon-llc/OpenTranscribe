@@ -6,11 +6,11 @@
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { ScimTokensApi, type ScimToken } from '$lib/api/scimTokens';
-  import EmptyState from '../ui/EmptyState.svelte';
-  import Badge from '../ui/Badge.svelte';
-  import CopyButton from '../ui/CopyButton.svelte';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
-  import BaseModal from '../ui/BaseModal.svelte';
+  import EmptyState from '$components/ui/EmptyState.svelte';
+  import Badge from '$components/ui/Badge.svelte';
+  import CopyButton from '$components/ui/CopyButton.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
 
   /**
    * SCIM 2.0 provisioning tokens (`/api/admin/scim-tokens`). A directory

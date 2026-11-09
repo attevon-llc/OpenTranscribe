@@ -15,7 +15,7 @@
    */
   import { createEventDispatcher, onDestroy } from 'svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
-  import ConfirmationModal from '../../ConfirmationModal.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import SearchPagination from '$components/search/SearchPagination.svelte';

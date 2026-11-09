@@ -4,8 +4,8 @@
     CustomVocabularyApi,
     type CustomVocabularyItem,
     type CustomVocabularyCreate,
-  } from '../../lib/api/asrSettings';
-  import { toastStore } from '../../stores/toast';
+  } from '$lib/api/asrSettings';
+  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
 

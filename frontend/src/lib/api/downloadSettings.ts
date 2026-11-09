@@ -7,7 +7,7 @@
  * - Audio bitrate selection (best, 320kbps, 192kbps, 128kbps)
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 /**
  * System-level download defaults and available options

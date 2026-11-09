@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { ProviderDefaults, UserLLMSettings } from '../../lib/api/llmSettings';
+import type { ProviderDefaults, UserLLMSettings } from '$lib/api/llmSettings';
 
 const api = vi.hoisted(() => ({
   getLocalEndpoints: vi.fn(),

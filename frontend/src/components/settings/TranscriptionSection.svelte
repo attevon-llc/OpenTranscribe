@@ -51,7 +51,7 @@
   const visited: Record<string, boolean> = {};
   $: if (activeId) visited[activeId] = true;
 
-  let dirty = { language: false, accuracy: false };
+  const dirty = { language: false, accuracy: false };
   $: settingsModalStore.setDirty('transcription', dirty.language || dirty.accuracy);
 
   const labelKey: Record<TranscriptionTabId, string> = {

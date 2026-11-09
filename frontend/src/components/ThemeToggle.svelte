@@ -1,5 +1,5 @@
 <script>
-  import { theme, toggleTheme } from '../stores/theme';
+  import { theme, toggleTheme } from '$stores/theme';
   import { t } from '$stores/locale';
 
   // Determine whether to show the toggle as checked (dark mode)

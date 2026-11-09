@@ -7,7 +7,7 @@
  * - Garbage segment cleanup settings
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 /**
  * Valid speaker prompt behavior options

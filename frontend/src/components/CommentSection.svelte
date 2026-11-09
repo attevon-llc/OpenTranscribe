@@ -2,15 +2,15 @@
   import { supportSessionGate } from '$stores/supportSession';
   import { onMount, createEventDispatcher } from 'svelte';
   // Use the shared axios instance so auth token is always sent
-  import axiosInstance from '../lib/axios';
-  import { authStore } from '../stores/auth';
+  import axiosInstance from '$lib/axios';
+  import { authStore } from '$stores/auth';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import CommentComposer from '$components/comments/CommentComposer.svelte';
   import CommentItem from '$components/comments/CommentItem.svelte';
   import { sortComments } from '$components/comments/commentOrder';
   import { createConfirmDialog } from '$lib/confirmDialog';
   import EmptyState from './ui/EmptyState.svelte';
-  import { toastStore } from '../stores/toast';
+  import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { fileFrozen } from '$lib/legalHold/fileHoldContext';
   import { reportHoldRefusal } from '$lib/legalHold/refusal';

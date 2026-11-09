@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { t } from '../../stores/locale';
-  import SearchPagination from '../search/SearchPagination.svelte';
+  import { t } from '$stores/locale';
+  import SearchPagination from '$components/search/SearchPagination.svelte';
   import { taskProgressPercent } from '$lib/utils/formatting';
 
   export let tasks: any[] = [];

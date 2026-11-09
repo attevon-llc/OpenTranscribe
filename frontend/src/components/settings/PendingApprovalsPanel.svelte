@@ -4,7 +4,7 @@
   import { t, locale } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import Badge from '../ui/Badge.svelte';
+  import Badge from '$components/ui/Badge.svelte';
   import { UserApprovalsApi, isAlreadyDecided, type PendingAccount } from '$lib/api/userApprovals';
 
   /**

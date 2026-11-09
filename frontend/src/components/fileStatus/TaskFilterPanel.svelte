@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t } from '../../stores/locale';
+  import { t } from '$stores/locale';
   import DateRangePicker from '$components/ui/DateRangePicker.svelte';
   import FilterChipButton from '$components/ui/FilterChipButton.svelte';
   import { format } from 'date-fns';

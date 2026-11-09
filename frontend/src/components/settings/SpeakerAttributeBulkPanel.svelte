@@ -6,8 +6,8 @@
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
-  import Spinner from '../ui/Spinner.svelte';
-  import ProgressBar from '../ui/ProgressBar.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
 
   // Bulk processing state
   let pendingFiles = 0;

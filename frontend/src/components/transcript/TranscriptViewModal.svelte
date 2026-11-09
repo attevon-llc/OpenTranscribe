@@ -367,7 +367,7 @@
         {diarizationDisabled}
         editable={false}
         editingSegmentId={null}
-        editingSegmentText={''}
+        editingSegmentText=""
         savingTranscript={false}
         searchQuery={mode === 'file' ? '' : searchQuery}
         {segmentClassification}

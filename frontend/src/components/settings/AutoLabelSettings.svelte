@@ -8,8 +8,8 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { llmStatusStore } from '$stores/llmStatus';
-  import ProgressBar from '../ui/ProgressBar.svelte';
-  import RangeSlider from '../ui/RangeSlider.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import RangeSlider from '$components/ui/RangeSlider.svelte';
 
   let autoTopicExtraction = true;
   let enabled = true;

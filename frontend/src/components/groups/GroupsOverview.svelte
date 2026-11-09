@@ -10,8 +10,8 @@
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import GroupDetailPanel from './GroupDetailPanel.svelte';
   import GroupCreateModal from './GroupCreateModal.svelte';
-  import Spinner from '../ui/Spinner.svelte';
-  import EmptyState from '../ui/EmptyState.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   let selectedGroup: GroupDetail | null = null;
   let showCreateModal = false;

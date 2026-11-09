@@ -103,6 +103,28 @@
 
 </script>
 
+{#snippet groupCard(group: Group, dateText: string)}
+  <button class="group-card" on:click={() => openGroupDetail(group)} disabled={loadingDetail}>
+    <div class="card-header">
+      <span class="card-name">{group.name}</span>
+      <GroupRoleBadge role={group.my_role} />
+    </div>
+    {#if group.description}
+      <p class="card-description">{group.description}</p>
+    {/if}
+    <div class="card-meta">
+      <span class="card-members">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+        </svg>
+        {group.member_count}
+      </span>
+      <span class="card-date">{dateText}</span>
+    </div>
+  </button>
+{/snippet}
+
 {#if selectedGroup}
   <GroupDetailPanel
     group={selectedGroup}
@@ -186,25 +208,7 @@
           <h4 class="groups-section-title">{$t('groups.myGroups')}</h4>
           <div class="groups-grid">
             {#each filteredMyGroups as group (group.uuid)}
-              <button class="group-card" on:click={() => openGroupDetail(group)} disabled={loadingDetail}>
-                <div class="card-header">
-                  <span class="card-name">{group.name}</span>
-                  <GroupRoleBadge role={group.my_role} />
-                </div>
-                {#if group.description}
-                  <p class="card-description">{group.description}</p>
-                {/if}
-                <div class="card-meta">
-                  <span class="card-members">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                      <circle cx="9" cy="7" r="4"></circle>
-                    </svg>
-                    {group.member_count}
-                  </span>
-                  <span class="card-date">{formatDate(group.created_at, $locale)}</span>
-                </div>
-              </button>
+              {@render groupCard(group, formatDate(group.created_at, $locale))}
             {/each}
           </div>
         </div>
@@ -216,25 +220,7 @@
           <h4 class="groups-section-title">{$t('groups.memberOf')}</h4>
           <div class="groups-grid">
             {#each filteredMemberGroups as group (group.uuid)}
-              <button class="group-card" on:click={() => openGroupDetail(group)} disabled={loadingDetail}>
-                <div class="card-header">
-                  <span class="card-name">{group.name}</span>
-                  <GroupRoleBadge role={group.my_role} />
-                </div>
-                {#if group.description}
-                  <p class="card-description">{group.description}</p>
-                {/if}
-                <div class="card-meta">
-                  <span class="card-members">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                      <circle cx="9" cy="7" r="4"></circle>
-                    </svg>
-                    {group.member_count}
-                  </span>
-                  <span class="card-date">{$t('groups.owner')}: {group.owner.full_name || group.owner.email}</span>
-                </div>
-              </button>
+              {@render groupCard(group, `${$t('groups.owner')}: ${group.owner.full_name || group.owner.email}`)}
             {/each}
           </div>
         </div>

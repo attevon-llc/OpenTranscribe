@@ -178,19 +178,17 @@ class _MovingClient(_Client):
         self.list_reads = 0
 
     def pipeline(self, transaction=True):
-        pipe = _Pipe(self)
         outer = self
-        original_execute = pipe.execute
 
-        def _execute():
-            if any(name == "lrange" for name, _ in pipe._ops):
-                outer.list_reads += 1
-                if outer.list_reads >= 2:
-                    outer.lists[outer._key] = [outer._message]
-            return original_execute()
+        class _SweepPipe(_Pipe):
+            def execute(self):
+                if any(name == "lrange" for name, _ in self._ops):
+                    outer.list_reads += 1
+                    if outer.list_reads >= 2:
+                        outer.lists[outer._key] = [outer._message]
+                return super().execute()
 
-        pipe.execute = _execute  # type: ignore[method-assign]
-        return pipe
+        return _SweepPipe(self)
 
 
 def test_a_stage_restored_between_the_two_reads_is_still_seen(monkeypatch):

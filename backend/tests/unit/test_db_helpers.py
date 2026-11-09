@@ -8,6 +8,7 @@ assertion instead of a mock silently accepting whatever was called on it.
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from app.core.enums import FileStatus
 from app.core.tenancy import UNSCOPED
@@ -181,7 +182,8 @@ def test_safe_get_by_id_skips_user_filter_when_model_has_no_user_id(db_session, 
 
 def test_safe_get_by_id_swallows_query_error_and_returns_none(db_session):
     # Integer column compared against a value Postgres can't cast -> DataError.
-    result = db_helpers.safe_get_by_id(db_session, MediaFile, "not-an-int")  # type: ignore[arg-type]  # deliberately wrong type to trigger a DB-level error
+    # Deliberately wrong type: the id must reach Postgres to provoke the DataError.
+    result = db_helpers.safe_get_by_id(db_session, MediaFile, cast("int", "not-an-int"))
 
     assert result is None
 
@@ -203,7 +205,8 @@ def test_safe_get_by_id_leaves_session_usable_after_query_error(db_session, norm
     """
     user_id = normal_user.id
 
-    db_helpers.safe_get_by_id(db_session, MediaFile, "not-an-int")  # type: ignore[arg-type]  # deliberately wrong type to trigger a DB-level error
+    # Deliberately wrong type, as above.
+    db_helpers.safe_get_by_id(db_session, MediaFile, cast("int", "not-an-int"))
 
     # A completely unrelated, well-formed query must still work.
     count = db_session.query(MediaFile).filter(MediaFile.user_id == user_id).count()

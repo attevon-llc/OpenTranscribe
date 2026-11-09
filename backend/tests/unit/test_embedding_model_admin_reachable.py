@@ -130,11 +130,15 @@ def _service_with(hits: list[dict]):
     """An ml_model_service wired to a fake transport, with no cluster involved."""
     from app.services.search.ml_model_service import OpenSearchMLModelService
 
-    service = OpenSearchMLModelService.__new__(OpenSearchMLModelService)
+    class _ClientReady(OpenSearchMLModelService):
+        # The client is injected below, so the lazy connect is a no-op.
+        def _ensure_client(self) -> bool:
+            return True
+
+    service = _ClientReady.__new__(_ClientReady)
     client = type("C", (), {})()
     client.transport = _FakeTransport(hits)
     service._client = client
-    service._ensure_client = lambda: True  # type: ignore[method-assign]
     return service, client.transport
 
 

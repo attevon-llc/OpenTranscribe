@@ -14,7 +14,6 @@ import contextlib
 import sys
 import threading
 import time
-import types
 from pathlib import Path
 
 import pytest
@@ -23,6 +22,7 @@ from app.core import chat_defaults
 from app.services.chat import reranker as reranker_mod
 from app.services.chat import reranker_warmup
 from app.services.system_settings_service import set_setting
+from tests.helpers import make_stub_module
 
 _APP_DIR = Path(__file__).resolve().parents[2] / "app"
 
@@ -87,8 +87,7 @@ class _ObservedLock:
 
 
 def _install(monkeypatch, loader: _Loader) -> _Loader:
-    stub = types.ModuleType("sentence_transformers")
-    stub.CrossEncoder = loader  # type: ignore[attr-defined]
+    stub = make_stub_module("sentence_transformers", CrossEncoder=loader)
     monkeypatch.setitem(sys.modules, "sentence_transformers", stub)
     return loader
 

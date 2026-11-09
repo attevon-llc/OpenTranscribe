@@ -29,6 +29,7 @@ Key metric names (stable; dashboards are built against these):
 | `http_request_duration_seconds` | Histogram | `method`, `route`, `status` |
 | `http_requests_total` | Counter | `method`, `route`, `status` (5xx rate derived in Grafana) |
 | `http_requests_in_flight` | Gauge | — |
+| `event_loop_lag_seconds` | Histogram | — (how much later than scheduled the API event loop woke a 0.5 s sampler; rising lag means blocking code on the loop, as opposed to an exhausted DB or thread pool) |
 | `db_query_duration_seconds` | Histogram | — (no statement/table labels — cardinality) |
 | `db_queries_per_request` | Histogram | `method`, `route` |
 | `db_pool_capacity`, `db_pool_checked_out`, `db_pool_overflow` | Gauge | — (the API process's SQLAlchemy pool, read at scrape time; `checked_out` at `capacity` means requests are waiting for a connection) |

@@ -7,9 +7,6 @@
 # refresh-token verification, external-token JIT sync, password and LDAP login, session
 # mint) re-raises and is NOT listed here.
 
-# WebSocket handshake: owned by scale lane F (plan section 6, M2 #8).
-app/api/websockets.py::_try_authenticate_token  # lane F: handshake auth failure on pool exhaustion is its finding (M2 #8)
-
 # Already answered as a retryable failure by the caller.
 app/auth/refresh_tokens.py::rotate_refresh_token  # RevocationError -> sessions.py answers 503 "retry" (the client keeps its old refresh token)
 app/auth/refresh_tokens.py::revoke_reused_token_family  # RevocationError -> logged by sessions.py; the reused token is refused either way

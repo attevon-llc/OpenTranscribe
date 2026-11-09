@@ -20,6 +20,9 @@ from app.api.endpoints.auth.lifecycle_gates import admitted_on_optional_auth
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.token_service import token_service
 from app.core.capabilities import capability_enabled
+from app.core.db_overload import OVERLOAD_EXCEPTION_CLASSES
+from app.core.db_overload import overload_cause
+from app.core.db_overload import reraise_db_overload
 from app.db.session_utils import session_scope
 from app.services import ws_admission
 from app.utils.client_ip import resolve_client_ip
@@ -520,6 +523,7 @@ def _try_authenticate_token(
                     return None
                 return external_user
     except Exception as e:
+        reraise_db_overload(e)
         # Never let an external-auth problem break local WS authentication;
         # fall through to the local-JWT path.
         logger.debug(f"WebSocket external token authentication error: {e}")
@@ -543,6 +547,7 @@ def _try_authenticate_token(
             return None
         return user
     except Exception as e:
+        reraise_db_overload(e)
         logger.error(f"WebSocket token authentication error: {str(e)}")
         return None
 
@@ -683,6 +688,66 @@ def _authenticate_in_session(token: str, websocket: WebSocket) -> User | None:
         return user
 
 
+async def _close_busy(websocket: WebSocket) -> None:
+    """Answer a handshake the database could not serve with 1013, not an auth failure.
+
+    RFC 6455 section 7.4.1 / IANA close code 1013 "Try Again Later": the client backs off and
+    retries instead of treating the refusal as bad credentials (4003).
+    """
+    logger.warning("Refused a WebSocket handshake: the database is overloaded")
+    with contextlib.suppress(Exception):
+        await websocket.close(code=ws_admission.TRY_AGAIN_LATER_CLOSE, reason="Server busy")
+
+
+async def _authenticate_in_pool(token: str, websocket: WebSocket) -> User | None:
+    """:func:`_authenticate_in_session` off the loop; an overload closes 1013 and raises ``_BusyError``."""
+    try:
+        return await run_in_threadpool(_authenticate_in_session, token, websocket)
+    except OVERLOAD_EXCEPTION_CLASSES as exc:
+        if overload_cause(exc) is None:
+            raise
+        await _close_busy(websocket)
+        raise _BusyError from exc
+
+
+class _BusyError(Exception):
+    """The handshake was answered 1013 because the database could not serve it."""
+
+
+async def _authenticate_handshake(websocket: WebSocket) -> tuple[User, str | None] | None:
+    """Authenticate an accepted socket by cookie, else by a first ``authenticate`` frame.
+
+    Returns ``(user, token)``, or ``None`` after closing the socket with the refusal's code.
+    """
+    token = websocket.cookies.get("access_token")
+    try:
+        user = await _authenticate_in_pool(token, websocket) if token else None
+        if user:
+            return user, token
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
+        data = json.loads(raw)
+        if data.get("type") != "authenticate" or not data.get("token"):
+            await websocket.close(code=4001, reason="Authentication required")
+            return None
+        auth_token = data["token"]
+        user = await _authenticate_in_pool(auth_token, websocket)
+        if not user:
+            await websocket.close(code=4003, reason="Invalid token")
+            return None
+        return user, auth_token
+    except _BusyError:
+        return None
+    except TimeoutError:
+        await websocket.close(code=4001, reason="Authentication timeout")
+    except (json.JSONDecodeError, WebSocketDisconnect):
+        with contextlib.suppress(Exception):
+            await websocket.close(code=4002, reason="Invalid message")
+    except Exception:
+        with contextlib.suppress(Exception):
+            await websocket.close(code=4003, reason="Authentication error")
+    return None
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint with first-message authentication.
@@ -743,38 +808,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Accept the connection, then authenticate
     await websocket.accept()
 
-    user: User | None = None
-
-    # 1. Try cookie-based auth
-    token = websocket.cookies.get("access_token")
-    auth_token = token
-    if token:
-        user = await run_in_threadpool(_authenticate_in_session, token, websocket)
-
-    # 2. If no cookie auth, wait for first-message authentication
-    if not user:
-        try:
-            raw = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
-            data = json.loads(raw)
-            if data.get("type") != "authenticate" or not data.get("token"):
-                await websocket.close(code=4001, reason="Authentication required")
-                return
-            auth_token = data["token"]
-            user = await run_in_threadpool(_authenticate_in_session, auth_token, websocket)
-            if not user:
-                await websocket.close(code=4003, reason="Invalid token")
-                return
-        except TimeoutError:
-            await websocket.close(code=4001, reason="Authentication timeout")
-            return
-        except (json.JSONDecodeError, WebSocketDisconnect):
-            with contextlib.suppress(Exception):
-                await websocket.close(code=4002, reason="Invalid message")
-            return
-        except Exception:
-            with contextlib.suppress(Exception):
-                await websocket.close(code=4003, reason="Authentication error")
-            return
+    authenticated = await _authenticate_handshake(websocket)
+    if authenticated is None:
+        return
+    user, auth_token = authenticated
 
     if not ws_admission.user_has_room(manager.open_sockets(user.id)):
         logger.warning("Refused a WebSocket for user %s: per-user socket limit reached", user.id)

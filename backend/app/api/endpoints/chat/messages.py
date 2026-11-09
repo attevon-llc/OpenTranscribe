@@ -26,6 +26,7 @@ from fastapi import Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import ValidationError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
@@ -53,6 +54,7 @@ from app.schemas.chat import MAX_ANSWER_TOKENS_REQUEST
 from app.schemas.chat import MAX_MESSAGE_CHARS
 from app.schemas.chat import AnswerBudget
 from app.schemas.chat import ChatScope
+from app.schemas.chat import Citation
 from app.schemas.chat import ContextEstimate
 from app.schemas.chat import MessageCreate
 from app.schemas.chat import MessageList
@@ -173,6 +175,7 @@ def list_messages(
     rows = query.order_by(ChatMessage.id.asc()).offset(offset).limit(limit).all()
 
     serialized = [_serialize_message(row) for row in rows]
+    _drop_invalid_citations(serialized, conversation_uuid)
     # A citation is persisted at answer time and never re-checked against the
     # file's CURRENT quarantine state — so a file taken down after a
     # conversation cited it stayed fully readable through the conversation's
@@ -195,6 +198,35 @@ def list_messages(
         limit=limit,
         offset=offset,
     )
+
+
+def _drop_invalid_citations(serialized: list[dict], conversation_uuid: str) -> None:
+    """Drop stored citations that no longer validate, so one bad row cannot 500 the list.
+
+    A citation is JSONB written at answer time; one missing a required field (``id``) made
+    ``MessageList`` validation raise and the whole conversation unreadable. Logged once per
+    request, with the count, not per citation.
+    """
+    dropped = 0
+    for message in serialized:
+        stored = message["citations"]
+        if not stored:
+            continue
+        valid = []
+        for citation in stored:
+            try:
+                Citation.model_validate(citation)
+            except ValidationError:
+                dropped += 1
+            else:
+                valid.append(citation)
+        message["citations"] = valid
+    if dropped:
+        logger.warning(
+            "Dropped %d malformed stored citation(s) listing conversation %s",
+            dropped,
+            conversation_uuid,
+        )
 
 
 def _prepare_turn(

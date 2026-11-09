@@ -75,7 +75,7 @@ def issue_session_response(
         client_ip: Client IP address
         user_agent: Client user agent
         request: The inbound request; its scheme decides the cookie Secure flag
-            under ALLOW_INSECURE_COOKIES (see `auth/cookies.py:_secure_for_request`).
+            under ALLOW_INSECURE_COOKIES (see `api/cookies.py:_secure_for_request`).
         extra_content: Additional keys to merge into the JSON body (e.g. backup codes)
 
     Returns:
@@ -110,7 +110,7 @@ def issue_session_response(
     response = JSONResponse(content=content)
 
     # Set httpOnly cookies for browser-based authentication (C2 security hardening)
-    from app.auth.cookies import set_auth_cookies
+    from app.api.cookies import set_auth_cookies
 
     set_auth_cookies(response, access_token, refresh_token, request)
     return response
@@ -141,7 +141,7 @@ def _complete_mfa_verification(
         client_ip: Client IP address
         user_agent: Client user agent
         request: The inbound request; its scheme decides the cookie Secure flag
-            under ALLOW_INSECURE_COOKIES (see `auth/cookies.py:_secure_for_request`).
+            under ALLOW_INSECURE_COOKIES (see `api/cookies.py:_secure_for_request`).
 
     Returns:
         JSONResponse with access_token, refresh_token, and token metadata

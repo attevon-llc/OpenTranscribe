@@ -1,6 +1,6 @@
 """Every rate-limited endpoint must declare ``response: Response``.
 
-The limiter is built with ``headers_enabled=True`` (``app/auth/rate_limit.py``),
+The limiter is built with ``headers_enabled=True`` (``app/api/rate_limit.py``),
 so slowapi injects ``X-RateLimit-*`` into a ``response`` parameter after the
 handler runs. When the decorated function has no such parameter, slowapi looks at
 the return value instead, and raises
@@ -99,7 +99,7 @@ def test_headers_enabled_is_what_makes_this_required():
     Pin the coupling so the next person to touch the limiter sees why the
     parameter is mandatory rather than deleting it as noise.
     """
-    source = (APP_ROOT / "auth" / "rate_limit.py").read_text()
+    source = (APP_ROOT / "api" / "rate_limit.py").read_text()
     assert "headers_enabled=True" in source, (
         "headers_enabled is no longer True. The `response: Response` requirement "
         "above comes from it — re-read this module's docstring before relaxing "

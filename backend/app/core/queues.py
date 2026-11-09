@@ -4,9 +4,8 @@
 functions read the deployment environment at call time.
 """
 
-import os as _os
-
 from app.core.config import settings
+from app.core.env import env_str
 
 # =============================================================================
 # Celery Task Queue Priorities
@@ -158,7 +157,7 @@ def gpu_split_enabled() -> bool:
     #703, amended by the corroboration this docstring used to (wrongly) claim this
     function alone provided).
     """
-    return _os.environ.get("ENGINE_GPU_SPLIT", "false").lower() == "true"
+    return env_str("ENGINE_GPU_SPLIT", "false").lower() == "true"
 
 
 class GPUPriority:

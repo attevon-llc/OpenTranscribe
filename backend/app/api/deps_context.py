@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import SUPPORT_ACCESS_GRANT_HEADER
+from app.core.request_scope import RequestScope
 from app.core.route_template import route_label
 from app.core.tenancy import UNSCOPED  # noqa: F401 — re-exported for callers
 from app.core.tenancy import OrgScope  # noqa: F401 — re-exported for callers
@@ -46,7 +47,9 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 logger = logging.getLogger(__name__)
 
 
-def resolve_org_context(request: Request, db: Session, user: User) -> tuple[int | None, str | None]:
+def resolve_org_context(
+    request: RequestScope, db: Session, user: User
+) -> tuple[int | None, str | None]:
     """Resolve ``(org_id, org_role)`` for ``user`` on this request (None = personal).
 
     The SINGLE source of org-scope resolution, reused by ``get_current_context``

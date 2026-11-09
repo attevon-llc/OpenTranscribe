@@ -422,7 +422,7 @@ ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN = 500
 SESSION_CAP_EVICTION_BATCH_LIMIT = 50
 
 #: Password sign-in is limited per (client IP, username) at RATE_LIMIT_AUTH_PER_MINUTE;
-#: one client IP across all usernames gets this many times that (auth/rate_limit.py).
+#: one client IP across all usernames gets this many times that (api/rate_limit.py).
 LOGIN_IP_BACKSTOP_MULTIPLIER = 10
 SESSION_CAP_SWEEP_MAX_PER_USER = 500
 

@@ -35,9 +35,9 @@ from typing import Any
 import pytest
 from starlette.requests import Request
 
+from app.api.cookies import ACCESS_COOKIE
 from app.api.endpoints.auth.dependencies import get_optional_current_user
 from app.auth import token_service as token_service_module
-from app.auth.cookies import ACCESS_COOKIE
 from app.auth.direct_auth import create_access_token
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings

@@ -92,12 +92,12 @@ def test_the_callback_stores_it_on_the_session_it_just_created(db_session, sessi
 
 
 def test_no_response_helper_ever_puts_the_id_token_in_a_cookie():
-    """The decision, enforced: `auth/cookies.py` has no id-token setter."""
-    from app.auth import cookies
+    """The decision, enforced: `api/cookies.py` has no id-token setter."""
+    from app.api import cookies
 
     source = inspect.getsource(cookies)
     assert "id_token" not in source, (
-        "an ID token must never reach app/auth/cookies.py — it belongs on the session "
+        "an ID token must never reach app/api/cookies.py — it belongs on the session "
         "row (refresh_token.oidc_id_token), not in the browser"
     )
 

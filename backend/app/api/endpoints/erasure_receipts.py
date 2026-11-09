@@ -30,11 +30,11 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.org_admin import org_id_of
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import ERASURE_RECEIPT_READ_RATE_LIMIT
 from app.db.base import get_db
 from app.models.erasure import ErasureLedgerEntry

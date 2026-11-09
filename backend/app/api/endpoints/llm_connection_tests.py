@@ -22,9 +22,9 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.llm_config_helpers import _get_accessible_config
 from app.api.endpoints.llm_endpoint_safety import _assert_safe_llm_endpoint
-from app.auth.rate_limit import get_llm_outbound_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import get_llm_outbound_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.services import llm_context_window
 from app.services import llm_reasoning

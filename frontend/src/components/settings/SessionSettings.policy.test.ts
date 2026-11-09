@@ -99,7 +99,7 @@ describe('SessionSettings — restart-required token lifetimes', () => {
     renderPanel();
 
     // `auth_config_keys.RESTART_REQUIRED_KEYS` holds exactly these two keys —
-    // app/auth/cookies.py sizes the session cookies from them at import time.
+    // app/api/cookies.py sizes the session cookies from them at import time.
     expect(screen.getAllByText('settings.session.restartRequired')).toHaveLength(2);
     expect(screen.getByText('settings.session.restartRequiredHelp')).toBeInTheDocument();
   });

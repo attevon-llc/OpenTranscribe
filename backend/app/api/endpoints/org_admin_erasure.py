@@ -35,9 +35,9 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import require_org_admin
 from app.api.deps_context import require_org_owner
 from app.api.endpoints.org_admin import org_id_of
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.models.erasure import ErasureLedgerEntry

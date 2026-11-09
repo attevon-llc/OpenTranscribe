@@ -26,13 +26,13 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
+from app.api.cookies import ACCESS_COOKIE
 from app.api.endpoints.auth import lifecycle_gates as gates_module
 from app.api.endpoints.auth.dependencies import get_optional_current_user
 from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_REJECTED
 from app.api.endpoints.auth.profile import session_status
 from app.auth.approval import APPROVAL_PENDING
 from app.auth.approval import APPROVAL_REJECTED
-from app.auth.cookies import ACCESS_COOKIE
 from app.auth.direct_auth import create_access_token
 from app.core.config import settings
 from app.core.security import get_password_hash

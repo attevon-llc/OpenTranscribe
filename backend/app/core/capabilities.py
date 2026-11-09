@@ -98,10 +98,8 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import Request
-
 from app.core.config import settings
-from app.core.exceptions import ResourceNotFoundError
+from app.core.request_scope import RequestScope
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -249,10 +247,10 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
 # Resolver signature: (request | None) -> capability dict. The request is
 # offered so a cloud resolver can derive tenant/tier from the verified
 # identity stashed by get_current_user (request.state.external_identity).
-CapabilityResolver = Callable[[Request | None], dict[str, bool]]
+CapabilityResolver = Callable[[RequestScope | None], dict[str, bool]]
 
 
-def _community_resolver(_request: Request | None) -> dict[str, bool]:
+def _community_resolver(_request: RequestScope | None) -> dict[str, bool]:
     return dict(COMMUNITY_CAPABILITIES)
 
 
@@ -277,7 +275,7 @@ def reset_capability_resolver() -> None:
     _resolver = _community_resolver
 
 
-def get_capabilities(request: Request | None = None) -> dict[str, bool]:
+def get_capabilities(request: RequestScope | None = None) -> dict[str, bool]:
     """Effective capability map for this deployment/request.
 
     Fails CLOSED (issue #868): a capability is on only when the resolver
@@ -359,7 +357,9 @@ def is_platform_staff(user: "User | None") -> bool:
     return user is not None and bool(user.is_active) and bool(user.is_superuser)
 
 
-def get_capabilities_for_viewer(request: Request | None, user: "User | None") -> dict[str, bool]:
+def get_capabilities_for_viewer(
+    request: RequestScope | None, user: "User | None"
+) -> dict[str, bool]:
     """Capability map as shown to *user*: ``get_capabilities`` plus the staff overlay.
 
     For platform staff every key in ``PLATFORM_OVERLAY_KEYS`` reads ``True`` whether the
@@ -384,51 +384,9 @@ def _warn_once(message: str) -> None:
         logger.warning(message)
 
 
-def capability_enabled(key: str, request: Request | None = None) -> bool:
+def capability_enabled(key: str, request: RequestScope | None = None) -> bool:
     """Check a single capability (False for unknown keys)."""
     return bool(get_capabilities(request).get(key, False))
-
-
-def require_capability(key: str, *, platform_admin_bypass: bool = True) -> Callable:
-    """FastAPI dependency factory: 404 when the capability is off.
-
-    404 (not 403) on purpose — a disabled feature surface should not exist
-    at all for this deployment, exactly like an unknown route.
-
-    ``platform_admin_bypass`` (default on) lets platform staff
-    (``is_platform_staff``) through even when the capability is hidden from
-    tenants — cloud tenants can never become superusers (external_sync never
-    grants it), so this exactly implements the capabilities matrix's
-    "invisible to org users / available to platform staff" column. Turning it
-    off is only allowed for a key declared in ``NO_PLATFORM_BYPASS`` (ValueError
-    otherwise), because ``get_capabilities_for_viewer`` must know not to overlay it.
-    """
-    if not platform_admin_bypass and key not in NO_PLATFORM_BYPASS:
-        raise ValueError(
-            f"require_capability({key!r}, platform_admin_bypass=False): declare the key in "
-            "NO_PLATFORM_BYPASS so the viewer overlay does not show it to platform staff"
-        )
-
-    def _dependency(request: Request) -> None:
-        if capability_enabled(key, request):
-            return
-        if platform_admin_bypass:
-            try:
-                from app.api.endpoints.auth import get_optional_current_user
-                from app.db.base import SessionLocal
-
-                db = SessionLocal()
-                try:
-                    if is_platform_staff(get_optional_current_user(request, db)):
-                        return
-                finally:
-                    db.close()
-            except Exception:
-                # Bypass is best-effort; any failure falls through to 404.
-                logger.debug("platform-admin bypass check failed", exc_info=True)
-        raise ResourceNotFoundError("Not Found")
-
-    return _dependency
 
 
 def edition() -> str:

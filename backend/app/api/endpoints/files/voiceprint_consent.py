@@ -23,12 +23,12 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
+from app.api.rate_limit import get_directory_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.rate_limit import get_directory_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.file_consent import FileVoiceprintConsent

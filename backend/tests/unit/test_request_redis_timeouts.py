@@ -50,7 +50,7 @@ def test_control_the_shared_client_stays_unbounded():
 
 
 def test_the_rate_limiter_storage_carries_the_configured_timeouts(monkeypatch):
-    from app.auth import rate_limit
+    from app.api import rate_limit
 
     monkeypatch.setattr(settings, "REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS", 1.5)
     monkeypatch.setattr(settings, "REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS", 0.75)

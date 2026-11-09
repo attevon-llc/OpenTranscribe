@@ -17,6 +17,7 @@ from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.cookies import set_auth_cookies
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.auth.account_linking import emails_agree
@@ -282,9 +283,10 @@ def update_current_user(
     if password_changed or email_changed:
         # The revocation above is total and includes THIS session. Hand the caller
         # a fresh one rather than signing them out of the flow they just completed.
-        reissue_current_session(
-            db, current_user, response, request, user_agent=user_agent, ip_address=client_ip
+        access_token, refresh_token = reissue_current_session(
+            db, current_user, user_agent=user_agent, ip_address=client_ip
         )
+        set_auth_cookies(response, access_token, refresh_token, request)
 
     _maybe_issue_reverification(db, current_user, mailbox_changed, client_ip)
 

@@ -38,9 +38,9 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_admin_user
-from app.auth.rate_limit import get_search_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import get_search_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.core.constants import ADMIN_HOLD_RATE_LIMIT
 from app.core.tenancy import UNSCOPED
 from app.db.base import get_db

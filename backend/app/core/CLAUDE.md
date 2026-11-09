@@ -33,7 +33,7 @@ should import `app.api` or `app.services` at module scope.
   valid `access_token`, the browser never stores the cookie, and the very next request 401s —
   indistinguishable from a wrong password. It relaxes only that one cookie attribute; every other
   hardened-mode control (secrets, rate limits, lockout, `DEBUG`) is unaffected, and it is a no-op
-  on an already-relaxed (dev/testing) deployment. Read in `app/auth/cookies.py`, not here — see
+  on an already-relaxed (dev/testing) deployment. Read in `app/api/cookies.py`, not here — see
   its CLAUDE.md. Self-signed HTTPS, a real reverse proxy, and cloud/EC2 deployments all already
   work under the default (`Secure` only requires the `https:` scheme, not a browser-trusted CA),
   so this flag is never the right fix for those; a plain-HTTP LAN is the only legitimate case.

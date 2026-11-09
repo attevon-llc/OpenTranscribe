@@ -15,9 +15,9 @@ from starlette.concurrency import run_in_threadpool
 from app import models
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.llm_endpoint_safety import _pin_llm_endpoint
-from app.auth.rate_limit import get_llm_outbound_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import get_llm_outbound_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.services.llm_config_queries import find_own_llm_config_by_uuid
 from app.utils.encryption import SecretDecryptionError

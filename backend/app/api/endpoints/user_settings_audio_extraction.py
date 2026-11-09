@@ -8,8 +8,8 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models
+from app.api.capability_dependency import require_capability
 from app.api.endpoints.auth import get_current_active_user
-from app.core.capabilities import require_capability
 from app.db.base import get_db
 from app.services.user_setting_queries import list_user_settings
 from app.services.user_setting_queries import upsert_user_setting

@@ -8,7 +8,7 @@ import pytest
 from limits.errors import ConfigurationError
 from redis import ConnectionPool
 
-from app.auth import rate_limit
+from app.api import rate_limit
 from app.core.config import settings
 
 pytestmark = pytest.mark.unit

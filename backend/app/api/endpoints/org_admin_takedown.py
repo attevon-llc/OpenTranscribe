@@ -32,9 +32,9 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import require_org_admin
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.audit_events import AuditEventType
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import ORG_TAKEDOWN_RATE_LIMIT
 from app.core.enums import TakedownOrigin
 from app.core.exceptions import DomainError

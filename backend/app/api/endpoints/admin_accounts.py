@@ -17,6 +17,9 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
@@ -27,9 +30,6 @@ from app.auth.lockout_admin import reset_lockout_state as lockout_reset_lockout_
 from app.auth.lockout_admin import unlock_account as lockout_unlock_account
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser

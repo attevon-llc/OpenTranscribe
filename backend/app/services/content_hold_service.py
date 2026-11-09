@@ -55,8 +55,7 @@ from app.services.hold_guard import HoldState
 from app.services.hold_guard import hold_states
 
 if TYPE_CHECKING:
-    from fastapi import Request
-
+    from app.core.request_scope import RequestScope
     from app.models.user import User
 
 #: Most files one file-scoped hold may name in a single request.
@@ -267,7 +266,7 @@ def release_hold(
 
 
 def record_hold_change(
-    db: Session, request: Request | None, actor: User, change: HoldChange
+    db: Session, request: RequestScope | None, actor: User, change: HoldChange
 ) -> None:
     """Stage the hold's audit event in the caller's transaction. Call it BEFORE the commit.
 
@@ -295,7 +294,7 @@ def record_hold_change(
 
 
 def finish_hold_change(
-    db: Session, request: Request | None, actor: User, change: HoldChange
+    db: Session, request: RequestScope | None, actor: User, change: HoldChange
 ) -> None:
     """After the commit: storage locks, the erasure-sweep nudge and delivery of the audit event.
 
@@ -320,7 +319,7 @@ def finish_hold_change(
 
 def record_hold_annotation(
     db: Session,
-    request: Request | None,
+    request: RequestScope | None,
     actor: User,
     file: MediaFile,
     comment_uuid: str,
@@ -353,7 +352,7 @@ def record_hold_annotation(
 
 def record_hold_refusal(
     db: Session,
-    request: Request | None,
+    request: RequestScope | None,
     actor: User,
     resource: AuditedResource,
     *,
@@ -377,7 +376,7 @@ def record_hold_refusal(
 
 def record_file_hold_refusals(
     db: Session,
-    request: Request | None,
+    request: RequestScope | None,
     actor: User,
     states: dict[int, HoldState],
     *,

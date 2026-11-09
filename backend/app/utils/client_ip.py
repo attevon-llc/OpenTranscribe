@@ -2,7 +2,7 @@
 
 Three places needed the client IP and disagreed:
 
-* ``auth/rate_limit.py`` honoured ``RATE_LIMIT_TRUSTED_PROXIES`` but took the FIRST
+* ``api/rate_limit.py`` honoured ``RATE_LIMIT_TRUSTED_PROXIES`` but took the FIRST
   ``X-Forwarded-For`` entry, which the client controls when more than one proxy is in
   front of the app.
 * ``endpoints/auth.py::_get_client_info`` used ``request.client.host`` directly, so every
@@ -26,9 +26,8 @@ from __future__ import annotations
 import ipaddress
 import logging
 
-from starlette.requests import HTTPConnection
-
 from app.core.config import settings
+from app.core.request_scope import RequestScope
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +78,7 @@ def is_trusted_proxy(ip: str) -> bool:
     return any(parsed in network for network in _TRUSTED_NETWORKS)
 
 
-def resolve_client_ip(request: HTTPConnection | None) -> str:
+def resolve_client_ip(request: RequestScope | None) -> str:
     """Return the most trustworthy client address for *request*.
 
     Args:

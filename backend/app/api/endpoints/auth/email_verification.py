@@ -23,10 +23,10 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.local_auth_gate import require_local_auth_enabled
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
 from app.auth.email_verification import resend_verification
 from app.auth.email_verification import verify_email
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
 from app.db.base import get_db
 from app.schemas.invitation import EmailVerificationRequest
 from app.schemas.invitation import EmailVerificationResendRequest

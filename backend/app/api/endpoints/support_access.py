@@ -30,8 +30,8 @@ from app.api.deps_context import require_org_admin
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import get_current_active_superuser
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.core.constants import SUPPORT_ACCESS_REQUEST_RATE_LIMIT
 from app.db.base import get_db
 from app.models.support_access import SupportAccessGrant

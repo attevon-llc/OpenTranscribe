@@ -13,9 +13,9 @@ from .base import DiarizationProvider
 from .errors import DiarizerConfigUnusableError
 
 if TYPE_CHECKING:
-    from fastapi import Request
     from sqlalchemy.orm import Session
 
+    from app.core.request_scope import RequestScope
     from app.models.user_asr_settings import UserASRSettings
     from app.models.user_diarization_settings import UserDiarizationSettings
 
@@ -58,7 +58,7 @@ def get_pyannote_credential(user_id: int, db: Session) -> UserDiarizationSetting
 
 
 def get_diarizer_asr_config(
-    db: Session, user_id: int, config_uuid: str | None, request: Request | None = None
+    db: Session, user_id: int, config_uuid: str | None, request: RequestScope | None = None
 ) -> UserASRSettings | None:
     """The saved ASR configuration named as the speaker detector, if the user may use it.
 

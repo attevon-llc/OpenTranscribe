@@ -32,10 +32,10 @@ from app.api.health import router as health_router
 from app.api.hold_refusal import hold_refused_handler
 from app.api.overload_response import handle_db_overload
 from app.api.overload_response import handle_http_exception
+from app.api.rate_limit import limiter
+from app.api.rate_limit import rate_limit_exceeded_handler
 from app.api.router import api_router
 from app.api.validation_errors import validation_error_handler
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
 from app.core.db_overload import OVERLOAD_EXCEPTION_CLASSES
 from app.core.env import env_bool

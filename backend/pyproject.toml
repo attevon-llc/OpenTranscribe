@@ -115,7 +115,6 @@ forbidden_modules = ["app.api"]
 allow_indirect_imports = false
 unmatched_ignore_imports_alerting = "error"
 ignore_imports = [
-  "app.core.capabilities -> app.api.endpoints.auth",  # upward import, function level: removal planned (layering)
   "app.services.pipeline_plan_inputs -> app.api.deps_context",  # upward import, function level: removal planned (layering)
   "app.services.storage_recovery_service -> app.api.endpoints.files.upload_dispatch",  # upward import, function level: removal planned (layering)
   "app.services.watch_sources.processing -> app.api.endpoints.files.upload_dispatch",  # upward import, function level: removal planned (layering)
@@ -168,7 +167,6 @@ ignore_imports = [
   "app.core.backup_metrics -> app.services.system_settings_service",  # upward import, function level: removal planned (layering)
   "app.core.backup_metrics -> app.services.task_row_supersede",  # upward import, function level: removal planned (layering)
   "app.core.broker_orphans -> app.services.transcription_retry",  # upward import, function level: removal planned (layering)
-  "app.core.capabilities -> app.api.endpoints.auth",  # upward import, function level: removal planned (layering)
   "app.core.capabilities -> app.models.user",  # type-checking only: removal planned (layering)
   "app.core.celery_worker_lifecycle -> app.services.huggingface_token",  # upward import, function level: removal planned (layering)
   "app.core.celery_worker_lifecycle -> app.services.local_models.worker_report",  # upward import, function level: removal planned (layering)

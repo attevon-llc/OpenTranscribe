@@ -27,6 +27,9 @@ from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import refresh_rate_key
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
@@ -34,9 +37,6 @@ from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.mfa import MFAService
 from app.auth.oidc import OIDCConfig
 from app.auth.oidc import call_federated_logout
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import refresh_rate_key
 from app.auth.refresh_tokens import RefreshTokenReplayError
 from app.auth.revocation_error import RevocationError
 from app.auth.token_service import token_service
@@ -63,7 +63,7 @@ def _refresh_body(request: Request, body: TokenRefreshRequest) -> TokenRefreshRe
     Only a token whose signature verifies sets ``request.state.refresh_subject``; the
     endpoint re-verifies it in full (revocation, session lifetime) either way.
     """
-    from app.auth.cookies import get_refresh_token_from_cookie
+    from app.api.cookies import get_refresh_token_from_cookie
 
     token = body.refresh_token or get_refresh_token_from_cookie(request)
     if token:
@@ -113,7 +113,7 @@ def refresh_access_token(
         HTTPException: If refresh token is invalid, expired, or revoked
     """
     # Try body first, then fall back to httpOnly cookie for refresh token
-    from app.auth.cookies import get_refresh_token_from_cookie
+    from app.api.cookies import get_refresh_token_from_cookie
 
     refresh_token_value = body.refresh_token
     if not refresh_token_value:
@@ -215,7 +215,7 @@ def refresh_access_token(
     )
 
     # Set new httpOnly cookies with rotated tokens (C2 security hardening)
-    from app.auth.cookies import set_auth_cookies
+    from app.api.cookies import set_auth_cookies
 
     set_auth_cookies(response, access_token, new_refresh_token, request)
     return response
@@ -262,7 +262,7 @@ def _revoke_presented_tokens(db: Session, request: Request, claims: dict | None)
     Returns the names of the revocations that could not be recorded; a token that
     is absent, malformed or expired has nothing to revoke and is not a failure.
     """
-    from app.auth.cookies import get_refresh_token_from_cookie
+    from app.api.cookies import get_refresh_token_from_cookie
 
     failed: list[str] = []
 
@@ -409,8 +409,8 @@ async def logout(
     Returns:
         Success message
     """
-    from app.auth.cookies import clear_auth_cookies
-    from app.auth.cookies import get_access_token_from_cookie
+    from app.api.cookies import clear_auth_cookies
+    from app.api.cookies import get_access_token_from_cookie
 
     # Fall back to cookie if no Bearer token
     if not token:
@@ -544,7 +544,7 @@ async def logout_all_sessions(
 
     logger.info(f"User {user_id} logged out from all sessions ({count} tokens revoked)")
 
-    from app.auth.cookies import clear_auth_cookies
+    from app.api.cookies import clear_auth_cookies
 
     response = JSONResponse(
         content={

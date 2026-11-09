@@ -535,7 +535,7 @@ class DynamicAuthSettings:
     # in the admin UI takes effect on the next refresh with no restart.
     #
     # ``jwt_access_token_expire_minutes`` / ``jwt_refresh_token_expire_days`` are
-    # the exception and are marked ``requires_restart``: ``auth/cookies.py``
+    # the exception and are marked ``requires_restart``: ``api/cookies.py``
     # computes ``ACCESS_MAX_AGE`` / ``REFRESH_MAX_AGE`` from them **at import
     # time**, so a live change would leave cookie lifetimes disagreeing with token
     # lifetimes. They are read here for display only.

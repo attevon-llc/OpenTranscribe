@@ -18,9 +18,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+from app.api.cookies import OIDC_STATE_COOKIE
 from app.api.endpoints.auth import oidc as oidc_module
 from app.api.endpoints.auth import saml as saml_module
-from app.auth.cookies import OIDC_STATE_COOKIE
 
 
 def _on_event_loop() -> bool:

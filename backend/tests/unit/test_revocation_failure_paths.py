@@ -15,11 +15,11 @@ from sqlalchemy.exc import OperationalError
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.api.cookies import REFRESH_COOKIE
 from app.api.endpoints.auth import saml as saml_module
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
-from app.auth.cookies import REFRESH_COOKIE
 from app.auth.revocation_error import RevocationError
 from app.auth.saml.config import SAMLConfig
 from app.auth.token_service import TokenService

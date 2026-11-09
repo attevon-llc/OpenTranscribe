@@ -34,6 +34,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 
+from app.core.env import env_int
 from app.utils.audio_stream import audio_map_args
 from app.utils.media_types import normalize_media_content_type
 
@@ -323,9 +324,9 @@ def build_encode_command(
         cmd += ["-ac", "2"]
     if probe.sample_rate is not None and probe.sample_rate > 48000:
         cmd += ["-ar", "48000"]
-    threads = os.environ.get("FFMPEG_THREADS", "").strip()
-    if threads.isdigit() and int(threads) > 0:
-        cmd += ["-threads", threads]
+    threads = env_int("FFMPEG_THREADS", 0, minimum=0)
+    if threads > 0:
+        cmd += ["-threads", str(threads)]
     cmd += ["-movflags", "+faststart", output_path]
     return cmd
 

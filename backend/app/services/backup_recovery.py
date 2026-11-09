@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.core.env import env_str
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ def collect_key_material() -> dict[str, str]:
         "ENCRYPTION_KEY": settings.ENCRYPTION_KEY,
         "JWT_SECRET_KEY": settings.JWT_SECRET_KEY,
     }
-    minio_kms = os.environ.get("MINIO_KMS_SECRET_KEY", "").strip()
+    minio_kms = env_str("MINIO_KMS_SECRET_KEY")
     if minio_kms:
         material["MINIO_KMS_SECRET_KEY"] = minio_kms
     return material

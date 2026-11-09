@@ -32,6 +32,7 @@ import threading
 from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING
 
+from app.core.env import env_int
 from app.utils.cpu_budget import effective_cpu_count
 
 if TYPE_CHECKING:
@@ -72,12 +73,9 @@ def _mp_context() -> BaseContext:
 
 
 def _worker_count() -> int:
-    env = os.environ.get("REDACTION_PII_WORKERS")
-    if env:
-        try:
-            return max(1, min(MAX_WORKERS, int(env)))
-        except ValueError:
-            logger.warning("REDACTION_PII_WORKERS=%r is not an integer; using default", env)
+    configured = env_int("REDACTION_PII_WORKERS", 0, minimum=1)
+    if configured:
+        return min(MAX_WORKERS, configured)
     cores = effective_cpu_count()
     return max(1, min(DEFAULT_WORKERS, MAX_WORKERS, cores - 1))
 

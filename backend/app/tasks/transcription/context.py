@@ -8,7 +8,6 @@ FAILED and notify the SPA.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import NoReturn
@@ -21,6 +20,7 @@ from app.core import redis as redis_core
 from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
 from app.core.constants import DIAR_SIDECAR_RETRY_BASE
 from app.core.constants import DIAR_SIDECAR_RETRY_MAX
+from app.core.env import env_int
 from app.db.session_utils import session_scope
 from app.services.error_categorization_service import NO_SPEECH_DETECTED_MESSAGE
 from app.services.error_categorization_service import ErrorCategorizationService
@@ -202,10 +202,7 @@ def _poisoned_requeue_allowed(task_id: str) -> bool:
     ``GPU_POISONED_MAX_REQUEUES`` (default 2). A Redis failure allows the requeue: Redis is
     the broker, so if it is unreachable the requeue cannot loop anyway.
     """
-    try:
-        cap = max(0, int(os.getenv("GPU_POISONED_MAX_REQUEUES", "2")))
-    except ValueError:
-        cap = 2
+    cap = env_int("GPU_POISONED_MAX_REQUEUES", 2, minimum=0)
     key = _POISONED_REQUEUE_KEY.format(task_id=task_id)
     try:
         client = redis_core.get_redis()

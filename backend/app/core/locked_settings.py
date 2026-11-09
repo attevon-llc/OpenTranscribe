@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Request
-
 from app.core.capabilities import capability_enabled
+from app.core.request_scope import RequestScope
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ TRANSCRIPTION_FIELD_CAPABILITY: dict[str, str] = {
 }
 
 
-def locked_transcription_fields(request: Request | None = None) -> frozenset[str]:
+def locked_transcription_fields(request: RequestScope | None = None) -> frozenset[str]:
     """Transcription-settings fields the user may not set in this deployment."""
     enabled = {
         key: capability_enabled(key, request)
@@ -52,12 +51,12 @@ def locked_transcription_fields(request: Request | None = None) -> frozenset[str
     )
 
 
-def locked_transcription_db_keys(request: Request | None = None) -> frozenset[str]:
+def locked_transcription_db_keys(request: RequestScope | None = None) -> frozenset[str]:
     """``UserSetting`` keys whose stored value must be ignored in this deployment."""
     return frozenset(f"transcription_{field}" for field in locked_transcription_fields(request))
 
 
-def effective_whisper_model(requested: str | None, request: Request | None) -> str | None:
+def effective_whisper_model(requested: str | None, request: RequestScope | None) -> str | None:
     """The per-file model to honour: ``requested``, or None when model choice is locked.
 
     None means "use the deployment default", so a lightweight model named by the

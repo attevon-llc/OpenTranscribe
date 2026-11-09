@@ -24,6 +24,7 @@ from starlette.types import Send
 # (logging_config, db_metrics, the Celery pre-run hook, tests).
 from app.core.request_context import get_request_id
 from app.core.request_context import set_request_id
+from app.core.request_scope import RequestScope
 
 __all__ = [
     "AuditMiddleware",
@@ -93,7 +94,7 @@ class AuditMiddleware:
         return resolve_client_ip(request)
 
 
-def get_request_context(request: Request) -> dict:
+def get_request_context(request: RequestScope) -> dict:
     """
     Get audit context from a request.
 

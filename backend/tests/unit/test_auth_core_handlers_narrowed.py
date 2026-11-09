@@ -14,11 +14,11 @@ from unittest.mock import patch
 import pytest
 import redis
 
+from app.api import rate_limit
 from app.auth import lockout_store
 from app.auth import mfa
 from app.auth import password_history
 from app.auth import pki_ocsp
-from app.auth import rate_limit
 from app.auth import session as auth_session
 from app.core import task_liveness
 from app.core import task_replay

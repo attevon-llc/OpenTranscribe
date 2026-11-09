@@ -44,7 +44,7 @@ def session_status(
     refresh_token cookie is — the client should attempt one silent refresh
     before treating the visitor as logged out.
     """
-    from app.auth.cookies import get_refresh_token_from_cookie
+    from app.api.cookies import get_refresh_token_from_cookie
 
     try:
         user = get_current_user(request, token=token, db=db)

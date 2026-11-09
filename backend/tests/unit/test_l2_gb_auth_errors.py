@@ -26,6 +26,7 @@ from joserfc import jwt
 from joserfc.jwk import OctKey
 from starlette.requests import Request
 
+from app.api.cookies import ACCESS_COOKIE
 from app.api.endpoints.auth import authenticators
 from app.api.endpoints.auth import login as login_module
 from app.api.endpoints.auth import saml as saml_module
@@ -35,7 +36,6 @@ from app.auth import external_sync
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
-from app.auth.cookies import ACCESS_COOKIE
 from app.auth.oidc.admission import assert_oidc_admission_permitted
 from app.auth.oidc.claims import OIDCUserData
 from app.auth.oidc.config import OIDCConfig

@@ -13,10 +13,9 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
-from fastapi import Request
-
 from app.core.constants import DEFAULT_DIARIZATION_SOURCE
 from app.core.constants import VALID_DIARIZATION_SOURCES
+from app.core.request_scope import RequestScope
 from app.services.pipeline_plan import DiarizerConfigInfo
 from app.services.pipeline_plan import PipelinePlan
 from app.services.pipeline_plan import PlanInputs
@@ -49,7 +48,7 @@ def _stored(db: Session, user_id: int) -> dict[str, str]:
 
 
 def _diarizer_config(
-    db: Session, user_id: int, config_uuid: str | None, request: Request | None
+    db: Session, user_id: int, config_uuid: str | None, request: RequestScope | None
 ) -> DiarizerConfigInfo | None:
     """The saved ASR configuration named as the speaker detector, if the user may use it.
 
@@ -106,7 +105,7 @@ def _provider_policy_flags(
     return asr_ok, diar_ok
 
 
-def _active_organization_id(db: Session, user_id: int, request: Request | None) -> int | None:
+def _active_organization_id(db: Session, user_id: int, request: RequestScope | None) -> int | None:
     """The organization the request acts in, or ``None`` (personal, or no request).
 
     The same resolution every request-scoped route uses (``resolve_org_context``: the
@@ -128,7 +127,7 @@ def load_plan_inputs(
     db: Session,
     user_id: int,
     *,
-    request: Request | None = None,
+    request: RequestScope | None = None,
     whisper_model: str | None = None,
     disable_diarization: bool | None = None,
     diarization_source: str | None = None,

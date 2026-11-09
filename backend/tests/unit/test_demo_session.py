@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from slowapi.errors import RateLimitExceeded
 
-from app.auth import rate_limit
+from app.api import rate_limit
 from app.core.config import settings
 from app.core.demo_info import DEMO_LICENSE_KEY
 

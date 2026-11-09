@@ -26,11 +26,11 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.login_completion import _generate_login_tokens
+from app.api.rate_limit import get_auth_methods_rate_limit
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.audit import audit_logger
-from app.auth.rate_limit import get_auth_methods_rate_limit
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
 from app.auth.roles import ROLE_USER
 from app.core.config import settings
 from app.core.demo_info import last_upgrade_at

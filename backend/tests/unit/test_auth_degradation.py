@@ -55,10 +55,13 @@ def test_a_raising_metric_is_swallowed_so_auth_never_fails_on_it(monkeypatch, ca
     assert any("Could not record security degradation metric" in r.message for r in caplog.records)
 
 
-@pytest.mark.parametrize("module", ["session", "lockout", "rate_limit", "revocation_fallback"])
+@pytest.mark.parametrize(
+    "module",
+    ["auth.session", "auth.lockout", "api.rate_limit", "auth.revocation_fallback"],
+)
 def test_every_auth_module_uses_the_shared_helper(module):
     import importlib
 
-    mod = importlib.import_module(f"app.auth.{module}")
+    mod = importlib.import_module(f"app.{module}")
     assert mod.record_degradation is record_degradation
     assert not hasattr(mod, "_record_degradation")

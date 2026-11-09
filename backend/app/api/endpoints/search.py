@@ -23,9 +23,9 @@ from app.api.endpoints.search_helpers import _resolve_source_set
 from app.api.endpoints.search_helpers import _search_response_to_schema
 from app.api.endpoints.search_helpers import _source_counts
 from app.api.endpoints.search_helpers import _summary_search_payload
-from app.auth.rate_limit import get_search_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import get_search_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.core.exceptions import DomainError

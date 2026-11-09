@@ -37,8 +37,8 @@ from app.api.endpoints.chat.common import read_user_chat_settings
 from app.api.endpoints.chat.common import resolve_effective_scope
 from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.api.endpoints.chat.common import resolve_use_context
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.core.config import settings
 from app.core.constants import LLM_CONTEXT_WINDOW_MAX
 from app.core.constants import LLM_CONTEXT_WINDOW_MIN

@@ -29,10 +29,10 @@ from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.api.capability_dependency import require_capability
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
-from app.core.capabilities import require_capability
 from app.core.env import is_truthy
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model

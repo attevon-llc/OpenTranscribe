@@ -8,6 +8,7 @@ import os
 
 from app.core.env import env_bool
 from app.core.env import env_is_set
+from app.core.env import env_str
 
 # =============================================================================
 # Engine shared-volume WAV handoff (issue #661 E0, consolidated onto pipeline_scratch in E2)
@@ -77,7 +78,7 @@ def resolve_engine_shared_volume_path() -> str:
     this function exists to catch, not a case where the check is inert. It deliberately does
     NOT rewrite ``.env``; this repo never edits an operator's ``.env`` without confirmation.
     """
-    configured = os.environ.get("ENGINE_SHARED_VOLUME_PATH")
+    configured = env_str("ENGINE_SHARED_VOLUME_PATH")
     if not configured or configured == ENGINE_SHARED_VOLUME_DEFAULT:
         return ENGINE_SHARED_VOLUME_DEFAULT
 

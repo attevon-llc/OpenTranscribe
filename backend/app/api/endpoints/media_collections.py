@@ -19,9 +19,7 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi import status
-from sqlalchemy import and_
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
@@ -40,7 +38,6 @@ from app.auth.audit_events import AuditEventType
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED
 from app.db.base import get_db
 from app.models.collection import Collection
-from app.models.collection import CollectionMember
 from app.models.user import User
 from app.schemas.collection import Collection as CollectionSchema
 from app.schemas.collection import CollectionCreate
@@ -50,6 +47,10 @@ from app.schemas.collection import CollectionWithCount
 from app.schemas.media import CollectionResponse
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.services import audit_outbox
+from app.services.collection_queries import collection_member_file_ids
+from app.services.collection_queries import collection_name_taken_for_creator
+from app.services.collection_queries import collection_name_taken_in_tenant_of
+from app.services.collection_queries import load_collection_detail
 from app.services.collection_visibility import members_without_access
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import stage_content_event
@@ -110,16 +111,7 @@ def create_collection(
         )
 
     # Check if a collection with the same name exists in this tenant
-    existing = (
-        db.query(Collection.id)
-        .filter(
-            PermissionService.collection_tenant_pred(current_user.id, ctx.org_id),
-            Collection.name == collection.name,
-        )
-        .first()
-    )
-
-    if existing:
+    if collection_name_taken_for_creator(db, current_user.id, ctx.org_id, collection.name):
         raise HTTPException(
             status_code=400,
             detail=f"Collection with name '{collection.name}' already exists",
@@ -182,15 +174,7 @@ def get_collection(
     )
 
     # Reload with joined data
-    reloaded_collection = (
-        db.query(Collection)
-        .filter(Collection.id == collection.id)
-        .options(
-            joinedload(Collection.collection_members).joinedload(CollectionMember.media_file),
-            joinedload(Collection.default_summary_prompt),
-        )
-        .first()
-    )
+    reloaded_collection = load_collection_detail(db, collection.id)
 
     if reloaded_collection is None:
         raise HTTPException(status_code=404, detail="Collection not found")
@@ -241,31 +225,17 @@ def update_collection(
     collection, permission = get_collection_by_uuid_with_sharing(
         db, collection_uuid, current_user.id, min_permission="editor", organization_id=ctx.org_id
     )
-    collection_id = collection.id
-
     # Check if new name conflicts with another collection of the same tenant
-    if collection_update.name and collection_update.name != collection.name:
-        if collection.organization_id is not None:
-            same_tenant = Collection.organization_id == collection.organization_id
-        else:
-            same_tenant = and_(
-                Collection.user_id == collection.user_id, Collection.organization_id.is_(None)
-            )
-        existing = (
-            db.query(Collection.id)
-            .filter(
-                same_tenant,
-                Collection.name == collection_update.name,
-                Collection.id != collection_id,
-            )
-            .first()
+    new_name = collection_update.name
+    if (
+        new_name
+        and new_name != collection.name
+        and collection_name_taken_in_tenant_of(db, collection, new_name)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Collection with name '{new_name}' already exists",
         )
-
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Collection with name '{collection_update.name}' already exists",
-            )
 
     # Update fields
     update_data = collection_update.dict(exclude_unset=True)
@@ -423,12 +393,7 @@ def delete_collection(
 
     # Capture the members before the cascade removes them; reindex after the commit so the
     # rewrite reads the collection as gone.
-    file_ids = [
-        cm.media_file_id
-        for cm in db.query(CollectionMember.media_file_id)
-        .filter(CollectionMember.collection_id == collection.id)
-        .all()
-    ]
+    file_ids = collection_member_file_ids(db, collection.id)
     # Deleting the collection would take a held member out of it (legal-hold freeze).
     refuse_if_frozen(db, file_ids, actor=current_user, action="delete_collection")
 

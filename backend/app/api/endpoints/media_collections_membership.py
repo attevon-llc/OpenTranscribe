@@ -33,12 +33,17 @@ from app.db.base import get_db
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.sharing import CollectionShare
 from app.models.user import User
 from app.schemas.collection import CollectionMemberAdd
 from app.schemas.collection import CollectionMemberRemove
 from app.schemas.media import PaginatedMediaFileResponse
 from app.services import audit_outbox
+from app.services.collection_queries import collection_files_query
+from app.services.collection_queries import collection_has_shares
+from app.services.collection_queries import existing_member_ids
+from app.services.collection_queries import files_in_scope
+from app.services.collection_queries import remove_members
+from app.services.collection_queries import resolve_file_ids
 from app.services.content_audit import MAX_MEMBERSHIP_UUIDS
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import stage_content_event
@@ -69,10 +74,7 @@ def _membership_affects_index(db: Session, collection: Collection) -> bool:
     """
     if collection.organization_id is not None:
         return True
-    return (
-        db.query(CollectionShare.id).filter(CollectionShare.collection_id == collection.id).first()
-        is not None
-    )
+    return collection_has_shares(db, collection.id)
 
 
 def _record_membership_change(
@@ -137,7 +139,7 @@ def add_media_to_collection(
     else:
         file_pred = and_(MediaFile.user_id == current_user.id, MediaFile.organization_id.is_(None))
 
-    media_files = db.query(MediaFile).filter(MediaFile.uuid.in_(media_file_uuids), file_pred).all()
+    media_files = files_in_scope(db, media_file_uuids, file_pred)
 
     if len(media_files) != len(media_file_uuids):
         # Determine which UUIDs are missing or unauthorized
@@ -151,16 +153,7 @@ def add_media_to_collection(
     media_file_ids = [f.id for f in media_files]
 
     # Get existing members to avoid duplicates
-    existing_members = (
-        db.query(CollectionMember.media_file_id)
-        .filter(
-            CollectionMember.collection_id == collection_id,
-            CollectionMember.media_file_id.in_(media_file_ids),
-        )
-        .all()
-    )
-
-    existing_ids = {member[0] for member in existing_members}
+    existing_ids = existing_member_ids(db, collection_id, media_file_ids)
     new_ids = set(media_file_ids) - existing_ids
 
     # A held file's collections are part of its preserved record (legal-hold freeze).
@@ -229,21 +222,14 @@ def remove_media_from_collection(
     # Every member of an org collection may remove any of its (org) files — the
     # collection is the org's (v422).
     may_remove_any = permission == "owner" or collection.organization_id is not None
-    id_query = db.query(MediaFile.id, MediaFile.uuid).filter(MediaFile.uuid.in_(media_file_uuids))
-    if not may_remove_any:
-        id_query = id_query.filter(MediaFile.user_id == current_user.id)
-    resolved = id_query.all()
+    resolved = resolve_file_ids(
+        db, media_file_uuids, owner_user_id=None if may_remove_any else current_user.id
+    )
     media_file_ids = [r[0] for r in resolved]
 
     # The members actually present, for the audit event (a uuid that was never in the
     # collection was not "removed").
-    present_ids = {
-        row[0]
-        for row in db.query(CollectionMember.media_file_id).filter(
-            CollectionMember.collection_id == collection_id,
-            CollectionMember.media_file_id.in_(media_file_ids),
-        )
-    }
+    present_ids = existing_member_ids(db, collection_id, media_file_ids)
 
     # A file a hold on THIS collection covers cannot leave it (issue #1276): moving it out would
     # be the way to slip evidence from under a hold. The whole request is refused so nothing is
@@ -264,14 +250,7 @@ def remove_media_from_collection(
     )
 
     # Remove members
-    removed_count = (
-        db.query(CollectionMember)
-        .filter(
-            CollectionMember.collection_id == collection_id,
-            CollectionMember.media_file_id.in_(media_file_ids),
-        )
-        .delete(synchronize_session=False)
-    )
+    removed_count = remove_members(db, collection_id, media_file_ids)
     _record_membership_change(
         db,
         request,
@@ -349,12 +328,7 @@ def get_collection_media(
     ]
 
     # Build base query scoped to this collection
-    base_query = (
-        db.query(MediaFile)
-        .options(*list_options)
-        .join(CollectionMember, CollectionMember.media_file_id == MediaFile.id)
-        .filter(CollectionMember.collection_id == collection_id)
-    )
+    base_query = collection_files_query(db, collection_id, list_options)
 
     # The owner of a PERSONAL collection sees only their own files in it; for
     # shared collections, and for an org's collections (v422: all org files are

@@ -12,11 +12,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Query
 from sqlalchemy import ColumnElement
-from sqlalchemy import func
-from sqlalchemy import or_
-from sqlalchemy.orm import Query as OrmQuery  # fastapi.Query is already imported
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
@@ -26,9 +22,6 @@ from app.api.endpoints.media_collections_access import _get_prompt_info
 from app.api.endpoints.media_collections_access import _tenant_pred
 from app.core.exceptions import ResourceNotFoundError
 from app.db.base import get_db
-from app.models.collection import Collection
-from app.models.collection import CollectionMember
-from app.models.group import UserGroupMember
 from app.models.media import MediaFile
 from app.models.sharing import CollectionShare
 from app.models.user import User
@@ -37,9 +30,17 @@ from app.schemas.collection import CollectionWithCount
 from app.schemas.content_hold import HoldSummary
 from app.schemas.sharing import SharedCollectionInfo
 from app.schemas.user import UserBrief
-from app.services.collection_visibility import visible_collection_ids
+from app.services.collection_queries import collections_for_listing
+from app.services.collection_queries import collections_holding_files
+from app.services.collection_queries import collections_with_owners
+from app.services.collection_queries import ids_in_tenant_of_user
+from app.services.collection_queries import ids_matching
+from app.services.collection_queries import page_matching_ids
+from app.services.collection_queries import page_own_collection_ids
+from app.services.collection_queries import share_counts
+from app.services.collection_queries import shares_reaching_user
+from app.services.collection_queries import visible_media_counts as _visible_media_counts
 from app.services.content_hold_queries import collection_hold_summaries
-from app.services.file_availability import exclude_unavailable
 from app.services.file_availability import is_unavailable_for
 from app.services.file_availability import unavailable_list_exempt
 from app.services.permission_service import PermissionService
@@ -47,28 +48,6 @@ from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_by_uuid
 
 router = APIRouter()
-
-
-def _visible_media_counts(
-    db: Session, collection_ids: list[int], *, include_quarantined: bool
-) -> dict[int, int]:
-    """Per-collection member counts, hiding quarantined files from non-admins.
-
-    Abuse/DMCA (issue #262g): a taken-down file is invisible on every read
-    surface for normal users — the member COUNT must agree with the member
-    LIST or the mismatch leaks the takedown. Admins keep the true count.
-    Collections absent from the result have zero visible members (callers use
-    ``.get(cid, 0)``).
-    """
-    if not collection_ids:
-        return {}
-    query: OrmQuery = (
-        db.query(CollectionMember.collection_id, func.count(CollectionMember.id))
-        .join(MediaFile, MediaFile.id == CollectionMember.media_file_id)
-        .filter(CollectionMember.collection_id.in_(collection_ids))
-    )
-    query = exclude_unavailable(query, include_quarantined=include_quarantined)
-    return {cid: cnt for cid, cnt in query.group_by(CollectionMember.collection_id).all()}
 
 
 def _explicitly_shared_entries(
@@ -84,19 +63,8 @@ def _explicitly_shared_entries(
     candidate = {cid: perm for cid, perm in accessible if perm != "owner"}
     if not candidate:
         return []
-    own = {
-        cid
-        for (cid,) in db.query(Collection.id).filter(
-            Collection.id.in_(list(candidate)),
-            PermissionService.collection_tenant_pred(user_id, ctx.org_id),
-        )
-    }
-    in_tenant = {
-        cid
-        for (cid,) in db.query(Collection.id).filter(
-            Collection.id.in_(list(candidate)), _tenant_pred(ctx)
-        )
-    }
+    own = ids_in_tenant_of_user(db, list(candidate), user_id, ctx.org_id)
+    in_tenant = ids_matching(db, list(candidate), _tenant_pred(ctx))
     return [(cid, perm) for cid, perm in candidate.items() if cid in in_tenant and cid not in own]
 
 
@@ -122,12 +90,7 @@ def list_shared_collections(
     collection_ids = [cid for cid, _ in shared_ids]
     perm_map = {cid: perm for cid, perm in shared_ids}
 
-    collections = (
-        db.query(Collection)
-        .options(joinedload(Collection.user))
-        .filter(Collection.id.in_(collection_ids))
-        .all()
-    )
+    collections = collections_with_owners(db, collection_ids)
 
     # Filter out owned collections
     collections = [c for c in collections if c.user_id != current_user.id]
@@ -141,23 +104,7 @@ def list_shared_collections(
     )
 
     # Batch: share records for shared_by info
-    user_group_ids = (
-        db.query(UserGroupMember.group_id)
-        .filter(UserGroupMember.user_id == current_user.id)
-        .subquery()
-    )
-    shares = (
-        db.query(CollectionShare)
-        .options(joinedload(CollectionShare.shared_by))
-        .filter(
-            CollectionShare.collection_id.in_(filtered_ids),
-            or_(
-                CollectionShare.target_user_id == current_user.id,
-                CollectionShare.target_group_id.in_(db.query(user_group_ids.c.group_id)),
-            ),
-        )
-        .all()
-    )
+    shares = shares_reaching_user(db, filtered_ids, current_user.id)
     # First matching share per collection
     share_map: dict[int, CollectionShare] = {}
     for share in shares:
@@ -218,8 +165,6 @@ def list_collections_on_files(
     Registered before ``/{collection_uuid}`` so the literal path is not
     swallowed.
     """
-    from app.models.collection import CollectionMember
-    from app.models.media import MediaFile
 
     file_ids = []
     for file_uuid in file_uuids:
@@ -229,17 +174,8 @@ def list_collections_on_files(
             raise ResourceNotFoundError("File not found")
         file_ids.append(media_file.id)
     selection_size = len(set(file_ids))
-    rows = (
-        db.query(Collection, func.count(func.distinct(CollectionMember.media_file_id)))
-        .join(CollectionMember, CollectionMember.collection_id == Collection.id)
-        .filter(
-            CollectionMember.media_file_id.in_(file_ids),
-            PermissionService.collection_tenant_pred(current_user.id, ctx.org_id),
-            Collection.id.in_(visible_collection_ids(db, current_user.id, ctx.org_id)),
-        )
-        .group_by(Collection.id)
-        .order_by(func.count(func.distinct(CollectionMember.media_file_id)).desc(), Collection.name)
-        .all()
+    rows = collections_holding_files(
+        db, file_ids, user_id=current_user.id, organization_id=ctx.org_id
     )
     return [
         CollectionOnSelection(
@@ -270,19 +206,15 @@ def _ownership_page(
     """
     if ownership == "mine":
         accessible_perms = dict(PermissionService.get_accessible_collection_ids(db, user_id))
-        collection_ids = [
-            row[0]
-            for row in db.query(Collection.id)
-            .filter(
-                PermissionService.collection_tenant_pred(user_id, ctx.org_id),
-                org_pred,
-                Collection.id.in_(list(accessible_perms)),
-            )
-            .order_by(Collection.id)
-            .offset(skip)
-            .limit(limit)
-            .all()
-        ]
+        collection_ids = page_own_collection_ids(
+            db,
+            list(accessible_perms),
+            user_id=user_id,
+            organization_id=ctx.org_id,
+            tenant_pred=org_pred,
+            skip=skip,
+            limit=limit,
+        )
         counts_dict = _visible_media_counts(
             db, collection_ids, include_quarantined=include_quarantined
         )
@@ -299,14 +231,7 @@ def _ownership_page(
         shared_by_dict = {}
 
         if collection_ids:
-            collection_ids = [
-                row[0]
-                for row in db.query(Collection.id)
-                .filter(Collection.id.in_(collection_ids), org_pred)
-                .offset(skip)
-                .limit(limit)
-                .all()
-            ]
+            collection_ids = page_matching_ids(db, collection_ids, org_pred, skip=skip, limit=limit)
             counts_dict = _visible_media_counts(
                 db, collection_ids, include_quarantined=include_quarantined
             )
@@ -322,14 +247,7 @@ def _ownership_page(
         shared_by_dict = {}
 
         if all_ids:
-            collection_ids = [
-                row[0]
-                for row in db.query(Collection.id)
-                .filter(Collection.id.in_(all_ids), org_pred)
-                .offset(skip)
-                .limit(limit)
-                .all()
-            ]
+            collection_ids = page_matching_ids(db, all_ids, org_pred, skip=skip, limit=limit)
             counts_dict = _visible_media_counts(
                 db, collection_ids, include_quarantined=include_quarantined
             )
@@ -394,30 +312,14 @@ def list_collections(
 
     # Fetch full collection objects with user and prompt relationships
     # (org_pred re-applied as defense-in-depth against un-gated id sources)
-    collections_objs = (
-        db.query(Collection)
-        .options(
-            joinedload(Collection.user),
-            joinedload(Collection.default_summary_prompt),
-        )
-        .filter(Collection.id.in_(collection_ids), org_pred)
-        .all()
-    )
+    collections_objs = collections_for_listing(db, collection_ids, org_pred)
 
     held_by_collection = collection_hold_summaries(
         db, collection_ids, reveal_uuids=ctx.is_org_admin
     )
 
     # Bulk-fetch share counts for all collections
-    share_counts_query = (
-        db.query(
-            CollectionShare.collection_id,
-            func.count(CollectionShare.id).label("share_count"),
-        )
-        .filter(CollectionShare.collection_id.in_(collection_ids))
-        .group_by(CollectionShare.collection_id)
-    ).all()
-    share_counts_dict = {row[0]: row[1] for row in share_counts_query}
+    share_counts_dict = share_counts(db, collection_ids)
 
     collections = []
     for collection in collections_objs:
@@ -449,21 +351,7 @@ def _populate_shared_by(
     shared_by_dict: dict,
 ) -> None:
     """Populate shared_by UserBrief for a list of shared collection IDs."""
-    user_group_ids_sq = (
-        db.query(UserGroupMember.group_id).filter(UserGroupMember.user_id == user_id).subquery()
-    )
-    shares = (
-        db.query(CollectionShare)
-        .options(joinedload(CollectionShare.shared_by))
-        .filter(
-            CollectionShare.collection_id.in_(collection_ids),
-            or_(
-                CollectionShare.target_user_id == user_id,
-                CollectionShare.target_group_id.in_(db.query(user_group_ids_sq.c.group_id)),
-            ),
-        )
-        .all()
-    )
+    shares = shares_reaching_user(db, collection_ids, user_id)
     for share in shares:
         if share.collection_id not in shared_by_dict and share.shared_by:
             shared_by_dict[share.collection_id] = UserBrief(

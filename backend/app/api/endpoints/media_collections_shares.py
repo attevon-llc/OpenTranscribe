@@ -13,9 +13,7 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi import status
-from sqlalchemy import exists
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
@@ -31,16 +29,24 @@ from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARED
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.models.collection import Collection
-from app.models.collection import CollectionMember
 from app.models.group import UserGroup
-from app.models.group import UserGroupMember
-from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
 from app.models.user import User
 from app.schemas.sharing import Share
 from app.schemas.sharing import ShareCreate
 from app.schemas.sharing import ShareUpdate
 from app.schemas.user import UserBrief
+from app.services.collection_queries import collection_member_file_ids
+from app.services.collection_queries import group_member_user_ids
+from app.services.collection_queries import is_organization_member
+from app.services.collection_queries import list_shares
+from app.services.collection_queries import load_share
+from app.services.collection_queries import organization_member_user_ids
+from app.services.collection_queries import share_target_user_ids
+from app.services.collection_queries import share_to_group_exists
+from app.services.collection_queries import share_to_user_exists
+from app.services.group_queries import count_members
+from app.services.group_queries import get_membership
 from app.services.permission_service import PermissionService
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_by_uuid
@@ -63,23 +69,7 @@ def _get_share_target_user_ids(
     returned: a group can outlive (or predate) a member's time in the
     organization, and such a user must not be told about the org's collection.
     """
-    if share.target_type == "user" and share.target_user_id:
-        query = db.query(User.id).filter(User.id == share.target_user_id)
-    elif share.target_type == "group" and share.target_group_id:
-        query = db.query(UserGroupMember.user_id).filter(
-            UserGroupMember.group_id == share.target_group_id
-        )
-    else:
-        return []
-    if collection.organization_id is not None:
-        user_col = User.id if share.target_type == "user" else UserGroupMember.user_id
-        query = query.filter(
-            exists().where(
-                OrganizationMembership.user_id == user_col,
-                OrganizationMembership.organization_id == collection.organization_id,
-            )
-        )
-    return [int(row[0]) for row in query.all()]
+    return share_target_user_ids(db, share, collection.organization_id)
 
 
 def _notify_share_event(
@@ -133,11 +123,7 @@ def _build_share_response(db: Session, share: CollectionShare) -> Share:
         target_uuid = share.target_group.uuid
         target_name = share.target_group.name
         target_email = None
-        member_count = (
-            db.query(UserGroupMember)
-            .filter(UserGroupMember.group_id == share.target_group.id)
-            .count()
-        )
+        member_count = count_members(db, share.target_group.id)
     else:
         raise HTTPException(status_code=500, detail="Invalid share target")
 
@@ -184,19 +170,7 @@ def list_collection_shares(
     )
     _require_collection_owner(db, collection, current_user.id)
 
-    shares = (
-        db.query(CollectionShare)
-        .options(
-            joinedload(CollectionShare.shared_by),
-            joinedload(CollectionShare.target_user),
-            joinedload(CollectionShare.target_group),
-        )
-        .filter(CollectionShare.collection_id == collection.id)
-        .order_by(CollectionShare.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    shares = list_shares(db, collection.id, skip=skip, limit=limit)
 
     return [_build_share_response(db, share) for share in shares]
 
@@ -218,36 +192,20 @@ def _user_share_target_id(
     # members of that organization — cross-org shares would otherwise leak
     # org content to outsiders. Personal collections (org NULL) keep the
     # existing behavior (shareable with any user).
-    if collection.organization_id is not None:
-        from app.models.organization import OrganizationMembership
-
-        membership = (
-            db.query(OrganizationMembership)
-            .filter(
-                OrganizationMembership.organization_id == collection.organization_id,
-                OrganizationMembership.user_id == target_user.id,
-            )
-            .first()
+    organization_id = collection.organization_id
+    if organization_id is not None and not is_organization_member(
+        db, organization_id, target_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Cannot share an organization collection with a user who is "
+                "not a member of that organization"
+            ),
         )
-        if membership is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Cannot share an organization collection with a user who is "
-                    "not a member of that organization"
-                ),
-            )
 
     # Check for existing share
-    existing = (
-        db.query(CollectionShare)
-        .filter(
-            CollectionShare.collection_id == collection.id,
-            CollectionShare.target_user_id == target_user.id,
-        )
-        .first()
-    )
-    if existing:
+    if share_to_user_exists(db, collection.id, target_user.id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Collection is already shared with this user",
@@ -267,15 +225,7 @@ def _group_share_target_id(
     target_group = get_by_uuid(db, UserGroup, str(share_in.target_uuid), "Group not found")
 
     # Verify the sharer is a member of the target group
-    is_member = (
-        db.query(UserGroupMember)
-        .filter(
-            UserGroupMember.group_id == target_group.id,
-            UserGroupMember.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not is_member:
+    if get_membership(db, target_group.id, current_user.id) is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You must be a member of the group to share with it",
@@ -286,20 +236,8 @@ def _group_share_target_id(
     # group member to hold membership in that org — otherwise the share
     # grants the non-member(s) a view onto the tenant's content.
     if collection.organization_id is not None:
-        from app.models.organization import OrganizationMembership
-
-        group_member_ids = {
-            int(row[0])
-            for row in db.query(UserGroupMember.user_id)
-            .filter(UserGroupMember.group_id == target_group.id)
-            .all()
-        }
-        org_member_ids = {
-            int(row[0])
-            for row in db.query(OrganizationMembership.user_id)
-            .filter(OrganizationMembership.organization_id == collection.organization_id)
-            .all()
-        }
+        group_member_ids = group_member_user_ids(db, target_group.id)
+        org_member_ids = organization_member_user_ids(db, collection.organization_id)
         outside = group_member_ids - org_member_ids
         if outside:
             raise HTTPException(
@@ -312,15 +250,7 @@ def _group_share_target_id(
             )
 
     # Check for existing share
-    existing = (
-        db.query(CollectionShare)
-        .filter(
-            CollectionShare.collection_id == collection.id,
-            CollectionShare.target_group_id == target_group.id,
-        )
-        .first()
-    )
-    if existing:
+    if share_to_group_exists(db, collection.id, target_group.id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Collection is already shared with this group",
@@ -371,26 +301,12 @@ def create_collection_share(
     db.refresh(share)
 
     # Reload with relationships
-    reloaded_share = (
-        db.query(CollectionShare)
-        .options(
-            joinedload(CollectionShare.shared_by),
-            joinedload(CollectionShare.target_user),
-            joinedload(CollectionShare.target_group),
-        )
-        .filter(CollectionShare.id == share.id)
-        .first()
-    )
+    reloaded_share = load_share(db, share.id)
     assert reloaded_share is not None  # just committed above
     share = reloaded_share
 
     # Reindex OpenSearch accessible_user_ids for files in this collection
-    file_ids = [
-        cm.media_file_id
-        for cm in db.query(CollectionMember.media_file_id)
-        .filter(CollectionMember.collection_id == collection.id)
-        .all()
-    ]
+    file_ids = collection_member_file_ids(db, collection.id)
     if file_ids:
         update_file_access_index.delay(file_ids)
 
@@ -454,26 +370,12 @@ def update_collection_share(
     db.refresh(share)
 
     # Reload with relationships
-    reloaded_share = (
-        db.query(CollectionShare)
-        .options(
-            joinedload(CollectionShare.shared_by),
-            joinedload(CollectionShare.target_user),
-            joinedload(CollectionShare.target_group),
-        )
-        .filter(CollectionShare.id == share.id)
-        .first()
-    )
+    reloaded_share = load_share(db, share.id)
     assert reloaded_share is not None  # just committed above
     share = reloaded_share
 
     # Reindex files since permission level changed
-    file_ids = [
-        cm.media_file_id
-        for cm in db.query(CollectionMember.media_file_id)
-        .filter(CollectionMember.collection_id == collection.id)
-        .all()
-    ]
+    file_ids = collection_member_file_ids(db, collection.id)
     if file_ids:
         update_file_access_index.delay(file_ids)
 
@@ -549,12 +451,7 @@ def delete_collection_share(
     db.commit()
 
     # Reindex OpenSearch accessible_user_ids for files in this collection
-    file_ids = [
-        cm.media_file_id
-        for cm in db.query(CollectionMember.media_file_id)
-        .filter(CollectionMember.collection_id == collection.id)
-        .all()
-    ]
+    file_ids = collection_member_file_ids(db, collection.id)
     if file_ids:
         update_file_access_index.delay(file_ids)
 

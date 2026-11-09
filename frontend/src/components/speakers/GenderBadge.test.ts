@@ -16,16 +16,7 @@ import { getSpeakerAttributeSettings } from '$lib/api/speakerAttributeSettings';
 import { resetSpeakerAttributePrefs } from '$stores/speakerAttributePrefs';
 
 // Real English copy with interpolation: the tooltip is one translated sentence with placeholders.
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    Object.entries(vars ?? {}).reduce(
-      (text, [name, value]) => text.replace(`{{${name}}}`, String(value)),
-      en[key] ?? key
-    );
-  return { t: readable(t), locale: readable('en') };
-});
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).englishLocale());
 
 vi.mock('$lib/api/speakerAttributeSettings', () => ({
   getSpeakerAttributeSettings: vi.fn(),

@@ -7,11 +7,7 @@ import { render, waitFor } from '@testing-library/svelte';
 
 const asrApi = vi.hoisted(() => ({ getProviders: vi.fn(), getStatus: vi.fn() }));
 vi.mock('$lib/api/asrSettings', () => ({ ASRSettingsApi: asrApi }));
-vi.mock('$stores/locale', () => {
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    vars ? `${key}${JSON.stringify(vars)}` : key;
-  return { t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) } };
-});
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyWithVarsLocale());
 
 import UploadStepReview from './UploadStepReview.svelte';
 

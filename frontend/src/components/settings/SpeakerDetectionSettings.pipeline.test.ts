@@ -1,11 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', () => {
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    vars ? `${key}${JSON.stringify(vars)}` : key;
-  return { t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) } };
-});
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyWithVarsLocale());
 const toast = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),

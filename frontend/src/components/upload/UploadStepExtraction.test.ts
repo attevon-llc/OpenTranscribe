@@ -24,11 +24,9 @@ import { estimateAudioSize, estimateDurationFromFileSize } from '$lib/utils/meta
 import { formatFileSize } from '$lib/utils/formatting';
 import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
 
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  return { t: readable((key: string) => en[key] ?? key) };
-});
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).englishLookupLocale()
+);
 
 import UploadStepExtraction from './UploadStepExtraction.svelte';
 

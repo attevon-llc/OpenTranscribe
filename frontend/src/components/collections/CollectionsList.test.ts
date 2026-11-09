@@ -6,11 +6,9 @@ import { render } from '@testing-library/svelte';
  * but only an owner (the creator or an org admin) may delete one. The list
  * renders the backend's `my_permission` verdict — it decides nothing itself.
  */
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  return { t: readable((key: string) => en[key] ?? key) };
-});
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).englishLookupLocale()
+);
 
 import CollectionsList from './CollectionsList.svelte';
 import type { Collection } from '$lib/types/collection';

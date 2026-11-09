@@ -16,11 +16,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  return { t: readable((key: string) => en[key] ?? key) };
-});
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).englishLookupLocale()
+);
 
 vi.mock('$lib/axios', () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },

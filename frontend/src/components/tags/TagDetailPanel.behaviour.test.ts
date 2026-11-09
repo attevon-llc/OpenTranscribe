@@ -1,14 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  return {
-    t: readable((key: string, opts?: Record<string, unknown>) =>
-      opts ? `${key} ${JSON.stringify(opts)}` : key
-    ),
-  };
-});
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyWithOptionsLocale()
+);
 
 import TagDetailPanel from './TagDetailPanel.svelte';
 import type { TagListEntry } from './TagList.svelte';

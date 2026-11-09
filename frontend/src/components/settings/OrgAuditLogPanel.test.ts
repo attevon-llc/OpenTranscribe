@@ -8,16 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    Object.entries(vars ?? {}).reduce(
-      (text, [name, value]) => text.replace(`{{${name}}}`, String(value)),
-      en[key] ?? key
-    );
-  return { t: readable(t), locale: readable('en') };
-});
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).englishLocale());
 
 const caps = vi.hoisted(() => ({ state: null as unknown }));
 vi.mock('$stores/capabilities', async () => {

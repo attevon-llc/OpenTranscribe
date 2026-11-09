@@ -6,11 +6,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import type { ProcessingStep } from '$lib/types/media';
 
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  return { t: readable((key: string) => en[key] ?? key) };
-});
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).englishLookupLocale()
+);
 
 import ProcessingSection from './ProcessingSection.svelte';
 

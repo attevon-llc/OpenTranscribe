@@ -4,7 +4,7 @@
   import { GroupsApi } from '$lib/api/groups';
   import { createDebouncedHandler } from '$lib/utils/debounce';
   import { getErrorStatus } from '$lib/utils/apiError';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import type { ShareTargetSearchResult } from '$lib/types/groups';
 
   export let existingShareTargets: Array<{ type: string; uuid: string }> = [];

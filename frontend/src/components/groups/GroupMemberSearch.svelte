@@ -7,7 +7,7 @@
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import { getInitials } from '$lib/utils/formatting';
   import { createDebouncedHandler } from '$lib/utils/debounce';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
 
   export let groupUuid: string;
   export let existingMemberUuids: string[] = [];

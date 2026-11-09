@@ -15,7 +15,7 @@
  *    client-side would rebuild the token oracle the backend deliberately removed.
  *    Render `getErrorMessage(err)` (from `$lib/utils/apiError`) as-is.
  */
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 /** Core auth types. External providers register their own strings server-side. */
 export type AuthType = 'local' | 'ldap' | 'oidc' | 'pki';

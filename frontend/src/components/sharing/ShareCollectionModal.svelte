@@ -3,15 +3,15 @@
   import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import BaseModal from '../ui/BaseModal.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
   import { toastStore } from '$stores/toast';
   import { SharingApi } from '$lib/api/sharing';
   import { sharingStore } from '$stores/sharing';
   import ShareTargetSearch from './ShareTargetSearch.svelte';
   import CurrentSharesList from './CurrentSharesList.svelte';
   import PermissionLevelSelect from './PermissionLevelSelect.svelte';
-  import Spinner from '../ui/Spinner.svelte';
-  import MenuIcon from '../ui/MenuIcon.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { Share, ShareTargetSearchResult, PermissionLevel } from '$lib/types/groups';
 
   export let collectionUuid: string;

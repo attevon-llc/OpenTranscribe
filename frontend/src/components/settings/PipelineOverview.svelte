@@ -22,7 +22,7 @@
   } from '$lib/settings/sectionData';
   import type { SettingsSection } from '$stores/settingsModalStore';
   import { locale, t } from '$stores/locale';
-  import Chip from '../ui/Chip.svelte';
+  import Chip from '$components/ui/Chip.svelte';
   import CapabilityBadges from './CapabilityBadges.svelte';
   import IssueRow from './IssueRow.svelte';
 

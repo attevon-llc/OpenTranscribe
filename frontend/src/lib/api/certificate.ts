@@ -6,7 +6,7 @@
  * for the local/LDAP/OIDC majority and would be dead weight on every session
  * probe.
  */
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 /** Certificate metadata for a PKI-authenticated user. */
 export interface CertificateInfo {

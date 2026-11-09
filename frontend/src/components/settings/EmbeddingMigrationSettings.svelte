@@ -6,8 +6,8 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
-  import Spinner from '../ui/Spinner.svelte';
-  import ProgressBar from '../ui/ProgressBar.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
 
   /**
    * Every migration route is super_admin (the section itself is admin-tier, for the

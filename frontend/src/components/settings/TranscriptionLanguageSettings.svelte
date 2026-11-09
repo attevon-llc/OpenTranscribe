@@ -12,7 +12,7 @@
   import { ASRSettingsApi, type ASRModelCapabilities } from '$lib/api/asrSettings';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import SettingsCard from './transcription/SettingsCard.svelte';
   import InfoTip from './transcription/InfoTip.svelte';
   import FormActions from './transcription/FormActions.svelte';

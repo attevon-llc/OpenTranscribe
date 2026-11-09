@@ -5,8 +5,8 @@
   import { SharingApi } from '$lib/api/sharing';
   import { sharingStore } from '$stores/sharing';
   import PermissionLevelSelect from './PermissionLevelSelect.svelte';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
-  import Spinner from '../ui/Spinner.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import type { Share, PermissionLevel } from '$lib/types/groups';
 
   export let shares: Share[] = [];

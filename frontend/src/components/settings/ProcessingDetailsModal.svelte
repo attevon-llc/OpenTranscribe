@@ -3,7 +3,7 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { QUEUE_NAME_KEYS } from '$lib/i18n/keyMaps';
   import { t, locale } from '$stores/locale';
-  import BaseModal from '../ui/BaseModal.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
 
   export let isOpen = false;
   export let section = 'performance';

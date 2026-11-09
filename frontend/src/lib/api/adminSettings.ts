@@ -2,7 +2,7 @@
  * API client for admin settings management
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export interface RetryConfig {
   max_retries: number;

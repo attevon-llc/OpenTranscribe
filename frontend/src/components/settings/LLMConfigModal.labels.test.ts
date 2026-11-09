@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
-import type { ProviderDefaults } from '../../lib/api/llmSettings';
+import type { ProviderDefaults } from '$lib/api/llmSettings';
 
 vi.mock('../../stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },

@@ -8,9 +8,9 @@
   import { GroupsApi } from '$lib/api/groups';
   import type { Group } from '$lib/types/groups';
   import { GroupMappingsApi, type GroupMapping, type GroupMappingSource } from '$lib/api/groupMappings';
-  import EmptyState from '../ui/EmptyState.svelte';
-  import Badge from '../ui/Badge.svelte';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
+  import EmptyState from '$components/ui/EmptyState.svelte';
+  import Badge from '$components/ui/Badge.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import GroupMappingForm from './GroupMappingForm.svelte';
   import GroupMappingTester from './GroupMappingTester.svelte';
 

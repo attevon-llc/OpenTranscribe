@@ -1,7 +1,7 @@
 /**
  * API client for transcript operations
  */
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 import type { TranscriptSegment } from '$lib/types/media';
 
 /**

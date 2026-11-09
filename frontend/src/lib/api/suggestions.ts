@@ -1,7 +1,7 @@
 /**
  * API client for AI suggestions (tags and collections)
  */
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export interface TagSuggestion {
   name: string;

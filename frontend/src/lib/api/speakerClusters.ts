@@ -1,7 +1,7 @@
 /**
  * API client for speaker clustering operations
  */
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 import type {
   SpeakerCluster,
   SpeakerClusterDetail,

@@ -7,7 +7,7 @@
  * - Display preferences for attribute badges on speaker cards
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 /**
  * User speaker attribute detection settings

@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { mapFFmpegMetadata, estimateAudioSize, calculateCompressionRatio } from './metadataMapper';
-import { DEFAULT_EXTRACTION_CONFIG } from '../types/audioExtraction';
+import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
 
 function videoFile(
   overrides: Partial<{ name: string; size: number; type: string; lastModified: number }> = {}

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { UploadItem } from '../lib/services/uploadService';
-  import { uploadsStore } from '../stores/uploads';
+  import type { UploadItem } from '$lib/services/uploadService';
+  import { uploadsStore } from '$stores/uploads';
   import { t } from '$stores/locale';
   import { formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';

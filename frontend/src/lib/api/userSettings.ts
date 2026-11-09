@@ -5,7 +5,7 @@
  * user settings that persist across sessions and devices.
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export interface RecordingSettings {
   max_recording_duration: number;

@@ -27,7 +27,7 @@
   } from '$lib/mediaSearch/searchParams';
   import { openPreviewMedia, speakerAtTime } from '$lib/mediaSearch/previewMedia';
   import { watchPanelViewport } from '$lib/mediaSearch/viewport';
-  import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
+  import CardGridSkeleton from '$components/ui/CardGridSkeleton.svelte';
 
   const searchSortOptions: SortOption[] = [
     { value: 'relevance', label: 'search.sort.relevance', noDirection: true },

@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
   import { t } from '$stores/locale';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
 
   export let label: string;
   /** Id of the control the label belongs to; omit for a toggle that carries its own label. */

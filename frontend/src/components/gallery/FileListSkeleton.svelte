@@ -1,6 +1,6 @@
 <script lang="ts">
   import './file-list-grid.css';
-  import '../ui/skeleton-shimmer.css';
+  import '$components/ui/skeleton-shimmer.css';
   import { t } from '$stores/locale';
 
   /**

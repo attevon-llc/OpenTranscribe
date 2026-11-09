@@ -2,8 +2,8 @@
   import { formatDateTime } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount } from 'svelte';
-  import Spinner from '../ui/Spinner.svelte';
-  import { toastStore } from '../../stores/toast';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import {
     getDirectorySyncSettings,

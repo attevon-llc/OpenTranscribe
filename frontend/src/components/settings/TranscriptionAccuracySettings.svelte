@@ -13,7 +13,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { user } from '$stores/auth';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import TranscriptionDefaultsCard from './TranscriptionDefaultsCard.svelte';
   import SettingsCard from './transcription/SettingsCard.svelte';
   import FormActions from './transcription/FormActions.svelte';

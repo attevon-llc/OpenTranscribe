@@ -2,7 +2,7 @@
  * API service for audio extraction user settings
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export interface AudioExtractionSettings {
   auto_extract_enabled: boolean;

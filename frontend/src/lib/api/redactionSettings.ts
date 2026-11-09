@@ -5,7 +5,7 @@
  * (the enforcement floor that forces categories / censored exports for all users).
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 type RedactionStyle = 'label' | 'asterisks' | 'first_letter' | 'blur';
 

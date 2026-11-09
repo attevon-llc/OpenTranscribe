@@ -43,7 +43,7 @@ vi.mock('../stores/locale', () => ({
   },
 }));
 
-import axiosInstance from '../lib/axios';
+import axiosInstance from '$lib/axios';
 import { toastStore } from '$stores/toast';
 import CommentSection from './CommentSection.svelte';
 

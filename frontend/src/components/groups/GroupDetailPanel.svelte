@@ -9,7 +9,7 @@
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import GroupMemberList from './GroupMemberList.svelte';
   import GroupMemberSearch from './GroupMemberSearch.svelte';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
   export let group: GroupDetail;
 

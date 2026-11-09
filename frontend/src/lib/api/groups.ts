@@ -1,7 +1,7 @@
 /**
  * API service for user group management
  */
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 import type {
   Group,
   GroupDetail,

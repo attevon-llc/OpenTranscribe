@@ -7,7 +7,7 @@
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
 
   // State
   let running = false;

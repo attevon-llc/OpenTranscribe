@@ -30,6 +30,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import redis.exceptions
 from celery.exceptions import Retry
 
 from app.core.enums import FileStatus
@@ -680,7 +681,7 @@ class TestEndpoint:
         f = _mk_file(db_session, normal_user)
 
         def broken(file_id: int) -> dict:
-            raise ConnectionError("redis down")
+            raise redis.exceptions.ConnectionError("redis down")
 
         monkeypatch.setattr("app.api.endpoints.files.post_processing.read_status", broken)
 

@@ -23,7 +23,8 @@ def _with_traceback(caplog, logger_name):
     return [
         r
         for r in caplog.records
-        if r.name == logger_name and r.levelno >= logging.WARNING and r.exc_info
+        # exc_text: MessageFreeTracebackFilter keeps the frames but drops exc_info and the message
+        if r.name == logger_name and r.levelno >= logging.WARNING and (r.exc_info or r.exc_text)
     ]
 
 

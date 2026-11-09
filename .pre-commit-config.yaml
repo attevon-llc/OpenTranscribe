@@ -408,6 +408,16 @@ repos:
         files: ^(frontend/(src/|tsconfig[^/]*\.json$|package\.json$)|scripts/guards/.*)
         stages: [pre-push]
         verbose: true
+      # jscpd (MIT, pinned in frontend/package.json) over backend/app, backend/tests, scripts and
+      # frontend/src; --min-tokens and the scan set live in the script. Seconds, not minutes.
+      - id: guard-duplicates
+        name: duplicated code ratchet (baselined)
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_duplicates.py'
+        language: system
+        pass_filenames: false
+        files: ^((backend/app|backend/tests|scripts)/.*\.py|frontend/src/|scripts/guards/.*|frontend/package\.json$)
+        stages: [pre-push]
+        verbose: true
 
   # Version consistency — VERSION, pyproject.toml, frontend/package.json,
   # frontend/package-lock.json (BOTH version fields), the Alembic single-head

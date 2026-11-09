@@ -356,6 +356,9 @@ pytest_plugins = [
     # `support_world`: two organizations, an org admin, a platform admin and a super_admin with
     # real tokens, for the support-access grant suites (#1122). Opt-in; nothing autouse.
     "fixtures.support_world",
+    # `destroyed` + `make_file`/`trash`/`exists`: a recording external destroy and a trashable file
+    # for the trash purge and retention suites (#1101). Opt-in; nothing autouse.
+    "fixtures.trash_world",
     # `gov`: one organization (admin, two members, an outsider) plus builders for files,
     # collections, shares and holds, and `acting_as` to run requests as one of them, for the
     # content-governance suites (#1275-#1277). Opt-in; nothing autouse.

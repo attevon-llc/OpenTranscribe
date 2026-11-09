@@ -360,9 +360,7 @@ storage is set and reset. `tests/unit/test_idle_in_transaction_backstop.py` asse
   migrate service. `scripts/common.sh:compose_run_migrate` runs it explicitly (restore
   calls it before restarting the app); `opentranscribe.sh:perform_phased_restart` checks its
   `up` and prints the migrate log on failure.
-- `_repair_skipped_v230()` runs after every successful migration — a permanent post-hook
-  that re-applies v230's idempotent DDL for DBs upgraded through the pre-linearisation
-  v250→v270 branch. Don't remove it.
+- `_repair_skipped_v230()` runs after every successful migration — a permanent post-hook that re-runs v230's idempotent `upgrade()` (via `ScriptDirectory` + `Operations.context`) for DBs upgraded through the pre-linearisation v250→v270 branch. Don't remove it; `alembic.versions` is not importable.
 - `Base` deliberately has **no `naming_convention`** — adding one would rename existing
   constraints, i.e. an unintended schema change.
 - The runner widens `alembic_version.version_num` to `VARCHAR(128)` on every start because

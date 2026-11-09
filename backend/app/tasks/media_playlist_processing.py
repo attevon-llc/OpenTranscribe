@@ -70,7 +70,7 @@ def _send_playlist_notification(
             extra=extra_data,
         )
     except Exception as e:
-        logger.error(f"Failed to send playlist notification: {e}")
+        logger.exception(f"Failed to send playlist notification: {e}")
 
 
 def _create_playlist_error_result(message: str) -> YouTubePlaylistProcessingResult:
@@ -124,7 +124,7 @@ def _notify_playlist_file_created(user_id: int, media_file: MediaFile) -> None:
             file_uuid=media_file.uuid,
         )
     except Exception as e:
-        logger.error(f"Failed to send file_created notification for video {media_file.id}: {e}")
+        logger.exception(f"Failed to send file_created notification for video {media_file.id}: {e}")
 
 
 def _dispatch_playlist_video_task(
@@ -175,7 +175,7 @@ def _dispatch_playlist_video_task(
         logger.info(f"Dispatched task for '{media_file.title}' with {countdown}s delay")
         return True
     except Exception as e:
-        logger.error(f"Failed to dispatch task for video {media_file.title}: {e}")
+        logger.exception(f"Failed to dispatch task for video {media_file.title}: {e}")
         error_msg = f"Failed to start processing: {str(e)}"
         media_file.last_error_message = error_msg
         media_file.error_category = categorize_error(error_msg).value
@@ -258,7 +258,7 @@ def process_youtube_playlist_task(
             transcription_options=transcription_options,
         )
     except Exception as e:
-        logger.error(f"Unexpected error in YouTube playlist processing task: {e}")
+        logger.exception(f"Unexpected error in YouTube playlist processing task: {e}")
         _send_playlist_notification(user_id, "error", f"Unexpected error: {str(e)}", 0)
         return _create_playlist_error_result(str(e))
 
@@ -320,7 +320,7 @@ def _process_playlist_with_db(
                 transcription_options=transcription_options,
             )
         except Exception as e:
-            logger.error(f"Error processing YouTube playlist {url}: {e}")
+            logger.exception(f"Error processing YouTube playlist {url}: {e}")
             _send_playlist_notification(
                 user_id, "error", f"Playlist processing failed: {str(e)}", 0
             )

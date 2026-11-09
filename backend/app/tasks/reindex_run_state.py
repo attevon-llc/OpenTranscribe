@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
 from app.core.redis import get_redis
 from app.services.search.reindex_cancel import cancel_requested
@@ -126,8 +128,8 @@ def _clear_stale_progress(user_id: int) -> None:
     """
     try:
         get_redis().delete(f"task_progress:reindex:{user_id}")
-    except Exception as e:
-        logger.warning(f"Could not clear stale reindex progress: {e}")
+    except RedisError as e:
+        logger.warning(f"Could not clear stale reindex progress: {e}", exc_info=True)
 
 
 def _send_reindex_progress(

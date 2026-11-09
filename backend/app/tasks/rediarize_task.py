@@ -27,6 +27,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Any
 
+from minio.error import MinioException
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+from urllib3.exceptions import HTTPError as Urllib3HTTPError
+
 from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.config import settings
@@ -83,8 +88,8 @@ def _resolve_asr_provider(db: Session, file_id: int) -> str:
         )
         if row and row.asr_provider:
             return str(row.asr_provider)
-    except Exception as e:  # pragma: no cover - best-effort provider lookup
-        logger.debug(f"Could not resolve asr_provider for file {file_id}: {e}")
+    except SQLAlchemyError as e:  # best-effort provider lookup
+        logger.warning(f"Could not resolve asr_provider for file {file_id}: {e}", exc_info=True)
     return "local"
 
 
@@ -173,9 +178,10 @@ def _prepare_audio(
             download_temp_audio(file_uuid, audio_file_path)
             logger.info("rediarize: reusing preprocessed WAV from temp")
             return audio_file_path, temp_dir
-        except Exception as temp_err:
+        except (MinioException, Urllib3HTTPError, OSError) as temp_err:
             logger.warning(
-                f"rediarize: temp WAV fetch failed ({temp_err}); falling back to original"
+                f"rediarize: temp WAV fetch failed ({temp_err}); falling back to original",
+                exc_info=True,
             )
 
     file_data, _, _ = download_file(storage_path)
@@ -431,8 +437,8 @@ def _voiceprint_stage(
         # migration, and let the embedding stage produce vectors in the index's space.
         try:
             _store_native_centroids_in_v4_staging(ctx, native, speaker_mapping)
-        except Exception as e:
-            logger.warning(f"v4 staging error during rediarize (non-fatal): {e}")
+        except (OpenSearchException, OpenSearchUnavailableError, SQLAlchemyError, OSError) as e:
+            logger.warning(f"v4 staging error during rediarize (non-fatal): {e}", exc_info=True)
 
     from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
 
@@ -494,7 +500,7 @@ def _dispatch_downstream(
             dispatch_task_by_name(stage, file_uuid, file_id=file_id, user_id=user_id)
             logger.info(f"Dispatched downstream task '{stage}' for file {file_uuid}")
         except Exception as e:
-            logger.warning(f"Failed to dispatch downstream task '{stage}' for {file_uuid}: {e}")
+            logger.exception(f"Failed to dispatch downstream task '{stage}' for {file_uuid}: {e}")
 
 
 def _after_speakers_changed(meta: dict, file_uuid: str, downstream_tasks: list[str] | None) -> None:
@@ -505,7 +511,7 @@ def _after_speakers_changed(meta: dict, file_uuid: str, downstream_tasks: list[s
 
         dispatch_speaker_attribute_pipeline(str(file_uuid), user_id)
     except Exception as e:
-        logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
+        logger.exception(f"Failed to dispatch speaker attribute detection: {e}")
 
     # Rediarization reassigns which speaker every segment belongs to, which changes both the
     # chunk plane and the full-document index — so it reindexes UNCONDITIONALLY (#666).
@@ -546,9 +552,9 @@ def _record_failure(file_uuid: str, task_id: str, error: Exception) -> str:
                     user_id=int(media_file.user_id),
                 )
             except Exception as file_err:
-                logger.warning(f"Could not update file error status: {file_err}")
+                logger.exception(f"Could not update file error status: {file_err}")
     except Exception as update_err:
-        logger.error(f"Error updating task status after rediarize failure: {update_err}")
+        logger.exception(f"Error updating task status after rediarize failure: {update_err}")
     return error_msg
 
 
@@ -720,23 +726,27 @@ def rediarize_task(
         }
 
     except Exception as e:
-        logger.error(f"Rediarization failed for file {file_uuid}: {e}")
+        logger.exception(f"Rediarization failed for file {file_uuid}: {e}")
         return {"status": "error", "message": _record_failure(file_uuid, task_id, e)}
 
     finally:
         if temp_dir and os.path.isdir(temp_dir):
             try:
                 shutil.rmtree(temp_dir)
-            except Exception as cleanup_err:
-                logger.warning(f"Failed to clean up temp dir {temp_dir}: {cleanup_err}")
+            except OSError as cleanup_err:
+                logger.warning(
+                    f"Failed to clean up temp dir {temp_dir}: {cleanup_err}", exc_info=True
+                )
 
         # We were the deferred consumer of the preprocessed WAV — unless the voiceprint
         # stage we dispatched now owns it (it cleans up itself).
         if not voiceprint_owns_audio:
             try:
                 cleanup_temp_audio(file_uuid)
-            except Exception as cleanup_err:
-                logger.debug(f"Temp audio cleanup after rediarize failed: {cleanup_err}")
+            except OSError as cleanup_err:
+                logger.warning(
+                    f"Temp audio cleanup after rediarize failed: {cleanup_err}", exc_info=True
+                )
 
         if engine == "local":
             # Free intermediate CUDA tensors for follow-on tasks

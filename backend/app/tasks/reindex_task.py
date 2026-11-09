@@ -5,11 +5,14 @@ import logging
 from typing import Any
 from uuid import uuid4
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.queues import CPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.search.reindex_cancel import consume_pending_cancel
 from app.services.search.reindex_lock import REINDEX_LOCK_KEY
 from app.tasks.reindex_completion import _handle_reindex_completion
@@ -277,8 +280,8 @@ def reindex_transcripts_task(
 
                 target_dim = get_search_embedding_dimension()
                 recreate_index_for_dimension(target_dim)
-            except Exception as e:
-                logger.warning(f"Dimension reconciliation failed: {e}")
+            except (OpenSearchException, OpenSearchUnavailableError, OSError) as e:
+                logger.warning(f"Dimension reconciliation failed: {e}", exc_info=True)
         else:
             # Another coordinator (or a corruption repair) is reconciling the
             # same index right now. Indexing our own files is still correct and
@@ -389,7 +392,7 @@ def reindex_transcripts_task(
         }
 
     except Exception as e:
-        logger.error(f"Re-index coordinator failed: {e}")
+        logger.exception(f"Re-index coordinator failed: {e}")
         with contextlib.suppress(Exception):
             _restore_normal_mode()
         with contextlib.suppress(Exception):
@@ -492,7 +495,7 @@ def reindex_batch_task(
         try:
             page_metadata = _load_reindex_page(batch_ids)
         except Exception as e:
-            logger.error(f"Error loading reindex page starting at {batch_start}: {e}")
+            logger.exception(f"Error loading reindex page starting at {batch_start}: {e}")
             local_stats["failed"] += len(batch_ids)
             redis.hincrby(state_key, "failed", len(batch_ids))
             continue
@@ -551,7 +554,7 @@ def reindex_batch_task(
                 _send_reindex_progress(redis, user_id, state_key, tracker)
 
             except Exception as e:
-                logger.error(f"Error re-indexing file {file_uuid}: {e}")
+                logger.exception(f"Error re-indexing file {file_uuid}: {e}")
                 local_stats["failed"] += 1
                 redis.hincrby(state_key, "failed", 1)
 

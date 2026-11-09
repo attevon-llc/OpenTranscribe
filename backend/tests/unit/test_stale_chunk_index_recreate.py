@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from opensearchpy.exceptions import RequestError
 
 from app.core.config import settings
 from app.services.search.index_schema import _INDEX_VERSION
@@ -82,7 +83,10 @@ def test_failed_create_restores_an_index_rather_than_leaving_none(new_index_body
     failure must be followed by restoring the mapping that was just read.
     """
     client = _client(dict(_OLD_MAPPINGS))
-    client.indices.create.side_effect = [RuntimeError("mapping rejected"), None]
+    client.indices.create.side_effect = [
+        RequestError(400, "mapper_parsing_exception", "mapping rejected"),
+        None,
+    ]
 
     with patch(_CLIENT_PATH, client):
         reindex_index_ops._check_and_recreate_stale_index()

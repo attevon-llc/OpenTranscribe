@@ -71,6 +71,8 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from kombu.exceptions import KombuError
+
 from app.core.celery import celery_app
 from app.core.queues import UtilityPriority
 
@@ -197,7 +199,7 @@ def erasure_reconciliation_sweep(self: Any) -> dict:  # bind=True signature
                     completed += 1
         except Exception as e:  # one bad entry must not stop the pass
             failures += 1
-            logger.error("Erasure reconciliation failed for ledger entry %s: %s", entry_id, e)
+            logger.exception("Erasure reconciliation failed for ledger entry %s: %s", entry_id, e)
 
     for entry_id in completed_ids:
         try:
@@ -221,7 +223,7 @@ def erasure_reconciliation_sweep(self: Any) -> dict:  # bind=True signature
                 scheduled_erasure.run_entry(db, entry)
         except Exception as e:
             failures += 1
-            logger.error("Re-erasure after resurrection failed for entry %s: %s", entry_id, e)
+            logger.exception("Re-erasure after resurrection failed for entry %s: %s", entry_id, e)
 
     # Phase 4 -- documents back in a search index while Postgres is unchanged.
     index_phase = run_index_phase()
@@ -294,5 +296,7 @@ def notify_hold_released(file: MediaFile) -> None:
             "Legal hold released on file %s — erasure reconciliation dispatched",
             getattr(file, "uuid", "?"),
         )
-    except Exception as e:  # the release must never fail on this
-        logger.warning("Could not dispatch erasure reconciliation after hold release: %s", e)
+    except (KombuError, OSError) as e:  # the release must never fail on a broker outage
+        logger.warning(
+            "Could not dispatch erasure reconciliation after hold release: %s", e, exc_info=True
+        )

@@ -314,7 +314,7 @@ def _process_file_segments(
         try:
             audio_np = fut.result(timeout=30)
         except Exception as e:
-            logger.debug("Segment future failed for speaker %s: %s", speaker.id, e)
+            logger.warning("Segment future failed for speaker %s: %s", speaker.id, e, exc_info=True)
             extraction_failures += 1
             continue
 
@@ -417,7 +417,7 @@ def process_batch_pipelined(
                     logger.info("%s… %d items processed", fuuid[:12], count)
 
             except Exception as e:
-                logger.error("%s… failed: %s", fuuid[:12], e)
+                logger.exception("%s… failed: %s", fuuid[:12], e)
                 failed += 1
                 on_file_failure(fuuid, e)
 
@@ -439,5 +439,5 @@ def cleanup_gpu_memory() -> None:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-    except Exception as e:
-        logger.debug("CUDA cleanup skipped: %s", e)
+    except (ImportError, RuntimeError) as e:
+        logger.debug("CUDA cleanup skipped: %s", e, exc_info=True)

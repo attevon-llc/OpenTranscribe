@@ -166,7 +166,7 @@ def prepare_media_download_task(
             )
         return {"status": "error", "message": str(e)}
     except Exception as e:
-        logger.error(f"prepare_media_download_task failed for file {file_id} ({mode}): {e}")
+        logger.exception(f"prepare_media_download_task failed for file {file_id} ({mode}): {e}")
         if file_uuid:
             publish_download_event(
                 file_uuid,
@@ -312,6 +312,6 @@ def prepare_bulk_subtitles_task(
         )
         return {"status": "success", "exported": exported, "skipped": skipped}
     except Exception as e:
-        logger.error(f"prepare_bulk_subtitles_task failed (job {job_id}): {e}")
+        logger.exception(f"prepare_bulk_subtitles_task failed (job {job_id}): {e}")
         publish_bulk_event(job_id, status="error", message="Failed to build export.")
         return {"status": "error", "message": str(e)}

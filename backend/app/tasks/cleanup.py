@@ -14,10 +14,14 @@ from typing import TYPE_CHECKING
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from minio.error import MinioException
+from urllib3.exceptions import HTTPError as Urllib3HTTPError
+
 from app.core.celery import celery_app
 from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
 from app.services.file_cleanup_cycle import cleanup_service
+from app.services.storage_versions import StorageDeleteIncompleteError
 from app.utils.time_format import age_seconds
 
 if TYPE_CHECKING:
@@ -25,6 +29,10 @@ if TYPE_CHECKING:
     from sqlalchemy.sql.elements import ColumnElement
 
 logger = logging.getLogger(__name__)
+
+#: What a MinIO stat/delete can raise: an S3 error reply, a transport failure, a version
+#: that survived the delete. Anything else is a programming error and propagates.
+_STORAGE_ERRORS = (MinioException, Urllib3HTTPError, OSError, StorageDeleteIncompleteError)
 
 #: Slowest upload rate the orphan sweeper assumes a real client can sustain
 #: (~1.1 Mbit/s). A PENDING row younger than ``file_size`` at this rate may still
@@ -185,7 +193,7 @@ def emergency_file_recovery(self: Any, file_uuids: list) -> dict[str, Any]:
                     results["failed"] += 1
                     error_msg = f"Error recovering file {file_uuid}: {str(e)}"
                     results["errors"].append(error_msg)
-                    logger.error(error_msg)
+                    logger.exception(error_msg)
 
             logger.info(
                 f"Emergency recovery completed: "
@@ -197,7 +205,7 @@ def emergency_file_recovery(self: Any, file_uuids: list) -> dict[str, Any]:
             return results
 
     except Exception as e:
-        logger.error(f"Critical error in emergency recovery: {e}")
+        logger.exception(f"Critical error in emergency recovery: {e}")
         raise
 
 
@@ -304,12 +312,13 @@ def orphan_upload_sweeper(self: Any, max_age_minutes: int = 30) -> dict[str, int
                 if storage_path:
                     try:
                         minio_size = object_exists_and_size(storage_path)
-                    except Exception as stat_err:
+                    except _STORAGE_ERRORS as stat_err:
                         skipped_uncertain += 1
                         logger.warning(
                             f"orphan_upload_sweeper: could not confirm object absence for "
                             f"file {file_id} at {storage_path} ({stat_err}); leaving it for "
-                            "the next sweep rather than risk deleting a completed upload"
+                            "the next sweep rather than risk deleting a completed upload",
+                            exc_info=True,
                         )
                         continue
                     if minio_size is not None:
@@ -348,7 +357,7 @@ def orphan_upload_sweeper(self: Any, max_age_minutes: int = 30) -> dict[str, int
                 except Exception as row_err:
                     errors += 1
                     db.rollback()
-                    logger.warning(f"orphan_upload_sweeper failed on file {file_id}: {row_err}")
+                    logger.exception(f"orphan_upload_sweeper failed on file {file_id}: {row_err}")
                     continue
 
                 # The row is gone; the object is now unreachable garbage. A missing
@@ -357,13 +366,14 @@ def orphan_upload_sweeper(self: Any, max_age_minutes: int = 30) -> dict[str, int
                     try:
                         delete_file(storage_path)
                         deleted_objects += 1
-                    except Exception as obj_err:
+                    except _STORAGE_ERRORS as obj_err:
                         logger.debug(
                             f"orphan_upload_sweeper: {storage_path} not deletable "
-                            f"({obj_err}); its row is already gone"
+                            f"({obj_err}); its row is already gone",
+                            exc_info=True,
                         )
     except Exception as e:
-        logger.error(f"orphan_upload_sweeper error: {e}")
+        logger.exception(f"orphan_upload_sweeper error: {e}")
         errors += 1
 
     if deleted_rows or deleted_objects or errors or skipped_in_progress or skipped_uncertain:
@@ -563,7 +573,7 @@ def _purge_expired_loop(
                 result = auto_delete_media_file(db, media_file, defer_citation_scrub=destroyed)
         except Exception as e:  # one bad file must not abort the pass
             failed += 1
-            logger.error(
+            logger.exception(
                 f"cleanup_expired_files: failed to delete file id={file_id} uuid={file_uuid}: {e}"
             )
             continue

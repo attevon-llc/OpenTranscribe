@@ -4,9 +4,16 @@ import logging
 from contextlib import AbstractContextManager
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 
 logger = logging.getLogger(__name__)
+
+#: What an OpenSearch call can raise: a client/transport error, the shared client's
+#: "unavailable" marker, or a socket-level failure. Anything else is a bug and propagates.
+_OPENSEARCH_ERRORS = (OpenSearchException, OpenSearchUnavailableError, OSError)
 
 #: How long one holder may own the chunks-index structure lock. Sized to the
 #: guarded work (a delete + create + alias swap), NOT to a whole reindex — a TTL
@@ -42,8 +49,8 @@ def _ensure_neural_pipeline_ready() -> bool:
         else:
             logger.warning("Neural ingest pipeline not available")
             return False
-    except Exception as e:
-        logger.warning(f"Could not setup neural pipeline: {e}")
+    except _OPENSEARCH_ERRORS as e:
+        logger.warning(f"Could not setup neural pipeline: {e}", exc_info=True)
         return False
 
 
@@ -86,8 +93,8 @@ def _refresh_index_and_clear_cache() -> None:
         if opensearch_client:
             opensearch_client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
             logger.info("Refreshed search index after reindex completion")
-    except Exception as e:
-        logger.warning(f"Index refresh after reindex failed: {e}")
+    except _OPENSEARCH_ERRORS as e:
+        logger.warning(f"Index refresh after reindex failed: {e}", exc_info=True)
 
 
 def _set_bulk_indexing_mode() -> None:
@@ -105,8 +112,8 @@ def _set_bulk_indexing_mode() -> None:
                 body={"index": {"refresh_interval": "-1"}},
             )
             logger.info("Set refresh_interval=-1 for bulk reindex")
-    except Exception as e:
-        logger.warning(f"Could not set bulk indexing mode: {e}")
+    except _OPENSEARCH_ERRORS as e:
+        logger.warning(f"Could not set bulk indexing mode: {e}", exc_info=True)
 
 
 def _restore_normal_mode() -> None:
@@ -120,8 +127,9 @@ def _restore_normal_mode() -> None:
                 body={"index": {"refresh_interval": "1s"}},
             )
             logger.info("Restored refresh_interval=1s after reindex")
-    except Exception as e:
-        logger.warning(f"Could not restore normal mode: {e}")
+    except _OPENSEARCH_ERRORS as e:
+        # Left at -1 the index never refreshes, so new documents stay unsearchable.
+        logger.exception(f"Could not restore normal mode: {e}")
 
 
 def _force_merge_after_reindex() -> None:
@@ -140,8 +148,8 @@ def _force_merge_after_reindex() -> None:
                 params={"wait_for_completion": "false"},
             )
             logger.info("Force merge initiated (running in background)")
-    except Exception as e:
-        logger.warning(f"Force merge after reindex failed (non-fatal): {e}")
+    except _OPENSEARCH_ERRORS as e:
+        logger.warning(f"Force merge after reindex failed (non-fatal): {e}", exc_info=True)
 
 
 def _index_structure_lock() -> "AbstractContextManager[bool]":
@@ -249,8 +257,8 @@ def _check_and_recreate_stale_index() -> None:
         try:
             if opensearch_client.indices.exists_alias(name=alias_name):
                 opensearch_client.indices.delete_alias(index=index_name, name=alias_name)
-        except Exception as e:
-            logger.debug(f"Could not remove alias '{alias_name}': {e}")
+        except _OPENSEARCH_ERRORS as e:
+            logger.warning(f"Could not remove alias '{alias_name}': {e}", exc_info=True)
 
         opensearch_client.indices.delete(index=index_name)
 
@@ -260,8 +268,8 @@ def _check_and_recreate_stale_index() -> None:
         # write path keeps working even if the new mapping is rejected.
         try:
             opensearch_client.indices.create(index=index_name, body=index_body)
-        except Exception as create_err:
-            logger.error(
+        except _OPENSEARCH_ERRORS as create_err:
+            logger.exception(
                 f"Creating '{index_name}' with version {_INDEX_VERSION} failed after the "
                 f"old index was deleted: {create_err}. Restoring the previous mapping."
             )
@@ -277,5 +285,5 @@ def _check_and_recreate_stale_index() -> None:
 
         logger.info(f"Recreated index '{index_name}' with version {_INDEX_VERSION}")
 
-    except Exception as e:
-        logger.error(f"Failed to check/recreate stale index: {e}")
+    except _OPENSEARCH_ERRORS as e:
+        logger.exception(f"Failed to check/recreate stale index: {e}")

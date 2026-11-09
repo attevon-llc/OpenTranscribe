@@ -221,6 +221,11 @@ Tokens live in `src/styles/theme.css`; the light values are on `:root`, the dark
   element in this app is ever given the class `dark`, so 34 components had written their entire
   dark-mode override against a selector that could not match: the light value stayed applied in
   dark mode and nothing failed. `src/styles/theme-parity.test.ts` now fails on any new one.
+- **Token families and consumption rules** (space, radius, type, elevation, motion, status roles; no
+  literals, no `var(--x, literal)` fallbacks, logical properties) are in `src/styles/CLAUDE.md`. The
+  `guard-style-literals` ratchet (`scripts/guards/check_style_literals.py`) blocks new literals; run
+  `--tighten` when a count falls. Before/after screenshots: `scripts/e2e/styling-ab.sh` (fresh stack only).
+
 - **A global element rule can out-specify a component's scoped rule, so don't set colours on
   `button:<pseudo-class>` in `src/styles/form-elements.css`.** Svelte compiles `.foo { … }` to
   `.foo.svelte-HASH` — specificity (0,2,0) — which `button:focus:not(:disabled)` (0,2,1) beats.

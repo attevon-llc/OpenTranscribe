@@ -37,3 +37,30 @@ Every text-like `<input>` (text, email, password, search, number, url, tel, date
 See `components/ui/CLAUDE.md` (RangeSlider): rounded track, blue fill to the thumb centre, oval white-ringed
 thumb, identical for WebKit and Gecko, and `slider-dual` for the gallery duration slider. Thumb rules outside
 this file fail `rangeSliderStructure.test.ts`.
+
+## Design tokens and the style-literal guard
+
+Method of record: `docs/design/frontend_styling_layer_plan.md`. All tokens live in `theme.css`; component-level
+tokens (`--field-*`, `--slider-*`) stay beside their stylesheet and are defined from role tokens, never literals.
+
+Families: colour roles (light on `:root`, dark on `[data-theme='dark']`; status families `error|warning|success|info`
+with `-color`, `-solid`, `-text`, `-bg`, `-border`), `--space-*` (rem, 4px base), `--radius-*` (px), `--font-size-*`,
+`--shadow-*` (both themes), `--duration-*`, `--z-*`. Scales are theme-independent and are not redeclared in dark
+(`token-parity.test.ts`); `contrast-pairs.test.ts` checks AA for every text and control pair.
+
+Rules for a component `<style>`:
+
+1. Role and scale tokens only (`padding: var(--space-2) var(--space-3)`, `border-radius: var(--radius-md)`).
+2. Tints are `rgba(var(--<family>-color-rgb), α)`, never numeric channels.
+3. No `var(--token, literal)` fallbacks: every token is declared on `:root`, a fallback only hides a typo.
+4. Dark mode comes from the token; a `:global([data-theme='dark'])` override needs a one-line reason.
+5. Logical properties (`padding-inline-start`, `inset-inline-end`, `text-align: start`); `left: 50%` centring is fine.
+6. Existing rules stand: no `.dark`, no colours on `button:<pseudo>` (#746), fields painted only by
+   `form-elements.css`, text never `--primary-color`, no purple.
+7. Canvas and inline-SVG colours read tokens at runtime via `getComputedStyle(document.documentElement)`.
+
+Guard: `python3 scripts/guards/check_style_literals.py` (baseline `scripts/guards/baselines/style_literals.txt`) counts
+colour, fallback, shadow, radius, spacing, font-size, font-weight, z-index, duration and physical-direction literals
+per file. Counts may only fall; run with `--tighten` in the same commit that removes literals.
+Screenshot A/B for any restyle: `scripts/e2e/styling-ab.sh` against a `--fresh` stack (never the live one), and the
+`/a11y-fixtures/ui-kit` page shows every shared component in every state.

@@ -19,7 +19,12 @@ ENDPOINTS = Path(__file__).resolve().parents[2] / "app" / "api" / "endpoints"
 GUARDED_HANDLERS = [
     ("llm_settings.py", "create_user_llm_configuration", "_assert_safe_llm_endpoint"),
     ("llm_settings.py", "update_user_llm_configuration", "_assert_safe_llm_endpoint"),
-    ("llm_connection_tests.py", "test_llm_connection", "_assert_safe_llm_endpoint"),
+    # Every route that dials a caller-chosen URL funnels through _run_connection_test, which
+    # runs the guard before any outbound call; pin both hops.
+    ("llm_connection_tests.py", "_run_connection_test", "_assert_safe_llm_endpoint"),
+    ("llm_connection_tests.py", "test_llm_connection", "_run_connection_test"),
+    ("llm_connection_tests.py", "test_active_configuration", "_run_connection_test"),
+    ("llm_connection_tests.py", "test_specific_configuration", "_run_connection_test"),
     ("llm_model_discovery.py", "get_ollama_models", "_pin_llm_endpoint"),
     ("llm_model_discovery.py", "get_openai_compatible_models", "_pin_llm_endpoint"),
 ]

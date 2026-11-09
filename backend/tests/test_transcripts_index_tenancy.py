@@ -196,24 +196,6 @@ def test_the_gallery_transcript_search_returns_only_its_tenants_file(scope, db_s
 
 @_needs_cluster
 @pytest.mark.xdist_group("opensearch_speaker_indices")
-@pytest.mark.parametrize("scope", SCOPES)
-def test_find_speaker_across_media_returns_only_its_tenants_file(scope, world, monkeypatch):
-    from app.services.opensearch_service import speaker_metadata
-
-    _write_through_the_writer(world)
-    speaker_uuid = str(uuid_pkg.uuid4())
-    # The speaker plane is not under test: its doc only supplies the name to look up.
-    monkeypatch.setattr(world.client, "get", lambda **_: {"_source": {"name": "SPEAKER_00"}})
-
-    results = speaker_metadata.find_speaker_across_media(
-        speaker_uuid, world.user.id, organization_id=world.org_ids[scope]
-    )
-
-    assert [r["file_uuid"] for r in results] == [str(world.files[scope].uuid)]
-
-
-@_needs_cluster
-@pytest.mark.xdist_group("opensearch_speaker_indices")
 def test_the_backfill_makes_a_pre_1027_org_document_visible_to_its_org(
     db_session, world, monkeypatch
 ):

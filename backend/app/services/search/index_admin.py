@@ -4,6 +4,8 @@ steps, version check and the ``speaker_id`` coverage survey."""
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.opensearch_service import client as _client
@@ -56,8 +58,8 @@ def ensure_chunks_index_exists() -> bool:
             logger.info(f"Created alias {alias_name} -> {index_name}")
 
         return True
-    except Exception as e:
-        logger.error(f"Error creating chunks index: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error creating chunks index: {e}")
         return False
 
 
@@ -107,8 +109,12 @@ def recreate_index_for_dimension(dimension: int) -> bool:
                     _client.opensearch_client.indices.delete_alias(
                         index=index_name, name=alias_name
                     )
-            except Exception as e:
-                logger.debug(f"Could not remove alias {alias_name} before index recreation: {e}")
+            except OpenSearchException as e:
+                # Soft on purpose: deleting the index below drops its aliases too.
+                logger.warning(
+                    f"Could not remove alias {alias_name} before index recreation: {e}",
+                    exc_info=True,
+                )
 
             # Delete the old index
             _client.opensearch_client.indices.delete(index=index_name)
@@ -125,8 +131,8 @@ def recreate_index_for_dimension(dimension: int) -> bool:
         logger.info(f"Created alias {alias_name} -> {index_name}")
 
         return True
-    except Exception as e:
-        logger.error(f"Error recreating index for dimension {dimension}: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error recreating index for dimension {dimension}: {e}")
         return False
 
 
@@ -161,8 +167,8 @@ def _check_index_version(index_name: str) -> None:
             )
         elif stored_version == _INDEX_VERSION:
             logger.debug(f"Index '{index_name}' is at current version {_INDEX_VERSION}")
-    except Exception as e:
-        logger.debug(f"Could not check index version for {index_name}: {e}")
+    except OpenSearchException as e:
+        logger.warning(f"Could not check index version for {index_name}: {e}", exc_info=True)
 
 
 def _apply_pending_additive_steps(index_name: str) -> None:
@@ -235,8 +241,9 @@ def _apply_pending_additive_steps(index_name: str) -> None:
             },
         )
         logger.info(f"Index '{index_name}' additive_version now {new_additive_version}")
-    except Exception as e:
-        logger.error(f"Could not apply pending additive mapping steps to '{index_name}': {e}")
+    except OpenSearchException as e:
+        # Soft on purpose: steps are idempotent and are retried on the next startup.
+        logger.exception(f"Could not apply pending additive mapping steps to '{index_name}': {e}")
 
 
 def survey_speaker_id_coverage() -> dict[str, Any]:
@@ -285,8 +292,8 @@ def survey_speaker_id_coverage() -> dict[str, Any]:
                 "aggs": {"with_speaker_id": {"filter": {"exists": {"field": "speaker_id"}}}},
             },
         )
-    except Exception as e:
-        logger.debug(f"Could not survey speaker_id coverage: {e}")
+    except OpenSearchException as e:
+        logger.warning(f"Could not survey speaker_id coverage: {e}", exc_info=True)
         return empty_result
 
     total = int((response.get("hits") or {}).get("total", {}).get("value", 0) or 0)

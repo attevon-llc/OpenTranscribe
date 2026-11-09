@@ -14,6 +14,9 @@ patching this module's ``get_opensearch_client`` takes effect for all of them.
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.exceptions import ServiceUnavailableError
 from app.services.opensearch_service import get_opensearch_client
 from app.services.search.ml_ingest_pipelines import MLIngestPipelineMixin
@@ -105,20 +108,29 @@ class OpenSearchMLModelService(
             logger.info("ML Commons cluster settings configured successfully")
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to configure ML Commons settings: {e}")
+        except OpenSearchException as e:
+            logger.exception(f"Failed to configure ML Commons settings: {e}")
             return False
 
-    def get_model_status(self, model_id: str) -> dict[str, Any]:
+    def get_model_status(self, model_id: str, *, raise_on_error: bool = False) -> dict[str, Any]:
         """Get the status of a registered model.
 
         Args:
             model_id: The OpenSearch model ID.
+            raise_on_error: If True, an unreachable registry raises instead of reading
+                as an empty dict. Lookups that act on "no such model" (refusing a
+                switch, deploying) must pass it.
 
         Returns:
-            Dict with model state and info, or empty dict on error.
+            Dict with model state and info, or an empty dict when the model is unknown
+            (or, without ``raise_on_error``, when the registry could not answer).
+
+        Raises:
+            ServiceUnavailableError: ``raise_on_error`` and the lookup failed.
         """
         if not self._ensure_client():
+            if raise_on_error:
+                raise ServiceUnavailableError("The ML model registry is unavailable.")
             return {}
 
         try:
@@ -137,8 +149,12 @@ class OpenSearchMLModelService(
                 "deployed": response.get("model_state", "").upper() == "DEPLOYED",
             }
 
-        except Exception as e:
-            logger.debug(f"Could not get model status for {model_id}: {e}")
+        except NotFoundError:
+            return {}
+        except OpenSearchException as e:
+            logger.warning(f"Could not get model status for {model_id}: {e}", exc_info=True)
+            if raise_on_error:
+                raise ServiceUnavailableError("The ML model registry is unavailable.") from e
             return {}
 
     def list_models(

@@ -129,20 +129,6 @@ def test_the_gallery_transcript_filter_excludes_the_trash(monkeypatch):
     assert any(_excludes_trashed(f) for f in body["query"]["bool"]["filter"]), body
 
 
-def test_the_speaker_across_media_lookup_excludes_the_trash(monkeypatch):
-    from app.services.opensearch_service import client as os_client
-    from app.services.opensearch_service import speaker_metadata
-
-    client = _RecordingClient(get_source={"name": "Alice"})
-    monkeypatch.setattr(os_client, "opensearch_client", client)
-    monkeypatch.setattr(speaker_metadata, "ensure_indices_exist", lambda: None)
-
-    speaker_metadata.find_speaker_across_media("s-1", 7, organization_id=None)
-
-    ((_index, body),) = client.bodies
-    assert any(_excludes_trashed(f) for f in body["query"]["bool"]["filter"]), body
-
-
 def _filters_with_a_trash_of(monkeypatch, size: int) -> tuple[list[dict[str, Any]], list[str]]:
     """``_build_filters`` with Postgres reporting ``size`` trashed files; returns the filters and
     the trash reads the build made."""

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 from app.services.chat.settings import ChatSettings
 from app.services.search.chunk_retrieval import ChunkHit
@@ -236,7 +237,7 @@ def test_blank_query_short_circuits():
 def test_retrieval_failure_degrades_to_no_context():
     """OpenSearch down must yield a context-free answer, never a 500."""
     client = MagicMock()
-    client.search.side_effect = RuntimeError("opensearch down")
+    client.search.side_effect = OpenSearchConnectionError("N/A", "down", Exception())
     with patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client):
         assert retrieve_chunks("q", user_id=1) == []
 

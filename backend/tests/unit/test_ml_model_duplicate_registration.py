@@ -89,7 +89,9 @@ def test_a_local_registration_that_landed_late_is_adopted_not_duplicated(service
     monkeypatch.setattr(service, "register_model_from_local", lambda name: None)
     monkeypatch.setattr(service, "register_model", _records(registered, "dup"))
     monkeypatch.setattr(
-        service, "get_model_status", lambda model_id: {"state": "REGISTERED", "deployed": False}
+        service,
+        "get_model_status",
+        lambda model_id, **_: {"state": "REGISTERED", "deployed": False},
     )
     deployed: list[str] = []
     monkeypatch.setattr(service, "deploy_model", _records(deployed, True))

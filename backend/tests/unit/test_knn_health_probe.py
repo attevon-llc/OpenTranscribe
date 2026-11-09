@@ -248,7 +248,7 @@ def test_an_unrecognised_error_is_unknown_never_corrupt(probe):
     """Repair is destructive; an unrelated bug must not be able to trigger it."""
     fake = _FakeOpenSearch(
         {"transcript_chunks": _ann_mapping()},
-        search_error=ValueError("something entirely unrelated"),
+        search_error=TransportError(400, "some_unrelated_exception", {}),
     )
     result = probe(fake, "transcript_chunks")
 

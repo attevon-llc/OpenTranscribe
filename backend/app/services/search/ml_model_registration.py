@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.services.search.ml_model_host import MLModelHost
 
 logger = logging.getLogger(__name__)
@@ -247,8 +249,8 @@ class MLModelRegistrationMixin(MLModelHost):
                 logger.info(f"Model registered from URL: {model_name} -> {model_id}")
             return model_id
 
-        except Exception as e:
-            logger.error(f"Failed to register model from URL {model_name}: {e}")
+        except (OpenSearchException, KeyError, TypeError) as e:
+            logger.exception(f"Failed to register model from URL {model_name}: {e}")
             return None
 
     def register_model_from_local(self, model_name: str) -> str | None:
@@ -380,8 +382,8 @@ class MLModelRegistrationMixin(MLModelHost):
                 logger.info(f"Model registered successfully: {model_name} -> {model_id}")
             return model_id
 
-        except Exception as e:
-            logger.error(f"Failed to register model {model_name}: {e}")
+        except (OpenSearchException, KeyError, TypeError) as e:
+            logger.exception(f"Failed to register model {model_name}: {e}")
             return None
 
     def _wait_for_registration(
@@ -427,8 +429,8 @@ class MLModelRegistrationMixin(MLModelHost):
                 logger.debug(f"Registration task {task_id} state: {state}")
                 time.sleep(poll_interval)
 
-            except Exception as e:
-                logger.warning(f"Error polling registration task: {e}")
+            except (OpenSearchException, KeyError, TypeError) as e:
+                logger.warning(f"Error polling registration task: {e}", exc_info=True)
                 time.sleep(poll_interval)
 
         logger.error(f"Model registration timed out after {max_wait}s")

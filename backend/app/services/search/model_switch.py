@@ -228,7 +228,9 @@ def apply_embedding_model_switch(model_name: str, triggered_by: int) -> dict[str
 
     ml_service = get_ml_model_service()
     model_id = ml_service.find_model_by_name(model_name)
-    if not model_id or not ml_service.get_model_status(model_id).get("deployed"):
+    if not model_id or not ml_service.get_model_status(model_id, raise_on_error=True).get(
+        "deployed"
+    ):
         raise EmbeddingModelNotDeployedError(
             f"{model_name} is not registered and deployed in OpenSearch, so it "
             f"cannot embed anything. Register and deploy it first "

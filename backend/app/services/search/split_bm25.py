@@ -4,6 +4,8 @@ import copy
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.services.search.result_processing import _process_inner_hits
 from app.services.search.search_types import SearchHit
@@ -159,8 +161,8 @@ def _hydrate_page_highlights(
                 "highlight": highlight,
             },
         )
-    except Exception as e:  # display-only enrichment, see docstring
-        logger.warning(f"Page highlight request failed for query='{query}': {e}")
+    except OpenSearchException as e:  # display-only enrichment, see docstring
+        logger.warning(f"Page highlight request failed for query='{query}': {e}", exc_info=True)
         return
     by_id = {h["_id"]: h.get("highlight", {}) for h in resp.get("hits", {}).get("hits", [])}
 

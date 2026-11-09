@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.opensearch_service import client as _client
@@ -76,7 +78,8 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                 try:
                     resolve_recorded_date_for_file(db, file_id)
                 except Exception as date_exc:  # enrichment, never fatal
-                    logger.warning(
+                    # Boundary on purpose: a date-extraction bug must not cost the digest plane.
+                    logger.exception(
                         "Could not resolve recorded_date for file %s: %s", file_id, date_exc
                     )
 
@@ -125,7 +128,9 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                 )
             return written
         except Exception as exc:  # chunks are indexed; do not fail the caller
-            logger.error(f"Could not index digest plane for file {file_uuid}: {exc}")
+            # Per-file boundary: artifact generation spans the DB and arbitrary
+            # extractors, and 0 reports "nothing written" while the traceback records why.
+            logger.exception(f"Could not index digest plane for file {file_uuid}: {exc}")
             return 0
 
     def _prune_stale_digests(self, file_uuid: str, *, keep_count: int) -> int:
@@ -170,6 +175,6 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                     f"orphan id(s) but the digest-plane predicate deleted {deleted}"
                 )
             return deleted
-        except Exception as e:  # logged; the new documents are already indexed
-            logger.error(f"Could not prune stale digest sections for file {file_uuid}: {e}")
+        except OpenSearchException as e:  # logged; the new documents are already indexed
+            logger.exception(f"Could not prune stale digest sections for file {file_uuid}: {e}")
             return 0

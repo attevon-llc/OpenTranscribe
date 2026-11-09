@@ -357,7 +357,7 @@ def test_apply_embedding_model_switch_rejects_when_model_is_registered_but_not_d
         with pytest.raises(EmbeddingModelNotDeployedError):
             apply_embedding_model_switch(_KNOWN_MODEL, triggered_by=1)
 
-    fake_ml_service.get_model_status.assert_called_once_with("ml-model-id-123")
+    fake_ml_service.get_model_status.assert_called_once_with("ml-model-id-123", raise_on_error=True)
     save_setting.assert_not_called()
 
 

@@ -2,6 +2,8 @@
 
 import logging
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.exceptions import SearchIndexError
 from app.services.opensearch_service import client as _client
@@ -258,8 +260,8 @@ class ChunkPlaneMixin(OrphanProbeMixin):
                     "the predicate is narrower than the id probe"
                 )
             return deleted
-        except Exception as e:
-            logger.error(
+        except OpenSearchException as e:
+            logger.exception(
                 f"Could not prune stale chunks for file {file_uuid} "
                 f"(chunks >= {keep_count} may still be searchable): {e}"
             )

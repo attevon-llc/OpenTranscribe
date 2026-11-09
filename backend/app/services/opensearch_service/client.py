@@ -30,6 +30,7 @@ from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 from opensearchpy.exceptions import ConnectionTimeout as OpenSearchConnectionTimeout
 from opensearchpy.exceptions import ImproperlyConfigured
 from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import OpenSearchException
 from opensearchpy.exceptions import SerializationError
 from opensearchpy.exceptions import TransportError
 
@@ -600,7 +601,7 @@ def probe_knn_health(index_name: str) -> KnnProbeResult:
     started = time.monotonic()
     try:
         opensearch_client.search(index=index_name, body=body)
-    except Exception as e:  # classified below; see the docstring
+    except OpenSearchException as e:  # classified below; see the docstring
         # "This field cannot serve an ANN query" is a statement about the
         # MAPPING, not the segments — the index is intact. It must be checked
         # first and matched NARROWLY: the rejection is a 400 carrying the
@@ -615,6 +616,7 @@ def probe_knn_health(index_name: str) -> KnnProbeResult:
             return KnnProbeResult("unsupported", detail=str(e))
         if _is_index_corruption_error(e):
             return KnnProbeResult("corrupt", detail=str(e))
+        logger.warning(f"kNN probe of '{index_name}' was inconclusive: {e}", exc_info=True)
         return KnnProbeResult("unknown", detail=str(e))
     latency_ms = (time.monotonic() - started) * 1000.0
 
@@ -624,8 +626,10 @@ def probe_knn_health(index_name: str) -> KnnProbeResult:
     # and rebuilds it again, forever.
     try:
         count = int(opensearch_client.count(index=index_name).get("count", 0))
-    except Exception as e:  # the probe itself already succeeded
-        logger.warning(f"kNN probe of '{index_name}' could not read a doc count: {e}")
+    except OpenSearchException as e:  # the probe itself already succeeded
+        logger.warning(
+            f"kNN probe of '{index_name}' could not read a doc count: {e}", exc_info=True
+        )
         return KnnProbeResult("healthy", latency_ms=latency_ms)
 
     if count == 0:

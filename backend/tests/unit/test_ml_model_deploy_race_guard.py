@@ -66,7 +66,7 @@ def test_a_registering_model_is_never_deployed_into(service, monkeypatch):
     """The defect, isolated: REGISTERING must never reach deploy_model."""
     deploy_calls: list[str] = []
     monkeypatch.setattr(service, "find_model_by_name", lambda name: "model-1")
-    monkeypatch.setattr(service, "get_model_status", lambda model_id: _status("REGISTERING"))
+    monkeypatch.setattr(service, "get_model_status", lambda model_id, **_: _status("REGISTERING"))
     monkeypatch.setattr(service, "deploy_model", lambda model_id: deploy_calls.append(model_id))
     # Keep the wait itself fast without touching real time/sleep.
     monkeypatch.setattr(
@@ -93,7 +93,7 @@ def test_a_registered_model_is_deployed_normally(service, monkeypatch):
         return True
 
     monkeypatch.setattr(service, "find_model_by_name", lambda name: "model-1")
-    monkeypatch.setattr(service, "get_model_status", lambda model_id: _status("REGISTERED"))
+    monkeypatch.setattr(service, "get_model_status", lambda model_id, **_: _status("REGISTERED"))
     monkeypatch.setattr(service, "deploy_model", fake_deploy_model)
     monkeypatch.setattr(service, "_await_deployable_state", lambda model_id, **kw: "REGISTERED")
     monkeypatch.setattr(service, "verify_model_can_embed", lambda model_id, **kw: (True, "ok"))
@@ -107,7 +107,7 @@ def test_a_registered_model_is_deployed_normally(service, monkeypatch):
 def test_a_model_that_finishes_registering_while_we_wait_is_deployed(service, monkeypatch):
     """The wait resolves to DEPLOYED (another caller finished the whole sequence)."""
     monkeypatch.setattr(service, "find_model_by_name", lambda name: "model-1")
-    monkeypatch.setattr(service, "get_model_status", lambda model_id: _status("REGISTERING"))
+    monkeypatch.setattr(service, "get_model_status", lambda model_id, **_: _status("REGISTERING"))
     monkeypatch.setattr(service, "_await_deployable_state", lambda model_id, **kw: "DEPLOYED")
     monkeypatch.setattr(service, "verify_model_can_embed", lambda model_id, **kw: (True, "ok"))
 
@@ -124,7 +124,7 @@ def test_await_deployable_state_polls_until_the_model_leaves_registering(service
     """The real wait loop, not a stubbed replacement -- proves it actually polls and resolves."""
     states = iter(["REGISTERING", "REGISTERING", "REGISTERED"])
     monkeypatch.setattr(
-        service, "get_model_status", lambda model_id: _status(next(states, "REGISTERED"))
+        service, "get_model_status", lambda model_id, **_: _status(next(states, "REGISTERED"))
     )
     sleeps: list[float] = []
     monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
@@ -139,7 +139,7 @@ def test_await_deployable_state_gives_up_at_max_wait_without_ever_returning_depl
     service, monkeypatch
 ):
     """A model stuck REGISTERING forever must not be silently treated as safe to deploy."""
-    monkeypatch.setattr(service, "get_model_status", lambda model_id: _status("REGISTERING"))
+    monkeypatch.setattr(service, "get_model_status", lambda model_id, **_: _status("REGISTERING"))
     monkeypatch.setattr("time.sleep", lambda s: None)
 
     result = service._await_deployable_state("model-1", max_wait=0.05, poll_interval=0.01)
@@ -164,7 +164,7 @@ def test_the_race_reproduction_matches_the_live_failure_shape(service, monkeypat
     states = iter(["REGISTERING", "REGISTERING", "REGISTERED"])
     last_state: dict[str, str | None] = {"value": None}
 
-    def fake_get_model_status(model_id):
+    def fake_get_model_status(model_id, **_):
         current = next(states, "REGISTERED")
         last_state["value"] = current
         return _status(current)

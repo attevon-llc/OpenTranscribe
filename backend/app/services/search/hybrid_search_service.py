@@ -34,9 +34,13 @@ import time
 from typing import TYPE_CHECKING
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import settings
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
+from app.core.exceptions import ServiceUnavailableError
 from app.services.opensearch_service import get_opensearch_client
 from app.services.search import collapse_bodies
 from app.services.search import collapsed_search
@@ -330,8 +334,8 @@ class HybridSearchService:
                 else:
                     logger.info("Neural search not available - no deployed model")
                 return _neural_search_available
-            except Exception as e:
-                logger.warning(f"Could not check neural search availability: {e}")
+            except (OpenSearchException, ServiceUnavailableError, SQLAlchemyError) as e:
+                logger.warning(f"Could not check neural search availability: {e}", exc_info=True)
                 _neural_search_available = False
                 _neural_search_check_time = time.time()
                 return False
@@ -347,8 +351,8 @@ class HybridSearchService:
 
             ml_service = get_ml_model_service()
             return ml_service.get_active_model_id()
-        except Exception as e:
-            logger.warning(f"Could not get neural model ID: {e}")
+        except (OpenSearchException, ServiceUnavailableError, SQLAlchemyError) as e:
+            logger.warning(f"Could not get neural model ID: {e}", exc_info=True)
             return None
 
     def _generate_query_embedding(

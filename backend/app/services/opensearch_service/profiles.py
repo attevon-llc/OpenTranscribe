@@ -5,7 +5,9 @@ import logging
 from typing import Any
 
 from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import OpenSearchException
 
+from app.core.config import settings
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.core.embedding_models import get_speaker_index
 from app.core.embedding_models import get_speaker_index_v4
@@ -84,8 +86,8 @@ def store_profile_embedding_v4(
         )
         return True
 
-    except Exception as e:
-        logger.error(f"Error storing v4 profile embedding for {profile_uuid}: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error storing v4 profile embedding for {profile_uuid}: {e}")
         return False
 
 
@@ -100,6 +102,8 @@ def msearch_profile_knn_batch(
     k: int = 10,
     accessible_profile_ids: set[int] | None = None,
     organization_id: int | None = None,
+    *,
+    strict: bool = False,
 ) -> dict[str, list[dict[str, Any]]]:
     """Batch kNN search for profile matches across multiple speakers.
 
@@ -113,11 +117,19 @@ def msearch_profile_knn_batch(
         k: Number of nearest neighbors per query.
         accessible_profile_ids: Optional set of profile IDs to restrict search.
         organization_id: Active org id (None = personal) — tenant gate.
+        strict: Raise OpenSearchUnavailableError instead of returning the empty
+            answer when the cluster could not answer, so "nothing matched" and
+            "could not look" differ.
 
     Returns:
         Dict mapping speaker_uuid -> list of profile match dicts.
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the search failed.
     """
     if not _client.opensearch_client or not speaker_embeddings:
+        if strict and speaker_embeddings and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         return {uid: [] for uid in speaker_embeddings}
 
     try:
@@ -185,22 +197,32 @@ def msearch_profile_knn_batch(
 
         return results
 
-    except Exception as e:
-        logger.error(f"Error in batch profile kNN search: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error in batch profile kNN search: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"profile kNN search failed: {e}") from e
         return {uid: [] for uid in speaker_embeddings}
 
 
-def get_profile_embedding(profile_uuid: str) -> list[float] | None:
+def get_profile_embedding(profile_uuid: str, *, strict: bool = False) -> list[float] | None:
     """
     Get the embedding vector for a speaker profile from OpenSearch
 
     Args:
         profile_uuid: UUID of the speaker profile
+        strict: Raise instead of returning None when the cluster could not
+            answer. Callers that act on "this profile has no centroid"
+            (centroid blending) must pass it, or an outage looks like a new profile.
 
     Returns:
         Embedding vector or None if not found
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the lookup failed.
     """
     if not _client.opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         logger.warning("OpenSearch client not initialized")
         return None
 
@@ -221,8 +243,12 @@ def get_profile_embedding(profile_uuid: str) -> list[float] | None:
 
         return None
 
-    except Exception as e:
-        logger.error(f"Error getting profile embedding: {e}")
+    except NotFoundError:
+        return None
+    except OpenSearchException as e:
+        logger.exception(f"Error getting profile embedding: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"profile embedding lookup failed: {e}") from e
         return None
 
 
@@ -290,8 +316,8 @@ def store_profile_embedding(
         )
         return True
 
-    except Exception as e:
-        logger.error(f"Error storing profile embedding: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error storing profile embedding: {e}")
         return False
 
 
@@ -344,6 +370,8 @@ def find_matching_profiles(
     threshold: float = SPEAKER_PROFILE_MATCH_THRESHOLD,
     size: int = 5,
     organization_id: int | None = None,
+    *,
+    strict: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Find matching speaker profiles using embedding similarity in OpenSearch.
@@ -354,11 +382,19 @@ def find_matching_profiles(
         threshold: Minimum similarity threshold
         size: Maximum number of results
         organization_id: Active org id (None = personal) — tenant gate.
+        strict: Raise OpenSearchUnavailableError instead of returning the empty
+            answer when the cluster could not answer, so "nothing matched" and
+            "could not look" differ.
 
     Returns:
         List of matching profiles with similarity scores
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the search failed.
     """
     if not _client.opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         logger.warning("OpenSearch client not initialized")
         return []
 
@@ -410,6 +446,8 @@ def find_matching_profiles(
         logger.info(f"Found {len(matches)} profile matches above threshold {threshold}")
         return matches
 
-    except Exception as e:
-        logger.error(f"Error finding matching profiles: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error finding matching profiles: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"profile search failed: {e}") from e
         return []

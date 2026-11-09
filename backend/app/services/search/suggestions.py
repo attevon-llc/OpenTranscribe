@@ -8,6 +8,8 @@ Both exclude trashed and quarantined files inside the query, through the ACL cla
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.exceptions import ServiceUnavailableError
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
@@ -125,8 +127,8 @@ def get_suggestions(
                     }
                 )
 
-    except Exception as e:
-        logger.error(f"Error getting suggestions: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error getting suggestions: {e}")
 
     return suggestions[:limit]
 

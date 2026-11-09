@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.exceptions import ServiceUnavailableError
 from app.services.search.collapse_bodies import _build_collapsed_bm25_body
@@ -70,8 +72,8 @@ def _backfill_starved_groups(
             sources=sources,
         )
         bm25_response, highlight = _execute_split_bm25_collapse(client, bm25_body)
-    except Exception as e:
-        logger.warning(f"BM25 group backfill failed for query='{query}': {e}")
+    except OpenSearchException as e:
+        logger.warning(f"BM25 group backfill failed for query='{query}': {e}", exc_info=True)
         return grouped, None
 
     bm25_grouped, _ = _process_collapsed_results(
@@ -213,22 +215,23 @@ def _search_with_collapse(
                 body=search_body,
                 params=search_params,
             )
-    except Exception as e:
+    except OpenSearchException as e:
         if use_neural:
             # Retry once before falling back — transient errors are common
-            logger.warning(f"Hybrid search failed (attempt 1), retrying: {e}")
+            logger.warning(f"Hybrid search failed (attempt 1), retrying: {e}", exc_info=True)
             try:
                 response = client.search(
                     index=settings.OPENSEARCH_CHUNKS_INDEX,
                     body=search_body,
                     params=search_params,
                 )
-            except Exception:
+            except OpenSearchException:
                 # Retry failed — fall back to BM25-only so users
                 # still get results instead of an empty page.
                 logger.warning(
                     "Hybrid search retry failed, falling back to BM25 for query='%s'",
                     query,
+                    exc_info=True,
                 )
                 fell_back_to_bm25 = True
                 try:
@@ -246,7 +249,7 @@ def _search_with_collapse(
                         index=settings.OPENSEARCH_CHUNKS_INDEX,
                         body=fallback_body,
                     )
-                except Exception as e3:
+                except OpenSearchException as e3:
                     logger.error("BM25 fallback also failed: %s", e3, exc_info=True)
                     raise ServiceUnavailableError("Search is temporarily unavailable.") from e3
         else:

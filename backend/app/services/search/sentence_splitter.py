@@ -92,8 +92,10 @@ def _get_nltk_tokenizer(language: str = "english") -> Any:
             _nltk_tokenizers[language] = tokenizer
             logger.debug(f"Loaded NLTK punkt tokenizer for '{language}'")
             return tokenizer
-    except Exception as e:
-        logger.debug(f"NLTK punkt tokenizer not available, using regex fallback: {e}")
+    except (ImportError, ValueError, *NLTK_CORPUS_UNAVAILABLE) as e:
+        logger.debug(
+            f"NLTK punkt tokenizer not available, using regex fallback: {e}", exc_info=True
+        )
 
     # WARNING, not debug: this decides how every chunk in this process is split,
     # and a worker that silently differs from its peers produces an index whose
@@ -271,8 +273,10 @@ def split_into_sentences(text: str, language: str | None = "en") -> list[str]:
         if tokenizer is not None:
             try:
                 return list(tokenizer.tokenize(text))
-            except Exception as e:
-                logger.debug(f"NLTK tokenizer failed for language '{language}': {e}")
+            except (LookupError, TypeError, ValueError) as e:
+                logger.warning(
+                    f"NLTK tokenizer failed for language '{language}': {e}", exc_info=True
+                )
 
     # Regex fallback: split on sentence-ending punctuation followed by uppercase
     sentences = _SENTENCE_SPLIT_RE.split(text)

@@ -5,6 +5,8 @@ import logging
 from typing import Any
 
 from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.embedding_models import get_speaker_index
 from app.core.embedding_models import get_speaker_index_v3
@@ -83,8 +85,8 @@ def merge_speaker_embeddings(
         logger.info(f"Merged speaker {source_speaker_uuid} into {target_speaker_uuid}")
         return response
 
-    except Exception as e:
-        logger.error(f"Error merging speaker embeddings: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error merging speaker embeddings: {e}")
         return None
 
 
@@ -194,14 +196,16 @@ def cleanup_orphaned_speaker_embeddings(user_id: int) -> int:
                 _client.opensearch_client.delete(index=get_speaker_index(), id=str(speaker_uuid))
                 logger.info(f"Deleted orphaned speaker document for speaker {speaker_uuid}")
                 deleted_count += 1
-            except Exception as e:
-                logger.error(f"Error deleting orphaned speaker {speaker_uuid}: {e}")
+            except OpenSearchException as e:
+                logger.exception(f"Error deleting orphaned speaker {speaker_uuid}: {e}")
 
         logger.info(
             f"Cleanup completed: removed {deleted_count} orphaned speaker documents for user {user_id}"
         )
         return deleted_count
 
-    except Exception as e:
-        logger.error(f"Error during orphaned speaker cleanup: {e}")
+    except (OpenSearchException, SQLAlchemyError) as e:
+        # Best-effort maintenance: 0 here means "nothing was removed", and the
+        # traceback is the record of why.
+        logger.exception(f"Error during orphaned speaker cleanup: {e}")
         return 0

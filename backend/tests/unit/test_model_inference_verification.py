@@ -19,6 +19,8 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
+from sqlalchemy.exc import OperationalError
 
 
 @pytest.fixture
@@ -103,7 +105,7 @@ def test_a_request_failure_is_reported_not_raised(service, monkeypatch) -> None:
 
     class _Boom:
         def perform_request(self, *a, **kw):
-            raise RuntimeError("connection refused")
+            raise OpenSearchConnectionError("N/A", "connection refused", Exception())
 
     class _Client:
         transport = _Boom()
@@ -124,7 +126,7 @@ def test_ensure_model_deployed_refuses_a_model_that_cannot_embed(service, monkey
     active model and the ingest pipeline points at something that produces no vectors.
     """
     monkeypatch.setattr(service, "find_model_by_name", lambda name: "model-1")
-    monkeypatch.setattr(service, "get_model_status", lambda mid: {"deployed": True})
+    monkeypatch.setattr(service, "get_model_status", lambda mid, **_: {"deployed": True})
     monkeypatch.setattr(
         service, "verify_model_can_embed", lambda mid, expected_dimension=None: (False, "nope")
     )
@@ -135,7 +137,7 @@ def test_ensure_model_deployed_refuses_a_model_that_cannot_embed(service, monkey
 def test_ensure_model_deployed_returns_a_model_that_can_embed(service, monkeypatch) -> None:
     """The positive control for the wiring above."""
     monkeypatch.setattr(service, "find_model_by_name", lambda name: "model-1")
-    monkeypatch.setattr(service, "get_model_status", lambda mid: {"deployed": True})
+    monkeypatch.setattr(service, "get_model_status", lambda mid, **_: {"deployed": True})
     monkeypatch.setattr(
         service, "verify_model_can_embed", lambda mid, expected_dimension=None: (True, "384-dim")
     )
@@ -152,11 +154,11 @@ def test_a_settings_failure_does_not_break_deployment(service, monkeypatch) -> N
     from app.services.search import settings_service
 
     def _boom() -> int:
-        raise RuntimeError("settings unavailable")
+        raise OperationalError("SELECT", {}, Exception("settings unavailable"))
 
     monkeypatch.setattr(settings_service, "get_search_embedding_dimension", _boom)
     monkeypatch.setattr(service, "find_model_by_name", lambda name: "model-1")
-    monkeypatch.setattr(service, "get_model_status", lambda mid: {"deployed": True})
+    monkeypatch.setattr(service, "get_model_status", lambda mid, **_: {"deployed": True})
 
     seen: dict[str, Any] = {}
 

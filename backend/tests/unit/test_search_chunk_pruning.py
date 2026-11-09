@@ -44,6 +44,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 from app.core.config import settings
 from app.services.search import index_schema
@@ -84,6 +85,9 @@ class _FakeIndices:
     def put_settings(self, index: str, body: dict[str, Any]) -> None:
         pass
 
+    def put_mapping(self, index: str, body: dict[str, Any]) -> None:
+        pass
+
     def refresh(self, index: str) -> None:
         self.refreshed += 1
 
@@ -113,6 +117,10 @@ class _FakeIndex:
         self.count_bodies: list[dict[str, Any]] = []
         self.delete_bodies: list[dict[str, Any]] = []
         self.mget_id_batches: list[list[str]] = []
+
+    def search(self, index: str, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        """The orphan-ceiling aggregation read: nothing indexed yet, so no ceiling."""
+        return {"hits": {"hits": [], "total": {"value": 0}}, "aggregations": {}}
 
     # -- query evaluation --------------------------------------------------
 
@@ -368,7 +376,7 @@ def test_prune_failure_does_not_fail_the_index(fake_index, monkeypatch):
     """The chunks are already written and correct — a failed prune is logged, not raised."""
 
     def _boom(index, body, _source=True):
-        raise RuntimeError("cluster_block_exception")
+        raise OpenSearchConnectionError("N/A", "cluster_block_exception", Exception())
 
     service = svc.TranscriptIndexingService()
     # The gate itself, since #435: if the id probe cannot run there is nothing to

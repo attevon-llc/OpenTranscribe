@@ -18,6 +18,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.services.opensearch_service import get_opensearch_client
 from app.services.search.fusion import FusionConfig
@@ -442,8 +444,8 @@ def retrieve_chunks(
         response = client.search(
             index=settings.OPENSEARCH_CHUNKS_INDEX, body=body, params=params or None
         )
-    except Exception as exc:  # retrieval failure must not break chat
-        logger.warning(f"Chat chunk retrieval failed: {exc}")
+    except OpenSearchException as exc:  # retrieval failure must not break chat
+        logger.warning(f"Chat chunk retrieval failed: {exc}", exc_info=True)
         if diagnostics is not None:
             diagnostics["retrieval_failed"] = True
         return []
@@ -602,8 +604,8 @@ def retrieve_digests(
         response = client.search(
             index=settings.OPENSEARCH_CHUNKS_INDEX, body=body, params=params or None
         )
-    except Exception as exc:  # a failed digest leg must not break chat
-        logger.warning(f"Chat digest retrieval failed: {exc}")
+    except OpenSearchException as exc:  # a failed digest leg must not break chat
+        logger.warning(f"Chat digest retrieval failed: {exc}", exc_info=True)
         if diagnostics is not None:
             diagnostics["digest_retrieval_failed"] = True
         return []

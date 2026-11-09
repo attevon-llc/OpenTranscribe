@@ -10,8 +10,11 @@ import logging
 from typing import Any
 
 from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
+from app.core.exceptions import ServiceUnavailableError
 from app.services.opensearch_service import client as _client
 
 from .embedding_provenance import reset_active_embedding_model
@@ -79,8 +82,8 @@ def ensure_search_pipeline_exists(fusion: FusionConfig | None = None) -> bool:
         )
         logger.info(f"Created search pipeline: {pipeline_id} ({cfg.slug()})")
         return True
-    except Exception as e:
-        logger.error(f"Error creating search pipeline: {e}")
+    except OpenSearchException as e:
+        logger.exception(f"Error creating search pipeline: {e}")
         return False
 
 
@@ -95,8 +98,8 @@ def _get_model_id_from_service() -> str | None:
 
         ml_service = get_ml_model_service()
         return ml_service.get_active_model_id()
-    except Exception as e:
-        logger.warning(f"Could not get active model: {e}")
+    except (OpenSearchException, ServiceUnavailableError, SQLAlchemyError) as e:
+        logger.warning(f"Could not get active model: {e}", exc_info=True)
         return None
 
 
@@ -294,10 +297,11 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
                 f"Created/updated neural ingest pipeline: {pipeline_id} "
                 f"with model {model_id} (batch_size={batch_size})"
             )
-        except Exception as batch_err:
+        except OpenSearchException as batch_err:
             logger.warning(
                 f"Neural pipeline creation with batch_size={batch_size} failed: {batch_err}. "
-                f"Retrying without batch_size."
+                f"Retrying without batch_size.",
+                exc_info=True,
             )
             # Fall back to pipeline without batch_size for older OpenSearch versions
             text_embedding_config.pop("batch_size", None)
@@ -318,8 +322,8 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
         set_active_embedding_model(resolve_model_label(model_id))
         return True
 
-    except Exception as e:
-        logger.error(f"Error creating neural ingest pipeline: {e}")
+    except (OpenSearchException, ServiceUnavailableError, SQLAlchemyError) as e:
+        logger.exception(f"Error creating neural ingest pipeline: {e}")
         _neural_pipeline_verified = False
         _neural_pipeline_available = False
         reset_active_embedding_model()

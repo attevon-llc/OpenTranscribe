@@ -5,6 +5,8 @@ import time
 from typing import TYPE_CHECKING
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
 from app.services.search.result_processing import _process_inner_hits
@@ -323,8 +325,10 @@ def _search_with_two_phase(
             body=phase1_body,
             params={"search_pipeline": search_pipeline},
         )
-    except Exception as e:
-        logger.warning(f"Two-phase Phase 1 failed, falling back to single-phase: {e}")
+    except OpenSearchException as e:
+        logger.warning(
+            f"Two-phase Phase 1 failed, falling back to single-phase: {e}", exc_info=True
+        )
         return service._search_with_collapse(
             query=query,
             search_query=search_query,
@@ -447,8 +451,8 @@ def _search_with_two_phase(
             index=settings.OPENSEARCH_CHUNKS_INDEX,
             body=phase2_body,
         )
-    except Exception as e:
-        logger.warning(f"Two-phase Phase 2 failed: {e}")
+    except OpenSearchException as e:
+        logger.warning(f"Two-phase Phase 2 failed: {e}", exc_info=True)
         phase2_resp = {"hits": {"hits": []}}
 
     p2_ms = round((time.time() - t_p2) * 1000)

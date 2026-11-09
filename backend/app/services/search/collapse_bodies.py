@@ -8,6 +8,8 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
@@ -284,8 +286,8 @@ def _bm25_leg_is_starved(
             },
         )
         return int(resp.get("count", 0)) == 0
-    except Exception as e:  # best-effort pre-check, see docstring
-        logger.debug(f"BM25 starvation pre-check failed, assuming non-empty: {e}")
+    except OpenSearchException as e:  # best-effort pre-check, see docstring
+        logger.warning(f"BM25 starvation pre-check failed, assuming non-empty: {e}", exc_info=True)
         return False
 
 

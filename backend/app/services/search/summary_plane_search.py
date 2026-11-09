@@ -4,6 +4,8 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
 from app.services.ingest_artifacts.index_mapping import summary_plane_clause
@@ -171,8 +173,8 @@ def search_summary_plane(
             body=body,
             params={"search_pipeline": pipeline_id} if needs_pipeline else {},
         )
-    except Exception as exc:
-        logger.warning(f"Summary plane search failed: {exc}")
+    except OpenSearchException as exc:
+        logger.warning(f"Summary plane search failed: {exc}", exc_info=True)
         return [], 0
 
     top_hits = response.get("hits", {}).get("hits", [])

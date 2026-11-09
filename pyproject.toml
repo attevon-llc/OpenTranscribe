@@ -56,7 +56,6 @@ ignore = [
     "E501",  # Line too long - handled by black
     "B008",  # Do not perform function calls in argument defaults
     "W191",  # Indentation contains tabs
-    "B904",  # Allow raising exceptions without from e, for HTTPException
 ]
 
 [tool.ruff.lint.isort]

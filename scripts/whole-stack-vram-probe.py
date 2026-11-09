@@ -67,7 +67,7 @@ def _load_nvml() -> Any:
 def _nvml_used_mb(lib: Any, handle: Any) -> float:
     mem = _NvmlMem()
     lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
-    return mem.used / (1024**2)
+    return float(mem.used / (1024**2))
 
 
 class Sampler:
@@ -278,7 +278,7 @@ def run_one(args: argparse.Namespace) -> WholeStackResult:
         t0 = t_diar_loaded
         audio_tensor = torch.from_numpy(audio).unsqueeze(0)
         diar_input = {'waveform': audio_tensor, 'sample_rate': 16000, 'uri': wav_path.stem}
-        diar_output = diarizer._pipeline(diar_input)  # type: ignore[attr-defined]
+        diar_output = diarizer._pipeline(diar_input)
         annotation = getattr(diar_output, 'speaker_diarization', diar_output)
         speakers_detected = len(annotation.labels()) if annotation is not None else 0
         t_diar_ran = time.perf_counter() - sampler._t0

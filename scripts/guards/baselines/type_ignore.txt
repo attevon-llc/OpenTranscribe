@@ -165,7 +165,3 @@ backend/tests/unit/test_trash_restore_purge_race.py::method-assign	1	reasoned ty
 backend/tests/unit/test_worker_report.py::attr-defined	3	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
 backend/tests/unit/test_worker_task_metrics.py::attr-defined	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
 backend/tests/unit/test_ws_event_quarantine_discipline.py::assignment	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-scripts/audit-route-coverage.py::return-value	2	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-scripts/guards/check_ruff_ratchet.py::index	4	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-scripts/update-a11y-baseline.py::arg-type	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-scripts/whole-stack-vram-probe.py::attr-defined	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane

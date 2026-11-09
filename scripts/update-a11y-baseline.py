@@ -55,7 +55,7 @@ from a11y_lib import (  # noqa: E402 - importable only after the sys.path insert
     run_axe,
     set_theme,
 )
-from playwright.sync_api import sync_playwright  # noqa: E402 - importable only after the sys.path insert above
+from playwright.sync_api import Page, sync_playwright  # noqa: E402 - importable only after the sys.path insert above
 from privacy_ui import (  # noqa: E402 - importable only after the sys.path insert above
     PRIVACY_SURFACES,
     SURFACE_SCAN_SCOPE,
@@ -70,9 +70,9 @@ _PLACEHOLDER_REASON = f'{BACKLOG_PREFIX} — REPLACE THIS REASON'
 _SAMPLE_MEDIA = E2E_DIR.parent / 'fixtures' / 'media' / 'sample_short.wav'
 
 
-def _print_surface(surface: str, theme: str, page: object, context: str | None = None) -> None:
+def _print_surface(surface: str, theme: str, page: Page, context: str | None = None) -> None:
     page.wait_for_timeout(500)  # let the entry transition settle before axe reads styles
-    results = run_axe(page, context=context)  # type: ignore[arg-type]
+    results = run_axe(page, context=context)
     # empty allowlist: report EVERYTHING found
     outcome = evaluate_surface(surface, theme, results, {})
     if not outcome.observed:

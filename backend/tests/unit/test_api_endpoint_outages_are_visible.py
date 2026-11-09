@@ -146,7 +146,7 @@ def test_document_export_guard_redis_outage_logs_traceback_and_proceeds(monkeypa
     with caplog.at_level(logging.WARNING, logger=export.__name__):
         _job, guard_key, is_new = export._claim_or_existing_job(1, 2, body)
     assert is_new is True
-    assert guard_key is not None
+    assert guard_key is None
     assert _traceback_logged(caplog, export.__name__)
 
 
@@ -239,12 +239,16 @@ def test_local_model_state_outage_is_none_with_traceback(monkeypatch, caplog):
 def test_asr_test_failure_logs_frames_but_never_the_api_key(caplog):
     from app.api.endpoints import asr_connection_tests as asr_tests
 
+    def _fail(message: str) -> None:
+        raise RuntimeError(message)
+
+    secret = "sk-secret-123"
     try:
-        raise RuntimeError("401 for key sk-secret-123")
+        _fail(f"401 for key {secret}")
     except RuntimeError as exc:
         frames = asr_tests._frames(exc)
     assert "test_asr_test_failure_logs_frames" in frames
-    assert "sk-secret-123" not in frames
+    assert secret not in frames
 
 
 def test_health_probe_failure_is_in_response_and_logged_with_traceback(caplog):

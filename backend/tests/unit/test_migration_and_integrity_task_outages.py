@@ -7,9 +7,14 @@ from unittest.mock import patch
 
 import pytest
 from opensearchpy.exceptions import ConnectionError as OSConnectionError
+from sqlalchemy.exc import OperationalError
 
 from app.tasks import embedding_migration_v4_scope as scope
 from app.tasks import opensearch_integrity_task as integrity
+
+
+def _pg_down() -> OperationalError:
+    return OperationalError("select", {}, Exception("no db"))
 
 
 def _down() -> OSConnectionError:
@@ -59,7 +64,7 @@ def test_index_overview_marks_failed_counts_instead_of_reporting_zero():
     client.count.side_effect = _down()
     with (
         patch("app.services.opensearch_service.get_opensearch_client", return_value=client),
-        patch("app.db.session_utils.session_scope", side_effect=RuntimeError("no db")),
+        patch("app.db.session_utils.session_scope", side_effect=_pg_down()),
     ):
         overview = integrity.get_index_overview()
     assert len(overview["indices"]) == 4
@@ -73,7 +78,7 @@ def test_index_overview_still_reports_real_zero_counts():
     client.count.return_value = {"count": 0}
     with (
         patch("app.services.opensearch_service.get_opensearch_client", return_value=client),
-        patch("app.db.session_utils.session_scope", side_effect=RuntimeError("no db")),
+        patch("app.db.session_utils.session_scope", side_effect=_pg_down()),
     ):
         overview = integrity.get_index_overview()
     assert len(overview["indices"]) == 4

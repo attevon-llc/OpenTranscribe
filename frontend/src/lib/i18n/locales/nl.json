@@ -4471,7 +4471,7 @@
   "settings.contentRedaction.toxicity": "Giftigheid",
   "settings.contentRedaction.toxicityThresholdHelp": "Segmenten die op of boven deze waarde scoren, worden als giftig gemarkeerd. Hoger = strenger.",
   "settings.contentRedaction.wordLists": "Aangepaste woorden & toegestane lijst",
-  "settings.contentRedaction.privacy": "Privacy & exports",
+  "settings.contentRedaction.privacy": "Privacy en exports",
   "settings.redactionPolicy.forceCategoriesTitle": "Verplichte categorieën",
   "settings.redactionPolicy.forceCategoriesDesc": "Hier verplicht gestelde categorieën worden altijd voor elke gebruiker geredigeerd en kunnen door hen niet worden uitgeschakeld.",
   "settings.redactionPolicy.mandatesTitle": "Export- en AI-verplichtingen",

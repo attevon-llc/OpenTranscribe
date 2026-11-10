@@ -9,15 +9,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 
-vi.mock('$lib/axios', () => ({
-  default: {
-    get: vi.fn().mockResolvedValue({ status: 200, data: {} }),
-    post: vi.fn().mockResolvedValue({ status: 200, data: {} }),
-    put: vi.fn(),
-    interceptors: { request: { use: vi.fn() }, response: { use: vi.fn() } },
-  },
-  abortAllRequests: vi.fn(),
-}));
+vi.mock('$lib/axios', async () =>
+  (await import('$testMocks/authMocks')).authAxiosMock({ answering: true })
+);
 vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 

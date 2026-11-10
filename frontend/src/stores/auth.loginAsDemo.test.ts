@@ -6,16 +6,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 
-vi.mock('$lib/axios', () => ({
-  default: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
-  abortAllRequests: vi.fn(),
-}));
+vi.mock('$lib/axios', async () => (await import('$testMocks/authMocks')).authAxiosMock());
 
 vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
-vi.mock('$lib/session/clearUserState', () => ({ clearUserState: vi.fn() }));
+vi.mock('$lib/session/clearUserState', async () =>
+  (await import('$testMocks/authMocks')).clearUserStateMock()
+);
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
-vi.mock('$stores/capabilities', () => ({ loadCapabilities: vi.fn() }));
+vi.mock('$stores/capabilities', async () =>
+  (await import('$testMocks/authMocks')).loadCapabilitiesMock()
+);
 
 import axiosInstance from '$lib/axios';
 import { loginAsDemo, authStore, isAuthenticated } from './auth';

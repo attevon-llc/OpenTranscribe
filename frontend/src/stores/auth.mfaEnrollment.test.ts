@@ -1,14 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 
-vi.mock('$lib/axios', () => ({
-  default: { get: vi.fn(), post: vi.fn() },
-  abortAllRequests: vi.fn(),
-}));
+vi.mock('$lib/axios', async () => (await import('$testMocks/authMocks')).authAxiosMock());
 
 vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
-vi.mock('$lib/session/clearUserState', () => ({ clearUserState: vi.fn() }));
+vi.mock('$lib/session/clearUserState', async () =>
+  (await import('$testMocks/authMocks')).clearUserStateMock()
+);
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 
 import axiosInstance from '$lib/axios';

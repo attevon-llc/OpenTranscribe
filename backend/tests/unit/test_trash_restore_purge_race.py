@@ -276,3 +276,91 @@ def test_a_restore_whose_transaction_began_before_the_row_was_due_is_still_refus
     assert purge["outcome"][0] == "purged"
     assert restore["restored"] == [], "a restore brought back a file the purge had taken"
     assert _row(world["file"]) is None
+
+
+def _place_hold_in_own_session(file_id: int, user_id: int) -> int:
+    """Place a platform hold on ``file_id`` and COMMIT it, as an administrator's request would.
+
+    ``lock_timeout`` turns a purge that still held the row lock into a fast failure here rather
+    than a hang: the hold's foreign key check needs ``FOR KEY SHARE`` on the row.
+    """
+    from app.models.content_hold import AUTHORITY_PLATFORM
+    from app.services import content_hold_service
+
+    s = Session()
+    try:
+        s.execute(text("SET LOCAL lock_timeout = '5s'"))
+        actor = s.get(User, user_id)
+        media_file = s.get(MediaFile, file_id)
+        assert actor is not None and media_file is not None
+        change = content_hold_service.place_file_hold(
+            s,
+            org_id=None,
+            actor=actor,
+            files=[media_file],
+            reason="preserve: placed while the purge destroyed storage",
+            authority=AUTHORITY_PLATFORM,
+        )
+        s.commit()
+        return int(change.hold.id)
+    finally:
+        s.close()
+
+
+def test_a_hold_placed_while_the_purge_destroys_storage_keeps_the_row_and_the_hold(
+    world, monkeypatch
+):
+    """``purge_media_file`` commits before its storage/OpenSearch phase, releasing the trash
+    purge's row lock, and ``content_hold_file`` is ON DELETE CASCADE. A hold placed in that
+    window used to be deleted with the file; the purge must re-check under a fresh row lock
+    and keep the row (and so the hold) instead."""
+    _set_purge_after(world["file"], "interval '-1 second'")
+    placed: dict = {}
+
+    def destroy_then_hold(plan):
+        placed["hold"] = _place_hold_in_own_session(world["file"], world["user"])
+        return []
+
+    monkeypatch.setattr(file_cleanup_service, "_purge_external_copies", destroy_then_hold)
+    try:
+        outcome, _residual = trash_purge.purge_one(world["file"], trigger="due")
+
+        assert "hold" in placed, "the destroy phase never ran"
+        assert outcome == "failed"
+        assert _row(world["file"]) is not None, "the purge deleted a file held mid-destroy"
+        with engine.connect() as conn:
+            linked = conn.execute(
+                text("SELECT count(*) FROM content_hold_file WHERE hold_id = :h"),
+                {"h": placed["hold"]},
+            ).scalar()
+        assert linked == 1, "the new hold's link to the file was cascaded away"
+    finally:
+        if "hold" in placed:
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM content_hold WHERE id = :h"), {"h": placed["hold"]})
+
+
+def test_a_quarantine_placed_while_the_trash_purge_destroys_storage_keeps_the_row(
+    world, monkeypatch
+):
+    """The trash purge's own selection excludes quarantined files; the re-check applies it."""
+    _set_purge_after(world["file"], "interval '-1 second'")
+
+    def destroy_then_quarantine(plan):
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE media_file SET is_quarantined = true WHERE id = :f"),
+                {"f": world["file"]},
+            )
+        return []
+
+    monkeypatch.setattr(file_cleanup_service, "_purge_external_copies", destroy_then_quarantine)
+    recorded: list[dict] = []
+    monkeypatch.setattr(trash_purge, "_record_purge", recorded.append)
+
+    outcome, _residual = trash_purge.purge_one(world["file"], trigger="due")
+
+    assert outcome == "failed"
+    assert _row(world["file"]) is not None
+    assert [r["details"]["kept_by"] for r in recorded] == ["selection"]
+    assert recorded[0]["outcome"] == "partial"

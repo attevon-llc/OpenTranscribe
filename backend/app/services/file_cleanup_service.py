@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from redis.exceptions import RedisError
+from sqlalchemy import ColumnElement
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -398,8 +400,43 @@ def _clear_reindex_coordination_keys(file_uuid: str) -> None:
         logger.debug(f"purge {file_uuid}: reindex coordination keys not cleared: {err}")
 
 
+#: ``error`` of a purge stopped at the row delete because the file stopped being destroyable
+#: while its external copies were being destroyed (a hold landed, or it left ``eligible``).
+PURGE_ABORTED_AFTER_DESTROY = "Purge stopped before the row delete; the file is kept"
+
+
+def _lock_and_recheck(
+    db: Session, file_id: int, eligible: ColumnElement[bool] | None
+) -> tuple[str, Any] | None:
+    """Row-lock ``file_id`` ``FOR UPDATE`` and say why it must not be destroyed now, else None.
+
+    ``("gone", None)``, ``("held", HoldState)`` or ``("ineligible", None)``. The lock lasts until
+    the caller's next commit or rollback (PostgreSQL row locks end with the transaction). It is
+    what makes the answer hold until then: placing a hold writes ``media_file.legal_hold`` or
+    inserts a ``content_hold_file`` row, whose foreign key check needs ``FOR KEY SHARE`` on
+    this row, and both conflict with ``FOR UPDATE``.
+    """
+    locked = db.execute(
+        select(MediaFile.id).where(MediaFile.id == file_id).with_for_update(of=MediaFile)
+    ).first()
+    if locked is None:
+        return "gone", None
+    hold = hold_state(db, file_id)
+    if hold.held:
+        return "held", hold
+    if eligible is not None and (
+        db.execute(select(MediaFile.id).where(MediaFile.id == file_id, eligible)).first() is None
+    ):
+        return "ineligible", None
+    return None
+
+
 def purge_media_file(
-    db: Session, file: MediaFile, *, defer_citation_scrub: list[str] | None = None
+    db: Session,
+    file: MediaFile,
+    *,
+    defer_citation_scrub: list[str] | None = None,
+    eligible: ColumnElement[bool] | None = None,
 ) -> dict:
     """Canonical destroy for a MediaFile and ALL associated data.
 
@@ -440,6 +477,22 @@ def purge_media_file(
     deliberately no override argument, because an argument that skips the guard
     is the guard's own failure mode.
 
+    **The check runs twice, each time under a ``FOR UPDATE`` row lock**
+    (:func:`_lock_and_recheck`): before the external copies are touched, and again right
+    before the row delete. The lock cannot span phase 2 (see "Session lifetime" below), so a
+    hold placed while storage and OpenSearch are being destroyed is only seen by the second
+    check, and ``content_hold_file`` is ``ON DELETE CASCADE``: without it the row delete
+    silently took the new hold's link, the transcript, the speakers and the summary with it.
+    When the second check finds the file held, the row is NOT deleted: the result is
+    ``deleted: False``, ``refused_legal_hold: True``, ``hold_state`` and
+    ``aborted_after_destroy: True``, logged at ERROR. The hold then keeps everything Postgres
+    still has; the object-storage and search copies may already be gone, which the flag says.
+
+    ``eligible`` (optional) is the caller's own selection predicate on ``MediaFile``
+    (``trash_purge`` passes its ``_due()``). Both checks also require it, so a file that left
+    the caller's selection mid-destroy (quarantined, for the trash purge) is kept the same way,
+    with ``aborted_after_destroy: True`` but no ``refused_legal_hold``.
+
     ``is_quarantined`` is deliberately **not** part of this check. Quarantine is
     a review state an admin can legitimately end by deleting the offending
     upload; it is the unattended retention sweep that must never destroy a file
@@ -468,25 +521,16 @@ def purge_media_file(
     can be relying on it to leave work pending.
     """
     file_uuid = str(file.uuid)
+    file_id = int(file.id)
     residual: list[dict[str, Any]] = []
 
-    hold = hold_state(db, int(file.id))
-    if hold.held:
-        logger.error(
-            f"purge_media_file: REFUSED to delete file {file_uuid} — it is under an "
-            f"active legal hold ({', '.join(hold.held_by)}). Release the hold before deleting."
-        )
-        return {
-            "deleted": False,
-            "file_uuid": file_uuid,
-            "error": LEGAL_HOLD_REFUSAL,
-            "residual_errors": residual,
-            "refused_legal_hold": True,
-            "hold_state": hold,
-        }
-
     try:
-        # Phase 1 — read (DB session open, Postgres only).
+        # Phase 1 — check under the row lock, then read (Postgres only).
+        stop = _lock_and_recheck(db, file_id, eligible)
+        if stop is not None:
+            # No rollback: a refusal before anything was destroyed leaves the caller's
+            # transaction as it was, as it always has.
+            return _stopped(file_uuid, stop, residual, after_destroy=False)
         plan = _load_purge_plan(db, file)
         owner_id = plan["owner_id"]
         db.commit()
@@ -494,8 +538,15 @@ def purge_media_file(
         # Phase 2 — object storage + OpenSearch. NO transaction is held here.
         residual.extend(_purge_external_copies(plan))
 
-        # Phase 3 — write. The citation scrub rides the row delete's transaction, so a
-        # failed delete never leaves the history scrubbed for a file that still exists.
+        # Phase 3 — write, after the same check under a fresh row lock (docstring). The
+        # citation scrub rides the row delete's transaction, so a failed delete never
+        # leaves the history scrubbed for a file that still exists.
+        stop = _lock_and_recheck(db, file_id, eligible)
+        if stop is not None:
+            # Nothing was written since phase 1's commit: ending the transaction only
+            # releases the row lock.
+            db.commit()
+            return _stopped(file_uuid, stop, residual, after_destroy=True)
         if defer_citation_scrub is None:
             scrub_chat_citations(db, [file_uuid])
         db.delete(file)
@@ -534,6 +585,34 @@ def purge_media_file(
             "error": f"Delete failed ({type(e).__name__})",
             "residual_errors": residual,
         }
+
+
+def _stopped(
+    file_uuid: str, stop: tuple[str, Any], residual: list[dict[str, Any]], *, after_destroy: bool
+) -> dict:
+    """The ``purge_media_file`` result for a file one of its row-locked checks kept."""
+    reason, hold = stop
+    result: dict[str, Any] = {"deleted": False, "file_uuid": file_uuid, "residual_errors": residual}
+    if after_destroy:
+        result["aborted_after_destroy"] = True
+    if reason == "held":
+        logger.error(
+            f"purge_media_file: REFUSED to delete file {file_uuid} — it is under an "
+            f"active legal hold ({', '.join(hold.held_by)}). Release the hold before deleting."
+            + (
+                " The hold landed after its external copies were destroyed."
+                if after_destroy
+                else ""
+            )
+        )
+        result.update(error=LEGAL_HOLD_REFUSAL, refused_legal_hold=True, hold_state=hold)
+    elif reason == "gone":
+        logger.warning(f"purge_media_file: file {file_uuid} was already deleted")
+        result["error"] = "File already deleted"
+    else:
+        logger.error(f"purge_media_file: file {file_uuid} no longer matches the purge selection")
+        result["error"] = PURGE_ABORTED_AFTER_DESTROY if after_destroy else "File not eligible"
+    return result
 
 
 def auto_delete_media_file(

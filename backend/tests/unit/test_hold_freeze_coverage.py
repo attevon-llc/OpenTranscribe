@@ -430,11 +430,11 @@ ROUTE_DESTROY_GUARDED: dict[str, tuple[str, str]] = {
     _r("files/trash.py::purge_file"): (_r("files/trash.py::purge_file"), _DESTROY),
     _r("files/trash.py::empty_trash"): ("services/trash_purge.py::_due", _DESTROY),
     _r("erasure_receipts.py::admin_erase_file"): (
-        "services/file_cleanup_service.py::purge_media_file",
+        "services/file_cleanup_service.py::_lock_and_recheck",
         _DESTROY + " (single-recording erasure is deferred while held, Art. 17(3)(e))",
     ),
     _r("erasure_receipts.py::org_erase_file"): (
-        "services/file_cleanup_service.py::purge_media_file",
+        "services/file_cleanup_service.py::_lock_and_recheck",
         _DESTROY + " (single-recording erasure is deferred while held, Art. 17(3)(e))",
     ),
     _r("admin_maintenance.py::admin_erase_user"): (

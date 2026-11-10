@@ -4,7 +4,11 @@ The body of the hourly ``files.purge_trash`` beat task and of ``files.purge_tras
 "delete forever" dispatch). Modelled on the retention sweep (``tasks/cleanup``): phase 1 is one
 short session that selects ``(id, uuid)``; phase 2 is one session PER FILE that re-loads the
 row ``FOR UPDATE`` under the same predicate (a restore or a new hold may have landed between
-the two phases) and hands it to the canonical destroy, ``purge_media_file``, unchanged.
+the two phases) and hands it to the canonical destroy, ``purge_media_file``, with that predicate
+as ``eligible``. That lock does NOT cover the destroy: ``purge_media_file`` commits before its
+storage/OpenSearch phase, which releases it. ``purge_media_file`` therefore re-locks the row and
+re-checks the hold and ``eligible`` right before the row delete, and keeps the row (reported
+``aborted_after_destroy``, audited ``partial`` here) when a hold or quarantine landed meanwhile.
 
 The predicate (:func:`_due`) is the whole safety argument: trashed, ``purge_after <=
 clock_timestamp()``,
@@ -136,9 +140,17 @@ def purge_one(
             "tenant_scope": TENANT_SCOPE_ORG if org_id is not None else TENANT_SCOPE_PERSONAL,
             "details": details,
         }
-        result = purge_media_file(db, media_file, defer_citation_scrub=defer_citation_scrub)
+        result = purge_media_file(
+            db, media_file, defer_citation_scrub=defer_citation_scrub, eligible=_due()
+        )
     if not result.get("deleted"):
         logger.error("trash purge: file %s not purged: %s", file_id, result.get("error"))
+        if result.get("aborted_after_destroy"):
+            # Its external copies were destroyed before a hold (or quarantine) kept the row:
+            # that destroy happened and is reported, as a partial purge.
+            details["aborted_after_destroy"] = True
+            details["kept_by"] = "legal_hold" if result.get("refused_legal_hold") else "selection"
+            _record_purge({**audit, "outcome": AuditOutcome.PARTIAL})
         return "failed", []
     residual = list(result.get("residual_errors") or [])
     if residual:

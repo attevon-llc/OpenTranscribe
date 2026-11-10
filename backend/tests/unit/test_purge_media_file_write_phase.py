@@ -191,3 +191,41 @@ def test_the_external_phase_is_handed_every_object_path(db_session, normal_user,
 
     assert result["deleted"] is True, result
     assert handed == [(file_id, expected)]
+
+
+def test_a_hold_placed_during_the_external_destroy_keeps_the_row(
+    db_session, normal_user, monkeypatch
+):
+    """The phase-3 re-check: a hold that lands while storage and OpenSearch are destroyed
+    (no lock is held then) stops the row delete, which would otherwise cascade the hold away."""
+    from app.models.content_hold import AUTHORITY_PLATFORM
+    from app.models.content_hold import ContentHoldFile
+    from app.services import content_hold_service
+
+    monkeypatch.setattr(fcs, "_refresh_surviving_centroids", lambda db, owner_id, plan: [])
+    doomed = _file(db_session, normal_user)
+    doomed_id = int(doomed.id)
+
+    def destroy_then_hold(plan):
+        content_hold_service.place_file_hold(
+            db_session,
+            org_id=None,
+            actor=normal_user,
+            files=[db_session.get(MediaFile, doomed_id)],
+            reason="preserve for the litigation matter",
+            authority=AUTHORITY_PLATFORM,
+        )
+        db_session.commit()
+        return []
+
+    monkeypatch.setattr(fcs, "_purge_external_copies", destroy_then_hold)
+
+    result = fcs.purge_media_file(db_session, doomed)
+
+    assert result["deleted"] is False
+    assert result["aborted_after_destroy"] is True
+    assert result["refused_legal_hold"] is True
+    assert result["hold_state"].held_by == ["platform"]
+    db_session.expire_all()
+    assert db_session.get(MediaFile, doomed_id) is not None
+    assert db_session.query(ContentHoldFile).filter_by(media_file_id=doomed_id).count() == 1

@@ -126,6 +126,10 @@ def _purge_files_loop(
             continue
         result = purge_media_file(db, media_file, defer_citation_scrub=destroyed)
         summary["errors"].extend(result.get("residual_errors") or [])
+        if result.get("refused_legal_hold"):
+            # Held after the check above (purge_media_file re-checks under a row lock): the
+            # erasure defers like any held file, so the sweep finishes it once released.
+            summary["legal_holds_skipped"] += 1
         if result.get("deleted"):
             summary["media_files_deleted"] += 1
         else:

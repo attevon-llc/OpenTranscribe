@@ -169,6 +169,32 @@ def _is_unchanged(db: Session, existing: MediaFile, digest: str) -> bool:
     return has_segments is not None
 
 
+def _is_protected(db: Session, file_id: int) -> bool:
+    """Whether the file is held or quarantined (``purge_file_guard.protected_file_pred``)."""
+    from app.services.privacy.purge_file_guard import protected_file_pred
+
+    query = select(MediaFile.id).where(MediaFile.id == file_id, protected_file_pred())
+    return db.execute(query).first() is not None
+
+
+def _left_alone(
+    db: Session, doc: MeetingDoc, seed: str, existing: MediaFile, digest: str, action: str
+) -> tuple[InjectionRecord, TurnRows]:
+    """The record and turn table of a file this run does not rewrite (``action`` says why)."""
+    _, turn_rows, nudged = rowbuild.build_segment_rows(doc, seed, media_file_id=existing.id)
+    stored = int(
+        db.scalar(
+            select(func.count(TranscriptSegment.id)).where(
+                TranscriptSegment.media_file_id == existing.id
+            )
+        )
+        or 0
+    )
+    record = _record(doc, existing, digest, action, stored)
+    record.extra["duplicate_spans_nudged"] = nudged
+    return record, turn_rows
+
+
 def inject_meeting(
     db: Session,
     doc: MeetingDoc,
@@ -191,6 +217,10 @@ def inject_meeting(
     file_uuid = ids.file_uuid(doc.corpus, doc.meeting_id, seed)
 
     existing = db.execute(select(MediaFile).where(MediaFile.uuid == file_uuid)).scalar_one_or_none()
+    if existing is not None and _is_protected(db, int(existing.id)):
+        # A legal hold or a quarantine freezes the file as it stands (``hold_guard``), even an
+        # injected one: not even the recorded date is refreshed.
+        return _left_alone(db, doc, seed, existing, digest, "skipped_protected")
     if existing is not None and not force and _is_unchanged(db, existing, digest):
         # The skip path still refreshes the recorded date, and deliberately nothing else.
         #
@@ -207,18 +237,7 @@ def inject_meeting(
         # OpenSearch index untouched — the date filter reads Postgres.
         _refresh_recorded_date(existing, doc)
         db.flush()
-        _, turn_rows, nudged = rowbuild.build_segment_rows(doc, seed, media_file_id=existing.id)
-        stored = int(
-            db.scalar(
-                select(func.count(TranscriptSegment.id)).where(
-                    TranscriptSegment.media_file_id == existing.id
-                )
-            )
-            or 0
-        )
-        record = _record(doc, existing, digest, "skipped", stored)
-        record.extra["duplicate_spans_nudged"] = nudged
-        return record, turn_rows
+        return _left_alone(db, doc, seed, existing, digest, "skipped")
 
     media_file, action = _upsert_media_file(db, doc, user_id, seed, tool_version, digest)
     speaker_ids = _get_or_create_speakers(db, doc, media_file, user_id, seed)

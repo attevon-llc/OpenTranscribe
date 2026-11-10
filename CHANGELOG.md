@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Re-running the corpus injector (`python -m app.scripts.corpus_injection`, also with `--force`) no longer rewrites an injected recording that is under a legal hold or in quarantine; the record says `skipped_protected` and no indexing or redaction is dispatched for it.
 - The manual `batch_speaker_matching` script no longer writes match records or name suggestions for the speakers of a recording under a legal hold or in quarantine (including one held while the script runs); it logs how many it left out.
 - `python -m app.scripts.split_shared_storage_paths --apply` no longer repoints a recording under a legal hold or in quarantine: such a recording keeps the shared original key, a second protected one in the same group is left as it is, and both runs report `skipped_protected`. A hold placed while the script runs is respected too.
 - An account erasure that cannot remove the whole `user_<id>/` or `avatars/<id>/` storage prefix (because a held recording, or one handed to another account, still sits there) now also removes every other object under it: legacy `youtube_<id>/` thumbnails, orphaned file directories and replaced profile photos no recording or profile names were left behind and not counted by the erasure receipt. Only the surviving recordings' directories and the surviving profiles' photos are kept; the receipt, unfinished-upload abort and media-mirror delete use the same selection.

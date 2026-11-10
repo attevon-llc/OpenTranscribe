@@ -164,6 +164,19 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
         verbose: true
+      # frontend-check above runs check:i18n too, but its `types_or` has no `json`, and
+      # `identify` tags the locale files `json`, so a commit that touches ONLY locale files
+      # fired nothing and a parity break surfaced in CI alone. This hook is that gap, and
+      # only that gap: a stdlib node script, well under a second, no node_modules needed.
+      # https://pre-commit.com/#filtering-files-with-types (files AND types must both match).
+      - id: i18n-parity
+        name: i18n key parity (locale JSON)
+        entry: node frontend/scripts/check-i18n-parity.mjs
+        language: system
+        files: ^frontend/src/lib/i18n/locales/[^/]+\.json$
+        types: [json]
+        pass_filenames: false
+        stages: [pre-commit]
       - id: frontend-build
         name: Frontend Build Verification (eslint + svelte-check + vite build)
         entry: scripts/frontend-check.sh --no-claude

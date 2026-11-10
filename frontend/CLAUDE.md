@@ -304,17 +304,13 @@ caveat: `src/components/ui/CLAUDE.md`.
 
   - **`npm run check:i18n` enforces key PARITY, not translation.** A key copied into all 12 files
     with English text passes the gate and ships untranslated. Parity is the floor, not the goal.
-  - **It runs in three places, and one of them has a gap.** (1) CI runs it explicitly
-    (`.github/workflows/pre-commit.yml`, step "Check i18n key parity"). (2) It also runs
-    **locally** — `scripts/frontend-check.sh` (the "i18n parity check" step) calls `npm run check:i18n`, and that script
-    body **is** the `frontend-check` pre-commit hook (`.pre-commit-config.yaml`, `--check-only`
-    at commit stage), so a local `git commit` touching frontend code does run it. (3) The
-    residual gap: that hook's `files: ^frontend/src/` + `types_or: [svelte, ts, javascript,
-css, html]` does not match `.json`, and locale files
-    (`frontend/src/lib/i18n/locales/*.json`) are tagged `json` by `identify` — so **a commit
-    that touches only locale JSON files does not fire the hook at all**, and a parity break
-    introduced purely in translation files looks clean locally and fails only in CI. Run it
-    yourself when in doubt: `cd frontend && npm run check:i18n`.
+  - **It runs in three places.** (1) CI runs it explicitly (`.github/workflows/pre-commit.yml`,
+    step "Check i18n key parity"). (2) `scripts/frontend-check.sh` calls it, and that script is
+    the `frontend-check` pre-commit hook, so a commit touching frontend code runs it. (3) That
+    hook's `types_or` has no `json` (locale files are tagged `json` by `identify`), so a commit
+    touching ONLY locale JSON used to fire nothing and fail only in CI; the `i18n-parity` hook
+    (commit stage, `files: ^frontend/src/lib/i18n/locales/`, `types: [json]`) now covers exactly
+    that case. `backend/tests/unit/test_precommit_i18n_locale_hook.py` pins both filters.
 
   This bites hardest on releases that touch a lot of copy at once, and on any long-lived branch:
   every locale file is a shared edit surface, so a branch that sits unmerged collects conflicts in

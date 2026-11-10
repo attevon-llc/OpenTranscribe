@@ -10,7 +10,7 @@ Public surface:
   unioned with the admin-forced floor.
 - ``RedactionService`` — orchestrates detection (cached) + read-time masking.
 
-Heavy ML dependencies (presidio, gliner, detoxify, torch) are imported lazily
+Heavy ML dependencies (presidio, gliner, torch) are imported lazily
 inside the detector modules so this package imports cleanly in the API process
 and in unit tests without those libraries installed.
 """

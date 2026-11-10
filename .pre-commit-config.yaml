@@ -391,6 +391,18 @@ repos:
         additional_dependencies: ['vulture==2.16']
         pass_filenames: false
         files: ^((backend/app|scripts)/.*\.py|scripts/guards/.*)$
+      # Declared vs imported Python dependencies (deptry, https://deptry.com/). Config and the
+      # reason for every ignore live in backend/deptry.toml. The hook env installs only deptry,
+      # so package -> module names come from that file's package_module_name_map. Whole-tree
+      # scan of backend/app and backend/alembic, so push stage; CI runs this stage too.
+      - id: guard-deptry
+        name: unused / missing / transitive / dev-only Python dependencies (deptry)
+        entry: bash -c 'cd backend && deptry app alembic --config deptry.toml'
+        language: python
+        additional_dependencies: ['deptry==0.25.1']
+        pass_filenames: false
+        files: ^(backend/(app|alembic)/.*\.py|backend/deptry\.toml|backend/requirements[^/]*\.txt)$
+        stages: [pre-push]
       # mypy over the tooling packages under scripts/ (the guards, shared libraries and audit
       # tooling the `mypy` hook above never saw, since that one is `files: ^backend/`). Ratcheted
       # because the packages were never type-checked; seconds, so commit stage.

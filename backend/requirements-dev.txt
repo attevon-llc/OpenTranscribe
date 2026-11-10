@@ -10,6 +10,7 @@ ruff==0.17.3
 mypy==2.4.1
 mypy-extensions==1.1.0
 vulture==2.16  # Dead-code ratchet (scripts/guards/check_vulture.py); the hook pins the same version
+deptry==0.25.1  # Declared-vs-imported dependency check (backend/deptry.toml); the guard-deptry hook pins the same version
 import-linter==2.15  # Enforces the app ↛ cloud seam (forbidden contract in pyproject.toml)
 
 # Testing — pytest + the plugins pyproject's addopts require. Pinned in
@@ -48,13 +49,9 @@ types-PyYAML==6.0.12.20260906
 # Packages backend code imports directly that nothing else here pins exactly (they would
 # otherwise only arrive as transitive dependencies). They ship py.typed, so the mypy hook
 # installs the same versions; the parity test above compares those pins with this file.
-aiohttp==3.14.5
-certifi==2026.10.23
-limits==5.8.0
 packaging==26.3
 pillow==13.0.0
 playwright==1.64.1
-urllib3==2.8.0
 
 # Development Utilities
 ipython==9.17.1  # Enhanced Python shell

@@ -259,3 +259,12 @@ watchfiles==1.3.0  # via uvicorn[standard]
 wrapt==2.5.1  # via deprecated, smart-open; pinned to prod's version (2.5.2 drifted the lite/CI resolves, 2026-11-01)
 amqp==5.4.1  # via kombu; pinned to prod's version (5.4.2 drifted the lite resolve, 2026-11-03)
 pandas==3.1.0  # via pyannote.audio; pinned to prod's version (3.1.1 drifted the lite resolve, 2026-11-04)
+# Imported directly by app code, so declared as direct dependencies (deptry DEP003/DEP004,
+# backend/deptry.toml). They were only transitive here, and aiohttp/certifi/limits/urllib3
+# lived solely in requirements-dev.txt, i.e. absent from a production-only install's own
+# declarations. Same versions the venv and the mypy hook already use.
+kombu==5.6.2
+aiohttp==3.14.5
+certifi==2026.10.23
+limits==5.8.0
+urllib3==2.8.0

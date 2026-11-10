@@ -124,6 +124,13 @@ One file per environment, all fully pinned:
 | `requirements-test.txt` | `Dockerfile.test` (GPU test image) **and** `requirements-dev.txt` |
 | `requirements-dev.txt` | the venv only — `requirements-test.txt` plus linters, pre-commit |
 
+`requirements.txt` is also a lock: it pins transitive packages on purpose (issue #492), so
+"declared but never imported" is expected for many lines. `guard-deptry` (push stage; config
+and a reason per ignore in `backend/deptry.toml`) enforces the useful rest: anything app code
+imports must be a direct pin in `requirements.txt` (not only transitive, not only in
+`requirements-dev.txt`), and a new package that nothing imports must be added to the config's
+`DEP002` list with a reason or not added. Run it by hand: `cd backend && venv/bin/deptry app alembic --config deptry.toml`.
+
 ⚠️ **`requirements-dev.txt`'s `mypy` pin and `types-*` stubs are mirrored in the mypy pre-commit hook**
 (`.pre-commit-config.yaml`: `rev` plus exact-pinned `additional_dependencies`). The hook runs in an
 isolated environment, so a `py.typed` package missing from it is `Any` there and the hook passes code

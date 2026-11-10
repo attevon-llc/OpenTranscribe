@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `scripts/e2e/styling-ab.sh` no longer aborts when the two trees' `package-lock.json` differ: the tree with the differing lock gets its own `npm ci` (log in the run dir, announced on stdout), while trees with matching locks keep the shared `node_modules`.
 - Storage and LLM client failures are now typed: `MinIOService` and the storage helpers raise `StorageError` (the store refused) or `StorageUnavailableError` (no answer), and `LLMService` raises `LLMUnavailableError` (unreachable, timed out) or `LLMResponseError` (non-200, bad JSON, empty content), all chained with `raise ... from`. Callers that caught a bare `Exception` for these now catch the typed error, so a programming error in those paths is no longer swallowed. Error messages no longer include the provider response body or object names.
 
 - Transcription error handling (`backend/app/transcription/**` and `backend/app/tasks/transcription/**`): every one of the remaining 93 handlers now narrows to what its try body can raise (Redis, SQLAlchemy, broker, OpenSearch, MinIO, subprocess, torch/CUDA `RuntimeError`) or is a marked boundary that calls `logger.exception`; each absorbed outage logs a traceback, and a programming error in those bodies is no longer swallowed. The waveform generator's outer catch-all was removed (the Celery task already logs and retries). Model-load error types live in `app/transcription/errors.py`.

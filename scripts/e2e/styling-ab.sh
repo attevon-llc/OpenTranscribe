@@ -15,6 +15,9 @@
 # The lead starts and stops the stack (this script never does):
 #   ./opentr.sh start dev --fresh styling --port-offset 200 --seed-benchmark --with-mock-llm
 #
+# A tree whose package-lock.json differs from the checkout's gets its own `npm ci` (log in
+# the run dir); trees with an identical lock share the checkout's node_modules.
+#
 # Refuses unless .fresh/<stack>.offset is non-zero and that stack's backend answers
 # /health, so it can never be pointed at the live stack. Never kills by name: the EXIT
 # trap TERMs only the PIDs this script started.
@@ -23,6 +26,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+. "$(dirname "${BASH_SOURCE[0]}")/styling-ab-deps.sh"
 MAIN_ROOT="$(cd "$REPO_ROOT" && dirname "$(readlink -f "$(git rev-parse --git-common-dir)")")"
 NODE_BIN="${STYLING_AB_NODE_BIN:-$HOME/.nvm/versions/node/v26.8.2/bin}"
 WORK_ROOT="${STYLING_AB_WORK_ROOT:-$HOME/ot-cleanup-work/styling/ab}"
@@ -30,7 +34,7 @@ WORK_ROOT="${STYLING_AB_WORK_ROOT:-$HOME/ot-cleanup-work/styling/ab}"
 LANE="" BASE="" AFTER="WORKTREE" MODE="zero" STACK="" SCREENS="all" VARIANTS=""
 CONTROL="" OFFSET="" SELFCHECK=0 NEGCTL=0
 
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
+usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
 die() { echo "styling-ab: $*" >&2; exit "${2:-2}"; }
 
 while [ $# -gt 0 ]; do
@@ -107,7 +111,6 @@ build_tree() { # <name> <ref|WORKTREE>
   else
     (cd "$REPO_ROOT" && git archive "$ref" frontend) | tar -x -C "$dir" || die "git archive $ref failed" 3
   fi
-  ln -s "$NODE_MODULES" "$dir/frontend/node_modules"
   mkdir -p "$dir/frontend/static"; rm -rf -- "$dir/frontend/static/fonts"; cp -a "$FONTS" "$dir/frontend/static/fonts"
 }
 
@@ -126,14 +129,14 @@ start_vite() { # <name> <port>
   die "vite ($name) did not answer on :$port within 180 s; log: $W/vite-$name.log" 3
 }
 
-build_tree before "$BASE"
+provision() { ab_provision_node_modules "$1" "$W/$1/frontend" "$NODE_MODULES" "$REPO_ROOT/frontend/package-lock.json" "$W" || exit 3; }
+
+build_tree before "$BASE"; provision before
 if [ "$SELFCHECK" = 1 ] || [ "$NEGCTL" = 1 ]; then
   start_vite before "$PORT_BEFORE"
   URL_BEFORE="http://localhost:$PORT_BEFORE"; URL_AFTER="$URL_BEFORE"
 else
-  build_tree after "$AFTER"
-  cmp -s "$W/before/frontend/package-lock.json" "$W/after/frontend/package-lock.json" \
-    || die "package-lock.json differs between the trees; the shared node_modules would be wrong" 3
+  build_tree after "$AFTER"; provision after
   start_vite before "$PORT_BEFORE"; start_vite after "$PORT_AFTER"
   URL_BEFORE="http://localhost:$PORT_BEFORE"; URL_AFTER="http://localhost:$PORT_AFTER"
 fi

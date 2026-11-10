@@ -33,7 +33,10 @@ What :func:`reverify_identity_sources` measures, inside an optional organization
 
 Dry run by default. With ``apply`` it clears the stamp of the ``evidence_lost`` rows, or of every
 ``backfill_stamped`` row with ``include_evidenced`` (an operator who would rather keep every
-pre-0.6.0 name than let a purge clear an ambiguous one). Clearing is the backfill's own
+pre-0.6.0 name than let a purge clear an ambiguous one). Speakers of a file under a legal hold or
+in quarantine are never cleared (``skipped_protected``): a hold freezes the file as it stands and
+every background write skips a frozen file (``hold_guard``), and clearing a stamp can change the
+label the held file shows. Clearing is the backfill's own
 "unknown": the columns :func:`~app.utils.speaker_identity_source.cleared_provenance_values`
 nulls, the name and link untouched. Each cleared row gets a ``confirmed`` identity-history row
 (``origin: identity_reverify``, a system actor); the affected files are re-indexed so a name that
@@ -165,6 +168,7 @@ class ReverifyReport:
     shape_left_unmarked_with_evidence: int = 0
     summaries_to_review: int = 0
     cleared: int = 0
+    skipped_protected: int = 0
     reindex_queue_failed: int = 0
     recorded: dict[str, Any] | None = None
     evidence_lost_uuids: list[str] = field(default_factory=list)
@@ -182,6 +186,7 @@ class ReverifyReport:
             "shape_left_unmarked_with_evidence": self.shape_left_unmarked_with_evidence,
             "summaries_to_review": self.summaries_to_review,
             "cleared": self.cleared,
+            "skipped_protected": self.skipped_protected,
             "reindex_queue_failed": self.reindex_queue_failed,
         }
 
@@ -255,11 +260,30 @@ def _measure(db: Session, report: ReverifyReport) -> list[tuple[int, bool]]:
     return rows
 
 
+def _on_unprotected_file() -> ColumnElement[bool]:
+    """``Speaker`` belongs to a file nobody holds and that is not quarantined."""
+    from app.services.privacy.purge_file_guard import unprotected_file_pred
+
+    return Speaker.media_file_id.in_(select(MediaFile.id).where(unprotected_file_pred()))
+
+
+def _count_protected(db: Session, speaker_ids: list[int]) -> int:
+    """How many of ``speaker_ids`` sit on a held or quarantined file."""
+    if not speaker_ids:
+        return 0
+    return int(
+        db.execute(
+            select(func.count()).where(Speaker.id.in_(speaker_ids), ~_on_unprotected_file())
+        ).scalar_one()
+    )
+
+
 def _clear(db: Session, speaker_ids: list[int], *, reason: str) -> list[tuple[int, str]]:
     """Clear the backfill stamp of these rows and record each in the identity history. No commit.
 
     The ``WHERE`` repeats the stamp test, so a row a person or the matcher rewrote between the
-    measurement and this statement keeps its new record.
+    measurement and this statement keeps its new record, and the protection test, so a speaker of
+    a file held or quarantined since is left as it is.
     """
     if not speaker_ids:
         return []
@@ -267,7 +291,7 @@ def _clear(db: Session, speaker_ids: list[int], *, reason: str) -> list[tuple[in
         (int(row[0]), str(row[1]))
         for row in db.execute(
             update(Speaker)
-            .where(Speaker.id.in_(speaker_ids), backfill_stamp_clause())
+            .where(Speaker.id.in_(speaker_ids), backfill_stamp_clause(), _on_unprotected_file())
             .values(**cleared_provenance_values())
             .returning(Speaker.id, Speaker.uuid)
             .execution_options(synchronize_session=False)
@@ -355,8 +379,9 @@ def reverify_identity_sources(
     )
     try:
         rows = _measure(db, report)
+        targets = [sid for sid, evidenced in rows if include_evidenced or not evidenced]
+        report.skipped_protected = _count_protected(db, targets)
         if apply:
-            targets = [sid for sid, evidenced in rows if include_evidenced or not evidenced]
             reason = "operator_cleared" if include_evidenced else "evidence_lost"
             cleared = _clear(db, targets, reason=reason)
             db.commit()

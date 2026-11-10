@@ -1163,6 +1163,29 @@ def test_every_celery_task_is_classified_and_guarded():
     assert not problems, "\n".join(problems)
 
 
+#: Operator CLIs under ``app/scripts`` that write file content. They are not decorated, so no
+#: scanner can find them: each is pinned here by hand, as a chain to the guard like a route's.
+CLI_FREEZE_GUARDED: dict[str, tuple[str, ...]] = {
+    # Clearing a v449 stamp can change what a held file's label shows.
+    "scripts/reverify_identity_sources.py::main": (
+        "services/privacy/identity_reverify.py::reverify_identity_sources",
+        "services/privacy/identity_reverify.py::_clear",
+        "services/privacy/identity_reverify.py::_on_unprotected_file",
+        "services/privacy/purge_file_guard.py::unprotected_file_pred",
+    ),
+}
+
+
+def test_each_pinned_operator_cli_still_reaches_a_hold_guard():
+    index = _app_index()
+    problems = [
+        problem
+        for key, chain in CLI_FREEZE_GUARDED.items()
+        for problem in chain_problems(index, key, chain)
+    ]
+    assert not problems, "\n".join(problems)
+
+
 def test_each_guard_wrapper_reaches_a_hold_guard_primitive():
     index = _app_index()
     for name, key in GUARD_WRAPPERS.items():

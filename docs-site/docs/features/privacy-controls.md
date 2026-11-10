@@ -236,10 +236,10 @@ comparison either: when they accept a voice suggestion it notes only that the su
 voice match, not its similarity score. Reverting an identity to unknown (unlinking, rejecting, deleting
 a profile) forgets the record with it.
 
-**This is the current state, not a history.** Only the latest source, time, person and origin are
-kept; what was there before is overwritten. A complete, append-only history of who changed which
-name and when is tracked in issue #1336 (v0.7.0), and a review of the queries these columns need
-at scale in #1337. Identities that existed before 0.6.0 have no time or person; the identities
+**These columns are the current state, not a history.** Only the latest source, time, person and
+origin are kept on the speaker row. The append-only history of who changed which name and when is
+kept separately (#1336): open **History** under a speaker in the speaker editor, or call
+`GET /api/speakers/{speaker_uuid}/identity-history`. Identities that existed before 0.6.0 have no time or person; the identities
 the upgrade recognised as voiceprint-made carry `{"origin": "v449_backfill"}`. An administrator
 can re-check those marks against today's data, and return the unfounded ones (or all of them) to
 unknown, with `python -m app.scripts.reverify_identity_sources`; see
@@ -437,8 +437,8 @@ recomputes each affected profile from its remaining speakers; it never deletes a
 profile left with no speakers is **listed** in the task result for review, not deleted: deleting a
 named person record is a human decision.
 
-The file-scoped purge ships separately; until it is installed the task logs that nothing was
-destroyed and returns `unavailable`.
+The file-scoped purge is part of this build. The sweep returns `unavailable` (and logs that nothing
+was destroyed) only if the purge it finds has no `files` scope.
 
 ## API reference
 
@@ -566,11 +566,10 @@ here); `effective` is what applies once the layers above are counted. `updated_a
 administrator saves a policy. `redaction_floor` is `null` while the `redaction.policy` capability is
 off for the request.
 
-The organization redaction floor has an API but **no screen in this release**: the organization
-privacy panel shows the two switches only. A floor screen is part of
-[#1279](https://github.com/attevon-llc/OpenTranscribe/issues/1279), planned for v0.7.0. Until then
-an administrator sets a floor through the API, and the stored floor is combined with the
-deployment's floor (strictest wins).
+The organization privacy panel (Settings, organization group, **Privacy policy**) also edits the
+organization's redaction floor when `redaction.policy` is on
+([#1279](https://github.com/attevon-llc/OpenTranscribe/issues/1279)); the same floor can be set
+through this API. The stored floor is combined with the deployment's floor (strictest wins).
 
 `PATCH` is partial and needs at least one field: `voiceprint_matching_enabled`,
 `gender_inference_enabled` and/or `redaction_floor`. Sending `redaction_floor` while

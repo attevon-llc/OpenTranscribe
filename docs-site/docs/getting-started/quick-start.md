@@ -53,7 +53,7 @@ The installer will ask for:
    - Get a free token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
 2. **Whisper Model Size** (default: `large-v3-turbo` — auto-detected based on hardware)
-   - `large-v3-turbo` - 6x faster, excellent accuracy (default, NVIDIA GPU recommended)
+   - `large-v3-turbo` - much faster than `large-v3`, excellent accuracy (default, NVIDIA GPU recommended)
    - `large-v3` - Best accuracy; use it rather than the turbo model if you need translation to English
    - `medium` - Good balance (the installer's pick for NVIDIA GPUs with 4-8GB VRAM)
    - `small` - The installer's pick on Apple Silicon and GPUs under 4GB VRAM

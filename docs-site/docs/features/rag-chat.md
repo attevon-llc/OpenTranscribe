@@ -364,8 +364,9 @@ them by other means. Every value applies to the next message — no restart, no
 Measured evaluation found the shipped cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
 **costs** retrieval quality rather than improving it — 20.6% and 32.7% nDCG@10 regressions
 across the two eval corpora (see `developer-guide/rag-evaluation.md`). The app's own in-app UI
-surfaces a disclosure when this is detected. Leave "Rerank excerpts" disabled unless you've
-verified on your own corpus that it helps.
+surfaces a disclosure when this is detected. "Rerank excerpts" is **on by default**
+(`DEFAULT_CHAT_RAG_RERANK_ENABLED`); consider switching it off unless you've verified on your own
+corpus that it helps.
 :::
 
 The reranker model (`cross-encoder/ms-marco-MiniLM-L-6-v2`, ~90&nbsp;MB) is

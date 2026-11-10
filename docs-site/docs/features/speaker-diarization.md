@@ -88,10 +88,10 @@ This section describes the engine that runs when speakers are detected **on this
 **New Capabilities**:
 - **Speaker Overlap Detection**: Automatically identifies and highlights segments where multiple speakers talk simultaneously with primary/secondary speaker classification and confidence scores
 - **Warm Model Caching**: Models are cached on startup, reducing initialization time by 40-60 seconds on subsequent restarts
-- **Fast Speaker Assignment**: 273x faster speaker clustering using optimized embedding algorithms
+- **Fast Speaker Assignment**: matching speaker turns to words is 273x faster than the WhisperX original (see [Pipeline Optimization](./pipeline-optimization.md)); it is not part of clustering
 
 **Technical Updates**:
-- **Embedding Dimension**: Upgraded from 192-dimensional to 256-dimensional speaker embeddings for improved voice fingerprinting accuracy
+- **Embedding Dimension**: Voiceprints moved from the older 512-dimensional pyannote embeddings (`speakers_v3`) to 256-dimensional WeSpeaker embeddings (`speakers_v4`)
 - **Better Noise Handling**: Improved performance with background noise and overlapping speech
 - **Optimized Processing**: Faster GPU utilization with reduced memory overhead
 
@@ -517,7 +517,7 @@ Whether the range is used depends on the detector; see [Speaker-count hints](#sp
 **Startup Impact**:
 - Cold start (first transcription): Normal baseline + model loading
 - Warm cache (subsequent transcriptions): **40-60 seconds faster** due to pre-loaded models
-- **Fast speaker assignment**: 273x faster clustering on GPU
+- **Fast speaker assignment**: matching speaker turns to words is 273x faster than the WhisperX original (see [Pipeline Optimization](./pipeline-optimization.md))
 
 **Per-File Processing** (this server's engine):
 - Base diarization: ~20-30 seconds for 1-hour audio
@@ -590,14 +590,11 @@ ${MODEL_CACHE_DIR}/torch/pyannote/      # PyAnnote voice embeddings
 
 ### Fast Speaker Assignment
 
-**What it does**: PyAnnote v4 uses optimized clustering algorithms for speaker detection.
+**What it does**: merging the detector's speaker turns onto the transcript's words (`backend/app/transcription/speaker_assigner.py`) is done with NumPy overlap matrices instead of the original per-word scan.
 
 **Performance**:
-- **273x faster** than previous speaker assignment methods
-- Clustering completes in milliseconds vs seconds
-- Particularly noticeable on high-speaker-count files (10+ speakers)
-
-**Technical**: Uses sklearn's `AgglomerativeClustering` with optimized similarity thresholds
+- **273x faster** than the WhisperX original (10.2 s to 0.037 s for 1,349 words, measured at the time)
+- It is the assignment of turns to words that got faster; clustering is a separate step and is not what this figure measures
 
 ### Native Word-Level Timestamps
 
@@ -636,11 +633,11 @@ The conservative auto-accept threshold (0.75) was chosen specifically to prevent
 
 ### Why 256-Dimensional WeSpeaker Embeddings
 
-PyAnnote v4 switched from 192-dimensional pyannote/embedding (v3) to 256-dimensional WeSpeaker ResNet34-LM embeddings. This was not simply a version bump -- it reflects a deliberate accuracy-performance tradeoff:
+PyAnnote v4 switched from the 512-dimensional pyannote/embedding model (v3) to 256-dimensional WeSpeaker ResNet34-LM embeddings. This was not simply a version bump -- it reflects a deliberate accuracy-performance tradeoff:
 
-- **Accuracy**: WeSpeaker ResNet34-LM achieves state-of-the-art results on VoxCeleb benchmarks. The 256-dim space provides a richer representation than 192-dim while remaining computationally efficient.
-- **Speed**: 273x faster speaker assignment (from ~3 seconds to ~11ms per speaker) due to optimized ONNX runtime and better clustering algorithms in v4.
-- **Storage**: 256-dim vectors are 33% larger than 192-dim but 50% smaller than the 512-dim embeddings used by the legacy pyannote/embedding model. At scale (30,000 speakers), the full OpenSearch index remains under 32MB.
+- **Accuracy**: WeSpeaker ResNet34-LM achieves state-of-the-art results on VoxCeleb benchmarks. The 256-dim space is half the size of the legacy 512-dim one while keeping state-of-the-art accuracy.
+- **Speed**: smaller vectors make every comparison cheaper. (The separate 273x figure elsewhere on this page is about merging speaker turns onto words, not about embeddings.)
+- **Storage**: 256-dim vectors are 50% smaller than the 512-dim embeddings used by the legacy pyannote/embedding model. At scale (30,000 speakers), the full OpenSearch index remains under 32MB.
 - **L2-normalization**: All embeddings are L2-normalized before storage, which means cosine similarity reduces to a simple dot product -- enabling efficient HNSW search in OpenSearch.
 
 The 512-dim pyannote/embedding model is retained in the `speakers_v3` index for backward compatibility and can be used as a fallback. The alias-based index architecture allows atomic switching between v3 and v4 without downtime (see [Embedding Migration](../configuration/embedding-migration.md)).

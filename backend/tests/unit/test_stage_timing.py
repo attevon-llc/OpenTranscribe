@@ -261,7 +261,7 @@ class TestTranscriberStages:
     def test_decode_failure_records_asr_failure(self, capture):
         def _exploding():
             raise RuntimeError("decoder died")
-            yield  # pragma: no cover - makes this a generator
+            yield  # makes this a generator
 
         with pytest.raises(RuntimeError, match="decoder died"):
             self._transcriber(_exploding()).transcribe(np.zeros(16000, dtype=np.float32))

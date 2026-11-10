@@ -68,11 +68,11 @@ class MirrorDestination(Protocol):
 
     def lookup(self, key: str) -> tuple[int, str | None] | None:
         """Return (size, etag-or-None) for ``key`` at the destination, or None."""
-        ...  # pragma: no cover - protocol
+        ...
 
     def copy(self, obj: SourceObject) -> None:
         """Copy one source object to the destination (streaming)."""
-        ...  # pragma: no cover - protocol
+        ...
 
 
 # =============================================================================

@@ -70,7 +70,7 @@ def completed_file(session, backend_url: str):
     `e2e-owned-*` upload, which that worker then deleted mid-test — MinIO NoSuchKey
     / 404 on a file that had worked seconds earlier.
     """
-    if not COMMITTED_SAMPLE_MEDIA.exists():  # pragma: no cover - the fixture is tracked
+    if not COMMITTED_SAMPLE_MEDIA.exists():  # the fixture is tracked
         pytest.skip(f"missing media fixture {COMMITTED_SAMPLE_MEDIA}")
     headers = {"Authorization": f"Bearer {session}"}
     name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}{COMMITTED_SAMPLE_MEDIA.suffix}"

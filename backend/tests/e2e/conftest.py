@@ -582,7 +582,7 @@ def authenticated_page(page: Page, base_url: str):
         # that cookie jar, so this reaches the real /api/auth/logout endpoint
         # with no token ever exposed to page.evaluate().
         page.request.post(f"{base_url}/api/auth/logout")
-    except Exception as exc:  # pragma: no cover - best-effort teardown
+    except Exception as exc:  # best-effort teardown
         warnings.warn(f"authenticated_page teardown: logout call failed: {exc}", stacklevel=2)
 
 
@@ -628,7 +628,7 @@ def shared_auth_state(browser, base_url: str):
                 logout_context.request.post(f"{base_url}/api/auth/logout")
             finally:
                 logout_context.close()
-        except Exception as exc:  # pragma: no cover - best-effort teardown
+        except Exception as exc:  # best-effort teardown
             warnings.warn(f"shared_auth_state teardown: logout call failed: {exc}", stacklevel=2)
     finally:
         if os.path.exists(state_file):
@@ -920,7 +920,7 @@ def owned_media_factory(backend_url: str):
     created: list[tuple[str, str]] = []
 
     def _upload(token: str, *, timeout_secs: int = 300) -> dict:
-        if not COMMITTED_SAMPLE_MEDIA.exists():  # pragma: no cover - the fixture is tracked
+        if not COMMITTED_SAMPLE_MEDIA.exists():  # the fixture is tracked
             pytest.skip(f"missing media fixture {COMMITTED_SAMPLE_MEDIA}")
 
         headers = {"Authorization": f"Bearer {token}"}
@@ -1033,7 +1033,7 @@ def admin_token(backend_url: str) -> Iterator[str]:
                 headers={"Authorization": f"Bearer {refresh_token}"},
                 timeout=30,
             )
-        except Exception as exc:  # pragma: no cover - best-effort teardown
+        except Exception as exc:  # best-effort teardown
             warnings.warn(f"admin_token teardown: logout call failed: {exc}", stacklevel=2)
 
 
@@ -1171,7 +1171,7 @@ def second_user_auth_state(browser, base_url: str, second_user: dict[str, str]):
                 logout_context.request.post(f"{base_url}/api/auth/logout")
             finally:
                 logout_context.close()
-        except Exception as exc:  # pragma: no cover - best-effort teardown
+        except Exception as exc:  # best-effort teardown
             warnings.warn(
                 f"second_user_auth_state teardown: logout call failed: {exc}", stacklevel=2
             )
@@ -1422,7 +1422,7 @@ class APIHelper:
                 headers={"Authorization": f"Bearer {self._refresh_token}"},
                 timeout=30,
             )
-        except Exception as exc:  # pragma: no cover - best-effort teardown
+        except Exception as exc:  # best-effort teardown
             warnings.warn(f"APIHelper.logout(): logout call failed: {exc}", stacklevel=2)
         finally:
             self._token = None

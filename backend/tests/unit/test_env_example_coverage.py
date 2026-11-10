@@ -212,7 +212,7 @@ def _keys_read_by_code() -> frozenset[str]:
     for path in APP_DIR.rglob("*.py"):
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:  # pragma: no cover - defensive
+        except SyntaxError:  # defensive
             continue
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -321,7 +321,7 @@ def _keys_genuinely_consumed() -> frozenset[str]:
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:  # pragma: no cover - defensive
+        except SyntaxError:  # defensive
             continue
         aliases = _settings_aliases(tree)
         constants = _module_string_constants(tree)
@@ -379,7 +379,7 @@ def _keys_consumed_on_the_surface() -> set[str]:
                 continue
             try:
                 seen.update(token.findall(path.read_text(encoding="utf-8", errors="ignore")))
-            except OSError:  # pragma: no cover - defensive
+            except OSError:  # defensive
                 continue
     return seen
 
@@ -452,7 +452,7 @@ def _wrapper_functions_reading_their_first_argument() -> set[str]:
     for path in (REPO_ROOT / "backend" / "app").rglob("*.py"):
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):  # pragma: no cover - defensive
+        except (OSError, SyntaxError):  # defensive
             continue
         for func in ast.walk(tree):
             if not isinstance(func, ast.FunctionDef) or not func.args.args:
@@ -516,7 +516,7 @@ def _settings_field_names() -> frozenset[str]:
                     if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)
                 )
     if not names:
-        raise AssertionError("no Settings fields found")  # pragma: no cover
+        raise AssertionError("no Settings fields found")
     return frozenset(names)
 
 

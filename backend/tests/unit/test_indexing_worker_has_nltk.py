@@ -65,7 +65,7 @@ def _volume_targets(service: dict) -> list[str]:
 
 @pytest.fixture(scope="module")
 def compose_services() -> dict:
-    if not _COMPOSE.exists():  # pragma: no cover - repo layout guard
+    if not _COMPOSE.exists():  # repo layout guard
         pytest.skip(f"docker-compose.yml not found at {_COMPOSE}")
     services: dict = yaml.safe_load(_COMPOSE.read_text())["services"]
     return services

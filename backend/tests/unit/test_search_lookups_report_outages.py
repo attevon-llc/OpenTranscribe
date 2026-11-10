@@ -54,7 +54,7 @@ def test_search_pipeline_lookup_outage_does_not_attempt_creation():
 @contextmanager
 def _broken_session():
     raise OperationalError("SELECT", {}, Exception("connection refused"))
-    yield  # pragma: no cover
+    yield
 
 
 def test_unreadable_setting_raises_instead_of_reading_as_unset():

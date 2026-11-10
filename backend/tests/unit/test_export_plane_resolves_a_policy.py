@@ -141,7 +141,7 @@ def _module_functions(module_name: str) -> dict[str, str]:
         return {}
     try:
         tree = ast.parse(inspect.getsource(module))
-    except (OSError, TypeError, SyntaxError):  # pragma: no cover - a C or generated module
+    except (OSError, TypeError, SyntaxError):  # a C or generated module
         return {}
     lines = inspect.getsource(module).splitlines()
     out: dict[str, str] = {}
@@ -168,7 +168,7 @@ def _deferred_names(source: str) -> set[str]:
     """
     try:
         tree = ast.parse(textwrap.dedent(source))
-    except SyntaxError:  # pragma: no cover - defensive; a real handler always parses
+    except SyntaxError:  # defensive; a real handler always parses
         return set()
     deferred: set[str] = set()
     direct: set[str] = set()
@@ -207,7 +207,7 @@ def _reaches_resolver(endpoint) -> bool:
 
     try:
         pending = [inspect.getsource(endpoint)]
-    except (OSError, TypeError):  # pragma: no cover
+    except (OSError, TypeError):
         return False
     seen: set[str] = set()
     while pending:
@@ -249,7 +249,7 @@ def _imported_resolver_aliases(module_name: str) -> dict[str, str]:
         return {}
     try:
         tree = ast.parse(inspect.getsource(module))
-    except (OSError, TypeError, SyntaxError):  # pragma: no cover
+    except (OSError, TypeError, SyntaxError):
         return {}
     out: dict[str, str] = {}
     for node in ast.walk(tree):

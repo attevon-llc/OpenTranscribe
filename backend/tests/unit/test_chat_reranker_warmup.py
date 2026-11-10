@@ -204,7 +204,7 @@ def test_unreadable_settings_skip_the_warmup_without_raising(monkeypatch):
     @contextlib.contextmanager
     def _broken():
         raise RuntimeError("database unavailable")
-        yield  # pragma: no cover
+        yield
 
     assert reranker_warmup.warmup_wanted(_broken) is False
     reranker_warmup._warm_if_wanted(_broken)

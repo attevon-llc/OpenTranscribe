@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
 from app.services.ingest_artifacts.index_mapping import summary_plane_clause
 
-if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
+if TYPE_CHECKING:
     from app.services.search.hybrid_search_service import HybridSearchService
 
 logger = logging.getLogger(__name__)

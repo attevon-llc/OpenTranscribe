@@ -104,7 +104,7 @@ def check_password_against_history(
     password_hashes = [str(entry.password_hash) for entry in history_entries]
 
     # Use the password policy's check function
-    return password_policy.check_password_history(  # nosec B106
+    return password_policy.check_password_history(  # nosec B106  empty placeholder arg; the real check is verify_func against the history
         new_password_hash="",  # Not used - placeholder for API compatibility
         password_history=password_hashes,
         verify_func=verify_password,

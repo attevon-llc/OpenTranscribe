@@ -217,7 +217,7 @@ def _all_live_reads() -> set[str]:
             continue
         try:
             live |= _live_reads(path.read_text(encoding="utf-8"))
-        except SyntaxError:  # pragma: no cover - a broken test file fails elsewhere, loudly
+        except SyntaxError:  # a broken test file fails elsewhere, loudly
             continue
     return live
 

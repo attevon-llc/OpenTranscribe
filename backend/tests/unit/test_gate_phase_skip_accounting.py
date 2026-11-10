@@ -114,7 +114,7 @@ class Phase:
     def reports_skip_reasons(self) -> bool:
         return "SKIP_REASONS" in self.body or bool(re.search(r"(?<![\w-])-rs\b", self.body))
 
-    def __repr__(self) -> str:  # pragma: no cover - assertion messages only
+    def __repr__(self) -> str:  # assertion messages only
         return f"{self.title!r} (line {self.lineno}, via {self.fn})"
 
 

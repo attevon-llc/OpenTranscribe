@@ -32,7 +32,7 @@ from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider
 from app.services.llm_types import LLMResponse
 
-if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
+if TYPE_CHECKING:
     from app.services.llm_usage import CallUsage
     from app.utils.url_validation import PinnedTarget
 

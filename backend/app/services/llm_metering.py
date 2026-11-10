@@ -22,7 +22,7 @@ from app.services.llm_stream import LLMStreamEvent
 from app.services.llm_types import LLMHost
 from app.services.llm_types import LLMResponse
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from app.services.llm_budget import Reservation
     from app.services.llm_usage import CallUsage
 

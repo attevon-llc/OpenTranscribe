@@ -735,7 +735,7 @@ def test_the_backstop_opens_its_own_session_when_none_is_given(monkeypatch, norm
     def fake_scope():
         opened.append(1)
         raise RuntimeError("no database in this test")
-        yield  # pragma: no cover
+        yield
 
     monkeypatch.setattr("app.db.session_utils.session_scope", fake_scope)
     policy.clear_write_backstop_cache()

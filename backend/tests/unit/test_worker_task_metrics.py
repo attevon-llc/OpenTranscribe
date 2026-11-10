@@ -41,11 +41,11 @@ def demo_app():
     app = Celery("worker-metrics-test", set_as_current=False)
 
     @app.task(name="demo.transcribe")
-    def transcribe():  # pragma: no cover - never executed, only registered
+    def transcribe():  # never executed, only registered
         return None
 
     @app.task(name="demo.summarize")
-    def summarize():  # pragma: no cover - never executed, only registered
+    def summarize():  # never executed, only registered
         return None
 
     return app

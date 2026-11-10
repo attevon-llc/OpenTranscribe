@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING
 from tests.eval.harness.corpora import EvalQuery
 from tests.eval.harness.metrics import RunDoc
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from app.services.search.fusion import FusionConfig
 
 logger = logging.getLogger(__name__)

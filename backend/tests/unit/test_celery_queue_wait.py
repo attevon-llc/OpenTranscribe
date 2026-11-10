@@ -42,7 +42,7 @@ def demo_app():
     app = Celery("queue-wait-test", set_as_current=False)
 
     @app.task(name="demo.transcribe")
-    def transcribe():  # pragma: no cover - never executed, only registered
+    def transcribe():  # never executed, only registered
         return None
 
     return app

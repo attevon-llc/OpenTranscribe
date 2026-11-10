@@ -375,6 +375,13 @@ show_missing = true
 skip_empty = true
 precision = 1
 fail_under = 37
+# Structural lines that can never execute under coverage. One central pattern
+# instead of per-line pragmas; see coverage.py docs, "Excluding code from
+# coverage" (exclude_also extends the defaults rather than replacing them).
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "^\\s*\\.\\.\\.$",  # Protocol / abstract method bodies
+]
 
 # ---------------------------------------------------------------------------
 # Mutation testing (opt-in — NEVER part of the default gate or CI).

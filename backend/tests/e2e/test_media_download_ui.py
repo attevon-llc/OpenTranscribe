@@ -41,7 +41,7 @@ def completed_uuid(backend_url: str):
     the parallel suite this could grab another xdist worker's `e2e-owned-*` upload
     moments before that worker deleted it.
     """
-    if not COMMITTED_SAMPLE_MEDIA.exists():  # pragma: no cover - the fixture is tracked
+    if not COMMITTED_SAMPLE_MEDIA.exists():  # the fixture is tracked
         pytest.skip(f"missing media fixture {COMMITTED_SAMPLE_MEDIA}")
     tok = requests.post(
         f"{backend_url}/api/auth/token",

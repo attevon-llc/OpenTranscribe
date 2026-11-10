@@ -71,7 +71,7 @@ def _probe_audio_codec(media_path: str) -> str | None:
         str(media_path),
     ]
     result = subprocess.run(  # noqa: S603 - validated path, internal input
-        cmd,  # nosec B603
+        cmd,  # nosec B603  argv list, no shell
         capture_output=True,
         text=True,
         timeout=30,

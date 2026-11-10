@@ -46,7 +46,7 @@ def _marked_modules(marker: str) -> set[str]:
             continue
         try:
             tree = ast.parse(path.read_text())
-        except SyntaxError:  # pragma: no cover - a syntax error fails collection anyway
+        except SyntaxError:  # a syntax error fails collection anyway
             continue
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr != marker:

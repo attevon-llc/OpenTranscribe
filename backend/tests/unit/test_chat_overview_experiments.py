@@ -144,7 +144,7 @@ class TestCitableOverview:
         from its file — ids demand the code path."""
 
         class _ExplodingLLM:
-            def __getattr__(self, name):  # pragma: no cover - the assertion is no call
+            def __getattr__(self, name):  # the assertion is no call
                 raise AssertionError("the LLM reducer must not run for a citable overview")
 
         overview = build_overview(

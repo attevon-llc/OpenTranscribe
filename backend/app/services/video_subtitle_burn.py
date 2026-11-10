@@ -128,7 +128,7 @@ def _run_ffmpeg(ffmpeg_cmd: list[str], file_id: int) -> None:
     # Using validated ffmpeg executable path with internally generated file paths
     # All paths are validated/sanitized by _validate_ffmpeg_paths() - not user input
     result = subprocess.run(  # noqa: S603 - validated paths, not user input
-        ffmpeg_cmd,  # nosec B603
+        ffmpeg_cmd,  # nosec B603  argv list, no shell
         capture_output=True,
         text=True,
         timeout=300,

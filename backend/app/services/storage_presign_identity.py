@@ -55,7 +55,7 @@ from typing import Protocol
 
 import urllib3
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from minio import Minio
 
 from minio.error import MinioException

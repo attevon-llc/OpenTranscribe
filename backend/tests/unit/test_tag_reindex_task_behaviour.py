@@ -173,7 +173,7 @@ def _broken_scope(monkeypatch) -> list[int]:
     def broken_scope():
         attempts.append(1)
         raise RuntimeError("database is down")
-        yield  # pragma: no cover
+        yield
 
     monkeypatch.setattr("app.db.session_utils.session_scope", broken_scope)
     return attempts

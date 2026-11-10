@@ -50,7 +50,7 @@ def _offenders() -> list[str]:
     for path in sorted(_API_ROOT.rglob("*.py")):
         try:
             tree = ast.parse(path.read_text())
-        except SyntaxError:  # pragma: no cover - a syntax error fails collection anyway
+        except SyntaxError:  # a syntax error fails collection anyway
             continue
         rel = path.relative_to(_API_ROOT.parent.parent).as_posix()
         for node in ast.walk(tree):

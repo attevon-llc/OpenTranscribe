@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 from app.core.exceptions import InvalidInputError
 from app.utils.url_validation import resolve_pinned_target
 
-if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
+if TYPE_CHECKING:
     from app.utils.url_validation import PinnedTarget
 
 logger = logging.getLogger(__name__)

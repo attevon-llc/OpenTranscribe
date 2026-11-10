@@ -212,7 +212,7 @@ def api_owned_file_uuid(api_token: str, backend_url: str):
     ``owned_media_factory`` uses, module-scoped so the five subtitle/bulk-action
     call sites below share one upload instead of re-uploading per test.
     """
-    if not COMMITTED_SAMPLE_MEDIA.exists():  # pragma: no cover - the fixture is tracked
+    if not COMMITTED_SAMPLE_MEDIA.exists():  # the fixture is tracked
         pytest.skip(f"missing media fixture {COMMITTED_SAMPLE_MEDIA}")
     headers = {"Authorization": f"Bearer {api_token}"}
     name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}{COMMITTED_SAMPLE_MEDIA.suffix}"

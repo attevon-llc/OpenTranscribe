@@ -63,7 +63,7 @@ def _order_by_calls() -> list[tuple[Path, int, str]]:
     for path in sorted(_APP.rglob("*.py")):
         try:
             tree = ast.parse(path.read_text(errors="ignore"))
-        except SyntaxError:  # pragma: no cover - app code must parse
+        except SyntaxError:  # app code must parse
             continue
         for node in ast.walk(tree):
             if (

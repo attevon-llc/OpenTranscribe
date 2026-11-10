@@ -57,7 +57,7 @@ def test_local_endpoints_route_has_no_free_parameters():
 def test_local_endpoints_route_has_no_free_parameters_must_fire_control():
     """Guard the guard: a genuinely added free parameter DOES fail the check above."""
 
-    def _fake_route(request, response, current_user, base_url: str):  # pragma: no cover
+    def _fake_route(request, response, current_user, base_url: str):
         raise NotImplementedError
 
     sig = inspect.signature(_fake_route)

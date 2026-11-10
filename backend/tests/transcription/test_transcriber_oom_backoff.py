@@ -133,7 +133,7 @@ class _FailsOnceWith(_Pipeline):
 
             def _boom():
                 raise RuntimeError(self.message)
-                yield  # pragma: no cover - makes this a generator
+                yield  # makes this a generator
 
             return _boom(), MagicMock(language="en")
         return super().transcribe(audio, **kwargs)

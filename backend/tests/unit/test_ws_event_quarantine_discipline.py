@@ -336,7 +336,7 @@ def _scan() -> tuple[dict[str, list[int]], dict[str, list[int]], list[tuple[str,
             continue
         try:
             tree = ast.parse(source)
-        except SyntaxError:  # pragma: no cover - a syntax error fails collection anyway
+        except SyntaxError:  # a syntax error fails collection anyway
             continue
 
         walker = _EnclosingFunctionWalker()

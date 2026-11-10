@@ -556,7 +556,7 @@ def _open_transcribe_error_subclasses_under(root: Path) -> frozenset[str]:
     for path in _iter_py_files(root):
         try:
             tree = ast.parse(path.read_text())
-        except SyntaxError:  # pragma: no cover - a syntax error fails collection anyway
+        except SyntaxError:  # a syntax error fails collection anyway
             continue
         for cls, cls_bases in _collect_class_bases(tree).items():
             base_map.setdefault(cls, set()).update(cls_bases)
@@ -580,7 +580,7 @@ def _scan() -> tuple[dict[str, list[int]], dict[str, list[int]]]:
             continue
         try:
             tree = ast.parse(source)
-        except SyntaxError:  # pragma: no cover
+        except SyntaxError:
             continue
         walker = _TaintWalker(error_subclasses)
         walker.visit(tree)
@@ -595,7 +595,7 @@ def _scan() -> tuple[dict[str, list[int]], dict[str, list[int]]]:
             continue
         try:
             tree = ast.parse(source)
-        except SyntaxError:  # pragma: no cover
+        except SyntaxError:
             continue
         walker = _TaintWalker(error_subclasses)
         walker.visit(tree)
@@ -623,7 +623,7 @@ def _scan_service_returns() -> dict[str, list[int]]:
             continue
         try:
             tree = ast.parse(source)
-        except SyntaxError:  # pragma: no cover
+        except SyntaxError:
             continue
         walker = _TaintWalker(error_subclasses)
         walker.visit(tree)
@@ -649,7 +649,7 @@ def _scan_container_returns() -> dict[str, list[int]]:
                 continue
             try:
                 tree = ast.parse(source)
-            except SyntaxError:  # pragma: no cover
+            except SyntaxError:
                 continue
             walker = _ContainerTaintWalker()
             walker.visit(tree)

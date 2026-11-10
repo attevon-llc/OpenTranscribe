@@ -130,7 +130,7 @@ def test_cp_inject_labels_all_labels_an_overlay_the_old_code_missed(tmp_path: Pa
     Static checks above prove the scenarios *call* it; this proves the call does the work —
     specifically that the third file, the one no scenario named, comes back labelled.
     """
-    if shutil.which("python3") is None:  # pragma: no cover - python3 runs this test
+    if shutil.which("python3") is None:  # python3 runs this test
         pytest.skip("python3 unavailable")
 
     stage = tmp_path / "stage"

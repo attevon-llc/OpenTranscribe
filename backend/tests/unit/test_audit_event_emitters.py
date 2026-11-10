@@ -54,7 +54,7 @@ def _scan_emitters() -> dict[str, set[str]]:
     for path in sorted(_APP_ROOT.rglob("*.py")):
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:  # pragma: no cover - a syntax error fails elsewhere
+        except SyntaxError:  # a syntax error fails elsewhere
             continue
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr not in declared:

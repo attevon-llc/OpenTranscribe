@@ -64,7 +64,7 @@ def collection_api(api_helper):
         for collection in api_helper.get("/api/collections") or []:
             if str(collection.get("name", "")).startswith(COLLECTION_PREFIX):
                 api_helper.delete(f"/api/collections/{collection['uuid']}")
-    except Exception as exc:  # pragma: no cover - teardown must not mask a failure
+    except Exception as exc:  # teardown must not mask a failure
         print(f"collection teardown failed (leaves orphan e2e collections): {exc}")
 
 

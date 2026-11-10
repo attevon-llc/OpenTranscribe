@@ -73,7 +73,7 @@ class _FakeSession:
             )
         self.commits += 1
 
-    def add(self, obj: object) -> None:  # pragma: no cover - conversions never add
+    def add(self, obj: object) -> None:  # conversions never add
         raise AssertionError("conversion helpers must not create rows")
 
     # Since v378 the LDAP/OIDC conversions delegate privilege to
@@ -83,10 +83,10 @@ class _FakeSession:
     def query(self, *args: object, **kwargs: object) -> _EmptyResult:
         return _EmptyResult()
 
-    def delete(self, obj: object) -> None:  # pragma: no cover - nothing to remove
+    def delete(self, obj: object) -> None:  # nothing to remove
         raise AssertionError("conversion must not delete rows in these fixtures")
 
-    def rollback(self) -> None:  # pragma: no cover - defensive
+    def rollback(self) -> None:  # defensive
         pass
 
 

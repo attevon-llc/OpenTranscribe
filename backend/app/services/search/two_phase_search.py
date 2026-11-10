@@ -13,7 +13,7 @@ from app.services.search.result_processing import _process_inner_hits
 from app.services.search.search_types import SearchHit
 from app.services.search.search_types import SearchResponse
 
-if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
+if TYPE_CHECKING:
     from app.services.search.hybrid_search_service import HybridSearchService
 
 logger = logging.getLogger(__name__)

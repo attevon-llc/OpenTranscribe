@@ -906,7 +906,7 @@ def test_visual_regression(
             # selectors that assertion just proved are still matching, so a
             # renamed class fails there rather than silently pinning nothing.
             _pin_masked_geometry(page, "chat_trace")
-        else:  # pragma: no cover - defensive
+        else:  # defensive
             pytest.fail(f"Unknown surface: {surface}")
 
         if surface in PRIVACY_SURFACES:

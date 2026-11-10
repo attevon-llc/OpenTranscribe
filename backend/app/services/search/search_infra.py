@@ -17,7 +17,7 @@ from app.services.search.fusion import search_pipeline_id
 from app.services.search.index_admin import ensure_chunks_index_exists
 from app.services.search.pipelines import ensure_search_pipeline_exists
 
-if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
+if TYPE_CHECKING:
     from opensearchpy import OpenSearch
 
 logger = logging.getLogger(__name__)

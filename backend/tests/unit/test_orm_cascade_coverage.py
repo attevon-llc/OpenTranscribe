@@ -177,7 +177,7 @@ def _seed_child(db, media_file: MediaFile, relationship_name: str) -> Any:
             digest_word_count=0,
             section_count=0,
         )
-    else:  # pragma: no cover - a new relationship must be added to the map above
+    else:  # a new relationship must be added to the map above
         raise AssertionError(f"no seeder for MediaFile.{relationship_name}")
     db.add(row)
     db.flush()
@@ -331,7 +331,7 @@ def _seed_user_child(db, user, relationship_name: str) -> Any:
         db.add(group)
         db.flush()
         row = UserGroupMember(uuid=uuid_pkg.uuid4(), group_id=group.id, user_id=user.id)
-    else:  # pragma: no cover - a new relationship must be added to the map above
+    else:  # a new relationship must be added to the map above
         raise AssertionError(f"no seeder for User.{relationship_name}")
     db.add(row)
     db.flush()

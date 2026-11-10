@@ -34,7 +34,7 @@ from app.services.llm_stream import parse_stream
 from app.services.llm_types import LLMHost
 from app.services.llm_types import LLMProvider
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     import requests
 
     from app.utils.url_validation import PinnedTarget

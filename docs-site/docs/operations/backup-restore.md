@@ -194,11 +194,13 @@ below. For an S3 destination, fetch the artifact first with `--from-s3` — see
 
 #### OpenSearch snapshots (optional)
 
-The in-app scheduler can **also take an OpenSearch snapshot** alongside each
-`pg_dump`. Enable it in the admin UI under **Settings → Data & Storage → Database Backups → "Include
-OpenSearch snapshot"**. Because every search index is **rebuildable from
-PostgreSQL**, this is a *convenience* (skip the reindex on restore), not a
-necessity — leave it off and nothing is lost.
+The in-app scheduler also takes an OpenSearch snapshot alongside each
+`pg_dump`. It is **on by default**; the toggle is in the admin UI under **Settings → Data & Storage → Database Backups → "Include
+OpenSearch snapshot"**. The transcript and chunk indices are **rebuildable from
+PostgreSQL**, so for them the snapshot only saves reindex time. The speaker
+indices (`speakers_v3` / `speakers_v4`) are not rebuildable: the snapshot is the only
+scheduled copy of those voiceprints, and the run records how many it covered. A
+snapshot that could not run records how many voiceprints it left uncovered.
 
 How it works:
 
@@ -648,8 +650,9 @@ This command automatically:
   themselves. Mutually exclusive with `--migrate-forward`.
 
 :::note[MinIO / OpenSearch are not rolled back]
-`opentranscribe.sh backup`/`restore` cover **PostgreSQL only**. After a restore, MinIO (media
-files) and OpenSearch (search indices) may be ahead of or behind the restored database —
+`opentranscribe.sh backup`/`restore` cover **PostgreSQL and the speaker voiceprints** (the
+`.voiceprints.ndjson` artifact), not media or the transcript search indices. After a restore, MinIO (media
+files) and the transcript indices in OpenSearch may be ahead of or behind the restored database —
 media with no row, rows with no media, stale search hits. Reindex from **Settings → Data & Storage → Search & Indexing**
 if the restored database's file list differs from what MinIO/OpenSearch currently have.
 :::
@@ -838,7 +841,7 @@ docker run --rm -v opentranscribe_minio_data:/data -v /path/to/backup:/backup \
 docker compose up -d
 
 # 9. Reindex OpenSearch (via Admin UI or API)
-# The backend will run Alembic migrations automatically on startup
+# The one-shot migrate service applies any pending Alembic migrations before the backend starts
 
 # 10. Verify the system
 curl -f http://localhost:5174/health

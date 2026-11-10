@@ -81,8 +81,19 @@ class Repo:
 
     def run(self, base: str, head: str, *extra: str) -> tuple[int, str, dict[str, object]]:
         out = self.path.parent / f"out-{self.path.name}"
-        code = cli.main(["--repo", str(self.path), "--base", base, "--head", head,
-                         "--out-dir", str(out), *extra])  # fmt: skip
+        code = cli.main(
+            [
+                "--repo",
+                str(self.path),
+                "--base",
+                base,
+                "--head",
+                head,
+                "--out-dir",
+                str(out),
+                *extra,
+            ]
+        )
         md = (
             (out / "dependency-diff.md").read_text()
             if (out / "dependency-diff.md").exists()

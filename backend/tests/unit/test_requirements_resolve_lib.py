@@ -270,7 +270,7 @@ def test_script_works_with_relative_report_dir_and_backend_dir_from_another_cwd(
             "pipreports",
             "--backend-dir",
             "wt/backend",
-        ]  # fmt: skip
+        ]
     )
     assert code == 0, capsys.readouterr().out
     for name in ("requirements.txt", "requirements-nodeps.txt"):

@@ -37,6 +37,7 @@ JOBS = {
 ARTIFACTS = {"dependency-diff": "dependency-diff", "license-gate": "license-evidence"}
 REVIEW_ACTION = "actions/dependency-review-action"
 # Inputs documented in the action's action.yml; a typo is silently ignored by GitHub.
+# `fmt: skip` below keeps this flat word list in rows; formatted, it becomes one value per line.
 REVIEW_INPUTS = {
     "repo-token", "fail-on-severity", "fail-on-scopes", "base-ref", "head-ref", "config-file",
     "allow-licenses", "deny-licenses", "allow-dependencies-licenses", "allow-ghsas",
@@ -88,8 +89,11 @@ def _uses(step: dict[str, Any], action: str) -> bool:
 def _script_flags(script: str) -> frozenset[str]:
     out = subprocess.run(
         [sys.executable, str(REPO / "scripts" / script), "--help"],
-        capture_output=True, text=True, check=True, cwd=REPO,
-    ).stdout  # fmt: skip
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=REPO,
+    ).stdout
     return frozenset(_FLAG_RE.findall(out))
 
 
@@ -288,8 +292,11 @@ def _step_with(job: str, needle: str) -> dict[str, Any]:
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
-        cwd=repo, capture_output=True, text=True, check=True,
-    ).stdout.strip()  # fmt: skip
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
 
 
 def _pr_repo(tmp_path: Path) -> tuple[Path, str, str]:
@@ -322,9 +329,12 @@ def _run_base_ref_step(repo: Path, tmp_path: Path, **env: str) -> str:
     github_env.write_text("")
     subprocess.run(
         ["bash", "-eo", "pipefail", "-c", step["run"]],
-        cwd=repo, check=True, capture_output=True, text=True,
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
         env={**os.environ, "GITHUB_ENV": str(github_env), **env},
-    )  # fmt: skip
+    )
     (line,) = github_env.read_text().splitlines()
     assert line.startswith("BASE_REF=")
     return line.removeprefix("BASE_REF=")

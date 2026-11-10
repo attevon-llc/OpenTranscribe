@@ -35,6 +35,7 @@ _PUNCT_STRIP = "\"'\u201c\u201d\u2018\u2019()[]{}.,;:!?\u2026"
 _ABBREVIATIONS = frozenset(
     {"mr.", "mrs.", "ms.", "dr.", "prof.", "sr.", "jr.", "st.", "vs.", "mt.", "no.", "approx."}
 )
+# `fmt: skip` below keeps this flat word list in rows; formatted, it becomes one value per line.
 _CONJUNCTIONS = frozenset(
     {
         "and", "but", "or", "nor", "so", "because", "which", "that", "when", "while", "if",
@@ -42,6 +43,7 @@ _CONJUNCTIONS = frozenset(
         "until", "whereas", "however",
     }
 )  # fmt: skip
+# `fmt: skip` below keeps this flat word list in rows; formatted, it becomes one value per line.
 _LINE_END_FORBIDDEN = frozenset(
     {
         "a", "an", "the", "of", "to", "in", "on", "at", "for", "with", "from", "by", "my",
@@ -49,6 +51,7 @@ _LINE_END_FORBIDDEN = frozenset(
         "about", "mr.", "mrs.", "ms.", "dr.", "prof.", "st.",
     }
 )  # fmt: skip
+# `fmt: skip` below keeps this flat word list in rows; formatted, it becomes one value per line.
 _UNITS = frozenset(
     {
         "percent", "per", "million", "millions", "billion", "billions", "thousand",

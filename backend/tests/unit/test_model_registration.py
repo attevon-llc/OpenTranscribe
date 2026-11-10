@@ -52,7 +52,7 @@ def _modules_declaring_a_table() -> dict[str, set[str]]:
 
 def test_importing_app_models_registers_every_table():
     """`import app.models` alone must make Base.metadata complete."""
-    import app.models  # noqa: F401  registration side effect is the subject
+    importlib.import_module("app.models")  # the registration side effect is the subject
     from app.db.base import Base
 
     registered = set(Base.metadata.tables)

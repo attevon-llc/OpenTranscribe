@@ -16,6 +16,7 @@ Run:
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 from pathlib import Path
@@ -254,7 +255,7 @@ def test_a_celery_publish_carries_the_stamp_the_gauge_reads(raw_client, queue_na
 
     from celery import Celery
 
-    import app.core.celery  # noqa: F401 - connects the publish handler
+    importlib.import_module("app.core.celery")  # connects the publish handler
 
     producer_app = Celery("queue-wait-live", broker=_redis_url(), set_as_current=False)
     producer_app.conf.broker_transport_options = {

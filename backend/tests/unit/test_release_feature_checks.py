@@ -182,10 +182,20 @@ def test_every_predicate_the_shell_calls_exists() -> None:
     # Every predicate added for the rehearsal gaps (privacy on real OpenSearch, reranker cap, GPU
     # pipeline, populated upgrade) is called through one of the multi-line shapes as well.
     assert {
-        "reranker-cap", "os-labels", "drift-scan", "os-seed", "os-docs",
-        "purge-residual-complete", "upgrade-counts", "backfill-consistent", "v448-tasks",
-        "v448-guard", "gpu-probe", "pipeline-evidence", "worker-log-clean",
-    } <= called  # fmt: skip
+        "reranker-cap",
+        "os-labels",
+        "drift-scan",
+        "os-seed",
+        "os-docs",
+        "purge-residual-complete",
+        "upgrade-counts",
+        "backfill-consistent",
+        "v448-tasks",
+        "v448-guard",
+        "gpu-probe",
+        "pipeline-evidence",
+        "worker-log-clean",
+    } <= called
     assert called <= set(fc.PREDICATES), (
         f"shell calls unknown predicate(s): {called - set(fc.PREDICATES)}"
     )

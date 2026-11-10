@@ -12,6 +12,7 @@ Contract pinned here:
 
 from __future__ import annotations
 
+import importlib
 import os
 import subprocess
 import sys
@@ -244,7 +245,7 @@ class TestRuntime:
 
 class TestWiring:
     def test_the_celery_app_connects_every_handler(self):
-        import app.core.celery  # noqa: F401 - importing wires the signals
+        importlib.import_module("app.core.celery")  # importing wires the signals
 
         expected = {
             signals.task_prerun: worker_metrics.on_task_prerun,

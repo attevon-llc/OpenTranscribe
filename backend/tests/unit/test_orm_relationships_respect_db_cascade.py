@@ -20,6 +20,8 @@ else turns the database's cascade into a constraint violation.
 
 from __future__ import annotations
 
+import importlib
+
 import pytest
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import DeclarativeBase
@@ -50,7 +52,7 @@ def _preempting_relationships(mappers) -> list[str]:
 
 @pytest.mark.unit
 def test_no_relationship_nulls_a_cascading_not_null_foreign_key() -> None:
-    import app.models  # noqa: F401 — registers every mapper
+    importlib.import_module("app.models")  # registers every mapper
     from app.db.base import Base
 
     configure_mappers()

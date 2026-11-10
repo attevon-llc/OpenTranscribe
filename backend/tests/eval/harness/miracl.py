@@ -31,6 +31,7 @@ from pathlib import Path
 SCOREABLE_SPLITS = ("dev", "train")
 
 #: The 18 languages MIRACL v1.0 publishes.
+# `fmt: skip` below keeps this flat word list in rows; formatted, it becomes one value per line.
 LANGUAGES = (
     "ar", "bn", "de", "en", "es", "fa", "fi", "fr", "hi",
     "id", "ja", "ko", "ru", "sw", "te", "th", "yo", "zh",

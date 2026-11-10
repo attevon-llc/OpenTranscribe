@@ -25,6 +25,7 @@ Run with specific base URL:
     pytest backend/tests/e2e/ -v --base-url http://localhost:5173
 """
 
+import importlib
 import os
 import re
 import shutil
@@ -73,7 +74,7 @@ from stack_urls import mixed_stack_problem
 from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
-import tests.conftest  # noqa: F401 — side effects only, see above
+importlib.import_module("tests.conftest")  # side effects only, see above
 
 # ``tests/conftest.py`` registers ``search_corpus``/``search_corpus_token``/``neural_available``
 # etc. (the self-seeding 6-file search-quality corpus, ``tests/fixtures/search_corpus_stack.py``)

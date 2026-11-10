@@ -17,6 +17,7 @@ Usage:
 import logging
 import sys
 import time
+from unittest.mock import patch
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def main() -> int:
     # Stub out OpenSearch writes for benchmark
     import app.tasks.embedding_migration_v4_writer as _mig_mod
 
-    _mig_mod._bulk_write_v4_embeddings = lambda docs: len(docs)  # type: ignore[assignment]
+    patch.object(_mig_mod, "_bulk_write_v4_embeddings", side_effect=len).start()
 
     # Phase 2a: Sequential baseline (single model, per-file pool)
     print("  Phase 2a: Sequential baseline (single model, per-file)", flush=True)

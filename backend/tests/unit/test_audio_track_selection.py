@@ -46,26 +46,51 @@ def two_track(tmp_path_factory) -> str:
     path = str(tmp_path_factory.mktemp("tracks") / "two_track.mkv")
     subprocess.run(
         [
-            "ffmpeg", "-v", "error", "-y",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=3:sample_rate=16000",
-            "-f", "lavfi", "-i", "sine=frequency=880:duration=3:sample_rate=16000",
-            "-filter_complex", "[1:a]pan=stereo|c0=c0|c1=c0[st]",
-            "-map", "0:a", "-map", "[st]", "-c:a", "pcm_s16le",
-            "-metadata:s:a:0", "language=eng",
-            "-metadata:s:a:1", "language=por", "-metadata:s:a:1", "title=Dublagem",
-            "-disposition:a:0", "default", "-disposition:a:1", "0", path,
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=3:sample_rate=16000",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=3:sample_rate=16000",
+            "-filter_complex",
+            "[1:a]pan=stereo|c0=c0|c1=c0[st]",
+            "-map",
+            "0:a",
+            "-map",
+            "[st]",
+            "-c:a",
+            "pcm_s16le",
+            "-metadata:s:a:0",
+            "language=eng",
+            "-metadata:s:a:1",
+            "language=por",
+            "-metadata:s:a:1",
+            "title=Dublagem",
+            "-disposition:a:0",
+            "default",
+            "-disposition:a:1",
+            "0",
+            path,
         ],
         check=True,
         timeout=60,
-    )  # fmt: skip
+    )
     return path
 
 
 def _probe_json(path: str) -> dict:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-print_format", "json", "-show_streams", path],
-        capture_output=True, check=True, timeout=30,
-    ).stdout  # fmt: skip
+        capture_output=True,
+        check=True,
+        timeout=30,
+    ).stdout
     parsed: dict = json.loads(out)
     return parsed
 
@@ -196,8 +221,10 @@ def test_audio_download_command_reads_the_chosen_track(two_track, tmp_path):
     subprocess.run(cmd, check=True, capture_output=True, timeout=60)
     decoded = subprocess.run(
         ["ffmpeg", "-v", "quiet", "-i", out, "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"],
-        capture_output=True, check=True, timeout=60,
-    ).stdout  # fmt: skip
+        capture_output=True,
+        check=True,
+        timeout=60,
+    ).stdout
     assert _hz(np.frombuffer(decoded, dtype=np.float32)) == pytest.approx(880, abs=5)
 
 
@@ -210,8 +237,10 @@ def test_playback_rendition_carries_the_chosen_track(two_track, tmp_path):
     )
     decoded = subprocess.run(
         ["ffmpeg", "-v", "quiet", "-i", out, "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"],
-        capture_output=True, check=True, timeout=60,
-    ).stdout  # fmt: skip
+        capture_output=True,
+        check=True,
+        timeout=60,
+    ).stdout
     assert _hz(np.frombuffer(decoded, dtype=np.float32)) == pytest.approx(880, abs=8)
 
 

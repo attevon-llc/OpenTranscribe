@@ -71,9 +71,9 @@
    */
   function qualityColor(score: number | null): string {
     if (score === null) return 'var(--text-on-tint)';
-    if (score >= 0.8) return 'var(--color-success-text, #047857)';
-    if (score >= 0.6) return 'var(--color-warning-text, #b45309)';
-    return 'var(--color-error-text, #b91c1c)';
+    if (score >= 0.8) return 'var(--success-text)';
+    if (score >= 0.6) return 'var(--warning-text)';
+    return 'var(--error-text)';
   }
 </script>
 
@@ -390,12 +390,12 @@
   /* Merge — blue outline → solid blue */
   .action-btn.merge {
     color: var(--primary-on-surface);
-    border-color: #3b82f6;
+    border-color: var(--info-color);
   }
 
   .action-btn.merge:hover {
     background: var(--primary-color);
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
     color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
@@ -418,7 +418,7 @@
   /* Promote — blue outline → solid blue */
   .action-btn.promote {
     color: var(--primary-on-surface);
-    border-color: #3b82f6;
+    border-color: var(--info-color);
   }
 
   .action-btn.promote:hover {
@@ -431,22 +431,22 @@
 
   /* Unassign — amber outline → solid amber */
   .action-btn.unassign {
-    color: #f59e0b;
-    border-color: #f59e0b;
+    color: var(--warning-text);
+    border-color: var(--warning-color);
   }
 
   .action-btn.unassign:hover {
-    background: #d97706;
-    border-color: #d97706;
-    color: var(--text-on-solid);
+    background: var(--warning-solid-hover);
+    border-color: var(--warning-solid-hover);
+    color: var(--text-on-warning);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(217, 119, 6, 0.3);
+    box-shadow: 0 3px 8px rgba(var(--warning-color-rgb), 0.3);
   }
 
   /* Delete — red outline → solid red */
   .action-btn.delete {
-    color: #ef4444;
-    border-color: #ef4444;
+    color: var(--error-text);
+    border-color: var(--error-color);
   }
 
   .action-btn.delete:hover {
@@ -454,14 +454,14 @@
     border-color: var(--error-solid);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(220, 38, 38, 0.3);
+    box-shadow: 0 3px 8px rgba(var(--error-color-rgb), 0.3);
   }
 
   /* Confirm Unassign — solid red (irreversible action, stays solid) */
   .action-btn.confirm-unassign {
-    background: #ef4444;
+    background: var(--error-solid);
     color: var(--text-on-solid);
-    border-color: #ef4444;
+    border-color: var(--error-solid);
   }
 
   .action-btn.confirm-unassign:hover:not(:disabled) {
@@ -469,7 +469,7 @@
     border-color: var(--error-solid);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(220, 38, 38, 0.3);
+    box-shadow: 0 3px 8px rgba(var(--error-color-rgb), 0.3);
   }
 
   .outlier-chip {

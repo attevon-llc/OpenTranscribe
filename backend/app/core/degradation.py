@@ -24,7 +24,7 @@ def record_degradation(control: str, fallback: str) -> None:
         from app.core.metrics import security_state_degraded_total
 
         security_state_degraded_total.labels(control=control, fallback=fallback).inc()
-    except Exception:  # pragma: no cover - metrics must never break auth
+    except Exception:  # boundary: metrics must never break auth
         # Swallowed on purpose, but never silently: PR #322 removed the blanket
         # S110 exemption precisely because silent handlers hide real faults. A
         # broken counter must not turn into a failed login, so this degrades to a

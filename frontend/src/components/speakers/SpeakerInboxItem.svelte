@@ -30,9 +30,9 @@
 
   function confidenceColor(confidence: number | null): string {
     if (confidence === null) return 'var(--text-secondary)';
-    if (confidence >= 0.75) return 'var(--success-color, #10b981)';
-    if (confidence >= 0.5) return 'var(--warning-color, #f59e0b)';
-    return 'var(--error-color, #ef4444)';
+    if (confidence >= 0.75) return 'var(--success-text)';
+    if (confidence >= 0.5) return 'var(--warning-text)';
+    return 'var(--error-text)';
   }
 
   function sourceLabel(source: string | null): string {

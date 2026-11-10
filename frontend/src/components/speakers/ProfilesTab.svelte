@@ -373,10 +373,6 @@
     vertical-align: middle;
     white-space: nowrap;
   }
-  :global([data-theme='dark']) .shared-badge {
-    background: rgba(var(--primary-color-rgb), 0.2);
-    color: #a5b4fc;
-  }
 
   @media (max-width: 768px) {
     .profile-list {

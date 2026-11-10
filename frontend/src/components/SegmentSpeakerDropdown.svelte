@@ -325,7 +325,7 @@
       background: var(--surface-color);
       border: 1px solid var(--border-color);
       border-radius: var(--radius-lg);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      box-shadow: var(--shadow-xl);
       min-width: 200px;
       /* A long suggested name used to widen the menu past the viewport edge, where
          the fixed `left` offset left it unreachable and overlapping the transcript.
@@ -608,6 +608,7 @@
     color: var(--speaker-light);
   }
 
+  /* Per-speaker colour pair set inline from getSpeakerColor(); not a theme token. */
   :global([data-theme='dark']) .segment-speaker {
     color: var(--speaker-dark);
   }

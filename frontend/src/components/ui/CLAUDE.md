@@ -31,6 +31,7 @@ primitive in the same spirit as this folder.
   scrolls) and the `header-actions` slot puts controls before the close button
   (`legal/LegalDocumentViewer`'s full-screen toggle).
 - `ExportFormatMenu.svelte` — one Export button that opens a menu of formats (`formats`, `label`, `on:select`); `disabled` + `disabledReason` (tooltip) when there is nothing to export. Placed by `anchoredPanel`, dismissed by click-outside/Escape. Used by the takedown notices export.
+- `Button.svelte` — behaviour wrapper over the global `.btn` classes (`styles/form-elements.css`); looks live in CSS, not here. `variant` (primary/secondary/danger/warning/success/ghost/link/danger-outline), `size` (sm/md/lg), `type` defaults to `button`, `busy` (aria-disabled + aria-busy, focus kept, click swallowed, Spinner), `iconOnly` (adds `.btn-icon`, needs `ariaLabel`), `icon` slot, forwarded `on:click`. Plain buttons can keep `<button class="btn btn-primary">`.
 - `Stepper.svelte` — progress-only step indicator (`steps`, `current`, `label`, `doneLabel`): dots on a
   connector, check icon (`MenuIcon` `check`) on complete steps, `aria-current="step"`, labels under the
   dots and only the current one (as a caption) in a container under 520px. Same visual language as

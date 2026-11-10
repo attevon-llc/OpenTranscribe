@@ -120,7 +120,7 @@
             </select>
 
             <button
-              class="btn btn-icon btn-sm btn-icon-danger btn-remove"
+              class="btn btn-icon-only btn-sm btn-icon-danger btn-remove"
               on:click={() => requestRemoveMember(member)}
               disabled={removingMember === member.user_uuid}
               title={$t('groups.removeMember')}

@@ -7,6 +7,7 @@
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import Badge from '$components/ui/Badge.svelte';
+  import Banner from '$components/ui/Banner.svelte';
   import {
     getDirectorySyncSettings,
     updateDirectorySyncSettings,
@@ -155,7 +156,7 @@
     </div>
   {:else}
     {#if enabled && dryRun}
-      <div class="banner banner-info">{$t('settings.directorySync.dryRunActiveBanner')}</div>
+      <Banner tone="info">{$t('settings.directorySync.dryRunActiveBanner')}</Banner>
     {/if}
 
     <!-- Enable toggle -->
@@ -309,20 +310,6 @@
     display: flex;
     align-items: center;
     padding: var(--space-4);
-  }
-
-  .banner {
-    border-radius: var(--radius-md);
-    padding: 0.6rem var(--space-3);
-    margin-bottom: var(--space-3);
-    font-size: 0.82rem;
-    line-height: 1.4;
-  }
-
-  .banner-info {
-    border: 1px solid var(--primary-color);
-    background-color: var(--background-secondary);
-    color: var(--text-color);
   }
 
   .field-row {

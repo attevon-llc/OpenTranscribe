@@ -8,6 +8,7 @@
   import { taskProgressPercent } from '$lib/utils/formatting';
   import Badge from '$components/ui/Badge.svelte';
   import { badgeVariantForStatus } from '$lib/fileStatus/statusVariant';
+  import Banner from '$components/ui/Banner.svelte';
 
   export let tasks: UserTask[] = [];
   export let filteredTasks: UserTask[] = [];
@@ -24,7 +25,7 @@
 {#if tasksLoading && tasks.length === 0}
   <div class="loading">{$t('fileStatus.loadingTasks')}</div>
 {:else if tasksError}
-  <div class="error-message">{tasksError}</div>
+  <Banner tone="error">{tasksError}</Banner>
 {:else if filteredTasks.length === 0}
   <div class="no-tasks">
     <p>{taskFilter !== 'all' || taskTypeFilter !== 'all' ? $t('fileStatus.noTasksFilters') : $t('fileStatus.noTasks')}</p>
@@ -292,17 +293,4 @@
     color: var(--text-light);
   }
 
-  .error-message {
-    background: var(--error-background);
-    color: var(--error-color);
-    padding: var(--space-4);
-    border-radius: var(--radius-sm);
-    margin-bottom: var(--space-4);
-    border: 1px solid var(--error-border);
-  }
-
-  :global([data-theme='dark']) .error-message {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.3);
-  }
 </style>

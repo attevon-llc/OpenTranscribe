@@ -7,6 +7,7 @@
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import Badge from '$components/ui/Badge.svelte';
+  import Banner from '$components/ui/Banner.svelte';
   import {
     getMediaMirrorSettings,
     updateMediaMirrorSettings,
@@ -244,14 +245,14 @@
     </div>
   {:else}
     {#if enabled && !isS3 && !mountOk}
-      <div class="banner banner-warning">
+      <Banner tone="warning">
         {$t('settings.backup.mirror.mountMissing', { destination })}
-      </div>
+      </Banner>
     {/if}
     {#if enabled && isS3 && s3Status && !s3Status.reachable}
-      <div class="banner banner-warning">
+      <Banner tone="warning">
         {$t('settings.backup.mirror.s3Unreachable')}{s3Status.error ? `: ${s3Status.error}` : ''}
-      </div>
+      </Banner>
     {/if}
 
     <!-- Enable toggle -->
@@ -477,20 +478,6 @@
     display: flex;
     align-items: center;
     padding: var(--space-4);
-  }
-
-  .banner {
-    border-radius: var(--radius-md);
-    padding: 0.6rem var(--space-3);
-    margin-bottom: var(--space-3);
-    font-size: 0.82rem;
-    line-height: 1.4;
-  }
-
-  .banner-warning {
-    border: 1px solid var(--warning-color);
-    background-color: var(--warning-bg);
-    color: var(--warning-color);
   }
 
   .field-row {

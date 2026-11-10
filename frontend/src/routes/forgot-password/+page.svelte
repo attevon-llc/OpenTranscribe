@@ -6,6 +6,7 @@
   import logoBanner from '$assets/logo-banner.png';
   import FormField from '$components/ui/FormField.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   let email = '';
   let loading = false;
@@ -58,7 +59,7 @@
     {:else}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
         {#if errorMessage}
-          <div class="error-message" role="alert">{errorMessage}</div>
+          <Banner tone="error">{errorMessage}</Banner>
         {/if}
 
         <FormField id="email" label={$t('auth.email')} size="lg">
@@ -184,15 +185,6 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .error-message {
-    background-color: var(--error-color-light);
-    color: var(--error-color);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(239, 68, 68, 0.2);
     font-weight: var(--font-weight-medium);
   }
 

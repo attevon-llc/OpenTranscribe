@@ -13,6 +13,7 @@
   import { llmStatusStore } from '$stores/llmStatus';
   import { PrivacyApi, type PrivacyLayer } from '$lib/api/privacy';
   import { LOCKED_BY_KEYS, isLockedAboveUser } from '$lib/settings/privacyPolicy';
+  import Banner from '$components/ui/Banner.svelte';
 
   let settings: SpeakerAttributeSettings = {
     detection_enabled: true,
@@ -227,7 +228,7 @@
     </div>
 
     {#if error}
-      <div class="error-message">{error}</div>
+      <Banner tone="error">{error}</Banner>
     {/if}
 
     {#if successMessage}
@@ -331,15 +332,6 @@
 
   .button-group .btn-secondary {
     margin-right: auto;
-  }
-
-  .error-message {
-    color: var(--error-color);
-    font-size: 0.85rem;
-    margin-bottom: var(--space-3);
-    padding: var(--space-2) var(--space-3);
-    background: rgba(255, 107, 107, 0.1);
-    border-radius: var(--radius-md);
   }
 
   .success-message {

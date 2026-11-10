@@ -24,6 +24,7 @@
 
   import logoBanner from '$assets/logo-banner.png';
   import FormField from '$components/ui/FormField.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   let phase: 'loading' | 'verified' | 'failed' = 'loading';
   /** Server prose for either outcome. Rendered as-is. */
@@ -97,7 +98,7 @@
         <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else}
-      <div class="error-message" role="alert">{outcomeMessage}</div>
+      <Banner tone="error">{outcomeMessage}</Banner>
 
       <form on:submit|preventDefault={handleResend} class="auth-form">
         <p class="muted">{$t('auth.verifyEmail.resendDescription')}</p>
@@ -228,15 +229,6 @@
 
   .auth-link:hover {
     text-decoration: underline;
-  }
-
-  .error-message {
-    background-color: var(--error-color-light);
-    color: var(--error-color);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    font-weight: var(--font-weight-medium);
   }
 
   .success-message {

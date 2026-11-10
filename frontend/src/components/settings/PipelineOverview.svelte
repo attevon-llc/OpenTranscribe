@@ -25,6 +25,7 @@
   import Chip from '$components/ui/Chip.svelte';
   import CapabilityBadges from './CapabilityBadges.svelte';
   import IssueRow from './IssueRow.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   const dispatch = createEventDispatcher<{ navigate: SettingsSection }>();
 
@@ -72,14 +73,14 @@
     </div>
   {:else}
     {#if model.liteBanner}
-      <p class="banner banner-info" data-testid="pipeline-lite-banner">
+      <Banner tone="info" spaced={false} testid="pipeline-lite-banner">
         {$t('settings.pipeline.liteBanner')}
-      </p>
+      </Banner>
     {/if}
     {#if vendors.length > 0}
-      <p class="banner banner-privacy" data-testid="pipeline-privacy">
+      <Banner tone="warning" spaced={false} testid="pipeline-privacy">
         {$t('settings.pipeline.audioLeaves', { vendor: vendorList })}
-      </p>
+      </Banner>
     {/if}
 
     <ol class="flow">
@@ -192,26 +193,6 @@
     gap: var(--space-4);
     padding: var(--space-10) var(--space-4);
     color: var(--text-secondary);
-  }
-
-  .banner {
-    margin: 0;
-    padding: var(--space-3) var(--space-4);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border-color);
-    font-size: 0.85rem;
-    line-height: 1.45;
-    color: var(--text-color);
-  }
-
-  .banner-info {
-    background: rgba(var(--primary-color-rgb), 0.08);
-    border-color: rgba(var(--primary-color-rgb), 0.3);
-  }
-
-  .banner-privacy {
-    background: rgba(var(--warning-color-rgb), 0.1);
-    border-color: rgba(var(--warning-color-rgb), 0.35);
   }
 
   .flow {

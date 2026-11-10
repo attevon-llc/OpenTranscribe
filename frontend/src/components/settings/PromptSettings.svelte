@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '$components/ui/tag-pill.css';
   import FormField from '$components/ui/FormField.svelte';
   import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
@@ -1233,17 +1234,6 @@
     flex-wrap: wrap;
     gap: var(--space-1);
     margin-top: 0.35rem;
-  }
-
-  .tag-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-2xl);
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-medium);
-    background: rgba(var(--accent-rgb), 0.12);
-    color: var(--primary-on-surface);
   }
 
   :global([data-theme='dark']) .tag-pill {

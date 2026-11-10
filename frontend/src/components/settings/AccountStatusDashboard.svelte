@@ -109,10 +109,10 @@
   .chip.warning .chip-value { color: rgb(234, 179, 8); }
 
   .chip.info {
-    border-color: rgba(59, 130, 246, 0.3);
-    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    background: rgba(var(--accent-rgb), 0.08);
   }
-  .chip.info .chip-value { color: rgb(59, 130, 246); }
+  .chip.info .chip-value { color: rgb(var(--accent-rgb)); }
 
   .chip.danger {
     border-color: rgba(239, 68, 68, 0.3);

@@ -440,7 +440,7 @@
   .retry-button {
     padding: 0.25rem 0.75rem;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -449,7 +449,7 @@
   }
 
   .retry-button:hover {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
   }
 
   .retry-button:active {

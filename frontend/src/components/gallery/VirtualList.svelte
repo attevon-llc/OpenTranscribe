@@ -334,11 +334,11 @@
   }
 
   .file-list-row.navigating {
-    background: rgba(59, 130, 246, 0.05);
+    background: rgba(var(--accent-rgb), 0.05);
   }
 
   :global([data-theme='dark']) .file-list-row.navigating {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
   }
 
   /* Selection mode: the row is a grid on the header's own template, and the link is a
@@ -387,12 +387,12 @@
   }
 
   .file-list-row.selected {
-    background-color: rgba(59, 130, 246, 0.08);
-    border-color: rgba(59, 130, 246, 0.2);
+    background-color: rgba(var(--accent-rgb), 0.08);
+    border-color: rgba(var(--accent-rgb), 0.2);
   }
 
   :global([data-theme='dark']) .file-list-row.selected {
-    background-color: rgba(59, 130, 246, 0.15);
+    background-color: rgba(var(--accent-rgb), 0.15);
   }
 
   .file-list-row.new-file {
@@ -400,7 +400,7 @@
   }
 
   @keyframes listNewFileGlow {
-    0% { background-color: rgba(59, 130, 246, 0.15); }
+    0% { background-color: rgba(var(--accent-rgb), 0.15); }
     100% { background-color: transparent; }
   }
 

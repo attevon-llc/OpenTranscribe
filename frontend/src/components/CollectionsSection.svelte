@@ -168,7 +168,7 @@
 
   /* Dark mode support */
   :global([data-theme='dark']) .collection-chip {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: #93bbfc;
   }
 

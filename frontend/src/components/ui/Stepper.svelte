@@ -112,7 +112,7 @@
   .stepper-step[data-state='current'] .stepper-dot {
     border-color: var(--primary-color);
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .stepper-step[data-state='current'] .stepper-dot {

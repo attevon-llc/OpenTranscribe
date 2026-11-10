@@ -459,7 +459,7 @@
 
   .badge.alert {
     background: var(--error-solid);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   @media (max-width: 768px) {

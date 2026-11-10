@@ -160,14 +160,14 @@
 
   .confirm-button {
     background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .confirm-button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .confirm-button:active:not(:disabled) {

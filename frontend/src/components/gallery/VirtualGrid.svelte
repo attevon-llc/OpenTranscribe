@@ -397,7 +397,7 @@
   @keyframes newFileGlow {
     0% {
       transform: scale(1);
-      box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+      box-shadow: 0 0 15px rgba(var(--accent-rgb), 0.4);
       border-color: #60a5fa;
     }
     100% {
@@ -434,12 +434,12 @@
 
   .file-card.selected {
     border: 2px solid #3b82f6;
-    background-color: rgba(59, 130, 246, 0.05);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+    background-color: rgba(var(--accent-rgb), 0.05);
+    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.15);
   }
 
   :global([data-theme='dark']) .file-card.selected {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
     border-color: #60a5fa;
     box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
   }
@@ -566,7 +566,7 @@
     justify-content: center;
     background: rgba(0, 0, 0, 0.5);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-on-solid);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
   }
@@ -581,7 +581,7 @@
     bottom: 6px;
     right: 6px;
     background: rgba(0, 0, 0, 0.7);
-    color: #fff;
+    color: var(--text-on-solid);
     font-size: 0.6875rem;
     font-weight: 500;
     padding: 1px 6px;

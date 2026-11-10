@@ -745,7 +745,7 @@
 
   .status-badge {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-radius: 10px;
     padding: 0 0.5rem;
     font-size: 0.72rem;
@@ -842,13 +842,13 @@
 
   .btn-danger-outline {
     background-color: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .btn-danger-outline:hover:not(:disabled) {
-    background-color: #dc2626;
+    background-color: var(--error-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }

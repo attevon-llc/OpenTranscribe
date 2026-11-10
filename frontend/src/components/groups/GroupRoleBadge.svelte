@@ -33,7 +33,7 @@
   }
 
   .role-admin {
-    background-color: rgba(59, 130, 246, 0.12);
+    background-color: rgba(var(--accent-rgb), 0.12);
     color: #1e40af;
   }
 
@@ -48,7 +48,7 @@
   }
 
   :global([data-theme='dark']) .role-admin {
-    background-color: rgba(59, 130, 246, 0.15);
+    background-color: rgba(var(--accent-rgb), 0.15);
     color: #93c5fd;
   }
 

@@ -332,7 +332,7 @@
   .domain-tab.active {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .add-form {
@@ -365,7 +365,7 @@
   .btn-add {
     padding: 0.45rem 1rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -377,7 +377,7 @@
   }
 
   .btn-add:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -529,7 +529,7 @@
 
   .btn-delete-term:hover {
     background: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .delete-confirm-inline {
@@ -541,7 +541,7 @@
   .btn-confirm-delete {
     padding: 0.25rem 0.625rem;
     background: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 6px;
     font-size: 0.75rem;
@@ -616,7 +616,7 @@
   .btn-import {
     padding: 0.45rem 1rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -627,7 +627,7 @@
   }
 
   .btn-import:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }

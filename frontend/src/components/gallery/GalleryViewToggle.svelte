@@ -156,7 +156,7 @@
 
   .toggle-btn.active {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .toggle-btn:focus {

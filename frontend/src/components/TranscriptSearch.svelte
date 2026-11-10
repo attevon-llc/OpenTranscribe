@@ -403,7 +403,7 @@
     background: var(--primary-color);
     border: 1px solid var(--primary-color);
     border-radius: 4px;
-    color: white;
+    color: var(--text-on-solid);
     cursor: pointer;
     transition:
       background 0.15s ease,

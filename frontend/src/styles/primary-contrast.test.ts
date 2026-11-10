@@ -109,6 +109,8 @@ describe('primary blue carries white text at AA contrast', () => {
  * `--tag-color -> --primary-dark -> --primary-on-surface`).
  */
 function rgbaWithAlpha(value: string): { rgb: [number, number, number]; alpha: number } {
+  // The chip tint is `rgba(var(--accent-rgb), α)`: resolve the channel token for the dark theme.
+  value = value.replace(/var\((--[\w-]+)\)/g, (_, name) => resolveToken(sets, 'dark', name));
   const m = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)/);
   if (!m) throw new Error(`could not parse rgba value: ${value}`);
   return {
@@ -181,7 +183,7 @@ describe('.chip (upload-shared.css) clears AA contrast in dark mode', () => {
   }
 
   const darkSurface = hexToRgb(token("[data-theme='dark']", '--surface-color'));
-  const chipBgMatch = chipDarkRuleBody().match(/background:\s*(rgba?\([^)]+\))/);
+  const chipBgMatch = chipDarkRuleBody().match(/background:\s*(rgba?\((?:[^()]|\([^()]*\))*\))/);
   if (!chipBgMatch) throw new Error('.chip dark-mode background declaration not found');
   const compositedChipBg = compositeOver(rgbaWithAlpha(chipBgMatch[1]), darkSurface);
 

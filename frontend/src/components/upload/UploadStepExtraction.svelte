@@ -187,16 +187,16 @@
 
   .choice-option:hover {
     border-color: var(--primary-color);
-    background: rgba(59, 130, 246, 0.02);
+    background: rgba(var(--accent-rgb), 0.02);
   }
 
   .choice-option.selected {
     border-color: var(--primary-color);
-    background: rgba(59, 130, 246, 0.04);
+    background: rgba(var(--accent-rgb), 0.04);
   }
 
   :global([data-theme='dark']) .choice-option.selected {
-    background: rgba(59, 130, 246, 0.08);
+    background: rgba(var(--accent-rgb), 0.08);
   }
 
   .choice-option input[type="radio"] {

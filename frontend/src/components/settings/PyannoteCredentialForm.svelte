@@ -322,7 +322,7 @@
   .cred-btn.primary {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .cred-btn.danger {

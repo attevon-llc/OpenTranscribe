@@ -992,7 +992,7 @@
 
   .create-button {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -1006,8 +1006,8 @@
 
   .create-button:hover:not(:disabled),
   .create-button:focus:not(:disabled) {
-    background-color: #2563eb;
-    color: white;
+    background-color: var(--primary-color);
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
     text-decoration: none;
@@ -1086,7 +1086,7 @@
 
   .delete-button:hover:not(:disabled) {
     background-color: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1102,7 +1102,7 @@
 
   .recover-button:hover:not(:disabled) {
     background-color: #10b981;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1118,7 +1118,7 @@
 
   .fallback-toggle-button:hover:not(:disabled) {
     background-color: #f59e0b;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1128,7 +1128,7 @@
 
   .fallback-toggle-button.active {
     background-color: #f59e0b;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .fallback-toggle-button.active:hover:not(:disabled) {
@@ -1137,23 +1137,23 @@
 
   /* Expiration button - blue */
   .expiration-button {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
   }
 
   .expiration-button:hover:not(:disabled) {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
   .expiration-button.active {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .expiration-button.active:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
   }
 
   .expiration-editor {
@@ -1175,7 +1175,7 @@
 
   .expiration-save-button:hover:not(:disabled) {
     background-color: #10b981;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .expiration-cancel-button {
@@ -1185,7 +1185,7 @@
 
   .expiration-cancel-button:hover:not(:disabled) {
     background-color: #6b7280;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   /* Reset password button - brand blue */
@@ -1196,7 +1196,7 @@
 
   .reset-password-button:hover:not(:disabled) {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1212,7 +1212,7 @@
 
   .lock-button:hover:not(:disabled) {
     background-color: #f97316;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1228,7 +1228,7 @@
 
   .unlock-button:hover:not(:disabled) {
     background-color: #0ea5e9;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1244,7 +1244,7 @@
 
   .force-logout-button:hover:not(:disabled) {
     background-color: #475569;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1258,7 +1258,7 @@
 
   :global([data-theme='dark']) .force-logout-button:hover:not(:disabled) {
     background-color: #64748b;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   /* MFA reset - teal */
@@ -1269,7 +1269,7 @@
 
   .mfa-reset-button:hover:not(:disabled) {
     background-color: #0f766e;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1285,7 +1285,7 @@
 
   .link-identity-button:hover:not(:disabled) {
     background-color: #14b8a6;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 

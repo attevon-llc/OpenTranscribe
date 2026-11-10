@@ -691,7 +691,7 @@
     top: -5px;
     right: -5px;
     background-color: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
     width: 18px;
     height: 18px;
     font-size: 0.7rem;
@@ -983,7 +983,7 @@
 
   /* Pulse colors for different recording states */
   .recording-pulse.recording-live {
-    background: #dc2626;
+    background: var(--error-solid);
     animation: recordingPulseLive 1.5s infinite ease-in-out;
   }
 
@@ -1136,7 +1136,7 @@
   }
 
   .status-dot.recording {
-    background: #dc2626;
+    background: var(--error-solid);
     animation: recordingPulse 2s infinite ease-in-out;
   }
 
@@ -1191,7 +1191,7 @@
   }
 
   .pause-btn:hover {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     border-color: #3b82f6;
     color: var(--primary-on-surface);
   }

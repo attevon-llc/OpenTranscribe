@@ -537,8 +537,8 @@
   }
 
   .action-box.running {
-    background: rgba(59, 130, 246, 0.08);
-    border-color: rgba(59, 130, 246, 0.3);
+    background: rgba(var(--accent-rgb), 0.08);
+    border-color: rgba(var(--accent-rgb), 0.3);
   }
 
   .action-icon {
@@ -554,7 +554,7 @@
   }
 
   .action-box.running .action-icon {
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
     color: var(--primary-on-surface);
   }
 

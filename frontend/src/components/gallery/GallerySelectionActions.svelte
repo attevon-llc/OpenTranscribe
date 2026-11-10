@@ -513,7 +513,7 @@
 
   /* Base button style */
   .action-btn {
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.375rem 0.75rem;
     border-radius: 10px;
@@ -584,13 +584,13 @@
   .select-all-btn,
   .process-btn {
     background-color: var(--primary-color);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .select-all-btn:hover:not(:disabled),
   .process-btn:hover:not(:disabled) {
     background-color: var(--primary-hover);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   /* Secondary — surface with border */
@@ -612,7 +612,7 @@
 
   /* Danger — red, destructive only */
   .delete-btn {
-    background-color: #dc2626;
+    background-color: var(--error-solid);
     box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
   }
 

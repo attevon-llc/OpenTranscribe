@@ -227,12 +227,12 @@
   .drop-zone:hover,
   .drop-zone.active {
     border-color: var(--primary-color);
-    background-color: rgba(59, 130, 246, 0.05);
+    background-color: rgba(var(--accent-rgb), 0.05);
   }
 
   :global([data-theme='dark']) .drop-zone:hover,
   :global([data-theme='dark']) .drop-zone.active {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
   }
 
   .drop-zone svg {

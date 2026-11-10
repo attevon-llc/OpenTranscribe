@@ -911,7 +911,7 @@
     padding: 0 1rem;
     flex-shrink: 0;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -975,7 +975,7 @@
 
   .mode-btn.active {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   }
 

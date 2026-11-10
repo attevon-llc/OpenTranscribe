@@ -105,7 +105,7 @@
   /* Primary action — "Go home". */
   .error-home {
     background: var(--primary-color);
-    color: #ffffff;
+    color: var(--text-on-solid);
     text-decoration: none;
     border: none;
   }

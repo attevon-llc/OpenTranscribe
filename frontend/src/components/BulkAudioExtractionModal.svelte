@@ -219,8 +219,8 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.75rem 1rem;
-    background: rgba(59, 130, 246, 0.05);
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.05);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
     border-radius: 6px;
     color: var(--text-secondary);
     font-size: 0.875rem;
@@ -327,12 +327,12 @@
 
   .primary-button {
     background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .primary-button:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
   }

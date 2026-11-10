@@ -626,7 +626,7 @@
     border-radius: 12px;
     font-size: 12px;
     font-weight: 500;
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     white-space: nowrap;
     flex-shrink: 0;
@@ -635,7 +635,7 @@
   }
 
   :global([data-theme='dark']) .shared-chip {
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
     color: #60a5fa;
   }
 
@@ -684,7 +684,7 @@
   .save-btn {
     background-color: var(--success-color);
     border-color: var(--success-color);
-    color: white;
+    color: var(--text-on-solid);
     padding: 0.5rem 0.5rem;
   }
 
@@ -696,13 +696,13 @@
   .cancel-btn {
     background-color: #6b7280;
     border-color: #6b7280;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .cancel-btn:hover:not(:disabled) {
     background-color: #4b5563;
     border-color: #4b5563;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .save-btn:disabled,

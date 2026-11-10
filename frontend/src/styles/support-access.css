@@ -9,7 +9,7 @@
 .btn.sa-danger {
   background-color: #b91c1c;
   border-color: #b91c1c;
-  color: #fff;
+  color: var(--text-on-solid);
 }
 
 .btn.sa-danger:hover:not(:disabled) {

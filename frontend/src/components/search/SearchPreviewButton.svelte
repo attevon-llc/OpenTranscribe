@@ -83,7 +83,7 @@
   .preview-btn.active {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    color: #fff;
+    color: var(--text-on-solid);
   }
 
   /* A ring, not a darker fill: --primary-color-dark aliases --primary-on-surface, which is a

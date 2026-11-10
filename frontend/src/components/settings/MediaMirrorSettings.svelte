@@ -638,7 +638,7 @@
     padding: 0 0.5rem;
     font-size: 0.72rem;
     line-height: 1.6;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .status-badge.ok {

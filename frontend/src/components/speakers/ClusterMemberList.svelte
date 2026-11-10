@@ -295,7 +295,7 @@
 
   .member-play-btn:hover {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--primary-color);
     transform: none;
     box-shadow: none;
@@ -303,7 +303,7 @@
 
   .member-play-btn.playing {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--primary-color);
   }
 
@@ -414,7 +414,7 @@
     border: none;
     border-radius: 8px;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     cursor: pointer;
     font-size: 13px;
     box-shadow: none;

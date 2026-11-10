@@ -194,7 +194,7 @@
     height: 36px;
     border-radius: 50%;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     display: flex;
     align-items: center;
     justify-content: center;

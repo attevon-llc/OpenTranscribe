@@ -376,7 +376,7 @@
   }
 
   .collection {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     padding: 0.35rem 0.5rem;
     border-radius: 4px;
@@ -421,7 +421,7 @@
 
   .collection-add-button {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 4px;
     padding: 0.25rem 0.5rem;
@@ -460,7 +460,7 @@
   .suggested-collection:hover {
     border-color: var(--primary-color);
     color: var(--primary-on-surface);
-    background-color: rgba(59, 130, 246, 0.05);
+    background-color: rgba(var(--accent-rgb), 0.05);
   }
 
   .suggested-collection:disabled {
@@ -477,12 +477,12 @@
 
   /* Dark mode support */
   :global([data-theme='dark']) .collection {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: var(--primary-on-surface);
   }
 
   :global([data-theme='dark']) .suggested-collection:hover {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
   }
 
   .dropdown-section {
@@ -497,8 +497,8 @@
   }
 
   .ai-collection {
-    background-color: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.25);
+    background-color: rgba(var(--accent-rgb), 0.08);
+    border: 1px solid rgba(var(--accent-rgb), 0.25);
   }
 
   .ai-icon {

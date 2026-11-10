@@ -190,7 +190,7 @@
 
   .unread-badge {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     padding: 2px 6px;
@@ -232,7 +232,7 @@
 
   .mark-read-btn:hover {
     background-color: var(--success-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .clear-btn {
@@ -243,7 +243,7 @@
 
   .clear-btn:hover {
     background-color: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .close-btn {
@@ -255,7 +255,7 @@
   .close-btn:hover {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .notifications-content {

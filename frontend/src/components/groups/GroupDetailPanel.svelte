@@ -469,12 +469,12 @@
 
   .btn-inline-save {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
   }
 
   .btn-inline-save:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
   }
 
   .btn-inline-save:disabled {

@@ -386,7 +386,7 @@
   .save-button {
     padding: 0.75rem 2rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 10px;
     font-weight: 500;
@@ -399,7 +399,7 @@
   }
 
   .save-button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
   }

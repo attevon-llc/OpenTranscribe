@@ -70,8 +70,8 @@
 
   /* Blue */
   .status-chip.blue {
-    border-color: rgba(59, 130, 246, 0.3);
-    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    background: rgba(var(--accent-rgb), 0.08);
   }
   .status-chip.blue .chip-dot {
     background: var(--primary-color);

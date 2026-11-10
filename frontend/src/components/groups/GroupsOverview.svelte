@@ -249,20 +249,20 @@
     gap: 0.375rem;
     padding: 0.6rem 1.2rem;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 10px;
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .btn-create:hover {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .btn-create:active {
@@ -297,20 +297,20 @@
   .btn-retry {
     padding: 0.375rem 0.75rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .btn-retry:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .btn-retry:active:not(:disabled) {

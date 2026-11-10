@@ -478,7 +478,7 @@
 
   .btn-primary {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     box-shadow: 0 1px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 

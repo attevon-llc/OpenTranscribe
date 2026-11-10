@@ -496,7 +496,7 @@
   .recovery-btn, .flower-btn {
     padding: 0.6rem 1.2rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 10px;
     cursor: pointer;
@@ -506,7 +506,7 @@
     align-items: center;
     gap: 0.5rem;
     font-size: 0.95rem;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .flower-btn {
@@ -516,9 +516,9 @@
   }
 
   .recovery-btn:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .recovery-btn:active {
@@ -555,7 +555,7 @@
     top: calc(100% + 8px);
     right: 0;
     background: rgba(0, 0, 0, 0.85);
-    color: #fff;
+    color: var(--text-on-solid);
     font-size: 0.6875rem;
     font-weight: 400;
     padding: 6px 10px;

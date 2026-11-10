@@ -832,7 +832,7 @@
     align-items: center;
     gap: 0.5rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -844,7 +844,7 @@
   }
 
   .create-config-button:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -952,7 +952,7 @@
   .activate-button {
     background-color: var(--success-color);
     border-color: var(--success-color);
-    color: white;
+    color: var(--text-on-solid);
     padding: 0.5rem 0.5rem;
   }
 
@@ -970,7 +970,7 @@
   .test-connection-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .edit-button {
@@ -982,7 +982,7 @@
   .edit-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .delete-config-button {
@@ -994,7 +994,7 @@
   .delete-config-button:hover:not(:disabled) {
     background-color: var(--error-color);
     border-color: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }
@@ -1016,7 +1016,7 @@
     align-items: center;
     gap: 0.5rem;
     background: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -1028,7 +1028,7 @@
   }
 
   .delete-all-button:hover:not(:disabled) {
-    background: #dc2626;
+    background: var(--error-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }
@@ -1076,7 +1076,7 @@
     align-items: center;
     gap: 0.5rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -1088,7 +1088,7 @@
   }
 
   .create-first-config-btn:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -1121,7 +1121,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
     margin-left: 0.5rem;
     vertical-align: middle;

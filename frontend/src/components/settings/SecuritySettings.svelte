@@ -597,7 +597,7 @@
   .warning-badge {
     padding: 0.25rem 0.5rem;
     background-color: var(--warning-color);
-    color: white;
+    color: var(--text-on-solid);
     font-size: 0.6875rem;
     font-weight: 600;
     text-transform: uppercase;

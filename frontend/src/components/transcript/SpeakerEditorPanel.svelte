@@ -685,7 +685,7 @@
 
   .timestamp-link:hover {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -773,7 +773,7 @@
 
   .speaker-profile-badge {
     background: #f59e0b;
-    color: white;
+    color: var(--text-on-solid);
     font-size: 0.6875rem;
     font-weight: 600;
     padding: 0.25rem 0.5rem;
@@ -820,20 +820,20 @@
     margin-top: 16px;
     padding: 0.6rem 1.2rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 10px;
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .save-speakers-button:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .save-speakers-button:active {
@@ -1201,7 +1201,7 @@
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    color: white;
+    color: var(--text-on-solid);
     white-space: nowrap;
   }
 
@@ -1215,7 +1215,7 @@
   }
 
   .suggestion-chip.llm-chip:hover {
-    background: #2563eb;
+    background: var(--primary-color);
   }
 
 
@@ -1250,7 +1250,7 @@
     height: 12px;
     margin-right: 0.25rem;
     opacity: 0.9;
-    stroke: white;
+    stroke: var(--text-on-solid);
     fill: none;
   }
 

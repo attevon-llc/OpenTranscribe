@@ -665,13 +665,13 @@
   .step-dot.active {
     border-color: var(--primary-color);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .step-dot.completed {
     border-color: var(--primary-color);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     cursor: pointer;
   }
 
@@ -813,7 +813,7 @@
   }
 
   .stage-item.selected:not(.disabled) {
-    background: rgba(59, 130, 246, 0.06);
+    background: rgba(var(--accent-rgb), 0.06);
   }
 
   .stage-item.disabled {
@@ -859,7 +859,7 @@
   .stage-check-custom.checked {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .stage-check-custom.disabled {
@@ -922,9 +922,9 @@
     border-radius: 20px;
     font-size: 0.78rem;
     font-weight: 500;
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
   }
 
   .review-settings {
@@ -946,10 +946,10 @@
   /* V4 Info Card */
   .v4-info-card {
     margin-top: 1rem;
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
     border-radius: 8px;
     overflow: hidden;
-    background: rgba(59, 130, 246, 0.03);
+    background: rgba(var(--accent-rgb), 0.03);
   }
 
   .v4-info-header {
@@ -960,8 +960,8 @@
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--primary-on-surface);
-    background: rgba(59, 130, 246, 0.06);
-    border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.06);
+    border-bottom: 1px solid rgba(var(--accent-rgb), 0.1);
   }
 
   .v4-info-header :global(svg) {
@@ -1024,8 +1024,8 @@
   }
 
   .warning-info {
-    background-color: rgba(59, 130, 246, 0.06);
-    border: 1px solid rgba(59, 130, 246, 0.15);
+    background-color: rgba(var(--accent-rgb), 0.06);
+    border: 1px solid rgba(var(--accent-rgb), 0.15);
     color: var(--text-secondary);
   }
 
@@ -1123,12 +1123,12 @@
 
   .primary-button {
     background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .primary-button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
   }
@@ -1156,7 +1156,7 @@
   }
 
   :global([data-theme='dark']) .stage-pill {
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
   }
 
   /* Responsive design */

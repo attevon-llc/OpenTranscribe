@@ -672,7 +672,7 @@
   .step-item.completed .step-dot {
     border-color: var(--primary-color);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
   .step-item.visited .step-dot {
     border-color: var(--primary-color);

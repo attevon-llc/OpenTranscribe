@@ -680,21 +680,21 @@
     gap: 6px;
     padding: 0.6rem 1.2rem;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 8px;
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .btn-create:hover:not(:disabled) {
-    background-color: #2563eb;
-    color: white;
+    background-color: var(--primary-color);
+    color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
     text-decoration: none;
   }
 
@@ -710,7 +710,7 @@
   .icon {
     font-size: 18px;
     line-height: 1;
-    color: white;
+    color: var(--text-on-solid);
     font-weight: var(--font-weight-semibold);
   }
 

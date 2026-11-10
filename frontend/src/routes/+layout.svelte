@@ -438,7 +438,7 @@
     overflow: hidden;
     padding: 0;
     background: var(--color-primary);
-    color: white;
+    color: var(--text-on-solid);
     z-index: var(--z-critical);
   }
 

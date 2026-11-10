@@ -321,7 +321,7 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .btn-decline {
     background-color: #6b7280;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .btn-decline:hover {
@@ -330,7 +330,7 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .btn-acknowledge {
     background-color: #059669;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .btn-acknowledge:hover {

@@ -323,7 +323,7 @@
 
   .action-btn.accept {
     background: var(--success-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--success-color);
   }
 

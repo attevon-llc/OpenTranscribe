@@ -205,7 +205,7 @@
   }
 
   .badge.prompt {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
   }
 
@@ -239,7 +239,7 @@
   .share-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .edit-button, .delete-config-button {
@@ -263,7 +263,7 @@
   .edit-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .delete-config-button {
@@ -275,14 +275,14 @@
   .delete-config-button:hover:not(:disabled) {
     background-color: var(--error-color);
     border-color: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
   }
 
   .btn-add {
     padding: 6px 12px;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 6px;
     font-size: 13px;
@@ -293,7 +293,7 @@
   }
 
   .btn-add:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
   }
 
   .btn-add:disabled {
@@ -312,7 +312,7 @@
   }
 
   :global([data-theme='dark']) .badge.prompt {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: #60a5fa;
   }
 

@@ -209,7 +209,7 @@
   }
 
   .status-processing {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
   }
 
@@ -234,7 +234,7 @@
   }
 
   :global([data-theme='dark']) .status-processing {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: #60a5fa;
   }
 
@@ -391,7 +391,7 @@
     cursor: pointer;
     transition: all 0.2s;
     background: var(--success-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--success-color);
   }
 

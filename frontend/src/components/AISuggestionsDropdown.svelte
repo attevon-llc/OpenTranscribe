@@ -297,14 +297,14 @@
 
   .btn-save {
     background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .btn-save:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .btn-save:active {
@@ -318,7 +318,7 @@
 
   .btn-cancel {
     background: var(--text-secondary);
-    color: white;
+    color: var(--text-on-solid);
     border: 1px solid var(--text-secondary);
     box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
   }
@@ -411,7 +411,7 @@
     padding: 6px 12px;
     font-size: 11px;
     color: var(--ai-accent-color);
-    background: rgba(59, 130, 246, 0.08);
+    background: rgba(var(--accent-rgb), 0.08);
     border-top: 1px solid var(--border-color);
   }
 

@@ -202,7 +202,7 @@
   .auth-button {
     width: 100%;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 10px;
     padding: 0.6rem 1.2rem;
@@ -210,7 +210,7 @@
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -218,7 +218,7 @@
   }
 
   .auth-button:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
     transform: translateY(-1px);
   }
 

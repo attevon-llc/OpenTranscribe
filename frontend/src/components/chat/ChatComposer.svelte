@@ -210,7 +210,7 @@
     border: none;
     border-radius: 50%;
     background-color: var(--primary-color);
-    color: #fff;
+    color: var(--text-on-solid);
     cursor: pointer;
     transition:
       background-color 0.15s ease,

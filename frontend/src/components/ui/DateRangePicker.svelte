@@ -503,21 +503,21 @@
   }
 
   :global([data-theme='dark']) .drp-layer :global(.datepicker .calendars-container) {
-    --datepicker-state-hover: rgba(59, 130, 246, 0.15);
+    --datepicker-state-hover: rgba(var(--accent-rgb), 0.15);
     --datepicker-calendar-day-color-hover: #fff;
     --datepicker-calendar-day-color-disabled: var(--text-secondary);
     --datepicker-calendar-day-background-hover: rgba(255, 255, 255, 0.1);
     --datepicker-calendar-header-month-nav-background-hover: rgba(255, 255, 255, 0.1);
     /* Range selection colours */
-    --datepicker-calendar-range-background: rgba(59, 130, 246, 0.2);
+    --datepicker-calendar-range-background: rgba(var(--accent-rgb), 0.2);
     --datepicker-calendar-range-color: var(--text-color);
     --datepicker-calendar-range-start-end-background: var(--primary-color);
     --datepicker-calendar-range-start-end-color: #fff;
-    --datepicker-calendar-range-included-background: rgba(59, 130, 246, 0.12);
+    --datepicker-calendar-range-included-background: rgba(var(--accent-rgb), 0.12);
     --datepicker-calendar-range-included-color: var(--text-color);
-    --datepicker-calendar-range-included-box-shadow: inset 20px 0 0 rgba(59, 130, 246, 0.12);
-    --datepicker-calendar-range-start-box-shadow: inset -20px 0 0 rgba(59, 130, 246, 0.15);
-    --datepicker-calendar-range-end-box-shadow: inset 20px 0 0 rgba(59, 130, 246, 0.15);
+    --datepicker-calendar-range-included-box-shadow: inset 20px 0 0 rgba(var(--accent-rgb), 0.12);
+    --datepicker-calendar-range-start-box-shadow: inset -20px 0 0 rgba(var(--accent-rgb), 0.15);
+    --datepicker-calendar-range-end-box-shadow: inset 20px 0 0 rgba(var(--accent-rgb), 0.15);
     --datepicker-calendar-range-start-box-shadow-selected: inset -20px 0 0 var(--surface-color);
     --datepicker-calendar-range-end-box-shadow-selected: inset 20px 0 0 var(--surface-color);
   }

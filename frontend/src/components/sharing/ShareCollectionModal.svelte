@@ -322,14 +322,14 @@
   .permission-guide {
     margin-bottom: 1rem;
     padding: 0.625rem 0.75rem;
-    background: rgba(59, 130, 246, 0.05);
-    border: 1px solid rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.05);
+    border: 1px solid rgba(var(--accent-rgb), 0.15);
     border-radius: 6px;
   }
 
   :global([data-theme='dark']) .permission-guide {
-    background: rgba(59, 130, 246, 0.08);
-    border-color: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.08);
+    border-color: rgba(var(--accent-rgb), 0.2);
   }
 
   .permission-guide-title {
@@ -368,9 +368,9 @@
   }
 
   .permission-badge.editor {
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
-    border: 1px solid rgba(59, 130, 246, 0.3);
+    border: 1px solid rgba(var(--accent-rgb), 0.3);
   }
 
   .permission-desc {
@@ -497,20 +497,20 @@
     gap: 0.5rem;
     padding: 0.5rem 1.2rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 8px;
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .share-btn:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .share-btn:active:not(:disabled) {

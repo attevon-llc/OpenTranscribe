@@ -95,7 +95,7 @@
     width: 1.1rem;
     height: 1.1rem;
     border-radius: 50%;
-    color: #fff;
+    color: var(--text-on-solid);
   }
 
   .issue-error .issue-glyph {

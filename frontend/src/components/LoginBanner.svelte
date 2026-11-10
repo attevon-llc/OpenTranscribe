@@ -136,7 +136,7 @@
     padding: 8px;
     text-align: center;
     font-weight: bold;
-    color: white;
+    color: var(--text-on-solid);
     text-transform: uppercase;
     letter-spacing: 2px;
   }
@@ -200,7 +200,7 @@
 
   .btn-acknowledge {
     background: var(--color-primary);
-    color: white;
+    color: var(--text-on-solid);
     padding: 12px 32px;
     border: none;
     border-radius: 4px;

@@ -765,13 +765,13 @@
     padding: 0.5rem 0.75rem;
     font-size: 0.75rem;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-small:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }

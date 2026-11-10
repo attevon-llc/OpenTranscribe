@@ -835,7 +835,7 @@
   /* Modal button styling to match app design */
   :global(.modal-delete-button) {
     background-color: #ef4444 !important;
-    color: white !important;
+    color: var(--text-on-solid) !important;
     border: none !important;
     padding: 0.6rem 1.2rem !important;
     border-radius: 10px !important;
@@ -847,7 +847,7 @@
   }
 
   :global(.modal-delete-button:hover) {
-    background-color: #dc2626 !important;
+    background-color: var(--error-solid) !important;
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
   }

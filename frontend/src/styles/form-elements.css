@@ -371,17 +371,17 @@ button:focus-visible {
 
 button.primary {
   background-color: var(--primary-color);
-  color: white !important;
+  color: var(--text-on-solid) !important;
   border: none;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
 }
 
 /* `:focus` deliberately omitted — see the `button:focus-visible` note above (#746). */
 button.primary:hover:not(:disabled) {
   background-color: var(--primary-hover);
-  color: white !important;
+  color: var(--text-on-solid) !important;
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
 }
 
 button:disabled {
@@ -449,14 +449,14 @@ button:disabled {
    it at 3.68:1, under WCAG AA's 4.5:1. Pinned by `primary-contrast.test.ts`. */
 .btn-primary {
   background-color: var(--primary-color);
-  color: white;
+  color: var(--text-on-solid);
   border: none;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
 }
 .btn-primary:hover:not(:disabled) {
   background-color: var(--primary-hover);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
 }
 .btn-primary:active:not(:disabled) {
   transform: scale(1) !important;
@@ -535,14 +535,14 @@ button:disabled {
 
 .modal-primary-button {
   background-color: var(--primary-color);
-  color: white;
+  color: var(--text-on-solid);
   border: none;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
 }
 .modal-primary-button:hover:not(:disabled) {
   background-color: var(--primary-hover);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
 }
 .modal-primary-button:active:not(:disabled) {
   transform: scale(1);

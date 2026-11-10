@@ -283,8 +283,8 @@
     color: var(--text-secondary);
     margin-bottom: 0.75rem;
     padding: 0.625rem 0.875rem;
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.08);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
     border-radius: 6px;
   }
 

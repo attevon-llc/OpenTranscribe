@@ -909,7 +909,7 @@
   }
 
   .stats-mode.cpu {
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
   }
 

@@ -546,7 +546,7 @@
 
   .cancel-button {
     background: #6b7280;
-    color: white;
+    color: var(--text-on-solid);
     border: 1px solid #6b7280;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -640,7 +640,7 @@
   }
 
   .segment-content:hover {
-    background: rgba(59, 130, 246, 0.08);
+    background: rgba(var(--accent-rgb), 0.08);
   }
 
   .segment-time {
@@ -788,14 +788,14 @@
 
   .segment-edit-actions .save-button {
     background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .segment-edit-actions .save-button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .segment-edit-actions .save-button:active:not(:disabled) {
@@ -809,7 +809,7 @@
 
   .segment-edit-actions .cancel-button {
     background: #6b7280;
-    color: white;
+    color: var(--text-on-solid);
     border: 1px solid #6b7280;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
@@ -831,7 +831,7 @@
   }
 
   @keyframes highlightFlash {
-    0% { background-color: rgba(59, 130, 246, 0.3); }
+    0% { background-color: rgba(var(--accent-rgb), 0.3); }
     100% { background-color: transparent; }
   }
 
@@ -841,7 +841,7 @@
     margin: 8px 0;
     padding-left: 12px;
     border-left: 3px solid var(--primary-color);
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.05) 0%, transparent 100%);
+    background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.05) 0%, transparent 100%);
     border-radius: 0 8px 8px 0;
   }
 
@@ -850,7 +850,7 @@
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     border-radius: 0 6px 0 0;
     font-size: 12px;
     color: var(--primary-on-surface);
@@ -894,7 +894,7 @@
   }
 
   .transcript-segment.in-overlap:hover .segment-content {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
   }
 
   .transcript-segment.first-in-overlap {
@@ -907,11 +907,11 @@
 
   /* Dark mode adjustments for overlap groups */
   :global([data-theme='dark']) .overlap-group {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.08) 0%, transparent 100%);
+    background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.08) 0%, transparent 100%);
   }
 
   :global([data-theme='dark']) .overlap-indicator {
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
   }
 
   @media (max-width: 768px) {

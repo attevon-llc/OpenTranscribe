@@ -153,7 +153,7 @@
   .retry-button {
     margin-top: 1rem;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 8px;

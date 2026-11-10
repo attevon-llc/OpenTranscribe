@@ -255,7 +255,7 @@
     height: 32px;
     border-radius: 50%;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     font-weight: 600;
   }
 

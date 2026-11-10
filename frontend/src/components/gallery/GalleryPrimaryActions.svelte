@@ -63,7 +63,7 @@
   }
 
   .action-btn {
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.375rem 0.75rem;
     border-radius: 10px;
@@ -101,12 +101,12 @@
   /* Primary action — solid blue */
   .upload-btn {
     background-color: var(--primary-color);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .upload-btn:hover:not(:disabled) {
     background-color: var(--primary-hover);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   /* Secondary actions — surface with border (not colored) */

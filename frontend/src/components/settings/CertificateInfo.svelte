@@ -119,7 +119,7 @@
     align-items: center;
     gap: 0.5rem;
     background: var(--success-color);
-    color: white;
+    color: var(--text-on-solid);
     padding: 0.5rem 1rem;
     border-radius: 6px;
     font-weight: 600;

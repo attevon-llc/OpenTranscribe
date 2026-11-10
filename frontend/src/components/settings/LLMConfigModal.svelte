@@ -913,7 +913,7 @@ let _llmConfigModalWasOpen = false;
     align-items: center;
     gap: 0.25rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
@@ -923,7 +923,7 @@ let _llmConfigModalWasOpen = false;
   }
 
   .discover-models-btn:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
   }
 
   .discover-models-btn:disabled {
@@ -1024,7 +1024,7 @@ let _llmConfigModalWasOpen = false;
 
   .close-selector {
     background: var(--secondary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 4px;
@@ -1045,7 +1045,7 @@ let _llmConfigModalWasOpen = false;
     align-items: center;
     gap: 0.5rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -1057,7 +1057,7 @@ let _llmConfigModalWasOpen = false;
   }
 
   .test-connection-btn:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -1165,7 +1165,7 @@ let _llmConfigModalWasOpen = false;
     align-items: center;
     gap: 0.5rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -1177,7 +1177,7 @@ let _llmConfigModalWasOpen = false;
   }
 
   .save-button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -1214,7 +1214,7 @@ let _llmConfigModalWasOpen = false;
     left: var(--tooltip-left, 50%);
     top: var(--tooltip-top, 50%);
     background: #1a1a1a;
-    color: white;
+    color: var(--text-on-solid);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 13px;

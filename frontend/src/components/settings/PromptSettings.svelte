@@ -885,7 +885,7 @@
     align-items: center;
     gap: 0.5rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -897,7 +897,7 @@
   }
 
   .create-config-button:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -946,7 +946,7 @@
   .activate-button {
     background-color: var(--success-color);
     border-color: var(--success-color);
-    color: white;
+    color: var(--text-on-solid);
     padding: 0.5rem 0.5rem;
   }
 
@@ -964,7 +964,7 @@
   .view-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .edit-button {
@@ -976,7 +976,7 @@
   .edit-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .delete-config-button {
@@ -988,7 +988,7 @@
   .delete-config-button:hover:not(:disabled) {
     background-color: var(--error-color);
     border-color: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }
@@ -1090,7 +1090,7 @@
     left: var(--tooltip-left, 50%);
     top: var(--tooltip-top, 50%);
     background: #1a1a1a;
-    color: white;
+    color: var(--text-on-solid);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -1145,7 +1145,7 @@
     display: inline-flex;
     align-items: center;
     padding: 0.125rem 0.5rem;
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     border-radius: 10px;
     font-size: 0.7rem;
@@ -1198,7 +1198,7 @@
     align-items: center;
     gap: 0.5rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
@@ -1210,7 +1210,7 @@
   }
 
   .create-first-config-btn:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -1363,7 +1363,7 @@
   /* Shared config styles */
   .config-item.shared {
     border-left: 3px solid var(--info-color);
-    background: rgba(59, 130, 246, 0.04);
+    background: rgba(var(--accent-rgb), 0.04);
   }
 
   :global([data-theme='dark']) .config-item.shared {
@@ -1377,7 +1377,7 @@
     border-radius: 10px;
     font-size: 0.625rem;
     font-weight: 600;
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
     text-transform: uppercase;
     letter-spacing: 0.02em;
@@ -1436,7 +1436,7 @@
     border-radius: 12px;
     font-size: 0.6875rem;
     font-weight: 500;
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
   }
 

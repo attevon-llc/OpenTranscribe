@@ -930,11 +930,11 @@
   .step-item:not(:disabled) { cursor: pointer; }
 
   .step-item:not(:disabled):hover {
-    background: rgba(59, 130, 246, 0.08);
+    background: rgba(var(--accent-rgb), 0.08);
   }
 
   :global([data-theme='dark']) .step-item:not(:disabled):hover {
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
   }
 
   .step-item:focus-visible {
@@ -962,13 +962,13 @@
   .step-item.active .step-dot {
     border-color: var(--primary-color);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .step-item.completed .step-dot {
     border-color: var(--primary-color);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .step-item.visited .step-dot {
@@ -1008,7 +1008,7 @@
   }
 
   .step-line.completed { background: var(--primary-color); }
-  .step-line.visited { background: rgba(59, 130, 246, 0.4); }
+  .step-line.visited { background: rgba(var(--accent-rgb), 0.4); }
 
   /* ── Step Content ── */
   .step-body {
@@ -1061,7 +1061,7 @@
     position: relative;
   }
 
-  .tab-button:hover { color: var(--primary-on-surface); background-color: rgba(59, 130, 246, 0.05); }
+  .tab-button:hover { color: var(--primary-on-surface); background-color: rgba(var(--accent-rgb), 0.05); }
   .tab-button.active { color: var(--primary-on-surface); border-bottom: 2px solid var(--primary-color); }
   .tab-button:disabled { opacity: 0.5; cursor: not-allowed; }
   .tab-button:disabled:hover { background: transparent; color: var(--text-secondary); }
@@ -1072,7 +1072,7 @@
   .message-content { flex: 1; }
 
   .duplicate-message {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     border: 1px solid var(--primary-color);
     border-left: 4px solid var(--primary-color);
     color: var(--primary-on-surface);
@@ -1084,7 +1084,7 @@
   .btn-acknowledge {
     padding: 0.375rem 0.75rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -1093,7 +1093,7 @@
     transition: background 0.15s ease;
   }
 
-  .btn-acknowledge:hover { background: #2563eb; }
+  .btn-acknowledge:hover { background: var(--primary-color); }
 
   .error-msg {
     display: flex;
@@ -1132,7 +1132,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #dc2626;
+    background: var(--error-solid);
     animation: recPulse 1.5s ease-in-out infinite;
   }
 
@@ -1190,36 +1190,36 @@
 
   /* "Review with defaults" — prominent secondary action, clearly distinct from Next */
   .nav-review-defaults {
-    background: rgba(59, 130, 246, 0.08);
+    background: rgba(var(--accent-rgb), 0.08);
     border: 1px solid var(--primary-color);
     color: var(--primary-on-surface);
     font-weight: 600;
   }
 
   .nav-review-defaults:hover {
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
     transform: translateY(-1px);
   }
 
   :global([data-theme='dark']) .nav-review-defaults {
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
   }
 
   :global([data-theme='dark']) .nav-review-defaults:hover {
-    background: rgba(59, 130, 246, 0.22);
+    background: rgba(var(--accent-rgb), 0.22);
   }
 
   .nav-next, .nav-submit {
     background: var(--primary-color);
     border: 1px solid #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .nav-next:hover:not(:disabled), .nav-submit:hover:not(:disabled) {
-    background: #2563eb;
-    border-color: #2563eb;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
     transform: translateY(-1px);
   }
 

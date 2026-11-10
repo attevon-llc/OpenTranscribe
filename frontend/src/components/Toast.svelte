@@ -141,7 +141,7 @@
     align-items: center;
     justify-content: center;
     background: var(--toast-color);
-    color: white;
+    color: var(--text-on-solid);
     border-radius: 50%;
     flex-shrink: 0;
   }
@@ -189,7 +189,7 @@
 
   .toast-action:hover:not(:disabled) {
     background: var(--toast-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   :global([data-theme='dark']) .toast-action:hover:not(:disabled) {

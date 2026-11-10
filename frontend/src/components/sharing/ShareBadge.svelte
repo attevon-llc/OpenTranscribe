@@ -29,13 +29,13 @@
     border-radius: 12px;
     font-size: 11px;
     font-weight: 500;
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     white-space: nowrap;
   }
 
   :global([data-theme='dark']) .share-badge {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: #60a5fa;
   }
 

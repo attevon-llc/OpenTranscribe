@@ -144,20 +144,20 @@
   }
 
   .badge.shared-permission {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     text-transform: capitalize;
   }
 
   :global([data-theme='dark']) .badge.shared-permission {
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
     color: #93c5fd;
   }
 
   .btn-add {
     padding: 6px 12px;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 6px;
     font-size: 13px;
@@ -168,7 +168,7 @@
   }
 
   .btn-add:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
   }
 
   .btn-add:disabled {

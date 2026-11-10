@@ -452,7 +452,7 @@
     border-radius: 10px;
     border: none;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     font-weight: 500;
     font-size: 0.95rem;
     cursor: pointer;
@@ -461,7 +461,7 @@
   }
 
   .btn-save:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -490,7 +490,7 @@
     border-radius: 10px;
     border: none;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     font-weight: 500;
     font-size: 0.9rem;
     cursor: pointer;
@@ -502,7 +502,7 @@
   }
 
   .btn-retroactive:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }

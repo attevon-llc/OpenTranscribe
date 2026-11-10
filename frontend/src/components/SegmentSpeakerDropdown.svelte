@@ -374,7 +374,7 @@
     }
 
     .speaker-dropdown-portal .dropdown-item.selected {
-      background: rgba(59, 130, 246, 0.15);
+      background: rgba(var(--accent-rgb), 0.15);
     }
 
     .speaker-dropdown-portal .speaker-option {
@@ -409,7 +409,7 @@
     }
 
     .speaker-dropdown-portal .create-speaker-btn:hover {
-      background: rgba(59, 130, 246, 0.1);
+      background: rgba(var(--accent-rgb), 0.1);
     }
 
     /* Every icon in a menu row is a fixed 12px square that never shrinks. They used
@@ -466,7 +466,7 @@
          content box at all (computed width 0) and it vanishes. */
       padding: 0;
       box-sizing: border-box;
-      color: #fff;
+      color: var(--text-on-solid);
       background: var(--primary-color);
       border: none;
       border-radius: 6px;

@@ -200,7 +200,7 @@
     border: 1px solid var(--primary-border);
   }
 
-  :global([data-theme='dark']) .review-chip.collection { background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); }
+  :global([data-theme='dark']) .review-chip.collection { background: rgba(var(--accent-rgb), 0.15); border-color: rgba(var(--accent-rgb), 0.3); }
 
   .review-chip.extract {
     background: rgba(16, 185, 129, 0.12); color: #10b981;

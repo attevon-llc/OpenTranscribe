@@ -243,9 +243,9 @@
     font-size: 0.9375rem;
     font-weight: 600;
     cursor: pointer;
-    border: 2px solid #dc2626;
-    background-color: #dc2626;
-    color: white;
+    border: 2px solid var(--error-solid);
+    background-color: var(--error-solid);
+    color: var(--text-on-solid);
     box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
     transition: all 0.2s ease;
   }
@@ -277,7 +277,7 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background-color: #dc2626;
+    background-color: var(--error-solid);
     animation: pulse 1.5s ease-in-out infinite;
   }
 
@@ -298,7 +298,7 @@
     font-size: 0.9375rem;
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     padding: 0.1875rem 0.625rem;
     border-radius: 4px;
   }
@@ -325,7 +325,7 @@
 
   .level-bar.active.low { background-color: #10b981; opacity: 1; }
   .level-bar.active.medium { background-color: #f59e0b; opacity: 1; }
-  .level-bar.active.high { background-color: #dc2626; opacity: 1; }
+  .level-bar.active.high { background-color: var(--error-solid); opacity: 1; }
 
   .control-row { display: flex; gap: 0.75rem; justify-content: center; }
 

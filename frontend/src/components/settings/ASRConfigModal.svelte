@@ -583,7 +583,7 @@
 
   .cap-badge {
     padding: 0.2rem 0.5rem;
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     border-radius: 4px;
     font-size: 0.7rem;
@@ -733,7 +733,7 @@
     gap: 0.5rem;
     padding: 0.5rem 0.875rem;
     border: none;
-    color: white;
+    color: var(--text-on-solid);
     background: var(--primary-color);
     border-radius: 6px;
     cursor: pointer;
@@ -744,7 +744,7 @@
   }
 
   .btn-test-conn:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -779,7 +779,7 @@
   .btn-save {
     padding: 0.5rem 1.25rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -789,7 +789,7 @@
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
-  .btn-save:hover:not(:disabled) { background: #2563eb; }
+  .btn-save:hover:not(:disabled) { background: var(--primary-color); }
 
   button:disabled {
     opacity: 0.6;

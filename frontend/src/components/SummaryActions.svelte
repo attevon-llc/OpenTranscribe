@@ -209,7 +209,7 @@
 
   .action-button.primary {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .action-button.primary:hover:not(:disabled) {
@@ -218,7 +218,7 @@
 
   .action-button.warning {
     background-color: var(--warning-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .action-button.warning:hover:not(:disabled) {
@@ -227,7 +227,7 @@
 
   .action-button.regenerate {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     padding: 0.5rem 1rem;
     font-size: 0.85rem;
   }

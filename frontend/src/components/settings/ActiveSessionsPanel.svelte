@@ -284,7 +284,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    background-color: rgba(59, 130, 246, 0.15);
+    background-color: rgba(var(--accent-rgb), 0.15);
     color: var(--primary-on-surface);
   }
 
@@ -325,7 +325,7 @@
 
   .btn-danger:hover:not(:disabled) {
     background-color: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   :global([data-theme='dark']) .btn-danger {
@@ -333,7 +333,7 @@
   }
 
   :global([data-theme='dark']) .btn-danger:hover:not(:disabled) {
-    color: white;
+    color: var(--text-on-solid);
   }
 
   @media (max-width: 768px) {

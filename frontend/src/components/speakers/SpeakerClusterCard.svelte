@@ -391,9 +391,9 @@
   .action-btn.merge:hover {
     background: var(--primary-color);
     border-color: #3b82f6;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
   }
 
   /* Split — blue outline → solid blue (matches primary action palette) */
@@ -405,9 +405,9 @@
   .action-btn.split:hover {
     background: var(--primary-hover);
     border-color: var(--primary-hover);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
   }
 
   /* Promote — blue outline → solid blue */
@@ -417,11 +417,11 @@
   }
 
   .action-btn.promote:hover {
-    background: #2563eb;
-    border-color: #2563eb;
-    color: white;
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
   }
 
   /* Unassign — amber outline → solid amber */
@@ -433,7 +433,7 @@
   .action-btn.unassign:hover {
     background: #d97706;
     border-color: #d97706;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 3px 8px rgba(217, 119, 6, 0.3);
   }
@@ -445,9 +445,9 @@
   }
 
   .action-btn.delete:hover {
-    background: #dc2626;
-    border-color: #dc2626;
-    color: white;
+    background: var(--error-solid);
+    border-color: var(--error-solid);
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 3px 8px rgba(220, 38, 38, 0.3);
   }
@@ -455,14 +455,14 @@
   /* Confirm Unassign — solid red (irreversible action, stays solid) */
   .action-btn.confirm-unassign {
     background: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
     border-color: #ef4444;
   }
 
   .action-btn.confirm-unassign:hover:not(:disabled) {
-    background: #dc2626;
-    border-color: #dc2626;
-    color: white;
+    background: var(--error-solid);
+    border-color: var(--error-solid);
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 3px 8px rgba(220, 38, 38, 0.3);
   }

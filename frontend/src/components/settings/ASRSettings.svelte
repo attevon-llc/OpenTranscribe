@@ -851,7 +851,7 @@
     align-items: center;
     gap: 0.5rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 8px;
@@ -862,7 +862,7 @@
   }
 
   .add-button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
   }
 
   .config-list {
@@ -960,7 +960,7 @@
     font-weight: 500;
     cursor: pointer;
     background: var(--success-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     transition: background 0.15s;
     white-space: nowrap;
@@ -990,7 +990,7 @@
 
   .btn-test:hover:not(:disabled) {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .btn-edit {
@@ -1002,7 +1002,7 @@
   .btn-edit:hover:not(:disabled) {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .btn-delete {
@@ -1013,7 +1013,7 @@
 
   .btn-delete:hover:not(:disabled) {
     background: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .delete-all-section {
@@ -1028,7 +1028,7 @@
     align-items: center;
     gap: 0.5rem;
     background: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 8px;
@@ -1038,7 +1038,7 @@
     transition: background 0.2s;
   }
 
-  .btn-delete-all:hover:not(:disabled) { background: #dc2626; }
+  .btn-delete-all:hover:not(:disabled) { background: var(--error-solid); }
 
   .empty-state {
     text-align: center;
@@ -1073,7 +1073,7 @@
     align-items: center;
     gap: 0.5rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.5rem 1.1rem;
     border-radius: 8px;
@@ -1083,7 +1083,7 @@
     transition: background 0.2s;
   }
 
-  .btn-add-first:hover { background: #2563eb; }
+  .btn-add-first:hover { background: var(--primary-color); }
 
   button:disabled {
     opacity: 0.6;

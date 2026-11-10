@@ -914,7 +914,7 @@
 
   .error-container button {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 10px 20px;
     border-radius: 6px;
@@ -1014,14 +1014,14 @@
   }
 
   :global(.transcript-segment.active-segment .segment-content) {
-    background-color: rgba(59, 130, 246, 0.12);
-    border-color: rgba(59, 130, 246, 0.3);
-    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
+    background-color: rgba(var(--accent-rgb), 0.12);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    box-shadow: 0 1px 3px rgba(var(--accent-rgb), 0.2);
   }
 
   :global(.transcript-segment.active-segment .segment-content:hover) {
-    background-color: rgba(59, 130, 246, 0.16);
-    border-color: rgba(59, 130, 246, 0.4);
+    background-color: rgba(var(--accent-rgb), 0.16);
+    border-color: rgba(var(--accent-rgb), 0.4);
   }
 
 </style>

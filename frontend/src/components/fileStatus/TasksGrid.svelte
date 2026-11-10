@@ -176,7 +176,7 @@
   }
 
   .status-processing {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
   }
 
@@ -207,7 +207,7 @@
   }
 
   :global([data-theme='dark']) .status-processing {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     /* Was a one-off #60a5fa: computed ~4.42:1 against this badge's composited background
      * (rgba(59,130,246,0.2) over the dark surface #1e293b -> rgb(36,59,96)) — just under
      * AA's 4.5:1, same failure class as the dark .status-error bug below (issue #972).

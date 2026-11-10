@@ -327,7 +327,7 @@
 
   .btn-danger {
     background: var(--error-color);
-    color: #fff;
+    color: var(--text-on-solid);
     border: 1px solid transparent;
     border-radius: 6px;
     padding: 0.5rem 0.875rem;

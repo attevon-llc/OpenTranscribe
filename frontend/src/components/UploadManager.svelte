@@ -281,7 +281,7 @@
   /* Minimized Badge */
   .upload-badge {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-radius: 20px;
     padding: 8px 12px;
     cursor: grab;
@@ -344,7 +344,7 @@
 
   .panel-header {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     padding: 12px 16px;
     cursor: grab;
     display: flex;
@@ -384,7 +384,7 @@
 
   .stat-queued,
   .stat-completed {
-    color: #fff;
+    color: var(--text-on-solid);
     font-weight: 500;
   }
 
@@ -400,7 +400,7 @@
     align-items: center;
     background: rgba(255, 255, 255, 0.2);
     border: none;
-    color: white;
+    color: var(--text-on-solid);
     padding: 4px 8px;
     border-radius: 4px;
     font-size: 0.75rem;

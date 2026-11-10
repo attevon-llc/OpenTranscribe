@@ -348,13 +348,13 @@
 
   .download-button.downloading {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--primary-color);
   }
 
   .download-button.processing {
     background: var(--warning-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--warning-color);
   }
 

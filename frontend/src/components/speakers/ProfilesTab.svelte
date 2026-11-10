@@ -249,7 +249,7 @@
     justify-content: center;
     opacity: 0;
     transition: opacity 0.15s ease;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .avatar-spinner {

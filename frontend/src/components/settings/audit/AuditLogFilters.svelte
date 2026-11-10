@@ -146,7 +146,7 @@
     height: 1.75rem;
     white-space: nowrap;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     align-self: flex-end;
     transition: all 0.2s ease;
@@ -154,7 +154,7 @@
   }
 
   .btn-apply:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
   }

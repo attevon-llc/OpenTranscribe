@@ -134,11 +134,11 @@
     display: flex; align-items: center; gap: 0.5rem;
     padding: 0.625rem 0.75rem; font-size: 0.8125rem;
     color: var(--text-secondary);
-    background: rgba(59, 130, 246, 0.05);
-    border: 1px solid rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.05);
+    border: 1px solid rgba(var(--accent-rgb), 0.12);
     border-radius: 6px;
   }
-  :global([data-theme='dark']) .info-note { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.2); }
+  :global([data-theme='dark']) .info-note { background: rgba(var(--accent-rgb), 0.1); border-color: rgba(var(--accent-rgb), 0.2); }
   .info-note :global(svg) { flex-shrink: 0; color: var(--primary-on-surface); }
   .info-note span { flex: 1; }
 

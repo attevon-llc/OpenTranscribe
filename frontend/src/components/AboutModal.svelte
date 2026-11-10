@@ -492,7 +492,7 @@
     width: 32px;
     height: 32px;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-radius: 50%;
     display: flex;
     align-items: center;

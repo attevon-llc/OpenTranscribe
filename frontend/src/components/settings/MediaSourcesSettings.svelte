@@ -472,7 +472,7 @@
     align-items: center;
     gap: 0.5rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.5rem 1.1rem;
     border-radius: 8px;
@@ -480,13 +480,13 @@
     font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .btn-add-first:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .source-card {
@@ -510,7 +510,7 @@
 
   .source-card.shared {
     border-left: 3px solid var(--info-color);
-    background: rgba(59, 130, 246, 0.04);
+    background: rgba(var(--accent-rgb), 0.04);
   }
 
   :global([data-theme='dark']) .source-card.shared {
@@ -556,7 +556,7 @@
     text-transform: uppercase;
     font-weight: 600;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     padding: 0.1rem 0.35rem;
     border-radius: 0.25rem;
     letter-spacing: 0.02em;
@@ -766,13 +766,13 @@
   /* Destructive solid — red confirm */
   .btn-danger {
     background: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .btn-danger:hover:not(:disabled) {
-    background: #dc2626;
+    background: var(--error-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
   }
@@ -786,19 +786,19 @@
     border: none;
     border-radius: 8px;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   }
 
   .btn-add:hover {
-    background: #2563eb;
-    color: white;
+    background: var(--primary-color);
+    color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   }
 
   .btn-add:active {

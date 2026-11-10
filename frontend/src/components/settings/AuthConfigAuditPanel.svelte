@@ -305,7 +305,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
     color: rgb(37, 99, 235);
   }
 
@@ -320,7 +320,7 @@
   }
 
   :global([data-theme='dark']) .change-type {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: rgb(96, 165, 250);
   }
 

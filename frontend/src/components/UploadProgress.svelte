@@ -230,7 +230,7 @@
     text-transform: uppercase;
     font-weight: 500;
     background: var(--accent-color);
-    color: white;
+    color: var(--text-on-solid);
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 10px;

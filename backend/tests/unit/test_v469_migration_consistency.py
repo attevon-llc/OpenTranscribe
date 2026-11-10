@@ -11,9 +11,11 @@ from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app.db.base import engine as shared_engine
+from tests.db_locks import acquire_ddl_lock_exclusive
 from tests.unit._migration_detection import assert_follows_with_single_head
-from tests.unit._migration_detection import exclusive_scratch_connection
 from tests.unit._migration_detection import load_revision_module
+from tests.unit._migration_detection import scratch_connection
 
 REVISION = "v469_add_media_file_audio_streams"
 DOWN_REVISION = "v468_add_organization_owner"
@@ -44,29 +46,37 @@ def test_the_orm_mirrors_the_audio_columns(db_session):
 
 def test_upgrade_is_idempotent_keeps_rows_and_refuses_a_negative_index():
     module = load_revision_module(REVISION)
-    with exclusive_scratch_connection("ot_v469") as conn:
-        conn.execute(text(_BASE_SQL))
-        conn.execute(text("INSERT INTO media_file (filename) VALUES ('a'), ('b')"))
-        conn.execute(text(module.UPGRADE_SQL))
-        conn.execute(text(module.UPGRADE_SQL))
+    with shared_engine.connect() as lock_conn, lock_conn.begin():
+        acquire_ddl_lock_exclusive(lock_conn)
+        with scratch_connection("ot_v469") as conn:
+            conn.execute(text(_BASE_SQL))
+            conn.execute(text("INSERT INTO media_file (filename) VALUES ('a'), ('b')"))
+            conn.execute(text(module.UPGRADE_SQL))
+            conn.execute(text(module.UPGRADE_SQL))
 
-        rows = conn.execute(text("SELECT audio_streams, audio_stream_index FROM media_file")).all()
-        assert [tuple(r) for r in rows] == [(None, None), (None, None)]
-        conn.execute(text("UPDATE media_file SET audio_stream_index = 1 WHERE id = 1"))
-        with pytest.raises(IntegrityError), conn.begin_nested():
-            conn.execute(text("UPDATE media_file SET audio_stream_index = -1 WHERE id = 2"))
+            rows = conn.execute(
+                text("SELECT audio_streams, audio_stream_index FROM media_file")
+            ).all()
+            assert [tuple(r) for r in rows] == [(None, None), (None, None)]
+            conn.execute(text("UPDATE media_file SET audio_stream_index = 1 WHERE id = 1"))
+            with pytest.raises(IntegrityError), conn.begin_nested():
+                conn.execute(text("UPDATE media_file SET audio_stream_index = -1 WHERE id = 2"))
 
 
 def test_the_downgrade_drops_columns_and_constraint_and_is_repeatable():
     module = load_revision_module(REVISION)
-    with exclusive_scratch_connection("ot_v469") as conn:
-        conn.execute(text(_BASE_SQL))
-        conn.execute(text(module.UPGRADE_SQL))
-        conn.execute(text(module.DOWNGRADE_SQL))
-        conn.execute(text(module.DOWNGRADE_SQL))
+    with shared_engine.connect() as lock_conn, lock_conn.begin():
+        acquire_ddl_lock_exclusive(lock_conn)
+        with scratch_connection("ot_v469") as conn:
+            conn.execute(text(_BASE_SQL))
+            conn.execute(text(module.UPGRADE_SQL))
+            conn.execute(text(module.DOWNGRADE_SQL))
+            conn.execute(text(module.DOWNGRADE_SQL))
 
-        cols = {c["name"] for c in inspect(conn).get_columns("media_file")}
-        assert not cols & {"audio_streams", "audio_stream_index"}
-        assert not conn.execute(
-            text("SELECT 1 FROM pg_constraint WHERE conname = 'ck_media_file_audio_stream_index'")
-        ).first()
+            cols = {c["name"] for c in inspect(conn).get_columns("media_file")}
+            assert not cols & {"audio_streams", "audio_stream_index"}
+            assert not conn.execute(
+                text(
+                    "SELECT 1 FROM pg_constraint WHERE conname = 'ck_media_file_audio_stream_index'"
+                )
+            ).first()

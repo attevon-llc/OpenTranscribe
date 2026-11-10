@@ -87,28 +87,26 @@ def assert_follows_with_single_head(revision: str, down_revision: str) -> None:
 
 
 @contextmanager
-def exclusive_scratch_connection(prefix: str) -> Iterator[Connection]:
-    """A transactional connection to a private throwaway database, DDL lock held EXCLUSIVE.
+def scratch_connection(prefix: str) -> Iterator[Connection]:
+    """A transactional connection to a private throwaway database.
 
-    Lets a revision's real SQL run without touching the shared test database.
+    Lets a revision's real SQL run without touching the shared test database. This does
+    NOT take the DDL lock: the caller must hold ``acquire_ddl_lock_exclusive`` itself, in
+    the test body, where ``test_ddl_marker_discipline`` can see it.
     """
     from app.core.config import settings
-    from app.db.base import engine as shared_engine
-    from tests.db_locks import acquire_ddl_lock_exclusive
 
     name = f"{prefix}_{uuid.uuid4().hex[:10]}_test"
     url = make_url(settings.DATABASE_URL)
     admin = create_engine(url.set(database="postgres"), isolation_level="AUTOCOMMIT")
     scratch = create_engine(url.set(database=name))
-    with shared_engine.connect() as lock_conn, lock_conn.begin():
-        acquire_ddl_lock_exclusive(lock_conn)
+    with admin.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{name}"'))
+    try:
+        with scratch.begin() as conn:
+            yield conn
+    finally:
+        scratch.dispose()
         with admin.connect() as conn:
-            conn.execute(text(f'CREATE DATABASE "{name}"'))
-        try:
-            with scratch.begin() as conn:
-                yield conn
-        finally:
-            scratch.dispose()
-            with admin.connect() as conn:
-                conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
-            admin.dispose()
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        admin.dispose()

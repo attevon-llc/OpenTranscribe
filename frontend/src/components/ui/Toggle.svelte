@@ -95,7 +95,7 @@
     inset: 0;
     background-color: var(--border-color);
     border: 1px solid var(--control-border);
-    border-radius: var(--radius-round);
+    border-radius: var(--radius-pill);
     transition: background-color var(--duration-base);
   }
 

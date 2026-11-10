@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.services.chat import limits
 from tests.helpers import does_not_raise
@@ -78,7 +79,7 @@ def test_message_at_the_limit_is_allowed_and_past_it_refused(real_redis):
 
 def test_hourly_limit_fails_open_when_redis_is_down():
     """A limiter outage must not stop people using the product."""
-    client = _redis(eval=ConnectionError("redis down"))
+    client = _redis(eval=RedisConnectionError("redis down"))
     with patch("app.core.redis.get_request_redis", return_value=client):
         allowed, retry_after = limits.check_hourly_limit(user_id=1, limit=120)
 
@@ -148,7 +149,7 @@ def test_slot_at_the_cap_is_refused(real_redis):
 
 def test_slot_acquisition_fails_open():
     """Chat must not go down because Redis did."""
-    client = _redis(type="zset", eval=ConnectionError("redis down"))
+    client = _redis(type="zset", eval=RedisConnectionError("redis down"))
     with patch("app.core.redis.get_request_redis", return_value=client):
         assert limits.acquire_stream_slot(user_id=1, max_concurrent=2)
     client.eval.assert_called_once()
@@ -179,7 +180,7 @@ def test_release_without_an_id_prunes_by_age_and_never_clears_the_key():
 
 
 def test_release_is_silent_when_redis_is_down():
-    client = _redis(zrem=ConnectionError("redis down"))
+    client = _redis(zrem=RedisConnectionError("redis down"))
     with patch("app.core.redis.get_request_redis", return_value=client):
         with does_not_raise("a Redis outage must not surface when releasing a stream slot"):
             limits.release_stream_slot(user_id=1, slot_id="slot-abc")
@@ -216,13 +217,13 @@ def test_is_cancelled_reflects_the_flag():
 
 def test_is_cancelled_reports_false_when_redis_is_down():
     """Fail open: an unreachable Redis must not cancel everyone's streams."""
-    client = _redis(get=ConnectionError("redis down"))
+    client = _redis(get=RedisConnectionError("redis down"))
     with patch("app.core.redis.get_request_redis", return_value=client):
         assert limits.is_cancelled("msg-uuid") is False
 
 
 def test_clear_cancel_is_contained():
-    client = _redis(delete=ConnectionError("redis down"))
+    client = _redis(delete=RedisConnectionError("redis down"))
     with patch("app.core.redis.get_request_redis", return_value=client):
         with does_not_raise("a Redis outage must not surface when clearing a cancel flag"):
             limits.clear_cancel("msg-uuid")

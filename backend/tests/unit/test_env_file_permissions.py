@@ -134,7 +134,7 @@ def test_create_initial_env_locks_permissions_immediately_after_the_copy():
     # somewhere in the function (a call after every sed has already run past a
     # world-readable window is a weaker fix, not the one described in the PR).
     copy_index = body.index("cp .env.example .env")
-    first_secret_write = body.index("POSTGRES_PASSWORD=")
+    first_secret_write = body.index("_replace_env_value POSTGRES_PASSWORD")
     permission_call = body.index("ensure_env_permissions")
     assert copy_index < permission_call < first_secret_write, (
         "ensure_env_permissions must run between the cp and the first secret sed, "

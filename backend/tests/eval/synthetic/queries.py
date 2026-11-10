@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from .aggregation import plan_aggregation
 from .facts import ASPECTS
-from .model import MONTHS  # noqa: F401  (re-export: historical import site)
 from .model import PlannedQuery
 from .org import Org
 from .org import Session

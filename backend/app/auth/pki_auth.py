@@ -27,7 +27,6 @@ from cryptography.hazmat.backends import default_backend
 from app.auth.header_trust import header_assertion_permitted
 from app.auth.header_trust import header_source_is_trusted
 from app.auth.header_trust import immediate_peer_ip as _get_pki_client_ip
-from app.auth.header_trust import ip_in_networks as _is_pki_trusted_proxy  # noqa: F401  # re-export: the PKI suite's membership tests import this name
 from app.auth.header_trust import parse_trusted_proxies
 from app.auth.pki_certificate import PKIUserData
 from app.auth.pki_certificate import _extract_certificate_metadata

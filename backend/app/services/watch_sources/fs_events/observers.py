@@ -12,17 +12,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.utils.module_probe import module_available
+
 logger = logging.getLogger(__name__)
 
 
 def watchdog_available() -> bool:
     """True when the watchdog package can be imported in this image."""
-    try:
-        import watchdog.observers  # noqa: F401 - import-availability probe
-    except (ImportError, OSError):  # missing/broken dep must not raise
-        logger.debug("watchdog is not available", exc_info=True)
-        return False
-    return True
+    return module_available("watchdog.observers")
 
 
 def native_observer() -> Any:

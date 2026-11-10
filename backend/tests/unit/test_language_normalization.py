@@ -175,6 +175,7 @@ def _old_redaction_normalize(language: str | None) -> str:
     return language.lower().split("-")[0].split("_")[0]
 
 
+# `fmt: skip` below keeps this flat word list in rows; formatted, it becomes one value per line.
 _CORPUS: tuple[str | None, ...] = (
     "en", "EN", "en-US", "en_GB", "en ", " en", "eng", "English", "es", "  es  ",
     "zh-Hans", "fr", "fra", "de", "deu", "ger", "zz", "xyzzy", "e1", "123",
@@ -208,6 +209,7 @@ def test_every_input_the_two_old_implementations_agreed_on_is_preserved_or_liste
         for raw in _CORPUS
         if _old_chat_normalize(raw) == _old_redaction_normalize(raw)
     }
+    # `fmt: skip` below keeps this flat word list in rows; formatted, it becomes one value per line.
     assert set(agreed) == {
         "en", "EN", "en-US", "en_GB", "eng", "English", "es",
         "zh-Hans", "fr", "fra", "de", "deu", "ger", "zz", "xyzzy",

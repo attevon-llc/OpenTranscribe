@@ -281,9 +281,23 @@ class TestQueueWaitHistogram:
 
     def test_buckets_are_a_tenth_of_a_second_to_two_hours(self):
         assert worker_metrics.QUEUE_WAIT_BUCKETS == (
-            0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0,
-            300.0, 600.0, 1200.0, 1800.0, 3600.0, 7200.0,
-        )  # fmt: skip
+            0.1,
+            0.25,
+            0.5,
+            1.0,
+            2.5,
+            5.0,
+            10.0,
+            30.0,
+            60.0,
+            120.0,
+            300.0,
+            600.0,
+            1200.0,
+            1800.0,
+            3600.0,
+            7200.0,
+        )
 
     def test_a_recording_error_never_reaches_the_task(self, recorder, demo_app, monkeypatch):
         calls: list[object] = []
@@ -312,9 +326,17 @@ class TestQueueWaitHistogram:
 class TestHelpers:
     @pytest.mark.parametrize(
         ("raw", "expected"),
-        [(12.5, 12.5), (7, 7.0), ("3.25", 3.25), (None, None), ("x", None), (True, None),
-         (float("nan"), None), (float("inf"), None)],
-    )  # fmt: skip
+        [
+            (12.5, 12.5),
+            (7, 7.0),
+            ("3.25", 3.25),
+            (None, None),
+            ("x", None),
+            (True, None),
+            (float("nan"), None),
+            (float("inf"), None),
+        ],
+    )
     def test_published_at_parsing(self, raw, expected):
         assert queue_wait.parse_published_at(raw) == expected
 

@@ -163,9 +163,15 @@ class TestCatalog:
     def test_reports_the_download_in_flight(self, client, super_admin_token_headers, store):
         store.try_acquire("tiny", "t-1", 1)
         store.write_state(
-            replace=True, model_id="tiny", status="downloading", bytes_done=40, bytes_total=100,
-            percent=40.0, task_id="t-1", user_id=1,
-        )  # fmt: skip
+            replace=True,
+            model_id="tiny",
+            status="downloading",
+            bytes_done=40,
+            bytes_total=100,
+            percent=40.0,
+            task_id="t-1",
+            user_id=1,
+        )
 
         download = client.get(URL, headers=super_admin_token_headers).json()["download"]
 
@@ -355,9 +361,15 @@ class TestStartDownload:
         assert store.current_lock() is None
 
     def test_no_response_carries_the_token(
-        self, client, super_admin_token_headers, store, dispatched, revoked, audit_events,
+        self,
+        client,
+        super_admin_token_headers,
+        store,
+        dispatched,
+        revoked,
+        audit_events,
         monkeypatch,
-    ):  # fmt: skip
+    ):
         monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", TOKEN)
         monkeypatch.setenv("HF_TOKEN", TOKEN)
 

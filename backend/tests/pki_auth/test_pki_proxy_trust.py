@@ -70,7 +70,7 @@ class TestTrustedProxyValidation:
 
     def test_is_trusted_proxy_in_range(self):
         """Test IP within trusted range."""
-        from app.auth.pki_auth import _is_pki_trusted_proxy
+        from app.auth.header_trust import ip_in_networks as _is_pki_trusted_proxy
         from app.auth.pki_auth import _parse_pki_trusted_proxies
 
         networks = _parse_pki_trusted_proxies("10.0.0.0/8")
@@ -78,7 +78,7 @@ class TestTrustedProxyValidation:
 
     def test_is_trusted_proxy_not_in_range(self):
         """Test IP outside trusted range."""
-        from app.auth.pki_auth import _is_pki_trusted_proxy
+        from app.auth.header_trust import ip_in_networks as _is_pki_trusted_proxy
         from app.auth.pki_auth import _parse_pki_trusted_proxies
 
         networks = _parse_pki_trusted_proxies("10.0.0.0/8")
@@ -86,13 +86,13 @@ class TestTrustedProxyValidation:
 
     def test_is_trusted_proxy_empty_networks(self):
         """Test with no trusted networks."""
-        from app.auth.pki_auth import _is_pki_trusted_proxy
+        from app.auth.header_trust import ip_in_networks as _is_pki_trusted_proxy
 
         assert not _is_pki_trusted_proxy("10.0.0.1", [])
 
     def test_is_trusted_proxy_invalid_ip(self):
         """Test with invalid IP address."""
-        from app.auth.pki_auth import _is_pki_trusted_proxy
+        from app.auth.header_trust import ip_in_networks as _is_pki_trusted_proxy
         from app.auth.pki_auth import _parse_pki_trusted_proxies
 
         networks = _parse_pki_trusted_proxies("10.0.0.0/8")

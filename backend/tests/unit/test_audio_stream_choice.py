@@ -42,25 +42,60 @@ def two_track(tmp_path_factory) -> str:
     path = str(tmp_path_factory.mktemp("two_track") / "two_track.mkv")
     subprocess.run(
         [
-            "ffmpeg", "-v", "error", "-y",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=3:sample_rate=16000",
-            "-f", "lavfi", "-i", "sine=frequency=880:duration=3:sample_rate=16000",
-            "-filter_complex", "[1:a]pan=stereo|c0=c0|c1=c0[st]",
-            "-map", "0:a", "-map", "[st]", "-c:a", "pcm_s16le",
-            "-disposition:a:0", "0", "-disposition:a:1", "default", path,
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=3:sample_rate=16000",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=3:sample_rate=16000",
+            "-filter_complex",
+            "[1:a]pan=stereo|c0=c0|c1=c0[st]",
+            "-map",
+            "0:a",
+            "-map",
+            "[st]",
+            "-c:a",
+            "pcm_s16le",
+            "-disposition:a:0",
+            "0",
+            "-disposition:a:1",
+            "default",
+            path,
         ],
         check=True,
         timeout=60,
-    )  # fmt: skip
+    )
     return path
 
 
 def _pcm_hz(path: str) -> float:
     out = subprocess.run(
-        ["ffmpeg", "-v", "quiet", "-i", path, "-map", "0:a:0", "-f", "f32le", "-ac", "1",
-         "-ar", str(SR), "-"],
-        capture_output=True, check=True, timeout=60,
-    ).stdout  # fmt: skip
+        [
+            "ffmpeg",
+            "-v",
+            "quiet",
+            "-i",
+            path,
+            "-map",
+            "0:a:0",
+            "-f",
+            "f32le",
+            "-ac",
+            "1",
+            "-ar",
+            str(SR),
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+        timeout=60,
+    ).stdout
     return _dominant_hz(np.frombuffer(out, dtype=np.float32))
 
 
@@ -68,8 +103,10 @@ def test_fixture_really_has_two_differing_tracks(two_track):
     """Control: without -map ffmpeg really picks the other (stereo) track."""
     out = subprocess.run(
         ["ffmpeg", "-v", "quiet", "-i", two_track, "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"],
-        capture_output=True, check=True, timeout=60,
-    ).stdout  # fmt: skip
+        capture_output=True,
+        check=True,
+        timeout=60,
+    ).stdout
     assert _dominant_hz(np.frombuffer(out, dtype=np.float32)) == pytest.approx(880, abs=5)
     assert _pcm_hz(two_track) == pytest.approx(440, abs=5)
 
@@ -169,11 +206,18 @@ def unselected_ffmpeg_functions(source: str) -> list[str]:
         # Own body only: a nested def is judged on its own.
         nodes = [n for stmt in fn.body for n in ast.walk(stmt)]
         uses_ffmpeg = any(
-            (isinstance(n, ast.List) and any(isinstance(e, ast.Constant) and e.value == "-i" for e in n.elts))
-            or (isinstance(n, ast.Attribute) and n.attr == "input"
-                and isinstance(n.value, ast.Name) and n.value.id == "ffmpeg")
+            (
+                isinstance(n, ast.List)
+                and any(isinstance(e, ast.Constant) and e.value == "-i" for e in n.elts)
+            )
+            or (
+                isinstance(n, ast.Attribute)
+                and n.attr == "input"
+                and isinstance(n.value, ast.Name)
+                and n.value.id == "ffmpeg"
+            )
             for n in nodes
-        )  # fmt: skip
+        )
         uses_selector = any(
             (isinstance(n, ast.Name) and n.id in _SELECTORS)
             or (isinstance(n, ast.Attribute) and n.attr in _SELECTORS)

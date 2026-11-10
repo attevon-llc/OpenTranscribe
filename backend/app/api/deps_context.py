@@ -25,9 +25,6 @@ from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import SUPPORT_ACCESS_GRANT_HEADER
 from app.core.request_scope import RequestScope
 from app.core.route_template import route_label
-from app.core.tenancy import UNSCOPED  # noqa: F401 — re-exported for callers
-from app.core.tenancy import OrgScope  # noqa: F401 — re-exported for callers
-from app.core.tenancy import _Unscoped  # noqa: F401 — re-exported for callers
 from app.db.base import get_db
 from app.models.user import User
 from app.services import organization_owner

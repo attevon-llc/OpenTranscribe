@@ -1,3 +1,4 @@
+import importlib
 import os
 import sys
 from logging.config import fileConfig
@@ -62,7 +63,7 @@ if config.config_file_name is not None:
 #   * Model-vs-schema drift is gated by `scripts/check-schema-drift.py` (see
 #     `tests/unit/test_schema_drift.py`), not by autogenerate. This import makes autogenerate
 #     usable for authoring a revision; it does not replace that gate.
-import app.models  # noqa: E402,F401  (side-effect import: registers every table on Base)
+importlib.import_module("app.models")  # registers every table on Base
 
 target_metadata = Base.metadata
 

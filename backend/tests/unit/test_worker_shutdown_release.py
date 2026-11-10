@@ -26,6 +26,7 @@ Three premises from the issue text are WRONG and this file pins the corrected be
 
 from __future__ import annotations
 
+import importlib
 import sys
 import threading
 import time
@@ -283,7 +284,7 @@ class TestCelerySignalWiring:
         pytest.importorskip("celery")
         import celery.signals as signals
 
-        from app.core import celery as celery_module  # noqa: F401 - importing connects the worker signals
+        importlib.import_module("app.core.celery")  # importing connects the worker signals
 
         return signals
 

@@ -17,6 +17,7 @@ from typing import Any
 from app.core.env import env_str
 from app.core.exceptions import ASRConfigurationError
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
+from app.utils.module_probe import module_available
 from app.utils.url_validation import pinned_requests_session
 from app.utils.url_validation import resolve_pinned_target
 
@@ -198,9 +199,7 @@ class GladiaProvider(ASRProvider):
     def validate_connection(self) -> tuple[bool, str, float]:
         """Test API key by hitting the /v2/live endpoint (lightweight, no audio needed)."""
         start = time.time()
-        try:
-            import requests  # noqa: F401  (import-availability probe only)
-        except ImportError:
+        if not module_available("requests"):
             return False, "requests not installed. Run: pip install requests", 0.0
         try:
             r = self._guarded_request(

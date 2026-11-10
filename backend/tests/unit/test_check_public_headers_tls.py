@@ -51,13 +51,26 @@ def _make_cert(directory: Path) -> tuple[Path, Path]:
     cert, key = directory / "srv.crt", directory / "srv.key"
     proc = subprocess.run(
         [
-            'openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '30',
-            '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1',
-            '-keyout', str(key), '-out', str(cert),
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "30",
+            "-subj",
+            "/CN=127.0.0.1",
+            "-addext",
+            "subjectAltName=IP:127.0.0.1",
+            "-keyout",
+            str(key),
+            "-out",
+            str(cert),
         ],
         capture_output=True,
         check=False,
-    )  # fmt: skip
+    )
     if proc.returncode != 0:
         pytest.skip("openssl CLI cannot create a test certificate here")
     return cert, key

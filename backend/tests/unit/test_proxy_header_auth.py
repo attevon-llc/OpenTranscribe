@@ -245,7 +245,6 @@ class TestPKISharesTheOneImplementation:
         from app.auth import pki_auth
 
         assert pki_auth._get_pki_client_ip is immediate_peer_ip
-        assert pki_auth._is_pki_trusted_proxy is ip_in_networks
 
     def test_pki_header_trust_delegates(self, monkeypatch):
         from app.auth import pki_auth

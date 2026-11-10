@@ -17,6 +17,7 @@ decides. This suite holds the properties that make that dependable rather than h
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 from collections.abc import Iterator
@@ -496,7 +497,7 @@ def test_drift_resumes_from_its_cursor_and_wraps(db_session, normal_user, seams)
 
 
 def test_the_task_is_registered_included_and_routed_to_the_cpu_queue():
-    import app.tasks.privacy_label_resync_task  # noqa: F401  (registers the task)
+    importlib.import_module("app.tasks.privacy_label_resync_task")  # registers the task
 
     assert "privacy.label_resync" in celery_app.tasks
     assert "app.tasks.privacy_label_resync_task" in celery_app.conf.include

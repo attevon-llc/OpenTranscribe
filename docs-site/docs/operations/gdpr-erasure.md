@@ -106,6 +106,10 @@ search index is re-pointed at the new owner, so search and chat keep finding the
   (up to 8 times, 15 minutes at most between tries) on OpenSearch errors and survives a lost
   worker, and a re-run changes nothing already moved.
 - **Audit.** The organization's audit log shows `org.content.transfer` with the counts, never a title.
+- **Hand-over time.** Each moved row records when it changed hands (`owner_since`). If the
+  receiving administrator's own organization data was erased earlier, the daily erasure
+  reconciliation counts handed-over rows from the hand-over, so they are not taken for a
+  restore of the erased data and are not re-erased.
 
 ## The receipt
 

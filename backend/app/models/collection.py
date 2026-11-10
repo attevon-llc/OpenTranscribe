@@ -22,6 +22,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.ownership import OwnerSinceMixin
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
@@ -31,7 +32,7 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
-class Collection(Base):
+class Collection(OwnerSinceMixin, Base):
     """A named set of media files, belonging to one tenant.
 
     Two kinds (migration ``v422_add_collection_tenancy``, issue #1051):

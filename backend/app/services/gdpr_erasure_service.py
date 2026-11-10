@@ -113,6 +113,8 @@ from app.models.tag import Tag
 from app.models.user import User
 from app.models.watch_source import WatchSource
 from app.services import erasure_ledger_service as ledger
+from app.services.erasure_org_member_rerun import acquired_after
+from app.services.erasure_org_member_rerun import owned_since
 from app.services.erasure_receipt import flow as receipt_flow
 from app.services.erasure_receipt.destroy_extras import erase_extras
 from app.services.erasure_receipt.measure import Measurement
@@ -393,7 +395,9 @@ def erase_org_member_data(
     legitimately created after the original erasure is untouched. A restore can only bring back
     rows that existed before the erasure, so the cutoff loses nothing. ``None`` is the direct
     request and erases everything. A time-bounded run takes no erasure receipt: the receipt
-    measures the whole scope, which rightly still holds the newer rows.
+    measures the whole scope, which rightly still holds the newer rows. "Created" is when the
+    member got the row (``erasure_org_member_rerun.owned_since``): content an organization handed
+    to them after the erasure is theirs since then, and its voiceprint documents are kept by id.
     """
     summary = _new_summary("org_member", user_id)
     summary["organization_id"] = org_id
@@ -424,7 +428,7 @@ def erase_org_member_data(
         MediaFile.user_id == user_id, MediaFile.organization_id == org_id
     )
     if created_before is not None:
-        file_query = file_query.filter(MediaFile.upload_time <= created_before)
+        file_query = file_query.filter(owned_since(MediaFile, "upload_time") <= created_before)
     files = file_query.all()
     _purge_files(db, files, summary)
 
@@ -432,7 +436,9 @@ def erase_org_member_data(
         SpeakerProfile.user_id == user_id, SpeakerProfile.organization_id == org_id
     )
     if created_before is not None:
-        profile_query = profile_query.filter(SpeakerProfile.created_at <= created_before)
+        profile_query = profile_query.filter(
+            owned_since(SpeakerProfile, "created_at") <= created_before
+        )
     profiles = profile_query.all()
     avatar_paths = _delete_profiles(db, profiles, summary)
 
@@ -442,7 +448,9 @@ def erase_org_member_data(
         Collection.user_id == user_id, Collection.organization_id == org_id
     )
     if created_before is not None:
-        collection_query = collection_query.filter(Collection.created_at <= created_before)
+        collection_query = collection_query.filter(
+            owned_since(Collection, "created_at") <= created_before
+        )
     collection_query.update({Collection.user_id: None}, synchronize_session=False)
 
     for model, key in (
@@ -464,7 +472,7 @@ def erase_org_member_data(
             model.user_id == user_id, model.organization_id == org_id
         )
         if created_before is not None:
-            row_query = row_query.filter(model.created_at <= created_before)
+            row_query = row_query.filter(owned_since(model, "created_at") <= created_before)
         for row in row_query.all():
             db.delete(row)
             summary[key] += 1
@@ -478,7 +486,7 @@ def erase_org_member_data(
     # files (v420), so they stay — but no longer name the erased member.
     tag_query = db.query(Tag).filter(Tag.user_id == user_id, Tag.organization_id == org_id)
     if created_before is not None:
-        tag_query = tag_query.filter(Tag.created_at <= created_before)
+        tag_query = tag_query.filter(owned_since(Tag, "created_at") <= created_before)
     tag_query.update({Tag.user_id: None}, synchronize_session=False)
 
     org_file_ids = db.query(MediaFile.id).filter(MediaFile.organization_id == org_id).subquery()
@@ -490,7 +498,7 @@ def erase_org_member_data(
     )
     if created_before is not None:
         comment_query = comment_query.filter(Comment.created_at <= created_before)
-        task_query = task_query.filter(Task.created_at <= created_before)
+        task_query = task_query.filter(owned_since(Task, "created_at") <= created_before)
     summary["comments_deleted"] = _delete_comments_deferring_held(db, comment_query, summary)
     summary["tasks_deleted"] = task_query.delete(synchronize_session=False)
     # The member's hide rows on the tenant's files (v465): which of the organization's
@@ -505,10 +513,14 @@ def erase_org_member_data(
     db.commit()
     _erase_avatar_objects(avatar_paths, summary["errors"])
 
+    handed_over = (
+        acquired_after(db, user_id, org_id, created_before) if created_before is not None else None
+    )
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
         user_id=user_id,
         organization_id=org_id,
         created_before=created_before,
+        keep=handed_over.must_not("os.speakers") if handed_over else None,
         errors=summary["errors"],
     )
     if captured is not None and before is not None:

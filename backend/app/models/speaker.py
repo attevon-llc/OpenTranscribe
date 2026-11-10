@@ -25,6 +25,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.ownership import OwnerSinceMixin
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
-class SpeakerProfile(Base):
+class SpeakerProfile(OwnerSinceMixin, Base):
     """Global speaker profile that can be identified across multiple media files"""
 
     __tablename__ = "speaker_profile"
@@ -117,7 +118,7 @@ class SpeakerProfile(Base):
     )
 
 
-class Speaker(Base):
+class Speaker(OwnerSinceMixin, Base):
     """Speaker instance within a specific media file"""
 
     __tablename__ = "speaker"
@@ -270,7 +271,7 @@ class Speaker(Base):
     )
 
 
-class SpeakerCollection(Base):
+class SpeakerCollection(OwnerSinceMixin, Base):
     """Collection of speaker profiles for organization"""
 
     __tablename__ = "speaker_collection"
@@ -348,7 +349,7 @@ class SpeakerCollectionMember(Base):
     )
 
 
-class SpeakerCluster(Base):
+class SpeakerCluster(OwnerSinceMixin, Base):
     """Auto-discovered cluster of likely-same speakers across files."""
 
     __tablename__ = "speaker_cluster"

@@ -20,6 +20,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.ownership import OwnerSinceMixin
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
@@ -64,7 +65,7 @@ MEMBERSHIP_SOURCES_SQL = ", ".join(f"'{s}'" for s in MEMBERSHIP_SOURCES)
 MAPPING_SOURCES_SQL = ", ".join(f"'{s}'" for s in MAPPING_SOURCES)
 
 
-class UserGroup(Base):
+class UserGroup(OwnerSinceMixin, Base):
     """User-created group for sharing collections."""
 
     __tablename__ = "user_group"

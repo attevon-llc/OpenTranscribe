@@ -790,7 +790,7 @@ which store was restored:
 |---|---|
 | The **database** | Re-opens ledger entries from the on-disk journal (original request time and deadline kept) and re-erases any subject whose account or organization row is back, matching on id **and** uuid. |
 | **OpenSearch only** (snapshot restore, `POST /search/repair-indices`, the speaker index rebuilt from its backup) | Asks every search index for documents belonging to completed erasures, one batched query per index per pass, and re-deletes what it finds. Each find is counted on the ledger entry (`resurrections_detected`) and audited. |
-| An **organization member's** data (member erased, account kept) | Re-erases rows the member owns in that organization that were **created at or before** the erasure completed. Anything created later is the member's own new data and is never touched. Rows with no creation time are reported (`org_member_needs_review`), not deleted. |
+| An **organization member's** data (member erased, account kept) | Re-erases rows the member owns in that organization that were **created at or before** the erasure completed. Anything created later is the member's own new data and is never touched. A row handed to the member later (a colleague left and their organization content was transferred) counts from the hand-over, not from when it was made, so it is never mistaken for a restore. Rows with no creation time are reported (`org_member_needs_review`), not deleted. |
 
 Things to know:
 

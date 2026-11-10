@@ -10,6 +10,13 @@ The tables are exactly the ones ``gdpr_erasure_service.erase_org_member_data`` d
 ``(user_id, organization_id)``; media files carry their timestamp as ``upload_time``, everything
 else as ``created_at``. A row whose timestamp is NULL cannot be shown to predate the erasure, so it
 is neither counted as resurrected nor deleted: it is reported (``untimed``) for review.
+
+**"Created" means "acquired by its current owner"** (:func:`owned_since`). An organization content
+transfer (``org_content_transfer``) re-owns rows and keeps their creation time; judged by creation
+alone, content handed to the member AFTER their erasure looked restored, and the re-run purged it.
+The transfer stamps ``owner_since`` (v471), and every bound here, in the time-bounded erasure and in
+the index phase reads ``coalesce(owner_since, <creation time>)``. Search documents carry no such
+stamp, so the document-level erasures exclude the handed-over rows by id (:func:`acquired_after`).
 ``ORG_MEMBER_RERUN_UNTIMED`` names tables with no timestamp column at all and why; it is empty
 today and a test derives that from the models.
 """
@@ -20,6 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import ColumnElement
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -32,6 +40,7 @@ from app.models.media import MediaFile
 from app.models.media import Task
 from app.models.prompt import SummaryPrompt
 from app.models.prompt import UserSetting
+from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerCollection
 from app.models.speaker import SpeakerProfile
 from app.models.tag import Tag
@@ -68,8 +77,72 @@ class RerunState:
     untimed_rows: int
 
 
+#: Ids per ``terms`` clause; OpenSearch refuses more than ``index.max_terms_count`` (65,536).
+_TERMS_CHUNK = 5000
+
+
+def owned_since(model: Any, ts_name: str) -> ColumnElement[Any]:
+    """When the row's CURRENT owner got it: the transfer's ``owner_since``, else its creation."""
+    ts: ColumnElement[Any] = getattr(model, ts_name)
+    stamp = getattr(model, "owner_since", None)
+    return ts if stamp is None else func.coalesce(stamp, ts)
+
+
+@dataclass(frozen=True)
+class AcquiredAfter:
+    """Rows a member was handed in one organization after a cutoff, for the search stores.
+
+    Their documents carry the member's ``user_id`` (the transfer restamps it) and their content's
+    own creation time, so a time bound alone would select them.
+    """
+
+    file_ids: tuple[int, ...] = ()
+    profile_ids: tuple[int, ...] = ()
+    cluster_uuids: tuple[str, ...] = ()
+
+    def must_not(self, store_key: str) -> list[dict[str, Any]]:
+        """``must_not`` clauses that keep these rows' documents in the store ``store_key``."""
+        if store_key == "os.speakers":
+            fields: list[tuple[str, tuple[Any, ...]]] = [
+                ("media_file_id", self.file_ids),
+                ("profile_id", self.profile_ids),
+                ("cluster_uuid", self.cluster_uuids),
+            ]
+        elif store_key in ("os.transcripts", "os.transcript_chunks"):
+            fields = [("file_id", self.file_ids)]
+        else:
+            fields = []
+        return [
+            {"terms": {name: list(ids[i : i + _TERMS_CHUNK])}}
+            for name, ids in fields
+            for i in range(0, len(ids), _TERMS_CHUNK)
+        ]
+
+
+def acquired_after(
+    db: Session, user_id: int, organization_id: int, cutoff: datetime
+) -> AcquiredAfter:
+    """What ``user_id`` was handed in ``organization_id`` after ``cutoff``."""
+
+    def ids(model: Any, column: Any) -> list[Any]:
+        return [
+            row[0]
+            for row in db.query(column).filter(
+                model.user_id == user_id,
+                model.organization_id == organization_id,
+                model.owner_since > cutoff,
+            )
+        ]
+
+    return AcquiredAfter(
+        file_ids=tuple(int(i) for i in ids(MediaFile, MediaFile.id)),
+        profile_ids=tuple(int(i) for i in ids(SpeakerProfile, SpeakerProfile.id)),
+        cluster_uuids=tuple(str(u) for u in ids(SpeakerCluster, SpeakerCluster.uuid)),
+    )
+
+
 def _count(db: Session, model: Any, ts_name: str, entry: ErasureLedgerEntry, *, old: bool) -> int:
-    ts = getattr(model, ts_name)
+    ts = owned_since(model, ts_name)
     query = db.query(func.count()).select_from(model).filter(model.user_id == entry.subject_user_id)
     if model in (Comment, Task):
         org_files = db.query(MediaFile.id).filter(

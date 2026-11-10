@@ -31,6 +31,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.ownership import OwnerSinceMixin
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
@@ -42,7 +43,7 @@ if TYPE_CHECKING:
 DEFAULT_MULTIPART_REGEX = r"^(.+?)_P(\d{3})(\.[^.]+)$"
 
 
-class WatchSource(Base):
+class WatchSource(OwnerSinceMixin, Base):
     """A configured source that is polled for new media to auto-import."""
 
     __tablename__ = "watch_source"

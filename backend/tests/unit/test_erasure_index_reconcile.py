@@ -1,6 +1,6 @@
 """Index-level resurrection check against an in-memory OpenSearch stand-in (issue #1355, WP-X).
 
-The fake implements exactly the query shapes the module issues (``term``, ``range``, ``exists``,
+The fake implements exactly the query shapes the module issues (``term``, ``terms``, ``range``, ``exists``,
 ``bool`` with ``filter``/``must_not``, and a ``filters`` aggregation), so the assertions are about
 what the module deletes and what it leaves, not about a mock being called. The live-cluster
 version of the same scenario runs on the isolated stack (``integration`` marker).
@@ -30,6 +30,9 @@ MAPPING = {
 
 
 def _match(doc: dict[str, Any], query: dict[str, Any]) -> bool:
+    if "terms" in query:
+        ((field, values),) = query["terms"].items()
+        return doc.get(field) in values
     if "term" in query:
         ((field, value),) = query["term"].items()
         return bool(doc.get(field) == value)
@@ -217,3 +220,77 @@ def test_a_live_user_with_the_same_id_is_ambiguous_not_deleted(db_session, norma
 
     assert entry.id in ambiguous
     assert entry.id not in [s.entry_id for s in subjects]
+
+
+def test_org_member_documents_handed_over_after_the_erasure_survive(opensearch):
+    """Documents of rows handed to the member after the erasure carry the member's id and their
+    content's older creation time; they are excluded by id, never re-deleted (v471)."""
+    from app.services.erasure_org_member_rerun import AcquiredAfter
+
+    handed = {"user_id": 7, "organization_id": 3, "upload_time": BEFORE, "file_id": 11}
+    restored = {"user_id": 7, "organization_id": 3, "upload_time": BEFORE, "file_id": 12}
+    fake = opensearch({"transcripts": [handed, restored]})
+    subject = IndexSubject(2, "org_member", 7, 3, ERASED_AT, AcquiredAfter(file_ids=(11,)))
+
+    result = reconcile.check_subjects([subject])
+
+    assert result.redeleted == 1
+    assert result.resurrections == [(2, "os.transcripts")]
+    assert fake.docs["transcripts"] == [handed]
+
+
+def test_select_subjects_names_what_an_org_member_was_handed(db_session, monkeypatch):
+    """The page's subjects carry the handed-over ids read from Postgres (``owner_since``)."""
+    import uuid
+    from datetime import UTC
+    from datetime import datetime
+
+    from app.models.media import MediaFile
+    from app.models.organization import Organization
+    from app.models.organization import OrganizationMembership
+    from app.services import erasure_ledger_service as ledger
+    from app.services import org_content_transfer
+    from tests.user_owned_rows import make_user
+
+    monkeypatch.setattr("app.core.celery.celery_app.send_task", lambda *a, **k: None)
+    org = Organization(name="Index Org", slug=f"idx-{uuid.uuid4().hex[:8]}")
+    db_session.add(org)
+    db_session.commit()
+    member, leaver = make_user(db_session, "erased"), make_user(db_session, "leaver")
+    db_session.add_all(
+        [
+            OrganizationMembership(organization_id=org.id, user_id=member.id, role="org:admin"),
+            OrganizationMembership(organization_id=org.id, user_id=leaver.id, role="org:member"),
+        ]
+    )
+    recording = MediaFile(
+        filename="handed.wav",
+        storage_path=f"idx/{org.id}/handed.wav",
+        content_type="audio/wav",
+        file_size=1,
+        user_id=leaver.id,
+        organization_id=org.id,
+        upload_time=datetime.now(UTC) - timedelta(days=2),
+    )
+    db_session.add(recording)
+    db_session.commit()
+    entry = ledger.record_request(
+        db_session,
+        subject_type="org_member",
+        subject_user_id=member.id,
+        subject_user_uuid=member.uuid,
+        subject_organization_id=org.id,
+        subject_organization_uuid=org.uuid,
+    )
+    assert entry is not None
+    ledger.record_outcome(db_session, entry, {"errors": [], "legal_holds_skipped": 0})
+    entry.completed_at = datetime.now(UTC) - timedelta(days=1)
+    db_session.commit()
+    org_content_transfer.transfer_org_content(
+        db_session, organization_id=org.id, from_user_id=leaver.id
+    )
+
+    subjects, _ambiguous = reconcile.select_subjects(db_session)
+
+    [mine] = [s for s in subjects if s.entry_id == entry.id]
+    assert mine.handed_over.file_ids == (recording.id,)

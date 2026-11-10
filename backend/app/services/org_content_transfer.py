@@ -21,6 +21,10 @@ Held files are NOT re-owned: a legal hold freezes the file as it stands, so it i
 named in the result (``skipped_held``) and the audit event. A quarantined file moves like any
 other; its quarantine state is untouched.
 
+Every re-owned row gets ``owner_since`` (v471, ``models/ownership``): its creation time is
+kept, and the org-member erasure re-run judges a row by when its current owner got it, so
+content handed to an already-erased member is not mistaken for a restore of theirs.
+
 The Postgres move and its audit event commit together. The OpenSearch ``user_id`` restamp runs
 after the commit as a Celery task with retries (``org_content_transfer.restamp``), selecting by
 the ids that moved and idempotent (:func:`restamp_documents`). Account deletion otherwise removes documents
@@ -36,6 +40,7 @@ from dataclasses import field
 from typing import Any
 
 from kombu.exceptions import OperationalError
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
@@ -221,10 +226,12 @@ def _move(
 
 
 def _reown(model: Any, column: str, where: Any, to_user_id: int) -> Any:
+    # The wall clock, not the transaction's now(): owner_since must read after an erasure that
+    # completed while this transaction was open (models/ownership).
     return (
         update(model)
         .where(where)
-        .values({column: to_user_id})
+        .values({column: to_user_id, "owner_since": func.clock_timestamp()})
         .execution_options(synchronize_session=False)
     )
 

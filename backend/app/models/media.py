@@ -31,6 +31,7 @@ from sqlalchemy.sql import func
 from app.core.enums import FileStatus  # re-exported for backward compat
 from app.core.infra_requeue_reset import register as _register_infra_requeue_reset
 from app.db.base import Base
+from app.models.ownership import OwnerSinceMixin
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
@@ -54,7 +55,7 @@ VOICEPRINT_CONSENT_STATES = ("unspecified", "granted", "declined")
 TRASH_ORIGINS = ("user", "retention")
 
 
-class MediaFile(Base):
+class MediaFile(OwnerSinceMixin, Base):
     __tablename__ = "media_file"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -670,7 +671,7 @@ class Comment(Base):
 TASK_ACTIVE_INDEX = "uq_task_active_per_file_type"
 
 
-class Task(Base):
+class Task(OwnerSinceMixin, Base):
     __tablename__ = "task"
 
     # A file has at most one pending/in_progress row per task_type (corpus-wide rows with no

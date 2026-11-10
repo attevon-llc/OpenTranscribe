@@ -25,6 +25,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.ownership import OwnerSinceMixin
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 SUPPORTED_DOMAINS = ("medical", "legal", "corporate", "government", "technical", "general")
 
 
-class CustomVocabulary(Base):
+class CustomVocabulary(OwnerSinceMixin, Base):
     """Domain-specific vocabulary term for ASR boosting."""
 
     __tablename__ = "custom_vocabulary"

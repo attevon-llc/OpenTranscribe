@@ -424,8 +424,7 @@ which stands up an **isolated `otbench` stack** (throwaway `*_bench_data` volume
 never touches dev/NAS data), uploads the corpus **like a real user**, processes it,
 collects metrics, and tears down (`down -v`) per level. Corpus: **40 files / 58.0 h**
 of real audio spanning 4 duration tiers. Model: `large-v3-turbo`. Raw data + per-level
-`metrics.json` and CSVs under `docs/engine-benchmark-results/`; quick-tier regression
-run preserved in `docs/engine-benchmark-results/quick_run/`.
+`metrics.json` and CSVs under `docs/engine-benchmark-results/`.
 
 > **RTF here = aggregate total throughput** = audio-hours processed ÷ wall-clock hours
 > over the whole corpus (steady-state), **not** a per-file end-to-end ratio.

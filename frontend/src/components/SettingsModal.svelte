@@ -664,9 +664,9 @@
         on:navigate={handleSettingsNavigate}
       />
       {#if !mobileSearchActive}
-        <!-- svelte-ignore a11y_label_has_associated_control -->
-        <label class="mobile-nav-label">{$t('settings.title')}</label>
+        <label class="mobile-nav-label" for="settings-mobile-section-select">{$t('settings.title')}</label>
         <select
+          id="settings-mobile-section-select"
           class="mobile-nav-select"
           value={effectiveActiveSection}
           on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}

@@ -545,9 +545,7 @@
 </nav>
 
 {#if mobileMenuOpen}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="mobile-overlay" on:click={closeMobileMenu}></div>
+  <div role="presentation" class="mobile-overlay" on:click={closeMobileMenu}></div>
 {/if}
 
 <!-- The notifications panel is mounted once, by routes/+layout.svelte. A second mount here

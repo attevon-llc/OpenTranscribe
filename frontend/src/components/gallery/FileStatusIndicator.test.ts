@@ -111,4 +111,30 @@ describe('FileStatusIndicator', () => {
     await fireEvent.click(el);
     expect(handler).not.toHaveBeenCalled();
   });
+
+  it('is a focusable button that activates on Enter and Space only when clickable', async () => {
+    const handler = vi.fn();
+    const { container } = render(FileStatusIndicator, {
+      props: { status: 'error', clickable: true },
+      events: { click: handler },
+    } as never);
+
+    const el = container.querySelector('.status-indicator') as HTMLElement;
+    expect(el.getAttribute('role')).toBe('button');
+    expect(el.tabIndex).toBe(0);
+    await fireEvent.keyDown(el, { key: 'Enter' });
+    await fireEvent.keyDown(el, { key: ' ' });
+    await fireEvent.keyDown(el, { key: 'a' });
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('is a non-focusable labelled image when not clickable', () => {
+    const { container } = render(FileStatusIndicator, {
+      props: { status: 'error', clickable: false },
+    });
+
+    const el = container.querySelector('.status-indicator') as HTMLElement;
+    expect(el.getAttribute('role')).toBe('img');
+    expect(el.hasAttribute('tabindex')).toBe(false);
+  });
 });

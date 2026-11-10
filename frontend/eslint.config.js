@@ -32,6 +32,11 @@ export default tseslint.config(
       'ffmpeg-wasm-build/src/',
     ],
   },
+  {
+    // A disable comment that no longer suppresses anything is dead weight that hides the next
+    // real finding on its line (https://eslint.org/docs/latest/use/configure/rules#report-unused-disable-directives).
+    linterOptions: { reportUnusedDisableDirectives: 'error' },
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   ...svelte.configs.recommended,

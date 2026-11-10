@@ -59,6 +59,14 @@
   }
 
   /** A click on an info icon inside a clickable card explains; it must not also open the details. */
+  // Enter/Space on the card itself only: a key pressed on a focused tooltip inside it is not ours.
+  function openOnKey(event: KeyboardEvent, section: string) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openProcessingDetails(section);
+  }
+
   function openDetailsUnlessTip(event: MouseEvent, section: string) {
     if ((event.target as Element | null)?.closest('.tip')) return;
     openProcessingDetails(section);
@@ -164,9 +172,7 @@
       </div>
 
       <!-- Performance Stats -->
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="stat-card stat-card-clickable" on:click={() => openProcessingDetails('performance')}>
+      <div class="stat-card stat-card-clickable" role="button" tabindex="0" on:click={() => openProcessingDetails('performance')} on:keydown={(event) => openOnKey(event, 'performance')}>
         <h4>{$t('settings.statistics.performance')}</h4>
         <div class="stat-detail">{$t('settings.statistics.avgProcessTime')}: {formatElapsed(stats.tasks?.avg_processing_time || 0)}</div>
         <div class="stat-detail">{$t('settings.statistics.fileTimingAvg')}: {formatElapsed(stats.file_timing?.avg_secs || 0)}</div>
@@ -177,9 +183,7 @@
       </div>
 
       <!-- Throughput & ETA -->
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="stat-card stat-card-clickable" on:click={() => openProcessingDetails('throughput')}>
+      <div class="stat-card stat-card-clickable" role="button" tabindex="0" on:click={() => openProcessingDetails('throughput')} on:keydown={(event) => openOnKey(event, 'throughput')}>
         <h4>{$t('settings.statistics.throughput')}</h4>
         <div class="stat-value">{stats.throughput?.rate_1h || 0} <span class="stat-unit">{$t('settings.statistics.filesPerHour')}</span></div>
         <div class="stat-detail">{$t('settings.statistics.avgRate3h')}: {stats.throughput?.rate_3h || 0} {$t('settings.statistics.filesPerHour')}</div>
@@ -195,9 +199,7 @@
       </div>
 
       <!-- Queue Depths -->
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="stat-card stat-card-clickable" on:click={() => openProcessingDetails('queues')}>
+      <div class="stat-card stat-card-clickable" role="button" tabindex="0" on:click={() => openProcessingDetails('queues')} on:keydown={(event) => openOnKey(event, 'queues')}>
         <h4>{$t('settings.statistics.queueDepths')}</h4>
         <div class="stat-value">{stats.queues_available === false ? '—' : stats.queues?.total || 0} <span class="stat-unit">{$t('settings.statistics.queueTotal')}</span></div>
         {#if (stats.queues?.total ?? 0) > 0}
@@ -219,9 +221,7 @@
       </div>
 
       <!-- AI Models -->
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="stat-card model-card stat-card-clickable" on:click={(event) => openDetailsUnlessTip(event, 'models')}>
+      <div class="stat-card model-card stat-card-clickable" role="button" tabindex="0" on:click={(event) => openDetailsUnlessTip(event, 'models')} on:keydown={(event) => openOnKey(event, 'models')}>
         <h4>{$t('settings.statistics.aiModels')}</h4>
         {#if stats.models}
           <div class="model-info">

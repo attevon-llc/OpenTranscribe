@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusOnMount } from '$lib/actions/focusOnMount';
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { portal } from '$lib/actions/portal';
@@ -79,11 +80,10 @@
   >
     <label class="new-speaker-field">
       <span class="new-speaker-label">{$t('speaker.newSpeakerNameLabel')}</span>
-      <!-- svelte-ignore a11y-autofocus -->
       <input
         class="new-speaker-name-input"
         type="text"
-        autofocus
+        use:focusOnMount
         maxlength="100"
         bind:value={name}
         on:keydown={handleKeydown}

@@ -87,9 +87,8 @@
       </svg>
     </button>
     {#if showExportDropdown}
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
+        role="presentation"
         class="export-dropdown-content"
         use:anchoredPanel={{ anchor: exportButton, width: 'content' }}
         on:click|stopPropagation
@@ -208,9 +207,8 @@
         {/if}
       </button>
       {#if showDownloadDropdown && !isDownloading}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div
+          role="presentation"
           class="export-dropdown-content"
           use:anchoredPanel={{ anchor: downloadButton, width: 'content', edge: 'right' }}
           on:click|stopPropagation

@@ -48,17 +48,13 @@
     e.stopPropagation();
     dispatch('click');
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ') handleClick(e as unknown as MouseEvent);
+  }
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
-<span
-  class="status-indicator status-{status}"
-  class:status-clickable={clickable}
-  title={label}
-  aria-label={label}
-  on:click={handleClick}
->
+{#snippet glyph()}
   <svg class="status-icon" viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" focusable="false">
     <circle cx="8" cy="8" r="7" fill="currentColor" />
     {#if status === 'completed'}
@@ -81,7 +77,31 @@
     {/if}
   </svg>
   {#if showLabel}<span class="status-text">{label}</span>{/if}
-</span>
+{/snippet}
+
+{#if clickable}
+  <span
+    role="button"
+    tabindex="0"
+    class="status-indicator status-{status}"
+    class:status-clickable={clickable}
+    title={label}
+    aria-label={label}
+    on:click={handleClick}
+    on:keydown={handleKeydown}
+  >
+    {@render glyph()}
+  </span>
+{:else}
+  <span
+    role="img"
+    class="status-indicator status-{status}"
+    title={label}
+    aria-label={label}
+  >
+    {@render glyph()}
+  </span>
+{/if}
 
 <style>
   .status-indicator {

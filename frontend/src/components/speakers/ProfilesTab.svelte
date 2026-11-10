@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusOnMount } from '$lib/actions/focusOnMount';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -19,6 +20,11 @@
   function getInitials(name: string): string {
     return name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
   }
+
+  function pickAvatar(uuid: string) {
+    if (avatarUploading.has(uuid)) return;
+    document.getElementById('avatar-input-' + uuid)?.click();
+  }
 </script>
 
 <div class="tab-content">
@@ -37,9 +43,7 @@
       {#each profiles as profile (profile.uuid)}
         <div class="profile-card">
           <div class="profile-header">
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div class="profile-avatar-wrapper" on:click|stopPropagation={() => { if (!avatarUploading.has(profile.uuid)) { const el = document.getElementById('avatar-input-' + profile.uuid); el?.click(); } }} title={$t('speakers.tooltip.uploadAvatar')}>
+            <div class="profile-avatar-wrapper" role="button" tabindex="0" on:click|stopPropagation={() => pickAvatar(profile.uuid)} on:keydown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickAvatar(profile.uuid); } }} title={$t('speakers.tooltip.uploadAvatar')}>
               {#if avatarUploading.has(profile.uuid)}
                 <div class="avatar-spinner"><Spinner size="small" /></div>
               {:else if profile.avatar_url}
@@ -62,11 +66,10 @@
               <input id="avatar-input-{profile.uuid}" type="file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" on:change={(e) => dispatch('avatarUpload', { uuid: profile.uuid, event: e })} />
             </div>
             {#if editingProfileUuid === profile.uuid}
-              <!-- svelte-ignore a11y-autofocus -->
               <input class="profile-edit-input" bind:value={editProfileName}
                 on:keydown={(e) => { if (e.key === 'Enter') dispatch('saveProfile', profile.uuid); if (e.key === 'Escape') dispatch('cancelEdit'); }}
                 on:blur={() => dispatch('saveProfile', profile.uuid)}
-                autofocus />
+                use:focusOnMount />
             {:else}
               <div class="profile-name">{profile.name || $t('speakers.profiles.unnamed')}</div>
               {#if profile.is_shared}

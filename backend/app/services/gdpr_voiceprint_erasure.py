@@ -23,6 +23,7 @@ def _erase_speaker_voiceprints(
     organization_id: int | None = None,
     personal_only: bool = False,
     created_before: datetime | None = None,
+    keep_ids: Iterable[str] = (),
     errors: list[dict[str, Any]] | None = None,
 ) -> int:
     """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
@@ -46,6 +47,10 @@ def _erase_speaker_voiceprints(
         created_before: Only documents whose ``created_at`` is at or before this instant (the
             automatic org-member re-run after a restore). A document with no ``created_at`` does
             not match and is left in place.
+        keep_ids: Document ids the stamp also matches but a legal hold keeps
+            (``capture.held_voices``): the speakers of a held file and the profiles and cluster
+            centroids holding one of their voices. Excluded with ``must_not``; re-diarizing a
+            held file to rebuild them is refused, so a deletion could not be undone.
         personal_only: Also require that the doc carries no organization, i.e. only
             personal-workspace docs (the privacy purge's "personal" scope). Without a
             ``user_id`` this is every user's personal docs. Contradicts
@@ -70,9 +75,15 @@ def _erase_speaker_voiceprints(
         terms.append({"term": {"organization_id": organization_id}})
     if created_before is not None:
         terms.append({"range": {"created_at": {"lte": created_before.isoformat()}}})
-    body: dict[str, Any] = {"query": {"bool": {"filter": terms}}}
+    must_not: list[dict[str, Any]] = []
     if personal_only:
-        body["query"]["bool"]["must_not"] = [{"exists": {"field": "organization_id"}}]
+        must_not.append({"exists": {"field": "organization_id"}})
+    kept = list(dict.fromkeys(str(i) for i in keep_ids))
+    if kept:
+        must_not.append({"ids": {"values": kept}})
+    body: dict[str, Any] = {"query": {"bool": {"filter": terms}}}
+    if must_not:
+        body["query"]["bool"]["must_not"] = must_not
 
     label = (
         "org " + str(organization_id)

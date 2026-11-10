@@ -12,18 +12,22 @@ import uuid as uuid_pkg
 from typing import TYPE_CHECKING
 
 from sqlalchemy import ColumnElement
+from sqlalchemy import exists
 from sqlalchemy import or_
 from sqlalchemy import select
 
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
+from app.services.erasure_receipt.types import HeldVoices
 
 if TYPE_CHECKING:
+    from sqlalchemy import Select
     from sqlalchemy.orm import Session
 
 
@@ -50,6 +54,84 @@ def _owner_filter(
     if scope.kind == "organization":
         return model.organization_id == scope.organization_id
     return None
+
+
+def _held_files() -> Select[tuple[int]]:
+    from app.services.hold_guard import held_pred
+
+    return select(MediaFile.id).where(held_pred())
+
+
+def profile_keeps_held_voice() -> ColumnElement[bool]:
+    """EXISTS a speaker of a held file linked to the enclosing query's ``SpeakerProfile``.
+
+    Deleting such a profile would unlink the speaker (``speaker.profile_id`` is ``ON DELETE SET
+    NULL``), rewriting the identity of a file the hold freezes: it is kept until the hold lifts.
+    The privacy purge's twin is ``purge_file_guard.profile_keeps_protected_voice``.
+    """
+    return exists().where(
+        Speaker.profile_id == SpeakerProfile.id, Speaker.media_file_id.in_(_held_files())
+    )
+
+
+def _held_speaker_filter(scope: ErasureScope) -> ColumnElement[bool]:
+    """Speakers of held files whose voiceprint document the scope's stamp would reach."""
+    in_scope = Speaker.media_file_id.in_(_held_files().where(_file_filter(scope)))
+    if scope.kind == "user":
+        return or_(
+            in_scope, (Speaker.user_id == scope.user_id) & Speaker.media_file_id.in_(_held_files())
+        )
+    if scope.kind == "org_member":
+        org_held = _held_files().where(MediaFile.organization_id == scope.organization_id)
+        return or_(
+            in_scope, (Speaker.user_id == scope.user_id) & Speaker.media_file_id.in_(org_held)
+        )
+    return in_scope
+
+
+def held_voices(db: Session, scope: ErasureScope) -> HeldVoices:
+    """What a legal hold keeps of the scope's voiceprints (Art. 17(3)(e), the hold freeze).
+
+    The speakers of held files; the scope's profiles linked to one of them; the scope's clusters
+    with one of them as a member or promoted to a kept profile.
+    """
+    speakers = db.execute(select(Speaker.id, Speaker.uuid).where(_held_speaker_filter(scope))).all()
+    if not speakers:
+        return HeldVoices()
+    speaker_ids = [int(r.id) for r in speakers]
+    profiles: list[tuple[int, str]] = []
+    clusters: list[str] = []
+    profile_scope = _owner_filter(SpeakerProfile, scope)
+    if profile_scope is not None:
+        profiles = [
+            (int(r.id), str(r.uuid))
+            for r in db.execute(
+                select(SpeakerProfile.id, SpeakerProfile.uuid).where(
+                    profile_scope, profile_keeps_held_voice()
+                )
+            )
+        ]
+    cluster_scope = _owner_filter(SpeakerCluster, scope)
+    if cluster_scope is not None:
+        holds_voice = or_(
+            exists().where(
+                SpeakerClusterMember.cluster_id == SpeakerCluster.id,
+                SpeakerClusterMember.speaker_id.in_(speaker_ids),
+            ),
+            exists().where(Speaker.cluster_id == SpeakerCluster.id, Speaker.id.in_(speaker_ids)),
+            SpeakerCluster.promoted_to_profile_id.in_([pid for pid, _ in profiles]),
+        )
+        clusters = [
+            str(u)
+            for u in db.execute(
+                select(SpeakerCluster.uuid).where(cluster_scope, holds_voice)
+            ).scalars()
+        ]
+    return HeldVoices(
+        speaker_uuids=tuple(str(r.uuid) for r in speakers),
+        profile_uuids=tuple(u for _, u in profiles),
+        cluster_uuids=tuple(clusters),
+    )
 
 
 _PATH_COLUMNS = (MediaFile.storage_path, MediaFile.thumbnail_path, MediaFile.playback_path)
@@ -123,12 +205,17 @@ def capture(db: Session, scope: ErasureScope) -> Captured:
         captured.speaker_ids = [int(r.id) for r in speakers]
         captured.speaker_uuids = [str(r.uuid) for r in speakers]
 
-    for model, attr in ((SpeakerProfile, "profile_uuids"), (SpeakerCluster, "cluster_uuids")):
+    held_voice = held_voices(db, scope)
+    captured.kept_voiceprint_ids = held_voice.doc_ids()
+    for model, attr, keep in (
+        (SpeakerProfile, "profile_uuids", set(held_voice.profile_uuids)),
+        (SpeakerCluster, "cluster_uuids", set(held_voice.cluster_uuids)),
+    ):
         condition = _owner_filter(model, scope)
         if condition is None:
             continue
         uuids = db.execute(select(model.uuid).where(condition)).scalars()
-        setattr(captured, attr, [str(u) for u in uuids])
+        setattr(captured, attr, [str(u) for u in uuids if str(u) not in keep])
 
     condition = _owner_filter(SpeakerProfile, scope)
     if condition is not None:
@@ -136,7 +223,9 @@ def capture(db: Session, scope: ErasureScope) -> Captured:
             str(p)
             for p in db.execute(
                 select(SpeakerProfile.avatar_path).where(
-                    condition, SpeakerProfile.avatar_path.is_not(None)
+                    condition,
+                    SpeakerProfile.avatar_path.is_not(None),
+                    ~profile_keeps_held_voice(),
                 )
             )
             .scalars()

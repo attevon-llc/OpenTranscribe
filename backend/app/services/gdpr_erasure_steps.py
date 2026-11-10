@@ -22,6 +22,7 @@ from app.models.speaker import SpeakerCollection
 from app.models.speaker import SpeakerProfile
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.services.erasure_receipt.capture import profile_keeps_held_voice
 from app.services.file_cleanup_service import purge_media_file
 from app.services.file_cleanup_service import scrub_chat_citations
 from app.services.gdpr_voiceprint_erasure import _erase_profile_embedding
@@ -52,6 +53,28 @@ def _delete_profiles(
         db.delete(profile)
         summary["speaker_profiles_deleted"] += 1
     return avatar_paths
+
+
+def _deletable_profiles(db: Session, query: Any, summary: dict[str, Any]) -> list[SpeakerProfile]:
+    """``query``'s profiles, minus the ones linked to a speaker of a held file.
+
+    Deleting such a profile unlinks the held file's speaker (``ON DELETE SET NULL``), which the
+    hold freeze forbids and nothing could undo while it stands. A kept profile is a deferral like
+    a held file: counted in ``legal_holds_skipped`` (the ledger entry is ``deferred`` /
+    ``legal_hold`` and the sweep retries it when the hold lifts; an account erasure keeps the
+    account row, whose cascade would take the profile) and reported with a fixed sentence.
+    """
+    kept = int(query.filter(profile_keeps_held_voice()).count())
+    if kept:
+        summary["legal_holds_skipped"] += kept
+        summary["errors"].append(
+            {
+                "stage": "speaker_profile",
+                "error": f"skipped: {kept} speaker profile(s) linked to a file under an active "
+                "legal hold (GDPR Art. 17(3)(e))",
+            }
+        )
+    return list(query.filter(~profile_keeps_held_voice()).all())
 
 
 def _erase_avatar_objects(avatar_paths: list[str], errors: list[dict[str, Any]]) -> None:
@@ -201,7 +224,9 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     ``tests/unit/test_user_deletion_fk_coverage.py`` derives the FKs from the live
     schema and requires both paths to account for each one.
     """
-    profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id).all()
+    profiles = _deletable_profiles(
+        db, db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id), summary
+    )
     avatar_paths = _delete_profiles(db, profiles, summary)
 
     # Organization collections are the tenant's and hold colleagues' files (v422):

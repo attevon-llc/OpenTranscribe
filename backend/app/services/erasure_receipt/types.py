@@ -40,6 +40,9 @@ class Captured:
     avatar_paths: list[str] = field(default_factory=list)
     #: Files a legal hold keeps (Art. 17(3)(e)); counted as retained, never as residual.
     held_file_ids: list[int] = field(default_factory=list)
+    #: Speaker-index ``_id``s a hold keeps: the speakers of held files, and the profiles and
+    #: cluster centroids that still hold one of their voices. Never deleted, never residual.
+    kept_voiceprint_ids: list[str] = field(default_factory=list)
     #: An active organization hold keeps the organization row (``erase_organization``).
     org_hold_active: bool = False
     #: ``user_<uid>/`` holds objects of no file the erasure keeps or another account owns, so the
@@ -48,6 +51,23 @@ class Captured:
     #: The same for ``avatars/<uid>/``: no surviving profile's avatar sits under it.
     whole_avatar_prefix: bool = False
     email: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True)
+class HeldVoices:
+    """Voiceprints a legal hold keeps out of an erasure (``capture.held_voices``)."""
+
+    speaker_uuids: tuple[str, ...] = ()
+    profile_uuids: tuple[str, ...] = ()
+    cluster_uuids: tuple[str, ...] = ()
+
+    def doc_ids(self) -> list[str]:
+        """Their speaker-index ``_id`` values."""
+        return [
+            *self.speaker_uuids,
+            *(f"profile_{u}" for u in self.profile_uuids),
+            *(f"cluster_{u}" for u in self.cluster_uuids),
+        ]
 
 
 def object_prefixes(scope: ErasureScope, captured: Captured) -> list[str]:

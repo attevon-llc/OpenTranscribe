@@ -173,6 +173,10 @@ class _FakeSession:
     def query(self, model, *rest) -> _FakeQuery:
         return _FakeQuery(self._present.get(model))
 
+    def execute(self, statement, *args, **kwargs) -> _FakeQuery:
+        """A 2.0-style read (which voiceprints a hold keeps): no rows, like every query here."""
+        return _FakeQuery(None)
+
     def delete(self, obj) -> None:
         raise self._delete_error
 

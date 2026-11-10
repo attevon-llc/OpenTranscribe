@@ -31,8 +31,6 @@ BACKEND = REPO_ROOT / 'backend'
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from app.scripts.corpus_injection.env import bootstrap  # noqa: E402 - importable only after the sys.path insert above
-
 logger = logging.getLogger('benchmark_router')
 
 DEFAULT_MANIFEST_ROOT = REPO_ROOT / '.rag-403' / 'injections'
@@ -166,6 +164,9 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO, format='%(levelname)s %(message)s'
     )
+    # Resolvable only after the sys.path insert at module top, hence imported here.
+    from app.scripts.corpus_injection.env import bootstrap
+
     bootstrap(REPO_ROOT)
 
     from tests.eval.harness.routing import (

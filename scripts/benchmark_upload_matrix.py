@@ -37,20 +37,12 @@ from pathlib import Path
 
 import requests
 
-# Reuse the proven helpers so we behave exactly like benchmark_e2e.py
-_SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-# E402: the two imports below resolve only after the sys.path.insert above.
-from benchmark_concurrent_uploads import (  # noqa: E402 - importable only after the sys.path insert above
-    _db_query,
-    fetch_timing_rows,
-)
-from e2e_bench.backend_api import (  # noqa: E402 - importable only after the sys.path insert above
-    get_auth_token,
-    poll_task_completion,
-    upload_file_via_api,
-)
-from e2e_bench.config import DEFAULT_BACKEND_URL  # noqa: E402 - importable only after the sys.path insert above
+# Reuse the proven helpers so we behave exactly like benchmark_e2e.py. They are siblings of
+# this script, and Python puts the running script's directory first on sys.path, so no
+# sys.path edit is needed (docs.python.org/3/library/sys_path_init.html).
+from benchmark_concurrent_uploads import _db_query, fetch_timing_rows
+from e2e_bench.backend_api import get_auth_token, poll_task_completion, upload_file_via_api
+from e2e_bench.config import DEFAULT_BACKEND_URL
 
 logger = logging.getLogger(__name__)
 

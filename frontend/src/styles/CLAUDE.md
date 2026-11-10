@@ -64,3 +64,11 @@ colour, fallback, shadow, radius, spacing, font-size, font-weight, z-index, dura
 per file. Counts may only fall; run with `--tighten` in the same commit that removes literals.
 Screenshot A/B for any restyle: `scripts/e2e/styling-ab.sh` against a `--fresh` stack (never the live one), and the
 `/a11y-fixtures/ui-kit` page shows every shared component in every state.
+
+## Shared blocks (de-duplicated, issue: frontend duplicate-code ratchet)
+
+- `auth.css` — the card/header/form/button/link base of the unauthenticated pages (login, register,
+  forgot/reset password, accept invite, verify email); each page imports `$styles/auth.css` and restates
+  only what differs. `utilities.css` also holds `.section-toggle` (+ `.section-toggle-heading`), `.text-btn`,
+  `.pill-chip`, `.copy-button-header` and the `.filter-sidebar` shell.
+- `sourceTree.ts` — `walkSource` / `rel` / `SRC` for the style-source tests; do not hand-roll another `walk()`.

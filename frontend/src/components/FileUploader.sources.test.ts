@@ -6,6 +6,10 @@
  * will throw away (speaker detection off, or the Fast CPU model) must not be offered. Payloads
  * are asserted where they leave the component: the `/files/process-url` POST body and the
  * arguments handed to the upload queue.
+ *
+ * The single-file "extract audio" path hands the wizard's options to a background job and then
+ * resets the wizard. The options must be read BEFORE the reset: resetAllState() clears the
+ * voiceprint consent, so reading them afterwards silently dropped it.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
@@ -23,58 +27,39 @@ const mockUploadsStore = vi.hoisted(() => ({
   addRecording: vi.fn(() => 'upload-id-1'),
   addExtractedAudio: vi.fn(),
 }));
+const mockExtractAndQueue = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+vi.mock('$lib/upload/bulkExtraction', () => ({
+  extractAndQueue: mockExtractAndQueue,
+  startBulkExtraction: vi.fn(),
+}));
+
 vi.mock('$stores/uploads', () => ({ uploadsStore: mockUploadsStore }));
 
-vi.mock('$lib/services/configService', () => ({
-  loadProtectedMediaAuthConfig: vi.fn().mockResolvedValue(undefined),
-  getAuthConfigForUrl: vi.fn().mockReturnValue(null),
-}));
-vi.mock('$lib/api/audioExtractionSettings', () => ({
-  getAudioExtractionSettings: vi.fn().mockResolvedValue({
-    auto_extract_enabled: true,
-    extraction_threshold_mb: 100,
-    remember_choice: false,
-    show_modal: true,
-  }),
-}));
-
-const SYSTEM_DEFAULTS = vi.hoisted(() => ({
-  min_speakers: 1,
-  max_speakers: 20,
-  garbage_cleanup_enabled: true,
-  garbage_cleanup_threshold: 50,
-  valid_speaker_prompt_behaviors: ['always_prompt', 'use_defaults', 'use_custom'],
-  available_source_languages: { auto: 'Auto-detect', en: 'English' },
-  available_llm_output_languages: { en: 'English' },
-  common_languages: ['auto', 'en'],
-  vad_threshold: 0.5,
-  vad_min_silence_ms: 2000,
-  vad_min_speech_ms: 250,
-  vad_speech_pad_ms: 400,
-  hallucination_silence_threshold: null,
-  repetition_penalty: 1.0,
-  diarization_source_default: 'provider',
-  valid_diarization_sources: ['provider', 'local', 'pyannote', 'off'],
-}));
+vi.mock('$lib/services/configService', async () =>
+  (await import('$testMocks/fileUploaderMocks')).configServiceMock()
+);
+vi.mock('$lib/api/audioExtractionSettings', async () =>
+  (await import('$testMocks/fileUploaderMocks')).audioExtractionSettingsMock()
+);
 
 const mockGetSettings = vi.hoisted(() => vi.fn());
 vi.mock('$lib/api/transcriptionSettings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/transcriptionSettings')>();
+  const { TRANSCRIPTION_SYSTEM_DEFAULTS } = await import('$testMocks/fileUploaderMocks');
   return {
     ...actual,
     getTranscriptionSettings: mockGetSettings,
-    getTranscriptionSystemDefaults: vi.fn().mockResolvedValue(SYSTEM_DEFAULTS),
+    getTranscriptionSystemDefaults: vi.fn().mockResolvedValue(TRANSCRIPTION_SYSTEM_DEFAULTS),
   };
 });
 
-vi.mock('$lib/api/asrSettings', () => ({
-  ASRSettingsApi: {
-    getActiveLocalModel: vi.fn().mockResolvedValue({ active_model: 'large-v3-turbo' }),
-  },
-}));
-vi.mock('$lib/api/tags', () => ({ listTags: vi.fn().mockResolvedValue([]) }));
+vi.mock('$lib/api/asrSettings', async () =>
+  (await import('$testMocks/fileUploaderMocks')).asrActiveModelMock()
+);
+vi.mock('$lib/api/tags', async () => (await import('$testMocks/fileUploaderMocks')).tagsApiMock());
 
 import FileUploader from './FileUploader.svelte';
+import { selectFile, sizedFile } from '$testMocks/fileUploaderMocks';
 import { recordingStore } from '$stores/recording';
 import { DEFAULT_TRANSCRIPTION_SETTINGS } from '$lib/api/transcriptionSettings';
 
@@ -130,13 +115,7 @@ async function importUrl(container: HTMLElement) {
 }
 
 async function submitFile(container: HTMLElement) {
-  await waitFor(() => expect(container.querySelector('input[type="file"]')).not.toBeNull());
-  const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-  Object.defineProperty(input, 'files', {
-    configurable: true,
-    value: [new File(['x'], 'clip.mp3', { type: 'audio/mpeg' })],
-  });
-  await fireEvent.change(input);
+  await selectFile(container, sizedFile('clip.mp3', 'audio/mpeg'));
   await reviewAndSubmit(container);
 }
 
@@ -225,5 +204,34 @@ describe('the Speakers step is offered only when it can apply (#1201)', () => {
       Record<string, unknown>,
     ];
     expect(params).toMatchObject({ whisperModel: 'base', minSpeakers: null, maxSpeakers: null });
+  });
+});
+
+describe('single-file audio extraction', () => {
+  it('forwards the voiceprint consent and the chosen tags to the extraction job', async () => {
+    remember({ tagNames: ['board'] });
+    const { container } = render(FileUploader);
+    await selectFile(container, sizedFile('clip.mp4', 'video/mp4', 150 * 1024 * 1024));
+
+    const clickNext = async () => {
+      await waitFor(() =>
+        expect(container.querySelector('.nav-next:not([disabled])')).not.toBeNull()
+      );
+      await fireEvent.click(container.querySelector('.nav-next') as HTMLElement);
+    };
+    for (let i = 0; i < 12 && !container.querySelector('#voiceprint-consent'); i++) {
+      await clickNext();
+    }
+    await waitFor(() => expect(container.querySelector('#voiceprint-consent')).not.toBeNull());
+    await fireEvent.click(container.querySelector('#voiceprint-consent') as HTMLElement);
+    for (let i = 0; i < 12 && !container.querySelector('.nav-submit'); i++) {
+      await clickNext();
+    }
+    await fireEvent.click(container.querySelector('.nav-submit') as HTMLElement);
+
+    expect(mockExtractAndQueue).toHaveBeenCalledTimes(1);
+    const [, params, organize] = mockExtractAndQueue.mock.calls[0];
+    expect(params.voiceprintConsent).toBe('granted');
+    expect(organize.tagNames).toEqual(['board']);
   });
 });

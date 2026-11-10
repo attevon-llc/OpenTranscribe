@@ -1,21 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-
-const SRC = path.resolve(__dirname, '..');
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, out);
-    else if (/\.(svelte|css)$/.test(e.name)) out.push(p);
-  }
-  return out;
-}
+import { SRC, walkSource } from './sourceTree';
 
 describe('.sr-only utility', () => {
   it('is defined once, in styles/utilities.css, and nowhere else', () => {
-    const definers = walk(SRC).filter((f) =>
+    const definers = walkSource(SRC, /\.(svelte|css)$/).filter((f) =>
       /^\s*\.sr-only\s*\{/m.test(fs.readFileSync(f, 'utf8'))
     );
     expect(definers.map((f) => path.relative(SRC, f))).toEqual(['styles/utilities.css']);

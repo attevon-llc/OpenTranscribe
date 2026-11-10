@@ -272,15 +272,7 @@
   }
 
   .file-list-header {
-    display: grid;
-    grid-template-columns: var(--file-list-columns);
-    gap: var(--file-list-gap);
-    padding: 0.75rem var(--file-list-pad);
-    background: var(--surface-color);
-    border-bottom: 1px solid var(--border-color);
-    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-    color: var(--text-secondary);
     position: sticky;
     top: 0;
     z-index: 2;

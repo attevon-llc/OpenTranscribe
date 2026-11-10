@@ -46,10 +46,9 @@ const mockUploadsStore = vi.hoisted(() => ({
 }));
 vi.mock('$stores/uploads', () => ({ uploadsStore: mockUploadsStore }));
 
-vi.mock('$lib/services/configService', () => ({
-  loadProtectedMediaAuthConfig: vi.fn().mockResolvedValue(undefined),
-  getAuthConfigForUrl: vi.fn().mockReturnValue(null),
-}));
+vi.mock('$lib/services/configService', async () =>
+  (await import('$testMocks/fileUploaderMocks')).configServiceMock()
+);
 
 const mockGetAudioExtractionSettings = vi.hoisted(() => vi.fn());
 vi.mock('$lib/api/audioExtractionSettings', () => ({
@@ -58,41 +57,24 @@ vi.mock('$lib/api/audioExtractionSettings', () => ({
 
 vi.mock('$lib/api/transcriptionSettings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/transcriptionSettings')>();
+  const { TRANSCRIPTION_SYSTEM_DEFAULTS } = await import('$testMocks/fileUploaderMocks');
   return {
     ...actual,
     getTranscriptionSettings: vi
       .fn()
       .mockResolvedValue({ ...actual.DEFAULT_TRANSCRIPTION_SETTINGS }),
-    getTranscriptionSystemDefaults: vi.fn().mockResolvedValue({
-      min_speakers: 1,
-      max_speakers: 20,
-      garbage_cleanup_enabled: true,
-      garbage_cleanup_threshold: 50,
-      valid_speaker_prompt_behaviors: ['always_prompt', 'use_defaults', 'use_custom'],
-      available_source_languages: { auto: 'Auto-detect', en: 'English' },
-      available_llm_output_languages: { en: 'English' },
-      common_languages: ['auto', 'en'],
-      vad_threshold: 0.5,
-      vad_min_silence_ms: 2000,
-      vad_min_speech_ms: 250,
-      vad_speech_pad_ms: 400,
-      hallucination_silence_threshold: null,
-      repetition_penalty: 1.0,
-      diarization_source_default: 'provider',
-      valid_diarization_sources: ['provider', 'local', 'pyannote', 'off'],
-    }),
+    getTranscriptionSystemDefaults: vi.fn().mockResolvedValue(TRANSCRIPTION_SYSTEM_DEFAULTS),
   };
 });
 
-vi.mock('$lib/api/asrSettings', () => ({
-  ASRSettingsApi: {
-    getActiveLocalModel: vi.fn().mockResolvedValue({ active_model: 'large-v3-turbo' }),
-  },
-}));
+vi.mock('$lib/api/asrSettings', async () =>
+  (await import('$testMocks/fileUploaderMocks')).asrActiveModelMock()
+);
 
-vi.mock('$lib/api/tags', () => ({ listTags: vi.fn().mockResolvedValue([]) }));
+vi.mock('$lib/api/tags', async () => (await import('$testMocks/fileUploaderMocks')).tagsApiMock());
 
 import FileUploader from './FileUploader.svelte';
+import { selectFile, selectFiles, sizedFile } from '$testMocks/fileUploaderMocks';
 import { loadProtectedMediaAuthConfig } from '$lib/services/configService';
 import { capabilities, resetCapabilities } from '$stores/capabilities';
 import {
@@ -102,25 +84,8 @@ import {
 
 const PREVIOUS_VALUES_KEY = 'opentr:uploadPreviousValues';
 
-function file(overrides: { name?: string; type?: string; size?: number } = {}): File {
-  const f = new File(['x'], overrides.name ?? 'clip.mp3', { type: overrides.type ?? 'audio/mpeg' });
-  if (overrides.size !== undefined) {
-    Object.defineProperty(f, 'size', { configurable: true, value: overrides.size });
-  }
-  return f;
-}
-
-async function selectFile(container: HTMLElement, selected: File) {
-  const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-  Object.defineProperty(input, 'files', { configurable: true, value: [selected] });
-  await fireEvent.change(input);
-}
-
-async function selectFiles(container: HTMLElement, files: File[]) {
-  const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-  Object.defineProperty(input, 'files', { configurable: true, value: files });
-  await fireEvent.change(input);
-}
+const file = (overrides: { name?: string; type?: string; size?: number } = {}) =>
+  sizedFile(overrides.name ?? 'clip.mp3', overrides.type ?? 'audio/mpeg', overrides.size);
 
 beforeEach(() => {
   vi.clearAllMocks();

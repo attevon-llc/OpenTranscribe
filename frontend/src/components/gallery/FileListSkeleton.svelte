@@ -83,17 +83,9 @@
   }
 
   .file-list-header {
-    display: grid;
-    grid-template-columns: var(--file-list-columns);
-    gap: var(--file-list-gap);
-    padding: 0.75rem var(--file-list-pad);
-    background: var(--surface-color);
-    border-bottom: 1px solid var(--border-color);
-    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--text-secondary);
   }
 
   .file-list-header.selecting-mode {

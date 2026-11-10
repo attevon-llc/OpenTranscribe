@@ -18,21 +18,10 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { SRC, rel, walkSource } from './sourceTree';
 
-const SRC = path.resolve(__dirname, '..');
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, out);
-    else if (/\.(svelte|css|ts)$/.test(e.name) && !/\.test\.ts$/.test(e.name)) out.push(p);
-  }
-  return out;
-}
-
-const rel = (p: string) => path.relative(SRC, p).split(path.sep).join('/');
 const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '');
-const STYLED = walk(SRC).filter((p) => /\.(svelte|css)$/.test(p));
+const STYLED = walkSource(SRC, /\.(svelte|css)$/);
 const read = (p: string) => strip(fs.readFileSync(p, 'utf8'));
 
 /** Files matching `re`, minus the allowlist; also reports allowlist entries that match nothing. */

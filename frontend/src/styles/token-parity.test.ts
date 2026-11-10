@@ -15,10 +15,10 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { SRC, walkSource } from './sourceTree';
 import { loadThemeTokens, type TokenSets } from './themeTokens';
 
 const sets = loadThemeTokens();
-const SRC = path.resolve(__dirname, '..');
 
 /** Colour tokens that are deliberately the same in both themes, each with its reason. */
 const THEME_INVARIANT: Record<string, string> = {
@@ -123,18 +123,10 @@ describe('token parity: elevation', () => {
 });
 
 /** All custom properties declared anywhere under src (stylesheets, templates, scripts). */
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name !== 'node_modules' && entry.name !== '.svelte-kit') walk(p, out);
-    } else if (/\.(svelte|css|ts|js|html)$/.test(entry.name)) out.push(p);
-  }
-  return out;
-}
-
 describe('token parity: every var(--x) resolves', () => {
-  const files = walk(SRC);
+  const files = walkSource(SRC, /\.(svelte|css|ts|js|html)$/, {
+    skipDirs: ['node_modules', '.svelte-kit'],
+  });
   const declaredAnywhere = new Set<string>();
   const used: Array<{ name: string; file: string }> = [];
   for (const file of files) {

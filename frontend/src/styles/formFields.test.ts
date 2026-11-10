@@ -17,10 +17,10 @@
  *    genuine exception goes in ALLOWED with a written reason (stale entries fail).
  */
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'fs';
-import { join, relative, resolve } from 'path';
+import { readFileSync } from 'fs';
+import { join, relative } from 'path';
+import { SRC, walkSource } from './sourceTree';
 
-const SRC = resolve(__dirname, '..');
 const css = readFileSync(join(__dirname, 'form-elements.css'), 'utf8');
 
 /** `file::selector -> why this field may paint itself`. */
@@ -29,15 +29,6 @@ const ALLOWED: Record<string, string> = {};
 const PAINT =
   /^\s*(border(?:-color|-radius|-width|-style)?|background(?:-color|-image)?|box-shadow|outline(?:-offset|-color)?)\s*:/m;
 const NON_TEXT = /type=['"]?(checkbox|radio|range|file|color|hidden|button|submit|image|reset)/;
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) walk(full, out);
-    else if (full.endsWith('.svelte')) out.push(full);
-  }
-  return out;
-}
 
 /** Classes on text-like <input>/<textarea>/<select> elements (brace-aware: `=>` contains `>`). */
 export function fieldClasses(markup: string): Set<string> {
@@ -195,7 +186,10 @@ describe('form-elements.css structure', () => {
 });
 
 describe('components do not re-paint the fields they render', () => {
-  const files = walk(SRC).map((f) => ({ rel: relative(SRC, f).replace(/\\/g, '/'), full: f }));
+  const files = walkSource(SRC, /\.svelte$/).map((f) => ({
+    rel: relative(SRC, f).replace(/\\/g, '/'),
+    full: f,
+  }));
 
   it('scans the component tree', () => {
     expect(files.length).toBeGreaterThan(100);

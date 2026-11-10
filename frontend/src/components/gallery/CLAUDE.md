@@ -128,3 +128,7 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   `[data-testid="gallery-files-loaded"]`, rendered by `GalleryGrid.svelte` only in its real-content
   branch (not skeleton/empty/error) — `conftest.py`'s `gallery_page` fixture waits on this, not on
   `.gallery-header-right`. See `backend/tests/CLAUDE.md`'s e2e section and `conftest.py` itself.
+
+- `FileSelectCheckbox.svelte` (`variant="card"|"row"`) and `FileRowStatus.svelte` are the selection checkbox
+  and status cell shared by `VirtualGrid` and `VirtualList`; the header row common to the table and its
+  skeleton lives in `file-list-grid.css`.

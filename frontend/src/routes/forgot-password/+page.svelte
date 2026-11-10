@@ -4,6 +4,7 @@
   import { t } from '$stores/locale';
 
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
 
   let email = '';
   let loading = false;
@@ -59,8 +60,7 @@
           <div class="error-message" role="alert">{errorMessage}</div>
         {/if}
 
-        <div class="form-group">
-          <label for="email">{$t('auth.email')}</label>
+        <FormField id="email" label={$t('auth.email')} size="lg">
           <input
             type="email"
             id="email"
@@ -69,7 +69,7 @@
             autocomplete="email"
             required
           />
-        </div>
+        </FormField>
 
         <button type="submit" class="auth-button" disabled={loading}>
           {#if loading}
@@ -128,18 +128,7 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
   }
 

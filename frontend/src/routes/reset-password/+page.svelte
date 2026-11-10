@@ -7,6 +7,7 @@
   import { t } from '$stores/locale';
 
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
 
   let newPassword = '';
   let confirmPassword = '';
@@ -92,19 +93,17 @@
           <div class="error-message" role="alert">{errorMessage}</div>
         {/if}
 
-        <div class="form-group">
-          <div class="password-header">
-            <label for="newPassword">{$t('auth.newPassword')}</label>
-            <button
-              type="button"
-              class="toggle-password"
-              on:click={togglePasswordVisibility}
-              tabindex="-1"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              <EyeIcon visible={showPassword} />
-            </button>
-          </div>
+        <FormField id="newPassword" label={$t('auth.newPassword')} size="lg">
+          <button
+            slot="label-after"
+            type="button"
+            class="toggle-password"
+            on:click={togglePasswordVisibility}
+            tabindex="-1"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            <EyeIcon visible={showPassword} />
+          </button>
           <input
             type={showPassword ? 'text' : 'password'}
             id="newPassword"
@@ -113,10 +112,9 @@
             autocomplete="new-password"
             required
           />
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <label for="confirmPassword">{$t('auth.confirmPassword')}</label>
+        <FormField id="confirmPassword" label={$t('auth.confirmPassword')} size="lg">
           <input
             type={showPassword ? 'text' : 'password'}
             id="confirmPassword"
@@ -125,7 +123,7 @@
             autocomplete="new-password"
             required
           />
-        </div>
+        </FormField>
 
         <button type="submit" class="auth-button" disabled={loading}>
           {#if loading}
@@ -184,25 +182,8 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
-  }
-
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
   }
 
   .toggle-password {

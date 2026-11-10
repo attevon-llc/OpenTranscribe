@@ -680,3 +680,41 @@ button:disabled {
   animation: spin 1s linear infinite;
 }
 /* @keyframes spin lives in animations.css (global). */
+
+/* ─── Form field layout (FormField.svelte) ─────────────────────────── */
+/* :where() keeps specificity at zero so a local rule always wins. */
+:where(.form-field) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+:where(.form-field-lg) {
+  gap: var(--space-2);
+}
+:where(.form-field-lg .form-field-label) {
+  font-size: var(--font-size-md);
+}
+:where(.form-field-label) {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-color);
+}
+:where(.form-field-hint) {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+:where(.form-field-error) {
+  margin: 0;
+  font-size: var(--font-size-md);
+  color: var(--error-text);
+}
+/* Label with controls beside it (a show-password toggle). The margin keeps the 8px the auth
+   label row has always had above the control, on top of the field gap. */
+:where(.form-field-header) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}

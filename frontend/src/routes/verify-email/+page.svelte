@@ -23,6 +23,7 @@
   import { onMount } from 'svelte';
 
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
 
   let phase: 'loading' | 'verified' | 'failed' = 'loading';
   /** Server prose for either outcome. Rendered as-is. */
@@ -101,8 +102,7 @@
       <form on:submit|preventDefault={handleResend} class="auth-form">
         <p class="muted">{$t('auth.verifyEmail.resendDescription')}</p>
 
-        <div class="form-group">
-          <label for="resend-email">{$t('auth.email')}</label>
+        <FormField id="resend-email" label={$t('auth.email')} size="lg">
           <input
             type="email"
             id="resend-email"
@@ -112,7 +112,7 @@
             disabled={resendPending}
             required
           />
-        </div>
+        </FormField>
 
         <button type="submit" class="auth-button" disabled={resendPending || !resendAddress.trim()}>
           {#if resendPending}
@@ -183,19 +183,7 @@
     margin-top: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
   }
 

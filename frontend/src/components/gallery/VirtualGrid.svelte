@@ -561,15 +561,6 @@
 
   /* --- Dark mode --- */
 
-  :global([data-theme='dark']) .file-card {
-    background: var(--surface-color);
-    border-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .file-card:hover {
-    border-color: var(--border-hover);
-  }
-
   :global([data-theme='dark']) .file-name {
     color: var(--text-primary);
   }

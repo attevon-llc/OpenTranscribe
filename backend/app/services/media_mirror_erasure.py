@@ -6,7 +6,9 @@ invariant stays true for every mirror run. This module is the one other path tha
 destination, and it is narrow on purpose:
 
 * it removes only keys under prefixes the CALLER derives from an erasure's captured ids
-  (``user_<uid>/file_<fid>/``), never a pattern, never "everything not in the source";
+  (``user_<uid>/file_<fid>/``), never a pattern, never "everything not in the source"; under an
+  account's own ``user_<uid>/`` it may remove every key except the surviving files' (the
+  erasure's ``ResidueSweep``), again from captured ids;
 * it is reachable only from ``gdpr_erasure_service`` (and counts through the same prefixes);
 * the engine's classes are not extended, so the structural invariant test is untouched.
 
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from collections.abc import Callable
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -54,6 +57,54 @@ def _s3_keys(client: Any, bucket: str, base: str, prefix: str) -> list[str]:
     ):
         keys.extend(o["Key"] for o in page.get("Contents", []))
     return keys
+
+
+def _s3_delete(client: Any, bucket: str, keys: list[str]) -> None:
+    for start in range(0, len(keys), 1000):
+        batch = [{"Key": k} for k in keys[start : start + 1000]]
+        client.delete_objects(Bucket=bucket, Delete={"Objects": batch, "Quiet": True})
+
+
+def _selected(target: tuple[str, Any], prefix: str, selects: Callable[[str], bool]) -> list[Any]:
+    """Local paths / S3 keys under ``prefix`` whose bucket-relative key ``selects`` accepts."""
+    kind, handle = target
+    _safe(prefix)
+    if kind == "local":
+        root = handle / prefix
+        if not root.is_dir():
+            return []
+        return [
+            p for p in root.rglob("*") if p.is_file() and selects(p.relative_to(handle).as_posix())
+        ]
+    client, bucket, base = handle
+    return [k for k in _s3_keys(client, bucket, base, prefix) if selects(k[len(base) :])]
+
+
+def count_mirrored_selected(prefix: str, selects: Callable[[str], bool]) -> int:
+    """Objects under ``prefix`` at the mirror destination that ``selects`` accepts (0 unmirrored).
+
+    Raises if the destination cannot be read, so the receipt reports unverified.
+    """
+    target = _destination()
+    return 0 if target is None else len(_selected(target, prefix, selects))
+
+
+def erase_mirrored_selected(prefix: str, selects: Callable[[str], bool]) -> int:
+    """Delete the objects under ``prefix`` that ``selects`` accepts; return how many.
+
+    Raises on a destination failure; the caller records it as an erasure error.
+    """
+    target = _destination()
+    if target is None:
+        return 0
+    found = _selected(target, prefix, selects)
+    if target[0] == "local":
+        for path in found:
+            path.unlink()
+    else:
+        client, bucket, _ = target[1]
+        _s3_delete(client, bucket, found)
+    return len(found)
 
 
 def count_mirrored(prefixes: Iterable[str]) -> int:
@@ -98,8 +149,6 @@ def erase_mirrored(prefixes: Iterable[str]) -> int:
         else:
             client, bucket, base = handle
             keys = _s3_keys(client, bucket, base, prefix)
-            for start in range(0, len(keys), 1000):
-                batch = [{"Key": k} for k in keys[start : start + 1000]]
-                client.delete_objects(Bucket=bucket, Delete={"Objects": batch, "Quiet": True})
+            _s3_delete(client, bucket, keys)
             removed += len(keys)
     return removed

@@ -154,25 +154,45 @@ def file_dirs_of(file_id: int, paths: tuple[str | None, ...]) -> list[str]:
     return list(dict.fromkeys(dirs))
 
 
-def _prefix_survives(db: Session, prefix: str, erased_file_ids: list[int]) -> bool:
-    """Some file the erasure does NOT destroy (held, or another account's) has a key under it."""
+def _surviving_file_keys(db: Session, prefix: str, erased_file_ids: list[int]) -> list[str]:
+    """What files the erasure does NOT destroy (held, or another account's) keep under ``prefix``.
+
+    Each such file's own ``user_<uid>/file_<fid>/`` directory, and any of its keys of another shape
+    by name (a prefix guessed from one could reach other objects). Empty when nothing survives.
+    """
     under = or_(*(col.startswith(prefix, autoescape=True) for col in _PATH_COLUMNS))
-    query = select(MediaFile.id).where(under)
+    query = select(MediaFile.id, *_PATH_COLUMNS).where(under)
     if erased_file_ids:
         query = query.where(MediaFile.id.not_in(erased_file_ids))
-    return db.execute(query.limit(1)).first() is not None
+    keep: list[str] = []
+    for row in db.execute(query):
+        paths = (row.storage_path, row.thumbnail_path, row.playback_path)
+        dirs = [d for d in file_dirs_of(int(row.id), paths) if d.startswith(prefix)]
+        keep.extend(dirs)
+        keep.extend(
+            p for p in paths if p and p.startswith(prefix) and not p.startswith(tuple(dirs))
+        )
+    return sorted(set(keep))
 
 
-def _avatar_prefix_survives(db: Session, prefix: str, erased_profile_uuids: list[str]) -> bool:
-    """Some profile the erasure does NOT delete has its avatar under ``prefix``."""
-    query = select(SpeakerProfile.id).where(
+def _surviving_avatar_keys(db: Session, prefix: str, erased_profile_uuids: list[str]) -> list[str]:
+    """What profiles the erasure does NOT delete keep under ``prefix``.
+
+    A profile's ``avatars/<uid>/<profile uuid>/`` directory when its avatar sits in it
+    (``speaker_avatar_service``), otherwise the avatar key itself.
+    """
+    query = select(SpeakerProfile.uuid, SpeakerProfile.avatar_path).where(
         SpeakerProfile.avatar_path.startswith(prefix, autoescape=True)
     )
     if erased_profile_uuids:
         query = query.where(
             SpeakerProfile.uuid.not_in([uuid_pkg.UUID(u) for u in erased_profile_uuids])
         )
-    return db.execute(query.limit(1)).first() is not None
+    keep: set[str] = set()
+    for row in db.execute(query):
+        own_dir = f"{prefix}{row.uuid}/"
+        keep.add(own_dir if str(row.avatar_path).startswith(own_dir) else str(row.avatar_path))
+    return sorted(keep)
 
 
 def capture(db: Session, scope: ErasureScope) -> Captured:
@@ -251,12 +271,15 @@ def capture(db: Session, scope: ErasureScope) -> Captured:
         # The whole prefix only when nothing under it outlives the erasure: a held file's objects
         # are retained, and a file the subject uploaded and an organization transfer handed to
         # someone else is that owner's, with its objects still under the subject's prefix.
-        captured.whole_user_prefix = not _prefix_survives(
+        # When it is not taken whole, everything else under it still goes (``types.user_residue``).
+        captured.user_prefix_keep = _surviving_file_keys(
             db, f"user_{scope.user_id}/", captured.file_ids
         )
-        captured.whole_avatar_prefix = not _avatar_prefix_survives(
+        captured.whole_user_prefix = not captured.user_prefix_keep
+        captured.avatar_prefix_keep = _surviving_avatar_keys(
             db, f"avatars/{scope.user_id}/", captured.profile_uuids
         )
+        captured.whole_avatar_prefix = not captured.avatar_prefix_keep
         email = db.execute(select(User.email).where(User.id == scope.user_id)).scalar_one_or_none()
         captured.email = str(email) if email else None
     return captured

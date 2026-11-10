@@ -66,3 +66,23 @@ def test_the_engine_still_has_no_delete_for_a_run():
 
     for cls in (engine.FolderDestination, engine.S3Destination):
         assert not [n for n in dir(cls) if "delete" in n.lower() or "remove" in n.lower()]
+
+
+def test_a_residue_sweep_deletes_and_counts_only_what_it_selects(folder):
+    """An account erasure that keeps a file's directory takes the rest of the prefix."""
+    from app.services.erasure_receipt.types import ResidueSweep
+
+    (folder / "user_7/youtube_abc").mkdir()
+    (folder / "user_7/youtube_abc/thumbnail.jpg").write_bytes(b"x")
+    sweep = ResidueSweep("user_7/", keep=("user_7/file_2/",), elsewhere=("user_7/file_1/",))
+
+    assert mirror.count_mirrored_selected(sweep.prefix, sweep.selects) == 1
+    assert mirror.erase_mirrored_selected(sweep.prefix, sweep.selects) == 1
+    assert not (folder / "user_7/youtube_abc/thumbnail.jpg").exists()
+    for survivor in (
+        "user_7/file_1/original.mp4",
+        "user_7/file_2/original.mp4",
+        "user_70/file_1/original.mp4",
+    ):
+        assert (folder / survivor).is_file(), survivor
+    assert mirror.count_mirrored_selected(sweep.prefix, sweep.selects) == 0

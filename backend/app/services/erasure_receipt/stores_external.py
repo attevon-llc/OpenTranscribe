@@ -17,8 +17,13 @@ from typing import Any
 from app.services.erasure_receipt.stores_pg import Disposition
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
+from app.services.erasure_receipt.types import ResidueSweep
 from app.services.erasure_receipt.types import avatar_prefixes
+from app.services.erasure_receipt.types import avatar_residue
+from app.services.erasure_receipt.types import multipart_targets
 from app.services.erasure_receipt.types import object_prefixes
+from app.services.erasure_receipt.types import residue_sweeps
+from app.services.erasure_receipt.types import user_residue
 
 logger = logging.getLogger(__name__)
 
@@ -240,11 +245,25 @@ def _count_versions(bucket: str, prefix: str, *, exact: bool = False) -> int:
     return total
 
 
+def _count_residue(bucket: str, sweep: ResidueSweep | None) -> int:
+    """Versions of the keys ``sweep`` selects: the set ``destroy_extras`` removes."""
+    if sweep is None:
+        return 0
+    return sum(
+        1
+        for obj in _client().list_objects(
+            bucket, prefix=sweep.prefix, recursive=True, include_version=True
+        )
+        if not getattr(obj, "is_dir", False) and sweep.selects(str(obj.object_name))
+    )
+
+
 def _s3_file_objects(scope: ErasureScope, captured: Captured) -> int:
     from app.core.config import settings
 
-    return sum(
-        _count_versions(settings.MEDIA_BUCKET_NAME, p) for p in object_prefixes(scope, captured)
+    bucket = settings.MEDIA_BUCKET_NAME
+    return sum(_count_versions(bucket, p) for p in object_prefixes(scope, captured)) + (
+        _count_residue(bucket, user_residue(scope, captured))
     )
 
 
@@ -253,11 +272,16 @@ def _s3_avatars(scope: ErasureScope, captured: Captured) -> int:
 
     prefixes = tuple(avatar_prefixes(scope, captured))
     total = sum(_count_versions(settings.MEDIA_BUCKET_NAME, p) for p in prefixes)
-    # A key under a counted prefix is already in that count.
-    return total + sum(
-        _count_versions(settings.MEDIA_BUCKET_NAME, p, exact=True)
-        for p in captured.avatar_paths
-        if not p.startswith(prefixes)
+    # A key under a counted prefix is already in that count, and the residue leaves out the
+    # erased profiles' own keys.
+    return (
+        total
+        + sum(
+            _count_versions(settings.MEDIA_BUCKET_NAME, p, exact=True)
+            for p in captured.avatar_paths
+            if not p.startswith(prefixes)
+        )
+        + _count_residue(settings.MEDIA_BUCKET_NAME, avatar_residue(scope, captured))
     )
 
 
@@ -275,9 +299,13 @@ def _s3_multipart(scope: ErasureScope, captured: Captured) -> int:
     from app.core.config import settings
 
     total = 0
-    for prefix in object_prefixes(scope, captured):
+    for prefix, selects in multipart_targets(scope, captured):
         result = _client()._list_multipart_uploads(settings.MEDIA_BUCKET_NAME, prefix=prefix)
-        total += len(result.uploads or [])
+        total += sum(
+            1
+            for upload in result.uploads or []
+            if selects is None or selects(str(upload.object_name))
+        )
     return total
 
 
@@ -315,8 +343,11 @@ def _fs_temp(scope: ErasureScope, captured: Captured) -> int:
 
 def _mirror_media(scope: ErasureScope, captured: Captured) -> int:
     from app.services.media_mirror_erasure import count_mirrored
+    from app.services.media_mirror_erasure import count_mirrored_selected
 
-    return count_mirrored(object_prefixes(scope, captured))
+    return count_mirrored(object_prefixes(scope, captured)) + sum(
+        count_mirrored_selected(s.prefix, s.selects) for s in residue_sweeps(scope, captured)
+    )
 
 
 def _backup_dumps(scope: ErasureScope, captured: Captured) -> int:

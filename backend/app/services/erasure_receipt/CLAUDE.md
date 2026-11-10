@@ -53,7 +53,10 @@ three are needed, and dropping any one reproduces a defect that shipped.
   `stores_external.INDEX_PATTERNS`; an edition's own stores use `register_erasure_store`. The
   deletes the canonical per-file destroy never made (lockout record, noncurrent versions, the
   account's whole object prefix, multipart uploads, temp objects, derived cache, mirror keys) are
-  `erasure_receipt/destroy_extras.py`; files under a legal hold are excluded from capture, so they
+  `erasure_receipt/destroy_extras.py`. When a held or handed-over file keeps `user_<uid>/` (or a
+  surviving profile keeps `avatars/<uid>/`) from going whole, the rest of the prefix still goes:
+  `types.ResidueSweep.selects` is the ONE selection the destroy, the receipt count, the multipart
+  abort and the mirror delete all use, so a change to what survives is made there; files under a legal hold are excluded from capture, so they
   are `retained`, never `residual`. `ErasureScope` is the erasure's own scope type (it is not
   `privacy.purge.PurgeScope`, whose `user` kind is one tenant); `Residual` and `GroupedCounts` live
   in `privacy/measure.py` for both. Media-mirror deletes go through `media_mirror_erasure.py` only.

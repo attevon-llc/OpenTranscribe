@@ -167,7 +167,6 @@
       {@const globalIndex = visibleStart + i}
       <div
         class="file-list-row {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''} {navigatingTo === file.uuid ? 'navigating' : ''}"
-        class:even={globalIndex % 2 === 0}
         style="height: {ROW_HEIGHT}px;"
         role="row"
         aria-rowindex={globalIndex + 1}
@@ -336,19 +335,7 @@
   }
 
   .file-list-row:hover {
-    background-color: var(--hover-bg);
-  }
-
-  :global([data-theme='dark']) .file-list-row:hover {
-    background-color: rgba(255, 255, 255, 0.06);
-  }
-
-  .file-list-row.even {
-    background-color: rgba(0, 0, 0, 0.01);
-  }
-
-  :global([data-theme='dark']) .file-list-row.even {
-    background-color: rgba(255, 255, 255, 0.02);
+    background-color: var(--surface-hover);
   }
 
   .file-list-row.selected {

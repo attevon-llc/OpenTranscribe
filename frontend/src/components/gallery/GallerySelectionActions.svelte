@@ -592,15 +592,15 @@
   }
 
   /* Matches .btn-danger's destructive red — this is also a takedown action.
-     Uses --color-error-text rather than the fill red: measured, #dc2626 on this
+     Uses --error-text rather than the fill red: measured, #dc2626 on this
      rule's own hover tint (rgba(220,38,38,0.1) over white = rgb(251,233,233)) is
      4.12:1, under WCAG AA. See the v0.6.0 text-vs-fill status-colour split. */
   .quarantine-item {
-    color: var(--color-error-text);
+    color: var(--error-text);
   }
 
   .quarantine-item:hover:not(:disabled) {
-    background-color: rgba(220, 38, 38, 0.1);
+    background-color: var(--error-bg);
   }
 
   /* Tablet: allow action buttons to wrap */

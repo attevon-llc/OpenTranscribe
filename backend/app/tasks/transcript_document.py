@@ -67,7 +67,7 @@ def _record_export(file_id: int, user_id: int | None, fmt: str) -> None:
                 details={"surface": "transcript", "format": fmt, "file_count": 1},
                 dedup=False,
             )
-    except SQLAlchemyError as e:  # pragma: no cover - an audit failure must not fail the export
+    except SQLAlchemyError as e:  # an audit failure must not fail the export
         logger.warning("Could not record the document export event: %s", type(e).__name__)
 
 
@@ -82,7 +82,7 @@ def _fail(job_id: str, reason: str) -> dict:
             RESULT_TTL_S,
             json.dumps({"status": "error", "reason": reason, "message": message}),
         )
-    except RedisError as e:  # pragma: no cover - the live event below still goes out
+    except RedisError as e:  # the live event below still goes out
         logger.warning("Could not cache a document export error: %s", type(e).__name__)
     publish_bulk_event(job_id, status="error", message=message, reason=reason)
     return {"status": "error", "reason": reason}

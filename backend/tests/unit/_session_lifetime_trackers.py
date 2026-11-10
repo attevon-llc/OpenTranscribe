@@ -15,9 +15,7 @@ import contextlib
 import uuid as uuid_mod
 from typing import Any
 
-from app.models.media import MediaFile
-from app.models.media import TranscriptSegment
-from app.models.speaker import Speaker
+from tests.fixtures.speaker_attribute_tracking import add_file_with_speakers
 
 
 class ScopeTracker:
@@ -74,44 +72,14 @@ def leak(tracker: ScopeTracker, label: str) -> str:
 
 def make_transcribed_file(db_session, user, *, speakers: int = 2):
     """A media file with speakers and segments, as after a completed transcription."""
-    media_file = MediaFile(
-        uuid=str(uuid_mod.uuid4()),
-        user_id=user.id,
+    return add_file_with_speakers(
+        db_session,
+        user,
+        speakers=speakers,
+        seg_seconds=4.0,
         filename="meeting.mp4",
         storage_path=f"test/meeting-{uuid_mod.uuid4().hex}.mp4",
-        content_type="video/mp4",
-        file_size=1000,
     )
-    db_session.add(media_file)
-    db_session.flush()
-
-    created = []
-    start = 0.0
-    for i in range(speakers):
-        speaker = Speaker(
-            uuid=str(uuid_mod.uuid4()),
-            media_file_id=media_file.id,
-            user_id=user.id,
-            name=f"SPEAKER_0{i}",
-        )
-        db_session.add(speaker)
-        db_session.flush()
-        created.append(speaker)
-
-        for _ in range(2):
-            db_session.add(
-                TranscriptSegment(
-                    uuid=str(uuid_mod.uuid4()),
-                    media_file_id=media_file.id,
-                    speaker_id=speaker.id,
-                    start_time=start,
-                    end_time=start + 4.0,
-                    text="hello there",
-                )
-            )
-            start += 4.0
-    db_session.flush()
-    return media_file, created
 
 
 #: Session methods that (re)open a transaction on first use.

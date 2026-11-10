@@ -13,7 +13,19 @@ silently skips DDL. So compare positions in the chain instead of identities.
 
 from __future__ import annotations
 
+import importlib.util
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import ModuleType
+
+from sqlalchemy import create_engine
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
+from sqlalchemy.engine import make_url
+
+_VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 
 
 def _chain_order() -> list[str]:
@@ -50,3 +62,53 @@ def assert_detected_at_or_after(conn, tables: list[str], revision: str) -> str:
         "EARLIER in the chain — that database would never receive the missing DDL"
     )
     return detected
+
+
+def load_revision_module(revision: str) -> ModuleType:
+    """Import an alembic revision file by id, to read its ``UPGRADE_SQL`` and friends."""
+    spec = importlib.util.spec_from_file_location(revision, _VERSIONS / f"{revision}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def assert_follows_with_single_head(revision: str, down_revision: str) -> None:
+    """Assert *revision* sits directly after *down_revision* and the chain has one head."""
+    from alembic.script import ScriptDirectory
+
+    from app.db.migrations import get_alembic_config
+
+    config = get_alembic_config()
+    config.set_main_option("script_location", str(_VERSIONS.parent))
+    scripts = ScriptDirectory.from_config(config)
+    assert scripts.get_revision(revision).down_revision == down_revision
+    assert len(set(scripts.get_heads())) == 1
+
+
+@contextmanager
+def exclusive_scratch_connection(prefix: str) -> Iterator[Connection]:
+    """A transactional connection to a private throwaway database, DDL lock held EXCLUSIVE.
+
+    Lets a revision's real SQL run without touching the shared test database.
+    """
+    from app.core.config import settings
+    from app.db.base import engine as shared_engine
+    from tests.db_locks import acquire_ddl_lock_exclusive
+
+    name = f"{prefix}_{uuid.uuid4().hex[:10]}_test"
+    url = make_url(settings.DATABASE_URL)
+    admin = create_engine(url.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    scratch = create_engine(url.set(database=name))
+    with shared_engine.connect() as lock_conn, lock_conn.begin():
+        acquire_ddl_lock_exclusive(lock_conn)
+        with admin.connect() as conn:
+            conn.execute(text(f'CREATE DATABASE "{name}"'))
+        try:
+            with scratch.begin() as conn:
+                yield conn
+        finally:
+            scratch.dispose()
+            with admin.connect() as conn:
+                conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+            admin.dispose()

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
+from app.services.bedrock_settings import BedrockConnection
 from app.services.bedrock_settings import connection_from_encrypted
 from app.services.bedrock_settings import merge_stored
 from app.services.bedrock_settings import pack_stored
@@ -18,6 +19,7 @@ from app.services.request_context import RequestContext
 from app.services.user_setting_queries import delete_settings_holding_value
 from app.services.user_setting_queries import upsert_user_setting
 from app.services.uuid_helpers import get_llm_config_by_uuid
+from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
 
@@ -40,7 +42,18 @@ def _encrypt_bedrock_fields(
     is ever logged or returned.
     """
     fields_set = settings_in.model_fields_set
-    current = connection_from_encrypted(existing)
+    replaces_credentials = bool(
+        settings_in.aws_access_key_id and settings_in.aws_secret_access_key
+    ) or bool(getattr(settings_in, "clear_aws_credentials", False))
+    try:
+        current = connection_from_encrypted(existing)
+    except SecretDecryptionError:
+        # An unreadable blob is only fatal when the request keeps part of it. A request that
+        # supplies a whole new key pair (or clears the pair) replaces it, which is how the
+        # user recovers; anything else answers 409 stored_value_unreadable (main.py).
+        if not replaces_credentials:
+            raise
+        current = BedrockConnection()
     merged = merge_stored(
         current,
         region=settings_in.aws_region,

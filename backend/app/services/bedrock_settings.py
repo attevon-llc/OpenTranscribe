@@ -30,6 +30,7 @@ from botocore.exceptions import BotoCoreError
 
 from app.core import llm_defaults
 from app.core.config import settings
+from app.utils.encryption import SecretDecryptionError
 
 logger = logging.getLogger(__name__)
 
@@ -132,8 +133,18 @@ def connection_from_encrypted(encrypted: str | None) -> BedrockConnection:
 
 
 def public_view(encrypted: str | None) -> tuple[str | None, bool]:
-    """``(region, has_credentials)`` for a response. The only fields a client may see."""
-    connection = connection_from_encrypted(encrypted)
+    """``(region, has_credentials)`` for a response. The only fields a client may see.
+
+    A blob that no longer decrypts (rotated ``ENCRYPTION_KEY``, corrupt value) reads as "no
+    stored credentials" here, so one unreadable row cannot fail a whole list response. Every
+    path that must USE the credentials still raises ``SecretDecryptionError`` (409
+    ``stored_value_unreadable``) through :func:`connection_from_encrypted`.
+    """
+    try:
+        connection = connection_from_encrypted(encrypted)
+    except SecretDecryptionError:
+        logger.warning("Stored Bedrock credentials cannot be decrypted; reporting them as unset")
+        return None, False
     return connection.region, connection.has_credentials
 
 

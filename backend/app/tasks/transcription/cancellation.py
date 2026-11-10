@@ -230,7 +230,7 @@ def finalize_cancelled_run(task_id: str, file_id: int, file_uuid: str, user_id: 
                     success=False,
                 )
             )
-        except Exception:  # pragma: no cover — hook layer already contains
+        except Exception:  # boundary: the hook layer already contains failures
             logger.exception("Cancellation completion hook raised (contained)")
 
     # Outside the session on purpose (the package's session-lifetime rule): this reaches Redis

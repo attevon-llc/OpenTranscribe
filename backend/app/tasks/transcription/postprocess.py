@@ -491,7 +491,7 @@ def _fire_completion_metering(
                 success=success,
             )
         )
-    except SQLAlchemyError:  # pragma: no cover - metering must never break the pipeline
+    except SQLAlchemyError:  # metering must never break the pipeline
         logger.warning(
             "Completion metering read failed for file %s (contained)", file_id, exc_info=True
         )

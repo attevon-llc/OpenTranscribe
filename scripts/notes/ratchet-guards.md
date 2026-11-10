@@ -12,6 +12,9 @@ an allowlist entry with no violation left fails as stale and is deleted by hand.
 - `guard-svelte-unused` (push stage, ~50 s): `svelte-check` with `frontend/tsconfig.unused.json`
   (`noUnusedLocals`/`noUnusedParameters`), `.svelte` files only. The eslint `no-unused-vars` rule crashes on
   implicit reactive declarations, so it stays off for `.svelte`.
+- `guard-nuia` (push stage, ~50 s): `svelte-check` with `frontend/tsconfig.nuia.json`
+  (`noUncheckedIndexedAccess`), errors counted per file. Production files are at zero; `baselines/nuia.txt` holds
+  only `*.test.ts` files until they are converted, after which the flag moves into the main tsconfig.
 - `guard-duplicates` (push stage): `jscpd` (pinned) with `--min-tokens 100`; 50 flags import/kwarg boilerplate.
   `check_duplicates.py --report PATH` writes the full clone list.
 - eslint `complexity` 15, `max-depth` 4 and `max-lines-per-function` 150 run at `warn`; existing offenders are in

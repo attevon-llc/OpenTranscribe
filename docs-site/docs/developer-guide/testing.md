@@ -717,6 +717,7 @@ Run in `frontend/`. Each one fails the gate; none of them is report-only.
 | `npm run lint:css` | Stylelint over `src/**/*.css` and Svelte `<style>` blocks, ratcheted per file (`scripts/guards/baselines/stylelint.txt`) | commit stage on staged files, push stage whole tree, CI |
 | `npm run check` | svelte-check (types) | commit stage, CI |
 | `npm run test:coverage` | vitest plus the coverage floors in `vitest.config.ts` | commit stage, CI |
+| `python3 scripts/guards/check_nuia_ratchet.py` | `noUncheckedIndexedAccess` (`frontend/tsconfig.nuia.json`): array and record lookups must handle the missing case; production code at zero, test files baselined per file (`scripts/guards/baselines/nuia.txt`) | push stage (`guard-nuia`), CI |
 | `python3 scripts/guards/check_knip.py` | knip (dead files, exports, dependencies) and madge (import cycles), ratcheted | push stage (`guard-knip`), CI |
 
 The typed lint is split from `npm run lint` because building the TypeScript program takes

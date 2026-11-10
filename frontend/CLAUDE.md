@@ -45,6 +45,14 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   with `void promise` **only when the callee already handles its own errors** (a try/catch that
   does not rethrow): `void` does not handle anything, it records the decision. For a callback
   slot typed `() => void`, pass `() => void asyncFn()` rather than the async function.
+- `python3 scripts/guards/check_nuia_ratchet.py` — `noUncheckedIndexedAccess` ratchet (`guard-nuia`,
+  push stage, about 50 s). `tsconfig.nuia.json` extends the real tsconfig with the flag, so `arr[i]`
+  and record lookups are `T | undefined`; the guard runs `svelte-check --tsconfig
+./tsconfig.nuia.json` and counts errors per file against `scripts/guards/baselines/nuia.txt`.
+  **Production code is at zero**: handle the missing case (early return, destructure with a
+  default, `?.`/`??`), never `!` unless an invariant makes it impossible. The baseline holds only
+  `*.test.ts` files (927 errors in 199 files); it can only shrink, and once it is empty the flag
+  moves into `tsconfig.json` and this config goes away. `--tighten` drops fixed entries.
 - `npm run lint:css` — Stylelint over `src/**/*.css` and every Svelte `<style>` block
   (`stylelint.config.mjs`: `stylelint-config-standard`, `postcss-html` as the Svelte custom syntax).
   It runs through `scripts/guards/check_stylelint_ratchet.py`, which counts findings per

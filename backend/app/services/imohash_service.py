@@ -123,7 +123,7 @@ class _MinioRangeReader:
             self._pos += offset
         elif whence == os.SEEK_END:
             self._pos = self._size + offset
-        else:  # pragma: no cover - defensive
+        else:
             raise ValueError(f"Invalid whence: {whence}")
         return self._pos
 

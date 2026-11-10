@@ -51,7 +51,7 @@ app.core.capabilities:set_capability_resolver
 app.core.capabilities:reset_capability_resolver
 app.core.capabilities:get_capabilities
 app.core.capabilities:get_capabilities_for_viewer
-app.core.capabilities:require_capability
+app.api.capability_dependency:require_capability
 
 # Tenant limits
 app.core.tenant_limits:TenantUploadLimits
@@ -109,3 +109,4 @@ moved app.auth.dependencies:_get_client_info -> app.api.endpoints.auth.lifecycle
 moved app.core.security:create_access_token -> app.auth.direct_auth:create_access_token @14
 moved app.core.constants:DEFAULT_CHAT_* -> app.core.chat_defaults:DEFAULT_CHAT_* @14
 moved app.services.search.indexing_service:_build_neural_ingest_pipeline -> app.services.search.pipelines:_build_neural_ingest_pipeline @14
+moved app.core.capabilities:require_capability -> app.api.capability_dependency:require_capability @14

@@ -32,6 +32,7 @@ for it to be added rather than relying on it silently.
 | `app.auth.dependencies._get_client_info` | `app.api.endpoints.auth.lifecycle_gates._get_client_info` | Private helper. Extensions should call the public `app.utils.client_ip.resolve_client_ip(request)` and read the `User-Agent` header themselves. |
 | `app.services.search.indexing_service._build_neural_ingest_pipeline` | `app.services.search.pipelines._build_neural_ingest_pipeline` | Private helper; only test code should touch it. |
 | `app.core.security.create_access_token` | `app.auth.direct_auth.create_access_token` | **Signature changed**, see below. |
+| `app.core.capabilities.require_capability` | `app.api.capability_dependency.require_capability` | Same signature (`key`, keyword-only `platform_admin_bypass`). It is a FastAPI dependency factory, so it now lives in the API layer and `app.core` no longer imports a web framework. The framework-free pieces it uses (`capability_enabled`, `is_platform_staff`, `NO_PLATFORM_BYPASS`) stay in `app.core.capabilities`. |
 
 ### Access-token issuer
 

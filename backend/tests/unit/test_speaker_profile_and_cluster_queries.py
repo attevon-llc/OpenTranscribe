@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import uuid
 
-from app.models.media import MediaFile
-from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerCollection
@@ -13,62 +11,22 @@ from app.models.speaker import SpeakerCollectionMember
 from app.models.speaker import SpeakerProfile
 from app.services import speaker_cluster_queries as clusters
 from app.services import speaker_profile_queries as profiles
-
-
-def _file(db, owner, **kw) -> MediaFile:
-    mf = MediaFile(
-        user_id=owner.id,
-        filename=f"{uuid.uuid4().hex[:6]}.wav",
-        storage_path=f"test/{uuid.uuid4().hex}.wav",
-        file_size=1,
-        content_type="audio/wav",
-        status=kw.pop("status", "completed"),
-        **kw,
-    )
-    db.add(mf)
-    db.flush()
-    return mf
-
-
-def _speaker(db, owner, mf, **kw) -> Speaker:
-    spk = Speaker(
-        user_id=owner.id,
-        media_file_id=mf.id,
-        name=kw.pop("name", f"S_{uuid.uuid4().hex[:6]}"),
-        **kw,
-    )
-    db.add(spk)
-    db.flush()
-    return spk
-
-
-def _segments(db, mf, speaker, starts_and_lengths):
-    rows = [
-        TranscriptSegment(
-            media_file_id=mf.id,
-            speaker_id=speaker.id,
-            start_time=start,
-            end_time=start + length,
-            text="t",
-        )
-        for start, length in starts_and_lengths
-    ]
-    db.add_all(rows)
-    db.flush()
-    return rows
+from tests.fixtures.speaker_query_rows import file_row
+from tests.fixtures.speaker_query_rows import segment_rows
+from tests.fixtures.speaker_query_rows import speaker_row
 
 
 def test_profile_counts_cover_available_files_only(db_session, normal_user):
     prof = SpeakerProfile(user_id=normal_user.id, name=f"P{uuid.uuid4().hex[:6]}")
     db_session.add(prof)
     db_session.flush()
-    one, two = _file(db_session, normal_user), _file(db_session, normal_user)
+    one, two = file_row(db_session, normal_user), file_row(db_session, normal_user)
     for mf in (one, one, two):
-        _speaker(db_session, normal_user, mf, profile_id=prof.id)
-    _speaker(
+        speaker_row(db_session, normal_user, mf, profile_id=prof.id)
+    speaker_row(
         db_session,
         normal_user,
-        _file(db_session, normal_user, is_quarantined=True),
+        file_row(db_session, normal_user, is_quarantined=True),
         profile_id=prof.id,
     )
     counts = profiles.profile_media_instance_counts(db_session, [prof.id])
@@ -96,11 +54,11 @@ def test_collection_counts_and_names(db_session, normal_user):
 
 
 def test_cluster_helpers_count_dissolve_and_match(db_session, normal_user):
-    mf = _file(db_session, normal_user)
+    mf = file_row(db_session, normal_user)
     cluster = SpeakerCluster(user_id=normal_user.id, label="c")
     db_session.add(cluster)
     db_session.flush()
-    spk = _speaker(db_session, normal_user, mf, cluster_id=cluster.id)
+    spk = speaker_row(db_session, normal_user, mf, cluster_id=cluster.id)
     assert clusters.speaker_totals(db_session, [Speaker.user_id == normal_user.id]) == (1, 1)
     assert clusters.count_clusters(db_session, [SpeakerCluster.user_id == normal_user.id]) == 1
     assert clusters.cluster_matching(db_session, [SpeakerCluster.uuid == cluster.uuid]) is cluster
@@ -111,9 +69,9 @@ def test_cluster_helpers_count_dissolve_and_match(db_session, normal_user):
 
 
 def test_longest_segment_breaks_ties_by_id(db_session, normal_user):
-    mf = _file(db_session, normal_user)
-    spk = _speaker(db_session, normal_user, mf)
-    short, tied_first, tied_second = _segments(
+    mf = file_row(db_session, normal_user)
+    spk = speaker_row(db_session, normal_user, mf)
+    short, tied_first, tied_second = segment_rows(
         db_session, mf, spk, [(0.0, 1.0), (5.0, 3.0), (9.0, 3.0)]
     )
     assert clusters.longest_segment_of_speaker(db_session, spk.id) is tied_first

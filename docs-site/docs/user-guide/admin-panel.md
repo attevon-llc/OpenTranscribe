@@ -107,7 +107,7 @@ For each user (except yourself):
 
 | Action | Description |
 |--------|-------------|
-| **Change role** | `user` / `admin` / **`super_admin`** — the super_admin option is visible only to a super admin, is audited, and raises a confirmation dialog |
+| **Change role** | Super admin only (`PUT /api/admin/users/{uuid}/role`; a plain admin's attempt to set a role is ignored). `user` / `admin` / **`super_admin`**; audited, ends the account's sessions, and the super_admin option raises a confirmation dialog |
 | **Reset password** | Super admin only. Applies the password policy and the reuse history, revokes every session, and optionally flags the account for a forced change on next sign-in. Refused for an account whose identity lives in a directory |
 | **Lock account / Clear login lockout** | Lock deactivates the account and revokes its sessions; the unlock action (**Clear login lockout**) is its true inverse — it clears **both** the deactivation and any failed-login lockout |
 | **Force sign-out** | Revokes every session for the account |

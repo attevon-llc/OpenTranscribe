@@ -44,8 +44,8 @@ default; the administrator can set 0 to 21). Until then:
 - Your account keeps working normally, and a notice at the top of the app reminds you.
 - Signing in does **not** cancel the request. Only **Cancel erasure request** does, and only before
   the scheduled time.
-- At the scheduled time the erasure runs on the next pass of the background reconciliation job, so it
-  can start up to one pass interval (daily by default) after the date shown.
+- At the scheduled time the erasure runs on the next pass of the hourly background job that executes
+  due erasures, so it can start up to an hour after the date shown.
 
 ## Your request receipt
 

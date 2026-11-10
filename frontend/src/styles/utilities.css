@@ -1,0 +1,18 @@
+/*
+ * Global utility classes. One definition per utility; components must not redeclare them
+ * (a scoped copy drifts: the dozen that existed differed in clip method and margin).
+ */
+
+/* Visually hidden, still exposed to assistive tech (the standard clip pattern). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

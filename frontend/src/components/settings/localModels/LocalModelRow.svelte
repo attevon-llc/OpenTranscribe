@@ -182,14 +182,6 @@
   :global([data-theme='dark']) .row-error {
     color: var(--error-color);
   }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
   @media (max-width: 640px) {
     .model-row {
       grid-template-columns: 1fr;

@@ -718,18 +718,6 @@
     }
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border-width: 0;
-  }
-
   /* Reduce gap, hide username, keep nav labels.
      MEASURED, not guessed: at full spacing with the username shown the navbar
      needed 1435px for "Chat" — it used to start at 1200px and the bar simply

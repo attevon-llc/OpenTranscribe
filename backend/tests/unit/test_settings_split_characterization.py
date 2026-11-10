@@ -56,7 +56,7 @@ def snapshot(tmp_dir: Path) -> dict[str, Any]:
         "TEMP_DIR": str(tmp_dir),
         "PYTHONPATH": str(BACKEND_DIR),
     }
-    proc = subprocess.run(  # noqa: S603 - fixed argv, no shell, scrubbed env
+    proc = subprocess.run(
         [sys.executable, "-c", _SNAPSHOT_CODE],
         env=env,
         cwd=tmp_dir,

@@ -59,9 +59,10 @@ def _make_worktree(tmp_path: Path, *, main_has_env: bool) -> tuple[Path, Path]:
     """
     main = tmp_path / "main"
     main.mkdir()
-    run = lambda *args: subprocess.run(  # noqa: E731 - local test helper
-        args, cwd=main, check=True, capture_output=True, text=True
-    )
+
+    def run(*args):
+        return subprocess.run(args, cwd=main, check=True, capture_output=True, text=True)
+
     run("git", "init", "-q")
     run("git", "config", "user.email", "t@example.com")
     run("git", "config", "user.name", "t")

@@ -30,7 +30,7 @@ target-version = "py312"
 [tool.ruff.lint]
 # Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
 # C90 is deliberately absent: scripts/guards/check_ruff_ratchet.py owns complexity (cap 15, baselined).
-select = ["E", "F", "W", "I", "N", "UP", "B", "A", "S", "SIM", "PIE"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "S", "SIM", "PIE", "RUF100"]
 ignore = [
     "E501",  # Line too long (handled by formatter)
     "E203",  # Whitespace before ':' (conflicts with black)

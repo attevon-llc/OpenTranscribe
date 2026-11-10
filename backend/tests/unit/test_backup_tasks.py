@@ -48,7 +48,6 @@ import pytest
 import redis
 
 from app.core.queues import CeleryQueues
-from app.core.queues import CPUPriority  # noqa: F401 - referenced for parity/documentation
 from app.core.queues import DownloadPriority
 from app.core.queues import UtilityPriority
 from app.services import backup_config

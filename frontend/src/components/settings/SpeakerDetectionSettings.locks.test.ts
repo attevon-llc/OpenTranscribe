@@ -93,7 +93,9 @@ async function renderLoaded() {
 async function saveAfterBehaviorChange(container: HTMLElement) {
   const select = container.querySelector('#speaker-behavior') as HTMLSelectElement;
   await fireEvent.change(select, { target: { value: 'use_defaults' } });
-  await fireEvent.click(container.querySelector('.btn-primary') as HTMLButtonElement);
+  await fireEvent.click(
+    container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement
+  );
   await waitFor(() => expect(api.updateTranscriptionSettings).toHaveBeenCalledOnce());
   return api.updateTranscriptionSettings.mock.calls[0][0] as Record<string, unknown>;
 }

@@ -140,9 +140,8 @@ describe('pyannote.ai key form in Speaker Detection', () => {
   it('keeps the form from hijacking the Save and Reset buttons of the settings form', async () => {
     const { container } = await renderLoaded();
     await choosePyannote(container);
-    const primary = container.querySelectorAll('.btn-primary');
-    expect(primary).toHaveLength(1);
-    expect(form(container)?.querySelector('.btn-primary, .btn-secondary')).toBeNull();
+    expect(container.querySelectorAll('[data-testid="form-actions-save"]')).toHaveLength(1);
+    expect(form(container)?.querySelector('[data-testid^="form-actions-"]')).toBeNull();
   });
 
   it('explains a pyannote_key_missing 409 as "save a key first" instead of the generic failure', async () => {
@@ -156,7 +155,9 @@ describe('pyannote.ai key form in Speaker Detection', () => {
     await fireEvent.change(container.querySelector('#diarization-source') as HTMLSelectElement, {
       target: { value: 'pyannote' },
     });
-    await fireEvent.click(container.querySelector('.btn-primary') as HTMLButtonElement);
+    await fireEvent.click(
+      container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement
+    );
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
@@ -171,7 +172,9 @@ describe('pyannote.ai key form in Speaker Detection', () => {
     await fireEvent.change(container.querySelector('#speaker-behavior') as HTMLSelectElement, {
       target: { value: 'use_defaults' },
     });
-    await fireEvent.click(container.querySelector('.btn-primary') as HTMLButtonElement);
+    await fireEvent.click(
+      container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement
+    );
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('settings.speakerIdentification.saveFailed')

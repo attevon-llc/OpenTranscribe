@@ -114,7 +114,7 @@ const sourceSelect = (c: HTMLElement) =>
 const choose = (c: HTMLElement, value: string) =>
   fireEvent.change(sourceSelect(c), { target: { value } });
 const save = async (c: HTMLElement) => {
-  await fireEvent.click(c.querySelector('.btn-primary') as HTMLButtonElement);
+  await fireEvent.click(c.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement);
   await waitFor(() => expect(api.updateTranscriptionSettings).toHaveBeenCalledOnce());
   return api.updateTranscriptionSettings.mock.calls[0][0] as Record<string, unknown>;
 };
@@ -165,9 +165,13 @@ describe('asr_config as the speaker source', () => {
       return el;
     });
     expect(picker.value).toBe('dg');
-    expect((container.querySelector('.btn-primary') as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement).disabled
+    ).toBe(true);
     await fireEvent.change(picker, { target: { value: 'dg2' } });
-    expect((container.querySelector('.btn-primary') as HTMLButtonElement).disabled).toBe(false);
+    expect(
+      (container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement).disabled
+    ).toBe(false);
   });
 
   it('never loads the saved configs, or offers the option, without asr.user_providers', async () => {
@@ -201,7 +205,9 @@ describe('a refused save reads the code, not the status', () => {
     api.updateTranscriptionSettings.mockRejectedValue(conflict(code));
     const { container } = await renderLoaded();
     await choose(container, 'pyannote');
-    await fireEvent.click(container.querySelector('.btn-primary') as HTMLButtonElement);
+    await fireEvent.click(
+      container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement
+    );
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
   });
 
@@ -209,7 +215,9 @@ describe('a refused save reads the code, not the status', () => {
     api.updateTranscriptionSettings.mockRejectedValue(conflict('asr_no_timing_for_speakers'));
     const { container } = await renderLoaded();
     await choose(container, 'pyannote');
-    await fireEvent.click(container.querySelector('.btn-primary') as HTMLButtonElement);
+    await fireEvent.click(
+      container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement
+    );
     await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
     expect(toast.error).not.toHaveBeenCalledWith(
       'settings.speakerIdentification.pyannoteKey.requiredToSelect'
@@ -220,7 +228,9 @@ describe('a refused save reads the code, not the status', () => {
     api.updateTranscriptionSettings.mockRejectedValue(conflict('unheard_of'));
     const { container } = await renderLoaded();
     await choose(container, 'pyannote');
-    await fireEvent.click(container.querySelector('.btn-primary') as HTMLButtonElement);
+    await fireEvent.click(
+      container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement
+    );
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('settings.speakerIdentification.saveFailed')
     );

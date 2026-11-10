@@ -384,7 +384,7 @@ def cpwer(
     """
     try:
         from meeteval.wer import cp_word_error_rate
-    except ImportError as exc:  # pragma: no cover - exercised only without the dep
+    except ImportError as exc:
         raise ImportError("meeteval is required for cpWER (pip install meeteval)") from exc
 
     def _by_speaker(words: list[dict[str, Any]]) -> dict[str, str]:

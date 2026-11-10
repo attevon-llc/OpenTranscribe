@@ -4,16 +4,32 @@ from app.core import privacy_env  # noqa: F401  # isort: skip
 
 # isort: split
 
-# Skip heavy AI imports during testing - speeds up test startup significantly
 import logging
 import os
 import socket
 import ssl
 
+from celery.signals import before_task_publish
+from celery.signals import setup_logging
+from celery.signals import task_postrun
+from celery.signals import task_prerun
+from celery.signals import worker_process_shutdown
+from celery.signals import worker_ready
+from celery.signals import worker_shutdown
+from celery.signals import worker_shutting_down
+
 from app.core import celery_worker_lifecycle
 from app.core import worker_metrics
+from app.core.celery_beat import BEAT_SCHEDULE
+from app.core.celery_routing import CELERY_QUEUES
+from app.core.celery_routing import INTENTIONALLY_UNROUTED_TASKS
+from app.core.celery_routing import TASK_ROUTES
+from app.core.config import settings
+from app.core.demo_publish import DemoAwareCelery
 from app.core.env import celery_visibility_timeout_s
 from app.core.env import env_bool
+from app.core.env import env_float
+from app.core.env import env_int
 from app.utils.nltk_offline import ensure_nltk_data_private
 
 # Issue #1161: before anything imports prometheus_client, so a worker with WORKER_METRICS_PORT
@@ -86,24 +102,6 @@ if not _SKIP_CELERY:
 
     # Note: WhisperX 3.8.1 has native PyAnnote v4 support — no patches needed
 
-# Imports must come after torch.load patch to prevent caching issues
-from celery.signals import before_task_publish  # noqa: E402 - after the torch.load patch finder above
-from celery.signals import setup_logging  # noqa: E402 - after the torch.load patch finder above
-from celery.signals import task_postrun  # noqa: E402 - after the torch.load patch finder above
-from celery.signals import task_prerun  # noqa: E402 - after the torch.load patch finder above
-from celery.signals import worker_process_shutdown  # noqa: E402 - after the torch.load patch finder above
-from celery.signals import worker_ready  # noqa: E402 - after the torch.load patch finder above
-from celery.signals import worker_shutdown  # noqa: E402 - after the torch.load patch finder above
-from celery.signals import worker_shutting_down  # noqa: E402 - after the torch.load patch finder above
-
-from app.core.celery_beat import BEAT_SCHEDULE  # noqa: E402 - after the torch.load patch finder above
-from app.core.celery_routing import CELERY_QUEUES  # noqa: E402 - after the torch.load patch finder above
-from app.core.celery_routing import INTENTIONALLY_UNROUTED_TASKS  # noqa: E402 - after the torch.load patch finder above
-from app.core.celery_routing import TASK_ROUTES  # noqa: E402 - after the torch.load patch finder above
-from app.core.config import settings  # noqa: E402 - after the torch.load patch finder above
-from app.core.demo_publish import DemoAwareCelery  # noqa: E402  # after the torch.load patch
-from app.core.env import env_float  # noqa: E402 - after ensure_nltk_data_private()
-from app.core.env import env_int  # noqa: E402 - after ensure_nltk_data_private()
 
 # kombu refuses to connect over `rediss://` unless an SSL context is supplied — it does
 # NOT fall back to a default. config.py builds a rediss:// URL whenever REDIS_USE_TLS is

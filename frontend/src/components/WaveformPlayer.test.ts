@@ -64,6 +64,30 @@ async function waitForMountedLoad() {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
+/** Mounts a player whose 300px-wide root maps `clientX` 0..300 onto `0..duration` seconds. */
+async function mountWithSeekTarget(duration: number) {
+  mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
+  const onSeek = vi.fn();
+  const { container, rerender } = render(WaveformPlayer, {
+    props: { fileId: 'f1', duration },
+    events: { seek: onSeek },
+  } as never);
+  await waitForMountedLoad();
+
+  vi.spyOn(rootOf(container), 'getBoundingClientRect').mockReturnValue({
+    left: 0,
+    width: 300,
+    top: 0,
+    right: 300,
+    bottom: 0,
+    height: 0,
+    x: 0,
+    y: 0,
+    toJSON() {},
+  });
+  return { container, rerender, onSeek };
+}
+
 /** Let one requestAnimationFrame callback run (drag seeks are rAF-coalesced). */
 async function nextAnimationFrame() {
   await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
@@ -222,26 +246,7 @@ describe('loading waveform data', () => {
 
 describe('click-to-seek', () => {
   it('dispatches seek with a time proportional to the click position', async () => {
-    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
-    const onSeek = vi.fn();
-    const { container } = render(WaveformPlayer, {
-      props: { fileId: 'f1', duration: 100 },
-      events: { seek: onSeek },
-    } as never);
-    await waitForMountedLoad();
-
-    const root = rootOf(container);
-    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-      left: 0,
-      width: 300,
-      top: 0,
-      right: 300,
-      bottom: 0,
-      height: 0,
-      x: 0,
-      y: 0,
-      toJSON() {},
-    });
+    const { container, onSeek } = await mountWithSeekTarget(100);
     const canvas = canvasOf(container);
     await fireEvent.click(canvas, { clientX: 75 }); // 25% across -> 25s of 100s
 
@@ -254,26 +259,7 @@ describe('click-to-seek', () => {
     // realistic on a fresh page load: the player hasn't reported its
     // duration to this component yet. The click should still take effect as
     // soon as duration becomes known, not require the user to click again.
-    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
-    const onSeek = vi.fn();
-    const { container, rerender } = render(WaveformPlayer, {
-      props: { fileId: 'f1', duration: 0 },
-      events: { seek: onSeek },
-    } as never);
-    await waitForMountedLoad();
-
-    const root = rootOf(container);
-    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-      left: 0,
-      width: 300,
-      top: 0,
-      right: 300,
-      bottom: 0,
-      height: 0,
-      x: 0,
-      y: 0,
-      toJSON() {},
-    });
+    const { container, rerender, onSeek } = await mountWithSeekTarget(0);
 
     await fireEvent.click(canvasOf(container), { clientX: 75 }); // 25% across
     expect(onSeek).not.toHaveBeenCalled(); // nothing to compute a time against yet
@@ -284,26 +270,7 @@ describe('click-to-seek', () => {
   });
 
   it('does not replay a queued seek on an unrelated duration update once it has flushed', async () => {
-    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
-    const onSeek = vi.fn();
-    const { container, rerender } = render(WaveformPlayer, {
-      props: { fileId: 'f1', duration: 0 },
-      events: { seek: onSeek },
-    } as never);
-    await waitForMountedLoad();
-
-    const root = rootOf(container);
-    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-      left: 0,
-      width: 300,
-      top: 0,
-      right: 300,
-      bottom: 0,
-      height: 0,
-      x: 0,
-      y: 0,
-      toJSON() {},
-    });
+    const { container, rerender, onSeek } = await mountWithSeekTarget(0);
 
     await fireEvent.click(canvasOf(container), { clientX: 75 });
     await rerender({ fileId: 'f1', duration: 100 });
@@ -321,26 +288,7 @@ describe('click-to-seek: real pointer sequences', () => {
     // and both seeked, so every click on the waveform issued two identical seeks
     // to the media element — two player seeks plus two raw seeks, four
     // `currentTime` assignments, per single click. Measured live before the fix.
-    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
-    const onSeek = vi.fn();
-    const { container } = render(WaveformPlayer, {
-      props: { fileId: 'f1', duration: 100 },
-      events: { seek: onSeek },
-    } as never);
-    await waitForMountedLoad();
-
-    const root = rootOf(container);
-    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-      left: 0,
-      width: 300,
-      top: 0,
-      right: 300,
-      bottom: 0,
-      height: 0,
-      x: 0,
-      y: 0,
-      toJSON() {},
-    });
+    const { container, onSeek } = await mountWithSeekTarget(100);
 
     const canvas = canvasOf(container);
     // A real pointer interaction fires mousedown, then mouseup, then click.
@@ -356,26 +304,7 @@ describe('click-to-seek: real pointer sequences', () => {
   it('still seeks on a synthetic click that has no preceding mousedown', async () => {
     // Assistive tech and programmatic activation dispatch `click` alone; the
     // dedupe above must not swallow those.
-    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
-    const onSeek = vi.fn();
-    const { container } = render(WaveformPlayer, {
-      props: { fileId: 'f1', duration: 100 },
-      events: { seek: onSeek },
-    } as never);
-    await waitForMountedLoad();
-
-    const root = rootOf(container);
-    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-      left: 0,
-      width: 300,
-      top: 0,
-      right: 300,
-      bottom: 0,
-      height: 0,
-      x: 0,
-      y: 0,
-      toJSON() {},
-    });
+    const { container, onSeek } = await mountWithSeekTarget(100);
 
     await fireEvent.click(canvasOf(container), { clientX: 75 });
     expect(onSeek).toHaveBeenCalledTimes(1);
@@ -383,26 +312,7 @@ describe('click-to-seek: real pointer sequences', () => {
   });
 
   it('clamps a drag past the container edge to the end of the track, and tracks mousemove while dragging', async () => {
-    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
-    const onSeek = vi.fn();
-    const { container } = render(WaveformPlayer, {
-      props: { fileId: 'f1', duration: 100 },
-      events: { seek: onSeek },
-    } as never);
-    await waitForMountedLoad();
-
-    const root = rootOf(container);
-    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-      left: 0,
-      width: 300,
-      top: 0,
-      right: 300,
-      bottom: 0,
-      height: 0,
-      x: 0,
-      y: 0,
-      toJSON() {},
-    });
+    const { container, onSeek } = await mountWithSeekTarget(100);
 
     const canvas = canvasOf(container);
     await fireEvent.mouseDown(canvas, { clientX: 999 }); // past the edge, clamped to 1.0

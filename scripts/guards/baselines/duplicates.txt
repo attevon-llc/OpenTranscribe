@@ -215,7 +215,6 @@ frontend/src/components/UserFileStatus.svelte	1	pre-existing duplicated blocks o
 frontend/src/components/UserManagementTable.authType.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/UserManagementTable.serverParity.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/UserManagementTable.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/WaveformPlayer.test.ts	12	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/chat/ChatMessageMeta.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/chat/ChatThread.disambiguate.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/chat/ProjectModal.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -371,11 +370,9 @@ frontend/src/stores/auth.accountLifecycle.test.ts	3	pre-existing duplicated bloc
 frontend/src/stores/auth.authMethods.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/auth.bannerAcknowledgment.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/auth.loginAsDemo.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/stores/auth.logoutOrdering.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/stores/auth.mfaEnrollment.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/stores/auth.mfaEnrollment.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/auth.sessionCookieRejected.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/stores/auth.sessionEndReason.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/stores/auth.sessionProbe.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/stores/auth.sessionProbe.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/websocket.notificationActions.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/websocket.retention.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/websocket.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

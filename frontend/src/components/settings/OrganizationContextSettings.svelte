@@ -394,7 +394,7 @@
   }
 
   .form-label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     display: flex;
     flex-direction: column;
@@ -402,14 +402,14 @@
   }
 
   .label-hint {
-    font-size: 0.8125rem;
-    font-weight: 400;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
   }
 
   .form-textarea {
     padding: var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     resize: vertical;
     min-height: 120px;
     line-height: 1.5;
@@ -421,7 +421,7 @@
   }
 
   .char-counter {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     text-align: right;
   }
@@ -458,12 +458,12 @@
   }
 
   .label-text {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .label-description {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -543,8 +543,8 @@
     align-items: center;
     gap: var(--space-2);
     color: var(--primary-on-surface);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
   }
 
   :global([data-theme='dark']) .banner-content {
@@ -556,8 +556,8 @@
     background-color: #ef4444;
     border: none;
     border-radius: var(--radius-md);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     color: var(--text-on-solid);
     transition: all var(--duration-fast);
@@ -591,8 +591,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0 0 var(--space-3) 0;
   }
@@ -628,8 +628,8 @@
   }
 
   .shared-owner {
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
@@ -639,7 +639,7 @@
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(245, 158, 11, 0.12);
@@ -657,7 +657,7 @@
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(16, 185, 129, 0.12);
@@ -665,7 +665,7 @@
   }
 
   .shared-card-preview {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
     white-space: pre-wrap;
@@ -679,8 +679,8 @@
   .btn-shared-action {
     padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-md);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-fast);
   }

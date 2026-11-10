@@ -120,7 +120,7 @@
     margin: var(--space-4) 0;
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
   .state.error {
     color: var(--error-color);
@@ -131,13 +131,13 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
   th {
     text-align: start;
     padding: 0.4rem 0.6rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-on-tint);
@@ -154,7 +154,7 @@
     white-space: nowrap;
   }
   code {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     overflow-wrap: anywhere;
   }
   .uuid {

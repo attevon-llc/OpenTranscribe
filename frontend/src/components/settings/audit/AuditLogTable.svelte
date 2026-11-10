@@ -140,7 +140,7 @@
   .audit-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .audit-table th,
@@ -153,8 +153,8 @@
 
   .audit-table th {
     background: var(--color-bg-secondary);
-    font-weight: 600;
-    font-size: 0.6875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     color: var(--color-text-secondary);
@@ -183,13 +183,13 @@
   .uuid,
   .ip {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--color-text-secondary);
   }
 
   .event-type {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     background: var(--color-bg-secondary);
     padding: var(--space-0-5) var(--space-1-5);
     border-radius: 3px;
@@ -197,14 +197,14 @@
   }
 
   .event-label {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .outcome {
     padding: var(--space-0-5) var(--space-1-5);
     border-radius: 3px;
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
@@ -256,7 +256,7 @@
     text-align: center;
     padding: var(--space-4);
     color: var(--color-text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   /* Scrollable table container for many logs */
@@ -272,7 +272,7 @@
     position: sticky;
     top: 0;
     text-align: end;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     padding: var(--space-1) var(--space-2);
     background: var(--surface-color);
@@ -291,7 +291,7 @@
     padding: var(--space-4);
     margin: 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.5;
     color: var(--color-text);
     white-space: pre-wrap;

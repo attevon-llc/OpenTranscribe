@@ -197,8 +197,8 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-xl);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -269,7 +269,7 @@
     background: transparent;
     border: none;
     border-radius: var(--radius-lg);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     cursor: pointer;
     transition: all var(--duration-fast) ease;
@@ -303,7 +303,7 @@
 
   .dropdown-item.active {
     color: var(--primary-on-surface);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .option-label {
@@ -324,7 +324,7 @@
 
   @media (max-width: 768px) {
     .sort-button {
-      font-size: 0.8125rem;
+      font-size: var(--font-size-sm);
       padding: 0.4rem var(--space-3);
     }
 

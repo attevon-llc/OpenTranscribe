@@ -203,7 +203,7 @@
 
   .picker-row:has(input:checked) {
     background-color: rgba(var(--primary-color-rgb), 0.12);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .picker-row:focus-within {

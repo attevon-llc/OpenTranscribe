@@ -128,11 +128,11 @@
 <style>
   .step-speakers { display: flex; flex-direction: column; gap: var(--space-3); }
 
-  .step-hint { font-size: 0.8125rem; color: var(--text-secondary); margin: 0; line-height: 1.5; }
+  .step-hint { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 0; line-height: 1.5; }
 
   .info-note {
     display: flex; align-items: center; gap: var(--space-2);
-    padding: var(--space-2-5) var(--space-3); font-size: 0.8125rem;
+    padding: var(--space-2-5) var(--space-3); font-size: var(--font-size-sm);
     color: var(--text-secondary);
     background: rgba(var(--accent-rgb), 0.05);
     border: 1px solid rgba(var(--accent-rgb), 0.12);
@@ -145,8 +145,8 @@
   .settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 
   .field { display: flex; flex-direction: column; gap: var(--space-1-5); }
-  .field label { font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); display: flex; flex-direction: column; gap: var(--space-0-5); }
-  .hint { font-size: 0.6875rem; font-weight: 400; color: var(--text-secondary); }
+  .field label { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); display: flex; flex-direction: column; gap: var(--space-0-5); }
+  .hint { font-size: var(--font-size-2xs); font-weight: var(--font-weight-regular); color: var(--text-secondary); }
 
   .field input[type="number"] {
     padding: 0.4375rem var(--space-2); border: 1px solid var(--border-color); border-radius: var(--radius-md);
@@ -161,12 +161,12 @@
     background: var(--surface-color);
   }
   .consent-row input[type='checkbox'] { margin-top: 0.1875rem; flex-shrink: 0; }
-  .consent-text { display: flex; flex-direction: column; gap: var(--space-1); font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); }
+  .consent-text { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); }
 
   .validation-error {
     display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2);
     background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: var(--radius-md); color: #dc2626; font-size: 0.8125rem;
+    border-radius: var(--radius-md); color: #dc2626; font-size: var(--font-size-sm);
   }
   :global([data-theme='dark']) .validation-error { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #f87171; }
 

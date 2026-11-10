@@ -1119,7 +1119,7 @@
   }
 
   .auth-header h1 {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     color: var(--text-color);
     margin-bottom: var(--space-2);
   }
@@ -1151,11 +1151,11 @@
 
   .form-group label {
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .form-group input {
-    font-size: 1rem;
+    font-size: var(--font-size-base);
   }
 
   .auth-button {
@@ -1165,7 +1165,7 @@
     border-radius: var(--radius-xl);
     padding: 0.6rem 1.2rem;
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);
@@ -1216,7 +1216,7 @@
   .auth-link {
     color: var(--primary-on-surface);
     text-decoration: none;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .auth-link:hover {
@@ -1277,7 +1277,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .success-message svg {
@@ -1338,7 +1338,7 @@
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -1387,7 +1387,7 @@
   /* Account-lifecycle / email-verification panels. Colours come from theme vars
      so light and dark stay in parity. */
   .lifecycle-panel h2 {
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     color: var(--text-color);
     margin-bottom: var(--space-2);
     text-align: center;
@@ -1440,7 +1440,7 @@
   }
 
   .mfa-form h2 {
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     color: var(--text-color);
     margin-bottom: var(--space-2);
   }
@@ -1457,7 +1457,7 @@
 
   .mfa-form input {
     text-align: center;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     letter-spacing: 0.25em;
     font-family: monospace;
   }
@@ -1514,7 +1514,7 @@
   .login-success-text {
     color: var(--text-light);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     margin: 0;
   }
 

@@ -606,10 +606,10 @@
     background: none;
     border: none;
     font-family: inherit;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     cursor: pointer;
     position: relative;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     /* Load-bearing for issue #754 item 3: "Transcript Search must render horizontally,
      * not stacked over two lines". `white-space` inherits, so this covers .nav-label
      * (the span that actually holds the text) without a second declaration. Removing it
@@ -779,7 +779,7 @@
 
     .nav-link {
       padding: 0.4rem 0.6rem;
-      font-size: 0.875rem;
+      font-size: var(--font-size-md);
     }
 
     /* Icon-only nav links on tablet portrait */
@@ -939,7 +939,7 @@
     gap: var(--space-2);
     font-family: inherit;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     transition: all var(--duration-slow) ease;
     overflow: hidden;
   }
@@ -1002,7 +1002,7 @@
   .recording-time {
     font-family: system-ui, -apple-system, sans-serif;
     font-variant-numeric: tabular-nums;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-size: 0.8rem;
     letter-spacing: 0.5px;
     min-width: 60px; /* Reserve space for HH:MM:SS */
@@ -1125,7 +1125,7 @@
     align-items: center;
     gap: var(--space-2);
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .status-dot {
@@ -1157,7 +1157,7 @@
     font-family: system-ui, -apple-system, sans-serif;
     font-variant-numeric: tabular-nums;
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     margin-left: auto;
     min-width: 64px; /* Reserve space for HH:MM:SS */
     text-align: right;

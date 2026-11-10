@@ -236,14 +236,14 @@
 
   .file-list-label {
     margin: 0 0 var(--space-1-5);
-    font-weight: 600;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
   }
 
   .file-list ul {
     margin: 0;
     padding-inline-start: var(--space-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     max-height: 120px;
     overflow-y: auto;
@@ -257,21 +257,21 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1-5);
-    font-weight: 600;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
   }
 
   textarea {
     resize: vertical;
     min-height: 80px;
     padding: var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     font-weight: normal;
   }
 
   .char-count {
     align-self: flex-end;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-weight: normal;
     color: var(--text-secondary);
   }
@@ -280,7 +280,7 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -299,7 +299,7 @@
   .notice,
   .scope-notice {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -310,7 +310,7 @@
     background: var(--bg-color);
     color: var(--text-color);
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .btn-secondary:hover:not(:disabled) {
@@ -327,7 +327,7 @@
     background: var(--error-solid);
     color: var(--text-on-solid);
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .btn-destructive:hover:not(:disabled) {

@@ -938,7 +938,7 @@
   .search-container input {
     width: 100%;
     padding: var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .table-actions {
@@ -969,13 +969,13 @@
   .form-group label {
     display: block;
     margin-bottom: var(--space-1);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-group input, .form-group select {
     width: 100%;
     padding: var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .role-warning {
@@ -986,7 +986,7 @@
     border-radius: var(--radius-md);
     background-color: rgba(245, 158, 11, 0.12);
     color: var(--text-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
   }
 
@@ -997,8 +997,8 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     margin-top: var(--space-2);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
@@ -1037,7 +1037,7 @@
     border-bottom: 1px solid var(--border-color);
     text-align: left;
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .users-table th {
@@ -1299,7 +1299,7 @@
     padding: 0.0625rem var(--space-1-5);
     border-radius: var(--radius-pill);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     vertical-align: middle;
@@ -1353,7 +1353,7 @@
     display: block;
     margin-top: var(--space-1);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
   }
 
@@ -1370,8 +1370,8 @@
   }
 
   .invitations-section h3 {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin-bottom: var(--space-3);
   }
@@ -1379,7 +1379,7 @@
   .invite-name {
     display: block;
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .current-role {
@@ -1390,7 +1390,7 @@
   .self-user {
     font-style: italic;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .loading-state {
@@ -1400,7 +1400,7 @@
     border-radius: var(--radius-sm);
     margin-top: var(--space-4);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .table-scroll-wrapper {
@@ -1417,7 +1417,7 @@
 
     .search-container input {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
 
     .table-actions {
@@ -1433,7 +1433,7 @@
     .add-user-form input,
     .add-user-form select {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
 
     .create-button {
@@ -1449,7 +1449,7 @@
     .users-table td {
       white-space: nowrap;
       padding: var(--space-2);
-      font-size: 0.75rem;
+      font-size: var(--font-size-xs);
     }
 
     .icon-button {

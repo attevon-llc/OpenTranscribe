@@ -69,7 +69,7 @@
 
 <style>
   .gender-icon {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     /* Rendered inside the cluster card's tinted gender chip, where --text-secondary
      * measures 4.25:1 against the success tint — under WCAG AA for this 11px label. */
     color: var(--text-on-tint);
@@ -87,7 +87,7 @@
   }
 
   .gender-label {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
   }
 
   .gender-confirmed-tick {
@@ -98,7 +98,7 @@
 
   @media (max-width: 768px) {
     .gender-icon {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
     }
   }
 </style>

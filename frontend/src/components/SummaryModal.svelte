@@ -549,8 +549,8 @@
 
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -611,7 +611,7 @@
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }

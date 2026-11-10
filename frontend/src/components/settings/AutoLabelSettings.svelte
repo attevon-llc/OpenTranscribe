@@ -362,7 +362,7 @@
 
   .setting-label {
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
 
@@ -453,7 +453,7 @@
     border: none;
     background: var(--primary-color);
     color: var(--text-on-solid);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     font-size: 0.95rem;
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -491,7 +491,7 @@
     border: none;
     background: var(--primary-color);
     color: var(--text-on-solid);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     font-size: 0.9rem;
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -537,11 +537,11 @@
   .progress-label {
     font-size: 0.8rem;
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .progress-percent {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 

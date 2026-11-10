@@ -252,7 +252,7 @@
     gap: var(--space-1);
     margin-left: var(--space-2);
     font-size: 0.68rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     padding: var(--space-0-5) var(--space-2);

@@ -582,8 +582,8 @@
     right: 6px;
     background: rgba(0, 0, 0, 0.7);
     color: var(--text-on-solid);
-    font-size: 0.6875rem;
-    font-weight: 500;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-sm);
     line-height: 1.4;
@@ -611,10 +611,10 @@
   }
 
   .file-name {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     /* Was 600 — the over-bold outlier issue #749 names (the list's `.file-title` is
        already 500; this is the view that needed fixing, not the list). */
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
     margin: 0;
     overflow: hidden;
@@ -626,7 +626,7 @@
   .meta-line {
     display: flex;
     align-items: center;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     line-height: 1.4;
     min-width: 0;
@@ -694,7 +694,7 @@
     }
 
     .file-name {
-      font-size: 0.75rem;
+      font-size: var(--font-size-xs);
     }
 
     .meta-line {
@@ -739,7 +739,7 @@
     }
 
     .file-name {
-      font-size: 0.8125rem;
+      font-size: var(--font-size-sm);
     }
   }
 

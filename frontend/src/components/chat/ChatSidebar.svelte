@@ -305,7 +305,7 @@
     background-color: var(--card-background);
     color: var(--text-color);
     font-size: 0.87rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: background-color var(--duration-fast) ease;
   }
@@ -336,7 +336,7 @@
 
   .archive-toggle.active {
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .sidebar-list {

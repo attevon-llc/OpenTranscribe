@@ -39,8 +39,8 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-xl);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     backdrop-filter: blur(8px);
@@ -64,7 +64,7 @@
 
   @media (max-width: 768px) {
     .count-chip {
-      font-size: 0.75rem;
+      font-size: var(--font-size-xs);
       padding: 0.3rem var(--space-2-5);
       gap: 0.3rem;
     }
@@ -79,7 +79,7 @@
 
   @media (max-width: 480px) {
     .count-chip {
-      font-size: 0.6875rem;
+      font-size: var(--font-size-2xs);
       padding: var(--space-1) var(--space-2);
     }
   }

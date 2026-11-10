@@ -219,8 +219,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    font-size: 11px;
-    font-weight: 500;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
   }
 
@@ -234,7 +234,7 @@
     padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-xl);
     font-size: 10px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .dropdown-icon {
@@ -259,8 +259,8 @@
 
   .edit-header h4 {
     margin: 0;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -271,7 +271,7 @@
   .edit-input {
     width: 100%;
     padding: var(--space-2) var(--space-3);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
   }
 
   .edit-actions {
@@ -285,7 +285,7 @@
     padding: 0.4rem 0.8rem;
     border-radius: var(--radius-xl);
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     border: none;
@@ -354,8 +354,8 @@
   }
 
   .chip-name {
-    font-size: 12px;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
     padding: 0 var(--space-1);
   }
@@ -409,7 +409,7 @@
     align-items: center;
     gap: var(--space-1-5);
     padding: var(--space-1-5) var(--space-3);
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     color: var(--ai-accent-color);
     background: rgba(var(--accent-rgb), 0.08);
     border-top: 1px solid var(--border-color);

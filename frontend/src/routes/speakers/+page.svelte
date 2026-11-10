@@ -360,8 +360,8 @@
   }
 
   .page-header h1 {
-    font-size: 24px;
-    font-weight: 600;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0;
   }
@@ -376,7 +376,7 @@
     background-color: rgba(var(--primary-color-rgb), 0.1);
     color: var(--primary-on-surface);
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .rename-propagation-spinner {
@@ -424,8 +424,8 @@
     border-radius: 0;
     background: none;
     color: var(--text-secondary);
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: calc(-1 * var(--space-0-5));
@@ -450,7 +450,7 @@
   }
 
   .badge {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     padding: 1px 7px;
     border-radius: var(--radius-xl);
     background: var(--hover-color);
@@ -468,7 +468,7 @@
     }
 
     .page-header h1 {
-      font-size: 20px;
+      font-size: var(--font-size-xl);
       margin-bottom: var(--space-3);
     }
 
@@ -485,7 +485,7 @@
 
     .tab {
       padding: var(--space-2) var(--space-3-5);
-      font-size: 13px;
+      font-size: var(--font-size-sm);
       white-space: nowrap;
       flex-shrink: 0;
     }

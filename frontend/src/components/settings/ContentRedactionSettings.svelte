@@ -375,7 +375,7 @@
 
   .section-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
@@ -387,7 +387,7 @@
   }
 
   .field-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
@@ -404,8 +404,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     margin-bottom: var(--space-1-5);
   }
@@ -420,7 +420,7 @@
 
   .perf-note {
     margin: var(--space-2) 0 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-color);
     background: rgba(var(--warning-color-rgb), 0.12);
     border-radius: var(--radius-md);
@@ -469,7 +469,7 @@
     background: var(--background-color);
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     user-select: none;
     transition:
       background-color 0.12s ease,
@@ -477,7 +477,7 @@
       color 0.12s ease;
   }
   .chip.small {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     padding: 0.3rem 0.6rem;
   }
   .chip:hover {
@@ -487,7 +487,7 @@
     background: rgba(var(--primary-color-rgb), 0.12);
     border-color: var(--primary-color);
     color: var(--text-color);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
   .chip.locked {
     border-color: var(--warning-color);
@@ -523,7 +523,7 @@
   }
 
   .lang-note {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     background: var(--background-color);
     border: 1px solid var(--border-color);
@@ -588,7 +588,7 @@
     transform: translateX(16px);
   }
   .toggle-text {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
     display: inline-flex;
     align-items: center;

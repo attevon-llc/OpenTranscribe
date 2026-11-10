@@ -568,7 +568,7 @@
   }
 
   .legend-title {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -633,8 +633,8 @@
 
   .speaker-editor-header h4 {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -672,7 +672,7 @@
   .timestamp-link {
     font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
     border: 1px solid var(--border-color);
@@ -705,7 +705,7 @@
 
   /* Matches .segment-speaker styling from transcript segments */
   .speaker-original {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-2xl);
@@ -748,7 +748,7 @@
     align-items: center;
     gap: 3px;
     font-size: 0.65rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     padding: 0.15rem 0.4rem;
     border-radius: var(--radius-pill);
     flex-shrink: 0;
@@ -774,8 +774,8 @@
   .speaker-profile-badge {
     background: #f59e0b;
     color: var(--text-on-solid);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-md);
     display: inline-flex;
@@ -802,7 +802,7 @@
 
   .profile-text {
     line-height: 1;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
 
@@ -812,7 +812,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.2rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-weight: normal;
   }
 
@@ -824,7 +824,7 @@
     border: none;
     border-radius: var(--radius-xl);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);
@@ -867,7 +867,7 @@
     background-color: rgba(var(--primary-color-rgb), 0.1);
     color: var(--primary-on-surface);
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .propagation-pending-spinner {
@@ -910,7 +910,7 @@
     background-color: var(--background-main);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .compact-header {
@@ -1001,7 +1001,7 @@
   }
 
   .match-confidence {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     font-size: 0.65rem;
     color: var(--success-color);
   }
@@ -1022,7 +1022,7 @@
   .more-matches-text {
     cursor: pointer;
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .more-matches-text:hover {
@@ -1066,7 +1066,7 @@
 
   .popup-match-text {
     flex: 1;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-color);
     margin-right: var(--space-2);
   }
@@ -1076,7 +1076,7 @@
     align-items: center;
     gap: 0.2rem;
     font-size: 0.65rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--success-color);
     white-space: nowrap;
   }
@@ -1118,7 +1118,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     color: var(--text-secondary-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     width: 100%;
@@ -1175,7 +1175,7 @@
 
   .chip-label {
     font-size: 0.7rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary-color);
     min-width: 35px;
     padding-top: var(--space-1);
@@ -1198,7 +1198,7 @@
     border: none;
     border-radius: var(--radius-3xl);
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     color: var(--text-on-solid);
@@ -1234,7 +1234,7 @@
 
   .chip-label.profile-label {
     color: #f59e0b;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .chip-confidence {
@@ -1242,7 +1242,7 @@
     background: rgba(255, 255, 255, 0.25);
     padding: 0.1rem 0.3rem;
     border-radius: var(--radius-lg);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .source-icon {
@@ -1333,7 +1333,7 @@
     }
 
     .speaker-original {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
       padding: var(--space-0-5) var(--space-1-5);
       min-width: auto;
     }

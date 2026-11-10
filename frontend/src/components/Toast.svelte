@@ -148,9 +148,9 @@
 
   .toast-message {
     flex: 1;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     min-width: 0;
     /* A sentence wraps to three lines before it is cut: a one-line clip hid the reason in
        messages like "speaker detection is back to Automatic". Short messages are unchanged. */
@@ -168,8 +168,8 @@
 
   .toast-retry-hint {
     display: block;
-    font-size: 12px;
-    font-weight: 400;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
     white-space: normal;
   }
@@ -180,8 +180,8 @@
     color: var(--toast-color);
     border-radius: var(--radius-sm);
     padding: var(--space-1) var(--space-2-5);
-    font-size: 13px;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     cursor: pointer;
     flex-shrink: 0;
     transition: all var(--duration-base);

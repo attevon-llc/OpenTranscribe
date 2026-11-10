@@ -65,7 +65,7 @@
   /* Never fall back to the OS control font (system-ui 13.33px on macOS). */
   font-family: inherit;
   font-size: var(--field-font-size);
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   line-height: var(--field-line-height);
   letter-spacing: normal;
   outline: 2px solid transparent;
@@ -285,7 +285,7 @@ th {
   background-color: var(--table-header-bg);
   padding: var(--space-3) var(--space-4);
   text-align: left;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--text-color);
   border-bottom: 1px solid var(--border-color);
 }
@@ -313,7 +313,7 @@ button {
   font-family: inherit;
   cursor: pointer;
   transition: all var(--duration-base) ease;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: 0.95rem;
   box-shadow: var(--shadow-md);
 }
@@ -424,8 +424,8 @@ button:disabled {
   gap: var(--space-1-5);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-lg);
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--duration-base) ease;
   font-family: inherit;
@@ -518,7 +518,7 @@ button:disabled {
   padding: 0.6rem 1.2rem;
   border-radius: var(--radius-xl);
   font-size: 0.95rem;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--duration-base) ease;
   min-width: 100px;

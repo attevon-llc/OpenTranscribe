@@ -116,7 +116,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-0-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     color: var(--text-secondary);
   }
@@ -145,7 +145,7 @@
   }
 
   .capability-legend dd {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     color: var(--text-secondary);
   }

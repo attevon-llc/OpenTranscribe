@@ -172,7 +172,7 @@
 
   .section-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
@@ -203,7 +203,7 @@
 
   .status-label {
     color: var(--text-muted);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .status-value {
@@ -220,7 +220,7 @@
   .field-label {
     font-size: 0.78rem;
     color: var(--text-muted);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .inline-input {
@@ -230,12 +230,12 @@
   }
 
   .input-suffix {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .hint {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin: var(--space-1) 0 0 0;
     line-height: 1.4;
@@ -243,7 +243,7 @@
 
   .form-input {
     padding: var(--space-1-5) var(--space-2);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .number-input {
@@ -283,7 +283,7 @@
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
   }
 

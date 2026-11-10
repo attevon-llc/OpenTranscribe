@@ -49,13 +49,13 @@
   }
 
   .title {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .state {
     margin: var(--space-1) 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     color: var(--text-secondary);
   }
@@ -67,7 +67,7 @@
   .docs {
     display: inline-block;
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--primary-on-surface);
   }
 </style>

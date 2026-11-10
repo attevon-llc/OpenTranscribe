@@ -73,15 +73,15 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     margin-bottom: var(--space-1-5);
   }
 
   .range-slider__badge {
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--slider-badge-text);
     background: var(--slider-badge-bg);
     padding: 0.1rem 0.45rem;
@@ -91,7 +91,7 @@
   .range-slider__hint,
   .range-slider__default {
     margin: var(--space-2) 0 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 

@@ -84,7 +84,7 @@
     border-radius: var(--radius-md);
     background: var(--surface-color);
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     text-align: start;
   }

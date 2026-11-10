@@ -250,7 +250,7 @@
   }
 
   .cluster-label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -264,7 +264,7 @@
 
   .suggested-badge {
     font-size: 10px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--primary-color) 12%, transparent);
@@ -274,7 +274,7 @@
   }
 
   .label-input {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     padding: var(--space-0-5) var(--space-1-5);
     font-size: inherit;
     min-width: 0;
@@ -292,8 +292,8 @@
   }
 
   .quality-badge {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
     background: currentColor;
@@ -302,8 +302,8 @@
   }
 
   .gender-chip {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     padding: 3px var(--space-2);
     border-radius: var(--radius-xl);
     white-space: nowrap;
@@ -325,13 +325,13 @@
   }
 
   .member-count {
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     white-space: nowrap;
   }
 
   .promoted-badge {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
     background: color-mix(in srgb, var(--success-color) 15%, transparent);
@@ -363,8 +363,8 @@
     border: 1px solid var(--border-color);
     background: transparent;
     color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-fast) ease;
   }
@@ -473,15 +473,15 @@
     gap: var(--space-1);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     background: color-mix(in srgb, var(--warning-color) 12%, transparent);
     color: var(--warning-color);
     white-space: nowrap;
   }
 
   .selection-chip {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -490,7 +490,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-color);
     cursor: pointer;
     white-space: nowrap;
@@ -567,7 +567,7 @@
     }
 
     .cluster-label {
-      font-size: 14px;
+      font-size: var(--font-size-md);
     }
 
     .quality-badge,
@@ -578,7 +578,7 @@
     }
 
     .member-count {
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
 
     .promoted-badge {
@@ -599,15 +599,15 @@
 
     .action-btn {
       padding: var(--space-1) var(--space-2);
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
 
     .selection-chip {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
     }
 
     .blacklist-toggle {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
     }
   }
 

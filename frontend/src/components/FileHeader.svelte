@@ -335,8 +335,8 @@
 
   .status-message p {
     margin: 0;
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
   }
 
   .status-message .error-heading {
@@ -345,14 +345,14 @@
 
   .status-message .error-suggestions-title {
     margin-top: var(--space-2);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .status-message .error-suggestions {
     margin: var(--space-1) 0 0;
     padding-inline-start: var(--space-5);
-    font-size: 14px;
-    font-weight: 400;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-regular);
   }
 
   .status-message .error-suggestions li {
@@ -361,7 +361,7 @@
 
   .status-message .error-retryable {
     margin-top: var(--space-2);
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     font-style: italic;
   }
 
@@ -394,22 +394,22 @@
   }
 
   .processing-label {
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--info-dark);
     line-height: 1.2;
   }
 
   .processing-step-text {
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     font-style: italic;
     line-height: 1.2;
   }
 
   .progress-percentage {
-    font-size: 14px;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(var(--primary-color-rgb), 0.1);
@@ -509,15 +509,15 @@
   }
 
   .stage-label {
-    font-size: 12px;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     text-align: center;
   }
 
   .stage.active .stage-label {
     color: var(--primary-on-surface);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .stage.completed .stage-label {
@@ -530,7 +530,7 @@
 
   .summary-text {
     margin: 0;
-    font-size: 16px;
+    font-size: var(--font-size-base);
     color: var(--text-secondary);
     line-height: 1.5;
     transition: max-height var(--duration-slow) ease-in-out;
@@ -563,7 +563,7 @@
   .expand-link {
     color: var(--primary-on-surface);
     cursor: pointer;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     text-decoration: none;
     white-space: nowrap;
     transition: color var(--duration-base) ease;
@@ -624,8 +624,8 @@
     gap: var(--space-1);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-2xl);
-    font-size: 12px;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     white-space: nowrap;
@@ -723,11 +723,11 @@
 
   @media (max-width: 768px) {
     .file-title h1 {
-      font-size: 24px;
+      font-size: var(--font-size-2xl);
     }
 
     .summary-text {
-      font-size: 14px;
+      font-size: var(--font-size-md);
     }
 
     .expand-link {
@@ -735,7 +735,7 @@
     }
 
     .title-input {
-      font-size: 24px;
+      font-size: var(--font-size-2xl);
       padding: var(--space-1-5) var(--space-2);
     }
 

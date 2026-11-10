@@ -167,7 +167,7 @@
   .empty-state {
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     padding: var(--space-6) 0;
     margin: 0;
   }
@@ -198,8 +198,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     flex-shrink: 0;
   }
 
@@ -209,8 +209,8 @@
   }
 
   .member-name {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
@@ -218,13 +218,13 @@
   }
 
   .you-label {
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .member-email {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -240,7 +240,7 @@
   }
 
   .member-joined {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -254,7 +254,7 @@
 
   .role-select {
     padding: var(--space-1) var(--space-2);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 
@@ -292,8 +292,8 @@
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--danger-color);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-fast);
     white-space: nowrap;

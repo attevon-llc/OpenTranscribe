@@ -196,8 +196,8 @@
 
   .panel-title {
     margin: 0 0 var(--space-3);
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
   }
 
   .state-row {
@@ -207,7 +207,7 @@
     padding: var(--space-3);
     border-radius: var(--radius-md);
     background: var(--bg-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .state-row.error {
@@ -234,7 +234,7 @@
     border-radius: var(--radius-md);
     background: rgba(217, 119, 6, 0.12);
     color: #b45309;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   :global([data-theme='dark']) .degraded-banner {
@@ -245,7 +245,7 @@
   .locked-accounts-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .locked-accounts-table th,
@@ -275,7 +275,7 @@
     color: var(--accent-color);
     cursor: pointer;
     padding: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .action-link:disabled {
@@ -291,6 +291,6 @@
     background: var(--bg-color);
     color: var(--text-color);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 </style>

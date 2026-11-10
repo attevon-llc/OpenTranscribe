@@ -275,8 +275,8 @@
     border-radius: var(--radius-md);
     color: var(--text-primary);
     text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -308,7 +308,7 @@
     border: none;
     text-align: start;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     cursor: pointer;
     transition: background-color var(--duration-base) ease;
   }

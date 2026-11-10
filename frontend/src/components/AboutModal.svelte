@@ -409,7 +409,7 @@
 
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     color: var(--text-primary);
   }
 
@@ -426,7 +426,7 @@
   .subtitle {
     font-size: 1.125rem;
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     margin: 0 0 var(--space-4) 0;
   }
 
@@ -439,8 +439,8 @@
   .features-section h3,
   .workflow-section h3 {
     color: var(--text-color);
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-4) 0;
   }
 
@@ -457,14 +457,14 @@
   }
 
   .feature-icon {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     flex-shrink: 0;
   }
 
   .feature-item h4 {
     color: var(--text-color);
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
   }
 
@@ -497,14 +497,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 600;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
   }
 
   .step-content h4 {
     color: var(--text-color);
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
   }
 
@@ -525,13 +525,13 @@
   .header-version-number {
     color: var(--text-color);
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
   .header-version-number.mismatch {
     color: var(--warning-text);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .header-version-sep {
@@ -571,8 +571,8 @@
   /* Legal / license section (issue #862) */
   .legal-section h3 {
     color: var(--text-color);
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     margin: var(--space-8) 0 var(--space-4) 0;
   }
 
@@ -594,8 +594,8 @@
   /* Credits Section Styles */
   .credits-section h3 {
     color: var(--text-color);
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-4) 0;
   }
 
@@ -614,8 +614,8 @@
 
   .credit-category h4 {
     color: var(--text-color);
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-3) 0;
   }
 
@@ -664,7 +664,7 @@
   .inline-link {
     color: var(--primary-on-surface);
     text-decoration: none;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .inline-link:hover {

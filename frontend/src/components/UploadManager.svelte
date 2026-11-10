@@ -313,8 +313,8 @@
   }
 
   .badge-text {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -358,14 +358,14 @@
 
   .header-content h3 {
     margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
   }
 
   .header-stats {
     display: flex;
     gap: var(--space-2);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     margin-top: var(--space-0-5);
   }
 
@@ -385,7 +385,7 @@
   .stat-queued,
   .stat-completed {
     color: var(--text-on-solid);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .header-actions {
@@ -403,7 +403,7 @@
     color: var(--text-on-solid);
     padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
     transition: background var(--duration-base) ease;
   }
@@ -428,13 +428,13 @@
   }
 
   .progress-label {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
 
   .progress-percent {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 

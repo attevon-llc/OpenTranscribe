@@ -840,7 +840,7 @@
     padding: 0.6rem 1.2rem !important;
     border-radius: var(--radius-xl) !important;
     font-size: 0.95rem !important;
-    font-weight: 500 !important;
+    font-weight: var(--font-weight-medium) !important;
     cursor: pointer !important;
     transition: all var(--duration-base) ease !important;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;

@@ -104,6 +104,6 @@
     border-radius: var(--radius-md);
     background: var(--error-background);
     color: var(--error-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 </style>

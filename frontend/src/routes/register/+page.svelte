@@ -299,7 +299,7 @@
   }
 
   .auth-header h1 {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     color: var(--text-color);
     margin-bottom: var(--space-2);
   }
@@ -323,16 +323,16 @@
 
   .form-group label {
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .form-group input {
-    font-size: 1rem;
+    font-size: var(--font-size-base);
   }
 
   .form-error {
     margin: 0 0 var(--space-3);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     line-height: 1.4;
     color: var(--error-color);
   }
@@ -344,7 +344,7 @@
     border-radius: var(--radius-xl);
     padding: 0.6rem 1.2rem;
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);
@@ -381,7 +381,7 @@
   .auth-link {
     color: var(--primary-on-surface);
     text-decoration: none;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .auth-link:hover {
@@ -487,7 +487,7 @@
   .tooltip-content ul {
     margin: 0;
     padding-left: var(--space-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-light);
   }
 

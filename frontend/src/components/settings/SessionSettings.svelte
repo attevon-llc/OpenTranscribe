@@ -248,7 +248,7 @@
   .intro-text {
     margin-bottom: var(--space-6);
     color: var(--color-text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .intro-text p {
@@ -269,8 +269,8 @@
 
   .section h3 {
     margin: 0 0 var(--space-4) 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text-secondary);
   }
 
@@ -282,8 +282,8 @@
   .form-group .group-label {
     display: block;
     margin-bottom: var(--space-2);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -298,14 +298,14 @@
   }
 
   .preview {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--color-text-secondary);
   }
 
   .help-text {
     display: block;
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
 
@@ -317,8 +317,8 @@
     border-radius: var(--radius-pill);
     background: var(--color-warning-bg);
     color: var(--color-warning-text);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: none;
     letter-spacing: 0;
     vertical-align: middle;
@@ -330,7 +330,7 @@
     border-radius: var(--radius-sm);
     padding: var(--space-3);
     margin-top: var(--space-4);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .token-info strong {
@@ -383,13 +383,13 @@
   }
 
   .radio-title {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .radio-description {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
 
@@ -408,13 +408,13 @@
   .recommendation strong {
     display: block;
     margin-bottom: var(--space-1);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--color-text);
   }
 
   .recommendation p {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
   }
 

@@ -896,7 +896,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-1-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--primary-on-surface);
     opacity: 0.7;
     margin-top: var(--space-1);
@@ -941,7 +941,7 @@
   }
 
   .result-summary {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -966,8 +966,8 @@
     border: none;
     border-radius: var(--radius-md);
     color: var(--text-secondary);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     white-space: nowrap;
@@ -1041,27 +1041,27 @@
   }
 
   .state-title {
-    font-size: 1rem;
-    font-weight: 500;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     margin: 0 0 var(--space-1-5);
   }
 
   .state-text {
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body);
     color: var(--text-secondary);
     margin: 0;
   }
 
   .state-hint {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0;
   }
 
   .search-tip {
     margin-top: var(--space-3);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-style: italic;
     opacity: 0.7;
   }
@@ -1147,7 +1147,7 @@
     padding: var(--space-1) var(--space-2-5);
     border-radius: 20px;
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     border: 1px solid;
     cursor: default;
     white-space: nowrap;

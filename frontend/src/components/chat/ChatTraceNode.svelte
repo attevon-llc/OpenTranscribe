@@ -185,7 +185,7 @@
 
   .trace-label {
     color: var(--text-color);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   /* A skipped step is de-emphasised but never hidden: "we never looked" is a

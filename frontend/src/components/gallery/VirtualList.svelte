@@ -302,8 +302,8 @@
     padding: 0.75rem var(--file-list-pad);
     background: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     position: sticky;
     top: 0;
@@ -494,8 +494,8 @@
     display: block;
     min-width: 0;
     flex: 0 1 auto;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -503,7 +503,7 @@
   }
 
   .list-cell-speakers {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     display: flex;
     flex-wrap: nowrap;
@@ -528,8 +528,8 @@
 
   .speaker-count {
     flex: 0 0 auto;
-    font-size: 0.6875rem;
-    font-weight: 500;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
     background: var(--primary-color-alpha);
     padding: var(--space-0-5) var(--space-1-5);
@@ -551,7 +551,7 @@
   .list-cell-duration,
   .list-cell-date,
   .list-cell-size {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
     justify-content: flex-end;
@@ -561,7 +561,7 @@
     justify-content: flex-end;
     min-width: 0;
     overflow: hidden;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   /* The header cells share the body cells' column classes, so the body font sizes above

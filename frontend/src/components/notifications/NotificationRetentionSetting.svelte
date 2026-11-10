@@ -28,7 +28,7 @@
     padding: var(--space-2-5) var(--space-5);
     border-top: 1px solid var(--border-color);
     background: var(--surface-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -40,7 +40,7 @@
     flex: 0 1 60%;
     min-width: 0;
     padding: var(--space-1) var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   @media (max-width: 640px) {

@@ -119,7 +119,7 @@
   }
 
   .settings-header-title {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-size: 1.1rem;
     color: var(--text-color);
     margin: 0;
@@ -223,7 +223,7 @@
     .settings-content :global(select),
     .settings-content :global(textarea) {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
       max-width: 100%;
       box-sizing: border-box;
     }

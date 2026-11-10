@@ -187,14 +187,14 @@
   }
 
   .form-group label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-textarea {
@@ -203,7 +203,7 @@
   }
 
   .form-hint {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.45;
   }
@@ -215,14 +215,14 @@
     border-radius: var(--radius-md);
     background: rgba(245, 158, 11, 0.12);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.45;
   }
 
   @media (max-width: 768px) {
     .form-control {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

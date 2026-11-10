@@ -770,7 +770,7 @@
     text-align: center;
     padding: var(--space-12);
     color: var(--text-muted);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .status-bar {
@@ -780,7 +780,7 @@
     padding: var(--space-2-5) var(--space-4);
     border-radius: var(--radius-md);
     margin-bottom: var(--space-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     background: var(--primary-bg);
     color: var(--primary-on-surface);
     border: 1px solid var(--primary-border);
@@ -796,7 +796,7 @@
 
   .in-use-flags {
     margin: calc(-1 * var(--space-2)) 0 var(--space-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -817,7 +817,7 @@
   .btn-use-local {
     margin-left: auto;
     padding: var(--space-1) var(--space-3);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     border-radius: var(--radius-sm);
     border: 1px solid var(--border-color);
     background: var(--surface-color);
@@ -842,7 +842,7 @@
     gap: var(--space-2);
     margin: 0;
     font-size: 1.125rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -856,8 +856,8 @@
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-lg);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: background var(--duration-base);
   }
 
@@ -910,7 +910,7 @@
     padding: 0.15rem var(--space-2);
     border-radius: var(--radius-sm);
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .provider-badge {
@@ -935,8 +935,8 @@
   .test-badge.test-failed { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 
   .config-name {
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
@@ -957,7 +957,7 @@
     padding: var(--space-1-5) var(--space-3);
     border-radius: 5px;
     font-size: 0.775rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     background: var(--success-color);
     color: var(--text-on-solid);
@@ -1033,8 +1033,8 @@
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-lg);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: background var(--duration-base);
   }
 
@@ -1056,14 +1056,14 @@
 
   .empty-state h4 {
     margin: 0 0 var(--space-2);
-    font-size: 1rem;
-    font-weight: 500;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .empty-state p {
     margin: 0 0 var(--space-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     line-height: 1.5;
   }
@@ -1078,8 +1078,8 @@
     padding: var(--space-2) 1.1rem;
     border-radius: var(--radius-lg);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: background var(--duration-base);
   }
 
@@ -1101,7 +1101,7 @@
   .share-badge {
     display: inline-flex; align-items: center;
     padding: 1px var(--space-1-5); border-radius: var(--radius-xl);
-    font-size: 0.625rem; font-weight: 600;
+    font-size: 0.625rem; font-weight: var(--font-weight-semibold);
     text-transform: uppercase; letter-spacing: 0.5px;
     background: rgba(var(--primary-color-rgb), 0.12); color: var(--primary-on-surface);
     margin-left: var(--space-2); vertical-align: middle;
@@ -1126,7 +1126,7 @@
 
   .toggle-label {
     display: flex; align-items: center; gap: var(--space-2);
-    cursor: pointer; font-size: 0.75rem; color: var(--text-muted);
+    cursor: pointer; font-size: var(--font-size-xs); color: var(--text-muted);
   }
 
   .toggle-input { display: none; }
@@ -1176,13 +1176,13 @@
   }
 
   .model-label {
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .model-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -1199,7 +1199,7 @@
     padding: 0.15rem var(--space-2);
     border-radius: var(--radius-sm);
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -1230,8 +1230,8 @@
     align-items: center;
     gap: var(--space-2);
     margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 500;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -1241,7 +1241,7 @@
     padding: 0.15rem var(--space-2);
     border-radius: var(--radius-sm);
     font-size: 0.675rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(245, 158, 11, 0.12);

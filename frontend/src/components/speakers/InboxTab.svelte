@@ -66,7 +66,7 @@
     padding: var(--space-2) var(--space-4);
     background: var(--hover-color);
     border-radius: var(--radius-md);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin-bottom: var(--space-3);
   }
@@ -84,7 +84,7 @@
     justify-content: center;
     gap: var(--space-4);
     margin-top: var(--space-4);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
@@ -96,7 +96,7 @@
     color: var(--text-color);
     cursor: pointer;
     box-shadow: none;
-    font-size: 14px;
+    font-size: var(--font-size-md);
   }
 
   .pagination button:hover:not(:disabled) {
@@ -113,17 +113,17 @@
   @media (max-width: 768px) {
     .inbox-hint {
       padding: var(--space-1-5) var(--space-3);
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
 
     .pagination {
       gap: var(--space-2);
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
 
     .pagination button {
       padding: var(--space-1-5) var(--space-2-5);
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
   }
 </style>

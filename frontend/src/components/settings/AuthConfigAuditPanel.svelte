@@ -188,7 +188,7 @@
   .panel-description,
   .panel-status,
   .panel-note {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
     margin: 0;
   }
@@ -220,7 +220,7 @@
 
   select {
     padding: var(--space-1) var(--space-1-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     min-width: 12rem;
     height: 1.75rem;
   }
@@ -229,7 +229,7 @@
     padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     height: 1.75rem;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -258,7 +258,7 @@
   .audit-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .audit-table th,
@@ -275,8 +275,8 @@
     top: 0;
     z-index: var(--z-base);
     background: var(--color-bg-secondary);
-    font-weight: 600;
-    font-size: 0.6875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     color: var(--color-text-secondary);
@@ -288,7 +288,7 @@
 
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--color-text-secondary);
   }
 
@@ -302,7 +302,7 @@
     padding: var(--space-0-5) var(--space-1-5);
     border-radius: 3px;
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     background: rgba(var(--accent-rgb), 0.15);
@@ -350,7 +350,7 @@
       width: 100%;
       min-height: 44px;
       height: auto;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

@@ -184,7 +184,7 @@
   .search-input {
     width: 100%;
     padding: 0.6rem var(--space-3) 0.6rem var(--space-8);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .search-loading {
@@ -241,15 +241,15 @@
   }
 
   .result-name {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .result-detail {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -269,7 +269,7 @@
 
   .search-hint {
     padding: var(--space-1-5) var(--space-2);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     text-align: center;
   }

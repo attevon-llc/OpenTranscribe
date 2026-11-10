@@ -59,7 +59,7 @@
   .error-status {
     margin: 0 0 var(--space-3);
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--text-secondary);
@@ -74,7 +74,7 @@
 
   .error-body {
     margin: 0 0 1.75rem;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     line-height: 1.5;
     color: var(--text-secondary);
     word-break: break-word;
@@ -96,8 +96,8 @@
     min-height: 44px;
     padding: 0.6rem var(--space-6);
     border-radius: var(--radius-lg);
-    font-weight: 600;
-    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-base);
     cursor: pointer;
     transition: background-color var(--duration-base) ease, transform var(--duration-base) ease;
   }

@@ -140,7 +140,7 @@
 
   .warning.over {
     color: var(--error-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .token-breakdown {
@@ -148,7 +148,7 @@
     grid-template-columns: auto 1fr;
     gap: 0.15rem var(--space-3);
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   dt {

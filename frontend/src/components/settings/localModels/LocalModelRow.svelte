@@ -176,7 +176,7 @@
   .bytes {
     display: block;
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
   .row-error {

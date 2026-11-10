@@ -223,8 +223,8 @@
     border-bottom: 2px solid transparent;
     border-radius: 0;
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     cursor: pointer;
     box-shadow: none;
@@ -267,13 +267,13 @@
 
   .detail-row-total {
     border-top: 2px solid var(--border-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-top: var(--space-1);
     padding-top: var(--space-3);
   }
 
   .detail-label {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     display: flex;
     flex-direction: column;
@@ -281,14 +281,14 @@
   }
 
   .detail-sublabel {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     opacity: 0.7;
   }
 
   .detail-value {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     text-align: right;
   }
@@ -299,7 +299,7 @@
 
   .detail-value.model-name {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .model-detail-row {
@@ -321,11 +321,11 @@
   }
 
   .model-engine-row .detail-label {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .model-engine-row .detail-value {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .fallback-warning-row {
@@ -347,9 +347,9 @@
   }
 
   .fallback-warning-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-color);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   :global([data-theme='dark']) .fallback-warning-row {
@@ -362,7 +362,7 @@
   }
 
   .subsection-title {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
     margin: var(--space-5) 0 var(--space-2) 0;
@@ -372,7 +372,7 @@
     text-align: center;
     padding: var(--space-6);
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     font-style: italic;
   }
 

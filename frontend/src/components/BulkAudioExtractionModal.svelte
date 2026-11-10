@@ -164,8 +164,8 @@
     padding: var(--space-3) var(--space-4);
     background: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
@@ -204,14 +204,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--text-color);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .file-size {
     flex-shrink: 0;
     color: var(--text-secondary);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
   }
 
   .regular-files-notice {
@@ -223,7 +223,7 @@
     border: 1px solid rgba(var(--accent-rgb), 0.2);
     border-radius: var(--radius-md);
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     margin-bottom: var(--space-4);
   }
 
@@ -250,15 +250,15 @@
   }
 
   .comparison-label {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-bottom: var(--space-2);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .comparison-value {
     font-size: 1.1rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     padding: var(--space-2);
     border-radius: var(--radius-md);
   }
@@ -289,8 +289,8 @@
     border: 1px solid rgba(16, 185, 129, 0.2);
     border-radius: var(--radius-lg);
     color: #10b981;
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
   }
 
   .modal-button {
@@ -298,7 +298,7 @@
     border: none;
     border-radius: var(--radius-xl);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     min-width: 140px;

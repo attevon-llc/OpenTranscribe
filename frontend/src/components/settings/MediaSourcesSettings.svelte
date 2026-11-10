@@ -455,14 +455,14 @@
 
   .empty-state h4 {
     margin: 0 0 var(--space-2);
-    font-size: 1rem;
-    font-weight: 500;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .empty-state p {
     margin: 0 0 var(--space-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -477,8 +477,8 @@
     padding: var(--space-2) 1.1rem;
     border-radius: var(--radius-lg);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);
   }
@@ -542,8 +542,8 @@
   }
 
   .source-hostname {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     display: flex;
     align-items: center;
@@ -554,7 +554,7 @@
   .hostname-badge {
     font-size: 0.65rem;
     text-transform: uppercase;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     background: var(--primary-color);
     color: var(--text-on-solid);
     padding: 0.1rem 0.35rem;
@@ -566,7 +566,7 @@
   .shared-badge {
     font-size: 0.6rem;
     text-transform: uppercase;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     background: rgba(34, 197, 94, 0.15);
     color: #16a34a;
     padding: 0.1rem 0.35rem;
@@ -582,7 +582,7 @@
   .admin-badge {
     font-size: 0.6rem;
     text-transform: uppercase;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
     padding: 0.1rem 0.35rem;
@@ -591,7 +591,7 @@
   }
 
   .source-label {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -611,7 +611,7 @@
     font-size: 0.65rem;
     padding: 0.15rem 0.4rem;
     border-radius: var(--radius-sm);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -668,14 +668,14 @@
   }
 
   .share-label {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .delete-confirm {
     display: flex;
     align-items: center;
     gap: var(--space-1-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -699,8 +699,8 @@
   }
 
   .form-field label {
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
@@ -734,7 +734,7 @@
 
   .btn-sm {
     padding: var(--space-1) var(--space-2);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     border-radius: var(--radius-md);
   }
 
@@ -787,8 +787,8 @@
     border-radius: var(--radius-lg);
     background: var(--primary-color);
     color: var(--text-on-solid);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);

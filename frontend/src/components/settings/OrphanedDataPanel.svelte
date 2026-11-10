@@ -300,7 +300,7 @@
   .orphans-title {
     margin: 0;
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -341,7 +341,7 @@
 
   .orphan-card-title {
     margin-bottom: var(--space-1-5);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -358,7 +358,7 @@
   }
 
   .orphan-val {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-family: monospace;
     color: var(--text-color);
   }
@@ -370,7 +370,7 @@
 
   .muted {
     margin: var(--space-1-5) 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 

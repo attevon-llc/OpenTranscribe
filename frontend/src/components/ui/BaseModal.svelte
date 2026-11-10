@@ -222,7 +222,7 @@
 
   .modal-header h2 {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     color: var(--text-primary);
   }
 
@@ -308,8 +308,8 @@
     min-height: 2.375rem;
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-lg);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
   }
 
   :global([data-theme='dark']) .modal-backdrop {

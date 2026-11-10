@@ -199,7 +199,7 @@
 <style>
   .step {
     margin: 0 0 var(--space-3) 0;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     color: var(--text-color);
   }
   .step:focus {
@@ -217,7 +217,7 @@
     border-radius: var(--radius-md);
     background: var(--warning-bg);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
   }
   .confirm-form {
@@ -225,7 +225,7 @@
   }
   .max {
     margin: calc(-1 * var(--space-2)) 0 var(--space-4) 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
   .field {
@@ -234,8 +234,8 @@
   .label {
     display: block;
     margin-bottom: 0.35rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
   input[type='text'] {
@@ -243,7 +243,7 @@
   }
   .hint {
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
   .error {
@@ -253,6 +253,6 @@
     border-radius: var(--radius-md);
     background: var(--error-background);
     color: var(--error-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 </style>

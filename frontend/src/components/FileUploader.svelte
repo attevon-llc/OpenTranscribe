@@ -950,8 +950,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     border: 2px solid var(--border-color);
     background: var(--background-color);
     color: var(--text-secondary);
@@ -981,7 +981,7 @@
   /* Label */
   .step-label {
     font-size: 0.65rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;
     transition: color var(--duration-base) ease;
@@ -992,7 +992,7 @@
    * WCAG AA. The on-surface token inverts to a light blue in dark mode. Caught by #972's
    * dark-theme axe scan; the light-only scan had always passed. The `.visited` rule is
    * the worst of the three, since it then multiplies by opacity 0.7. */
-  .step-item.active .step-label { color: var(--primary-on-surface); font-weight: 600; }
+  .step-item.active .step-label { color: var(--primary-on-surface); font-weight: var(--font-weight-semibold); }
   .step-item.completed .step-label { color: var(--primary-on-surface); }
   .step-item.visited .step-label { color: var(--primary-on-surface); opacity: 0.7; }
 
@@ -1055,7 +1055,7 @@
     cursor: pointer;
     color: var(--text-secondary);
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     border-radius: var(--radius-md) var(--radius-md) 0 0;
     transition: all var(--duration-base) ease;
     position: relative;
@@ -1067,7 +1067,7 @@
   .tab-button:disabled:hover { background: transparent; color: var(--text-secondary); }
 
   /* ── Messages ── */
-  .message { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-lg); margin-bottom: var(--space-3); font-size: 0.8125rem; }
+  .message { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-lg); margin-bottom: var(--space-3); font-size: var(--font-size-sm); }
   .message-icon { flex-shrink: 0; }
   .message-content { flex: 1; }
 
@@ -1078,7 +1078,7 @@
     color: var(--primary-on-surface);
   }
 
-  .duplicate-message strong { display: block; margin-bottom: var(--space-1); font-size: 0.875rem; }
+  .duplicate-message strong { display: block; margin-bottom: var(--space-1); font-size: var(--font-size-md); }
   .duplicate-message p { margin: 0 0 var(--space-2) 0; line-height: 1.4; }
 
   .btn-acknowledge {
@@ -1088,8 +1088,8 @@
     border: none;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    font-weight: 500;
-    font-size: 0.8125rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
     transition: background var(--duration-fast) ease;
   }
 
@@ -1104,7 +1104,7 @@
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: var(--radius-lg);
     color: var(--text-primary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     margin-bottom: var(--space-3);
   }
 
@@ -1121,7 +1121,7 @@
     border: 1px solid rgba(220, 38, 38, 0.2);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: #dc2626;
     width: 100%;
   }
@@ -1173,8 +1173,8 @@
     gap: var(--space-1-5);
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-lg);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-fast) ease;
     white-space: nowrap;
@@ -1193,7 +1193,7 @@
     background: rgba(var(--accent-rgb), 0.08);
     border: 1px solid var(--primary-color);
     color: var(--primary-on-surface);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .nav-review-defaults:hover {
@@ -1234,7 +1234,7 @@
   @media (max-width: 480px) {
     .step-label { display: none; }
     .step-line { min-width: 12px; }
-    .tab-button { padding: var(--space-2) var(--space-2-5); font-size: 0.8125rem; }
+    .tab-button { padding: var(--space-2) var(--space-2-5); font-size: var(--font-size-sm); }
     .tab-button svg { width: 16px; height: 16px; }
   }
 

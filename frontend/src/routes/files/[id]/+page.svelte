@@ -919,8 +919,8 @@
     padding: var(--space-2-5) var(--space-5);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
   }
 
   .error-container button:hover {
@@ -929,8 +929,8 @@
 
   .back-to-gallery-link {
     color: var(--primary-on-surface);
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     text-decoration: none;
   }
 
@@ -973,7 +973,7 @@
     flex-shrink: 0;
     margin: 0;
     font-size: 18px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 

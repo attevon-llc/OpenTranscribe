@@ -449,7 +449,7 @@
     height: auto;
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-sm);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-decoration: none;
   }
 

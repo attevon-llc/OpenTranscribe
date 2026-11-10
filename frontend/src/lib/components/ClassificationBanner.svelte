@@ -165,7 +165,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     padding: var(--space-1) var(--space-2);
     font-family: 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif;
     font-weight: 700;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     letter-spacing: 0.5px;
     text-transform: uppercase;
     /* Same tier as ToastContainer (H5) — both are globally-rendered and can be
@@ -227,8 +227,8 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .consent-header h2 {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -241,7 +241,7 @@ By using this IS (which includes any device attached to this IS), you consent to
   .classification-badge {
     padding: var(--space-1) var(--space-3);
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-weight: 700;
     letter-spacing: 0.5px;
     background-color: rgba(255, 255, 255, 0.2);
@@ -269,7 +269,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     background-color: #fef3c7;
     color: #7c2d12;
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .consent-error {
@@ -279,7 +279,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     border-radius: var(--radius-sm);
     background-color: #fee2e2;
     color: #7f1d1d;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .consent-text {
@@ -313,7 +313,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     padding: var(--space-3) var(--space-6);
     border-radius: var(--radius-md);
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     border: none;

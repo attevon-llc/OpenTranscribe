@@ -17,7 +17,7 @@
     gap: var(--space-1-5);
     padding: 0.3rem var(--space-2-5);
     border-radius: var(--radius-3xl);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     border: 1px solid var(--border-color);
     background: var(--surface-color);
     white-space: nowrap;
@@ -33,12 +33,12 @@
 
   .chip-label {
     color: var(--text-secondary);
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
   }
 
   .chip-value {
     color: var(--text-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   /* Green */

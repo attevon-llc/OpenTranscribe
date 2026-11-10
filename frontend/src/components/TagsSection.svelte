@@ -115,8 +115,8 @@
 
   .section-heading {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -132,8 +132,8 @@
     color: var(--primary-on-surface);
     padding: 3px var(--space-2);
     border-radius: var(--radius-2xl);
-    font-size: 11px;
-    font-weight: 500;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -144,7 +144,7 @@
 
   .no-tags {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-style: italic;
   }
 

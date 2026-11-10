@@ -209,7 +209,7 @@
     padding: var(--space-2) var(--space-2-5);
     border-radius: var(--radius-md);
     color: var(--text-color);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     cursor: pointer;
   }
   .searchable-option.highlighted {
@@ -222,7 +222,7 @@
     justify-content: center;
     padding: var(--space-4) var(--space-3);
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
   }
   .searchable-spinner {
     width: 16px;

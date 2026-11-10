@@ -237,7 +237,7 @@
 
   .mfa-enroll h2 {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     color: var(--text-color);
   }
 
@@ -253,7 +253,7 @@
   .enroll-lead,
   .enroll-instruction {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-light);
   }
 
@@ -293,7 +293,7 @@
   .manual-entry-label {
     display: block;
     margin-bottom: var(--space-1-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-light);
   }
 
@@ -305,7 +305,7 @@
     background-color: var(--background-color);
     color: var(--text-color);
     font-family: monospace;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     word-break: break-all;
     user-select: all;
   }
@@ -319,13 +319,13 @@
 
   .verify-form label {
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .code-input {
     font-family: monospace;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     letter-spacing: 0.25em;
     text-align: center;
   }

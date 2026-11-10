@@ -178,21 +178,21 @@
     border-color: rgba(var(--primary-color-rgb), 0.35);
     background-color: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .chip-off {
     border-color: rgba(var(--warning-color-rgb), 0.5);
     background-color: rgba(var(--warning-color-rgb), 0.12);
     color: var(--text-color);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .chip-speaker {
     border-color: rgba(var(--primary-color-rgb), 0.35);
     background-color: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     max-width: 16rem;
   }
 

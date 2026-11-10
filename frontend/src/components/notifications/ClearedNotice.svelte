@@ -39,7 +39,7 @@
     border-bottom: 1px solid var(--border-color);
     background: var(--background-color);
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   button {

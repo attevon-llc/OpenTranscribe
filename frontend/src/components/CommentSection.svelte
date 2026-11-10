@@ -377,8 +377,8 @@
 
   .section-heading {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -393,8 +393,8 @@
     color: var(--primary-on-surface);
     padding: 3px var(--space-2);
     border-radius: var(--radius-2xl);
-    font-size: 11px;
-    font-weight: 500;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -402,7 +402,7 @@
     /* Sits on the slate-100 secondary surface, where --text-secondary is 4.34:1 —
      * under WCAG AA, and italic 12px is the least legible text on the page. */
     color: var(--text-on-tint);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-style: italic;
   }
 

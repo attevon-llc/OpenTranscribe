@@ -137,7 +137,7 @@
   .approvals-loading {
     padding: var(--space-4) 0;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .approvals {
@@ -156,14 +156,14 @@
 
   .approvals-head h4 {
     margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .approvals-note {
     margin: 0.35rem 0 0.85rem 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -175,14 +175,14 @@
   .approvals-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .approvals-table th {
     text-align: left;
     padding: 0.4rem 0.6rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-secondary);
@@ -199,13 +199,13 @@
 
   .email {
     display: block;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     word-break: break-all;
   }
 
   .name {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -226,7 +226,7 @@
 
   .btn-row {
     padding: 0.3rem 0.7rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     margin-left: 0.35rem;
   }
 

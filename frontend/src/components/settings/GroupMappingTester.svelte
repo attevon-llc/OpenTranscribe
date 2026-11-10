@@ -205,14 +205,14 @@
 
   .tester-head h4 {
     margin: 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text-secondary);
   }
 
   .tester-note {
     margin: 0 0 var(--space-3) 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
     line-height: 1.5;
   }
@@ -228,7 +228,7 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     /* Without this the flex row shrinks each label to its longest word and
        stacks "Paste / claim / values" vertically. */
@@ -248,8 +248,8 @@
   }
 
   .form-group label {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -263,7 +263,7 @@
 
   .help-text {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
     line-height: 1.45;
   }
@@ -293,7 +293,7 @@
 
   .result-label {
     min-width: 9rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--color-text-secondary);
   }
@@ -305,13 +305,13 @@
   }
 
   .muted {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-tertiary);
   }
 
   .result-note {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
     line-height: 1.5;
   }

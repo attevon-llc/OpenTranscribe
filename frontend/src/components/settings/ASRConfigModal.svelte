@@ -519,8 +519,8 @@
 
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -538,14 +538,14 @@
   }
 
   .form-group label {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .form-input, .form-select {
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-select {
@@ -568,7 +568,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     white-space: nowrap;
   }
@@ -587,7 +587,7 @@
     color: var(--primary-on-surface);
     border-radius: var(--radius-sm);
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .experimental-warning {
@@ -624,14 +624,14 @@
 
   .field-hint {
     margin: var(--space-1) 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     font-style: italic;
   }
 
   .pricing-disclaimer {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     font-style: italic;
   }
@@ -642,7 +642,7 @@
     gap: var(--space-2);
     padding: var(--space-2-5) var(--space-3-5);
     border-radius: var(--radius-md);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .test-result.success {
@@ -671,8 +671,8 @@
     align-items: center;
     gap: var(--space-2);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 400;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
     user-select: none;
   }
 
@@ -737,8 +737,8 @@
     background: var(--primary-color);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
@@ -760,7 +760,7 @@
     color: var(--text-color);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     transition: all var(--duration-fast);
     box-shadow: var(--shadow-md);
   }
@@ -783,8 +783,8 @@
     border: none;
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: background var(--duration-fast);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
@@ -818,7 +818,7 @@
     .form-group input,
     .form-group select {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 

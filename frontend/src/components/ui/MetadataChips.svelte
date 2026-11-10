@@ -107,7 +107,7 @@
 
   .chip-overflow {
     align-self: center;
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 

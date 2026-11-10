@@ -64,8 +64,8 @@
   }
 
   .section-title {
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-3);
     color: var(--text-primary);
     border-bottom: 2px solid var(--border-color);
@@ -93,7 +93,7 @@
     align-items: center;
     gap: var(--space-2);
     font-size: 1.1rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin: 0 0 var(--space-2) 0;
     line-height: 1.3;
@@ -152,7 +152,7 @@
     }
 
     .topic-heading {
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

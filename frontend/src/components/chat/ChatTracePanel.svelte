@@ -210,7 +210,7 @@
   .trace-title {
     margin: 0;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -224,7 +224,7 @@
     border-radius: var(--radius-pill);
     color: var(--text-secondary);
     font-size: 0.6rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     cursor: help;

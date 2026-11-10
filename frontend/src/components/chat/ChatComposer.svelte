@@ -258,7 +258,7 @@
 
   .counter.over {
     color: var(--error-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .ai-disclaimer {

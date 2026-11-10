@@ -331,7 +331,7 @@
   .intro,
   .tradeoffs {
     margin: 0 0 var(--space-4) 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--color-text-secondary);
   }
@@ -378,13 +378,13 @@
   }
 
   .tier-name {
-    font-weight: 600;
-    font-size: 0.9375rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-body);
     color: var(--color-text);
   }
 
   .tier-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     color: var(--color-text-secondary);
   }
@@ -395,7 +395,7 @@
     border-radius: var(--radius-sm);
     padding: var(--space-3);
     margin-bottom: var(--space-4);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .policy-preview ul {
@@ -410,7 +410,7 @@
     border-radius: var(--radius-md);
     background: var(--color-info-bg);
     color: var(--color-text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.5;
   }
 
@@ -434,8 +434,8 @@
   .form-group label {
     display: block;
     margin-bottom: var(--space-2);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -452,7 +452,7 @@
   .help-text {
     display: block;
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
 
@@ -463,7 +463,7 @@
 
   .field-error {
     margin: calc(-1 * var(--space-2)) 0 var(--space-4) 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--error-solid);
   }
 
@@ -479,7 +479,7 @@
     align-items: center;
     gap: var(--space-2);
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     margin-bottom: var(--space-2);
   }
 
@@ -498,7 +498,7 @@
     padding: 0.6rem var(--space-3);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--color-text-secondary);
   }
@@ -512,7 +512,7 @@
   .list-status code {
     display: block;
     margin-top: 0.35rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     user-select: all;
   }
 

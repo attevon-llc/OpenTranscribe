@@ -65,7 +65,7 @@
     border-radius: var(--radius-md);
     color: var(--text-color);
     font-size: 0.8rem;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     padding: 0.35rem 0.7rem;
     cursor: pointer;
     transition: all var(--duration-base) ease;

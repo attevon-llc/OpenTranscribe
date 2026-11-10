@@ -183,7 +183,7 @@
 
   .header-title {
     margin: 0;
-    font-size: 16px;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
@@ -295,7 +295,7 @@
     }
 
     .header-title {
-      font-size: 15px;
+      font-size: var(--font-size-body);
     }
 
     .icon-btn {

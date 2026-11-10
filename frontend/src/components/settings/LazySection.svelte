@@ -87,7 +87,7 @@
 
   .section-load-error p {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 </style>

@@ -962,8 +962,8 @@
   }
 
   .filter-header h2 {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     margin: 0;
   }
 
@@ -979,8 +979,8 @@
     border-radius: var(--radius-md);
     color: var(--text-secondary);
     padding: 0.3rem 0.7rem;
-    font-size: 0.75rem;
-    font-weight: 400;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -1018,7 +1018,7 @@
 
   .filter-section h3 {
     font-size: var(--font-size-xs);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin: 0;
   }
@@ -1068,7 +1068,7 @@
     direction: ltr;
     display: flex;
     justify-content: space-between;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-bottom: var(--space-1);
     font-variant-numeric: tabular-nums;
@@ -1077,7 +1077,7 @@
   .slider-wrapper {
     direction: ltr;
     padding: 0 var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   /* Status row for the dropdown's server-side speaker search. */
@@ -1096,7 +1096,7 @@
     border-radius: var(--radius-md);
     color: var(--text-color);
     padding: 0.3rem 0.8rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -1128,7 +1128,7 @@
 
   /* Input help text */
   .input-help {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-top: var(--space-1);
     display: block;

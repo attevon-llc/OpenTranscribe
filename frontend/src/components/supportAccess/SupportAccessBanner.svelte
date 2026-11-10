@@ -158,7 +158,7 @@
     background: var(--warning-bg);
     border-bottom: 2px solid var(--warning-color);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
   .banner.break-glass {
     background: var(--error-background);
@@ -172,7 +172,7 @@
     min-width: 0;
   }
   .what {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     overflow-wrap: anywhere;
   }
   .buttons {
@@ -181,7 +181,7 @@
   }
   .buttons .btn {
     padding: var(--space-1) 0.7rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
   .sr-only {
     position: absolute;

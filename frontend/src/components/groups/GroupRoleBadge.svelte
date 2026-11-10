@@ -21,8 +21,8 @@
     align-items: center;
     padding: var(--space-0-5) var(--space-2);
     border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     line-height: 1.25rem;
     white-space: nowrap;
   }

@@ -164,7 +164,7 @@
     font-size: 0.7rem;
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .type-badge {
     background: var(--button-hover);
@@ -191,7 +191,7 @@
     color: var(--text-secondary);
   }
   .source-name {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-size: 0.95rem;
   }
   .source-meta {
@@ -203,7 +203,7 @@
   }
   .disk-banner {
     margin-top: var(--space-1-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--warning-color);
   }
   .source-actions {

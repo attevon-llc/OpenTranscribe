@@ -264,7 +264,7 @@
     width: 100%;
     min-width: 0;
     padding: var(--space-2) var(--space-8) var(--space-2) var(--space-3);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     box-sizing: border-box;
   }
 
@@ -278,8 +278,8 @@
     border: none;
     background: var(--primary-color);
     color: var(--text-on-solid);
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     white-space: nowrap;
     box-shadow: var(--shadow-primary);
@@ -302,7 +302,7 @@
   }
 
   .last-clustered-chip {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     /* 11px on the hover tint — --text-secondary measures 4.34:1 here, under AA. */
     color: var(--text-on-tint);
     background: var(--hover-color);
@@ -343,7 +343,7 @@
   .progress-text {
     display: block;
     margin-top: var(--space-1);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -357,7 +357,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin: var(--space-4) 0 var(--space-1);
@@ -405,7 +405,7 @@
 
   .section-empty-note {
     padding: var(--space-3) var(--space-6);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     font-style: italic;
   }
@@ -413,7 +413,7 @@
   .loading-members {
     padding: var(--space-3);
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
   }
 
   .pagination {
@@ -422,7 +422,7 @@
     justify-content: center;
     gap: var(--space-4);
     margin-top: var(--space-4);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
@@ -434,7 +434,7 @@
     color: var(--text-color);
     cursor: pointer;
     box-shadow: none;
-    font-size: 14px;
+    font-size: var(--font-size-md);
   }
 
   .pagination button:hover:not(:disabled) {
@@ -458,7 +458,7 @@
     border: 1px solid var(--primary-color);
     border-radius: var(--radius-md);
     margin-bottom: var(--space-3);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--primary-on-surface);
   }
 
@@ -476,7 +476,7 @@
     background: var(--card-background);
     color: var(--text-color);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     box-shadow: none;
   }
 
@@ -507,7 +507,7 @@
       flex: 1;
       min-width: 0;
       padding: var(--space-2) var(--space-3);
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
 
     .last-clustered-chip {
@@ -519,7 +519,7 @@
     .merge-banner {
       flex-wrap: wrap;
       padding: var(--space-2) var(--space-3);
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
 
     .merge-banner span {
@@ -528,18 +528,18 @@
     }
 
     .section-heading-btn {
-      font-size: 12px;
+      font-size: var(--font-size-xs);
       padding: var(--space-1) var(--space-0-5);
     }
 
     .pagination {
       gap: var(--space-2);
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
 
     .pagination button {
       padding: var(--space-1-5) var(--space-2-5);
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
   }
 </style>

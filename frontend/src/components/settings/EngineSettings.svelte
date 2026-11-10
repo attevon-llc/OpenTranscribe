@@ -352,8 +352,8 @@
   }
 
   .section-title {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0;
   }
@@ -372,7 +372,7 @@
   .form-select {
     width: 100%;
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     height: 36px;
     cursor: pointer;
   }
@@ -385,7 +385,7 @@
   .form-input {
     width: 100%;
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     box-sizing: border-box;
   }
 
@@ -452,7 +452,7 @@
     font-size: 0.775rem;
     color: var(--text-muted);
     line-height: 1.4;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
   }
 
   .form-actions {
@@ -468,8 +468,8 @@
     gap: var(--space-1-5);
     padding: var(--space-2) var(--space-5);
     border-radius: var(--radius-md);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-fast);
     border: none;
@@ -510,7 +510,7 @@
 
   .scope-note {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     line-height: 1.4;
   }

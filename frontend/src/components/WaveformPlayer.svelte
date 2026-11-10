@@ -426,7 +426,7 @@
     align-items: center;
     justify-content: center;
     color: var(--text-secondary);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     gap: var(--space-2);
     background-color: var(--surface-color);
   }
@@ -444,7 +444,7 @@
     border: none;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     transition: background-color var(--duration-base) ease;
   }
 
@@ -475,7 +475,7 @@
     .waveform-loading,
     .waveform-error,
     .waveform-placeholder {
-      font-size: 13px;
+      font-size: var(--font-size-sm);
       height: 60px;
     }
   }

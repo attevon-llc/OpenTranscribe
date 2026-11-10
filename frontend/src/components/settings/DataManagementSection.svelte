@@ -167,7 +167,7 @@
   .tab-heading {
     margin: 0;
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 

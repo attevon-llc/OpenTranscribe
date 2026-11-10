@@ -232,7 +232,7 @@
   .description {
     flex: 1 1 18rem;
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     line-height: 1.5;
     color: var(--text-secondary);
   }
@@ -252,7 +252,7 @@
     margin: var(--space-6) 0;
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
   .state.error {
     color: var(--error-color);

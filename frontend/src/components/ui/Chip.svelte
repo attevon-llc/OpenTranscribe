@@ -51,8 +51,8 @@
     gap: var(--space-1-5);
     padding: 3px var(--space-2-5);
     border-radius: 14px;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     white-space: nowrap;
     border: 1px solid transparent;

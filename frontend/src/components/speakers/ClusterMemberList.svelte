@@ -211,7 +211,7 @@
     gap: var(--space-2);
     padding: var(--space-1-5) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     min-width: 0;
   }
 
@@ -220,7 +220,7 @@
   }
 
   .member-name {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     min-width: 80px;
     overflow: hidden;
@@ -241,11 +241,11 @@
 
   .member-confidence {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
   }
 
   .verified-badge {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--success-color) 15%, transparent);
@@ -315,16 +315,16 @@
     padding: var(--space-2) var(--space-2) var(--space-1);
     margin-top: var(--space-2);
     border-top: 1px dashed var(--warning-color);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--warning-color);
     flex-wrap: wrap;
     min-width: 0;
   }
 
   .separator-hint {
-    font-weight: 400;
-    font-size: 11px;
+    font-weight: var(--font-weight-regular);
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -336,13 +336,13 @@
     padding: var(--space-1-5) var(--space-2) var(--space-0-5);
     margin-top: var(--space-1);
     border-top: 1px solid var(--border-color);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
   .outlier-loading {
     padding: var(--space-1-5) var(--space-2);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-style: italic;
   }
@@ -350,7 +350,7 @@
   /* Outlier badges */
   .outlier-badge {
     font-size: 10px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-lg);
     white-space: nowrap;
@@ -378,7 +378,7 @@
     border: 1px solid var(--color-warning-border);
     border-radius: var(--radius-md);
     margin-bottom: var(--space-2);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--warning-color);
   }
 
@@ -399,7 +399,7 @@
     background: var(--card-background);
     color: var(--text-color);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     box-shadow: none;
   }
 
@@ -416,7 +416,7 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     box-shadow: none;
   }
 
@@ -435,17 +435,17 @@
     .member-row {
       gap: var(--space-1-5);
       padding: var(--space-1-5) var(--space-1);
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
 
     .member-name {
       min-width: 60px;
       max-width: 120px;
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
 
     .member-confidence {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
     }
 
     .outlier-badge {
@@ -460,7 +460,7 @@
 
     .mode-banner {
       padding: var(--space-1-5) var(--space-2);
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
 
     .mode-actions {
@@ -470,11 +470,11 @@
     .btn-cancel,
     .btn-confirm {
       padding: 5px var(--space-2-5);
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
 
     .gender-separator {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
       gap: var(--space-1);
     }
 

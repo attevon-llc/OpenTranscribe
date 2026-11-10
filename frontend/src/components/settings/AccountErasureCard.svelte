@@ -251,7 +251,7 @@
 
   .title {
     margin: 0;
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
@@ -260,7 +260,7 @@
   .hint,
   .scheduled {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
@@ -277,11 +277,11 @@
     margin: 0;
     display: grid;
     gap: var(--space-1);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .receipt dt {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -293,7 +293,7 @@
   .mono {
     display: block;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     overflow-wrap: anywhere;
     text-align: left;
     color: var(--text-color);
@@ -309,14 +309,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1-5);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .actions {
@@ -342,7 +342,7 @@
   .notice {
     margin: 0;
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     border-radius: var(--radius-md);
     background: #fef3c7;
     color: #78350f;
@@ -357,7 +357,7 @@
 
   .error {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--error-color);
   }
 </style>

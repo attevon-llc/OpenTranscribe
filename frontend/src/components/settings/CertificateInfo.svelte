@@ -122,8 +122,8 @@
     color: var(--text-on-solid);
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-md);
-    font-weight: 600;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
   }
 
   .warning-banner {
@@ -132,8 +132,8 @@
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-md);
     margin-bottom: var(--space-4);
-    font-weight: 500;
-    font-size: 0.8125rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
     border: 1px solid rgba(234, 179, 8, 0.3);
   }
 
@@ -179,7 +179,7 @@
 
   .cert-item span,
   .cert-item pre {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
@@ -190,7 +190,7 @@
     background: var(--surface-color);
     padding: var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     border: 1px solid var(--border-color);
     font-family: 'Courier New', Courier, monospace;
   }
@@ -206,7 +206,7 @@
 
   .expired {
     color: #dc2626;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   :global([data-theme='dark']) .expired {

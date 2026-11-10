@@ -410,7 +410,7 @@
   .edit-btn.primary {
     border-color: var(--primary-color);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .timestamp {

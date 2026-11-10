@@ -376,7 +376,7 @@
 
   .loading-state p {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .mfa-disabled-notice {
@@ -395,13 +395,13 @@
 
   .notice-content h4 {
     margin: 0 0 var(--space-1) 0;
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body);
     color: var(--text-color);
   }
 
   .notice-content p {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -444,13 +444,13 @@
 
   .status-content h4 {
     margin: 0 0 var(--space-1) 0;
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body);
     color: var(--text-color);
   }
 
   .status-content p {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -462,7 +462,7 @@
     background-color: rgba(var(--primary-color-rgb), 0.1);
     border-radius: var(--radius-md);
     color: var(--primary-on-surface);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .setup-section, .disable-section, .backup-codes-section {
@@ -475,13 +475,13 @@
 
   .setup-section h4, .disable-section h4 {
     margin: 0 0 var(--space-2) 0;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     color: var(--text-color);
   }
 
   .setup-instruction {
     margin: 0 0 var(--space-4) 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -510,7 +510,7 @@
     border: none;
     color: var(--primary-on-surface);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     text-decoration: underline;
     padding: 0;
   }
@@ -526,7 +526,7 @@
 
   .manual-entry-label {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-bottom: var(--space-2);
   }
@@ -538,7 +538,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     font-family: monospace;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     word-break: break-all;
     user-select: all;
   }
@@ -549,8 +549,8 @@
 
   .verify-section label {
     display: block;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     margin-bottom: var(--space-2);
   }
@@ -565,14 +565,14 @@
     flex: 1;
     max-width: 200px;
     text-align: center;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     font-family: monospace;
     letter-spacing: 0.25em;
   }
 
   .disable-warning {
     margin: 0 0 var(--space-4) 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--error-color);
   }
 
@@ -590,7 +590,7 @@
 
   .backup-header h4 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     color: var(--text-color);
   }
 
@@ -598,15 +598,15 @@
     padding: var(--space-1) var(--space-2);
     background-color: var(--warning-color);
     color: var(--text-on-solid);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     border-radius: var(--radius-sm);
   }
 
   .backup-warning {
     margin: 0 0 var(--space-4) 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -623,7 +623,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     font-family: monospace;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     text-align: center;
   }
 
@@ -641,7 +641,7 @@
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   @media (max-width: 480px) {

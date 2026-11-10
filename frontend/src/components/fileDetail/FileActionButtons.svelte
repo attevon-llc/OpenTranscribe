@@ -134,7 +134,7 @@
     border-radius: var(--radius-lg);
     padding: 0 var(--space-4);
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     display: inline-flex;
@@ -191,7 +191,7 @@
 
   @media (max-width: 480px) {
     .header-action-btn {
-      font-size: 0.75rem;
+      font-size: var(--font-size-xs);
       padding: 0 var(--space-2);
       height: 32px;
       gap: var(--space-1);

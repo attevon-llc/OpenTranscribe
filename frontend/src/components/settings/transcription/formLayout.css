@@ -29,7 +29,7 @@
 
 .tx-form .section-title {
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   margin: 0;
   color: var(--text-color);
 }
@@ -47,7 +47,7 @@
   margin-top: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px dashed var(--border-color);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
 }
 
 .tx-form .defaults-label {
@@ -68,7 +68,7 @@
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: var(--radius-md);
   color: var(--error-color);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
 }
 
 .tx-form .button-row {
@@ -105,6 +105,6 @@
 
   .tx-form .number-input {
     min-height: 44px;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
   }
 }

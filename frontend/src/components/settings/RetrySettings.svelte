@@ -168,7 +168,7 @@
   }
 
   .toggle-text {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
@@ -185,7 +185,7 @@
 
   .form-input {
     padding: var(--space-1-5) var(--space-2);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .form-input:disabled {
@@ -233,7 +233,7 @@
 
     .number-input {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

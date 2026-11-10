@@ -267,7 +267,7 @@
     box-shadow: none;
     font-family: inherit;
     font-size: var(--field-font-size);
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     line-height: var(--field-line-height);
     text-align: start;
     cursor: pointer;
@@ -387,7 +387,7 @@
 
   .typed-date-field label {
     font-size: var(--font-size-xs);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
@@ -404,8 +404,8 @@
     background: transparent;
     color: var(--primary-on-surface);
     box-shadow: none;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transform: none;
   }
 
@@ -474,7 +474,7 @@
     background-color: transparent;
     box-shadow: none;
     transform: none;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     padding: 0;
   }
 
@@ -490,12 +490,12 @@
   .drp-layer :global(.datepicker .calendars-container .calendar .date span) {
     width: 34px !important;
     height: 34px !important;
-    font-size: 0.8125rem !important;
+    font-size: var(--font-size-sm) !important;
     padding: var(--space-0-5) !important;
   }
 
   .drp-layer :global(.datepicker .calendars-container .calendar .dow) {
-    font-size: 0.75rem !important;
+    font-size: var(--font-size-xs) !important;
   }
 
   :global([data-theme='dark']) .drp-layer {

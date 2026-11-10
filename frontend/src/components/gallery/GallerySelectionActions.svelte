@@ -517,8 +517,8 @@
     border: none;
     padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-xl);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     display: flex;
@@ -659,7 +659,7 @@
     border: none;
     background: none;
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     text-align: start;
     transition: background-color var(--duration-fast) ease;
@@ -736,7 +736,7 @@
   @media (max-width: 480px) {
     .action-btn {
       padding: 0.35rem 0.6rem;
-      font-size: 0.75rem;
+      font-size: var(--font-size-xs);
     }
 
     .action-separator {

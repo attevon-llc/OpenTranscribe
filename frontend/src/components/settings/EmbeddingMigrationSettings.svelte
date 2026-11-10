@@ -644,7 +644,7 @@
 
   .section-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
@@ -739,7 +739,7 @@
 
   .migration-estimate {
     margin-top: var(--space-1) !important;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -793,7 +793,7 @@
 
   .progress-percent {
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
   }
 
@@ -827,7 +827,7 @@
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: #ef4444;
   }
 
@@ -849,7 +849,7 @@
     align-items: center;
     gap: var(--space-2);
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     margin-bottom: var(--space-3);
   }
@@ -899,7 +899,7 @@
   }
 
   .reextract-hint {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 

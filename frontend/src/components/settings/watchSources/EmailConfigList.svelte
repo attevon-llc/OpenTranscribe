@@ -155,7 +155,7 @@
     font-size: 0.7rem;
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .type-badge {
     background: var(--button-hover);
@@ -175,7 +175,7 @@
     margin-left: var(--space-1-5);
   }
   .email-name {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-size: 0.95rem;
   }
   .email-from {
@@ -210,7 +210,7 @@
     align-items: center;
     gap: var(--space-1);
     font-size: 0.68rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     padding: var(--space-0-5) var(--space-2);

@@ -138,8 +138,8 @@
   }
 
   .preview-title {
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
@@ -168,13 +168,13 @@
     display: flex;
     align-items: center;
     gap: var(--space-1-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     min-width: 0;
   }
 
   .preview-time {
     font-family: monospace;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     flex-shrink: 0;
     white-space: nowrap;
@@ -205,7 +205,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--primary-on-surface);
     text-decoration: none;
     padding: var(--space-1) var(--space-2);

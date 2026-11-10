@@ -254,7 +254,7 @@
     width: 100%;
     height: 44px;
     padding: 0 var(--space-4);
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body);
     color-scheme: light dark;
   }
 
@@ -305,7 +305,7 @@
     border: none;
     background: none;
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     text-align: start;
     cursor: pointer;
     transition: background 0.1s;
@@ -329,7 +329,7 @@
   }
 
   .suggestion-type {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -350,19 +350,19 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .hint-label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .operator-hint code {
     font-family: monospace;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     background: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
     padding: var(--space-0-5) var(--space-1-5);

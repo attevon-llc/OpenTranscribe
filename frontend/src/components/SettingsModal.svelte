@@ -1297,7 +1297,7 @@
 
   .section-heading {
     font-size: var(--font-size-xs);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin: 0 var(--space-5) var(--space-1-5);
     padding-top: 0;
@@ -1322,7 +1322,7 @@
     text-align: left;
     cursor: pointer;
     transition: background-color var(--duration-fast), color var(--duration-fast);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     position: relative;
   }
 
@@ -1334,7 +1334,7 @@
   .nav-item.active {
     background-color: var(--primary-light);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   /* Present but not openable: the entry has to stay legible enough to read as a
@@ -1379,7 +1379,7 @@
     background: rgba(245, 158, 11, 0.18);
     color: #b45309;
     border: 1px solid rgba(245, 158, 11, 0.45);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     text-align: center;
@@ -1403,15 +1403,15 @@
 
   .mobile-nav-label {
     display: block;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-1);
     color: var(--text-secondary);
   }
 
   .mobile-nav-select {
     width: 100%;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     min-height: 44px;
   }
 
@@ -1421,7 +1421,7 @@
 
   .section-title {
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
@@ -1438,7 +1438,7 @@
   }
 
   .section-description {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0 0 var(--space-5) 0;
   }
@@ -1456,14 +1456,14 @@
   }
 
   .form-group label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control:disabled {
@@ -1472,7 +1472,7 @@
   }
 
   .form-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-top: var(--space-0-5);
   }
@@ -1483,7 +1483,7 @@
     gap: var(--space-2);
     cursor: pointer;
     font-weight: normal;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .checkbox-label input[type="checkbox"] {
@@ -1507,8 +1507,8 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     border: none;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }

@@ -129,7 +129,7 @@
     border-radius: var(--radius-md);
     background: var(--surface-color);
     color: var(--text-color);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     cursor: pointer;
     transition: all var(--duration-fast);
   }

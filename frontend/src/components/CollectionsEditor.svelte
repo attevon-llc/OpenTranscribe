@@ -390,7 +390,7 @@
     background: none;
     border: none;
     color: var(--text-light);
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     cursor: pointer;
     padding: 0;
     display: flex;

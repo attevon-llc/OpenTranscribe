@@ -202,7 +202,7 @@
     margin-left: -0.35rem;
     border-radius: var(--radius-md);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 
@@ -225,7 +225,7 @@
 
   dt {
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   dd {
@@ -284,7 +284,7 @@
     background-color: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
     font-size: 0.76rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
   }
 

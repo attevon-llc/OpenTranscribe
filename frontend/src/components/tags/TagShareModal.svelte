@@ -136,7 +136,7 @@
   .share-note,
   .share-empty {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -169,7 +169,7 @@
   .share-kind {
     flex-shrink: 0;
     font-size: 10px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--text-secondary);

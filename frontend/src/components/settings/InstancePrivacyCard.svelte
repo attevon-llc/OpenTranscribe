@@ -168,14 +168,14 @@
 
   .heading {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .intro {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-secondary);
     max-width: var(--measure-prose);
@@ -188,7 +188,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 

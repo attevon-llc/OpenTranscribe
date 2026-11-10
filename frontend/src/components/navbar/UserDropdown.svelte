@@ -240,7 +240,7 @@
     border-radius: var(--radius-sm);
     color: var(--text-color);
     font-family: inherit;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
   }
 
   .user-button:hover {
@@ -256,11 +256,11 @@
     border-radius: var(--radius-round);
     background-color: var(--primary-color);
     color: var(--text-on-solid);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .username {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -310,7 +310,7 @@
   .dropdown-header strong {
     display: block;
     color: var(--text-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-top: var(--space-1);
     word-break: break-all;
   }
@@ -332,7 +332,7 @@
     text-decoration: none !important;
     transition: all var(--duration-base) ease;
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     border: none;
     width: calc(100% - 1rem);
     text-align: start;
@@ -356,7 +356,7 @@
     padding: var(--space-2) var(--space-4) !important;
     margin: var(--space-0-5) var(--space-2) !important;
     width: calc(100% - 1rem) !important;
-    font-weight: 500 !important;
+    font-weight: var(--font-weight-medium) !important;
     border-radius: var(--radius-md) !important;
     background-color: transparent !important;
     transition: all var(--duration-base) ease !important;
@@ -379,7 +379,7 @@
     color: var(--text-color);
     text-decoration: none;
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     border: none;
     width: calc(100% - 1rem);
     text-align: start;

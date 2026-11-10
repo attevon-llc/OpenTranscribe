@@ -286,7 +286,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
@@ -304,7 +304,7 @@
   .kept,
   small {
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .warning {
@@ -369,7 +369,7 @@
   }
 
   code {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     background: var(--surface-secondary);
     border-radius: var(--radius-sm);
     padding: 0 var(--space-1);

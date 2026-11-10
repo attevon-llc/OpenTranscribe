@@ -219,13 +219,13 @@
   }
 
   .count-number {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .count-label {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -235,8 +235,8 @@
 
   .list-title {
     margin: 0 0 var(--space-2);
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
   }
 
@@ -277,7 +277,7 @@
   }
 
   .file-age {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -295,7 +295,7 @@
   .all-normal,
   .empty {
     margin: 0 0 var(--space-6);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 

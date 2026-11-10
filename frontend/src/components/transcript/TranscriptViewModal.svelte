@@ -403,8 +403,8 @@
   }
 
   .modal-title {
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin: 0;
     margin-right: var(--space-6);
@@ -445,7 +445,7 @@
     padding: 0.15rem 0.35rem;
     border-radius: var(--radius-sm);
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
     cursor: pointer;
     white-space: nowrap;
@@ -474,7 +474,7 @@
   }
 
   .search-query-echo {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -557,7 +557,7 @@
   .no-transcript h3 {
     margin: 0;
     color: var(--text-primary);
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
   }
 </style>

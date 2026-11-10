@@ -109,20 +109,20 @@
   }
 
   .title {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .help {
     margin: var(--space-1) 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     color: var(--text-secondary);
   }
 
   .note {
     margin: 0.4rem 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-color);
   }
 

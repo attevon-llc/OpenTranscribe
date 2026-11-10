@@ -339,8 +339,8 @@
     }
 
     .speaker-dropdown-portal .dropdown-header {
-      font-size: 11px;
-      font-weight: 600;
+      font-size: var(--font-size-2xs);
+      font-weight: var(--font-weight-semibold);
       text-transform: uppercase;
       color: var(--text-secondary);
       padding: var(--space-2) var(--space-3) var(--space-1) var(--space-3);
@@ -365,7 +365,7 @@
       cursor: pointer;
       transition: background-color var(--duration-fast) ease;
       color: var(--text-primary);
-      font-size: 14px;
+      font-size: var(--font-size-md);
       text-align: start;
     }
 
@@ -452,7 +452,7 @@
       flex: 1;
       min-width: 0;
       padding: var(--space-1-5) var(--space-2);
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
 
     .speaker-dropdown-portal .inline-name-save {
@@ -486,7 +486,7 @@
 
     .speaker-dropdown-portal .inline-name-hint {
       padding: 0 var(--space-3) var(--space-1-5) var(--space-3);
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
       line-height: 1.35;
       color: var(--warning-color);
     }
@@ -503,8 +503,8 @@
     .speaker-dropdown-portal .suggestion-confidence {
       flex-shrink: 0;
       margin-left: var(--space-2);
-      font-size: 11px;
-      font-weight: 600;
+      font-size: var(--font-size-2xs);
+      font-weight: var(--font-weight-semibold);
       color: var(--text-secondary);
       font-variant-numeric: tabular-nums;
     }
@@ -588,7 +588,7 @@
   }
 
   .segment-speaker {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-2xl);

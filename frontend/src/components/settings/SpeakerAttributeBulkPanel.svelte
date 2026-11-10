@@ -266,7 +266,7 @@
 
   .bulk-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0 0 var(--space-1) 0;
   }
@@ -318,7 +318,7 @@
 
   .progress-percent {
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
   }
 
@@ -344,7 +344,7 @@
   }
 
   .failed-info {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--error-color);
     margin-top: var(--space-2);
   }

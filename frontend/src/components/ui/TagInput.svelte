@@ -119,8 +119,8 @@
     align-items: center;
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-2xl);
-    font-size: 0.6875rem;
-    font-weight: 500;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
     gap: var(--space-1);
@@ -141,7 +141,7 @@
     color: inherit;
     cursor: pointer;
     padding: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     line-height: 1;
     opacity: 0.7;
     transition: opacity var(--duration-fast);
@@ -157,7 +157,7 @@
     border: none;
     outline: none;
     background: transparent;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
     padding: var(--space-0-5) var(--space-1);
   }

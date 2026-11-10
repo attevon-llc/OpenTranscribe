@@ -168,8 +168,8 @@
   }
 
   .search-title {
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0;
   }
@@ -200,7 +200,7 @@
     width: 100%;
     min-width: 120px;
     padding: var(--space-2) var(--space-2-5) var(--space-2) var(--space-8);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .search-input::placeholder {
@@ -210,7 +210,7 @@
 
   .role-picker {
     padding: var(--space-2) var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     flex-shrink: 0;
     max-width: 120px;
   }
@@ -263,7 +263,7 @@
     align-items: center;
     justify-content: center;
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     flex-shrink: 0;
   }
 
@@ -275,15 +275,15 @@
   }
 
   .result-name {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .result-email {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -292,14 +292,14 @@
 
   .no-results {
     padding: var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     text-align: center;
   }
 
   .search-hint {
     padding: var(--space-1-5) var(--space-2);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     text-align: center;
   }

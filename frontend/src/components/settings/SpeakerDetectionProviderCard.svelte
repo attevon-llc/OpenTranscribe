@@ -285,7 +285,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1) var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .saved-list li[data-qualifies='false'] .saved-name {
@@ -293,12 +293,12 @@
   }
 
   .saved-name {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
 
   .saved-meta {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 

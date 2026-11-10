@@ -18,13 +18,13 @@
 
   .section-title {
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0;
   }
 
   .section-description {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0;
     line-height: 1.5;

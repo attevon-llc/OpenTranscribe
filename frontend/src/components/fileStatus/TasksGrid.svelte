@@ -162,8 +162,8 @@
   .status-badge {
     padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     text-transform: uppercase;
   }
 
@@ -247,7 +247,7 @@
   .tasks-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     margin-bottom: 0;
     box-shadow: none;
   }
@@ -255,8 +255,8 @@
   .tasks-table thead th {
     text-align: left;
     padding: 0.6rem var(--space-3);
-    font-weight: 600;
-    font-size: 0.75rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-xs);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-secondary-color);
@@ -293,7 +293,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -308,7 +308,7 @@
 
   .task-filename {
     display: block;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -320,7 +320,7 @@
 
   .task-error-inline {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     /* 3.76:1 as --error-color, even on plain white — the fill red is simply not a text
      * colour at 12px. */
     color: var(--color-error-text);
@@ -354,8 +354,8 @@
   }
 
   .task-progress-text {
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary-color);
   }
 

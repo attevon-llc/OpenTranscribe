@@ -271,8 +271,8 @@
 
   .section-heading {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -308,15 +308,15 @@
   }
 
   .metadata-label {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
   .metadata-value {
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .file-id-item {

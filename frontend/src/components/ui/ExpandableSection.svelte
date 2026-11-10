@@ -84,8 +84,8 @@
     box-shadow: none;
     cursor: pointer;
     color: var(--text-color);
-    font-size: 14px;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     text-align: start;
   }
   /* Flat disclosure row: cancel form-elements.css's global button hover (fill + scale). */

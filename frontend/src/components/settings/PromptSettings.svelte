@@ -890,8 +890,8 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
@@ -913,7 +913,7 @@
     padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-sm);
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     width: fit-content;
   }
 
@@ -1017,7 +1017,7 @@
     gap: var(--space-2);
     margin: 0;
     font-size: 1.125rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -1060,9 +1060,9 @@
   }
 
   .config-name {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     margin-bottom: var(--space-1);
     display: flex;
     align-items: center;
@@ -1093,7 +1093,7 @@
     color: var(--text-on-solid);
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: normal;
     max-width: 320px;
     white-space: normal;
@@ -1113,7 +1113,7 @@
   }
 
   .config-url {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     opacity: 0.7;
     max-width: 400px;
@@ -1132,7 +1132,7 @@
     align-items: center;
     gap: 0.35rem;
     margin-top: 0.4rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .linked-label {
@@ -1149,7 +1149,7 @@
     color: var(--primary-on-surface);
     border-radius: var(--radius-xl);
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -1183,13 +1183,13 @@
     margin: 0 0 var(--space-2);
     color: var(--text-color);
     font-size: 1.125rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .empty-state p {
     margin: 0 0 var(--space-6);
     color: var(--text-muted);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
   }
 
@@ -1203,8 +1203,8 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
@@ -1247,14 +1247,14 @@
   }
 
   label {
-    font-weight: 500;
-    font-size: 0.8125rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
   .form-control {
     padding: var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control.textarea {
@@ -1327,7 +1327,7 @@
 
   .detail-row {
     margin-bottom: var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .detail-row strong {
@@ -1347,7 +1347,7 @@
 
   .prompt-text-display {
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.6;
     color: var(--text-color);
     white-space: pre-wrap;
@@ -1376,7 +1376,7 @@
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
     text-transform: uppercase;
@@ -1394,7 +1394,7 @@
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     background: rgba(245, 158, 11, 0.12);
     color: #d97706;
     text-transform: uppercase;
@@ -1434,8 +1434,8 @@
     align-items: center;
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-2xl);
-    font-size: 0.6875rem;
-    font-weight: 500;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
   }
@@ -1460,7 +1460,7 @@
     align-items: center;
     gap: var(--space-2);
     cursor: pointer;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
   }
 
   .toggle-input {
@@ -1501,14 +1501,14 @@
   }
 
   .toggle-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 

@@ -148,12 +148,12 @@
 
   .banner-content h2 {
     margin: 0 0 var(--space-4);
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
   }
 
   .banner-text {
     white-space: pre-wrap;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     line-height: 1.6;
     margin: var(--space-4) 0;
     padding: var(--space-4);
@@ -162,7 +162,7 @@
   }
 
   .legal-notice {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: #6b7280;
     font-style: italic;
   }
@@ -177,7 +177,7 @@
     background: #fef3c7;
     color: #7c2d12;
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .banner-error {
@@ -187,7 +187,7 @@
     border-radius: var(--radius-sm);
     background: #fee2e2;
     color: #7f1d1d;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .banner-actions {

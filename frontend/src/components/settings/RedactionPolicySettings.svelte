@@ -195,7 +195,7 @@
   }
   .section-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
@@ -205,7 +205,7 @@
     margin: 0 0 var(--space-4) 0;
   }
   .field-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
@@ -260,7 +260,7 @@
     transform: translateX(16px);
   }
   .toggle-text {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
   .button-row {

@@ -158,8 +158,8 @@
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-lg);
     cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
   }
 
@@ -219,8 +219,8 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 20px;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 

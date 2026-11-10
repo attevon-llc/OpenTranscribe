@@ -248,7 +248,7 @@
 
   .info-box p {
     margin: var(--space-2) 0 0 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--color-text-secondary);
     line-height: 1.5;
   }
@@ -267,14 +267,14 @@
   .token-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .token-table th {
     text-align: left;
     padding: var(--space-2) 0.6rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--color-text-secondary);
@@ -296,7 +296,7 @@
 
   .btn-row {
     padding: 0.3rem 0.65rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .form-group {
@@ -306,8 +306,8 @@
   .form-group label {
     display: block;
     margin-bottom: 0.35rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -321,7 +321,7 @@
     border: 1px solid var(--color-warning-border);
     border-radius: var(--radius-md);
     padding: var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     margin-bottom: var(--space-4);
   }
 
@@ -339,7 +339,7 @@
   .token-reveal code {
     flex: 1;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     word-break: break-all;
   }
 </style>

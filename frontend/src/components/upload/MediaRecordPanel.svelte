@@ -192,7 +192,7 @@
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: var(--radius-lg);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
   }
 
@@ -210,8 +210,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -240,8 +240,8 @@
     gap: var(--space-2);
     padding: var(--space-3) var(--space-6);
     border-radius: var(--radius-lg);
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     cursor: pointer;
     border: 2px solid var(--error-solid);
     background-color: var(--error-solid);
@@ -291,11 +291,11 @@
     50% { opacity: 0.4; }
   }
 
-  .status-text { font-weight: 600; font-size: 0.875rem; color: var(--text-primary); }
+  .status-text { font-weight: var(--font-weight-semibold); font-size: var(--font-size-md); color: var(--text-primary); }
 
   .duration-badge {
     font-family: 'Monaco', 'Menlo', monospace;
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(var(--accent-rgb), 0.1);
@@ -340,7 +340,7 @@
     background: transparent;
     color: var(--text-color);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     transition: all var(--duration-fast) ease;
   }
 
@@ -357,8 +357,8 @@
   }
 
   .complete-info { text-align: center; }
-  .complete-title { display: block; font-weight: 600; font-size: 0.9375rem; color: var(--text-primary); }
-  .complete-meta { font-size: 0.8125rem; color: var(--text-secondary); }
+  .complete-title { display: block; font-weight: var(--font-weight-semibold); font-size: var(--font-size-body); color: var(--text-primary); }
+  .complete-meta { font-size: var(--font-size-sm); color: var(--text-secondary); }
 
   .ctrl-btn.clear:hover { background: rgba(107, 114, 128, 0.1); }
 
@@ -368,7 +368,7 @@
     flex-direction: column;
     align-items: center;
     gap: var(--space-1);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-tertiary);
     text-align: center;
   }
@@ -377,7 +377,7 @@
     background: none;
     border: none;
     color: var(--primary-on-surface);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     cursor: pointer;
     text-decoration: underline;
     text-underline-offset: 2px;

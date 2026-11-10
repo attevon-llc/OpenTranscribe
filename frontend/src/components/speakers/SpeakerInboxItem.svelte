@@ -200,9 +200,9 @@
   }
 
   .speaker-name {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -213,7 +213,7 @@
     align-items: center;
     gap: var(--space-1-5);
     margin-top: var(--space-0-5);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     flex-wrap: wrap;
     min-width: 0;
   }
@@ -224,7 +224,7 @@
 
   .suggestion-name {
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -232,12 +232,12 @@
   }
 
   .confidence {
-    font-weight: 600;
-    font-size: 12px;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-xs);
   }
 
   .source-badge {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-lg);
     background: var(--hover-color);
@@ -264,7 +264,7 @@
     align-items: center;
     gap: var(--space-2);
     margin-top: 3px;
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     flex-wrap: wrap;
     min-width: 0;
@@ -303,7 +303,7 @@
     border: 1px solid var(--border-color);
     background: var(--hover-color);
     color: var(--text-color);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     transition: all var(--duration-fast) ease;
     box-shadow: none;
@@ -338,7 +338,7 @@
     min-width: 0;
     flex-shrink: 1;
     padding: 0.3rem var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
   }
 
@@ -372,11 +372,11 @@
     }
 
     .speaker-name {
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
 
     .suggestion {
-      font-size: 12px;
+      font-size: var(--font-size-xs);
       gap: var(--space-1);
     }
 
@@ -389,7 +389,7 @@
     }
 
     .meta {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
       gap: var(--space-1);
     }
 
@@ -399,7 +399,7 @@
 
     .action-btn {
       padding: var(--space-1) var(--space-2);
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
   }
 

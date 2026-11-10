@@ -464,8 +464,8 @@
   }
 
   .section-title {
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-3);
     color: var(--text-primary);
     border-bottom: 2px solid var(--border-color);
@@ -551,7 +551,7 @@
 
   .action-item-priority {
     text-transform: uppercase;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     padding: 0.05rem 0.4rem;
     border-radius: 3px;
   }
@@ -587,7 +587,7 @@
   }
 
   .speaker-name {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -599,7 +599,7 @@
 
   .speaker-talktime {
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     font-size: 0.85rem;
   }
 
@@ -660,7 +660,7 @@
 
   :global(.field-title) {
     font-size: 1.1rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-2);
     color: var(--text-primary);
   }
@@ -686,12 +686,12 @@
   }
 
   :global(.bool-value) {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--success-color);
   }
 
   :global(.number-value) {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
   }
 

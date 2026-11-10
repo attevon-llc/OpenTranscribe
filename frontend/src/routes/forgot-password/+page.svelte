@@ -112,7 +112,7 @@
   }
 
   .auth-header h1 {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     color: var(--text-color);
     margin-bottom: var(--space-2);
   }
@@ -136,11 +136,11 @@
 
   .form-group label {
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .form-group input {
-    font-size: 1rem;
+    font-size: var(--font-size-base);
   }
 
   .auth-button {
@@ -150,7 +150,7 @@
     border-radius: var(--radius-xl);
     padding: 0.6rem 1.2rem;
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);
@@ -194,7 +194,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .error-message {
@@ -203,7 +203,7 @@
     padding: var(--space-3);
     border-radius: var(--radius-sm);
     border: 1px solid rgba(239, 68, 68, 0.2);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .auth-logo {

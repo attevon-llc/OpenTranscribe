@@ -319,7 +319,7 @@
   .domain-tab {
     padding: 0.35rem var(--space-3);
     border-radius: var(--radius-md);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     background: transparent;
     border: 1px solid var(--border-color);
@@ -352,14 +352,14 @@
     flex: 2;
     min-width: 140px;
     padding: 0.45rem var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .domain-select, .category-input {
     flex: 1;
     min-width: 110px;
     padding: 0.45rem var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .btn-add {
@@ -369,8 +369,8 @@
     border: none;
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     transition: all var(--duration-fast);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
@@ -390,7 +390,7 @@
     text-align: center;
     padding: var(--space-6);
     color: var(--text-muted);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .terms-list {
@@ -428,8 +428,8 @@
   }
 
   .term-text {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -442,7 +442,7 @@
   }
 
   .category-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -544,8 +544,8 @@
     color: var(--text-on-solid);
     border: none;
     border-radius: var(--radius-md);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     white-space: nowrap;
     transition: all var(--duration-fast);
@@ -562,7 +562,7 @@
     color: var(--text-secondary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
     white-space: nowrap;
     transition: all var(--duration-fast);
@@ -601,7 +601,7 @@
   .bulk-textarea {
     width: 100%;
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     resize: vertical;
     box-sizing: border-box;
     font-family: var(--font-mono);
@@ -620,7 +620,7 @@
     border: none;
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     white-space: nowrap;
     transition: all var(--duration-fast);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);

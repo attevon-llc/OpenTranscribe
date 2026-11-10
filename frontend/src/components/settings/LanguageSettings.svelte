@@ -66,9 +66,9 @@
   }
 
   .form-label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .form-select {
@@ -81,7 +81,7 @@
   }
 
   .input-hint {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin: 0;
   }
@@ -100,13 +100,13 @@
   }
 
   .preview-label {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .preview-value {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 </style>

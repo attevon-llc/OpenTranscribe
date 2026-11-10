@@ -81,10 +81,10 @@
     grid-template-columns: max-content 1fr;
     gap: 0.35rem var(--space-4);
     margin: 0 0 var(--space-4) 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
   dt {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
   }
   dd {
@@ -94,14 +94,14 @@
   }
   .requested {
     margin: 0 0 var(--space-4) 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
   .label {
     display: block;
     margin-bottom: 0.35rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
   select {
@@ -109,7 +109,7 @@
   }
   .hint {
     margin: 0.35rem 0 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 </style>

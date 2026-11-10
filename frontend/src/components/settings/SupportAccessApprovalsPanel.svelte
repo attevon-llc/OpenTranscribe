@@ -56,7 +56,7 @@
   }
   .description {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     line-height: 1.5;
     color: var(--text-secondary);
   }

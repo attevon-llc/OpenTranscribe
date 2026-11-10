@@ -122,8 +122,8 @@
   }
 
   .discovery-summary {
-    font-size: 0.8125rem;
-    font-weight: 400;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
     color: var(--text-muted);
   }
 
@@ -145,7 +145,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     padding: 0.2rem 0.6rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-color);
     cursor: pointer;
     transition:
@@ -201,13 +201,13 @@
   }
 
   .discovery-row-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .discovery-row-detail {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     display: flex;
     flex-wrap: wrap;
@@ -217,7 +217,7 @@
   }
 
   .discovery-row-detail code {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .discovery-row-detail-muted {
@@ -231,12 +231,12 @@
   .discovery-use-btn {
     flex-shrink: 0;
     padding: 0.3rem var(--space-3);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .discovery-warning {
     margin: var(--space-3) 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--warning-color);
   }
 </style>

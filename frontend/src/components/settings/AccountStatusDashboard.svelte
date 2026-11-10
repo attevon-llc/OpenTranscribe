@@ -93,7 +93,7 @@
 
   .chip-label {
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .chip.success {

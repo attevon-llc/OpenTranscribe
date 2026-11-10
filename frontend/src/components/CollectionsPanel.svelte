@@ -669,7 +669,7 @@
   .panel-header h3 {
     margin: 0;
     font-size: 18px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -684,7 +684,7 @@
     border: none;
     border-radius: var(--radius-lg);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);
@@ -734,7 +734,7 @@
     /* The app's input tokens, not --surface-color/--border-color: matches
        form-elements.css and TagManagerModal, which this panel's search bar
        is converging on (issue #757). */
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     box-sizing: border-box;
   }
 
@@ -768,7 +768,7 @@
     text-align: center;
     padding: var(--space-6) 0;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .no-results p {

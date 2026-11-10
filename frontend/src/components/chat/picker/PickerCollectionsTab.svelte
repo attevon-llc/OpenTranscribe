@@ -146,7 +146,7 @@
 
   .picker-row:has(input:checked) {
     background-color: rgba(var(--primary-color-rgb), 0.12);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .picker-row:focus-within {
@@ -163,7 +163,7 @@
 
   .row-count {
     flex-shrink: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }

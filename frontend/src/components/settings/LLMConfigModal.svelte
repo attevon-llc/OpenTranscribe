@@ -857,13 +857,13 @@ let _llmConfigModalWasOpen = false;
 <style>
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .field-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
@@ -889,7 +889,7 @@ let _llmConfigModalWasOpen = false;
     align-items: center;
     justify-content: space-between;
     margin-bottom: var(--space-2);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -917,7 +917,7 @@ let _llmConfigModalWasOpen = false;
     border: none;
     padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
     transition: background-color var(--duration-base) ease;
   }
@@ -964,8 +964,8 @@ let _llmConfigModalWasOpen = false;
 
   .advanced-settings h4 {
     margin: 0 0 var(--space-4);
-    font-size: 1rem;
-    font-weight: 500;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -985,8 +985,8 @@ let _llmConfigModalWasOpen = false;
 
   .model-selector h4 {
     margin: 0 0 var(--space-2);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
   }
 
   .model-list {
@@ -1013,12 +1013,12 @@ let _llmConfigModalWasOpen = false;
   }
 
   .model-name {
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
   }
 
   .model-details {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -1029,7 +1029,7 @@ let _llmConfigModalWasOpen = false;
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .test-section {
@@ -1051,7 +1051,7 @@ let _llmConfigModalWasOpen = false;
     border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
@@ -1085,8 +1085,8 @@ let _llmConfigModalWasOpen = false;
     align-items: center;
     gap: var(--space-2);
     cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 400;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-regular);
     user-select: none;
   }
 
@@ -1145,7 +1145,7 @@ let _llmConfigModalWasOpen = false;
     border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-md);
   }
@@ -1171,7 +1171,7 @@ let _llmConfigModalWasOpen = false;
     border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
@@ -1217,7 +1217,7 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-on-solid);
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     font-weight: normal;
     max-width: 320px;
     white-space: normal;
@@ -1233,7 +1233,7 @@ let _llmConfigModalWasOpen = false;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     font-size: 0.9rem;
     color: var(--text-color);
     margin-bottom: var(--space-2);
@@ -1260,7 +1260,7 @@ let _llmConfigModalWasOpen = false;
 
     .form-control {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 

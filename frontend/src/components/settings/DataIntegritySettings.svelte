@@ -398,7 +398,7 @@
 
   .section-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
@@ -422,13 +422,13 @@
 
   .overview-title {
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-2) 0;
     color: var(--text-color);
   }
 
   .pg-stats {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin-bottom: var(--space-2);
     display: flex;
@@ -465,8 +465,8 @@
   }
 
   .index-label {
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -478,7 +478,7 @@
 
   .index-body {
     padding: var(--space-1-5) var(--space-2-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .index-body.empty {
@@ -505,7 +505,7 @@
   }
 
   .breakdown-val {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-family: monospace;
   }
 
@@ -515,9 +515,9 @@
     padding: var(--space-1) 0 var(--space-0-5);
     margin-top: var(--space-0-5);
     border-top: 1px solid var(--border-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .breakdown-total.solo {
@@ -601,7 +601,7 @@
 
   .progress-percent {
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
   }
 
@@ -630,18 +630,18 @@
   .results-title {
     margin: 0 0 var(--space-1) 0;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .results-meta {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin: 0 0 var(--space-3) 0;
   }
 
   .results-table {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .results-row {
@@ -653,7 +653,7 @@
   }
 
   .results-row.header {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
     border-bottom: 2px solid var(--border-color);
   }

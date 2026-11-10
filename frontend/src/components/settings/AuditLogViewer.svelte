@@ -140,7 +140,7 @@
 <style>
   .audit-log-viewer {
     padding: var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   /* Coming Soon Section Styles */
@@ -161,14 +161,14 @@
 
   .coming-soon h3 {
     margin: 0 0 var(--space-2) 0;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     color: var(--color-text);
   }
 
   .coming-soon p {
     color: var(--color-text-secondary);
     margin: var(--space-1) 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .note {
@@ -178,7 +178,7 @@
     padding: var(--space-3);
     margin-top: var(--space-3);
     text-align: left;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .note strong {

@@ -198,8 +198,8 @@
   .status-badge {
     padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     text-transform: uppercase;
   }
 
@@ -251,7 +251,7 @@
   .file-details h4 {
     margin: 0 0 var(--space-4) 0;
     color: var(--text-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .processing-provenance {
@@ -279,7 +279,7 @@
 
   .metadata-value {
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     word-break: break-word;
   }
@@ -300,7 +300,7 @@
     padding: 0.1rem 0.4rem;
     font-size: 0.7rem;
     font-family: inherit;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     border-radius: var(--radius-sm);
     background-color: rgba(var(--warning-color-rgb), 0.15);
     color: var(--warning-color);
@@ -332,7 +332,7 @@
   }
 
   .task-type-label {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     text-transform: capitalize;
   }
@@ -385,7 +385,7 @@
 
   .retry-btn {
     padding: var(--space-1) var(--space-3);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     cursor: pointer;
@@ -410,7 +410,7 @@
 
   .retry-btn.large {
     padding: var(--space-3) var(--space-6);
-    font-size: 1rem;
+    font-size: var(--font-size-base);
   }
 
   .task-details {
@@ -426,7 +426,7 @@
 
   .task-error {
     color: var(--error-color);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     margin-top: var(--space-1);
   }
 </style>

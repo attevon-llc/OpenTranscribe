@@ -589,8 +589,8 @@
   }
 
   .toggle-text {
-    font-weight: 500;
-    font-size: 1rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-base);
   }
 
   .info-box {
@@ -607,7 +607,7 @@
 
   .info-box p {
     margin: var(--space-2) 0 0 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--color-text-secondary);
   }
 
@@ -626,14 +626,14 @@
 
   .section h3 {
     margin: 0 0 var(--space-4) 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text-secondary);
   }
 
   .section-intro {
     margin: calc(-1 * var(--space-2)) 0 var(--space-4) 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     line-height: 1.5;
   }
@@ -645,7 +645,7 @@
     border-radius: var(--radius-md);
     background: rgba(245, 158, 11, 0.12);
     color: var(--color-text);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.5;
   }
 
@@ -662,7 +662,7 @@
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
     color: var(--color-text);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-family: monospace;
   }
 
@@ -673,7 +673,7 @@
     background: rgba(16, 185, 129, 0.12);
     border: 1px solid rgba(16, 185, 129, 0.4);
     color: var(--color-text);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
   }
 
@@ -713,8 +713,8 @@
   .form-group label {
     display: block;
     margin-bottom: var(--space-2);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -747,7 +747,7 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     color: var(--color-text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
     white-space: nowrap;
   }
@@ -763,7 +763,7 @@
 
   .btn-small {
     padding: var(--space-2) var(--space-3);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -783,7 +783,7 @@
   .help-text {
     display: block;
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
 
@@ -797,7 +797,7 @@
     align-items: center;
     gap: var(--space-2);
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     margin-bottom: var(--space-2);
   }
 

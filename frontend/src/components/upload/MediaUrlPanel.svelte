@@ -274,7 +274,7 @@
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: var(--radius-lg);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-primary);
   }
 
@@ -290,8 +290,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -306,7 +306,7 @@
   .url-input {
     width: 100%;
     padding: var(--space-2-5) var(--space-10) var(--space-2-5) var(--space-3);
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body);
   }
   .url-input:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -339,7 +339,7 @@
     gap: var(--space-2);
   }
 
-  .protected-media-header { font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); }
+  .protected-media-header { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
 
   .protected-media-fields {
     display: grid;
@@ -348,16 +348,16 @@
   }
 
   .protected-media-field { display: flex; flex-direction: column; gap: var(--space-1); }
-  .protected-media-field label { font-size: 0.75rem; color: var(--text-secondary); }
+  .protected-media-field label { font-size: var(--font-size-xs); color: var(--text-secondary); }
 
   .protected-input {
     width: 100%;
     padding: var(--space-1-5) var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .protected-input:disabled { opacity: 0.6; cursor: not-allowed; }
-  .protected-media-hint { font-size: 0.6875rem; color: var(--text-secondary); margin: 0; }
+  .protected-media-hint { font-size: var(--font-size-2xs); color: var(--text-secondary); margin: 0; }
 
   /* Download Options */
   .download-options {
@@ -371,8 +371,8 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     cursor: pointer;
     list-style: none;
@@ -397,11 +397,11 @@
     gap: var(--space-3);
   }
 
-  .download-option-row label { font-size: 0.8125rem; color: var(--text-primary); }
+  .download-option-row label { font-size: var(--font-size-sm); color: var(--text-primary); }
 
   .download-select {
     padding: 0.3125rem var(--space-2);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     min-width: 120px;
   }
 
@@ -433,8 +433,8 @@
   .download-toggle input:checked + .download-toggle-slider { background-color: var(--primary-color); }
   .download-toggle input:checked + .download-toggle-slider::before { transform: translateX(16px); }
 
-  .download-options-hint { font-size: 0.6875rem; color: var(--text-secondary); margin: 0; }
-  .download-options-loading { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); font-size: 0.8125rem; color: var(--text-secondary); }
+  .download-options-hint { font-size: var(--font-size-2xs); color: var(--text-secondary); margin: 0; }
+  .download-options-loading { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); }
 
   /* URL Info Footer */
   .url-info-footer {
@@ -447,7 +447,7 @@
     background-color: var(--surface-color);
   }
 
-  .url-platforms-note { margin: 0; font-size: 0.6875rem; line-height: 1.5; color: var(--text-secondary); text-align: center; }
+  .url-platforms-note { margin: 0; font-size: var(--font-size-2xs); line-height: 1.5; color: var(--text-secondary); text-align: center; }
 
   .url-terms-notice {
     display: flex;

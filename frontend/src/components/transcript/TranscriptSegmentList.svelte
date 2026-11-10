@@ -518,7 +518,7 @@
     gap: var(--space-2);
     padding: var(--space-4);
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: var(--font-size-md);
   }
 
   /* Segments loaded info bar */
@@ -530,12 +530,12 @@
     padding: var(--space-2) var(--space-4);
     background: var(--surface-secondary);
     border-top: 1px solid var(--border-color);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .segments-count {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .loading-indicator {
@@ -551,7 +551,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     cursor: pointer;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     font-size: 0.95rem;
     box-shadow: var(--shadow-md);
@@ -644,8 +644,8 @@
   }
 
   .segment-time {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     font-family: monospace;
     white-space: nowrap;
@@ -653,7 +653,7 @@
   }
 
   .segment-speaker {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-2xl);
@@ -675,7 +675,7 @@
   }
 
   .segment-text {
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
     line-height: 1.4;
     position: relative;
@@ -737,8 +737,8 @@
     border: none;
     color: var(--primary-on-surface);
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 400;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
     transition: all var(--duration-base) ease;
     text-decoration: underline;
     text-decoration-color: transparent;
@@ -776,7 +776,7 @@
     padding: 0.4rem 0.8rem;
     border-radius: var(--radius-xl);
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     border: none;
@@ -852,9 +852,9 @@
     padding: var(--space-2) var(--space-3);
     background: rgba(var(--accent-rgb), 0.1);
     border-radius: 0 var(--radius-md) 0 0;
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--primary-on-surface);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .overlap-indicator svg {
@@ -868,9 +868,9 @@
 
   .overlap-time {
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .overlap-connector {
@@ -929,7 +929,7 @@
 
     /* Time stays in column 1 */
     .segment-time {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
       grid-column: 1;
       grid-row: 1;
     }
@@ -954,7 +954,7 @@
       grid-column: 1 / -1;
       grid-row: 2;
       padding-left: 0;
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
 
     .segment-text::before {

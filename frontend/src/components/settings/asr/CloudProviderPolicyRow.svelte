@@ -114,8 +114,8 @@
   .chip {
     padding: 1px var(--space-2);
     border-radius: var(--radius-xl);
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     background: rgba(var(--success-color-rgb), 0.14);
     color: var(--success-color);
     border: 1px solid rgba(var(--success-color-rgb), 0.35);

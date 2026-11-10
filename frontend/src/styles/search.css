@@ -42,7 +42,7 @@
   color: var(--text-primary);
   padding: 0.1em 0.2em;
   border-radius: 3px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .current-match {
@@ -50,7 +50,7 @@
   color: var(--text-primary);
   padding: 0.1em 0.2em;
   border-radius: 3px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.75);
 }
 
@@ -77,7 +77,7 @@
   color: var(--text-primary);
   padding: 0.1em 0.2em;
   border-radius: 3px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .search-semantic-segment {

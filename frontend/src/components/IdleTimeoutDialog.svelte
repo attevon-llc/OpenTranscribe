@@ -188,7 +188,7 @@
 
   .session-dialog h2 {
     margin: 0 0 var(--space-3);
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
   }
 
   .session-dialog p {

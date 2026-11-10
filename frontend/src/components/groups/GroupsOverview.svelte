@@ -252,8 +252,8 @@
     color: var(--text-on-solid);
     border: none;
     border-radius: var(--radius-xl);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);
@@ -276,7 +276,7 @@
     gap: var(--space-3);
     padding: var(--space-8) 0;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .loading-state p {
@@ -287,7 +287,7 @@
     text-align: center;
     padding: var(--space-6) 0;
     color: var(--danger-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .error-state p {
@@ -300,8 +300,8 @@
     color: var(--text-on-solid);
     border: none;
     border-radius: var(--radius-md);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);
@@ -333,7 +333,7 @@
   .search-input {
     width: 100%;
     padding: var(--space-2) var(--space-8) var(--space-2) 2.25rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     box-sizing: border-box;
   }
 
@@ -367,7 +367,7 @@
     text-align: center;
     padding: var(--space-4) 0;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .no-results p {
@@ -382,7 +382,7 @@
 
   .groups-section-title {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
@@ -425,8 +425,8 @@
   }
 
   .card-name {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
@@ -435,7 +435,7 @@
 
   .card-description {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.4;
     display: -webkit-box;
@@ -456,12 +456,12 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
   .card-date {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;

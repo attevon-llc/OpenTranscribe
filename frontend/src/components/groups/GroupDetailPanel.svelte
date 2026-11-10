@@ -329,8 +329,8 @@
     border: none;
     cursor: pointer;
     color: var(--primary-on-surface);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     padding: var(--space-1-5) var(--space-2);
     border-radius: var(--radius-md);
     transition: background-color var(--duration-fast);
@@ -349,8 +349,8 @@
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--danger-color);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-fast);
   }
@@ -388,8 +388,8 @@
 
   .group-name {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -421,7 +421,7 @@
 
   .group-description {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -439,12 +439,12 @@
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .edit-name-input {
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .edit-desc-textarea {
@@ -461,8 +461,8 @@
   .btn-inline-cancel {
     padding: var(--space-1) var(--space-3);
     border-radius: var(--radius-md);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-fast);
   }
@@ -496,7 +496,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-1-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     flex-wrap: wrap;
   }
@@ -517,8 +517,8 @@
   }
 
   .members-title {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0;
   }

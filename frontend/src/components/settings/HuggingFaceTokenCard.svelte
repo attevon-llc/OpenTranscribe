@@ -213,7 +213,7 @@
     padding: var(--space-0-5) var(--space-2-5);
     border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
@@ -228,13 +228,13 @@
   .hint,
   .note {
     margin: var(--space-1-5) 0 var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .hint {
     margin: var(--space-1-5) 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .note.warn {
@@ -247,7 +247,7 @@
   .label {
     display: block;
     margin-bottom: var(--space-1-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
@@ -272,7 +272,7 @@
 
   .result {
     margin: var(--space-2) 0 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--error-color);
   }
 

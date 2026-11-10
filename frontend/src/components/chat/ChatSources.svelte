@@ -202,7 +202,7 @@
     border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
   }
 
@@ -288,14 +288,14 @@
   }
 
   .source-speaker {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   /* A digest is derived text, not a quote. The badge is what stops a summary
      from reading as something a participant said — light/dark parity via the
      shared tokens, never a hardcoded colour. */
   .source-kind {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     font-size: var(--font-size-2xs);
@@ -337,7 +337,7 @@
     background: none;
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
   }
 

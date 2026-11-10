@@ -194,8 +194,8 @@
 
   .bedrock-title {
     margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -205,7 +205,7 @@
     align-items: center;
     gap: var(--space-2);
     margin: 0 0 var(--space-4);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .status-chip {
@@ -233,7 +233,7 @@
   .form-group label {
     display: block;
     margin-bottom: var(--space-2);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -243,7 +243,7 @@
 
   .field-error {
     margin: var(--space-1-5) 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--error-color);
   }
 
@@ -252,7 +252,7 @@
     align-items: center;
     gap: var(--space-2);
     margin-bottom: var(--space-4);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
     cursor: pointer;
   }

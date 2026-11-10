@@ -57,7 +57,7 @@
     border: 1px solid var(--warning-color);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
     color: var(--text-color);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     line-height: 1.3;
   }
 
@@ -86,7 +86,7 @@
     background: var(--button-hover);
     color: var(--text-color);
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     cursor: pointer;
     transition: background-color var(--duration-base) ease;
   }

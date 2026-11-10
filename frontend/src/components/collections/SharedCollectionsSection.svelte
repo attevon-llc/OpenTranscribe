@@ -87,8 +87,8 @@
 
   .collection-info h4 {
     margin: 0 0 var(--space-1) 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
@@ -97,7 +97,7 @@
 
   .description {
     margin: 0 0 var(--space-2) 0;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     line-height: 1.4;
     display: -webkit-box;
@@ -111,19 +111,19 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .media-count {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .badge {
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-2xl);
-    font-size: 12px;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
   }
 
   .section-label {
@@ -160,8 +160,8 @@
     color: var(--text-on-solid);
     border: none;
     border-radius: var(--radius-md);
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base);
     white-space: nowrap;

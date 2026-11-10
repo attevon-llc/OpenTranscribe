@@ -651,8 +651,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     border: 2px solid var(--border-color);
     background: var(--background-color);
     color: var(--text-secondary);
@@ -689,7 +689,7 @@
 
   .step-label {
     font-size: 0.72rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin-left: 0.35rem;
     white-space: nowrap;
@@ -698,7 +698,7 @@
 
   .step-label.active {
     color: var(--primary-on-surface);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .step-label.completed {
@@ -754,7 +754,7 @@
     background: none;
     border: 1px solid var(--border-color);
     color: var(--primary-on-surface);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     padding: var(--space-1) 0.6rem;
     border-radius: var(--radius-sm);
     cursor: pointer;
@@ -877,14 +877,14 @@
   }
 
   .stage-label {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
     line-height: 1.3;
   }
 
   .stage-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -921,7 +921,7 @@
     padding: 0.3rem 0.7rem;
     border-radius: 20px;
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     border: 1px solid rgba(var(--accent-rgb), 0.2);
@@ -958,7 +958,7 @@
     gap: var(--space-2);
     padding: 0.6rem var(--space-3);
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(var(--accent-rgb), 0.06);
     border-bottom: 1px solid rgba(var(--accent-rgb), 0.1);
@@ -981,7 +981,7 @@
   }
 
   .v4-path span {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -1053,12 +1053,12 @@
 
   .setting-field label {
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
 
   .setting-field .hint {
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
     font-size: 0.7rem;
   }
@@ -1085,7 +1085,7 @@
     border: 1px solid rgba(239, 68, 68, 0.3);
     border-radius: var(--radius-md);
     color: #dc2626;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     margin-top: var(--space-2);
   }
 
@@ -1094,7 +1094,7 @@
     border: none;
     border-radius: var(--radius-xl);
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     min-width: 100px;
@@ -1192,7 +1192,7 @@
 
     .setting-field input {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 

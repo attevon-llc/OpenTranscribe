@@ -411,7 +411,7 @@
     margin: 0;
     flex: 1;
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -451,7 +451,7 @@
   .advanced summary {
     cursor: pointer;
     font-size: 0.82rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     list-style: revert;
   }
@@ -525,14 +525,14 @@
   .toggle-label {
     display: block;
     font-size: 0.87rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .toggle-hint,
   .range-hint {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -542,7 +542,7 @@
     justify-content: space-between;
     align-items: center;
     font-size: 0.82rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 

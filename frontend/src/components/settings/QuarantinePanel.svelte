@@ -301,7 +301,7 @@
   }
 
   .scope-note {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin: 0;
   }
@@ -327,7 +327,7 @@
     background: var(--bg-color);
     color: var(--text-color);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .toggle-btn.active {
@@ -343,7 +343,7 @@
     padding: var(--space-3);
     border-radius: var(--radius-md);
     background: var(--bg-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .state-row.error {
@@ -365,7 +365,7 @@
     border-collapse: collapse;
     overflow-wrap: normal;
     word-break: normal;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .quarantine-table th,
@@ -430,15 +430,15 @@
     gap: var(--space-1-5);
     margin-top: var(--space-1);
     white-space: normal;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .badge {
     display: inline-block;
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-pill);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
   }
 
   .badge-hold {
@@ -472,7 +472,7 @@
   }
 
   .action-disabled {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -488,7 +488,7 @@
     color: var(--accent-color);
     cursor: pointer;
     padding: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .action-link:disabled {

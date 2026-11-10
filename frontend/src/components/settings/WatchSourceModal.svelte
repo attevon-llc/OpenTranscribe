@@ -661,7 +661,7 @@
     align-items: center;
     justify-content: center;
     font-size: 0.7rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     border: 2px solid var(--border-color);
     background: var(--surface-color);
     color: var(--text-secondary);
@@ -679,14 +679,14 @@
     color: var(--primary-on-surface);
   }
   .step-label {
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;
   }
   .step-item.active .step-label {
     color: var(--primary-on-surface);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .step-item.completed .step-label,
   .step-item.visited .step-label {

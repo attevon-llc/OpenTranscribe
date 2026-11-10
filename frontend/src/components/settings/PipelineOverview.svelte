@@ -340,7 +340,7 @@
     border-radius: var(--radius-round);
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
   }
 
@@ -348,7 +348,7 @@
     flex: 1;
     margin: 0;
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -365,12 +365,12 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-2);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
   .engine-name {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .engine-model {

@@ -109,7 +109,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-0-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .label-text {
@@ -120,7 +120,7 @@
   .filter-row input,
   .filter-row select {
     padding: var(--space-1) var(--space-1-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     height: 1.75rem;
   }
 
@@ -141,8 +141,8 @@
     padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     height: 1.75rem;
     white-space: nowrap;
     background: var(--primary-color);
@@ -172,8 +172,8 @@
     padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     height: 1.75rem;
     white-space: nowrap;
     background: var(--surface-color);
@@ -195,7 +195,7 @@
     padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     height: 1.75rem;
     white-space: nowrap;
     background: var(--surface-color);
@@ -227,7 +227,7 @@
     .filter-row select {
       height: auto;
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
 
     .filter-row input[type='date'],

@@ -20,8 +20,8 @@
     gap: var(--space-1);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     white-space: nowrap;
     border: 1px solid transparent;

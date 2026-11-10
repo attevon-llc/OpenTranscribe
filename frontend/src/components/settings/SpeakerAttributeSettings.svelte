@@ -275,7 +275,7 @@
 
   .settings-section h3 {
     font-size: 1.1rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-1);
     color: var(--text-color);
   }
@@ -316,7 +316,7 @@
 
   .setting-label {
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     display: block;
     margin-bottom: var(--space-1);
@@ -338,7 +338,7 @@
 
   .locked-note {
     color: var(--text-color);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .toggle {

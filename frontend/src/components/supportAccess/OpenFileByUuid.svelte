@@ -51,8 +51,8 @@
   label {
     display: block;
     margin-bottom: var(--space-1);
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
   .row {
@@ -65,7 +65,7 @@
   }
   .error {
     margin: 0.35rem 0 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--error-color);
   }
 </style>

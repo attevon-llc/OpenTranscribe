@@ -501,7 +501,7 @@
     border-radius: var(--radius-xl);
     cursor: pointer;
     transition: all var(--duration-base) ease;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -556,8 +556,8 @@
     right: 0;
     background: rgba(0, 0, 0, 0.85);
     color: var(--text-on-solid);
-    font-size: 0.6875rem;
-    font-weight: 400;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-regular);
     padding: var(--space-1-5) var(--space-2-5);
     border-radius: var(--radius-md);
     white-space: nowrap;
@@ -614,7 +614,7 @@
   }
 
   .status-number {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin-bottom: var(--space-1);
@@ -625,7 +625,7 @@
      * (an alias of --text-secondary) measures 4.16:1, under WCAG AA. */
     color: var(--text-on-tint);
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .error-message {
@@ -665,7 +665,7 @@
     }
 
     .status-number {
-      font-size: 1.25rem;
+      font-size: var(--font-size-xl);
     }
 
     .status-label {

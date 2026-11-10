@@ -76,12 +76,12 @@
     grid-template-columns: minmax(8rem, max-content) 1fr;
     gap: var(--space-1) var(--space-3);
     align-items: baseline;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
   }
 
   .step-name {
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .step-detail {
@@ -94,12 +94,12 @@
   }
 
   .provider {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .model {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     overflow-wrap: anywhere;
   }
 

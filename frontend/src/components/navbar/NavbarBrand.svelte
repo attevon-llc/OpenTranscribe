@@ -30,8 +30,8 @@
     align-items: center;
     text-decoration: none;
     color: var(--primary-on-surface);
-    font-weight: 600;
-    font-size: 1.25rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-xl);
     transition: transform var(--duration-base) ease;
     border-radius: var(--radius-lg);
     padding: var(--space-1);

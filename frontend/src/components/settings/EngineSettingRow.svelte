@@ -78,8 +78,8 @@
 
   .field-label-row label,
   .field-label-row .field-name {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     flex: 1;
     min-width: 0;
@@ -91,7 +91,7 @@
     padding: 0.15rem var(--space-2);
     border-radius: var(--radius-sm);
     font-size: 0.675rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.4px;
     white-space: nowrap;
@@ -123,7 +123,7 @@
     padding: 0.2rem 0.6rem;
     border-radius: var(--radius-sm);
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     background: var(--surface-color);
     color: var(--text-muted);
@@ -145,7 +145,7 @@
 
   .field-hint {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     line-height: 1.4;
   }

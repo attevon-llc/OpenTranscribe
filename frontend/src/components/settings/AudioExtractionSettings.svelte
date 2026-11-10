@@ -243,7 +243,7 @@
   }
 
   .form-label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     display: flex;
     flex-direction: column;
@@ -251,8 +251,8 @@
   }
 
   .label-hint {
-    font-size: 0.8125rem;
-    font-weight: 400;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
   }
 
@@ -284,12 +284,12 @@
   }
 
   .label-text {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .label-description {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -362,18 +362,18 @@
   }
 
   .threshold-unit {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
   .form-input {
     padding: var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .input-hint {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -389,7 +389,7 @@
     color: var(--text-on-solid);
     border: none;
     border-radius: var(--radius-xl);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     display: flex;
@@ -441,7 +441,7 @@
     margin: 0;
     padding-left: var(--space-5);
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.6;
   }
 

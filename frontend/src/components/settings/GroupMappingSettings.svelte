@@ -242,7 +242,7 @@
 
   .info-box p {
     margin: var(--space-2) 0 0 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--color-text-secondary);
     line-height: 1.5;
   }
@@ -270,8 +270,8 @@
     border-radius: 0;
     box-shadow: none;
     color: var(--color-text-secondary);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
   }
 
@@ -294,14 +294,14 @@
   .mapping-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .mapping-table th {
     text-align: left;
     padding: var(--space-2) 0.6rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--color-text-secondary);
@@ -329,7 +329,7 @@
   .description {
     display: block;
     margin-top: 0.2rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
 
@@ -344,7 +344,7 @@
 
   .btn-row {
     padding: 0.3rem 0.65rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     margin-left: 0.35rem;
   }
 

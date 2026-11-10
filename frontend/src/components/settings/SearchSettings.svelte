@@ -661,8 +661,8 @@
   }
 
   .subsection-title {
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
@@ -697,7 +697,7 @@
   }
 
   .progress-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -710,14 +710,14 @@
   }
 
   .form-group label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control:disabled {
@@ -726,7 +726,7 @@
   }
 
   .form-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-top: var(--space-0-5);
   }
@@ -741,7 +741,7 @@
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
     font-size: 0.7rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
     background-color: var(--background-color);
@@ -797,7 +797,7 @@
     border-radius: var(--radius-md);
     padding: var(--space-2-5) var(--space-3);
     margin-bottom: var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.4;
   }
 
@@ -814,7 +814,7 @@
   }
 
   .banner-title {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-1);
     color: var(--warning-color);
   }
@@ -824,7 +824,7 @@
   }
 
   .banner-detail {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-top: var(--space-0-5);
   }
@@ -857,7 +857,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .stats-header {
@@ -868,15 +868,15 @@
   }
 
   .stats-label {
-    font-weight: 600;
-    font-size: 0.8125rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
   .btn-dismiss {
     background: none;
     border: none;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0 var(--space-1);
@@ -898,8 +898,8 @@
   .stats-mode {
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
-    font-weight: 600;
-    font-size: 0.6875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
   }
 
@@ -915,7 +915,7 @@
 
   .btn-sm {
     padding: var(--space-1) var(--space-3);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   @media (max-width: 768px) {

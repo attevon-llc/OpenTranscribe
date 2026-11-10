@@ -319,7 +319,7 @@
     border-radius: 5px;
     background-color: var(--card-background);
     color: var(--text-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 

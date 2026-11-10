@@ -99,7 +99,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-0-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .label-text {
@@ -109,7 +109,7 @@
 
   input {
     padding: var(--space-1) var(--space-1-5);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     height: 1.75rem;
     min-width: 11rem;
   }
@@ -131,7 +131,7 @@
     border: none;
     cursor: pointer;
     color: var(--text-secondary);
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     line-height: 1;
     padding: 0;
   }
@@ -163,7 +163,7 @@
     border-radius: var(--radius-sm);
     cursor: pointer;
     color: var(--text-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .results button:hover {
@@ -173,7 +173,7 @@
   .sub,
   .hint {
     color: var(--text-secondary);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
   }
 
   .hint {

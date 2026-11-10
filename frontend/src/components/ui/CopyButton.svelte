@@ -104,8 +104,8 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     color: var(--text-color);
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     line-height: 1;
     cursor: pointer;
     transition:

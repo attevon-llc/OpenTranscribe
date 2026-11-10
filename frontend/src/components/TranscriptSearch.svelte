@@ -471,7 +471,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     transition:
       background var(--duration-fast) ease,
       color var(--duration-fast) ease;

@@ -133,7 +133,7 @@
     border-color: var(--primary-color);
     background-color: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .tag-count {

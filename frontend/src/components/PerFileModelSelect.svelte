@@ -60,7 +60,7 @@
   .model-select {
     width: 100%;
     padding: 0.4375rem var(--space-2-5);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     cursor: pointer;
   }
 
@@ -71,7 +71,7 @@
   @media (max-width: 640px) {
     .model-select {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

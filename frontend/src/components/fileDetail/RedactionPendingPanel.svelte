@@ -33,7 +33,7 @@
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .redaction-pending-chip .chip-dot {
     width: 8px;

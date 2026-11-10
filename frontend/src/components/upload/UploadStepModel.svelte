@@ -77,14 +77,14 @@
 
 <style>
   .step-model { display: flex; flex-direction: column; gap: var(--space-4); }
-  .step-hint { font-size: 0.8125rem; color: var(--text-secondary); margin: 0; line-height: 1.5; }
+  .step-hint { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 0; line-height: 1.5; }
 
   .field { display: flex; flex-direction: column; gap: var(--space-1-5); }
-  .field label { font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); display: flex; flex-direction: column; gap: var(--space-0-5); }
-  .hint { font-size: 0.6875rem; font-weight: 400; color: var(--text-secondary); }
+  .field label { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); display: flex; flex-direction: column; gap: var(--space-0-5); }
+  .hint { font-size: var(--font-size-2xs); font-weight: var(--font-weight-regular); color: var(--text-secondary); }
 
-  .model-managed { margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
-  .model-note { margin: 0; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3; }
+  .model-managed { margin: 0; font-size: var(--font-size-sm); color: var(--text-secondary); }
+  .model-note { margin: 0; font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.3; }
 
   /* Section */
   .section {
@@ -119,8 +119,8 @@
   }
 
   .toggle-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
 

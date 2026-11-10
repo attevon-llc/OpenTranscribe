@@ -87,7 +87,7 @@
     border: none;
     border-radius: var(--radius-lg);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     min-width: 120px;
@@ -100,7 +100,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-lg);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     cursor: pointer;
     box-shadow: var(--card-shadow);

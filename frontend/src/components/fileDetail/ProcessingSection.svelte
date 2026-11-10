@@ -74,8 +74,8 @@
 
   .section-heading {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 

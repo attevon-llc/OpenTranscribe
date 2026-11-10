@@ -149,7 +149,7 @@
   }
 
   .gender-toggle-btn {
-    font-size: 14px;
+    font-size: var(--font-size-md);
     padding: 3px var(--space-1-5);
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
@@ -170,7 +170,7 @@
   }
 
   .gender-toggle-label {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
   }
 
   .gender-toggle-btn:hover {
@@ -233,8 +233,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: color-mix(in srgb, var(--primary-color) 20%, transparent);
   }
@@ -270,8 +270,8 @@
   }
 
   .profile-name {
-    font-weight: 600;
-    font-size: 15px;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-body);
     color: var(--text-color);
     flex: 1;
     min-width: 0;
@@ -282,7 +282,7 @@
 
   .profile-desc {
     margin-top: var(--space-1);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     word-break: break-word;
     overflow-wrap: break-word;
@@ -293,7 +293,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2-5);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     flex-wrap: wrap;
   }
@@ -302,7 +302,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: default;
   }
 
@@ -354,15 +354,15 @@
     flex: 1;
     min-width: 0;
     padding: var(--space-1) var(--space-2);
-    font-size: 15px;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     box-sizing: border-box;
   }
 
   .shared-badge {
     display: inline-block;
     font-size: 0.65rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-lg);
     background: var(--accent-light);
@@ -399,11 +399,11 @@
     }
 
     .avatar-initials {
-      font-size: 14px;
+      font-size: var(--font-size-md);
     }
 
     .profile-name {
-      font-size: 14px;
+      font-size: var(--font-size-md);
     }
 
     .profile-meta {

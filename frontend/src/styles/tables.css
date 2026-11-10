@@ -15,7 +15,7 @@ table {
 table th {
   text-align: left;
   padding: var(--space-3) var(--space-4);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   background-color: var(--table-header-bg);
   color: var(--text-color);
   border-bottom: 1px solid var(--border-color);

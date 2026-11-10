@@ -215,7 +215,7 @@
 
   .card-title {
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
@@ -223,7 +223,7 @@
   .panel-description,
   .panel-status,
   .panel-note {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin: 0;
   }
@@ -243,7 +243,7 @@
   .sessions-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .sessions-table th,
@@ -256,8 +256,8 @@
   }
 
   .sessions-table th {
-    font-weight: 600;
-    font-size: 0.6875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     color: var(--text-secondary);
@@ -281,7 +281,7 @@
     padding: 0.0625rem var(--space-1-5);
     border-radius: var(--radius-pill);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     background-color: rgba(var(--accent-rgb), 0.15);
@@ -296,8 +296,8 @@
   .btn {
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-xl);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }

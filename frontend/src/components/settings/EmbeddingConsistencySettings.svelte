@@ -379,7 +379,7 @@
 
   .section-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
@@ -414,7 +414,7 @@
 
   .counts-row.has-missing {
     color: var(--warning-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .counts-row.unrepairable,
@@ -432,7 +432,7 @@
   }
 
   .count-value {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-family: monospace;
   }
 
@@ -512,13 +512,13 @@
 
   .progress-percent {
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
   }
 
   .progress-eta {
     margin-inline-start: var(--space-2);
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
   }
 
@@ -540,7 +540,7 @@
     display: flex;
     gap: var(--space-4);
     margin-top: var(--space-2);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -559,12 +559,12 @@
   .results-title {
     margin: 0 0 var(--space-1) 0;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .results-meta {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin: 0;
   }

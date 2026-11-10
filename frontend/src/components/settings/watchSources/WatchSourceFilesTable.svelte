@@ -163,11 +163,11 @@
     vertical-align: top;
   }
   .files-table th {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: var(--text-secondary);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .file-cell {
     max-width: 260px;
@@ -183,7 +183,7 @@
   }
   .row-hint {
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-style: italic;
     color: var(--warning-color);
   }

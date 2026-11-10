@@ -60,14 +60,14 @@
 <style>
   .body {
     margin: 0 0 var(--space-4) 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
   .label {
     display: block;
     margin-bottom: 0.35rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
   textarea {

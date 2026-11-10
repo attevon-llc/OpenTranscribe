@@ -160,8 +160,8 @@
   .label {
     display: block;
     margin-bottom: 0.35rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
   .radio {
@@ -169,7 +169,7 @@
     align-items: center;
     gap: 0.4rem;
     margin-inline-end: var(--space-5);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
     white-space: nowrap;
   }
@@ -191,7 +191,7 @@
     justify-content: space-between;
     gap: var(--space-4);
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
   .picked {
@@ -205,11 +205,11 @@
     background: var(--surface-secondary);
   }
   .picked-label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     overflow-wrap: anywhere;
   }
   .btn-row {
     padding: 0.3rem 0.7rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 </style>

@@ -339,13 +339,13 @@
 
   .section-title {
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .section-description {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0 0 var(--space-5) 0;
   }
@@ -371,7 +371,7 @@
 
   .card-title {
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-3) 0;
     color: var(--text-color);
   }
@@ -402,14 +402,14 @@
   }
 
   .form-group label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control:disabled {
@@ -418,7 +418,7 @@
   }
 
   .form-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-top: var(--space-0-5);
   }
@@ -457,8 +457,8 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     border: none;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }

@@ -57,7 +57,7 @@
     font-size: 0.85rem;
     cursor: pointer;
     text-decoration: underline;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .toggle-truncation:hover {

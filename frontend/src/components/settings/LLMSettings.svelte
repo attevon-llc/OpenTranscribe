@@ -823,7 +823,7 @@
     gap: var(--space-2);
     margin: 0;
     font-size: 1.125rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -837,8 +837,8 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
@@ -886,9 +886,9 @@
   }
 
   .config-name {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     margin-bottom: var(--space-1);
   }
 
@@ -899,7 +899,7 @@
   }
 
   .config-url {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     font-family: var(--font-mono);
     opacity: 0.7;
@@ -919,7 +919,7 @@
     padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-sm);
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     width: fit-content;
   }
 
@@ -1021,8 +1021,8 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
@@ -1061,13 +1061,13 @@
     margin: 0 0 var(--space-2);
     color: var(--text-color);
     font-size: 1.125rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .empty-state p {
     margin: 0 0 var(--space-6);
     color: var(--text-muted);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
   }
 
@@ -1081,8 +1081,8 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
@@ -1118,7 +1118,7 @@
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(var(--accent-rgb), 0.12);
@@ -1138,7 +1138,7 @@
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(245, 158, 11, 0.12);
@@ -1153,7 +1153,7 @@
   }
 
   .shared-by {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     font-style: italic;
     margin-top: var(--space-0-5);
@@ -1173,7 +1173,7 @@
     align-items: center;
     gap: var(--space-2);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -1251,19 +1251,19 @@
   }
 
   .toggle-title {
-    font-weight: 500;
-    font-size: 0.8125rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
   .toggle-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     line-height: 1.4;
   }
 
   .summary-hint {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     padding: var(--space-2) var(--space-4);
     background: var(--surface-color);
@@ -1289,7 +1289,7 @@
     }
 
     .section-header h4 {
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
 
     .create-config-button,

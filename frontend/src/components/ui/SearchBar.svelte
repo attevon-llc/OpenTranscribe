@@ -371,7 +371,7 @@
 
   .search-bar-counter {
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;
   }

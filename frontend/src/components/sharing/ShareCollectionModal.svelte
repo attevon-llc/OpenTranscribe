@@ -281,7 +281,7 @@
     padding: var(--space-2) var(--space-3);
     font-size: 0.9rem;
     color: var(--text-primary);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
@@ -298,7 +298,7 @@
     gap: var(--space-2);
     margin: 0;
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-primary);
     background: var(--surface-secondary);
@@ -313,7 +313,7 @@
 
   .share-intro {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -344,7 +344,7 @@
     align-items: center;
     gap: var(--space-2);
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
   }
 
@@ -355,8 +355,8 @@
     text-align: center;
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-pill);
-    font-weight: 600;
-    font-size: 0.6875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.02em;
   }
@@ -399,14 +399,14 @@
 
   .empty-title {
     margin: 0 0 var(--space-1) 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
   .empty-desc {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.4;
     max-width: 320px;
@@ -415,7 +415,7 @@
   .pending-section h4 {
     margin: 0 0 var(--space-2) 0;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -451,7 +451,7 @@
 
   .pending-name {
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
@@ -501,7 +501,7 @@
     border: none;
     border-radius: var(--radius-lg);
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: var(--shadow-primary);

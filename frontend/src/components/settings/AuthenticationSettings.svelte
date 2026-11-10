@@ -521,8 +521,8 @@
 
   .settings-header h2 {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
   }
 
   .rerun-wizard-button {
@@ -551,7 +551,7 @@
 
   .coming-soon h3 {
     margin: 0 0 var(--space-2) 0;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     color: var(--color-text);
   }
 
@@ -577,8 +577,8 @@
 
   .config-method h4 {
     margin: 0 0 var(--space-2) 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text);
   }
 
@@ -587,13 +587,13 @@
     background: var(--color-surface);
     padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     margin-bottom: var(--space-2);
     color: var(--color-primary);
   }
 
   .config-method p {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     margin: 0;
   }
 
@@ -613,7 +613,7 @@
     padding: var(--space-4);
     margin-top: var(--space-4);
     text-align: left;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .note strong {

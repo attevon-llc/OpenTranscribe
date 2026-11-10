@@ -170,12 +170,12 @@
 
   .review-label {
     flex-shrink: 0; width: 90px;
-    font-size: 0.75rem; font-weight: var(--font-weight-medium); color: var(--text-secondary);
+    font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--text-secondary);
     padding-top: var(--space-0-5);
   }
 
   .review-value {
-    flex: 1; font-size: 0.8125rem; color: var(--text-primary);
+    flex: 1; font-size: var(--font-size-sm); color: var(--text-primary);
     word-break: break-word;
   }
 
@@ -185,7 +185,7 @@
 
   .review-chip {
     display: inline-block; padding: var(--space-0-5) 0.4375rem;
-    border-radius: var(--radius-pill); font-size: 0.6875rem; font-weight: 500;
+    border-radius: var(--radius-pill); font-size: var(--font-size-2xs); font-weight: var(--font-weight-medium);
   }
 
   .review-chip.tag {

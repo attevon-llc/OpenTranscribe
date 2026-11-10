@@ -248,7 +248,7 @@
     align-items: center;
     gap: var(--space-1);
     color: var(--text-color);
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body);
     line-height: 1.5;
   }
 
@@ -260,7 +260,7 @@
   .multi-file-hint {
     color: var(--primary-on-surface);
     font-size: 0.8em;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     margin-top: var(--space-0-5);
   }
 
@@ -270,24 +270,24 @@
 
   .supported-formats p {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-secondary);
   }
 
   .supported-formats .formats-heading {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-0-5);
   }
 
   .supported-formats .formats-label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .supported-formats .formats-help {
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .selected-file {
@@ -313,14 +313,14 @@
   }
 
   .file-name {
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
     margin: 0;
     word-break: break-all;
   }
 
   .file-size {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin: var(--space-0-5) 0 0 0;
   }

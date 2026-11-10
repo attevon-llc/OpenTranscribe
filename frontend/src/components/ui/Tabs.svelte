@@ -217,8 +217,8 @@
     border-radius: 0;
     box-shadow: none;
     color: var(--text-secondary);
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition:
       color var(--duration-fast) ease,
@@ -274,8 +274,8 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     line-height: 1;
   }
   .tab.active .tab-badge {

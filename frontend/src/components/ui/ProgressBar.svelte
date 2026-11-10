@@ -52,7 +52,7 @@
   }
 
   .progress-value {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 

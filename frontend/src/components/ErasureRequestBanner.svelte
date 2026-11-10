@@ -101,7 +101,7 @@
     justify-content: center;
     gap: var(--space-3);
     padding: var(--space-1-5) var(--space-4);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     background: #fef3c7;
     color: #78350f;
     border-bottom: 1px solid #f59e0b;

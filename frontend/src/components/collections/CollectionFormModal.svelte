@@ -160,7 +160,7 @@
   .form-group label {
     display: block;
     margin-bottom: var(--space-2);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -173,7 +173,7 @@
   .visibility-group legend {
     padding: 0;
     margin-bottom: var(--space-2);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -186,7 +186,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     cursor: pointer;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
   }
 
   .visibility-option.chosen {

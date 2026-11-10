@@ -297,7 +297,7 @@
 
   label {
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -306,7 +306,7 @@
     align-items: center;
     gap: 0.6rem;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   /* form-elements.css sets `input { width: 100% }` with no type exemption, so an
@@ -359,7 +359,7 @@
   .experimental-title {
     margin: 0;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 

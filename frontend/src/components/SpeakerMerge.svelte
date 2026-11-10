@@ -324,13 +324,13 @@
 
   .merge-header-left h5 {
     margin: 0;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
   .merge-header-hint {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
   }
 
@@ -350,7 +350,7 @@
 
   .help-text {
     margin: 0 0 var(--space-4) 0;
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -400,7 +400,7 @@
   }
 
   .speaker-badge {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     padding: 3px var(--space-2);
     border-radius: var(--radius-2xl);
@@ -420,7 +420,7 @@
   }
 
   .segment-count {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
   }
 
@@ -435,7 +435,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     border: none;
@@ -492,7 +492,7 @@
 
   .modal-description {
     margin: 0 0 var(--space-4) 0;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     line-height: 1.5;
   }

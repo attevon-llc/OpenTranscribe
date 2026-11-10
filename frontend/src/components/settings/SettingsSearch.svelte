@@ -259,7 +259,7 @@
   }
 
   .result-label {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
     line-height: 1.3;
   }

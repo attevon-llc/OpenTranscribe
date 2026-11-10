@@ -150,9 +150,9 @@
     padding: var(--space-2-5) var(--space-3); margin: var(--space-2) 0;
     border: 1px solid var(--border-color); border-radius: var(--radius-md);
     background: var(--surface-color);
-    font-size: 0.8125rem; color: var(--text-secondary);
+    font-size: var(--font-size-sm); color: var(--text-secondary);
   }
   .text { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
-  .text strong { color: var(--text-primary); font-weight: 600; }
+  .text strong { color: var(--text-primary); font-weight: var(--font-weight-semibold); }
   .progress { color: var(--primary-on-surface); }
 </style>

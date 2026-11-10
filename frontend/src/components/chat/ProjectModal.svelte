@@ -227,7 +227,7 @@
 
   .field-label {
     font-size: 0.87rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -270,7 +270,7 @@
 
   .char-count {
     flex-shrink: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }

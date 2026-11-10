@@ -204,8 +204,8 @@
     background-color: var(--surface-color);
     color: var(--text-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    font-size: 0.75rem;
-    font-weight: 400;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
     line-height: 1.4;
     text-align: start;
     white-space: normal;

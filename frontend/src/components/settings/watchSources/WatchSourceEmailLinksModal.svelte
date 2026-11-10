@@ -302,7 +302,7 @@
     margin-bottom: var(--space-2);
   }
   .link-name {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-size: 0.95rem;
   }
   .unlink {
@@ -312,7 +312,7 @@
     font-size: 0.7rem;
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .type-badge {
     background: var(--button-hover);

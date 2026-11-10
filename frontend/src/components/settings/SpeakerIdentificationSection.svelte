@@ -210,7 +210,7 @@
   .maintenance-heading {
     margin: 0 0 var(--space-1);
     font-size: 1.05rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 

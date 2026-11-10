@@ -148,7 +148,7 @@
 
   .list-title {
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0 0 var(--space-2) 0;
   }
@@ -192,7 +192,7 @@
 
   .target-name {
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
@@ -200,7 +200,7 @@
   }
 
   .target-email {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;

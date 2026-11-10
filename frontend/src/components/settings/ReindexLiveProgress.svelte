@@ -89,15 +89,15 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
   }
 
   .reindex-count {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .progress-bar.reindexing {
@@ -123,7 +123,7 @@
     justify-content: space-between;
     align-items: center;
     margin-top: var(--space-1);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -133,7 +133,7 @@
 
   .reindex-eta {
     white-space: nowrap;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
   }
 
@@ -160,7 +160,7 @@
 
   .btn-sm {
     padding: var(--space-1) var(--space-3);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .progress-container {
@@ -186,7 +186,7 @@
   }
 
   .progress-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }

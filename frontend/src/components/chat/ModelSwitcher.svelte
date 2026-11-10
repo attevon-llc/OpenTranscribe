@@ -114,7 +114,7 @@
 
   .field-label {
     font-size: 0.82rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -139,7 +139,7 @@
   .warning-title {
     margin: 0 0 0.2rem;
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -172,6 +172,6 @@
   .warning-btn.primary {
     border-color: var(--primary-color);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 </style>

@@ -132,7 +132,7 @@
     margin: 0;
     color: var(--text-secondary);
     line-height: 1.5;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .comparison {
@@ -152,12 +152,12 @@
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-bottom: var(--space-1);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .comparison-value {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     padding: var(--space-1);
     border-radius: var(--radius-md);
   }
@@ -231,14 +231,14 @@
   }
 
   .choice-title {
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
   .choice-badge {
     font-size: 0.6rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     padding: 0.0625rem var(--space-1-5);
     border-radius: var(--radius-pill);
     text-transform: uppercase;
@@ -252,7 +252,7 @@
   }
 
   .choice-desc {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -263,7 +263,7 @@
     justify-content: center;
     gap: var(--space-2);
     color: var(--text-tertiary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   @media (max-width: 480px) {

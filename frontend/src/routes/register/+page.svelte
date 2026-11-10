@@ -128,7 +128,7 @@
   <div class="auth-card">
     {#if checkingRegistration}
       <div class="registration-check">
-        <Spinner size="small" />
+        <Spinner label={$t('common.loading')} size="small" />
       </div>
     {:else if registrationAllowed}
     <div class="auth-header">

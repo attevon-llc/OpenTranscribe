@@ -140,7 +140,7 @@
   </div>
 
   {#if loading && !data}
-    <div class="loading-state"><Spinner size="large" /></div>
+    <div class="loading-state"><Spinner label={$t('common.loading')} size="large" /></div>
   {:else if error}
     <Banner tone="error">{error}</Banner>
   {:else if data}

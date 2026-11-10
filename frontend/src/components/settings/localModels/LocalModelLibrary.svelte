@@ -194,7 +194,7 @@
     {#if locked}
       <p class="hint locked" data-testid="local-model-locked-hint">{$t('settings.localModels.locked')}</p>
     {:else if loading && !catalog}
-      <div class="state"><Spinner size="medium" /></div>
+      <div class="state"><Spinner label={$t('common.loading')} size="medium" /></div>
     {:else if loadError && !catalog}
       <p class="error-text" role="alert">{loadError}</p>
       <button type="button" class="btn btn-secondary" on:click={() => load()}>

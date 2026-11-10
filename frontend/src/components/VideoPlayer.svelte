@@ -288,7 +288,7 @@
 
     {#if isSeeking}
       <div class="seek-overlay">
-        <Spinner size="medium" color="white" />
+        <Spinner label={$t('common.loading')} size="medium" color="white" />
       </div>
     {/if}
 

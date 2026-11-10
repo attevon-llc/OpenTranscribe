@@ -142,7 +142,7 @@
 
   <div class="sentinel" bind:this={sentinel}>
     {#if loading}
-      <Spinner size="small" />
+      <Spinner label={$t('common.loading')} size="small" />
     {/if}
   </div>
 </div>

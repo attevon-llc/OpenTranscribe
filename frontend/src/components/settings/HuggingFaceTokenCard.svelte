@@ -112,7 +112,7 @@
   <p class="desc">{$t('settings.engineSettings.hfToken.description')}</p>
 
   {#if loading}
-    <Spinner size="small" />
+    <Spinner label={$t('common.loading')} size="small" />
   {:else}
     {#if loadFailed}
       <p class="note warn" role="alert" data-testid="hf-token-load-failed">

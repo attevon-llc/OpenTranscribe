@@ -134,7 +134,7 @@
   <p class="credential-desc">{$t('settings.speakerIdentification.pyannoteKey.description')}</p>
 
   {#if loading}
-    <Spinner size="small" />
+    <Spinner label={$t('common.loading')} size="small" />
   {:else}
     {#if view.warningKey}
       <p class="credential-warning" role="alert" data-testid="pyannote-warning">

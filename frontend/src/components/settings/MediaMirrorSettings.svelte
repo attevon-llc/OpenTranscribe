@@ -241,7 +241,7 @@
 
   {#if loading}
     <div class="loading-state">
-      <Spinner size="small" />
+      <Spinner label={$t('common.loading')} size="small" />
     </div>
   {:else}
     {#if enabled && !isS3 && !mountOk}

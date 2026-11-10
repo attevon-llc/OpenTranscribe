@@ -307,7 +307,7 @@
 
   {#if loading}
     <div class="loading-state">
-      <Spinner size="small" />
+      <Spinner label={$t('common.loading')} size="small" />
     </div>
   {:else}
     <!-- Mount status banner (local destination only) -->

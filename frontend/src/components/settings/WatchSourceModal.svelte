@@ -345,7 +345,7 @@
               <button type="button" class="btn btn-secondary" on:click={() => openBrowser(form.local_path)}>{$t('settings.watchSources.browse')}</button>
             </div>
             {#if browsing}
-              <Spinner size="small" />
+              <Spinner label={$t('common.loading')} size="small" />
             {:else if listing}
               <div class="folder-browser">
                 <div class="fb-header">

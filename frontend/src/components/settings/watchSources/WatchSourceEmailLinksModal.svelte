@@ -167,7 +167,7 @@
     <p class="scope-note">{$t('settings.emailNotifications.links.perScanNote')}</p>
 
     {#if loading}
-      <div class="links-loading"><Spinner /></div>
+      <div class="links-loading"><Spinner label={$t('common.loading')} /></div>
     {:else}
       {#if links.length === 0}
         <EmptyState

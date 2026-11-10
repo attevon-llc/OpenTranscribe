@@ -77,6 +77,14 @@ vi.mock('$stores/toast', () => ({ toastStore: mockToast }));
 
 vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
+vi.mock('$lib/passwordPolicy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/passwordPolicy')>()),
+  loadPasswordPolicy: vi
+    .fn()
+    .mockResolvedValue(
+      (await importOriginal<typeof import('$lib/passwordPolicy')>()).FALLBACK_PASSWORD_POLICY
+    ),
+}));
 vi.mock('$lib/api/invitations', () => ({ resendEmailVerification: vi.fn() }));
 
 function noopComponent() {

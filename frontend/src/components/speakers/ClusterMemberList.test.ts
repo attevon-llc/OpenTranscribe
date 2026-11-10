@@ -28,6 +28,14 @@ vi.mock('$stores/audioPlaybackStore', async () => {
 });
 
 const mockAnalyzeClusterOutliers = vi.hoisted(() => vi.fn());
+vi.mock('$lib/api/speakerAttributeSettings', () => ({
+  getSpeakerAttributeSettings: vi.fn().mockResolvedValue({
+    detection_enabled: true,
+    gender_detection_enabled: true,
+    show_attributes_on_cards: true,
+    auto_llm_speaker_identification: false,
+  }),
+}));
 vi.mock('$lib/api/speakerClusters', () => ({ analyzeClusterOutliers: mockAnalyzeClusterOutliers }));
 
 // Svelte 5 removed `component.$on(...)`, so dispatched events are only

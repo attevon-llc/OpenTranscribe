@@ -15,6 +15,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 
+vi.mock('$lib/api/chatApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/api/chatApi')>()),
+  getAnswerBudget: vi
+    .fn()
+    .mockResolvedValue({ default_tokens: 1024, max_tokens: 4096, context_window: 8192 }),
+}));
+
 import ChatControlsPanel from './ChatControlsPanel.svelte';
 import type { ReasoningOffSwitch, UserLLMConfigurationsList } from '$lib/api/llmSettings';
 import { LLMSettingsApi } from '$lib/api/llmSettings';

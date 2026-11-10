@@ -65,7 +65,7 @@
   .summary-search {
     padding: 0.75rem 1.5rem;
     border-bottom: 1px solid var(--border-color);
-    background-color: var(--bg-secondary, var(--surface-color));
+    background-color: var(--bg-secondary);
   }
 
   .no-results {
@@ -74,7 +74,7 @@
     justify-content: center;
     gap: 0.5rem;
     padding: 1rem;
-    color: var(--text-muted, var(--text-secondary));
+    color: var(--text-muted);
     font-size: 0.9rem;
   }
 </style>

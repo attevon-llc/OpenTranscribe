@@ -112,8 +112,8 @@
     inset-inline-end: var(--space-4);
     width: 400px;
     max-width: calc(100vw - 2rem);
-    background: var(--surface-color, #fff);
-    border: 1px solid var(--border-color, #e5e7eb);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
     z-index: 1000;
@@ -125,8 +125,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.5rem 0.75rem;
-    background: var(--surface-color, #f9fafb);
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    background: var(--surface-color);
+    border-bottom: 1px solid var(--border-color);
   }
 
   .preview-info {
@@ -140,7 +140,7 @@
   .preview-title {
     font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--text-color, #111827);
+    color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -181,12 +181,12 @@
   }
 
   .preview-separator {
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     flex-shrink: 0;
   }
 
   .preview-subtitle {
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -234,7 +234,7 @@
 
   .preview-close:hover {
     color: var(--text-color);
-    background: var(--button-hover, var(--background-color));
+    background: var(--button-hover);
   }
 
   @media (max-width: 768px) {

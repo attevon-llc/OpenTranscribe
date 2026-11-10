@@ -32,15 +32,15 @@
     color: var(--text-secondary);
   }
   .badge-success {
-    background: rgba(var(--success-color-rgb, 34, 197, 94), 0.12);
+    background: rgba(var(--success-color-rgb), 0.12);
     color: var(--success-text);
   }
   .badge-warning {
-    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.14);
+    background: rgba(var(--warning-color-rgb), 0.14);
     color: var(--warning-text);
   }
   .badge-error {
-    background: rgba(var(--error-color-rgb, 239, 68, 68), 0.12);
+    background: rgba(var(--error-color-rgb), 0.12);
     color: var(--error-text);
   }
   .badge-info {

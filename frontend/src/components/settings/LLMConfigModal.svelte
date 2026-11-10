@@ -942,7 +942,7 @@ let _llmConfigModalWasOpen = false;
     border: none;
     cursor: pointer;
     padding: 4px;
-    color: var(--text-secondary, var(--text-muted));
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     border-radius: 4px;
@@ -950,7 +950,7 @@ let _llmConfigModalWasOpen = false;
   }
 
   .toggle-password:hover {
-    background-color: var(--background-color, var(--hover-color));
+    background-color: var(--background-color);
     color: var(--text-color);
   }
 

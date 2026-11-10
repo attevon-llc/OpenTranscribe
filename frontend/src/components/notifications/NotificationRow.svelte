@@ -74,15 +74,15 @@
 
   .notification-title {
     margin: 0 0 4px 0;
-    font-size: var(--font-size-md, 14px);
-    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     line-height: 1.4;
   }
 
   .notification-message {
     margin: 0 0 8px 0;
-    font-size: var(--font-size-sm, 13px);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.4;
     overflow-wrap: anywhere;
@@ -91,8 +91,8 @@
   .notification-action {
     display: block;
     margin-top: 8px;
-    font-size: var(--font-size-xs, 12px);
-    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     text-decoration: none;
     white-space: nowrap;
@@ -107,8 +107,8 @@
   }
 
   .notification-time {
-    font-size: var(--font-size-2xs, 11px);
-    font-weight: var(--font-weight-medium, 500);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 </style>

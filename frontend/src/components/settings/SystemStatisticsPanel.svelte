@@ -432,9 +432,9 @@
 
 <style>
   .cpu-mode-banner {
-    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.08);
-    border: 1px solid var(--warning-color, #f59e0b);
-    border-left: 4px solid var(--warning-color, #f59e0b);
+    background: rgba(var(--warning-color-rgb), 0.08);
+    border: 1px solid var(--warning-color);
+    border-left: 4px solid var(--warning-color);
     border-radius: 6px;
     padding: 14px 18px;
     margin-bottom: 20px;
@@ -456,7 +456,7 @@
 
   .cpu-mode-banner-reason {
     font-size: 0.85rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     margin-bottom: 10px;
   }
 
@@ -468,8 +468,8 @@
   }
 
   .cpu-mode-banner-list code {
-    background: var(--surface-color, rgba(0, 0, 0, 0.06));
-    border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
     border-radius: 3px;
     padding: 1px 5px;
     font-size: 0.85em;
@@ -477,8 +477,8 @@
 
   .cpu-mode-banner-footer {
     font-size: 0.82rem;
-    color: var(--text-secondary, #6b7280);
-    border-top: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
     padding-top: 8px;
     margin-top: 4px;
   }
@@ -691,7 +691,7 @@
   }
 
   .stat-detail-warning {
-    color: var(--warning-text, #92400e);
+    color: var(--warning-text);
   }
 
   :global([data-theme='dark']) .stat-detail-warning {
@@ -758,7 +758,7 @@
   }
 
   .gpu-step-btn:hover {
-    background-color: var(--primary-light, var(--border-color));
+    background-color: var(--primary-light);
     color: var(--primary-on-surface);
     border-color: var(--primary-color);
   }
@@ -942,9 +942,9 @@
     margin-top: 0.125rem;
     font-size: 0.6875rem;
     font-weight: 600;
-    color: var(--warning-text, #92400e);
-    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.12);
-    border: 1px solid var(--warning-color, #f59e0b);
+    color: var(--warning-text);
+    background: rgba(var(--warning-color-rgb), 0.12);
+    border: 1px solid var(--warning-color);
     border-radius: 10px;
     padding: 0.125rem 0.5rem;
     cursor: help;

@@ -260,27 +260,27 @@
   }
 
   .bulk-separator {
-    border-top: 1px solid var(--border-color, #444);
+    border-top: 1px solid var(--border-color);
     margin-bottom: 1rem;
   }
 
   .bulk-title {
     font-size: 0.95rem;
     font-weight: 600;
-    color: var(--text-color, #e0e0e0);
+    color: var(--text-color);
     margin: 0 0 0.25rem 0;
   }
 
   .bulk-description {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
     margin: 0 0 1rem 0;
     line-height: 1.4;
   }
 
   .pending-info {
     font-size: 0.85rem;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
     margin-bottom: 0.75rem;
     padding: 0.625rem 0.875rem;
     background: rgba(59, 130, 246, 0.08);
@@ -290,7 +290,7 @@
 
   .all-processed {
     font-size: 0.85rem;
-    color: var(--success-color, #51cf66);
+    color: var(--success-color);
     padding: 0.625rem 0.875rem;
     background: rgba(81, 207, 102, 0.08);
     border: 1px solid rgba(81, 207, 102, 0.2);
@@ -299,9 +299,9 @@
 
   .progress-section {
     padding: 1rem;
-    background: var(--background-color, #2a2a2a);
+    background: var(--background-color);
     border-radius: 6px;
-    border: 1px solid var(--border-color, #444);
+    border: 1px solid var(--border-color);
   }
 
   .progress-header {
@@ -313,7 +313,7 @@
 
   .progress-text {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
   }
 
   .progress-percent {
@@ -324,28 +324,28 @@
 
   .progress-bar-container {
     height: 8px;
-    background: var(--border-color, #444);
+    background: var(--border-color);
     border-radius: 4px;
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
-    background: var(--primary-color, #4a9eff);
+    background: var(--primary-color);
     border-radius: 4px;
     transition: width 0.3s ease;
   }
 
   .queued-message {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
     margin-bottom: 0.5rem;
     font-style: italic;
   }
 
   .failed-info {
     font-size: 0.75rem;
-    color: var(--error-color, #ff6b6b);
+    color: var(--error-color);
     margin-top: 0.5rem;
   }
 
@@ -362,7 +362,7 @@
 
   .reextract-confirm p {
     font-size: 0.85rem;
-    color: var(--text-color, #e0e0e0);
+    color: var(--text-color);
     margin: 0 0 0.75rem 0;
     line-height: 1.4;
   }

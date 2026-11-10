@@ -353,9 +353,9 @@
   }
 
   .download-button.processing {
-    background: var(--warning-color, #f59e0b);
+    background: var(--warning-color);
     color: white;
-    border-color: var(--warning-color, #f59e0b);
+    border-color: var(--warning-color);
   }
 
   .spinner {

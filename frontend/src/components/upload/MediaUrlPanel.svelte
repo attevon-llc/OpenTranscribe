@@ -430,7 +430,7 @@
     transition: transform 0.2s ease;
   }
 
-  .download-toggle input:checked + .download-toggle-slider { background-color: var(--primary-color, var(--primary-color)); }
+  .download-toggle input:checked + .download-toggle-slider { background-color: var(--primary-color); }
   .download-toggle input:checked + .download-toggle-slider::before { transform: translateX(16px); }
 
   .download-options-hint { font-size: 0.6875rem; color: var(--text-secondary); margin: 0; }
@@ -456,7 +456,7 @@
     margin: 0;
     font-size: 0.625rem;
     line-height: 1.4;
-    color: var(--text-tertiary, var(--text-secondary));
+    color: var(--text-tertiary);
   }
 
   .url-terms-link {

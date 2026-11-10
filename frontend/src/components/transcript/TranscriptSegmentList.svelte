@@ -693,7 +693,7 @@
     border-left: 3px solid var(--primary-color);
   }
   .segment-text.semantic-segment {
-    border-left: 3px solid var(--text-secondary, #94a3b8);
+    border-left: 3px solid var(--text-secondary);
   }
 
   /* Content redaction — "blur" mask style. The backend emits
@@ -701,7 +701,7 @@
      and reveal on hover (authorized viewers only see this style at all). */
   .segment-text :global(span.redacted) {
     filter: blur(5px);
-    background: var(--surface-hover, rgba(127, 127, 127, 0.15));
+    background: var(--surface-hover);
     border-radius: 3px;
     cursor: help;
     transition: filter 0.12s ease;
@@ -725,7 +725,7 @@
 
   .low-confidence-dot {
     display: inline-flex;
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
     vertical-align: super;
     margin-inline-start: 2px;
     cursor: help;

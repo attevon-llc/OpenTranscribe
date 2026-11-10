@@ -317,7 +317,7 @@
   }
 
   .result-note.warn {
-    color: var(--color-warning-text, var(--warning-color, #d97706));
+    color: var(--color-warning-text);
   }
 
   @media (max-width: 768px) {

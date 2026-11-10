@@ -122,7 +122,7 @@
   }
 
   .capability-notes .blocking {
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 
   .capability-legend {

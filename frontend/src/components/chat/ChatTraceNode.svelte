@@ -166,7 +166,7 @@
     transform: rotate(45deg);
   }
   .trace-marker--cross {
-    background: var(--error-color, #ef4444);
+    background: var(--error-color);
     clip-path: polygon(
       20% 0%,
       0% 20%,
@@ -211,8 +211,8 @@
   }
 
   .trace-node[data-outcome='failed'] .trace-badge--outcome {
-    border-color: var(--error-color, #ef4444);
-    color: var(--error-color, #ef4444);
+    border-color: var(--error-color);
+    color: var(--error-color);
   }
 
   .trace-chip,

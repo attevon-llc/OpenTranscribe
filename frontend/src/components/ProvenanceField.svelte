@@ -157,13 +157,13 @@
   /* A hand-entered value is the one fact here nobody derived, so it reads differently
      from an inference rather than sharing its styling. */
   .source-badge.manual {
-    border-color: var(--success-color, #2e7d32);
-    color: var(--success-color, #2e7d32);
+    border-color: var(--success-color);
+    color: var(--success-color);
   }
 
   .source-badge.conflict {
-    border-color: var(--warning-color, #b26a00);
-    color: var(--warning-color, #b26a00);
+    border-color: var(--warning-color);
+    color: var(--warning-color);
   }
 
   .source-badge.unresolved {
@@ -197,6 +197,6 @@
 
   .conflict-note {
     margin: 0.2rem 0;
-    color: var(--warning-color, #b26a00);
+    color: var(--warning-color);
   }
 </style>

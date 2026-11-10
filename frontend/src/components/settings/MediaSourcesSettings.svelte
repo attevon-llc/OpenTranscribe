@@ -430,7 +430,7 @@
     align-items: center;
     gap: 0.5rem;
     padding: 1rem 0;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .media-sources {
@@ -490,26 +490,26 @@
   }
 
   .source-card {
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 0.5rem;
     padding: 0.75rem 1rem;
-    background: var(--card-background, var(--input-background));
+    background: var(--card-background);
     transition: border-color 0.15s;
   }
 
   .source-card:hover:not(.editing):not(.add-card) {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
   }
 
   .source-card.editing,
   .source-card.add-card {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     border-width: 2px;
     padding: calc(0.75rem - 1px) calc(1rem - 1px);
   }
 
   .source-card.shared {
-    border-left: 3px solid var(--info-color, #3b82f6);
+    border-left: 3px solid var(--info-color);
     background: rgba(59, 130, 246, 0.04);
   }
 
@@ -523,7 +523,7 @@
     gap: 0.5rem;
     font-size: 0.8rem;
     font-weight: var(--font-weight-medium);
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     margin-top: 0.5rem;
   }
 
@@ -592,12 +592,12 @@
 
   .source-label {
     font-size: 0.75rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .shared-by {
     font-size: 0.7rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     font-style: italic;
   }
 
@@ -659,7 +659,7 @@
     gap: 0.375rem;
     margin-top: 0.5rem;
     padding-top: 0.5rem;
-    border-top: 1px solid var(--border-color, #e5e7eb);
+    border-top: 1px solid var(--border-color);
     flex-wrap: wrap;
   }
 
@@ -701,7 +701,7 @@
   .form-field label {
     font-size: 0.75rem;
     font-weight: 500;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .form-input,
@@ -722,7 +722,7 @@
   .toggle-row-inline input[type="checkbox"] {
     width: 1rem;
     height: 1rem;
-    accent-color: var(--primary-color, #3b82f6);
+    accent-color: var(--primary-color);
   }
 
   .form-actions-inline {
@@ -752,20 +752,20 @@
 
   /* Destructive text-only indicator */
   .btn-danger-text {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
   }
 
   .btn-danger-text:hover:not(:disabled) {
     background: rgba(239, 68, 68, 0.1);
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
     transform: scale(1.02);
   }
 
   /* Destructive solid — red confirm */
   .btn-danger {
-    background: var(--error-color, #ef4444);
+    background: var(--error-color);
     color: white;
     border: none;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
@@ -807,7 +807,7 @@
 
   .section-hint {
     font-size: 0.7rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     margin: 0.25rem 0 0;
     line-height: 1.4;
   }

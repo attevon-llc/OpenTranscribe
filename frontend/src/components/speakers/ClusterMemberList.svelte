@@ -248,8 +248,8 @@
     font-size: 11px;
     padding: 1px 6px;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--success-color, #059669) 15%, transparent);
-    color: var(--success-color, #059669);
+    background: color-mix(in srgb, var(--success-color) 15%, transparent);
+    color: var(--success-color);
   }
 
   /* .gender-icon / .gender-svg / .gender-confirmed-tick moved to GenderBadge.svelte
@@ -257,7 +257,7 @@
      needs its styles to live there, not here. */
 
   .gender-outlier {
-    background: color-mix(in srgb, var(--warning-color, #f59e0b) 8%, transparent);
+    background: color-mix(in srgb, var(--warning-color) 8%, transparent);
   }
 
   .split-selectable {
@@ -265,11 +265,11 @@
   }
 
   .split-selectable:hover {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
   }
 
   .split-selectable input[type="checkbox"] {
-    accent-color: var(--primary-color, #3b82f6);
+    accent-color: var(--primary-color);
     width: 16px;
     height: 16px;
     cursor: pointer;
@@ -283,9 +283,9 @@
     height: 24px;
     padding: 0;
     border-radius: 50%;
-    border: 1px solid var(--border-color, #e5e7eb);
-    background: var(--card-background, #fff);
-    color: var(--text-secondary, #6b7280);
+    border: 1px solid var(--border-color);
+    background: var(--card-background);
+    color: var(--text-secondary);
     cursor: pointer;
     transition: all 0.15s ease;
     flex-shrink: 0;
@@ -296,7 +296,7 @@
   .member-play-btn:hover {
     background: var(--primary-color);
     color: white;
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     transform: none;
     box-shadow: none;
   }
@@ -304,7 +304,7 @@
   .member-play-btn.playing {
     background: var(--primary-color);
     color: white;
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
   }
 
   /* Gender separator */
@@ -314,10 +314,10 @@
     gap: 8px;
     padding: 8px 8px 4px;
     margin-top: 8px;
-    border-top: 1px dashed var(--warning-color, #f59e0b);
+    border-top: 1px dashed var(--warning-color);
     font-size: 12px;
     font-weight: 600;
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
     flex-wrap: wrap;
     min-width: 0;
   }
@@ -325,7 +325,7 @@
   .separator-hint {
     font-weight: 400;
     font-size: 11px;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -335,9 +335,9 @@
   .majority-separator {
     padding: 6px 8px 2px;
     margin-top: 4px;
-    border-top: 1px solid var(--border-color, #e5e7eb);
+    border-top: 1px solid var(--border-color);
     font-size: 12px;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
   }
 
   .outlier-loading {
@@ -357,29 +357,29 @@
   }
 
   .outlier-badge-red {
-    background: color-mix(in srgb, var(--error-color, #ef4444) 15%, transparent);
-    color: var(--error-color, #ef4444);
+    background: color-mix(in srgb, var(--error-color) 15%, transparent);
+    color: var(--error-color);
   }
 
   .outlier-badge-yellow {
-    background: color-mix(in srgb, var(--warning-color, #f59e0b) 15%, transparent);
-    color: var(--warning-color, #f59e0b);
+    background: color-mix(in srgb, var(--warning-color) 15%, transparent);
+    color: var(--warning-color);
   }
 
   .outlier-badge-green {
-    background: color-mix(in srgb, var(--success-color, #10b981) 15%, transparent);
-    color: var(--success-color, #10b981);
+    background: color-mix(in srgb, var(--success-color) 15%, transparent);
+    color: var(--success-color);
   }
 
   /* Mode banners and actions */
   .mode-banner {
     padding: 8px 12px;
-    background: var(--color-warning-bg, rgba(245, 158, 11, 0.1));
-    border: 1px solid var(--color-warning-border, rgba(245, 158, 11, 0.3));
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
     border-radius: 6px;
     margin-bottom: 8px;
     font-size: 13px;
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
   }
 
   .mode-actions {
@@ -389,22 +389,22 @@
     gap: 8px;
     padding-bottom: 8px;
     margin-bottom: 8px;
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    border-bottom: 1px solid var(--border-color);
   }
 
   .btn-cancel {
     padding: 6px 14px;
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: var(--card-background, #fff);
-    color: var(--text-color, #111827);
+    background: var(--card-background);
+    color: var(--text-color);
     cursor: pointer;
     font-size: 13px;
     box-shadow: none;
   }
 
   .btn-cancel:hover {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }

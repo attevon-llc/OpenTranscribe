@@ -377,7 +377,7 @@
   }
 
   .search-bar-counter.no-results {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
   }
 
   .search-bar-nav {
@@ -412,7 +412,7 @@
 
   .search-bar-btn:hover:not(:disabled),
   .search-bar-clear:hover:not(:disabled) {
-    background: var(--button-hover, var(--hover-color));
+    background: var(--button-hover);
     color: var(--text-color);
   }
 

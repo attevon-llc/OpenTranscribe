@@ -692,27 +692,27 @@
     flex-direction: column;
     gap: 4px;
     padding: 12px 14px;
-    border: 1px solid var(--border-color, #d1d5db);
+    border: 1px solid var(--border-color);
     border-inline-start-width: 4px;
     border-radius: 8px;
-    background-color: var(--bg-secondary, white);
-    color: var(--text-primary, #111827);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
   }
 
   .wizard-callout-warning {
-    border-color: var(--warning-color, #f59e0b);
-    background-color: rgba(var(--warning-color-rgb, 245, 158, 11), 0.12);
+    border-color: var(--warning-color);
+    background-color: rgba(var(--warning-color-rgb), 0.12);
   }
 
   .wizard-callout-success {
-    border-color: var(--success-color, #10b981);
-    background-color: rgba(var(--success-color-rgb, 16, 185, 129), 0.12);
+    border-color: var(--success-color);
+    background-color: rgba(var(--success-color-rgb), 0.12);
   }
 
   .wizard-hint {
     margin: 0;
-    color: var(--text-secondary, #6b7280);
-    font-size: var(--font-size-sm, 0.9rem);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .wizard-skip-hint {
@@ -781,7 +781,7 @@
 
   .wizard-checkbox small {
     display: block;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     font-weight: normal;
   }
 

@@ -725,7 +725,7 @@
   .policy-skip-notice {
     margin: 0 0 1rem 0;
     padding: 0.6rem 0.9rem;
-    border: 1px solid var(--warning-color, #d97706);
+    border: 1px solid var(--warning-color);
     border-radius: 6px;
     font-size: 0.8rem;
     color: var(--text-color);

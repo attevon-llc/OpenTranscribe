@@ -938,7 +938,7 @@
   }
 
   .step-item:focus-visible {
-    outline: 2px solid var(--primary-color, #3b82f6);
+    outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
 
@@ -960,19 +960,19 @@
   }
 
   .step-item.active .step-dot {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     background: var(--primary-color);
     color: white;
   }
 
   .step-item.completed .step-dot {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     background: var(--primary-color);
     color: white;
   }
 
   .step-item.visited .step-dot {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     color: var(--primary-on-surface);
   }
 
@@ -1191,7 +1191,7 @@
   /* "Review with defaults" — prominent secondary action, clearly distinct from Next */
   .nav-review-defaults {
     background: rgba(59, 130, 246, 0.08);
-    border: 1px solid var(--primary-color, #3b82f6);
+    border: 1px solid var(--primary-color);
     color: var(--primary-on-surface);
     font-weight: 600;
   }

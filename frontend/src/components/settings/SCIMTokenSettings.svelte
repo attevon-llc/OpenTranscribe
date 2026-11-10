@@ -317,8 +317,8 @@
   }
 
   .warning-box {
-    background: var(--color-warning-bg, rgba(217, 119, 6, 0.1));
-    border: 1px solid var(--color-warning-border, rgba(217, 119, 6, 0.3));
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
     border-radius: 6px;
     padding: 0.75rem;
     font-size: 0.8125rem;
@@ -338,7 +338,7 @@
 
   .token-reveal code {
     flex: 1;
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     word-break: break-all;
   }

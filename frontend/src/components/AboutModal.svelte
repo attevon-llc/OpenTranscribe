@@ -410,7 +410,7 @@
   .modal-title {
     margin: 0;
     font-size: 1.25rem;
-    color: var(--text-primary, #1a1a1a);
+    color: var(--text-primary);
   }
 
   .about-modal-wrapper :global(.modal-body) {
@@ -523,14 +523,14 @@
   }
 
   .header-version-number {
-    color: var(--text-color, var(--text-primary, #1a1a1a));
+    color: var(--text-color);
     font-size: 0.9rem;
     font-weight: 500;
     white-space: nowrap;
   }
 
   .header-version-number.mismatch {
-    color: var(--warning-text, var(--warning-color));
+    color: var(--warning-text);
     font-weight: 600;
   }
 
@@ -558,7 +558,7 @@
     border: 1px solid var(--warning-border);
     border-radius: 6px;
     background: var(--warning-bg);
-    color: var(--warning-text, var(--text-primary));
+    color: var(--warning-text);
     font-size: 0.9rem;
     line-height: 1.5;
   }
@@ -640,7 +640,7 @@
 
   .credit-link:hover {
     color: var(--primary-on-surface);
-    background: var(--hover-color, rgba(59, 130, 246, 0.1));
+    background: var(--hover-color);
     transform: translateX(4px);
   }
 

@@ -156,6 +156,6 @@
     transition: transform 0.2s ease;
   }
 
-  .toggle-switch input:checked + .toggle-slider { background: var(--primary-color, var(--primary-color)); }
+  .toggle-switch input:checked + .toggle-slider { background: var(--primary-color); }
   .toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
 </style>

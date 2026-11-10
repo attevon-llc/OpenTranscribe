@@ -257,7 +257,7 @@
 
   .search-clear-btn:hover {
     color: var(--text-color);
-    background: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background: var(--hover-color);
   }
 
   .search-input {
@@ -359,7 +359,7 @@
     gap: 8px;
     font-size: 13px;
     font-weight: var(--font-weight-medium);
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     margin: 16px 0 4px;
     padding: 4px 4px;
     border: none;
@@ -373,7 +373,7 @@
   }
 
   .section-heading-btn:hover {
-    background: var(--hover-color, #f9fafb);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }
@@ -383,11 +383,11 @@
   }
 
   .section-heading-btn.identified {
-    color: var(--success-color, #059669);
+    color: var(--success-color);
   }
 
   .section-heading-btn.unidentified {
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .section-heading-btn svg {
@@ -406,7 +406,7 @@
   .section-empty-note {
     padding: 12px 24px;
     font-size: 13px;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     font-style: italic;
   }
 
@@ -428,17 +428,17 @@
 
   .pagination button {
     padding: 6px 14px;
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: var(--card-background, #fff);
-    color: var(--text-color, #111827);
+    background: var(--card-background);
+    color: var(--text-color);
     cursor: pointer;
     box-shadow: none;
     font-size: 14px;
   }
 
   .pagination button:hover:not(:disabled) {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }
@@ -454,8 +454,8 @@
     justify-content: space-between;
     gap: 8px;
     padding: 8px 16px;
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 10%, transparent);
-    border: 1px solid var(--primary-color, #3b82f6);
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+    border: 1px solid var(--primary-color);
     border-radius: 6px;
     margin-bottom: 12px;
     font-size: 14px;
@@ -471,23 +471,23 @@
 
   .btn-cancel-merge {
     padding: 4px 12px;
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: var(--card-background, #fff);
-    color: var(--text-color, #111827);
+    background: var(--card-background);
+    color: var(--text-color);
     cursor: pointer;
     font-size: 13px;
     box-shadow: none;
   }
 
   .btn-cancel-merge:hover {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }
 
   .merge-source-highlight {
-    outline: 2px solid var(--primary-color, #3b82f6);
+    outline: 2px solid var(--primary-color);
     outline-offset: 2px;
     border-radius: 8px;
   }

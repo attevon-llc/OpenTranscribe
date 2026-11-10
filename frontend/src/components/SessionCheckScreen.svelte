@@ -51,7 +51,7 @@
   .check-shell {
     min-height: 100vh;
     min-height: 100dvh;
-    background: var(--bg-color, var(--bg-primary));
+    background: var(--bg-color);
   }
 
   /* Same box as Navbar's `.navbar` / `.navbar-container`: height, surface, padding, max-width. */
@@ -131,7 +131,7 @@
     gap: 1.5rem;
     min-height: 100vh;
     min-height: 100dvh;
-    background-color: var(--bg-primary, #f8fafc);
+    background-color: var(--bg-primary);
   }
 
   .logo {
@@ -144,7 +144,7 @@
     height: 3px;
     overflow: hidden;
     border-radius: 3px;
-    background: var(--border-color, #e2e8f0);
+    background: var(--border-color);
   }
 
   .bar-fill {
@@ -178,7 +178,7 @@
     position: fixed;
     inset-inline: 1rem;
     bottom: 1.5rem;
-    z-index: var(--z-critical, 10000);
+    z-index: var(--z-critical);
     display: flex;
     flex-wrap: wrap;
     align-items: center;

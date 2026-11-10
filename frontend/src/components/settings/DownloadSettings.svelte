@@ -206,7 +206,7 @@
     align-items: center;
     gap: 0.5rem;
     padding: 1rem 0;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .settings-form {
@@ -247,7 +247,7 @@
 
   .form-hint {
     font-size: 0.75rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     margin: 0;
   }
 
@@ -277,7 +277,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: var(--border-color, #d1d5db);
+    background-color: var(--border-color);
     border-radius: 1.5rem;
     transition: background-color 0.2s;
   }
@@ -307,7 +307,7 @@
     justify-content: flex-end;
     gap: 0.75rem;
     padding-top: 0.75rem;
-    border-top: 1px solid var(--border-color, #e5e7eb);
+    border-top: 1px solid var(--border-color);
   }
 
   .form-actions .btn-secondary {

@@ -277,12 +277,12 @@
     font-size: 1.1rem;
     font-weight: 600;
     margin-bottom: 0.25rem;
-    color: var(--text-color, #e0e0e0);
+    color: var(--text-color);
   }
 
   .section-description {
     font-size: 0.85rem;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
     margin-bottom: 1.5rem;
     line-height: 1.4;
   }
@@ -301,13 +301,13 @@
     gap: 1rem;
     padding: 0.75rem;
     border-radius: 8px;
-    background: var(--background-color, #2a2a2a);
+    background: var(--background-color);
     border: 1px solid var(--border-color);
   }
 
   .setting-row.sub-setting {
     margin-left: 1.5rem;
-    background: var(--surface-color, #333);
+    background: var(--surface-color);
   }
 
   .setting-info {
@@ -317,27 +317,27 @@
   .setting-label {
     font-size: 0.9rem;
     font-weight: 500;
-    color: var(--text-color, #e0e0e0);
+    color: var(--text-color);
     display: block;
     margin-bottom: 0.25rem;
   }
 
   .setting-description {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
     margin: 0;
     line-height: 1.3;
   }
 
   .setting-note {
     font-size: 0.775rem;
-    color: var(--text-muted, #999);
+    color: var(--text-muted);
     margin: 0.375rem 0 0;
     line-height: 1.3;
   }
 
   .locked-note {
-    color: var(--text-color, #e0e0e0);
+    color: var(--text-color);
     font-weight: 500;
   }
 
@@ -360,7 +360,7 @@
     position: absolute;
     cursor: pointer;
     inset: 0;
-    background-color: var(--border-color, #555);
+    background-color: var(--border-color);
     border-radius: 24px;
     transition: 0.2s;
   }
@@ -378,7 +378,7 @@
   }
 
   .toggle input:checked + .toggle-slider {
-    background-color: var(--primary-color, #4a9eff);
+    background-color: var(--primary-color);
   }
 
   .toggle input:checked + .toggle-slider::before {
@@ -402,7 +402,7 @@
   }
 
   .error-message {
-    color: var(--error-color, #ff6b6b);
+    color: var(--error-color);
     font-size: 0.85rem;
     margin-bottom: 0.75rem;
     padding: 0.5rem 0.75rem;
@@ -411,7 +411,7 @@
   }
 
   .success-message {
-    color: var(--success-color, #51cf66);
+    color: var(--success-color);
     font-size: 0.85rem;
     margin-bottom: 0.75rem;
     padding: 0.5rem 0.75rem;

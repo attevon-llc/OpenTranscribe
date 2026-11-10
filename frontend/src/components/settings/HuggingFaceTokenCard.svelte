@@ -203,8 +203,8 @@
 
   .title {
     margin: 0;
-    font-size: var(--font-size-md, 0.95rem);
-    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -214,7 +214,7 @@
     border-radius: 999px;
     border: 1px solid var(--border-color);
     font-size: 0.75rem;
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
@@ -248,7 +248,7 @@
     display: block;
     margin-bottom: 0.375rem;
     font-size: 0.8125rem;
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 

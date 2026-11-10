@@ -410,13 +410,13 @@
     gap: 6px;
     padding: 6px 12px;
     font-size: 11px;
-    color: var(--ai-accent-color, var(--primary-color, #3b82f6));
+    color: var(--ai-accent-color);
     background: rgba(59, 130, 246, 0.08);
     border-top: 1px solid var(--border-color);
   }
 
   .sparkle-icon {
-    color: var(--ai-accent-color, var(--primary-color, #3b82f6));
+    color: var(--ai-accent-color);
     flex-shrink: 0;
   }
 </style>

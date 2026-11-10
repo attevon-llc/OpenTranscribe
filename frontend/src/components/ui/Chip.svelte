@@ -70,16 +70,16 @@
     color: var(--text-secondary);
   }
   .chip-success {
-    background: rgba(var(--success-color-rgb, 34, 197, 94), 0.12);
-    color: var(--success-color, #16a34a);
+    background: rgba(var(--success-color-rgb), 0.12);
+    color: var(--success-color);
   }
   .chip-warning {
-    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.14);
-    color: var(--warning-color, #d97706);
+    background: rgba(var(--warning-color-rgb), 0.14);
+    color: var(--warning-color);
   }
   .chip-error {
-    background: rgba(var(--error-color-rgb, 239, 68, 68), 0.12);
-    color: var(--error-color, #dc2626);
+    background: rgba(var(--error-color-rgb), 0.12);
+    color: var(--error-color);
   }
   .chip-info {
     background: rgba(var(--primary-color-rgb), 0.12);

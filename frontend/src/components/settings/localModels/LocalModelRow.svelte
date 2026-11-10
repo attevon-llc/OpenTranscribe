@@ -150,7 +150,7 @@
     gap: 0.5rem;
   }
   .model-name {
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     overflow-wrap: anywhere;
   }
@@ -181,10 +181,10 @@
   }
   .row-error {
     font-size: 0.8rem;
-    color: var(--error-color, #b91c1c);
+    color: var(--error-color);
   }
   :global([data-theme='dark']) .row-error {
-    color: var(--error-color, #f87171);
+    color: var(--error-color);
   }
   .sr-only {
     position: absolute;

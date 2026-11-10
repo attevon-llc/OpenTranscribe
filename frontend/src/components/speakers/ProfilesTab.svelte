@@ -152,9 +152,9 @@
     font-size: 14px;
     padding: 3px 6px;
     border-radius: 6px;
-    border: 1px solid var(--border-color, #d1d5db);
+    border: 1px solid var(--border-color);
     background: transparent;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     cursor: pointer;
     transition: all 0.15s ease;
     line-height: 1;
@@ -174,13 +174,13 @@
   }
 
   .gender-toggle-btn:hover {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     color: var(--primary-on-surface);
   }
 
   .gender-toggle-btn.active {
-    border-color: var(--primary-color, #3b82f6);
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     color: var(--primary-on-surface);
   }
 
@@ -193,9 +193,9 @@
 
   .profile-card {
     padding: 16px;
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: var(--card-background, #fff);
+    background: var(--card-background);
     transition: box-shadow 0.15s ease;
     overflow: hidden;
     min-width: 0;
@@ -236,7 +236,7 @@
     font-size: 16px;
     font-weight: 600;
     color: var(--primary-on-surface);
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 20%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 20%, transparent);
   }
 
   .avatar-overlay {
@@ -259,7 +259,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 20%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 20%, transparent);
   }
 
   .profile-header {
@@ -326,9 +326,9 @@
     min-width: 28px;
     padding: 0;
     border-radius: 6px;
-    border: 1px solid var(--border-color, #e5e7eb);
-    background: var(--card-background, #fff);
-    color: var(--text-secondary, #6b7280);
+    border: 1px solid var(--border-color);
+    background: var(--card-background);
+    color: var(--text-secondary);
     cursor: pointer;
     transition: all 0.15s ease;
     box-shadow: none;
@@ -336,16 +336,16 @@
   }
 
   .icon-btn:hover {
-    background: var(--hover-color, #f3f4f6);
-    color: var(--text-color, #111827);
+    background: var(--hover-color);
+    color: var(--text-color);
     transform: none;
     box-shadow: none;
   }
 
   .icon-btn.danger:hover {
-    color: var(--error-color, #ef4444);
-    background: color-mix(in srgb, var(--error-color, #ef4444) 10%, transparent);
-    border-color: color-mix(in srgb, var(--error-color, #ef4444) 30%, transparent);
+    color: var(--error-color);
+    background: color-mix(in srgb, var(--error-color) 10%, transparent);
+    border-color: color-mix(in srgb, var(--error-color) 30%, transparent);
     transform: none;
     box-shadow: none;
   }
@@ -365,7 +365,7 @@
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 8px;
-    background: var(--accent-light, #e0e7ff);
+    background: var(--accent-light);
     color: var(--primary-on-surface);
     margin-left: 6px;
     vertical-align: middle;

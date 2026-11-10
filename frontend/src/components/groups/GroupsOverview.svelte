@@ -286,7 +286,7 @@
   .error-state {
     text-align: center;
     padding: 1.5rem 0;
-    color: var(--danger-color, #dc2626);
+    color: var(--danger-color);
     font-size: 0.8125rem;
   }
 

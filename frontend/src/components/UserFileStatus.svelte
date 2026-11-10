@@ -470,8 +470,8 @@
     margin: 0 auto;
     padding: 1rem;
     color: var(--text-color);
-    height: calc(100vh - var(--content-top, 60px));
-    height: calc(100dvh - var(--content-top, 60px));
+    height: calc(100vh - var(--content-top));
+    height: calc(100dvh - var(--content-top));
     overflow-y: auto;
   }
 

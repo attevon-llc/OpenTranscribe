@@ -453,9 +453,9 @@
   .info-note {
     margin: 0.5rem 0 0 1.5rem;
     padding: 0.6rem 0.75rem;
-    border: 1px solid var(--color-info-border, rgba(var(--primary-color-rgb), 0.3));
+    border: 1px solid var(--color-info-border);
     border-radius: 6px;
-    background: var(--color-info-bg, rgba(var(--primary-color-rgb), 0.08));
+    background: var(--color-info-bg);
     color: var(--color-text-secondary);
     font-size: 0.75rem;
     line-height: 1.5;

@@ -182,8 +182,8 @@
   }
 
   .chip-off {
-    border-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.5);
-    background-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.12);
+    border-color: rgba(var(--warning-color-rgb), 0.5);
+    background-color: rgba(var(--warning-color-rgb), 0.12);
     color: var(--text-color);
     font-weight: 500;
   }
@@ -230,13 +230,13 @@
   }
 
   .chip-estimate {
-    border-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.5);
+    border-color: rgba(var(--warning-color-rgb), 0.5);
     color: var(--text-color);
   }
 
   .chip-estimate.over {
-    border-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.5);
-    color: var(--error-color, #dc3545);
+    border-color: rgba(var(--error-color-rgb), 0.5);
+    color: var(--error-color);
   }
 
   .add-context,

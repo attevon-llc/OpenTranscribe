@@ -629,7 +629,7 @@
        subtracting it from the height; otherwise the shell's padding is added
        back below the page and the whole window scrolls by exactly 2x padding. */
     margin: -1rem;
-    height: calc(100vh - var(--navbar-height, 60px));
+    height: calc(100vh - var(--navbar-height));
     overflow: hidden;
   }
 
@@ -776,10 +776,10 @@
     max-width: 52rem;
     margin: 0.75rem auto 0;
     padding: 0.6rem 0.85rem;
-    border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.35);
+    border: 1px solid rgba(var(--error-color-rgb), 0.35);
     border-radius: 8px;
-    background-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.08);
-    color: var(--error-color, #dc3545);
+    background-color: rgba(var(--error-color-rgb), 0.08);
+    color: var(--error-color);
     font-size: 0.85rem;
   }
 
@@ -795,7 +795,7 @@
   }
 
   .error-action:hover {
-    background-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.12);
+    background-color: rgba(var(--error-color-rgb), 0.12);
   }
 
   .chat-unavailable {
@@ -838,7 +838,7 @@
 
     .sidebar-pane {
       position: fixed;
-      top: var(--navbar-height, 60px);
+      top: var(--navbar-height);
       bottom: 0;
       left: 0;
       width: min(17rem, 82vw);
@@ -854,7 +854,7 @@
     .sidebar-scrim {
       display: block;
       position: fixed;
-      inset: var(--navbar-height, 60px) 0 0 0;
+      inset: var(--navbar-height) 0 0 0;
       z-index: 29;
       border: none;
       background-color: rgba(0, 0, 0, 0.4);

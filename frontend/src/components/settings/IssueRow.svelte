@@ -99,7 +99,7 @@
   }
 
   .issue-error .issue-glyph {
-    background: var(--error-solid, var(--error-color));
+    background: var(--error-solid);
   }
 
   .issue-warning .issue-glyph {

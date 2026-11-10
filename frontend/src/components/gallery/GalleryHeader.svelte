@@ -214,8 +214,8 @@
       margin-right: -1rem;
       padding: 0.5rem 1rem;
       /* Prevent content showing through gap between navbar and toolbar */
-      background-color: var(--background-color, var(--surface-color));
-      box-shadow: 0 -20px 0 0 var(--background-color, var(--surface-color));
+      background-color: var(--background-color);
+      box-shadow: 0 -20px 0 0 var(--background-color);
     }
 
     .toolbar-row {

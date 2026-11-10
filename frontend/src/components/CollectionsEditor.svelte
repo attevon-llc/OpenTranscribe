@@ -502,7 +502,7 @@
   }
 
   .ai-icon {
-    color: var(--ai-accent-color, var(--primary-color, #3b82f6));
+    color: var(--ai-accent-color);
     display: flex;
     align-items: center;
   }

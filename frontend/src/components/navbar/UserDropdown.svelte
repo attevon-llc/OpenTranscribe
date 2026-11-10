@@ -365,7 +365,7 @@
   .dropdown-menu :global(a.dropdown-item:hover) {
     color: var(--primary-on-surface) !important;
     text-decoration: none !important;
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05)) !important;
+    background-color: var(--hover-color) !important;
     padding-inline-start: calc(1rem + 2px) !important;
   }
 
@@ -393,7 +393,7 @@
   }
 
   .dropdown-menu :global(.dropdown-item:hover) {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background-color: var(--hover-color);
     color: var(--primary-on-surface);
   }
 
@@ -439,7 +439,7 @@
      translateX pushed them past the scrollport and, with overflow-y:auto
      computing overflow-x to auto, produced a horizontal scrollbar on hover. */
   .dropdown-item:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background-color: var(--hover-color);
     color: var(--primary-on-surface);
     padding-inline-start: calc(1rem + 2px);
   }
@@ -455,7 +455,7 @@
   }
 
   .dropdown-item.logout {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
     margin-top: 0.125rem;
   }
 
@@ -465,19 +465,19 @@
 
   .dropdown-item.logout:hover {
     background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
     padding-inline-start: calc(1rem + 2px);
   }
 
   .dropdown-item.logout:hover svg {
     opacity: 1;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 
   /* Active state for dropdown items */
   .dropdown-item:active {
     padding-inline-start: calc(1rem + 1px);
-    background-color: var(--primary-color-light, rgba(59, 130, 246, 0.1));
+    background-color: var(--primary-color-light);
   }
 
   /* Improved spacing between groups */

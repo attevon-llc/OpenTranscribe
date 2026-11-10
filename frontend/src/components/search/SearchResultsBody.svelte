@@ -283,8 +283,8 @@
   .summary-unavailable-notice {
     padding: 1rem;
     border-radius: 8px;
-    background: var(--warning-bg, #fef3c7);
-    border: 1px solid var(--warning-border, #f59e0b);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
     margin-bottom: 0.75rem;
   }
 
@@ -333,8 +333,8 @@
   .no-keyword-notice {
     padding: 12px 16px;
     margin-bottom: 12px;
-    background: var(--color-warning-bg, #fef3c7);
-    color: var(--color-warning-text, #92400e);
+    background: var(--color-warning-bg);
+    color: var(--color-warning-text);
     border-radius: 8px;
     font-size: var(--font-size-sm);
   }

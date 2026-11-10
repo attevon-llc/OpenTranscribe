@@ -238,7 +238,7 @@
   .toggle-slider {
     position: absolute;
     inset: 0;
-    background-color: var(--border-color, #d1d5db);
+    background-color: var(--border-color);
     border-radius: 1.5rem;
     transition: background-color 0.2s;
   }

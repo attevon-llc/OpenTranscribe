@@ -155,7 +155,7 @@
     margin: 0;
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
-    max-width: var(--measure-prose, 72ch);
+    max-width: var(--measure-prose);
   }
 
   .gate-group {
@@ -172,7 +172,7 @@
 
   .gate-group legend {
     padding: 0 0.375rem;
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
   }
 
   .gate-option {
@@ -189,6 +189,6 @@
 
   .gate-error {
     margin: 0;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 </style>

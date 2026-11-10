@@ -322,7 +322,7 @@
 
   .claim {
     display: block;
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-mono);
     word-break: break-all;
   }
 

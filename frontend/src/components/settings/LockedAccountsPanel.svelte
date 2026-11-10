@@ -206,7 +206,7 @@
     gap: 0.5rem;
     padding: 0.75rem;
     border-radius: 6px;
-    background: var(--bg-secondary, rgba(0, 0, 0, 0.03));
+    background: var(--bg-secondary);
     font-size: 0.8125rem;
   }
 
@@ -216,7 +216,7 @@
   }
 
   .state-row.disabled {
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
   }
 
   .retry-btn {
@@ -261,7 +261,7 @@
 
   .no-match {
     font-style: italic;
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
   }
 
   .actions-cell {
@@ -272,7 +272,7 @@
   .action-link {
     border: none;
     background: none;
-    color: var(--accent-color, #2563eb);
+    color: var(--accent-color);
     cursor: pointer;
     padding: 0;
     font-size: 0.8125rem;

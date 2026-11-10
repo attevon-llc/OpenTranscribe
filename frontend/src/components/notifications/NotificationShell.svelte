@@ -64,7 +64,7 @@
   }
 
   .notification-item:hover {
-    background: var(--hover-color, rgba(0, 0, 0, 0.025));
+    background: var(--hover-color);
   }
 
   .notification-item.unread {
@@ -98,7 +98,7 @@
   }
 
   .status-warning .notification-indicator {
-    background: var(--warning-color, #f59e0b);
+    background: var(--warning-color);
   }
 
   /* An error keeps its colour even while unread: it is the thing to notice. */
@@ -156,7 +156,7 @@
   .status-warning .notification-icon {
     background: rgba(245, 158, 11, 0.1);
     border-color: rgba(245, 158, 11, 0.2);
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
   }
 
   .notification-content {
@@ -188,7 +188,7 @@
   }
 
   .notification-dismiss:hover {
-    background: var(--error-background, rgba(239, 68, 68, 0.1));
+    background: var(--error-background);
     color: var(--error-color);
     opacity: 1;
     box-shadow: none;

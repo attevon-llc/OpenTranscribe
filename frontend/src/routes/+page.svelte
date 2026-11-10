@@ -783,8 +783,8 @@
 <style>
   /* Main Container - Fixed Height Layout */
   .media-library-container {
-    height: calc(100vh - var(--content-top, 60px)); /* Full viewport minus navbar + safe-area */
-    height: calc(100dvh - var(--content-top, 60px));
+    height: calc(100vh - var(--content-top)); /* Full viewport minus navbar + safe-area */
+    height: calc(100dvh - var(--content-top));
     display: flex;
     overflow: hidden;
     padding-top: 0;

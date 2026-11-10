@@ -256,7 +256,7 @@
   .shimmer {
     position: relative;
     overflow: hidden;
-    background: var(--skeleton-base, rgba(100, 116, 139, 0.12));
+    background: var(--skeleton-base);
   }
 
   :global([data-theme='dark']) .shimmer {
@@ -299,7 +299,7 @@
       background: none;
     }
     .shimmer {
-      background: var(--skeleton-base, rgba(100, 116, 139, 0.15));
+      background: var(--skeleton-base);
     }
   }
 

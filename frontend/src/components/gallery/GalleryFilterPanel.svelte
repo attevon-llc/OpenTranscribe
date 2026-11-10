@@ -126,7 +126,7 @@
   .filter-overlay-backdrop {
     display: none;
     position: fixed;
-    top: var(--content-top, 60px);
+    top: var(--content-top);
     left: 0;
     right: 0;
     bottom: 0;
@@ -145,12 +145,12 @@
   @media (max-width: 768px) {
     .filter-sidebar {
       position: fixed;
-      top: var(--content-top, 60px);
+      top: var(--content-top);
       left: -100%;
       width: 85%;
       max-width: 320px;
-      height: calc(100vh - var(--content-top, 60px));
-      height: calc(100dvh - var(--content-top, 60px));
+      height: calc(100vh - var(--content-top));
+      height: calc(100dvh - var(--content-top));
       background: var(--surface-color);
       z-index: var(--z-modal);
       transition: left 0.3s ease;

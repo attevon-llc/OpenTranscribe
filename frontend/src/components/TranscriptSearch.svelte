@@ -445,7 +445,7 @@
   }
 
   .close-button:hover {
-    background: var(--button-hover, var(--hover-color));
+    background: var(--button-hover);
     color: var(--text-color);
   }
 

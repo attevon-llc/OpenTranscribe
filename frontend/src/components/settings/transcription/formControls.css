@@ -188,12 +188,12 @@
 
 .tx-form .capability-warning {
   font-size: 0.8rem;
-  color: var(--warning-color, #b45309);
+  color: var(--warning-color);
   margin-top: 0.25rem;
   padding: 0.4rem 0.6rem;
-  background: var(--warning-bg, rgba(245, 158, 11, 0.1));
+  background: var(--warning-bg);
   border-radius: 4px;
-  border-left: 3px solid var(--warning-color, #b45309);
+  border-left: 3px solid var(--warning-color);
 }
 
 .tx-form .capability-warning.warning-subtle {
@@ -224,10 +224,10 @@
 
 .tx-form .field-warning {
   font-size: 0.75rem;
-  color: var(--warning-color, #b45309);
+  color: var(--warning-color);
   margin: 0.375rem 0 0 0;
   padding: 0.25rem 0.5rem;
-  background: var(--warning-bg, rgba(245, 158, 11, 0.1));
+  background: var(--warning-bg);
   border-radius: 4px;
 }
 

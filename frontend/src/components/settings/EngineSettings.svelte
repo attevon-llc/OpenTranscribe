@@ -432,7 +432,7 @@
   }
 
   .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color, var(--primary-color));
+    background: var(--primary-color);
   }
 
   .toggle-input:checked + .toggle-switch::after {
@@ -477,13 +477,13 @@
   }
 
   .btn-primary {
-    background: var(--primary-color, var(--primary-color));
+    background: var(--primary-color);
     color: white;
     box-shadow: 0 1px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover, #2563eb);
+    background: var(--primary-hover);
     transform: translateY(-1px);
   }
 

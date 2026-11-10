@@ -190,7 +190,7 @@
     padding: 0.6rem 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background-color: var(--background-secondary, rgba(0, 0, 0, 0.03));
+    background-color: var(--background-secondary);
     font-size: 0.8rem;
   }
 

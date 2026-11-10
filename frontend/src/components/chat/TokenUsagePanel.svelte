@@ -94,15 +94,15 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background-color: var(--success-color, #22c55e);
+    background-color: var(--success-color);
   }
 
   .dot.near {
-    background-color: var(--warning-color, #ffc107);
+    background-color: var(--warning-color);
   }
 
   .dot.over {
-    background-color: var(--error-color, #dc3545);
+    background-color: var(--error-color);
   }
 
   .token-total {
@@ -135,11 +135,11 @@
   .warning {
     margin: 0;
     font-size: 0.76rem;
-    color: var(--warning-color, #ffc107);
+    color: var(--warning-color);
   }
 
   .warning.over {
-    color: var(--error-color, #dc3545);
+    color: var(--error-color);
     font-weight: 600;
   }
 

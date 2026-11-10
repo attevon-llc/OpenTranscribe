@@ -393,7 +393,7 @@
   }
 
   .empty-shares svg {
-    color: var(--text-tertiary, #94a3b8);
+    color: var(--text-tertiary);
     margin-bottom: 0.5rem;
   }
 
@@ -481,7 +481,7 @@
   }
 
   .remove-btn:hover {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
     background: rgba(239, 68, 68, 0.08);
   }
 

@@ -284,6 +284,6 @@
   .error {
     margin: 0;
     font-size: 0.82rem;
-    color: var(--error-color, #dc3545);
+    color: var(--error-color);
   }
 </style>

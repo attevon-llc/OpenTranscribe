@@ -186,7 +186,7 @@
   }
 
   .member-row.is-self {
-    background-color: var(--primary-light, rgba(59, 130, 246, 0.05));
+    background-color: var(--primary-light);
   }
 
   .member-avatar {
@@ -277,7 +277,7 @@
   }
 
   .btn-remove:hover:not(:disabled) {
-    color: var(--danger-color, #dc2626);
+    color: var(--danger-color);
     background-color: rgba(220, 38, 38, 0.08);
   }
 
@@ -288,10 +288,10 @@
 
   .btn-leave {
     padding: 0.25rem 0.75rem;
-    border: 1px solid var(--danger-color, #dc2626);
+    border: 1px solid var(--danger-color);
     border-radius: 6px;
     background: transparent;
-    color: var(--danger-color, #dc2626);
+    color: var(--danger-color);
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;

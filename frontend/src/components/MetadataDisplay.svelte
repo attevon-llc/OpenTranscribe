@@ -244,7 +244,7 @@
 
 <style>
   .provenance-error {
-    color: var(--error-color, #c62828);
+    color: var(--error-color);
   }
 
   .metadata-dropdown-section {

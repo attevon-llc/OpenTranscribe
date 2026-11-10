@@ -164,7 +164,7 @@
   }
 
   .share-row:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.03));
+    background-color: var(--hover-color);
   }
 
   .share-row.updating {
@@ -236,8 +236,8 @@
   }
 
   .revoke-btn:hover:not(:disabled) {
-    border-color: var(--error-color, #ef4444);
-    color: var(--error-color, #ef4444);
+    border-color: var(--error-color);
+    color: var(--error-color);
     background: rgba(239, 68, 68, 0.08);
   }
 

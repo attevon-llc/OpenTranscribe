@@ -118,7 +118,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    background: var(--success-color, #22c55e);
+    background: var(--success-color);
     color: white;
     padding: 0.5rem 1rem;
     border-radius: 6px;

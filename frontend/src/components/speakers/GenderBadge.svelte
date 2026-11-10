@@ -72,7 +72,7 @@
     font-size: 12px;
     /* Rendered inside the cluster card's tinted gender chip, where --text-secondary
      * measures 4.25:1 against the success tint — under WCAG AA for this 11px label. */
-    color: var(--text-on-tint, #475569);
+    color: var(--text-on-tint);
     display: inline-flex;
     align-items: center;
     gap: 2px;
@@ -92,7 +92,7 @@
 
   .gender-confirmed-tick {
     display: inline-flex;
-    color: var(--success-color, #10b981);
+    color: var(--success-color);
     margin-inline-start: 1px;
   }
 

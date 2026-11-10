@@ -570,7 +570,7 @@
   }
 
   .expand-link:hover {
-    color: var(--primary-color-dark, #2563eb);
+    color: var(--primary-color-dark);
     text-decoration: underline;
   }
 

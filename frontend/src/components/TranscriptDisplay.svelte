@@ -300,7 +300,7 @@
   }
 
   .jump-to-playhead-button:hover:not(:disabled) {
-    background: var(--button-hover, var(--hover-color));
+    background: var(--button-hover);
     color: var(--text-color);
   }
 

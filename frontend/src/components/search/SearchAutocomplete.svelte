@@ -277,22 +277,22 @@
     border: none;
     border-radius: 50%;
     background: none;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     cursor: pointer;
     transition: color 0.15s, background-color 0.15s;
   }
 
   .clear-btn:hover {
-    color: var(--text-color, #374151);
-    background-color: var(--hover-color, #f1f5f9);
+    color: var(--text-color);
+    background-color: var(--hover-color);
   }
 
   /* Placed by anchoredPanel: fixed on <body>, flips above, scrolls when short on room. */
   .suggestions-dropdown {
-    background: var(--card-background, var(--surface-color, #fff));
-    border: 1px solid var(--border-color, #e5e7eb);
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    box-shadow: var(--dropdown-shadow, 0 4px 12px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--dropdown-shadow);
     overflow-y: auto;
   }
 
@@ -304,7 +304,7 @@
     padding: 0.5rem 0.75rem;
     border: none;
     background: none;
-    color: var(--text-color, #374151);
+    color: var(--text-color);
     font-size: 0.8125rem;
     text-align: start;
     cursor: pointer;
@@ -313,11 +313,11 @@
 
   .suggestion-item:hover,
   .suggestion-item.selected {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
   }
 
   .suggestion-item svg {
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     flex-shrink: 0;
   }
 
@@ -330,7 +330,7 @@
 
   .suggestion-type {
     font-size: 0.6875rem;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -342,21 +342,21 @@
     right: 0;
     margin-top: 4px;
     padding: 0.5rem 0.75rem;
-    background: var(--card-background, var(--surface-color, #fff));
-    border: 1px solid var(--border-color, #e5e7eb);
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    box-shadow: var(--dropdown-shadow, 0 4px 12px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--dropdown-shadow);
     z-index: 100;
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.8125rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .hint-label {
     font-weight: 500;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     font-size: 0.75rem;
   }
 

@@ -214,7 +214,7 @@
     border: 1px solid var(--border-color);
     border-radius: 999px;
     color: var(--text-muted);
-    background: var(--surface-color, transparent);
+    background: var(--surface-color);
   }
 
   .status-chip-ok {

@@ -172,8 +172,8 @@
   }
 
   .note {
-    background: var(--color-info-bg, rgba(59, 130, 246, 0.1));
-    border: 1px solid var(--color-info-border, rgba(59, 130, 246, 0.3));
+    background: var(--color-info-bg);
+    border: 1px solid var(--color-info-border);
     border-radius: 4px;
     padding: 0.75rem;
     margin-top: 0.75rem;
@@ -182,6 +182,6 @@
   }
 
   .note strong {
-    color: var(--color-info, #3b82f6);
+    color: var(--color-info);
   }
 </style>

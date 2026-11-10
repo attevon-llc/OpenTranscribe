@@ -169,7 +169,7 @@
   .heading {
     margin: 0;
     font-size: 1rem;
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -178,7 +178,7 @@
     font-size: 0.8125rem;
     line-height: 1.5;
     color: var(--text-secondary);
-    max-width: var(--measure-prose, 72ch);
+    max-width: var(--measure-prose);
   }
 
   .scope {
@@ -194,7 +194,7 @@
 
   .scope legend {
     padding: 0 0.375rem;
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
   }
 
   .scope label {
@@ -210,6 +210,6 @@
 
   .error {
     margin: 0;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 </style>

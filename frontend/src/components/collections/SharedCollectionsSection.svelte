@@ -77,7 +77,7 @@
 
   .collection-card.selected {
     border-color: var(--primary-color);
-    background: var(--primary-bg, rgba(59, 130, 246, 0.05));
+    background: var(--primary-bg);
   }
 
   .collection-info {

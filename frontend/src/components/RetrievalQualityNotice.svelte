@@ -157,7 +157,7 @@
     padding: 0.55rem 0.7rem;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    background-color: var(--surface-secondary, var(--background-secondary));
+    background-color: var(--surface-secondary);
     /* --text-on-tint, not --text-secondary: this sits on the slate-100 secondary
      * surface, where #64748b measures 4.34:1 and misses WCAG AA's 4.5:1 for the
      * 12.8px text below. It clears AA on the base white surface, which is why the
@@ -212,7 +212,7 @@
   }
 
   .notice-dismiss:hover {
-    background-color: var(--button-hover, var(--surface-hover));
+    background-color: var(--button-hover);
     color: var(--text-color);
   }
 

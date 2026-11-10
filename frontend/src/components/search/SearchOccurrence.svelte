@@ -78,7 +78,7 @@
   .snippet {
     font-size: var(--font-size-md);
     line-height: var(--line-height-body);
-    color: var(--text-color, #374151);
+    color: var(--text-color);
     overflow-wrap: break-word;
     word-break: break-word;
   }

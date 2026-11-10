@@ -647,16 +647,16 @@
 
   /* Confirmation block */
   .confirm-block {
-    border: 1px solid var(--warning-color, #f59e0b);
+    border: 1px solid var(--warning-color);
     border-radius: 6px;
     padding: 0.75rem 1rem;
     margin: 0.5rem 0 0.75rem 0;
-    background-color: var(--warning-bg, rgba(245, 158, 11, 0.08));
+    background-color: var(--warning-bg);
   }
 
   .confirm-warning {
     font-size: 0.82rem;
-    color: var(--warning-color, #b45309);
+    color: var(--warning-color);
     margin: 0 0 0.5rem 0;
     line-height: 1.4;
   }
@@ -723,7 +723,7 @@
     padding: 0.6rem 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background-color: var(--background-secondary, rgba(0,0,0,0.03));
+    background-color: var(--background-secondary);
     font-size: 0.8rem;
   }
 
@@ -787,7 +787,7 @@
     color: var(--text-muted);
     border-bottom: 1px solid var(--border-color);
     margin: 0;
-    background-color: var(--background-secondary, rgba(0,0,0,0.02));
+    background-color: var(--background-secondary);
   }
 
   .preview-table-wrap {
@@ -801,7 +801,7 @@
   }
 
   .preview-table th {
-    background-color: var(--background-secondary, rgba(0,0,0,0.04));
+    background-color: var(--background-secondary);
     color: var(--text-muted);
     font-weight: 600;
     text-align: left;

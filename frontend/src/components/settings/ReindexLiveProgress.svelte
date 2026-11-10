@@ -101,7 +101,7 @@
   }
 
   .progress-bar.reindexing {
-    background: var(--primary-light, rgba(var(--primary-color-rgb), 0.2));
+    background: var(--primary-light);
   }
 
   .progress-bar.reindexing .progress-fill {
@@ -145,12 +145,12 @@
 
   .btn-danger-outline {
     background: transparent;
-    color: var(--danger-color, #dc2626);
-    border: 1px solid var(--danger-color, #dc2626);
+    color: var(--danger-color);
+    border: 1px solid var(--danger-color);
   }
 
   .btn-danger-outline:hover:not(:disabled) {
-    background: var(--danger-bg, rgba(220, 38, 38, 0.08));
+    background: var(--danger-bg);
   }
 
   .btn-danger-outline:disabled {

@@ -302,9 +302,9 @@
     font-family: inherit;
     font-weight: 500;
     border-radius: 4px;
-    background-color: rgba(var(--warning-color-rgb, 217, 119, 6), 0.15);
-    color: var(--warning-color, #d97706);
-    border: 1px solid rgba(var(--warning-color-rgb, 217, 119, 6), 0.3);
+    background-color: rgba(var(--warning-color-rgb), 0.15);
+    color: var(--warning-color);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.3);
     vertical-align: middle;
     cursor: help;
   }
@@ -346,9 +346,9 @@
   .task-error-details {
     margin-top: 1rem;
     padding: 0.75rem;
-    background: rgba(var(--error-color-rgb, 239, 68, 68), 0.05);
+    background: rgba(var(--error-color-rgb), 0.05);
     border-radius: 4px;
-    border: 1px solid rgba(var(--error-color-rgb, 239, 68, 68), 0.2);
+    border: 1px solid rgba(var(--error-color-rgb), 0.2);
   }
 
   .task-error-details .metadata-label {

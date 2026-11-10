@@ -242,8 +242,8 @@
     margin-top: 1rem;
     padding: 1rem;
     border-radius: 10px;
-    background: var(--surface-color, #333);
-    border: 1px solid var(--border-color, #444);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     gap: 0.625rem;
@@ -252,7 +252,7 @@
   .title {
     margin: 0;
     font-size: 0.9375rem;
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -270,7 +270,7 @@
   }
 
   .scheduled {
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: var(--font-weight-semibold);
   }
 
   .receipt {
@@ -292,7 +292,7 @@
 
   .mono {
     display: block;
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     overflow-wrap: anywhere;
     text-align: left;
@@ -326,7 +326,7 @@
   }
 
   .btn-danger {
-    background: var(--error-color, #dc2626);
+    background: var(--error-color);
     color: #fff;
     border: 1px solid transparent;
     border-radius: 6px;
@@ -358,6 +358,6 @@
   .error {
     margin: 0;
     font-size: 0.8125rem;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 </style>

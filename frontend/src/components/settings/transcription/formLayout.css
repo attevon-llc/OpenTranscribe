@@ -67,7 +67,7 @@
   background-color: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 6px;
-  color: var(--error-color, #ef4444);
+  color: var(--error-color);
   font-size: 0.8125rem;
 }
 

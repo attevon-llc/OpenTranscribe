@@ -79,7 +79,7 @@
     flex-wrap: wrap;
   }
   .provider-name {
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
   .credentials {
@@ -109,21 +109,21 @@
   }
   .credential-name {
     color: var(--text-color);
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
   }
   .chip {
     padding: 1px 8px;
     border-radius: 10px;
     font-size: 11px;
     font-weight: 600;
-    background: rgba(var(--success-color-rgb, 34, 197, 94), 0.14);
-    color: var(--success-color, #15803d);
-    border: 1px solid rgba(var(--success-color-rgb, 34, 197, 94), 0.35);
+    background: rgba(var(--success-color-rgb), 0.14);
+    color: var(--success-color);
+    border: 1px solid rgba(var(--success-color-rgb), 0.35);
   }
   .add-shared {
     margin-inline-start: auto;
   }
   :global([data-theme='dark']) .chip {
-    color: var(--success-color, #4ade80);
+    color: var(--success-color);
   }
 </style>

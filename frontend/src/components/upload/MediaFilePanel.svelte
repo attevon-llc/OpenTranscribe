@@ -345,7 +345,7 @@
   }
 
   .file-remove:hover {
-    background: var(--button-hover, #f1f5f9);
+    background: var(--button-hover);
     color: #ef4444;
   }
 </style>

@@ -121,8 +121,8 @@
     color: var(--text-color);
   }
   .copy-button.copied {
-    color: var(--success-color, #16a34a);
-    border-color: var(--success-color, #16a34a);
+    color: var(--success-color);
+    border-color: var(--success-color);
   }
   .copy-button:focus-visible {
     outline: 2px solid var(--primary-color);

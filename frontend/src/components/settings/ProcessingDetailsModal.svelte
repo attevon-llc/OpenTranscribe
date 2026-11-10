@@ -332,8 +332,8 @@
     display: flex;
     align-items: flex-start;
     gap: 0.5rem;
-    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.1);
-    border: 1px solid var(--warning-color, #f59e0b);
+    background: rgba(var(--warning-color-rgb), 0.1);
+    border: 1px solid var(--warning-color);
     border-radius: 6px;
     padding: 0.5rem 0.625rem;
     margin: 0.375rem 0;
@@ -342,7 +342,7 @@
   .fallback-warning-icon {
     display: inline-flex;
     margin-top: 0.1rem;
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
     flex-shrink: 0;
   }
 

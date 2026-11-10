@@ -386,7 +386,7 @@
   }
 
   .typed-date-field label {
-    font-size: var(--font-size-xs, 0.75rem);
+    font-size: var(--font-size-xs);
     font-weight: 500;
     color: var(--text-secondary);
   }

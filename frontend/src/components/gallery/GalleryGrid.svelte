@@ -226,6 +226,6 @@
 
   .end-indicator-content svg {
     flex-shrink: 0;
-    color: var(--success-color, #10b981);
+    color: var(--success-color);
   }
 </style>

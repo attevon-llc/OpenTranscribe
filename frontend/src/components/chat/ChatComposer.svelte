@@ -169,7 +169,7 @@
   }
 
   .input-shell.too-long {
-    border-color: var(--error-color, #dc3545);
+    border-color: var(--error-color);
   }
 
   /* Embedded field: the shell above draws the one rounded box and its focus ring, so every
@@ -257,7 +257,7 @@
   }
 
   .counter.over {
-    color: var(--error-color, #dc3545);
+    color: var(--error-color);
     font-weight: 600;
   }
 

@@ -93,7 +93,7 @@
   .erasure-banner {
     position: fixed;
     inset-inline: 0;
-    top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px) + var(--demo-banner-height));
+    top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height) + var(--demo-banner-height));
     z-index: 1150;
     display: flex;
     flex-wrap: wrap;

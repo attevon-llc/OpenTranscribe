@@ -321,7 +321,7 @@
 
   .banner-info {
     border: 1px solid var(--primary-color);
-    background-color: var(--background-secondary, rgba(0, 0, 0, 0.03));
+    background-color: var(--background-secondary);
     color: var(--text-color);
   }
 
@@ -367,7 +367,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    color: var(--success-color, #16a34a);
+    color: var(--success-color);
   }
 
   .toggle-label {
@@ -439,7 +439,7 @@
     padding: 0.6rem 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    background-color: var(--background-secondary, rgba(0, 0, 0, 0.03));
+    background-color: var(--background-secondary);
     font-size: 0.8rem;
   }
 
@@ -468,16 +468,16 @@
   }
 
   .status-badge.ok {
-    background-color: var(--success-color, #16a34a);
+    background-color: var(--success-color);
   }
 
   .status-badge.bad {
-    background-color: var(--error-color, #ef4444);
+    background-color: var(--error-color);
   }
 
   .status-error {
     font-size: 0.75rem;
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
     word-break: break-word;
   }
 

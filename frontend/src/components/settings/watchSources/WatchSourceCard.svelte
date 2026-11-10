@@ -176,11 +176,11 @@
   }
   .badge-success {
     background: rgba(34, 197, 94, 0.15);
-    color: var(--success-color, #16a34a);
+    color: var(--success-color);
   }
   .badge-error {
     background: rgba(239, 68, 68, 0.15);
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
   .badge-running {
     background: rgba(234, 179, 8, 0.15);

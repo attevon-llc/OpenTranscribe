@@ -1327,7 +1327,7 @@
   }
 
   .nav-item:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.04));
+    background-color: var(--hover-color);
     color: var(--primary-on-surface);
   }
 

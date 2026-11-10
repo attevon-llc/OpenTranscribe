@@ -156,7 +156,7 @@
     width: 18px;
     inset-inline-start: 3px;
     bottom: 3px;
-    background-color: var(--toggle-button, white);
+    background-color: var(--toggle-button);
     transition: 0.3s;
     border-radius: 50%;
   }

@@ -226,7 +226,7 @@
   }
 
   .result-item:hover {
-    background-color: var(--hover-color, rgba(59, 130, 246, 0.08));
+    background-color: var(--hover-color);
   }
 
   .type-icon {

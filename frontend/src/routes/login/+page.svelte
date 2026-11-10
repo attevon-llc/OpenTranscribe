@@ -1259,7 +1259,7 @@
   }
 
   .toggle-password:hover {
-    background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
+    background-color: var(--surface-hover);
   }
 
   .field-error {
@@ -1344,7 +1344,7 @@
   }
 
   .external-auth-button:hover:not(:disabled) {
-    background-color: var(--surface-hover, rgba(0, 0, 0, 0.03));
+    background-color: var(--surface-hover);
     border-color: var(--primary-color);
   }
 
@@ -1480,7 +1480,7 @@
   }
 
   .text-button:hover {
-    color: var(--primary-color-dark, #2563eb);
+    color: var(--primary-color-dark);
     text-decoration: underline;
   }
 
@@ -1501,7 +1501,7 @@
     gap: 1.25rem;
     min-height: 100vh;
     min-height: 100dvh;
-    background: var(--bg-primary, #f8fafc);
+    background: var(--bg-primary);
   }
 
   .login-success-logo {

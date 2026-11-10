@@ -374,7 +374,7 @@
 
   .setting-note {
     font-size: 0.775rem;
-    color: var(--text-muted, var(--text-secondary));
+    color: var(--text-muted);
     line-height: 1.3;
   }
 
@@ -413,13 +413,13 @@
     width: 18px;
     left: 3px;
     bottom: 3px;
-    background-color: var(--toggle-button, white);
+    background-color: var(--toggle-button);
     transition: 0.3s;
     border-radius: 50%;
   }
 
   .toggle-switch input:focus-visible + .toggle-slider {
-    outline: 2px solid var(--primary-color, #3b82f6);
+    outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
 
@@ -523,7 +523,7 @@
 
   .queued-message {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
     margin-bottom: 0.5rem;
   }
 
@@ -547,14 +547,14 @@
 
   .progress-bar-container {
     height: 8px;
-    background: var(--border-color, #444);
+    background: var(--border-color);
     border-radius: 4px;
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
-    background: var(--primary-color, #4a9eff);
+    background: var(--primary-color);
     border-radius: 4px;
     transition: width 0.3s ease;
   }

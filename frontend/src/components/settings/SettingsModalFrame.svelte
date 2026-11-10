@@ -145,7 +145,7 @@
 
   .modal-close-button:hover {
     color: var(--text-color);
-    background: var(--button-hover, var(--background-color));
+    background: var(--button-hover);
   }
 
   .settings-modal-container {

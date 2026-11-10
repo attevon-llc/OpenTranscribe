@@ -131,9 +131,9 @@
   .switch-warning {
     margin-top: 0.35rem;
     padding: 0.6rem 0.7rem;
-    border: 1px solid rgba(var(--warning-color-rgb, 255, 193, 7), 0.5);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.5);
     border-radius: 8px;
-    background-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.1);
+    background-color: rgba(var(--warning-color-rgb), 0.1);
   }
 
   .warning-title {

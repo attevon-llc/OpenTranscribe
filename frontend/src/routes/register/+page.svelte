@@ -420,7 +420,7 @@
   }
 
   .toggle-password:hover {
-    background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
+    background-color: var(--surface-hover);
   }
 
   .label-with-info {

@@ -572,7 +572,7 @@
   }
 
   .select-btn:hover:not(:disabled) {
-    background-color: var(--button-hover, #f1f5f9);
+    background-color: var(--button-hover);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   }
 
@@ -583,13 +583,13 @@
   /* Primary actions — solid blue */
   .select-all-btn,
   .process-btn {
-    background-color: var(--primary-color, var(--primary-color));
+    background-color: var(--primary-color);
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .select-all-btn:hover:not(:disabled),
   .process-btn:hover:not(:disabled) {
-    background-color: var(--primary-hover, #2563eb);
+    background-color: var(--primary-hover);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
@@ -602,7 +602,7 @@
   }
 
   .organize-btn:hover:not(:disabled) {
-    background-color: var(--button-hover, #f1f5f9);
+    background-color: var(--button-hover);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   }
 
@@ -667,7 +667,7 @@
   }
 
   .dropdown-item:hover:not(:disabled) {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background-color: var(--hover-color);
   }
 
   .dropdown-item:disabled {

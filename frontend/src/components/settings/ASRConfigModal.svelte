@@ -600,7 +600,7 @@
     border: 1px solid rgba(245, 158, 11, 0.3);
     border-radius: 6px;
     font-size: 0.8rem;
-    color: var(--warning-color, #d97706);
+    color: var(--warning-color);
     line-height: 1.4;
   }
 

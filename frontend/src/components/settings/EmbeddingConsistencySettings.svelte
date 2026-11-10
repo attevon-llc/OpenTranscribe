@@ -413,7 +413,7 @@
   }
 
   .counts-row.has-missing {
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
     font-weight: 600;
   }
 

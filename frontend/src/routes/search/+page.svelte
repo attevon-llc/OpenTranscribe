@@ -786,8 +786,8 @@
 <style>
   .search-page {
     display: flex;
-    height: calc(100vh - var(--content-top, 60px));
-    height: calc(100dvh - var(--content-top, 60px));
+    height: calc(100vh - var(--content-top));
+    height: calc(100dvh - var(--content-top));
     overflow: hidden;
     padding-top: 0;
   }
@@ -876,14 +876,14 @@
   }
 
   .back-to-gallery:hover {
-    background: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background: var(--hover-color);
     color: var(--text-color);
   }
 
   .search-title {
     font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-color, #111827);
+    color: var(--text-color);
     margin: 0;
   }
 
@@ -910,7 +910,7 @@
     height: 44px;
     padding: 0 1rem;
     flex-shrink: 0;
-    background-color: var(--primary-color, var(--primary-color));
+    background-color: var(--primary-color);
     color: white;
     border: none;
     border-radius: 6px;
@@ -919,7 +919,7 @@
   }
 
   .search-btn:hover:not(:disabled) {
-    background-color: var(--primary-color-dark, #2563eb);
+    background-color: var(--primary-color-dark);
     transform: translateY(-1px);
   }
 
@@ -937,12 +937,12 @@
     gap: 0.75rem;
     margin-top: 1rem;
     padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    border-bottom: 1px solid var(--border-color);
   }
 
   .result-summary {
     font-size: 0.8125rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .results-controls {
@@ -954,7 +954,7 @@
   /* Search Mode Toggle - sliding pill style */
   .mode-toggle {
     display: flex;
-    background: var(--hover-color, #f1f5f9);
+    background: var(--hover-color);
     border-radius: 8px;
     padding: 2px;
     gap: 0;
@@ -965,7 +965,7 @@
     background: transparent;
     border: none;
     border-radius: 6px;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
@@ -980,7 +980,7 @@
   }
 
   .mode-btn:hover:not(.active) {
-    color: var(--text-color, #374151);
+    color: var(--text-color);
   }
 
   /* Multi-select source toggle (issue #760, replaces the exclusive
@@ -1028,34 +1028,34 @@
   }
 
   .state-container.error {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
   }
 
   .state-container svg {
-    color: var(--text-secondary, #d1d5db);
+    color: var(--text-secondary);
     margin-bottom: 1rem;
   }
 
   .state-container.error svg {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
   }
 
   .state-title {
     font-size: 1rem;
     font-weight: 500;
-    color: var(--text-color, #374151);
+    color: var(--text-color);
     margin: 0 0 0.375rem;
   }
 
   .state-text {
     font-size: 0.9375rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     margin: 0;
   }
 
   .state-hint {
     font-size: 0.8125rem;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     margin: 0;
   }
 
@@ -1080,17 +1080,17 @@
     /* Slide-in overlay sidebar — matches gallery page pattern */
     .filter-sidebar {
       position: fixed;
-      top: var(--content-top, 60px);
+      top: var(--content-top);
       left: -100%;
       width: 100% !important;
       min-width: 100% !important;
-      height: calc(100vh - var(--content-top, 60px));
-      height: calc(100dvh - var(--content-top, 60px));
+      height: calc(100vh - var(--content-top));
+      height: calc(100dvh - var(--content-top));
       background: var(--surface-color);
       z-index: 1000;
       transition: left 0.3s ease;
       border-right: none;
-      border-top: 1px solid var(--border-color, #e5e7eb);
+      border-top: 1px solid var(--border-color);
     }
 
     .filter-sidebar.show {

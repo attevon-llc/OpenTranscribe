@@ -12,7 +12,7 @@
 /* ── Hint text ── */
 .step-hint {
   font-size: 0.8125rem;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary);
   margin: 0;
   line-height: 1.5;
 }
@@ -27,7 +27,7 @@
   background: rgba(59, 130, 246, 0.06);
   border: 1px solid rgba(59, 130, 246, 0.15);
   font-size: 0.75rem;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary);
 }
 
 :global([data-theme='dark']) .previous-banner {
@@ -41,18 +41,18 @@
 
 .previous-banner-clear {
   padding: 0.125rem 0.5rem;
-  border: 1px solid var(--border-color, #e2e8f0);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
-  background: var(--surface-color, white);
-  color: var(--text-secondary, #64748b);
+  background: var(--surface-color);
+  color: var(--text-secondary);
   font-size: 0.6875rem;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .previous-banner-clear:hover {
-  background: var(--button-hover, #f1f5f9);
-  color: var(--text-primary, #1e293b);
+  background: var(--button-hover);
+  color: var(--text-primary);
 }
 
 /* ── Selected chips ── */
@@ -68,11 +68,11 @@
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
   border-radius: 999px;
-  background: var(--primary-bg, #eff6ff);
+  background: var(--primary-bg);
   color: var(--primary-on-surface);
   font-size: 0.75rem;
   font-weight: 500;
-  border: 1px solid var(--primary-border, #bfdbfe);
+  border: 1px solid var(--primary-border);
 }
 
 :global([data-theme='dark']) .chip {
@@ -84,13 +84,13 @@
      the token this codebase already uses for "text on a dark surface must be
      light" (see .tag-chip below, via --tag-color -> --primary-dark ->
      --primary-on-surface); use it here too. */
-  color: var(--primary-on-surface, #93c5fd);
+  color: var(--primary-on-surface);
 }
 
 .tag-chip {
-  background: var(--tag-bg, #f0fdf4);
-  color: var(--tag-color, #16a34a);
-  border-color: var(--tag-border, #bbf7d0);
+  background: var(--tag-bg);
+  color: var(--tag-color);
+  border-color: var(--tag-border);
 }
 
 :global([data-theme='dark']) .tag-chip {
@@ -127,7 +127,7 @@
 /* ── Empty state ── */
 .empty-text {
   font-size: 0.8125rem;
-  color: var(--text-tertiary, #94a3b8);
+  color: var(--text-tertiary);
   text-align: center;
   margin: 0.5rem 0;
 }
@@ -142,24 +142,24 @@
 .create-input {
   flex: 1;
   padding: 0.375rem 0.625rem;
-  border: 1px solid var(--border-color, #e2e8f0);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 0.8125rem;
-  background: var(--input-bg, white);
-  color: var(--text-primary, #1e293b);
+  background: var(--input-bg);
+  color: var(--text-primary);
   outline: none;
   box-sizing: border-box;
 }
 
 .create-input:focus {
-  border-color: var(--primary-color, #3b82f6);
+  border-color: var(--primary-color);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
 
 :global([data-theme='dark']) .create-input {
-  background: var(--dark-input-bg, #1e293b);
-  border-color: var(--dark-border, #334155);
-  color: var(--dark-text, #e2e8f0);
+  background: var(--dark-input-bg);
+  border-color: var(--dark-border);
+  color: var(--dark-text);
 }
 
 .create-btn {
@@ -167,7 +167,7 @@
   align-items: center;
   gap: 0.25rem;
   padding: 0.375rem 0.625rem;
-  border: 1px solid var(--primary-color, #3b82f6);
+  border: 1px solid var(--primary-color);
   border-radius: 6px;
   background: transparent;
   color: var(--primary-on-surface);

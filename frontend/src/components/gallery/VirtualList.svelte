@@ -371,7 +371,7 @@
   }
 
   .file-list-row:hover {
-    background-color: var(--hover-bg, rgba(0, 0, 0, 0.03));
+    background-color: var(--hover-bg);
   }
 
   :global([data-theme='dark']) .file-list-row:hover {
@@ -531,7 +531,7 @@
     font-size: 0.6875rem;
     font-weight: 500;
     color: var(--primary-on-surface);
-    background: var(--primary-color-alpha, rgba(59, 130, 246, 0.1));
+    background: var(--primary-color-alpha);
     padding: 0.125rem 0.375rem;
     border-radius: 9999px;
     white-space: nowrap;

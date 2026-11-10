@@ -125,17 +125,17 @@
     min-width: 36px;
     height: 36px;
     padding: 0 0.5rem;
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: var(--surface-color, #fff);
-    color: var(--text-color, #374151);
+    background: var(--surface-color);
+    color: var(--text-color);
     font-size: 0.875rem;
     cursor: pointer;
     transition: all 0.15s;
   }
 
   .page-btn:hover:not(:disabled):not(.active) {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     border-color: var(--primary-color);
   }
 
@@ -152,6 +152,6 @@
 
   .ellipsis {
     padding: 0 0.25rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 </style>

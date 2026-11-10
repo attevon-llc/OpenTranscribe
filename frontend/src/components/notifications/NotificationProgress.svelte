@@ -84,8 +84,8 @@
   }
 
   .progress-text {
-    font-size: var(--font-size-2xs, 11px);
-    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
     min-width: 32px;
     text-align: end;
@@ -93,7 +93,7 @@
   }
 
   .progress-eta {
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
     margin-inline-start: 4px;
   }
 

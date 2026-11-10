@@ -187,7 +187,7 @@
 <style>
   .trace-panel {
     position: fixed;
-    top: var(--navbar-height, 60px);
+    top: var(--navbar-height);
     right: 0;
     bottom: 0;
     z-index: 25;

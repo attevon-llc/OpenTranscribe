@@ -61,8 +61,8 @@
   .account-status-strip {
     margin-bottom: 1.25rem;
     padding: 0.75rem 1rem;
-    background: var(--background-color, #2a2a2a);
-    border: 1px solid var(--border-color, #444);
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
     border-radius: 10px;
   }
 
@@ -81,9 +81,9 @@
     padding: 0.375rem 0.75rem;
     border-radius: 20px;
     font-size: 0.8rem;
-    background: var(--surface-color, #333);
-    border: 1px solid var(--border-color, #444);
-    color: var(--text-color, #e0e0e0);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
   }
 
   .chip-value {
@@ -92,7 +92,7 @@
   }
 
   .chip-label {
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
     font-size: 0.75rem;
   }
 

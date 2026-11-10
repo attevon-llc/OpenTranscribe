@@ -186,12 +186,12 @@
   }
 
   .choice-option:hover {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     background: rgba(59, 130, 246, 0.02);
   }
 
   .choice-option.selected {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     background: rgba(59, 130, 246, 0.04);
   }
 
@@ -204,7 +204,7 @@
     height: 18px;
     margin-top: 1px;
     cursor: pointer;
-    accent-color: var(--primary-color, #3b82f6);
+    accent-color: var(--primary-color);
     flex-shrink: 0;
   }
 
@@ -262,7 +262,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    color: var(--text-tertiary, #94a3b8);
+    color: var(--text-tertiary);
     font-size: 0.75rem;
   }
 

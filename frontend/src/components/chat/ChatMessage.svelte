@@ -311,9 +311,9 @@
     margin: 0.25rem 0 0;
     padding: 0.6rem 0.75rem;
     border-radius: 8px;
-    background-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.08);
-    border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.25);
-    color: var(--error-color, #dc3545);
+    background-color: rgba(var(--error-color-rgb), 0.08);
+    border: 1px solid rgba(var(--error-color-rgb), 0.25);
+    color: var(--error-color);
     font-size: var(--font-size-md);
   }
 

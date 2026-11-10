@@ -48,24 +48,24 @@
     align-items: center;
     margin-bottom: 0.25rem;
     font-size: 0.85rem;
-    color: var(--text-secondary, #666);
+    color: var(--text-secondary);
   }
 
   .progress-value {
     font-weight: 600;
-    color: var(--text-primary, #1a1a1a);
+    color: var(--text-primary);
   }
 
   .progress-track {
     height: 6px;
-    background: var(--bg-tertiary, #e8e8e8);
+    background: var(--bg-tertiary);
     border-radius: 3px;
     overflow: hidden;
   }
 
   .progress-fill {
     height: 100%;
-    background-color: var(--accent-color, #4a90d9);
+    background-color: var(--accent-color);
     border-radius: 3px;
     transition: width 0.3s ease;
   }

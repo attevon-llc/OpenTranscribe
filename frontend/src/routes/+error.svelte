@@ -48,12 +48,12 @@
     width: 100%;
     max-width: 480px;
     text-align: center;
-    background: var(--surface-color, #ffffff);
-    border: 1px solid var(--border-color, #e0e0e0);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
     padding: 2.5rem 2rem;
-    color: var(--text-color, #1a1a1a);
+    color: var(--text-color);
   }
 
   .error-status {
@@ -62,21 +62,21 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--text-secondary, #64748b);
+    color: var(--text-secondary);
   }
 
   .error-heading {
     margin: 0 0 0.75rem;
     font-size: 1.6rem;
     line-height: 1.2;
-    color: var(--text-color, #1a1a1a);
+    color: var(--text-color);
   }
 
   .error-body {
     margin: 0 0 1.75rem;
     font-size: 1rem;
     line-height: 1.5;
-    color: var(--text-secondary, #64748b);
+    color: var(--text-secondary);
     word-break: break-word;
   }
 
@@ -104,32 +104,32 @@
 
   /* Primary action — "Go home". */
   .error-home {
-    background: var(--primary-color, var(--primary-color));
+    background: var(--primary-color);
     color: #ffffff;
     text-decoration: none;
     border: none;
   }
 
   .error-home:hover {
-    background: var(--primary-hover, #2563eb);
+    background: var(--primary-hover);
     transform: translateY(-1px);
   }
 
   /* Secondary action — "Reload" (grey, never blue). */
   .error-reload {
-    background: var(--surface-color, #ffffff);
-    color: var(--text-color, #1a1a1a);
-    border: 1px solid var(--border-color, #e0e0e0);
+    background: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
   }
 
   .error-reload:hover {
-    background: var(--button-hover, #f1f5f9);
+    background: var(--button-hover);
     transform: translateY(-1px);
   }
 
   .error-home:focus-visible,
   .error-reload:focus-visible {
-    outline: 2px solid var(--primary-color, #3b82f6);
+    outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
 

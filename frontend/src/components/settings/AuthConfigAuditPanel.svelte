@@ -189,15 +189,15 @@
   .panel-status,
   .panel-note {
     font-size: 0.75rem;
-    color: var(--color-text-secondary, var(--text-secondary));
+    color: var(--color-text-secondary);
     margin: 0;
   }
 
   .panel-note {
     padding: 0.5rem 0.625rem;
-    border: 1px solid var(--color-border, var(--border-color));
+    border: 1px solid var(--color-border);
     border-radius: 6px;
-    background: var(--color-bg-secondary, var(--background-color));
+    background: var(--color-bg-secondary);
   }
 
   .controls {
@@ -214,7 +214,7 @@
   }
 
   .label-text {
-    color: var(--color-text-secondary, var(--text-secondary));
+    color: var(--color-text-secondary);
     font-size: var(--font-size-xs);
   }
 
@@ -250,7 +250,7 @@
     overflow-x: auto;
     max-height: 420px;
     overflow-y: auto;
-    border: 1px solid var(--color-border, var(--border-color));
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     -webkit-overflow-scrolling: touch;
   }
@@ -265,8 +265,8 @@
   .audit-table td {
     padding: 0.375rem 0.5rem;
     text-align: left;
-    border-bottom: 1px solid var(--color-border, var(--border-color));
-    color: var(--color-text, var(--text-color));
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
     white-space: nowrap;
   }
 
@@ -274,22 +274,22 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--color-bg-secondary, var(--table-header-bg));
+    background: var(--color-bg-secondary);
     font-weight: 600;
     font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    color: var(--color-text-secondary, var(--text-secondary));
+    color: var(--color-text-secondary);
   }
 
   .audit-table tbody tr:hover {
-    background: var(--color-bg-secondary, var(--table-row-hover));
+    background: var(--color-bg-secondary);
   }
 
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.6875rem;
-    color: var(--color-text-secondary, var(--text-secondary));
+    color: var(--color-text-secondary);
   }
 
   .value {

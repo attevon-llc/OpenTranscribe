@@ -282,7 +282,7 @@
   }
 
   .tasks-table tbody tr:hover {
-    background: var(--table-row-hover, rgba(0, 0, 0, 0.02));
+    background: var(--table-row-hover);
   }
 
   :global([data-theme='dark']) .tasks-table tbody tr:hover {

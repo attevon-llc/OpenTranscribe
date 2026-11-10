@@ -201,7 +201,7 @@
     padding: 0.5rem 0.75rem;
     border-radius: 6px;
     border: 1px solid var(--border-color);
-    background-color: var(--surface-color, #333);
+    background-color: var(--surface-color);
     color: var(--text-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     font-size: 0.75rem;

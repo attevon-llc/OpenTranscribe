@@ -386,7 +386,7 @@
        (navbar + the 3.25rem offset above), hence the subtraction.
        `overscroll-behavior` stops a scroll that reaches the end of the panel
        from chaining into the transcript thread behind it. */
-    max-height: calc(100vh - var(--navbar-height, 60px) - 5rem);
+    max-height: calc(100vh - var(--navbar-height) - 5rem);
     overflow-y: auto;
     overscroll-behavior: contain;
   }

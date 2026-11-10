@@ -100,12 +100,12 @@
 
   /* Primary action — solid blue */
   .upload-btn {
-    background-color: var(--primary-color, var(--primary-color));
+    background-color: var(--primary-color);
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .upload-btn:hover:not(:disabled) {
-    background-color: var(--primary-hover, #2563eb);
+    background-color: var(--primary-hover);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
@@ -120,7 +120,7 @@
 
   .collections-btn:hover:not(:disabled),
   .tags-btn:hover:not(:disabled) {
-    background-color: var(--button-hover, #f1f5f9);
+    background-color: var(--button-hover);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   }
 

@@ -867,11 +867,11 @@
   }
   .test-result.success {
     background: rgba(34, 197, 94, 0.12);
-    color: var(--success-color, #16a34a);
+    color: var(--success-color);
   }
   .test-result.failure {
     background: rgba(239, 68, 68, 0.12);
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
   .footer-row {
     display: flex;

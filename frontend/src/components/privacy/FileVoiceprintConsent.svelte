@@ -149,7 +149,7 @@
     display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
     padding: 0.625rem 0.75rem; margin: 0.5rem 0;
     border: 1px solid var(--border-color); border-radius: 6px;
-    background: var(--surface-color, transparent);
+    background: var(--surface-color);
     font-size: 0.8125rem; color: var(--text-secondary);
   }
   .text { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }

@@ -286,7 +286,7 @@
   }
 
   .icon-btn.danger:hover {
-    color: var(--error-color, #dc3545);
+    color: var(--error-color);
   }
 
   .rename-input {
@@ -328,8 +328,8 @@
   }
 
   .confirm-btn.danger {
-    border-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.5);
-    color: var(--error-color, #dc3545);
+    border-color: rgba(var(--error-color-rgb), 0.5);
+    color: var(--error-color);
   }
 
   @media (hover: none) {

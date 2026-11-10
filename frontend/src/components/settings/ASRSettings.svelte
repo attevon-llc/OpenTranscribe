@@ -781,9 +781,9 @@
     border-radius: 6px;
     margin-bottom: 1.25rem;
     font-size: 0.8125rem;
-    background: var(--primary-bg, rgba(var(--primary-color-rgb), 0.08));
+    background: var(--primary-bg);
     color: var(--primary-on-surface);
-    border: 1px solid var(--primary-border, rgba(var(--primary-color-rgb), 0.2));
+    border: 1px solid var(--primary-border);
   }
 
   .status-bar.local {
@@ -884,12 +884,12 @@
   }
 
   .config-card.active {
-    border-color: var(--primary-color, #3b82f6);
-    background: var(--primary-bg, rgba(var(--primary-color-rgb), 0.05));
+    border-color: var(--primary-color);
+    background: var(--primary-bg);
   }
 
   .config-card:hover:not(.active) {
-    border-color: var(--border-hover, #6b7280);
+    border-color: var(--border-hover);
   }
 
   .config-info {
@@ -920,13 +920,13 @@
 
   .experimental-badge {
     background: rgba(245, 158, 11, 0.12);
-    color: var(--warning-color, #d97706);
+    color: var(--warning-color);
   }
 
   .active-badge {
-    background: var(--success-bg, rgba(16, 185, 129, 0.1));
-    color: var(--success-color, #10b981);
-    border: 1px solid var(--success-border, rgba(16, 185, 129, 0.2));
+    background: var(--success-bg);
+    color: var(--success-color);
+    border: 1px solid var(--success-border);
   }
 
   .test-badge { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; }
@@ -959,7 +959,7 @@
     font-size: 0.775rem;
     font-weight: 500;
     cursor: pointer;
-    background: var(--success-color, #10b981);
+    background: var(--success-color);
     color: white;
     border: none;
     transition: background 0.15s;
@@ -1007,12 +1007,12 @@
 
   .btn-delete {
     background: transparent;
-    border-color: var(--error-color, #ef4444);
-    color: var(--error-color, #ef4444);
+    border-color: var(--error-color);
+    color: var(--error-color);
   }
 
   .btn-delete:hover:not(:disabled) {
-    background: var(--error-color, #ef4444);
+    background: var(--error-color);
     color: white;
   }
 
@@ -1091,7 +1091,7 @@
   }
 
   .config-card.shared {
-    border-left: 3px solid var(--info-color, #3b82f6);
+    border-left: 3px solid var(--info-color);
     background: rgba(var(--primary-color-rgb), 0.04);
   }
   :global([data-theme='dark']) .config-card.shared { background: rgba(96, 165, 250, 0.06); }
@@ -1204,13 +1204,13 @@
   }
 
   .cap-yes {
-    background: var(--success-bg, rgba(16, 185, 129, 0.1));
-    color: var(--success-color, #10b981);
+    background: var(--success-bg);
+    color: var(--success-color);
   }
 
   .cap-no {
     background: rgba(239, 68, 68, 0.08);
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
   }
 
   .cap-neutral {

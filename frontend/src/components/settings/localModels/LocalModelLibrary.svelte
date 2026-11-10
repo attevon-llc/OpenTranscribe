@@ -276,10 +276,10 @@
   .error-text {
     margin: 0 0 0.5rem;
     font-size: 0.8rem;
-    color: var(--error-color, #b91c1c);
+    color: var(--error-color);
   }
   :global([data-theme='dark']) .error-text {
-    color: var(--error-color, #f87171);
+    color: var(--error-color);
   }
   .state {
     display: flex;

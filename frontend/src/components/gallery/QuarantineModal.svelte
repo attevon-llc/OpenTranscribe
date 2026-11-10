@@ -244,7 +244,7 @@
     margin: 0;
     padding-inline-start: 1.25rem;
     font-size: 0.8125rem;
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
     max-height: 120px;
     overflow-y: auto;
   }
@@ -273,7 +273,7 @@
     align-self: flex-end;
     font-size: 0.75rem;
     font-weight: normal;
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
   }
 
   .legal-hold-field {
@@ -281,7 +281,7 @@
     align-items: flex-start;
     gap: 0.5rem;
     font-size: 0.8125rem;
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
   }
 
   /* styles/form-elements.css no longer styles checkboxes, so the box keeps its native
@@ -300,7 +300,7 @@
   .scope-notice {
     margin: 0;
     font-size: 0.75rem;
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
   }
 
   .btn-secondary {
@@ -314,7 +314,7 @@
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background: var(--hover-color);
   }
 
   .btn-destructive {

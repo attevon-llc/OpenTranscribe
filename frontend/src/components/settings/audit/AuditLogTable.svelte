@@ -296,7 +296,7 @@
     color: var(--color-text);
     white-space: pre-wrap;
     word-break: break-word;
-    background: var(--color-bg-secondary, #f9fafb);
+    background: var(--color-bg-secondary);
     border-radius: 6px;
   }
 

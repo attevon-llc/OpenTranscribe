@@ -53,10 +53,10 @@
     max-width: calc(100vw - 2rem);
     padding: 0.55rem 1rem;
     border-radius: 999px;
-    background: var(--surface-color, #ffffff);
-    border: 1px solid var(--warning-color, #f59e0b);
+    background: var(--surface-color);
+    border: 1px solid var(--warning-color);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
-    color: var(--text-color, #1a1a1a);
+    color: var(--text-color);
     font-size: 0.875rem;
     line-height: 1.3;
   }
@@ -66,7 +66,7 @@
     width: 9px;
     height: 9px;
     border-radius: 50%;
-    background: var(--warning-color, #f59e0b);
+    background: var(--warning-color);
   }
 
   /* Pulse only while actively reconnecting; steady when fully disconnected. */
@@ -82,9 +82,9 @@
     flex: 0 0 auto;
     padding: 0.3rem 0.75rem;
     border-radius: 999px;
-    border: 1px solid var(--border-color, #e0e0e0);
-    background: var(--button-hover, #f1f5f9);
-    color: var(--text-color, #1a1a1a);
+    border: 1px solid var(--border-color);
+    background: var(--button-hover);
+    color: var(--text-color);
     font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
@@ -92,11 +92,11 @@
   }
 
   .connection-retry:hover {
-    background: var(--border-color, #e0e0e0);
+    background: var(--border-color);
   }
 
   .connection-retry:focus-visible {
-    outline: 2px solid var(--primary-color, #3b82f6);
+    outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
 

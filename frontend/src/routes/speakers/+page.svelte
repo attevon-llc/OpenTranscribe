@@ -408,7 +408,7 @@
   }
 
   .back-to-gallery:hover {
-    background: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background: var(--hover-color);
     color: var(--text-color);
   }
 
@@ -423,7 +423,7 @@
     border: none;
     border-radius: 0;
     background: none;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
@@ -438,7 +438,7 @@
 
   .tab:hover,
   .tab:focus {
-    color: var(--text-color, #111827);
+    color: var(--text-color);
     background: none;
     transform: none;
     box-shadow: none;
@@ -458,7 +458,7 @@
   }
 
   .badge.alert {
-    background: var(--error-solid, #dc2626);
+    background: var(--error-solid);
     color: white;
   }
 

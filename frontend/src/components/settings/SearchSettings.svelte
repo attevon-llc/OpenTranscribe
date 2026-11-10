@@ -753,8 +753,8 @@
   }
 
   .lang-badge.not-ready {
-    border-color: var(--warning-color, #b45309);
-    color: var(--warning-color, #b45309);
+    border-color: var(--warning-color);
+    color: var(--warning-color);
   }
 
   .model-prepare {
@@ -802,8 +802,8 @@
   }
 
   .banner-warning {
-    border: 1px solid var(--warning-color, #b45309);
-    background-color: var(--warning-bg, rgba(180, 83, 9, 0.08));
+    border: 1px solid var(--warning-color);
+    background-color: var(--warning-bg);
     color: var(--text-color);
   }
 
@@ -816,7 +816,7 @@
   .banner-title {
     font-weight: 600;
     margin-bottom: 0.25rem;
-    color: var(--warning-color, #b45309);
+    color: var(--warning-color);
   }
 
   .banner-body {
@@ -892,7 +892,7 @@
 
   .stats-row.error {
     margin-top: 0.25rem;
-    color: var(--danger-color, #dc2626);
+    color: var(--danger-color);
   }
 
   .stats-mode {

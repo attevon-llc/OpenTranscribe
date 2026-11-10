@@ -755,7 +755,7 @@
     cursor: default;
     white-space: nowrap;
     background: rgba(128, 128, 128, 0.1);
-    color: var(--text-secondary, #777);
+    color: var(--text-secondary);
     border: 1px solid rgba(128, 128, 128, 0.25);
   }
 
@@ -767,7 +767,7 @@
 
   :global([data-theme='dark']) .gender-badge {
     background: rgba(255, 255, 255, 0.07);
-    color: var(--text-secondary, #888);
+    color: var(--text-secondary);
     border-color: rgba(255, 255, 255, 0.12);
   }
 
@@ -1256,7 +1256,7 @@
 
   .metadata-chip {
     background: rgba(100, 149, 237, 0.1);
-    color: var(--text-color, #e0e0e0);
+    color: var(--text-color);
     border: 1px solid rgba(100, 149, 237, 0.3);
   }
 
@@ -1265,7 +1265,7 @@
   }
 
   .metadata-label {
-    color: var(--text-secondary, #888);
+    color: var(--text-secondary);
   }
 
   .chip-role {
@@ -1295,11 +1295,11 @@
   }
 
   .alignment-dot.match {
-    background: var(--success-color, #51cf66);
+    background: var(--success-color);
   }
 
   .alignment-dot.mismatch {
-    background: var(--warning-color, #ffc107);
+    background: var(--warning-color);
   }
 
   .spinner {

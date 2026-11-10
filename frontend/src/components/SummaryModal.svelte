@@ -541,10 +541,10 @@
 
   .summary-actions-fixed {
     flex-shrink: 0;
-    border-top: 1px solid var(--border-color, #e0e0e0);
+    border-top: 1px solid var(--border-color);
     padding: 0.75rem 1.5rem;
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-    background: var(--bg-primary, #ffffff);
+    background: var(--bg-primary);
   }
 
   .modal-title {

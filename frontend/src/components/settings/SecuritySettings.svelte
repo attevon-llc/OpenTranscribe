@@ -421,7 +421,7 @@
   }
 
   .mfa-status-card.enabled {
-    border-color: var(--success-color, #10b981);
+    border-color: var(--success-color);
     background-color: rgba(16, 185, 129, 0.05);
   }
 
@@ -439,7 +439,7 @@
 
   .status-icon.enabled {
     background-color: rgba(16, 185, 129, 0.1);
-    color: var(--success-color, #10b981);
+    color: var(--success-color);
   }
 
   .status-content h4 {
@@ -596,7 +596,7 @@
 
   .warning-badge {
     padding: 0.25rem 0.5rem;
-    background-color: var(--warning-color, #f59e0b);
+    background-color: var(--warning-color);
     color: white;
     font-size: 0.6875rem;
     font-weight: 600;

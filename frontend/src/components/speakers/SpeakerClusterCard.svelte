@@ -207,9 +207,9 @@
 
 <style>
   .cluster-card {
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: var(--card-background, #ffffff);
+    background: var(--card-background);
     overflow: hidden;
     transition: box-shadow 0.15s ease;
   }
@@ -230,7 +230,7 @@
   }
 
   .card-header:hover {
-    background: var(--hover-color, #f9fafb);
+    background: var(--hover-color);
   }
 
   .header-left {
@@ -245,13 +245,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     width: 16px;
   }
 
   .cluster-label {
     font-weight: 500;
-    color: var(--text-color, #111827);
+    color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -267,7 +267,7 @@
     font-weight: 600;
     padding: 1px 6px;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     color: var(--primary-on-surface);
     white-space: nowrap;
     flex-shrink: 0;
@@ -315,18 +315,18 @@
   }
 
   .gender-coherent {
-    background: color-mix(in srgb, var(--success-color, #10b981) 12%, transparent);
-    color: var(--success-color, #10b981);
+    background: color-mix(in srgb, var(--success-color) 12%, transparent);
+    color: var(--success-color);
   }
 
   .gender-conflict {
-    background: color-mix(in srgb, var(--warning-color, #f59e0b) 12%, transparent);
-    color: var(--warning-color, #f59e0b);
+    background: color-mix(in srgb, var(--warning-color) 12%, transparent);
+    color: var(--warning-color);
   }
 
   .member-count {
     font-size: 13px;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     white-space: nowrap;
   }
 
@@ -334,8 +334,8 @@
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 10px;
-    background: color-mix(in srgb, var(--success-color, #059669) 15%, transparent);
-    color: var(--success-color, #059669);
+    background: color-mix(in srgb, var(--success-color) 15%, transparent);
+    color: var(--success-color);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -343,7 +343,7 @@
   }
 
   .card-body {
-    border-top: 1px solid var(--border-color, #e5e7eb);
+    border-top: 1px solid var(--border-color);
     padding: 12px 16px;
   }
 
@@ -354,15 +354,15 @@
     flex-wrap: wrap;
     margin-bottom: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    border-bottom: 1px solid var(--border-color);
   }
 
   .action-btn {
     padding: 4px 12px;
     border-radius: 6px;
-    border: 1px solid var(--border-color, #d1d5db);
+    border: 1px solid var(--border-color);
     background: transparent;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
@@ -377,8 +377,8 @@
 
   /* Default (uncolored) hover — grey fill */
   .action-btn:hover {
-    background: var(--button-hover, #e5e7eb);
-    color: var(--text-color, #374151);
+    background: var(--button-hover);
+    color: var(--text-color);
     transform: scale(1.02);
   }
 
@@ -399,12 +399,12 @@
   /* Split — blue outline → solid blue (matches primary action palette) */
   .action-btn.split {
     color: var(--primary-on-surface);
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
   }
 
   .action-btn.split:hover {
-    background: var(--primary-hover, #2563eb);
-    border-color: var(--primary-hover, #2563eb);
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
     color: white;
     transform: scale(1.02);
     box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
@@ -475,14 +475,14 @@
     border-radius: 10px;
     font-size: 11px;
     font-weight: 600;
-    background: color-mix(in srgb, var(--warning-color, #f59e0b) 12%, transparent);
-    color: var(--warning-color, #f59e0b);
+    background: color-mix(in srgb, var(--warning-color) 12%, transparent);
+    color: var(--warning-color);
     white-space: nowrap;
   }
 
   .selection-chip {
     font-size: 12px;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     white-space: nowrap;
   }
 
@@ -497,7 +497,7 @@
   }
 
   .blacklist-toggle input[type="checkbox"] {
-    accent-color: var(--error-color, #ef4444);
+    accent-color: var(--error-color);
     width: 14px;
     height: 14px;
   }
@@ -519,7 +519,7 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: var(--border-color, #e5e7eb);
+    background: var(--border-color);
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
 
@@ -533,7 +533,7 @@
   .skeleton-line {
     height: 12px;
     border-radius: 4px;
-    background: var(--border-color, #e5e7eb);
+    background: var(--border-color);
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
 

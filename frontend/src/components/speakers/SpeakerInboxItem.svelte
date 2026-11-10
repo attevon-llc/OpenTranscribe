@@ -143,12 +143,12 @@
 
 <style>
   .inbox-item {
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    border-bottom: 1px solid var(--border-color);
     transition: background 0.1s ease;
   }
 
   .inbox-item:hover {
-    background: var(--hover-color, #f9fafb);
+    background: var(--hover-color);
   }
 
   .inbox-row {
@@ -201,7 +201,7 @@
 
   .speaker-name {
     font-weight: 500;
-    color: var(--text-color, #111827);
+    color: var(--text-color);
     font-size: 14px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -219,7 +219,7 @@
   }
 
   .suggestion-label {
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
   }
 
   .suggestion-name {
@@ -240,23 +240,23 @@
     font-size: 11px;
     padding: 1px 6px;
     border-radius: 8px;
-    background: var(--hover-color, #f3f4f6);
-    color: var(--text-secondary, #9ca3af);
+    background: var(--hover-color);
+    color: var(--text-secondary);
   }
 
   .source-badge.source-profile {
-    background: color-mix(in srgb, var(--success-color, #10b981) 10%, transparent);
-    color: var(--success-color, #10b981);
+    background: color-mix(in srgb, var(--success-color) 10%, transparent);
+    color: var(--success-color);
   }
 
   .source-badge.source-voice {
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 10%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
     color: var(--primary-on-surface);
   }
 
   .source-badge.source-llm {
-    background: color-mix(in srgb, var(--text-secondary, #9ca3af) 10%, transparent);
-    color: var(--text-secondary, #9ca3af);
+    background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+    color: var(--text-secondary);
   }
 
   .meta {
@@ -265,7 +265,7 @@
     gap: 8px;
     margin-top: 3px;
     font-size: 12px;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     flex-wrap: wrap;
     min-width: 0;
   }
@@ -284,7 +284,7 @@
   .cluster-tag {
     padding: 1px 6px;
     border-radius: 8px;
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
   }
 
   .item-actions {
@@ -300,9 +300,9 @@
     white-space: nowrap;
     padding: 4px 12px;
     border-radius: 6px;
-    border: 1px solid var(--border-color, #d1d5db);
-    background: var(--hover-color, #f9fafb);
-    color: var(--text-color, #374151);
+    border: 1px solid var(--border-color);
+    background: var(--hover-color);
+    color: var(--text-color);
     font-size: 13px;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -316,15 +316,15 @@
   }
 
   .action-btn:hover {
-    background: var(--border-color, #e5e7eb);
+    background: var(--border-color);
     transform: none;
     box-shadow: none;
   }
 
   .action-btn.accept {
-    background: var(--success-color, #10b981);
+    background: var(--success-color);
     color: white;
-    border-color: var(--success-color, #10b981);
+    border-color: var(--success-color);
   }
 
   .action-btn.accept:hover {
@@ -348,15 +348,15 @@
   }
 
   .action-btn.skip {
-    background: var(--card-background, #fff);
-    color: var(--text-secondary, #6b7280);
-    border-color: var(--border-color, #d1d5db);
+    background: var(--card-background);
+    color: var(--text-secondary);
+    border-color: var(--border-color);
   }
 
   .action-btn.skip:hover {
-    background: var(--button-hover, #e5e7eb);
-    border-color: var(--text-secondary, #9ca3af);
-    color: var(--text-color, #374151);
+    background: var(--button-hover);
+    border-color: var(--text-secondary);
+    color: var(--text-color);
     transform: none;
     box-shadow: none;
   }

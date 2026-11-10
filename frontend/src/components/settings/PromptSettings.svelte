@@ -1362,7 +1362,7 @@
 
   /* Shared config styles */
   .config-item.shared {
-    border-left: 3px solid var(--info-color, #3b82f6);
+    border-left: 3px solid var(--info-color);
     background: rgba(59, 130, 246, 0.04);
   }
 

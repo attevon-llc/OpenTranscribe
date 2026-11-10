@@ -365,8 +365,8 @@
   .profile-card {
     padding: 1rem;
     border-radius: 10px;
-    background: var(--surface-color, #333);
-    border: 1px solid var(--border-color, #444);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
   }
 
   .card-title {
@@ -377,7 +377,7 @@
   }
 
   .card-divider {
-    border-top: 1px solid var(--border-color, #444);
+    border-top: 1px solid var(--border-color);
     margin: 1rem 0;
   }
 
@@ -385,8 +385,8 @@
     margin-top: 1rem;
     padding: 1rem;
     border-radius: 10px;
-    background: var(--surface-color, #333);
-    border: 1px solid var(--border-color, #444);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
   }
 
   .settings-form {

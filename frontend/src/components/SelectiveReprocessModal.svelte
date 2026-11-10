@@ -663,13 +663,13 @@
   }
 
   .step-dot.active {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     background: var(--primary-color);
     color: white;
   }
 
   .step-dot.completed {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     background: var(--primary-color);
     color: white;
     cursor: pointer;
@@ -858,7 +858,7 @@
 
   .stage-check-custom.checked {
     background: var(--primary-color);
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     color: white;
   }
 
@@ -1130,7 +1130,7 @@
   .primary-button:hover:not(:disabled) {
     background: #2563eb;
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb, 59, 130, 246), 0.3);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
   }
 
   .primary-button:active:not(:disabled) {
@@ -1208,7 +1208,7 @@
 
   /* Focus styles */
   .modal-button:focus {
-    outline: 2px solid var(--primary-color, #3b82f6);
+    outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
 

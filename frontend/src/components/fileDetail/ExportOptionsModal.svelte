@@ -132,7 +132,7 @@
   .export-redaction-note {
     margin-top: 1rem;
     padding: 0.6rem 0.75rem;
-    background: rgba(var(--warning-color-rgb, 234, 179, 8), 0.12);
+    background: rgba(var(--warning-color-rgb), 0.12);
     border-radius: 6px;
     font-size: 0.85rem;
     color: var(--text-color);

@@ -218,7 +218,7 @@
   }
 
   .estimate.over {
-    color: var(--error-color, #dc3545);
+    color: var(--error-color);
     font-weight: 600;
   }
 

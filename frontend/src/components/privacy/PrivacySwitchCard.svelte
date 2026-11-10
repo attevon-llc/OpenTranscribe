@@ -113,7 +113,7 @@
   .title {
     margin: 0 0 0.25rem;
     font-size: 0.9375rem;
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -133,7 +133,7 @@
 
   .locked {
     color: var(--text-color);
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
   }
 
   .toggle {

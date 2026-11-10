@@ -334,7 +334,7 @@
   .primary-button:hover {
     background: #2563eb;
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb, 59, 130, 246), 0.3);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
   }
 
   .primary-button:active {

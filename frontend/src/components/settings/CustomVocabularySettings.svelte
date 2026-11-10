@@ -327,7 +327,7 @@
     transition: all 0.15s;
   }
 
-  .domain-tab:hover { color: var(--text-color); border-color: var(--border-hover, #6b7280); }
+  .domain-tab:hover { color: var(--text-color); border-color: var(--border-hover); }
 
   .domain-tab.active {
     background: var(--primary-color);
@@ -499,7 +499,7 @@
   }
 
   .toggle input:checked + .toggle-slider {
-    background: var(--success-color, #10b981);
+    background: var(--success-color);
   }
 
   .toggle input:checked + .toggle-slider::after {
@@ -519,8 +519,8 @@
     height: 30px;
     padding: 0;
     background: transparent;
-    border: 1px solid var(--error-color, #ef4444);
-    color: var(--error-color, #ef4444);
+    border: 1px solid var(--error-color);
+    color: var(--error-color);
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.15s;
@@ -528,7 +528,7 @@
   }
 
   .btn-delete-term:hover {
-    background: var(--error-color, #ef4444);
+    background: var(--error-color);
     color: white;
   }
 
@@ -540,7 +540,7 @@
 
   .btn-confirm-delete {
     padding: 0.25rem 0.625rem;
-    background: var(--error-color, #ef4444);
+    background: var(--error-color);
     color: white;
     border: none;
     border-radius: 6px;
@@ -552,14 +552,14 @@
   }
 
   .btn-confirm-delete:hover {
-    background: var(--error-color, #ef4444);
+    background: var(--error-color);
     filter: brightness(0.85);
   }
 
   .btn-cancel-delete {
     padding: 0.25rem 0.625rem;
     background: transparent;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     font-size: 0.75rem;
@@ -589,7 +589,7 @@
     transition: all 0.15s;
   }
 
-  .btn-bulk-toggle:hover { color: var(--text-color); border-color: var(--border-hover, #6b7280); }
+  .btn-bulk-toggle:hover { color: var(--text-color); border-color: var(--border-hover); }
 
   .bulk-form {
     margin-top: 0.75rem;
@@ -604,7 +604,7 @@
     font-size: 0.8125rem;
     resize: vertical;
     box-sizing: border-box;
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
   }
 
   .bulk-row {

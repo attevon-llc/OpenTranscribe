@@ -154,7 +154,7 @@
   }
 
   .cancel-button:hover {
-    background: var(--button-hover, #e5e7eb);
+    background: var(--button-hover);
     border-color: var(--border-color);
   }
 

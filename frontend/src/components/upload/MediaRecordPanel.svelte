@@ -369,7 +369,7 @@
     align-items: center;
     gap: 0.25rem;
     font-size: 0.6875rem;
-    color: var(--text-tertiary, #94a3b8);
+    color: var(--text-tertiary);
     text-align: center;
   }
 
@@ -384,7 +384,7 @@
     padding: 0;
   }
 
-  .settings-link:hover { color: var(--primary-hover, #2563eb); }
+  .settings-link:hover { color: var(--primary-hover); }
 
   @media (prefers-reduced-motion: reduce) {
     .recording-dot { animation: none; }

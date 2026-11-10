@@ -557,11 +557,11 @@
   }
 
   .action-item-priority.priority-high {
-    color: var(--danger-color, #d32f2f);
+    color: var(--danger-color);
   }
 
   .action-item-priority.priority-medium {
-    color: var(--warning-color, #ed6c02);
+    color: var(--warning-color);
   }
 
   .action-item-priority.priority-low {
@@ -681,7 +681,7 @@
   }
 
   :global(.empty-list) {
-    color: var(--text-tertiary, #999);
+    color: var(--text-tertiary);
     font-style: italic;
   }
 

@@ -114,7 +114,7 @@
   }
 
   .cancel-button:hover {
-    background: var(--button-hover, #e5e7eb);
+    background: var(--button-hover);
     border-color: var(--border-color);
   }
 
@@ -155,7 +155,7 @@
 
   /* Dark mode adjustments */
   :global([data-theme='dark']) .cancel-button:hover {
-    background: var(--button-hover, rgba(255, 255, 255, 0.1));
+    background: var(--button-hover);
     border-color: var(--border-color);
   }
 

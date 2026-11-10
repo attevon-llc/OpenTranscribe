@@ -422,7 +422,7 @@
     margin: 0.5rem 0 0 0;
     font-size: 0.75rem;
     color: var(--text-color);
-    background: rgba(var(--warning-color-rgb, 234, 179, 8), 0.12);
+    background: rgba(var(--warning-color-rgb), 0.12);
     border-radius: 6px;
     padding: 0.5rem 0.65rem;
     line-height: 1.5;
@@ -448,7 +448,7 @@
   }
   .ex-blur {
     filter: blur(5px);
-    background: var(--surface-hover, rgba(127, 127, 127, 0.15));
+    background: var(--surface-hover);
     border-radius: 3px;
     user-select: none;
   }
@@ -491,7 +491,7 @@
   }
   .chip.locked {
     border-color: var(--warning-color);
-    background: rgba(var(--warning-color-rgb, 234, 179, 8), 0.12);
+    background: rgba(var(--warning-color-rgb), 0.12);
     cursor: not-allowed;
   }
   /* Hide the raw checkbox; the chip itself is the control. */

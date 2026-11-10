@@ -186,8 +186,8 @@
   }
 
   .success-message {
-    background-color: var(--success-color-light, #f0fdf4);
-    color: var(--success-color, #22c55e);
+    background-color: var(--success-color-light);
+    color: var(--success-color);
     padding: 0.75rem;
     border-radius: 4px;
     border: 1px solid rgba(34, 197, 94, 0.2);
@@ -198,8 +198,8 @@
   }
 
   .error-message {
-    background-color: var(--error-color-light, #fef2f2);
-    color: var(--error-color, #ef4444);
+    background-color: var(--error-color-light);
+    color: var(--error-color);
     padding: 0.75rem;
     border-radius: 4px;
     border: 1px solid rgba(239, 68, 68, 0.2);

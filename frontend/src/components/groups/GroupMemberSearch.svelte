@@ -245,7 +245,7 @@
   }
 
   .result-item:hover:not(:disabled) {
-    background-color: var(--hover-color, rgba(59, 130, 246, 0.08));
+    background-color: var(--hover-color);
   }
 
   .result-item:disabled {

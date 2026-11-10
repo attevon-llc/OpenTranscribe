@@ -313,15 +313,15 @@
     align-items: flex-start;
     padding: 0.625rem 0.75rem;
     border-radius: 6px;
-    border: 1px solid var(--error-color, #dc2626);
+    border: 1px solid var(--error-color);
     background: rgba(220, 38, 38, 0.08);
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
   }
 
   .warning :global(svg) {
     flex-shrink: 0;
     margin-top: 0.1875rem;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 
   .understand {
@@ -339,7 +339,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
   }
 
   .typed input {
@@ -349,11 +349,11 @@
   }
 
   .error {
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 
   .verified {
-    color: var(--color-success-text, #047857);
+    color: var(--color-success-text);
   }
 
   .results {
@@ -370,7 +370,7 @@
 
   code {
     font-size: 0.8125rem;
-    background: var(--surface-secondary, rgba(127, 127, 127, 0.12));
+    background: var(--surface-secondary);
     border-radius: 4px;
     padding: 0 0.25rem;
     white-space: nowrap;

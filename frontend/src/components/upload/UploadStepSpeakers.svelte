@@ -151,14 +151,14 @@
   .field input[type="number"] {
     padding: 0.4375rem 0.5rem; border: 1px solid var(--border-color); border-radius: 6px;
   }
-  .field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background, #f5f5f5); }
+  .field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background); }
   .field input::placeholder { color: var(--text-light); }
 
   .consent-row {
     display: flex; align-items: flex-start; gap: 0.625rem;
     padding: 0.625rem 0.75rem; cursor: pointer;
     border: 1px solid var(--border-color); border-radius: 6px;
-    background: var(--surface-color, transparent);
+    background: var(--surface-color);
   }
   .consent-row input[type='checkbox'] { margin-top: 0.1875rem; flex-shrink: 0; }
   .consent-text { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); }

@@ -38,8 +38,8 @@
   }
 
   .role-member {
-    background-color: var(--background-color, #f3f4f6);
-    color: var(--text-secondary, #6b7280);
+    background-color: var(--background-color);
+    color: var(--text-secondary);
   }
 
   :global([data-theme='dark']) .role-owner {

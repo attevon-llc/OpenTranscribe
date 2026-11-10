@@ -98,7 +98,7 @@
   }
 
   .model {
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-mono);
     font-size: 12px;
     overflow-wrap: anywhere;
   }

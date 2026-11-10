@@ -73,9 +73,9 @@
     border-radius: 6px;
     background: linear-gradient(
       90deg,
-      var(--bg-tertiary, #e8e8e8) 25%,
-      var(--bg-secondary, #f0f0f0) 50%,
-      var(--bg-tertiary, #e8e8e8) 75%
+      var(--bg-tertiary) 25%,
+      var(--bg-secondary) 50%,
+      var(--bg-tertiary) 75%
     );
     background-size: 200% 100%;
     animation: shell-pulse 1.5s ease-in-out infinite;

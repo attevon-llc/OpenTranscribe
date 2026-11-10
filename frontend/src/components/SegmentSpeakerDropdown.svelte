@@ -322,8 +322,8 @@
 <svelte:head>
   <style>
     .speaker-dropdown-portal .dropdown-menu {
-      background: var(--surface-color, #1e293b);
-      border: 1px solid var(--border-color, #334155);
+      background: var(--surface-color);
+      border: 1px solid var(--border-color);
       border-radius: 8px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
       min-width: 200px;
@@ -342,14 +342,14 @@
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      color: var(--text-secondary, #94a3b8);
+      color: var(--text-secondary);
       padding: 8px 12px 4px 12px;
       letter-spacing: 0.5px;
     }
 
     .speaker-dropdown-portal .dropdown-divider {
       height: 1px;
-      background: var(--border-light, #475569);
+      background: var(--border-light);
       margin: 4px 0;
     }
 
@@ -364,13 +364,13 @@
       border-radius: 6px;
       cursor: pointer;
       transition: background-color 0.15s ease;
-      color: var(--text-primary, #f1f5f9);
+      color: var(--text-primary);
       font-size: 14px;
       text-align: start;
     }
 
     .speaker-dropdown-portal .dropdown-item:hover {
-      background: var(--surface-hover, #334155);
+      background: var(--surface-hover);
     }
 
     .speaker-dropdown-portal .dropdown-item.selected {
@@ -400,8 +400,8 @@
     }
 
     .speaker-dropdown-portal .speaker-color-indicator.no-speaker {
-      background: var(--border-color, #475569);
-      border-color: var(--border-hover, #64748b);
+      background: var(--border-color);
+      border-color: var(--border-hover);
     }
 
     .speaker-dropdown-portal .create-speaker-btn {
@@ -429,16 +429,16 @@
     }
 
     .speaker-dropdown-portal .suggestion-header {
-      color: var(--warning-color, #f59e0b);
+      color: var(--warning-color);
     }
 
     .speaker-dropdown-portal .suggestion-btn svg {
-      color: var(--warning-color, #f59e0b);
+      color: var(--warning-color);
       margin-right: 4px;
     }
 
     .speaker-dropdown-portal .suggestion-btn:hover {
-      background: var(--surface-hover, #334155);
+      background: var(--surface-hover);
     }
 
     .speaker-dropdown-portal .inline-name-row {
@@ -467,7 +467,7 @@
       padding: 0;
       box-sizing: border-box;
       color: #fff;
-      background: var(--primary-color, #3b82f6);
+      background: var(--primary-color);
       border: none;
       border-radius: 6px;
       cursor: pointer;
@@ -488,7 +488,7 @@
       padding: 0 12px 6px 12px;
       font-size: 11px;
       line-height: 1.35;
-      color: var(--warning-color, #f59e0b);
+      color: var(--warning-color);
     }
 
     .speaker-dropdown-portal .inline-name-matches[hidden],
@@ -505,7 +505,7 @@
       margin-left: 8px;
       font-size: 11px;
       font-weight: 600;
-      color: var(--text-secondary, #94a3b8);
+      color: var(--text-secondary);
       font-variant-numeric: tabular-nums;
     }
   </style>
@@ -648,6 +648,6 @@
     width: 12px;
     height: 12px;
     flex-shrink: 0;
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
   }
 </style>

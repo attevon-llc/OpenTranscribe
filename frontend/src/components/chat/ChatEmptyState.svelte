@@ -152,8 +152,8 @@
   }
 
   .hero-icon.warning {
-    background-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.15);
-    color: var(--warning-color, #ffc107);
+    background-color: rgba(var(--warning-color-rgb), 0.15);
+    color: var(--warning-color);
   }
 
   h1 {

@@ -90,17 +90,17 @@
 
   .pagination button {
     padding: 6px 14px;
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
-    background: var(--card-background, #fff);
-    color: var(--text-color, #111827);
+    background: var(--card-background);
+    color: var(--text-color);
     cursor: pointer;
     box-shadow: none;
     font-size: 14px;
   }
 
   .pagination button:hover:not(:disabled) {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }

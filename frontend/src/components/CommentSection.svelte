@@ -369,7 +369,7 @@
     justify-content: space-between;
     padding: 12px 16px;
     border-bottom: 1px solid var(--border-color);
-    background: var(--bg-secondary, var(--surface-color));
+    background: var(--bg-secondary);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -424,7 +424,7 @@
     top: 0;
     z-index: 5;
     padding: 1rem 0.5rem;
-    border-bottom: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
+    border-bottom: 1px solid var(--border-color);
   }
 
   .comments-list-container {

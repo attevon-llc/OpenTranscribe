@@ -254,7 +254,7 @@
   }
 
   .result-item.active {
-    background: var(--hover-color, var(--surface-color));
+    background: var(--hover-color);
     border-color: var(--border-color);
   }
 

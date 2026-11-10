@@ -2193,8 +2193,8 @@ run_upgrade_sequence() {
     local compose_files="$1"
 
     preflight_upgrade_env || exit 1
-    compose_down_for_upgrade "$compose_files" || exit 1
     compose_pull_for_upgrade "$compose_files" || exit 1
+    compose_down_for_upgrade "$compose_files" || exit 1
     [ -z "${UPDATE_TARGET_VERSION:-}" ] || update_pin_image_tag
 
     if ! perform_phased_restart "$compose_files"; then

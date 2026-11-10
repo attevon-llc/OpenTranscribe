@@ -45,7 +45,7 @@ get_compose_files() {{ echo "-f docker-compose.yml"; }}
 show_access_info() {{ :; }}
 preflight_upgrade_env() {{ return {preflight_rc}; }}
 compose_pull_for_upgrade() {{ echo "PULL tag=$OT_IMAGE_TAG"; return {pull_rc}; }}
-compose_down_for_upgrade() {{ echo REACHED_TEARDOWN; }}
+compose_down_for_upgrade() {{ echo REACHED_TEARDOWN; echo down >> {tmp_path}/down.log; }}
 perform_phased_restart() {{ echo REACHED_RESTART; }}
 docker() {{
   if [ "$1" = "compose" ]; then echo some_head; return 0; fi
@@ -81,6 +81,14 @@ def test_refused_update_leaves_env_byte_identical(
     assert result.returncode != 0, result.stdout + result.stderr
     assert (tmp_path / ".env").read_text() == ENV_BEFORE
     assert "REACHED_RESTART" not in result.stdout
+
+
+@pytest.mark.parametrize("args", ["--version v0.8.0", "--rollback"])
+def test_failed_pull_aborts_before_the_old_stack_is_taken_down(tmp_path, args):
+    result = _run(tmp_path, args=args, preflight_rc=0, pull_rc=1, docker_run_rc=0)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert not (tmp_path / "down.log").exists()
+    assert (tmp_path / ".env").read_text() == ENV_BEFORE
 
 
 def test_committed_update_pulls_target_tag_then_writes_tag_and_marker(tmp_path):

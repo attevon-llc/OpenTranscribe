@@ -74,6 +74,7 @@ check_environment() {{ :; }}
 fix_model_cache_permissions() {{ :; }}
 get_compose_files() {{ echo "-f docker-compose.yml"; }}
 preflight_upgrade_env() {{ :; }}
+compose_pull_for_upgrade() {{ :; }}
 compose_down_for_upgrade() {{ echo "REACHED_TEARDOWN"; exit 0; }}
 {docker_stub}
 set -- update --rollback {extra_args}

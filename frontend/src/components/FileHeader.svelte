@@ -3,6 +3,7 @@
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
   import DemoAttribution from '$components/demo/DemoAttribution.svelte';
   import HeldFileBanner from '$components/legal-hold/HeldFileBanner.svelte';
   import { fileFrozen } from '$lib/legalHold/fileHoldContext';
@@ -228,9 +229,10 @@
         <span class="progress-percentage" dir="ltr">{file.progress || 0}%</span>
       </div>
 
-      <div class="progress-bar">
-        <div class="progress-bar-inner" style="width: {file.progress || 0}%;"></div>
-      </div>
+      <ProgressBar
+        percent={file.progress || 0}
+        ariaLabel={$t('fileDetail.processingInProgress')}
+      />
 
       <div class="processing-stages">
         <div class="stage {(file.progress || 0) >= 5 ? 'active' : ''} {(file.progress || 0) >= 25 ? 'completed' : ''}">
@@ -418,31 +420,6 @@
     flex-shrink: 0;
   }
 
-  .progress-bar {
-    width: 100%;
-    height: 8px;
-    background: var(--surface-color);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    border: 1px solid var(--border-color);
-  }
-
-  .progress-bar-inner {
-    height: 100%;
-    background: linear-gradient(90deg, var(--primary-color), rgba(var(--primary-color-rgb), 0.8));
-    border-radius: var(--radius-sm);
-    transition: width var(--duration-slow) ease;
-    animation: progress-shimmer 1.5s infinite;
-  }
-
-  @keyframes progress-shimmer {
-    0% {
-      background-position: -200px 0;
-    }
-    100% {
-      background-position: calc(200px + 100%) 0;
-    }
-  }
 
   .processing-stages {
     display: flex;

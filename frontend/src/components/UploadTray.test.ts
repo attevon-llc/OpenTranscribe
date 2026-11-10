@@ -79,9 +79,12 @@ describe('UploadManager drag (defect 2)', () => {
 describe('UploadProgress (defects 1 and 5)', () => {
   it('fills the active bar from a theme token, not a hardcoded hex', async () => {
     const { container } = await renderTray();
-    const fill = container.querySelector('.upload-item .progress-fill') as HTMLElement;
-    expect(fill.getAttribute('style')).toContain('var(--primary-on-surface)');
-    expect(fill.getAttribute('style')).not.toMatch(/#[0-9a-f]{3,6}/i);
+    expect(
+      container.querySelector('.upload-item [role="progressbar"] .progress-fill')
+    ).not.toBeNull();
+    const bar = fs.readFileSync(path.resolve(__dirname, 'ui/ProgressBar.svelte'), 'utf8');
+    expect(bar).toMatch(/background-color:\s*var\(--primary-on-surface\)/);
+    expect(bar).not.toMatch(/background(-color)?:\s*#[0-9a-f]{3,6}/i);
   });
 
   it('uses tray-specific button classes that cannot collide with the gallery toolbar', async () => {
@@ -113,7 +116,7 @@ describe('theme tokens (defects 1 and 3)', () => {
   ] as const) {
     it(`${theme}: active progress fill clears 3:1 (WCAG 1.4.11) against its track`, () => {
       expect(
-        ratio(token(sel, '--primary-on-surface'), token(sel, '--border-color'))
+        ratio(token(sel, '--primary-on-surface'), token(sel, '--color-bg-tertiary'))
       ).toBeGreaterThanOrEqual(3);
     });
   }

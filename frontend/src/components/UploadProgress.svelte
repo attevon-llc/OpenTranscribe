@@ -4,6 +4,7 @@
   import { t } from '$stores/locale';
   import { formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
   import type { MenuIconName } from '$lib/ui/menuIcons';
 
   export let upload: UploadItem;
@@ -152,11 +153,12 @@
 
   {#if showProgress}
     <div class="progress-container">
-      <div class="progress-bar">
-        <div
-          class="progress-fill"
-          style="width: {upload.progress}%; background-color: {getStatusColor(upload.status)}"
-        ></div>
+      <div class="progress-bar-slot">
+        <ProgressBar
+          percent={upload.progress}
+          ariaLabel={upload.name}
+          tone={upload.status === 'queued' ? 'warning' : 'primary'}
+        />
       </div>
       <span class="progress-text" dir="ltr">{upload.progress}%</span>
     </div>
@@ -292,17 +294,8 @@
     margin-top: var(--space-2);
   }
 
-  .progress-bar {
+  .progress-bar-slot {
     flex: 1;
-    height: 4px;
-    background: var(--border-color);
-    border-radius: var(--radius-xs);
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    transition: width var(--duration-slow) ease;
   }
 
   .progress-text {
@@ -348,10 +341,6 @@
 
   :global([data-theme='dark']) .upload-action-btn:hover {
     background: var(--hover-color);
-  }
-
-  :global([data-theme='dark']) .progress-bar {
-    background: var(--border-color);
   }
 
   :global([data-theme='dark']) .error-message {

@@ -10,6 +10,7 @@
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
   import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
 
   let showModelChangeModal = false;
@@ -446,8 +447,8 @@
     </div>
   {:else if indexStatus && indexStatus.total_files > 0 && progressPercent < 100}
     <div class="progress-container">
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: {progressPercent}%"></div>
+      <div class="progress-bar-slot">
+        <ProgressBar percent={progressPercent} ariaLabel={$t('search.reindexProgressBar')} />
       </div>
       <span class="progress-text">{$t('settings.search.percentIndexed', { percent: progressPercent })}</span>
     </div>
@@ -697,19 +698,8 @@
     margin-bottom: var(--space-2);
   }
 
-  .progress-bar {
+  .progress-bar-slot {
     flex: 1;
-    height: 6px;
-    background: var(--border-color);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: 3px;
-    transition: width var(--duration-slow);
   }
 
   .progress-text {

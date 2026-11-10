@@ -72,6 +72,7 @@ def build_world(label: str = "user", *, org_id: int | None = None, files: int = 
     from app.models.speaker import SpeakerProfile
     from app.models.user import User
     from app.services.opensearch_service import opensearch_client
+    from app.utils.filename import get_safe_storage_filename
 
     db = _db()
     try:
@@ -111,6 +112,10 @@ def build_world(label: str = "user", *, org_id: int | None = None, files: int = 
             )
             db.add(row)
             db.commit()
+            # The key layout the upload pipeline writes (utils/filename.py): it needs the id.
+            row.storage_path = get_safe_storage_filename("original.mp4", owner.id, row.id)
+            row.thumbnail_path = get_safe_storage_filename("thumbnail.jpg", owner.id, row.id)
+            db.commit()
             db.refresh(row)
             return row
 
@@ -133,8 +138,8 @@ def build_world(label: str = "user", *, org_id: int | None = None, files: int = 
             world.file_ids.append(fid)
             world.file_uuids.append(fuuid)
             prefix = f"user_{subject.id}/file_{fid}"
-            _put(settings.MEDIA_BUCKET_NAME, f"{prefix}/original.mp4", world)
-            _put(settings.MEDIA_BUCKET_NAME, f"{prefix}/thumbnail.jpg", world)
+            _put(settings.MEDIA_BUCKET_NAME, str(row.storage_path), world)
+            _put(settings.MEDIA_BUCKET_NAME, str(row.thumbnail_path), world)
             # Not named by any file column: only a prefix sweep reaches it.
             _put(settings.MEDIA_BUCKET_NAME, f"{prefix}/stray.bin", world)
             _put(settings.MEDIA_BUCKET_NAME, f"temp/preprocess/{fuuid}/audio.wav", world)

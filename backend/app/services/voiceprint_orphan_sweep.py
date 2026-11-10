@@ -29,6 +29,11 @@ Guards, both stated in the report:
   refuses unless ``force=True``.
 * The deletion is verified: after ``delete_by_query`` (with ``refresh``) each index is
   re-counted for the ids it tried to delete, and any survivor is reported.
+* **Writes during the scan.** The row snapshot is taken before the scan, so a speaker whose row
+  commits while the scan runs would look orphaned. Before deleting, the rows are read again and
+  any candidate that now has one is dropped, and a document written after the sweep started
+  (``created_at``) is never deleted: its row may not have committed yet. Both are counted in
+  ``skipped_recent``.
 
 Run it inside a backend container::
 
@@ -39,6 +44,8 @@ Run it inside a backend container::
 from __future__ import annotations
 
 import logging
+from datetime import UTC
+from datetime import datetime
 from typing import Any
 
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
@@ -98,6 +105,20 @@ def _classify(
     return None
 
 
+def _written_since(hit: dict[str, Any], started: datetime) -> bool:
+    """The document's ``created_at`` is at or after ``started`` (absent or unreadable: no)."""
+    raw = (hit.get("_source") or {}).get("created_at")
+    if not raw:
+        return False
+    try:
+        written = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return False
+    if written.tzinfo is None:
+        written = written.replace(tzinfo=UTC)
+    return written >= started
+
+
 def _concrete_indices(client: Any, names: list[str]) -> list[str]:
     """Resolve aliases so each physical index is scanned exactly once."""
     concrete: list[str] = []
@@ -138,6 +159,7 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
     if client is None:
         raise RuntimeError("OpenSearch client unavailable — cannot sweep voiceprints")
 
+    started = datetime.now(UTC)
     speakers = _db_speaker_uuids()
     profiles = _db_profile_uuids()
     # A failed read raises here, before any scan or delete: an unreadable table must never
@@ -152,10 +174,11 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
         "orphans_found": 0,
         "deleted": 0,
         "surviving_orphans": 0,
+        "skipped_recent": 0,
         "indices": {},
     }
 
-    orphans_by_index: dict[str, list[str]] = {}
+    orphans_by_index: dict[str, list[dict[str, Any]]] = {}
     for idx in _concrete_indices(client, speaker_embedding_indices()):
         stats = {
             "docs_scanned": 0,
@@ -169,23 +192,23 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
         # while a just-written one would be missed (also harmless); refresh keeps the counts
         # an operator reads honest.
         client.indices.refresh(index=idx)
-        orphan_ids: list[str] = []
+        orphan_hits: list[dict[str, Any]] = []
         for hit in helpers.scan(
             client,
             index=idx,
             query={"query": {"match_all": {}}},
-            _source=["document_type", "profile_uuid", "cluster_uuid"],
+            _source=["document_type", "profile_uuid", "cluster_uuid", "created_at"],
             size=1000,
         ):
             stats["docs_scanned"] += 1
             kind = _classify(hit, speakers, profiles, clusters)
             if kind:
                 stats[f"orphan_{kind}_docs"] += 1
-                orphan_ids.append(str(hit["_id"]))
+                orphan_hits.append(hit)
         report["indices"][idx] = stats
-        report["orphans_found"] += len(orphan_ids)
-        if orphan_ids:
-            orphans_by_index[idx] = orphan_ids
+        report["orphans_found"] += len(orphan_hits)
+        if orphan_hits:
+            orphans_by_index[idx] = orphan_hits
 
     if not speakers and not profiles and report["orphans_found"] and not force:
         report["refused"] = "empty_database"
@@ -201,8 +224,17 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
         logger.info("Voiceprint sweep (dry run): %d orphan(s) found", report["orphans_found"])
         return report
 
-    for idx, ids in orphans_by_index.items():
+    # The first snapshot predates the scan: read the rows again now, after it, and keep only the
+    # candidates that are still orphans and were written before the sweep began.
+    speakers, profiles, clusters = _db_speaker_uuids(), _db_profile_uuids(), _db_cluster_uuids()
+    for idx, hits in orphans_by_index.items():
         stats = report["indices"][idx]
+        ids = [
+            str(hit["_id"])
+            for hit in hits
+            if _classify(hit, speakers, profiles, clusters) and not _written_since(hit, started)
+        ]
+        report["skipped_recent"] += len(hits) - len(ids)
         for i in range(0, len(ids), _DELETE_BATCH):
             batch = ids[i : i + _DELETE_BATCH]
             try:

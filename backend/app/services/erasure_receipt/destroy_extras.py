@@ -16,6 +16,7 @@ from typing import Any
 
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
+from app.services.erasure_receipt.types import avatar_prefixes
 from app.services.erasure_receipt.types import object_prefixes
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
@@ -48,15 +49,13 @@ def erase_object_prefixes(
     The canonical per-file destroy removes the objects it knows by name; this removes what it
     does not (``user_<uid>/youtube_<id>/`` thumbnails, a rendition an older version wrote, noncurrent
     versions of either). A file a legal hold keeps is never touched, and a user prefix is only
-    removed whole when nothing under it is held.
+    removed whole when nothing under it survives the erasure (``Captured.whole_user_prefix``).
     """
     from app.core.config import settings
     from app.services.minio_service import minio_client
     from app.services.storage_versions import remove_completely
 
-    prefixes = object_prefixes(scope, captured)
-    if scope.kind == "user" and scope.user_id is not None:
-        prefixes = [*prefixes, f"avatars/{scope.user_id}/"]
+    prefixes = [*object_prefixes(scope, captured), *avatar_prefixes(scope, captured)]
     for prefix in prefixes:
         try:
             remove_completely(minio_client, settings.MEDIA_BUCKET_NAME, prefix=prefix)

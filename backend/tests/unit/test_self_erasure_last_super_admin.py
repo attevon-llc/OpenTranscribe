@@ -193,3 +193,25 @@ def test_a_blocked_request_is_what_get_last_blocked_request_reports(
     # the two apart.
     assert blocked.cancelled_at is None
     assert service.get_open_request(db_session, int(super_admin_user.id)) is None
+
+
+def test_a_retry_after_a_hold_releases_does_not_erase_the_last_super_admin(
+    db_session, super_admin_user, erased, audit_actions
+):
+    """The check ran when the request first executed; a hold deferred it, and by the time the
+    hold lifts and the sweep retries (``run_entry``), the other super administrator is gone."""
+    other = _super_admin(db_session)
+    entry = _entry(db_session, super_admin_user)
+    assert executor._execute_one(db_session, int(entry.id), DUE) is True
+    # What erase_user leaves when a held file kept the account: a legal-hold deferral.
+    entry.status, entry.deferred_reason = "deferred", "legal_hold"
+    other.role, other.is_superuser = "admin", False
+    db_session.commit()
+
+    summary = executor.run_entry(db_session, entry)
+    db_session.expire_all()
+
+    assert erased == [super_admin_user.id], "only the first execution reached the destroy"
+    assert summary["complete"] is False
+    assert db_session.get(ErasureLedgerEntry, entry.id).status == "cancelled"
+    assert audit_actions == ["gdpr_self_erasure_blocked"]

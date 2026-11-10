@@ -150,6 +150,15 @@ def is_unavailable_for(bypass: PlatformBypass, file: MediaFile) -> bool:
     """:func:`is_unavailable` with the exemption decided by this request's bypass."""
     if getattr(file, "deleted_at", None) is not None:
         return True
+    return is_quarantine_hidden_for(bypass, file)
+
+
+def is_quarantine_hidden_for(bypass: PlatformBypass, file: MediaFile) -> bool:
+    """Whether ``file``'s quarantine hides it from this request. The trash is not considered.
+
+    For a route that must still reach a trashed file (an Art. 17 erasure destroys the trash too)
+    but must not reach a takedown the caller cannot see.
+    """
     if not bool(getattr(file, "is_quarantined", False)):
         return False
     return not quarantine_exempt(bypass, file)

@@ -39,7 +39,7 @@ def erasure_receipt_reverify(
         organization_id=scope.get("organization_id"),
         file_ids=tuple(scope.get("file_ids") or ()),
     )
-    subject = Captured(**{**captured, "file_owners": [tuple(p) for p in captured["file_owners"]]})
+    subject = Captured(**captured)
     data = build_receipt(erasure_scope, subject, None, measure_all(erasure_scope, subject))
     with session_scope() as db:
         entry = db.query(ErasureLedgerEntry).filter(ErasureLedgerEntry.uuid == ledger_uuid).first()

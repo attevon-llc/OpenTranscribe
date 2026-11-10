@@ -110,6 +110,11 @@ search index is re-pointed at the new owner, so search and chat keep finding the
   receiving administrator's own organization data was erased earlier, the daily erasure
   reconciliation counts handed-over rows from the hand-over, so they are not taken for a
   restore of the erased data and are not re-erased.
+- **Stored objects do not move.** A recording's objects keep their keys (`user_<uploader id>/file_<id>/...`)
+  and a profile photo keeps `avatars/<uploader id>/...`. Erasing the uploader's account later
+  destroys only the objects of the files and profiles that erasure covers: it removes the whole
+  `user_<id>/` and `avatars/<id>/` prefixes only when nothing under them belongs to another account
+  or is held, and otherwise each erased file's own directory, wherever its keys live.
 
 ## The receipt
 
@@ -182,6 +187,7 @@ index on its own retention.
 | The erasure ledger and its journal | Surrogate ids only, no address or name; it must outlive the data to prove the erasure | `pg.erasure_ledger` |
 | Acceptance records of legal documents | Pseudonymised (the account link, address and browser string are removed; document, version, hash, time, scope and organization remain) and kept until the retention date, `legal.acceptance_retention_days`. The operator states the lawful basis | `pg.legal_acceptance` (counted as de-attributed) |
 | A recording under a legal hold (see [Legal holds](../user-guide/legal-holds.md)), and the account that owns it | Art. 17(3)(e). The erasure is `deferred` and retried when the hold lifts | `pg.media_file.legal_hold`, `pg.user` |
+| The voiceprints of a held recording's speakers, the speaker profiles linked to one of them (with their photos) and the voice clusters that contain one | Art. 17(3)(e). The hold freezes the recording, and rebuilding a voiceprint means reprocessing it, which the hold refuses. Each kept profile also defers the erasure; they go when it is retried after the hold lifts | not counted as residual in `os.speakers` |
 | Database backups and OpenSearch snapshots | Until they rotate. A restore is reconciled: the ledger journal re-erases a subject that comes back | `backup.pg_dumps` |
 | An organization's tags and collections the subject created | They belong to the tenant and sit on colleagues' files. They stay with the subject removed | `pg.tag.org`, `pg.collection.org` |
 

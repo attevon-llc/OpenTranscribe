@@ -17,6 +17,7 @@ from typing import Any
 from app.services.erasure_receipt.stores_pg import Disposition
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
+from app.services.erasure_receipt.types import avatar_prefixes
 from app.services.erasure_receipt.types import object_prefixes
 
 logger = logging.getLogger(__name__)
@@ -127,14 +128,19 @@ def _os_summaries(scope: ErasureScope, captured: Captured) -> int:
     return sum(count_legacy_summary_docs(ids[i : i + _BATCH]) for i in range(0, len(ids), _BATCH))
 
 
-def _speaker_stamp(scope: ErasureScope) -> dict[str, Any] | None:
-    """The same stamp clause ``_erase_speaker_voiceprints`` deletes by."""
+def _speaker_stamp(scope: ErasureScope, captured: Captured) -> dict[str, Any] | None:
+    """The same stamp clause ``_erase_speaker_voiceprints`` deletes by, minus what a hold keeps."""
     terms: list[dict[str, Any]] = []
     if scope.kind in ("user", "org_member"):
         terms.append({"term": {"user_id": scope.user_id}})
     if scope.kind in ("org_member", "organization"):
         terms.append({"term": {"organization_id": scope.organization_id}})
-    return {"bool": {"filter": terms}} if terms else None
+    if not terms:
+        return None
+    clause: dict[str, Any] = {"filter": terms}
+    if captured.kept_voiceprint_ids:
+        clause["must_not"] = [{"ids": {"values": list(captured.kept_voiceprint_ids)}}]
+    return {"bool": clause}
 
 
 def _os_speakers(scope: ErasureScope, captured: Captured) -> int:
@@ -146,7 +152,7 @@ def _os_speakers(scope: ErasureScope, captured: Captured) -> int:
         *(f"cluster_{u}" for u in captured.cluster_uuids),
     ]
     errors: list[dict[str, Any]] = []
-    found = count_speaker_docs_by_ids(ids, also=_speaker_stamp(scope), errors=errors)
+    found = count_speaker_docs_by_ids(ids, also=_speaker_stamp(scope, captured), errors=errors)
     if found is None:
         raise RuntimeError("speaker documents could not be counted")
     return found
@@ -245,12 +251,14 @@ def _s3_file_objects(scope: ErasureScope, captured: Captured) -> int:
 def _s3_avatars(scope: ErasureScope, captured: Captured) -> int:
     from app.core.config import settings
 
-    total = sum(
-        _count_versions(settings.MEDIA_BUCKET_NAME, p, exact=True) for p in captured.avatar_paths
+    prefixes = tuple(avatar_prefixes(scope, captured))
+    total = sum(_count_versions(settings.MEDIA_BUCKET_NAME, p) for p in prefixes)
+    # A key under a counted prefix is already in that count.
+    return total + sum(
+        _count_versions(settings.MEDIA_BUCKET_NAME, p, exact=True)
+        for p in captured.avatar_paths
+        if not p.startswith(prefixes)
     )
-    if scope.kind == "user" and scope.user_id is not None:
-        total += _count_versions(settings.MEDIA_BUCKET_NAME, f"avatars/{scope.user_id}/")
-    return total
 
 
 def _s3_temp(scope: ErasureScope, captured: Captured) -> int:

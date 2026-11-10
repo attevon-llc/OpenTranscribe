@@ -116,11 +116,13 @@ from app.services import erasure_ledger_service as ledger
 from app.services.erasure_org_member_rerun import acquired_after
 from app.services.erasure_org_member_rerun import owned_since
 from app.services.erasure_receipt import flow as receipt_flow
+from app.services.erasure_receipt.capture import held_voices
 from app.services.erasure_receipt.destroy_extras import erase_extras
 from app.services.erasure_receipt.measure import Measurement
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
 from app.services.gdpr_erasure_steps import _actor_kind
+from app.services.gdpr_erasure_steps import _deletable_profiles
 from app.services.gdpr_erasure_steps import _delete_comments_deferring_held
 from app.services.gdpr_erasure_steps import _delete_owner_scoped_rows
 from app.services.gdpr_erasure_steps import _delete_profiles
@@ -252,7 +254,7 @@ def erase_user(
     _erase_avatar_objects(avatar_paths, summary["errors"])
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
-        user_id=user_id, errors=summary["errors"]
+        user_id=user_id, keep_ids=held_voices(db, scope).doc_ids(), errors=summary["errors"]
     )
 
     if summary["legal_holds_skipped"]:
@@ -439,7 +441,7 @@ def erase_org_member_data(
         profile_query = profile_query.filter(
             owned_since(SpeakerProfile, "created_at") <= created_before
         )
-    profiles = profile_query.all()
+    profiles = _deletable_profiles(db, profile_query, summary)
     avatar_paths = _delete_profiles(db, profiles, summary)
 
     # The member's collections in this org are the TENANT's, shared by every
@@ -521,6 +523,7 @@ def erase_org_member_data(
         organization_id=org_id,
         created_before=created_before,
         keep=handed_over.must_not("os.speakers") if handed_over else None,
+        keep_ids=held_voices(db, scope).doc_ids(),
         errors=summary["errors"],
     )
     if captured is not None and before is not None:
@@ -615,7 +618,9 @@ def erase_organization(
     # Every document stamped with this org, across ALL members (v399/lane C3/C4).
     # Org-scoped speaker profiles (clear their profile embedding first), then
     # the org's collections — across ALL members of the org.
-    profiles = db.query(SpeakerProfile).filter(SpeakerProfile.organization_id == org_id).all()
+    profiles = _deletable_profiles(
+        db, db.query(SpeakerProfile).filter(SpeakerProfile.organization_id == org_id), summary
+    )
     avatar_paths = _delete_profiles(db, profiles, summary)
 
     speaker_collections = (
@@ -639,7 +644,7 @@ def erase_organization(
     _erase_avatar_objects(avatar_paths, summary["errors"])
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
-        organization_id=org_id, errors=summary["errors"]
+        organization_id=org_id, keep_ids=held_voices(db, scope).doc_ids(), errors=summary["errors"]
     )
 
     # Drop the org row (organization_membership rows CASCADE on delete).

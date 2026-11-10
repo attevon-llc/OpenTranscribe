@@ -387,7 +387,9 @@ in the database, for personal and organization purges alike. It does not run on 
 it once after upgrading, from a backend container:
 `python -m app.scripts.sweep_orphan_voiceprints` for a dry run that only counts, then
 `python -m app.scripts.sweep_orphan_voiceprints --apply` to delete. If the database cannot be
-read, the sweep stops without deleting anything.
+read, the sweep stops without deleting anything. It never deletes a voiceprint written while it runs:
+before deleting it reads the database again and skips any entry that has gained a row, or that
+was written after the sweep started (reported as `skipped_recent`).
 
 ## Re-check the speaker names the 0.6.0 upgrade marked as voiceprint-made
 

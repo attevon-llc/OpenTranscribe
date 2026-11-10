@@ -120,11 +120,8 @@ def _client(
     use, and this runs under a threadpool. Construction is cheap relative to an
     LLM call, so a per-call client trades negligible latency for no shared state.
     """
-    try:
-        import boto3
-        from botocore.config import Config
-    except ImportError as exc:  # pragma: no cover - boto3 is a hard dependency
-        raise BedrockNotConfiguredError("boto3 is not installed") from exc
+    import boto3
+    from botocore.config import Config
 
     if not region:
         raise BedrockNotConfiguredError("No AWS region configured for Bedrock")

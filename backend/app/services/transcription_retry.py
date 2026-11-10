@@ -123,7 +123,7 @@ def _release_reservation(media_file: MediaFile, task_id: str) -> None:
                 success=False,
             )
         )
-    except Exception:  # pragma: no cover - the hook layer already contains failures  # boundary: completion hooks must never fail the run
+    except Exception:  # boundary: completion hooks must never fail the run
         logger.exception("Failure-path completion hook raised (contained)")
 
 

@@ -19,7 +19,7 @@ class _Unscoped:
 
     __slots__ = ()
 
-    def __repr__(self) -> str:  # pragma: no cover - debug aid
+    def __repr__(self) -> str:
         return "UNSCOPED"
 
 

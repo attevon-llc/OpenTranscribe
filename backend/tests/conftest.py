@@ -350,6 +350,8 @@ pytest_plugins = [
     # `open_registration`: opt-in fixture that opens self-registration in the test savepoint.
     "fixtures.open_registration",
     "fixtures.production_txn",
+    # `tracking_env`: detect_speaker_attributes_task with a real DB session and everything slow faked.
+    "fixtures.speaker_attribute_tracking",
     # `summary_plane` + `sync_summary_plane`: seed the OpenSearch summary plane (#963) from
     # Postgres for API-level summary-search tests. Opt-in per module; nothing autouse.
     "fixtures.summary_plane",

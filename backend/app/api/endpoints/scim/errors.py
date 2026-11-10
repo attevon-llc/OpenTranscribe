@@ -78,9 +78,7 @@ async def scim_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     """FastAPI exception handler for :class:`SCIMError`."""
     if isinstance(exc, SCIMError):
         return exc.to_response()
-    return SCIMError(  # pragma: no cover - defensive
-        status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal error"
-    ).to_response()
+    return SCIMError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal error").to_response()
 
 
 def not_found(resource: str, resource_id: str) -> SCIMError:

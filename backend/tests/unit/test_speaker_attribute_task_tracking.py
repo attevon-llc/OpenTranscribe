@@ -24,128 +24,16 @@ from __future__ import annotations
 
 import datetime
 import time
-import uuid as uuid_mod
-from contextlib import contextmanager
-
-import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Task
-from app.models.media import TranscriptSegment
-from app.models.speaker import Speaker
 from app.tasks import speaker_attribute_task as sat
-
-
-@contextmanager
-def _real_scope(db_session):
-    """A `session_scope` stand-in bound to the test's savepoint session.
-
-    Commits like the real thing so a later query in the same test sees the
-    write, but never closes `db_session` — the fixture owns that.
-    """
-    try:
-        yield db_session
-        db_session.commit()
-    except Exception:
-        db_session.rollback()
-        raise
-
-
-def _make_file_with_speech(db_session, user, *, speakers: int = 1, seg_seconds: float = 4.0):
-    media_file = MediaFile(
-        uuid=str(uuid_mod.uuid4()),
-        user_id=user.id,
-        filename="attrs.mp4",
-        storage_path="test/attrs.mp4",
-        content_type="video/mp4",
-        file_size=1000,
-    )
-    db_session.add(media_file)
-    db_session.flush()
-
-    created = []
-    start = 0.0
-    for i in range(speakers):
-        speaker = Speaker(
-            uuid=str(uuid_mod.uuid4()),
-            media_file_id=media_file.id,
-            user_id=user.id,
-            name=f"SPEAKER_0{i}",
-        )
-        db_session.add(speaker)
-        db_session.flush()
-        created.append(speaker)
-
-        for _ in range(2):
-            db_session.add(
-                TranscriptSegment(
-                    uuid=str(uuid_mod.uuid4()),
-                    media_file_id=media_file.id,
-                    speaker_id=speaker.id,
-                    start_time=start,
-                    end_time=start + seg_seconds,
-                    text="hello there",
-                )
-            )
-            start += seg_seconds
-    db_session.flush()
-    db_session.commit()
-    return media_file, created
-
-
-class _FakeMinio:
-    def presigned_get_object(self, **kwargs):
-        return "http://minio.invalid/attrs.mp4"
-
-
-class _FakeAttributeService:
-    """Stands in for the real wav2vec2 service — no model, no ffmpeg."""
-
-    def load_models(self):
-        pass
-
-
-def _fake_inference_success(audio_source, work_items, service, audio_stream_index=None):
-    if not work_items:
-        return {}, {}
-    speaker_id = work_items[0][0]
-    return ({speaker_id: {"male": 0.9, "female": 0.1}}, {speaker_id: 1})
-
-
-@pytest.fixture
-def tracking_env(db_session, monkeypatch):
-    """Real DB session wired in; everything slow/external is faked."""
-    monkeypatch.setattr(sat, "session_scope", lambda: _real_scope(db_session))
-    monkeypatch.setattr(sat, "_is_speaker_attribute_detection_enabled", lambda user_id: True)
-    monkeypatch.setattr(sat, "_dispatch_llm_speaker_identification", lambda file_uuid: None)
-    monkeypatch.setattr(sat, "send_ws_event_for_file", lambda *a, **kw: None)
-    # send_ws_event_for_file (issue #908) resolves quarantine via its OWN
-    # session_scope() on a real connection, which cannot see this test's
-    # savepoint-isolated MediaFile even after _real_scope's commit (a nested
-    # savepoint release is not visible across connections) — stub the check
-    # itself rather than bridge a second session.
-    monkeypatch.setattr(
-        "app.services.file_availability.is_notification_suppressed_for_uuid",
-        lambda *a, **kw: False,
-    )
-    monkeypatch.setattr("app.services.minio_service.minio_client", _FakeMinio())
-    monkeypatch.setattr(
-        "app.services.speaker_attribute_service.get_cached_attribute_service",
-        lambda: _FakeAttributeService(),
-    )
-    monkeypatch.setattr(sat, "_run_gender_inference_parallel", _fake_inference_success)
-    return None
-
-
-def _task_row_for(db_session, media_file_id: int) -> Task | None:
-    db_session.expire_all()
-    row: Task | None = db_session.query(Task).filter(Task.media_file_id == media_file_id).first()
-    return row
+from tests.fixtures.speaker_attribute_tracking import make_file_with_speech
+from tests.fixtures.speaker_attribute_tracking import task_row_for
 
 
 def test_normal_completion_creates_and_completes_task_row(db_session, normal_user, tracking_env):
     """(a) The happy path must leave a real, terminal, matched Task row."""
-    media_file, _ = _make_file_with_speech(db_session, normal_user)
+    media_file, _ = make_file_with_speech(db_session, normal_user)
 
     result = sat.detect_speaker_attributes_task.apply(
         args=[str(media_file.uuid), normal_user.id]
@@ -153,7 +41,7 @@ def test_normal_completion_creates_and_completes_task_row(db_session, normal_use
 
     assert result["status"] == "success", result
 
-    task = _task_row_for(db_session, media_file.id)
+    task = task_row_for(db_session, media_file.id)
     assert task is not None, "no Task row was created — issue #622 regression"
     assert task.task_type == "speaker_attribute_detection"
     assert task.status == "completed"
@@ -172,7 +60,7 @@ def test_already_predicted_skip_path_creates_skipped_task_row(
     db_session, normal_user, tracking_env, monkeypatch
 ):
     """(b) The idempotency guard must still leave an honest, visible Task row."""
-    media_file, speakers = _make_file_with_speech(db_session, normal_user)
+    media_file, speakers = make_file_with_speech(db_session, normal_user)
     for speaker in speakers:
         speaker.attributes_predicted_at = datetime.datetime.now(datetime.UTC)
         speaker.predicted_gender = "male"
@@ -193,7 +81,7 @@ def test_already_predicted_skip_path_creates_skipped_task_row(
     assert result == {"status": "skipped", "reason": "already_predicted"}
     assert called["inference"] is False, "idempotency guard did not actually skip the slow work"
 
-    task = _task_row_for(db_session, media_file.id)
+    task = task_row_for(db_session, media_file.id)
     assert task is not None, "the skip path left no Task row — invisible in the Tasks UI"
     assert task.status == "skipped"
     assert task.completed_at is not None
@@ -203,7 +91,7 @@ def test_duplicate_in_progress_skip_path_creates_skipped_task_row(
     db_session, normal_user, tracking_env, monkeypatch
 ):
     """(c) The Redis dedup guard must also leave an honest, visible Task row."""
-    media_file, _ = _make_file_with_speech(db_session, normal_user)
+    media_file, _ = make_file_with_speech(db_session, normal_user)
 
     class _FakeRedis:
         def set(self, *args, **kwargs):
@@ -235,7 +123,7 @@ def test_duplicate_in_progress_skip_path_creates_skipped_task_row(
     assert result == {"status": "skipped", "reason": "duplicate_in_progress"}
     assert called["inference"] is False
 
-    task = _task_row_for(db_session, media_file.id)
+    task = task_row_for(db_session, media_file.id)
     assert task is not None, "the dedup skip path left no Task row"
     assert task.status == "skipped"
     assert task.completed_at is not None
@@ -243,7 +131,7 @@ def test_duplicate_in_progress_skip_path_creates_skipped_task_row(
 
 def test_failure_path_creates_failed_task_row(db_session, normal_user, tracking_env, monkeypatch):
     """(d) A real failure must be recorded as failed, with the error captured."""
-    media_file, _ = _make_file_with_speech(db_session, normal_user)
+    media_file, _ = make_file_with_speech(db_session, normal_user)
 
     def boom(*args, **kwargs):
         raise RuntimeError("ffmpeg segment fetch failed")
@@ -256,7 +144,7 @@ def test_failure_path_creates_failed_task_row(db_session, normal_user, tracking_
 
     assert result["status"] == "error"
 
-    task = _task_row_for(db_session, media_file.id)
+    task = task_row_for(db_session, media_file.id)
     assert task is not None, "a failed run left no Task row"
     assert task.status == "failed"
     assert task.error_message and "ffmpeg segment fetch failed" in task.error_message
@@ -276,7 +164,7 @@ def test_stalled_model_load_fails_fast_instead_of_hanging(
     the task gives up in roughly the (patched, short) timeout window rather
     than anywhere near the sleep duration or the real 60s default.
     """
-    media_file, _ = _make_file_with_speech(db_session, normal_user)
+    media_file, _ = make_file_with_speech(db_session, normal_user)
     monkeypatch.setattr(sat, "_MODEL_LOAD_TIMEOUT_SECONDS", 1)
 
     class _HangingService:
@@ -298,7 +186,7 @@ def test_stalled_model_load_fails_fast_instead_of_hanging(
     assert "did not complete within" in result["message"]
     assert elapsed < 4, f"the timeout did not bound the wait: took {elapsed:.1f}s"
 
-    task = _task_row_for(db_session, media_file.id)
+    task = task_row_for(db_session, media_file.id)
     assert task is not None
     assert task.status == "failed"
     assert task.error_message and "did not complete within" in task.error_message

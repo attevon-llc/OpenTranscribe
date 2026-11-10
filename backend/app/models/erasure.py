@@ -253,7 +253,7 @@ class ErasureLedgerEntry(Base):
         {"extend_existing": True},
     )
 
-    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+    def __repr__(self) -> str:
         return (
             f"<ErasureLedgerEntry {self.uuid} {self.subject_type} "
             f"status={self.status} attempts={self.attempts}>"

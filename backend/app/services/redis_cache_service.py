@@ -35,7 +35,7 @@ def _record(result: str) -> None:
 
         cache_operations_total.labels(cache="redis", result=result).inc()
     except (ImportError, ValueError):  # metrics must never break caching
-        logger.debug("cache metric not recorded", exc_info=True)  # pragma: no cover
+        logger.debug("cache metric not recorded", exc_info=True)
 
 
 # Default TTLs in seconds

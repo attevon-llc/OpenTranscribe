@@ -244,7 +244,7 @@ def fingerprint_object(media_file: MediaFile) -> None:
         S3Error,
         urllib3.exceptions.HTTPError,
         OSError,
-    ) as exc:  # pragma: no cover - network path
+    ) as exc:
         logger.debug(
             "imohash compute failed for %s (non-fatal): %s",
             media_file.storage_path,

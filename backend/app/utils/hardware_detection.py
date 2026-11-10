@@ -58,7 +58,7 @@ def resolve_cuda_device_index(cuda: Any | None = None) -> int:
 
     try:
         visible = int(cuda.device_count())
-    except _CUDA_ERRORS as e:  # pragma: no cover - driver-level failure
+    except _CUDA_ERRORS as e:
         logger.debug(f"Could not count CUDA devices ({e}); using ordinal 0", exc_info=True)
         return 0
 

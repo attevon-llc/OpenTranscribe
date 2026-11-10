@@ -65,7 +65,7 @@ def _owner_id(db: Session, token: SCIMToken) -> int:
     if token.created_by is not None:
         return int(token.created_by)
     fallback = get_first_super_admin(db)
-    if fallback is None:  # pragma: no cover - a deployment always seeds one
+    if fallback is None:
         raise SCIMError(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "No administrator is available to own a SCIM-created group",

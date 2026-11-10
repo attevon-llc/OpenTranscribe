@@ -333,6 +333,33 @@ def _open_settings(page: Any) -> None:
     page.wait_for_selector(".settings-sidebar .nav-item", timeout=15000)
 
 
+def _patch_route(page: Any, pattern: str, fields: dict[str, Any]) -> None:
+    """Merge ``fields`` into the real JSON answer of every GET whose URL matches ``pattern``.
+
+    The request still reaches the backend, so everything the fields do not name is the stack's
+    own data. An object answer is updated; a list answer has each object element updated. This
+    is how a state the seeded data lacks (a shared file, a speaker with profile suggestions)
+    is reached deterministically; pair it with ``reload`` when the page already fetched.
+    """
+    import re
+
+    def handler(route: Any) -> None:
+        if route.request.method != "GET":
+            route.continue_()
+            return
+        response = route.fetch()
+        data = response.json()
+        if isinstance(data, dict):
+            data.update(fields)
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    item.update(fields)
+        route.fulfill(response=response, json=data)
+
+    page.route(re.compile(pattern), handler)
+
+
 def run_step(page: Any, step: str) -> None:
     """Execute one manifest step (vocabulary in ``styling_screens``)."""
     kind, arg = split_step(step)
@@ -369,6 +396,11 @@ def run_step(page: Any, step: str) -> None:
             )
         elif kind == "tab":
             page.locator(f"#tab-{arg}").first.click()
+        elif kind == "patch":
+            pattern, _, body = arg.rpartition("|")
+            _patch_route(page, pattern, json.loads(body))
+        elif kind == "reload":  # arg ignored: the manifest validator wants kind:arg
+            page.reload()
         else:
             raise StepError(f"unknown step kind in {step!r}")
     except (StepError, ScreenUnavailableError):

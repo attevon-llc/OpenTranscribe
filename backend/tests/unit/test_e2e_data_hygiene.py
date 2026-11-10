@@ -372,7 +372,7 @@ def _module_literals(tree: ast.Module) -> dict[str, str]:
 def _conftest_literals() -> dict[str, str]:
     """``e2e/conftest.py``'s constants, which most modules import by name."""
     conftest = _E2E_ROOT / "conftest.py"
-    if not conftest.exists():  # pragma: no cover - the suite cannot run without it
+    if not conftest.exists():  # the suite cannot run without it
         return {}
     return _module_literals(ast.parse(conftest.read_text()))
 
@@ -887,7 +887,7 @@ def _tree_wide_helpers() -> tuple[set[str], set[str]]:
     for path in _e2e_modules():
         try:
             tree = ast.parse(path.read_text())
-        except SyntaxError:  # pragma: no cover - a syntax error fails collection anyway
+        except SyntaxError:  # a syntax error fails collection anyway
             continue
         functions = [
             n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
@@ -933,7 +933,7 @@ def _collect() -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str
         source = path.read_text()
         try:
             tree = ast.parse(source)
-        except SyntaxError:  # pragma: no cover - a syntax error fails collection anyway
+        except SyntaxError:  # a syntax error fails collection anyway
             continue
         module_count += 1
         rel = path.name

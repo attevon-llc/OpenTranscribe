@@ -60,7 +60,7 @@ from app.services.search.search_infra import _ensure_infrastructure
 from app.services.search.search_types import SearchCountUnavailableError
 from app.services.search.search_types import SearchResponse
 
-if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
+if TYPE_CHECKING:
     from opensearchpy import OpenSearch
 
 logger = logging.getLogger(__name__)

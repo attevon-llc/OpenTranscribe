@@ -309,7 +309,7 @@ def paired_ttest(deltas: Sequence[float]) -> TTestResult:
 
         p_value = float(stats.t.sf(abs(statistic), df) * 2)
         engine = "scipy"
-    except ImportError:  # pragma: no cover - exercised only when scipy is absent
+    except ImportError:  # exercised only when scipy is absent
         p_value = math.erfc(abs(statistic) / math.sqrt(2))
         engine = "normal-approx"
     return TTestResult(statistic=statistic, p_value=p_value, df=df, engine=engine)

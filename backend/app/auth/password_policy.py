@@ -791,7 +791,7 @@ def check_password_history(
     Returns:
         True if password is OK (not in history), False if recently used
     """
-    return password_policy.check_password_history(  # nosec B106
+    return password_policy.check_password_history(  # nosec B106  empty placeholder arg; the real check is verify_func against the history
         new_password_hash="",  # Not used - placeholder for API compatibility
         password_history=password_history,
         verify_func=verify_func,

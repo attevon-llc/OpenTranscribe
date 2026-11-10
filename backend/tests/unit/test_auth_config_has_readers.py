@@ -170,7 +170,7 @@ def _scan_readers() -> dict[str, set[str]]:
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:  # pragma: no cover - a syntax error fails elsewhere
+        except SyntaxError:  # a syntax error fails elsewhere
             continue
         for key in _keys_read_by(tree):
             readers.setdefault(key, set()).add(str(path.relative_to(_APP_ROOT.parent)))

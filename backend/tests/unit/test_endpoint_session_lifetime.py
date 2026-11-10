@@ -131,7 +131,7 @@ class _FakeIndices:
         self._tracker.observe("opensearch_exists")
         return True
 
-    def create(self, **kwargs):  # pragma: no cover - never reached in these tests
+    def create(self, **kwargs):  # never reached in these tests
         self._tracker.observe("opensearch_create")
 
 
@@ -276,7 +276,7 @@ def test_backup_status_skips_the_probe_when_opensearch_is_excluded(
     db_session.add(SystemSettings(key="backup.include_opensearch", value="false"))
     db_session.flush()
 
-    def _status():  # pragma: no cover - must not run
+    def _status():  # must not run
         tracked_db.observe("opensearch_snapshot_status")
         return {"reachable": True, "repository_registered": True, "last_snapshot": None}
 

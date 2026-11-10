@@ -91,7 +91,7 @@ def _arrange(db_session, state: str) -> None:
         _set_designation_raw(db_session, str(_config(db_session, enabled=False).uuid))
     elif state == "missing":
         _set_designation_raw(db_session, str(uuid_pkg.uuid4()))
-    else:  # pragma: no cover - guards a typo in the parametrization
+    else:  # guards a typo in the parametrization
         raise AssertionError(state)
 
 

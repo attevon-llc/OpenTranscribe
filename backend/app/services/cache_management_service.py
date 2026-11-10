@@ -28,7 +28,7 @@ from app.services.minio_bucket_admin import MinIOService
 from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
 from app.services.video_processing_service import VideoProcessingService
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from minio import Minio
 
 logger = logging.getLogger(__name__)

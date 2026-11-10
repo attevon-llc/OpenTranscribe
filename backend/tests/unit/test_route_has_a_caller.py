@@ -369,7 +369,7 @@ def _resolve_axios_call_arg(
         if declared_value is None:
             return None
         return _resolve_template_literal(declared_value, call_at, consts)
-    return None  # pragma: no cover - regex always yields one group or the other
+    return None  # regex always yields one group or the other
 
 
 def _normalize_frontend_path(raw: str) -> tuple[str, ...]:

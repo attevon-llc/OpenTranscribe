@@ -305,7 +305,7 @@ def _free_port_offsets(count: int) -> list[int]:
             if len(found) == count:
                 return found
     pytest.skip(f"fewer than {count} free port-offset blocks available on this host")
-    raise AssertionError("unreachable")  # pragma: no cover - satisfies type checkers
+    raise AssertionError("unreachable")  # satisfies type checkers
 
 
 def _port_is_free(port: int) -> bool:

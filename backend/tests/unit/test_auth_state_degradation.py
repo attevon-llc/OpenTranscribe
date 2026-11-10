@@ -205,7 +205,7 @@ def _reprobe_boundary_survives_a_concurrent_caller(module, *, probe_name):
         other = threading.Thread(target=module._get_store)
         other.start()
         other.join(timeout=5)
-        if other.is_alive():  # pragma: no cover - a hang is a failure, not a pass
+        if other.is_alive():  # a hang is a failure, not a pass
             raise AssertionError("the concurrent _get_store() call did not return")
 
     with patch.object(module, probe_name, return_value=recovered):

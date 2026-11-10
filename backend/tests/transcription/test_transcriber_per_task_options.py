@@ -192,7 +192,7 @@ def test_concurrent_threads_never_see_each_others_options(manager):
     def _run(key: str) -> None:
         try:
             results[key] = _decode(mgr, tasks[key])
-        except BaseException as exc:  # pragma: no cover - surfaced by the assert below
+        except BaseException as exc:  # surfaced by the assert below
             errors.append(exc)
 
     workers = [threading.Thread(target=_run, args=(k,)) for k in tasks]

@@ -22,7 +22,7 @@ from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider
 from app.utils.encryption import SecretDecryptionError
 
-if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
+if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from app.models.user_llm_settings import UserLLMSettings

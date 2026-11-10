@@ -17,7 +17,7 @@ from pydantic import model_validator
 
 from app.schemas.media_source import normalise_source_address
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from app.models.media import MediaFile
 
 

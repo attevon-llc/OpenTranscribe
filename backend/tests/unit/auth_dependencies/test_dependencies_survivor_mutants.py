@@ -221,7 +221,7 @@ class TestGetCurrentAdminUserResponseBody:
 class _NoDBAccess:
     """A ``Session`` stand-in that must never be reached (no-token/bad-token paths)."""
 
-    def query(self, *a, **kw):  # pragma: no cover - defensive
+    def query(self, *a, **kw):  # defensive
         raise AssertionError("must not reach the database before a token is present")
 
 

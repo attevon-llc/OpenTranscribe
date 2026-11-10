@@ -55,10 +55,10 @@ class _Normalizer(ASRProvider):
     def supports_translation(self) -> bool:
         return False
 
-    def validate_connection(self) -> tuple[bool, str, float]:  # pragma: no cover - unused
+    def validate_connection(self) -> tuple[bool, str, float]:  # unused
         return True, "n/a", 0.0
 
-    def transcribe(self, audio_path, config, progress_callback=None):  # pragma: no cover - unused
+    def transcribe(self, audio_path, config, progress_callback=None):  # unused
         raise NotImplementedError
 
 

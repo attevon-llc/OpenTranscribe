@@ -17,7 +17,7 @@ from app.services.search.query_building import _build_highlight_fields
 from app.services.search.query_building import _build_text_query
 from app.services.search.query_building import _get_search_fields
 
-if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
+if TYPE_CHECKING:
     from app.services.search.hybrid_search_service import HybridSearchService
 
 logger = logging.getLogger(__name__)

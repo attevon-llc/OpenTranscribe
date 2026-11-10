@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import event
 from sqlalchemy import text
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
 #: Postgres advisory-lock namespace reserved for test-suite DDL isolation (issue #389).

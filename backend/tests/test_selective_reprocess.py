@@ -185,7 +185,7 @@ def completed_file(headers):
     _sweep_stale_fixture_uploads(headers)
 
     source = _source_media()
-    if not source.exists():  # pragma: no cover - the committed fixture is tracked
+    if not source.exists():  # the committed fixture is tracked
         pytest.skip(f"missing media fixture {source}")
 
     mime = "video/mp4" if source.suffix.lower() in {".mp4", ".m4v", ".mov"} else "audio/wav"

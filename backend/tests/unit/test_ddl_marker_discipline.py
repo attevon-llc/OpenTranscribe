@@ -332,7 +332,7 @@ def _collect() -> tuple[list[str], list[str], list[str]]:
             continue
         try:
             tree = ast.parse(source)
-        except SyntaxError:  # pragma: no cover - a syntax error fails collection anyway
+        except SyntaxError:  # a syntax error fails collection anyway
             continue
 
         rel = path.relative_to(_TESTS_ROOT).as_posix()

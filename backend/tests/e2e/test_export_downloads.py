@@ -154,7 +154,7 @@ def test_each_export_format_downloads_real_content(
     elif ext == "pdf":
         assert body.startswith(b"%PDF-"), body[:8]
         assert body.rstrip().endswith(b"%%EOF")
-    else:  # pragma: no cover - the FORMATS table is the only source of ext
+    else:  # the FORMATS table is the only source of ext
         pytest.fail(f"unhandled format {ext}")
 
 

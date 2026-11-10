@@ -111,7 +111,7 @@ class GpuMemory:
 def _load() -> ctypes.CDLL:
     try:
         lib = ctypes.CDLL("libnvidia-ml.so.1")
-    except OSError as exc:  # pragma: no cover - depends on the host driver
+    except OSError as exc:  # depends on the host driver
         raise NvmlUnavailableError(f"cannot load libnvidia-ml.so.1: {exc}") from exc
     if lib.nvmlInit_v2() != _NVML_SUCCESS:
         raise NvmlUnavailableError("nvmlInit_v2 failed")

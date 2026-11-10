@@ -25,7 +25,7 @@ from app.services.llm_types import LLMProvider
 from app.utils.llm_log_safety import describe_llm_text
 from app.utils.llm_log_safety import log_llm_text_excerpt
 
-if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
+if TYPE_CHECKING:
     from app.utils.url_validation import PinnedTarget
 
 logger = logging.getLogger(__name__)

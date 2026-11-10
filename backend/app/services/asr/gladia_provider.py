@@ -31,7 +31,7 @@ from .types import ASRWord
 if TYPE_CHECKING:
     import requests
 
-if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
+if TYPE_CHECKING:
     import requests
 
 logger = logging.getLogger(__name__)

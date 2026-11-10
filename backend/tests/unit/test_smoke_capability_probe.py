@@ -154,7 +154,7 @@ def verdict(proc: subprocess.CompletedProcess) -> dict[str, int]:
 
 @pytest.fixture(autouse=True)
 def _needs_bash():
-    if shutil.which("bash") is None:  # pragma: no cover - bash is present everywhere here
+    if shutil.which("bash") is None:  # bash is present everywhere here
         pytest.skip("bash not available")
 
 

@@ -54,7 +54,7 @@ def test_ldap_directory_session_never_echoes_the_raw_ldap3_message(monkeypatch, 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(LdapDirectoryUnavailableError) as excinfo:
             with ldap_directory_session(_sentinel_config()):
-                pass  # pragma: no cover - never reached
+                pass  # never reached
 
     message = str(excinfo.value)
     assert DIRECTORY_URL_SENTINEL not in message

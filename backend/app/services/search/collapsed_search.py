@@ -16,7 +16,7 @@ from app.services.search.search_types import SearchHit
 from app.services.search.search_types import SearchResponse
 from app.services.search.split_bm25 import _execute_split_bm25_collapse
 
-if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
+if TYPE_CHECKING:
     from app.services.search.hybrid_search_service import HybridSearchService
 
 logger = logging.getLogger(__name__)

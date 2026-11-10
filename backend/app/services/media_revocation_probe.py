@@ -40,7 +40,7 @@ from app.services import storage_backend
 from app.services import storage_presign_identity
 from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from minio import Minio
 
 logger = logging.getLogger(__name__)

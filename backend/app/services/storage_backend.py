@@ -26,7 +26,7 @@ import logging
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     import urllib3
     from minio import Minio
     from minio.credentials import Provider

@@ -31,7 +31,7 @@ from app.services.redaction.config import detector_language_support
 if TYPE_CHECKING:
     pass
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from app.core.redaction_config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)

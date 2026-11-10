@@ -382,7 +382,7 @@ class TestForkedChildLeavesParentConnectionsAlone:
             monkeypatch.setattr(lifecycle_module, "_cap_torch_threads_to_cpu_quota", lambda: None)
 
             child = os.fork()
-            if child == 0:  # pragma: no cover - runs in the forked child
+            if child == 0:  # runs in the forked child
                 code = 0
                 try:
                     init_worker_process()

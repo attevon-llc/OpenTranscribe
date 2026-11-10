@@ -54,7 +54,7 @@ def test_strong_secrets_pass(production_settings):
     """
     try:
         _validate_production_secrets()
-    except ValueError as exc:  # pragma: no cover - only on a real regression
+    except ValueError as exc:  # only on a real regression
         pytest.fail(f"baseline production settings must pass validation, got: {exc}")
 
 
@@ -78,7 +78,7 @@ def test_explicit_cors_origins_pass_in_production(production_settings):
     production_settings.setattr(settings, "CORS_ORIGINS", ["https://app.example.com"])
     try:
         _validate_production_secrets()
-    except ValueError as exc:  # pragma: no cover - only on a real regression
+    except ValueError as exc:  # only on a real regression
         pytest.fail(f"explicit CORS origins must be accepted, got: {exc}")
 
 

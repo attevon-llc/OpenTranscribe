@@ -79,7 +79,7 @@ def test_diarization_provider_normalize_does_not_raise():
     """Regression: the old `object.__new__(ASRProvider)` proxy raised TypeError here."""
 
     class _Stub(DiarizationProvider):
-        def diarize(self, audio_path, config, progress_callback=None):  # pragma: no cover
+        def diarize(self, audio_path, config, progress_callback=None):
             raise NotImplementedError
 
         def supports_speaker_count(self) -> bool:
@@ -89,7 +89,7 @@ def test_diarization_provider_normalize_does_not_raise():
         def provider_name(self) -> str:
             return "stub"
 
-        def validate_connection(self):  # pragma: no cover
+        def validate_connection(self):
             return (True, "ok", 0.0)
 
     assert _Stub()._normalize_speaker_label("SPEAKER_1") == "SPEAKER_01"

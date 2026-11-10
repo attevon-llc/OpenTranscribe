@@ -73,7 +73,7 @@ def _fake_docker_ps(argv: list[str]) -> str:
                 keep = keep and container.project == spec.split("=", 2)[2]
             elif spec.startswith("label=com.docker.compose.service="):
                 keep = keep and container.service == spec.split("=", 2)[2]
-            else:  # pragma: no cover - an unhandled filter would silently widen the result
+            else:  # an unhandled filter would silently widen the result
                 raise AssertionError(f"fake docker ps got an unmodelled filter: {spec}")
         if keep:
             rows.append(container.project if "Label" in fmt else container.name)

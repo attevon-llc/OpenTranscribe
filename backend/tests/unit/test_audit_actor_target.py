@@ -122,10 +122,10 @@ def _emitted(**kwargs) -> dict:
         def info(self, message: str) -> None:
             captured.append(message)
 
-        def warning(self, *a, **k) -> None:  # pragma: no cover - not exercised
+        def warning(self, *a, **k) -> None:  # not exercised
             pass
 
-        def error(self, *a, **k) -> None:  # pragma: no cover - not exercised
+        def error(self, *a, **k) -> None:  # not exercised
             pass
 
     with patch.object(logger, "_logger", _Sink()):
@@ -180,7 +180,7 @@ def _audit_log_calls() -> list[tuple[pathlib.Path, ast.Call]]:
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:  # pragma: no cover - would fail the build elsewhere
+        except SyntaxError:  # would fail the build elsewhere
             continue
         for node in ast.walk(tree):
             if (

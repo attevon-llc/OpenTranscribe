@@ -32,7 +32,7 @@ from redis.exceptions import RedisError
 
 from app.core.config import settings
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from minio import Minio
 
     from app.services.media_revocation import ObjectRole

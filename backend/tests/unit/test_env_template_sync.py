@@ -242,7 +242,7 @@ def _broad_surface_names() -> frozenset[str]:
                 continue
             try:
                 seen.update(token.findall(path.read_text(encoding="utf-8", errors="ignore")))
-            except OSError:  # pragma: no cover - defensive
+            except OSError:  # defensive
                 continue
     return frozenset(seen)
 

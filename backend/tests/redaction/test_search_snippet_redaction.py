@@ -414,7 +414,7 @@ def test_an_unresolvable_config_withholds_the_snippets(db_session, normal_user, 
     @contextlib.contextmanager
     def _broken():
         raise RuntimeError("database is on fire")
-        yield  # pragma: no cover
+        yield
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _broken)
     response = _response(f"Mail {EMAIL} today.")

@@ -59,7 +59,7 @@ def tag_api(api_helper):
         for tag in api_helper.get("/api/tags") or []:
             if str(tag.get("name", "")).startswith(TAG_PREFIX):
                 api_helper.delete(f"/api/tags?tag_uuids={tag['uuid']}")
-    except Exception as exc:  # pragma: no cover - teardown must not mask a failure
+    except Exception as exc:  # teardown must not mask a failure
         print(f"tag teardown failed (leaves orphan e2e tags): {exc}")
 
 

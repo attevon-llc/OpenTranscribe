@@ -79,7 +79,7 @@ from urllib.parse import urlunparse
 
 from app.core.exceptions import InvalidInputError
 
-if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
+if TYPE_CHECKING:
     import aiohttp
     import requests
 

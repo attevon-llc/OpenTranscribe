@@ -181,5 +181,5 @@ def test_process_url_failure_does_not_echo_ytdlp_output(
     assert SENTINEL in caplog.text
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -544,7 +544,7 @@ class _PatternSensitiveScanStore:
     def delete(self, key):
         return 1
 
-    def keys(self, pattern):  # pragma: no cover - only the scan_iter path is exercised
+    def keys(self, pattern):  # only the scan_iter path is exercised
         raise AssertionError("this stand-in has scan_iter; KEYS must never be used")
 
 

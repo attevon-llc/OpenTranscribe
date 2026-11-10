@@ -186,7 +186,7 @@ def _expand_joined(node: ast.JoinedStr, env: _Env) -> set[str]:
         elif isinstance(piece, ast.FormattedValue):
             resolved = sorted(_strings(piece.value, env))
             pieces.append(resolved if resolved else [_WILD])
-        else:  # pragma: no cover - JoinedStr holds only these two node types
+        else:  # JoinedStr holds only these two node types
             pieces.append([_WILD])
 
     total = 1

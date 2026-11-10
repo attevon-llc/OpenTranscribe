@@ -229,7 +229,7 @@ class TestFailClosed:
         clone's /v1/models uninvited is the 400-on-unknown-key mistake the
         reasoning probe's provider gate exists to prevent, one feature over."""
 
-        def explode(*a, **kw):  # pragma: no cover - the assertion is that it never runs
+        def explode(*a, **kw):  # the assertion is that it never runs
             raise AssertionError("no HTTP call may be made for an undiscoverable provider")
 
         monkeypatch.setattr(llm_context_window.requests, "get", explode)
@@ -269,7 +269,7 @@ class TestFailClosed:
 
         from app.core.config import settings as app_settings
 
-        def explode(*a, **kw):  # pragma: no cover - the assertion is that it never runs
+        def explode(*a, **kw):  # the assertion is that it never runs
             raise AssertionError("a refused SSRF target must never be dialled")
 
         monkeypatch.setattr(app_settings, "LLM_ALLOW_PRIVATE_ENDPOINTS", False, raising=False)

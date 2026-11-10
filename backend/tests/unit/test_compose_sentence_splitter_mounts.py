@@ -81,7 +81,7 @@ def _python_sources() -> dict[str, ast.Module]:
     for path in APP.rglob("*.py"):
         try:
             trees[_module_key(path)] = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError as exc:  # pragma: no cover - a parse error is a real failure
+        except SyntaxError as exc:  # a parse error is a real failure
             pytest.fail(f"Could not parse {path}: {exc}")
     return trees
 

@@ -51,7 +51,7 @@
   <div class="error-state">
     <p>{$t('gallery.connectionError')}</p>
     <button
-      class="retry-button"
+      class="btn btn-primary retry-button"
       on:click={() => dispatch('retry')}
       title={$t('gallery.retryTooltip')}
     >{$t('gallery.retry')}</button>
@@ -148,28 +148,6 @@
 
   .error-state {
     color: var(--error-color);
-  }
-
-  .retry-button {
-    margin-top: var(--space-4);
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-  }
-
-  .retry-button:hover {
-    background-color: var(--primary-hover);
-    transform: translateY(-1px);
-  }
-
-  .retry-button:active {
-    transform: translateY(0);
   }
 
   /* Infinite scroll sentinel - invisible trigger element */

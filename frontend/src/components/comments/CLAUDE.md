@@ -26,4 +26,4 @@ toasts). Children receive props and report up; they never call the API.
 
 E2E selectors (`backend/tests/e2e/test_file_comments.py`): `.comment-form`, `button.submit-button`,
 `.form-error`, `.timestamp-toggle input`, `.kind-summary.general`, `.comment-item`,
-`button.timestamp-link`, `.general-label`, `button.btn-danger-text`.
+`button.timestamp-link`, `.general-label`, `[data-testid=comment-delete]`.

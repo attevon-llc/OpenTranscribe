@@ -164,7 +164,7 @@ def test_admin_places_and_releases_a_hold_from_the_ui(
             form.locator("button.submit-button").click()
         assert created.value.status == 200, created.value.text()[:300]
         item = page.locator(".comment-item", has_text=suffix)
-        expect(item.locator("button.delete-button")).to_be_disabled()
+        expect(item.locator("[data-testid=comment-delete]")).to_be_disabled()
 
         # Release from Settings > Legal holds, the only place release lives.
         open_settings_section(page, "Legal holds")

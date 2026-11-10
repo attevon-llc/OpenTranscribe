@@ -120,10 +120,11 @@
             </select>
 
             <button
-              class="btn-remove"
+              class="btn btn-icon btn-sm btn-remove"
               on:click={() => requestRemoveMember(member)}
               disabled={removingMember === member.user_uuid}
               title={$t('groups.removeMember')}
+              aria-label={$t('groups.removeMember')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -132,7 +133,7 @@
             </button>
           {:else if member.user_uuid === currentUserUuid && member.role !== 'owner'}
             <button
-              class="btn-leave"
+              class="btn btn-danger-outline btn-sm btn-leave"
               on:click={() => requestRemoveMember(member)}
               disabled={removingMember === member.user_uuid}
             >
@@ -263,48 +264,4 @@
     cursor: not-allowed;
   }
 
-  .btn-remove {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: var(--space-1);
-    color: var(--text-secondary);
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all var(--duration-fast);
-  }
-
-  .btn-remove:hover:not(:disabled) {
-    color: var(--danger-color);
-    background-color: rgba(220, 38, 38, 0.08);
-  }
-
-  .btn-remove:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .btn-leave {
-    padding: var(--space-1) var(--space-3);
-    border: 1px solid var(--danger-color);
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--danger-color);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-fast);
-    white-space: nowrap;
-  }
-
-  .btn-leave:hover:not(:disabled) {
-    background-color: rgba(220, 38, 38, 0.08);
-  }
-
-  .btn-leave:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
 </style>

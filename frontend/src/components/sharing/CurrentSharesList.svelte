@@ -102,10 +102,11 @@
               on:change={(e) => handlePermissionChange(share, e)}
             />
             <button
-              class="revoke-btn"
+              class="btn btn-icon btn-sm revoke-btn"
               on:click={() => requestRevoke(share)}
               disabled={revokingShareId === share.uuid}
               title={$t('sharing.revokeAccess')}
+              aria-label={$t('sharing.revokeAccess')}
             >
               {#if revokingShareId === share.uuid}
                 <Spinner size="small" />
@@ -218,32 +219,6 @@
     font-size: 0.8rem;
     color: var(--text-secondary);
     padding: 0.35rem var(--space-2);
-  }
-
-  .revoke-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all var(--duration-fast) ease;
-  }
-
-  .revoke-btn:hover:not(:disabled) {
-    border-color: var(--error-color);
-    color: var(--error-color);
-    background: rgba(239, 68, 68, 0.08);
-  }
-
-  .revoke-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
 </style>

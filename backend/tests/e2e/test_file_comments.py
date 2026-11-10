@@ -56,7 +56,7 @@ def _post_through_the_form(page: Page, file_uuid: str, text: str) -> dict:
 
 def _delete_through_the_list(page: Page, text: str) -> None:
     item = page.locator(".comment-item", has_text=text)
-    item.locator("button.delete-button").click()
+    item.locator("[data-testid=comment-delete]").click()
     with page.expect_response(
         lambda r: r.request.method == "DELETE" and "/comments/" in r.url
     ) as deleted:

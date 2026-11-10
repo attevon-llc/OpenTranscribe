@@ -139,6 +139,7 @@
         <button
           type="button"
           class="btn btn-link"
+          data-testid="comment-edit"
           on:click={startEdit}
           disabled={frozen}
           aria-describedby={frozen ? frozenNoteId : undefined}
@@ -149,6 +150,7 @@
         <button
           type="button"
           class="btn btn-link btn-danger-text"
+          data-testid="comment-delete"
           on:click={() => dispatch('delete')}
           disabled={frozen}
           aria-describedby={frozen ? frozenNoteId : undefined}

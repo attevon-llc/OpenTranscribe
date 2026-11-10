@@ -126,9 +126,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if isOpen}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-backdrop" style="z-index: {zIndex}; --modal-instance-z-index: {zIndex};" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
+  <div role="presentation" class="modal-backdrop" style="z-index: {zIndex}; --modal-instance-z-index: {zIndex};" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
     <div
       class="modal-container"
       class:fullscreen

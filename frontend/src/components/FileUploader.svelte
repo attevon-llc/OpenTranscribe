@@ -600,8 +600,7 @@
   }
 </script>
 
-<!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="uploader-container" on:keydown={handleStepKeydown}>
+<div role="presentation" class="uploader-container" on:keydown={handleStepKeydown}>
   <!-- Stepper Indicator (always visible so users see the full journey) -->
   <div class="step-indicator" role="navigation" aria-label={$t('uploader.stepsNav')}>
     {#each activeSteps as step, i (step.id)}

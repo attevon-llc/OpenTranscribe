@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusOnMount } from '$lib/actions/focusOnMount';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import type { SpeakerCluster } from '$lib/types/speakerCluster';
@@ -36,6 +37,12 @@
   function startEdit() {
     labelInput = cluster.label || '';
     editingLabel = true;
+  }
+
+  function startEditOnKey(event: KeyboardEvent) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    startEdit();
   }
 
   function saveLabel() {
@@ -84,30 +91,28 @@
         />
       {/if}
       {#if editingLabel}
-        <!-- svelte-ignore a11y-autofocus -->
         <input
           class="label-input"
           bind:value={labelInput}
           on:blur={saveLabel}
           on:keydown={handleKeydown}
           on:click|stopPropagation
-          autofocus
+          use:focusOnMount
           maxlength="200"
           placeholder={$t('speakers.cluster.editLabel')}
         />
       {:else}
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
         {#if cluster.label || cluster.promoted_to_profile_name}
-          <span class="cluster-label" on:dblclick|stopPropagation={startEdit} title={$t('speakers.tooltip.editLabel')}>
+          <span class="cluster-label" role="button" tabindex="0" on:dblclick|stopPropagation={startEdit} on:keydown={startEditOnKey} title={$t('speakers.tooltip.editLabel')}>
             {cluster.label || cluster.promoted_to_profile_name}
           </span>
         {:else if cluster.suggested_name}
-          <span class="cluster-label suggested" on:dblclick|stopPropagation={startEdit} title={$t('speakers.tooltip.suggestedName')}>
+          <span class="cluster-label suggested" role="button" tabindex="0" on:dblclick|stopPropagation={startEdit} on:keydown={startEditOnKey} title={$t('speakers.tooltip.suggestedName')}>
             {cluster.suggested_name}
           </span>
           <span class="suggested-badge" title={$t('speakers.tooltip.suggestedName')}>{$t('speakers.cluster.suggested')}</span>
         {:else}
-          <span class="cluster-label" on:dblclick|stopPropagation={startEdit} title={$t('speakers.tooltip.editLabel')}>
+          <span class="cluster-label" role="button" tabindex="0" on:dblclick|stopPropagation={startEdit} on:keydown={startEditOnKey} title={$t('speakers.tooltip.editLabel')}>
             {$t('speakers.cluster.unlabeled')}
           </span>
         {/if}

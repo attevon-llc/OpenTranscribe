@@ -37,9 +37,8 @@
 
 <!-- Mobile filter overlay backdrop -->
 {#if showFilters}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
+    role="presentation"
     class="filter-overlay-backdrop"
     on:click={toggleFilters}
     transition:fade={{ duration: 200 }}

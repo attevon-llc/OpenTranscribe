@@ -199,9 +199,8 @@
           </svg>
         </button>
         {#if showProcessMenu}
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div
+            role="presentation"
             class="dropdown-menu"
             use:anchoredPanel={{ anchor: processBtn, width: 'content' }}
             on:click|stopPropagation
@@ -327,9 +326,8 @@
           </svg>
         </button>
         {#if showOrganizeMenu}
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div
+            role="presentation"
             class="dropdown-menu"
             use:anchoredPanel={{ anchor: organizeBtn, width: 'content' }}
             on:click|stopPropagation

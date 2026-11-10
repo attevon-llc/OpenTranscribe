@@ -175,9 +175,8 @@
         aria-busy={navigatingTo === file.uuid}
       >
         {#if isSelecting}
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
           <label
+            role="presentation"
             class="list-cell list-cell-checkbox"
             on:click|stopPropagation={(e) => handleCheckboxLabelClick(file.uuid, e)}
           >

@@ -383,7 +383,7 @@
             </button>
           </div>
           <!-- A focusable region, so the panel scrolls from the keyboard. -->
-          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div class="terms-panel" tabindex="0" role="region" aria-label={termsDoc.title} data-testid="terms-panel">
             <LegalProse html={termsHtml} density="compact" />
           </div>

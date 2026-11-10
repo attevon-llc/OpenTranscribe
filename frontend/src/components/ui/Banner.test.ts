@@ -93,4 +93,11 @@ describe('Banner size', () => {
     expect(root?.classList.contains('size-body')).toBe(true);
     expect(root?.classList.contains('size-md')).toBe(false);
   });
+
+  it('offers base (16px) and keeps exactly one size class', () => {
+    const { container } = render(Banner, { props: { size: 'base' } });
+    const root = container.querySelector('.banner');
+    expect(root?.classList.contains('size-base')).toBe(true);
+    expect(root?.classList.contains('size-md')).toBe(false);
+  });
 });

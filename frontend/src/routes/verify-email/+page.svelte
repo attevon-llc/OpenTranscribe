@@ -98,7 +98,7 @@
         <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else}
-      <Banner tone="error" size="body">{outcomeMessage}</Banner>
+      <Banner tone="error" size="base">{outcomeMessage}</Banner>
 
       <form on:submit|preventDefault={handleResend} class="auth-form">
         <p class="muted">{$t('auth.verifyEmail.resendDescription')}</p>

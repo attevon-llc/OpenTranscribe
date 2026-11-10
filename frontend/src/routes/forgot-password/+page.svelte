@@ -59,7 +59,7 @@
     {:else}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
         {#if errorMessage}
-          <Banner tone="error" size="body">{errorMessage}</Banner>
+          <Banner tone="error" size="base">{errorMessage}</Banner>
         {/if}
 
         <FormField id="email" label={$t('auth.email')} size="lg">

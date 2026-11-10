@@ -23,8 +23,8 @@
   export let dismissible: boolean = false;
   /** Translated accessible name of the dismiss button; defaults to "Close". */
   export let dismissLabel: string = '';
-  /** `md` (14px) is the default; `body` (15px) where the text it replaces was reading size (auth pages). */
-  export let size: 'md' | 'body' = 'md';
+  /** `md` (14px) is the default; `body` (15px) / `base` (16px) where the text it replaces was reading size (auth pages use `base`). */
+  export let size: 'md' | 'body' | 'base' = 'md';
   export let live: 'auto' | 'off' | 'polite' | 'assertive' = 'auto';
   /** Bottom margin after the banner; `false` where the parent already spaces its children. */
   export let spaced: boolean = true;
@@ -86,6 +86,10 @@
     color: var(--text-color);
     font-size: var(--font-size-md);
     line-height: 1.45;
+  }
+
+  .banner.size-base {
+    font-size: var(--font-size-base);
   }
 
   .banner.size-body {

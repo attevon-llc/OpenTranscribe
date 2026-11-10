@@ -83,7 +83,7 @@
         <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else if !tokenParam}
-      <Banner tone="error" size="body">
+      <Banner tone="error" size="base">
         {$t('auth.invalidResetLink')}
       </Banner>
       <div class="auth-links">
@@ -92,7 +92,7 @@
     {:else}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
         {#if errorMessage}
-          <Banner tone="error" size="body">{errorMessage}</Banner>
+          <Banner tone="error" size="base">{errorMessage}</Banner>
         {/if}
 
         <FormField id="newPassword" label={$t('auth.newPassword')} size="lg">

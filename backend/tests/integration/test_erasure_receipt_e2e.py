@@ -272,7 +272,7 @@ def test_delayed_reverify_catches_a_racing_write(world):
     subject = Captured(
         file_ids=w.file_ids,
         file_uuids=w.file_uuids,
-        file_owners=[(w.user_id, f) for f in w.file_ids],
+        file_dirs=[f"user_{w.user_id}/file_{f}/" for f in w.file_ids],
         speaker_uuids=w.speaker_uuids,
     )
     scope = ErasureScope("user", user_id=w.user_id)
@@ -357,6 +357,80 @@ def test_org_member_receipt_counts_de_attributed_tenant_vocabulary(world):
         db = _session()
         try:
             db.execute(text("DELETE FROM tag WHERE organization_id = :o"), {"o": org_id})
+            db.execute(
+                text("UPDATE media_file SET organization_id = NULL WHERE organization_id = :o"),
+                {"o": org_id},
+            )
+            db.execute(text("DELETE FROM organization WHERE id = :o"), {"o": org_id})
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_uploaders_erasure_spares_objects_of_files_handed_to_another_owner(world):
+    """An organization transfer re-owns rows, not objects: the keys still name the uploader.
+
+    The subject uploaded three organization recordings; two were handed to a colleague (one of
+    them is now under the colleague's legal hold) and so was the profile with its photo. Erasing
+    the subject must destroy only the subject's own recording, and the receipt must say so.
+    """
+    from app.core.config import settings
+    from app.models.organization import Organization
+    from app.services.opensearch_service import opensearch_client
+
+    db = _session()
+    try:
+        org = Organization(
+            external_org_id=f"org_erw_{uuid_pkg.uuid4().hex[:8]}", name="erw org", is_active=True
+        )
+        db.add(org)
+        db.commit()
+        org_id = int(org.id)
+    finally:
+        db.close()
+    w = world("xfer", org_id=org_id, files=3)
+    handed, held, own = w.file_ids
+    db = _session()
+    try:
+        # What transfer_org_content writes: owner columns only, no key moves.
+        for sql in (
+            "UPDATE media_file SET user_id = :to WHERE id = ANY(:ids)",
+            "UPDATE speaker SET user_id = :to WHERE media_file_id = ANY(:ids)",
+        ):
+            db.execute(text(sql), {"to": w.other_user_id, "ids": [handed, held]})
+        db.execute(
+            text("UPDATE speaker_profile SET user_id = :to WHERE uuid = :p"),
+            {"to": w.other_user_id, "p": w.profile_uuid},
+        )
+        db.execute(text("UPDATE media_file SET legal_hold = true WHERE id = :i"), {"i": held})
+        db.commit()
+    finally:
+        db.close()
+    # ...and the restamp task moved their voiceprints to the new owner.
+    for spk in w.speaker_uuids[:2]:
+        opensearch_client.index(index=SPEAKER_INDEX, id=spk, body={"user_id": w.other_user_id})
+    opensearch_client.indices.refresh(index=SPEAKER_INDEX)
+
+    try:
+        summary = _erase_user(w.user_id)
+        entry, receipt = _receipts(summary["ledger_uuid"])[:2]
+
+        media = settings.MEDIA_BUCKET_NAME
+        for fid in (handed, held):
+            assert _object_versions(media, f"user_{w.user_id}/file_{fid}/") == 3, fid
+        assert _object_versions(media, w.avatar_key) == 1, "the colleague's profile photo stays"
+        assert _object_versions(media, f"user_{w.user_id}/file_{own}/") == 0
+        assert receipt.outcome == "verified", (
+            {k: v for k, v in receipt.residual.items() if v},
+            receipt.unverified,
+        )
+        assert receipt.deleted["s3.media.file_objects"] == 3, "only the subject's own recording"
+        assert receipt.deleted["pg.media_file"] == 1
+        assert entry.status == "complete"
+    finally:
+        db = _session()
+        try:
+            db.execute(text("DELETE FROM speaker_profile WHERE uuid = :p"), {"p": w.profile_uuid})
             db.execute(
                 text("UPDATE media_file SET organization_id = NULL WHERE organization_id = :o"),
                 {"o": org_id},

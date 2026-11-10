@@ -104,6 +104,11 @@ search index is re-pointed at the new owner, so search and chat keep finding the
   (up to 8 times, 15 minutes at most between tries) on OpenSearch errors and survives a lost
   worker, and a re-run changes nothing already moved.
 - **Audit.** The organization's audit log shows `org.content.transfer` with the counts, never a title.
+- **Stored objects do not move.** A recording's objects keep their keys (`user_<uploader id>/file_<id>/...`)
+  and a profile photo keeps `avatars/<uploader id>/...`. Erasing the uploader's account later
+  destroys only the objects of the files and profiles that erasure covers: it removes the whole
+  `user_<id>/` and `avatars/<id>/` prefixes only when nothing under them belongs to another account
+  or is held, and otherwise each erased file's own directory, wherever its keys live.
 
 ## The receipt
 

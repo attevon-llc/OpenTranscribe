@@ -29,8 +29,10 @@ class Captured:
 
     file_ids: list[int] = field(default_factory=list)
     file_uuids: list[str] = field(default_factory=list)
-    #: ``(owner user id, file id)``: the object-storage prefix is ``user_<uid>/file_<fid>/``.
-    file_owners: list[tuple[int, int]] = field(default_factory=list)
+    #: ``user_<uploader>/file_<fid>/`` of each file, read from the file's own object keys. The
+    #: key names the UPLOADER and never moves, so a file handed to another owner (an
+    #: organization content transfer) keeps its old directory: never rebuild it from ``user_id``.
+    file_dirs: list[str] = field(default_factory=list)
     speaker_ids: list[int] = field(default_factory=list)
     speaker_uuids: list[str] = field(default_factory=list)
     profile_uuids: list[str] = field(default_factory=list)
@@ -40,18 +42,34 @@ class Captured:
     held_file_ids: list[int] = field(default_factory=list)
     #: An active organization hold keeps the organization row (``erase_organization``).
     org_hold_active: bool = False
+    #: ``user_<uid>/`` holds objects of no file the erasure keeps or another account owns, so the
+    #: whole prefix (with objects no file names) may go. Only ever set for a ``user`` scope.
+    whole_user_prefix: bool = False
+    #: The same for ``avatars/<uid>/``: no surviving profile's avatar sits under it.
+    whole_avatar_prefix: bool = False
     email: str | None = field(default=None, repr=False)
 
 
 def object_prefixes(scope: ErasureScope, captured: Captured) -> list[str]:
     """Media-bucket prefixes the erasure destroys and the receipt counts.
 
-    The whole ``user_<uid>/`` prefix for an account erasure, which also covers objects the
-    per-file destroy never names; per-file prefixes otherwise. A file under a legal hold is
-    excluded (and so is the whole-user shortcut while one exists): its objects are retained, not
-    residual.
+    The whole ``user_<uid>/`` prefix for an account erasure when nothing under it survives the
+    erasure, which also covers objects the per-file destroy never names. Otherwise each erased
+    file's own directory: under someone else's prefix for a file the subject received, and never
+    a held file's or a transferred-away file's (both are left out of ``file_dirs``).
     """
-    held = set(captured.held_file_ids)
-    if scope.kind == "user" and scope.user_id is not None and not held:
+    if scope.kind == "user" and scope.user_id is not None and captured.whole_user_prefix:
         return [f"user_{scope.user_id}/"]
-    return [f"user_{uid}/file_{fid}/" for uid, fid in captured.file_owners if fid not in held]
+    return list(dict.fromkeys(captured.file_dirs))
+
+
+def avatar_prefixes(scope: ErasureScope, captured: Captured) -> list[str]:
+    """``avatars/<uid>/`` for an account erasure when no surviving profile's avatar is under it.
+
+    An avatar key names the profile's owner at upload time and never moves, so a profile handed
+    to another owner keeps its photo there. The erased profiles' own keys are
+    ``captured.avatar_paths``, deleted and counted one by one.
+    """
+    if scope.kind == "user" and scope.user_id is not None and captured.whole_avatar_prefix:
+        return [f"avatars/{scope.user_id}/"]
+    return []

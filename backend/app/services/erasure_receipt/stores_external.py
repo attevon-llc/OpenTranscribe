@@ -17,6 +17,7 @@ from typing import Any
 from app.services.erasure_receipt.stores_pg import Disposition
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
+from app.services.erasure_receipt.types import avatar_prefixes
 from app.services.erasure_receipt.types import object_prefixes
 
 logger = logging.getLogger(__name__)
@@ -245,12 +246,14 @@ def _s3_file_objects(scope: ErasureScope, captured: Captured) -> int:
 def _s3_avatars(scope: ErasureScope, captured: Captured) -> int:
     from app.core.config import settings
 
-    total = sum(
-        _count_versions(settings.MEDIA_BUCKET_NAME, p, exact=True) for p in captured.avatar_paths
+    prefixes = tuple(avatar_prefixes(scope, captured))
+    total = sum(_count_versions(settings.MEDIA_BUCKET_NAME, p) for p in prefixes)
+    # A key under a counted prefix is already in that count.
+    return total + sum(
+        _count_versions(settings.MEDIA_BUCKET_NAME, p, exact=True)
+        for p in captured.avatar_paths
+        if not p.startswith(prefixes)
     )
-    if scope.kind == "user" and scope.user_id is not None:
-        total += _count_versions(settings.MEDIA_BUCKET_NAME, f"avatars/{scope.user_id}/")
-    return total
 
 
 def _s3_temp(scope: ErasureScope, captured: Captured) -> int:

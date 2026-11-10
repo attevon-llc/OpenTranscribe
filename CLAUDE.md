@@ -241,7 +241,7 @@ this; see `scripts/notes/dev-test-gate.md` for the full flag table. This is **no
 dev/prod/lite/PKI/GPU-scale/fresh-install/upgrade, run before cutting a release, not during
 ordinary development).
 
-MinIO/OpenSearch-backed tests **auto-enable** when the dev stack is reachable (conftest TCP-probes localhost:5178/5180) and skip otherwise. Backend coverage is **ENFORCED, not report-only**: `backend/pyproject.toml`'s `fail_under = 37` is a hard pytest-cov gate — a run below the floor exits non-zero. It is a **ratchet floor** set just below the measured value, so it fails on a *regression*, not on failing to improve. Raise it when coverage rises; never lower it to make a run pass. Frontend coverage (`npm run test:coverage`) genuinely is report-only.
+MinIO/OpenSearch-backed tests **auto-enable** when the dev stack is reachable (conftest TCP-probes localhost:5178/5180) and skip otherwise. Backend coverage is **ENFORCED, not report-only**: `backend/pyproject.toml`'s `fail_under = 86` is a hard pytest-cov gate — a run below the floor exits non-zero. It is a **ratchet floor** set just below the measured value, so it fails on a *regression*, not on failing to improve. Raise it when coverage rises; never lower it to make a run pass. Frontend coverage (`npm run test:coverage`) genuinely is report-only.
 
 ### Four tools that keep the suite honest (issue #431)
 

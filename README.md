@@ -1090,7 +1090,7 @@ cd backend/
 pytest tests/                    # All tests
 pytest tests/api/                # API tests only
 pytest --cov=app tests/          # With coverage (ENFORCED: backend/pyproject.toml's
-                                  # `fail_under = 37` is a hard gate, not report-only)
+                                  # `fail_under = 86` is a hard gate, not report-only)
 
 # Frontend tests
 cd frontend/

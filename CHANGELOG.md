@@ -78,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The backend coverage floor (`fail_under` in `backend/pyproject.toml`) rises from 37 to 86. The full suite measured 87.49% line+branch coverage on 2026-11-10, and the floor sits at that value rounded down, minus one, so a drop in coverage fails the run.
 - Frontend unit tests can no longer reach the network: `src/test-network-guard.ts` (installed from `src/test-setup.ts`) makes any unmocked XHR or `fetch` throw at the call site naming the method and URL, and fails the test in `afterEach` even if the component swallows the error. Eleven test files that were silently making real requests now mock the API module they use. This also removes the `EnvironmentTeardownError: Closing rpc` aborts that an unmocked request caused under host load.
 
 - `scripts/e2e/styling-ab.sh` no longer aborts when the two trees' `package-lock.json` differ: the tree with the differing lock gets its own `npm ci` (log in the run dir, announced on stdout), while trees with matching locks keep the shared `node_modules`.

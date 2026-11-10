@@ -360,7 +360,9 @@ norecursedirs = ["tests/e2e"]
 
 # Coverage runs via `pytest --cov=app` (CI backend-tests job + the local gate's
 # --coverage flag). fail_under is a RATCHET FLOOR set just below the measured
-# baseline (36.6% on 2026-06-04) — raise it as coverage grows, never lower it.
+# baseline: 87.49% on 2026-11-10 (full suite, throwaway DB, no live services, the setup
+# closest to CI), floor = floor(measured) - 1 per owner decision D5. Raise it as coverage
+# grows, never lower it.
 [tool.coverage.run]
 source = ["app"]
 branch = true
@@ -374,7 +376,7 @@ omit = [
 show_missing = true
 skip_empty = true
 precision = 1
-fail_under = 37
+fail_under = 86
 # Structural lines that can never execute under coverage. One central pattern
 # instead of per-line pragmas; see coverage.py docs, "Excluding code from
 # coverage" (exclude_also extends the defaults rather than replacing them).

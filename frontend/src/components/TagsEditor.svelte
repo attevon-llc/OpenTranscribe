@@ -421,6 +421,22 @@
     box-shadow: none;
   }
 
+  .suggested-tag {
+    padding: var(--space-0-5) var(--space-2-5);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-pill);
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: var(--font-size-sm);
+    box-shadow: none;
+  }
+
+  .suggested-tag:focus-visible,
+  .tag-remove:focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 1px;
+  }
+
   .tag-remove:hover:not(:disabled) {
     background-color: var(--hover-color);
     color: var(--error-text);
@@ -480,24 +496,8 @@
     color: var(--text-secondary);
   }
 
-  .suggested-tag {
-    padding: var(--space-0-5) var(--space-2-5);
-    border: 1px dashed var(--border-color);
-    border-radius: var(--radius-pill);
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
-    box-shadow: none;
-  }
-
   .suggested-tag:hover:not(:disabled) {
     border-color: var(--primary-color);
     background-color: var(--hover-color);
-  }
-
-  .suggested-tag:focus-visible,
-  .tag-remove:focus-visible {
-    outline: 2px solid var(--focus-ring-color);
-    outline-offset: 1px;
   }
 </style>

@@ -178,13 +178,13 @@
   transition: all var(--duration-fast) ease;
 }
 
-.create-btn:hover:not(:disabled) {
-  background: rgba(var(--accent-rgb), 0.08);
-}
-
 .create-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.create-btn:hover:not(:disabled) {
+  background: rgba(var(--accent-rgb), 0.08);
 }
 
 /* ── Labelled field with a small hint under the label (Model, Speakers) ── */

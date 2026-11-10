@@ -358,14 +358,14 @@
     width: 100%;
   }
 
-  .group-card:hover:not(:disabled) {
-    border-color: var(--primary-color);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  }
-
   .group-card:disabled {
     opacity: 0.7;
     cursor: wait;
+  }
+
+  .group-card:hover:not(:disabled) {
+    border-color: var(--primary-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   }
 
   .card-header {

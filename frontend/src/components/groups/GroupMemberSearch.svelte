@@ -244,13 +244,13 @@
     transition: background-color var(--duration-fast) ease;
   }
 
-  .result-item:hover:not(:disabled) {
-    background-color: var(--hover-color);
-  }
-
   .result-item:disabled {
     opacity: 0.6;
     cursor: wait;
+  }
+
+  .result-item:hover:not(:disabled) {
+    background-color: var(--hover-color);
   }
 
   .result-avatar {

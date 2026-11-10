@@ -297,6 +297,17 @@
     background: rgba(var(--accent-rgb), 0.05);
   }
 
+  .file-list-link {
+    display: grid;
+    grid-template-columns: var(--file-list-columns);
+    gap: var(--file-list-gap);
+    padding: 0.5rem var(--file-list-pad);
+    text-decoration: none;
+    color: inherit;
+    align-items: center;
+    height: 100%;
+  }
+
   .file-list-row.navigating .file-list-link {
     opacity: 0.72;
     transition: opacity 0.12s ease;
@@ -322,17 +333,6 @@
     grid-column: 2 / -1;
     grid-template-columns: subgrid;
     padding-inline: 0;
-  }
-
-  .file-list-link {
-    display: grid;
-    grid-template-columns: var(--file-list-columns);
-    gap: var(--file-list-gap);
-    padding: 0.5rem var(--file-list-pad);
-    text-decoration: none;
-    color: inherit;
-    align-items: center;
-    height: 100%;
   }
 
   .file-list-row:hover {

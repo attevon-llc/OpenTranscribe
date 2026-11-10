@@ -628,6 +628,13 @@
     margin: 0 0 var(--space-2) 0;
   }
 
+  .stat-value {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-color);
+    margin-bottom: var(--space-1-5);
+  }
+
   .stat-section .stat-value {
     font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-semibold);
@@ -653,13 +660,6 @@
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin: 0 0 var(--space-2) 0;
-  }
-
-  .stat-value {
-    font-size: var(--font-size-2xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-color);
-    margin-bottom: var(--space-1-5);
   }
 
   .loading-text {

@@ -804,15 +804,15 @@
     cursor: pointer;
   }
 
+  .wizard-skip-link:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .wizard-skip-link:hover:not(:disabled) {
     background: none;
     box-shadow: none;
     color: var(--text-primary);
-  }
-
-  .wizard-skip-link:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .terms-footer {

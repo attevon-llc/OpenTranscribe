@@ -293,6 +293,25 @@
     box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.22);
   }
 
+  .search-bar-btn,
+  .search-bar-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition:
+      background var(--duration-fast) ease,
+      color var(--duration-fast) ease;
+    flex-shrink: 0;
+  }
+
   .pill .search-bar-clear {
     width: 22px;
     height: 22px;
@@ -387,33 +406,8 @@
     flex-shrink: 0;
   }
 
-  .search-bar-btn,
-  .search-bar-clear {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    background: none;
-    border: none;
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition:
-      background var(--duration-fast) ease,
-      color var(--duration-fast) ease;
-    flex-shrink: 0;
-  }
-
   .search-bar-btn {
     border: 1px solid var(--border-color);
-  }
-
-  .search-bar-btn:hover:not(:disabled),
-  .search-bar-clear:hover:not(:disabled) {
-    background: var(--button-hover);
-    color: var(--text-color);
   }
 
   .search-bar-btn:disabled {
@@ -425,5 +419,11 @@
   .search-bar-clear:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 1px;
+  }
+
+  .search-bar-btn:hover:not(:disabled),
+  .search-bar-clear:hover:not(:disabled) {
+    background: var(--button-hover);
+    color: var(--text-color);
   }
 </style>

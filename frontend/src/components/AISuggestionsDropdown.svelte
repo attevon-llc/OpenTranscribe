@@ -206,13 +206,13 @@
     transition: background var(--duration-base);
   }
 
-  .ai-suggestions-header:hover:not(:disabled) {
-    background: var(--hover-color);
-  }
-
   .ai-suggestions-header:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .ai-suggestions-header:hover:not(:disabled) {
+    background: var(--hover-color);
   }
 
   .ai-badge {
@@ -301,12 +301,6 @@
     box-shadow: var(--shadow-primary);
   }
 
-  .btn-save:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
   .btn-save:active {
     transform: scale(1);
   }
@@ -314,6 +308,12 @@
   .btn-save:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .btn-save:hover:not(:disabled) {
+    background: var(--primary-color);
+    transform: scale(1.02);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-cancel {
@@ -383,6 +383,11 @@
     height: 16px;
   }
 
+  .chip-add:disabled, .chip-edit:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .chip-add:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.1);
     color: var(--primary-on-surface);
@@ -391,11 +396,6 @@
   .chip-edit:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.1);
     color: var(--text-primary);
-  }
-
-  .chip-add:disabled, .chip-edit:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   /* Dark mode adjustments */

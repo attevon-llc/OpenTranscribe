@@ -79,13 +79,13 @@
     font-family: inherit;
   }
 
-  .action-btn:hover:not(:disabled) {
-    transform: scale(1.02);
-  }
-
   .action-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .action-btn:hover:not(:disabled) {
+    transform: scale(1.02);
   }
 
   .action-btn:active:not(:disabled) {

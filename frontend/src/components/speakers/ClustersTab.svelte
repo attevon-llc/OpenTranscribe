@@ -288,6 +288,11 @@
     transition: all var(--duration-base) ease;
   }
 
+  .btn-recluster:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .btn-recluster:hover:not(:disabled) {
     background: var(--primary-color);
     transform: scale(1.02);
@@ -296,11 +301,6 @@
 
   .btn-recluster:active:not(:disabled) {
     transform: scale(1);
-  }
-
-  .btn-recluster:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .last-clustered-chip {
@@ -425,15 +425,15 @@
     font-size: var(--font-size-md);
   }
 
+  .pagination button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   .pagination button:hover:not(:disabled) {
     background: var(--hover-color);
     transform: none;
     box-shadow: none;
-  }
-
-  .pagination button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 
   .merge-banner {

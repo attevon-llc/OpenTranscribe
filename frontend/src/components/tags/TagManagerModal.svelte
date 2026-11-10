@@ -759,6 +759,10 @@
       grid-template-columns: minmax(0, 1fr);
     }
 
+    .detail-pane {
+      position: static;
+    }
+
     .tags-manager.has-selection .list-pane,
     .tags-manager:not(.has-selection) .detail-pane {
       display: none;
@@ -766,10 +770,6 @@
 
     .back-button {
       display: inline-flex;
-    }
-
-    .detail-pane {
-      position: static;
     }
   }
 

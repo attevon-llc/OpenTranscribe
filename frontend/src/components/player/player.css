@@ -63,15 +63,15 @@
   transition: opacity var(--duration-base) var(--ease-standard);
 }
 
-/* Hidden while idle during playback, but never while a control inside has keyboard focus. */
-.media-player .controls-content:not([data-visible]):not(:has(:focus-visible)) {
-  opacity: 0;
-}
-
 .media-player .audio .controls-content {
   position: static;
   padding: var(--space-3);
   background: none;
+}
+
+/* Hidden while idle during playback, but never while a control inside has keyboard focus. */
+.media-player .controls-content:not([data-visible]):not(:has(:focus-visible)) {
+  opacity: 0;
 }
 
 .media-player .controls-row {
@@ -114,8 +114,31 @@
   background: var(--player-control-hover);
 }
 
-.media-player .audio .control:hover {
-  background: var(--hover-color);
+.media-player .big-play {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--space-16);
+  block-size: var(--space-16);
+  margin: auto;
+  border-radius: var(--radius-round);
+  background: var(--primary-color);
+  color: var(--text-on-solid);
+  cursor: pointer;
+}
+
+.media-player .slider {
+  --media-slider-fill: 0%;
+  --media-slider-buffer: 0%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  direction: ltr;
+  cursor: pointer;
+  touch-action: none;
 }
 
 .media-player .control:focus-visible,
@@ -123,6 +146,10 @@
 .media-player .slider:focus-visible {
   outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
+}
+
+.media-player .audio .control:hover {
+  background: var(--hover-color);
 }
 
 .media-player .control svg,
@@ -180,22 +207,6 @@
   white-space: nowrap;
 }
 
-.media-player .big-play {
-  position: absolute;
-  inset: 0;
-  z-index: var(--z-base);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: var(--space-16);
-  block-size: var(--space-16);
-  margin: auto;
-  border-radius: var(--radius-round);
-  background: var(--primary-color);
-  color: var(--text-on-solid);
-  cursor: pointer;
-}
-
 .media-player .big-play:not([data-paused]) {
   display: none;
 }
@@ -208,17 +219,6 @@
 /* ---- sliders --------------------------------------------------------------------------- */
 
 /* The elements set these inline as the value changes; declared so they have one before. */
-.media-player .slider {
-  --media-slider-fill: 0%;
-  --media-slider-buffer: 0%;
-  position: relative;
-  display: flex;
-  align-items: center;
-  direction: ltr;
-  cursor: pointer;
-  touch-action: none;
-}
-
 .media-player .time-slider {
   inline-size: 100%;
   block-size: var(--space-4);
@@ -236,6 +236,10 @@
   border-radius: var(--radius-pill);
   background: var(--player-track);
   overflow: hidden;
+}
+
+.media-player .audio .slider-track {
+  background: var(--slider-track);
 }
 
 .media-player .slider:hover .slider-track,
@@ -270,10 +274,6 @@
   background: var(--player-on-media);
   box-shadow: var(--shadow-thumb);
   translate: -50% 0;
-}
-
-.media-player .audio .slider-track {
-  background: var(--slider-track);
 }
 
 .media-player .audio .slider-thumb {
@@ -312,11 +312,6 @@
   white-space: nowrap;
 }
 
-.media-player .tip:not([data-open]),
-.media-player .settings-menu:not([data-open]) {
-  display: none;
-}
-
 .media-player .settings-menu {
   --media-menu-side-offset: var(--space-2);
   --media-menu-available-height: none;
@@ -325,6 +320,11 @@
   padding: var(--space-1);
   overflow-y: auto;
   font-size: var(--font-size-md);
+}
+
+.media-player .tip:not([data-open]),
+.media-player .settings-menu:not([data-open]) {
+  display: none;
 }
 
 /* One view at a time: the root list, or the open submenu. A closed submenu carries

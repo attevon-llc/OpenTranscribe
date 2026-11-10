@@ -218,6 +218,19 @@
     overflow: hidden;
   }
 
+  .avatar-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-round);
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity var(--duration-fast) ease;
+    color: var(--text-on-solid);
+  }
+
   .profile-avatar-wrapper:hover .avatar-overlay {
     opacity: 1;
   }
@@ -240,19 +253,6 @@
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: color-mix(in srgb, var(--primary-color) 20%, transparent);
-  }
-
-  .avatar-overlay {
-    position: absolute;
-    inset: 0;
-    border-radius: var(--radius-round);
-    background: rgba(0, 0, 0, 0.45);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity var(--duration-fast) ease;
-    color: var(--text-on-solid);
   }
 
   .avatar-spinner {

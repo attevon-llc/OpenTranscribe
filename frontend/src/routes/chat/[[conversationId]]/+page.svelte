@@ -724,6 +724,10 @@
     cursor: pointer;
   }
 
+  .hamburger {
+    display: none;
+  }
+
   .hamburger:hover,
   .gear:hover {
     background-color: var(--button-hover);
@@ -744,10 +748,6 @@
     width: 17px;
     height: 17px;
     flex-shrink: 0;
-  }
-
-  .hamburger {
-    display: none;
   }
 
   .chat-body {

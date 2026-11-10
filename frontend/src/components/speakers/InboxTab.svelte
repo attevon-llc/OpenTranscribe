@@ -99,15 +99,15 @@
     font-size: var(--font-size-md);
   }
 
+  .pagination button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   .pagination button:hover:not(:disabled) {
     background: var(--hover-color);
     transform: none;
     box-shadow: none;
-  }
-
-  .pagination button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 
   @media (max-width: 768px) {

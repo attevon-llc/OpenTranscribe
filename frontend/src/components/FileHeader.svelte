@@ -306,6 +306,21 @@
 />
 
 <style>
+  .edit-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    transition: all var(--duration-base) ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-bottom: var(--space-4);
+  }
+
   .edit-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
@@ -530,15 +545,6 @@
     padding-right: 5rem;
   }
 
-  .truncated-wrapper .expand-link {
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    background: var(--bg-primary);
-    padding-left: 0.5em;
-    margin-left: 0.3em;
-  }
-
   .expand-link {
     color: var(--primary-on-surface);
     cursor: pointer;
@@ -546,6 +552,15 @@
     text-decoration: none;
     white-space: nowrap;
     transition: color var(--duration-base) ease;
+  }
+
+  .truncated-wrapper .expand-link {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    background: var(--bg-primary);
+    padding-left: 0.5em;
+    margin-left: 0.3em;
   }
 
   .expand-link:hover {
@@ -570,21 +585,6 @@
   .title-display-container h1 {
     margin: 0 0 var(--space-4) 0;
     flex: 1;
-  }
-
-  .edit-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: var(--space-2);
-    border-radius: var(--radius-md);
-    transition: all var(--duration-base) ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-bottom: var(--space-4);
   }
 
   .edit-btn:hover {

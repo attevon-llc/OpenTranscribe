@@ -739,14 +739,14 @@
     margin-bottom: var(--space-3);
   }
 
-  .step-instruction-row .step-instruction {
-    margin: 0;
-  }
-
   .step-instruction {
     margin: 0 0 var(--space-3);
     font-size: 0.85rem;
     color: var(--text-secondary);
+  }
+
+  .step-instruction-row .step-instruction {
+    margin: 0;
   }
 
   .select-all-btn {

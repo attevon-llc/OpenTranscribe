@@ -251,8 +251,8 @@
     transition: opacity var(--duration-fast) ease;
   }
 
-  .conversation-item:hover .item-actions,
-  .item-actions:focus-within {
+  .item-actions:focus-within,
+  .conversation-item:hover .item-actions {
     opacity: 1;
   }
 

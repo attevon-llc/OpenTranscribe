@@ -568,15 +568,15 @@
     transition: all var(--duration-base) ease;
   }
 
+  .copy-button-header:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .copy-button-header:hover:not(:disabled) {
     background-color: var(--hover-bg);
     color: var(--primary-on-surface);
     border-color: var(--primary-color);
-  }
-
-  .copy-button-header:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .copy-button-header.copied {
@@ -606,15 +606,15 @@
     transition: all var(--duration-base) ease;
   }
 
+  .reprocess-button-header:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .reprocess-button-header:hover:not(:disabled) {
     background-color: var(--hover-bg);
     border-color: var(--primary-color);
     color: var(--primary-on-surface);
-  }
-
-  .reprocess-button-header:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .loading-container, .error-container {

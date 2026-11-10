@@ -325,9 +325,9 @@
     z-index: var(--z-base);
   }
 
-  .paste-button:hover:not(:disabled) { background: var(--button-hover); color: var(--primary-on-surface); }
   .paste-button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  .paste-button:hover:not(:disabled) { background: var(--button-hover); color: var(--primary-on-surface); }
   /* Protected Media Auth */
   .protected-media-auth {
     border-radius: var(--radius-lg);

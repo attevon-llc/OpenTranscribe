@@ -278,19 +278,19 @@
     background-position: left 0.75rem center;
   }
 
-  .date-trigger-btn:hover:not(:disabled) {
-    border-color: var(--field-border-hover);
-    background-color: var(--field-bg);
-    box-shadow: none;
-    transform: none;
-  }
-
   .date-trigger-btn:focus-visible,
   .date-trigger-btn[aria-expanded='true'] {
     border-color: var(--primary-color);
     box-shadow: var(--field-focus-ring);
     outline: 2px solid transparent;
     outline-offset: 0;
+  }
+
+  .date-trigger-btn:hover:not(:disabled) {
+    border-color: var(--field-border-hover);
+    background-color: var(--field-bg);
+    box-shadow: none;
+    transform: none;
   }
 
   .date-icon {

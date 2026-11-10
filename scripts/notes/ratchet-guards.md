@@ -16,3 +16,8 @@ an allowlist entry with no violation left fails as stale and is deleted by hand.
   `check_duplicates.py --report PATH` writes the full clone list.
 - eslint `complexity` 15, `max-depth` 4 and `max-lines-per-function` 150 run at `warn`; existing offenders are in
   `baselines/eslint.txt`, new ones fail the ratchet.
+- `guard-unused-css` (push stage, ~2 s): a class defined in `frontend/src/styles/*.css` or a component `:global(...)`
+  selector must appear as a whole token in a non-test `.svelte`/`.ts`/`.js`/`.html` source (style blocks stripped).
+  A template/concat prefix (`badge-${tone}`) covers its family; classes rendered by a dependency (highlight.js,
+  the datepicker, the range slider) are `third-party-dom` allowlist entries. Lenient by design: it reports only
+  certainly-dead classes.

@@ -9,8 +9,8 @@ Loaded once by `routes/+layout.svelte`: `theme.css` (tokens, light on `:root`, d
 Every text-like `<input>` (text, email, password, search, number, url, tel, date, time, ...),
 `<textarea>` and `<select>` is styled here with no class: 8px radius, `--field-border`, `--field-bg`,
 0.875rem / 1.25rem text, 0.5rem x 0.75rem padding (38px tall), brand-blue focus ring
-(`--field-focus-ring`), `--text-muted` placeholder, 0.6 opacity disabled, `aria-invalid="true"` /
-`.is-invalid` error state. `.field-sm` is the compact size for toolbars and dense tables.
+(`--field-focus-ring`), `--text-muted` placeholder, 0.6 opacity disabled, `aria-invalid="true"`
+error state. `.field-sm` is the compact size for toolbars and dense tables.
 
 - **Scoped, not global.** The rule is `:where(input:not([type=checkbox], [type=radio], [type=range],
 [type=file], [type=color], [type=hidden], [type=image], [type=button], [type=submit],

@@ -447,6 +447,16 @@ repos:
         files: ^(frontend/(src/|tsconfig[^/]*\.json$|package\.json$)|scripts/guards/.*)
         stages: [pre-push]
         verbose: true
+      # Global CSS classes (frontend/src/styles/*.css and component :global(...) selectors) that no
+      # non-test frontend source references. svelte-check reports unused SCOPED selectors only.
+      # About 2 s, but push stage with the other whole-frontend ratchets.
+      - id: guard-unused-css
+        name: unused global CSS classes (baselined, allowlist for third-party DOM)
+        entry: python3 scripts/guards/check_unused_css.py
+        language: system
+        pass_filenames: false
+        files: ^(frontend/src/.*\.(svelte|css|ts|js|html)|scripts/guards/.*)$
+        stages: [pre-push]
       # jscpd (MIT, pinned in frontend/package.json) over backend/app, backend/tests, scripts and
       # frontend/src; --min-tokens and the scan set live in the script. Seconds, not minutes.
       - id: guard-duplicates

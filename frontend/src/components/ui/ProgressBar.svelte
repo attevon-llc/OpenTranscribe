@@ -59,7 +59,7 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--space-1);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 

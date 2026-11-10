@@ -315,7 +315,6 @@ font-size::frontend/src/components/ui/ConnectionStatusBanner.svelte	1	styling la
 font-size::frontend/src/components/ui/EmptyState.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/ui/FilterChipButton.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/ui/MetadataChips.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/ui/ProgressBar.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/ui/SearchBar.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/upload/MediaFilePanel.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/upload/MediaUrlPanel.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

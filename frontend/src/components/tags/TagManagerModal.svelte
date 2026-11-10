@@ -543,7 +543,7 @@
       {#if selectedEntries.length > 0}
         <button
           type="button"
-          class="btn btn-secondary btn-small back-button"
+          class="btn btn-secondary btn-sm back-button"
           on:click={() => setSelection([])}
         >
           {$t('tags.manager.back')}

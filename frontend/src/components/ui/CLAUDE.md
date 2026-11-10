@@ -22,7 +22,7 @@ primitive in the same spirit as this folder.
   consent banners, drawer/popover scrims). Width is `size="sm|md|lg|xl|2xl"` (480/600/720/960/1200),
   not a pixel prop; `titleId` is only for a caller that needs a stable `aria-labelledby`. The footer
   normalises every `<button>` to one size, radius and weight whatever class vocabulary the caller uses
-  (`btn`, `modal-button`, ad hoc) — colour stays the caller's; order is dismiss first, primary last;
+  (`btn`, a bespoke footer-button class, ad hoc) — colour stays the caller's; order is dismiss first, primary last;
   a form in the body is submitted from the footer with `<button type="submit" form="the-form-id">`.
   Its `zIndex` prop defaults to the shared `--z-modal` tier (H5, see `src/styles/theme.css`).
   **Escape closes only the topmost open BaseModal** (a module-level open stack): every instance

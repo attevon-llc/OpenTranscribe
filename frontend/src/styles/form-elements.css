@@ -431,10 +431,6 @@ button:disabled {
   font-family: inherit;
   white-space: nowrap;
 }
-.btn-small {
-  padding: var(--space-1) var(--space-2-5);
-  font-size: var(--font-size-xs);
-}
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -559,8 +555,7 @@ button:disabled {
   background-color: var(--error-bg);
 }
 
-/* Sizes. `.btn-sm` is the canonical small (`.btn-small` goes in the 2.3 migration);
-   `.btn-lg` shares the `.modal-button` metrics rule below. */
+/* Sizes. `.btn-sm` is the canonical small; `.btn-lg` is the modal-footer size below. */
 .btn-sm {
   padding: var(--space-1) var(--space-2-5);
   font-size: var(--font-size-xs);
@@ -591,8 +586,7 @@ button:disabled {
 
 /* ─── Modal Action Buttons ──────────────────────────────────────────── */
 /* Base sizing shared by all modal footer buttons */
-.btn-lg,
-.modal-button {
+.btn-lg {
   padding: 0.6rem 1.2rem;
   border-radius: var(--radius-xl);
   font-size: 0.95rem;
@@ -605,74 +599,6 @@ button:disabled {
   justify-content: center;
   gap: var(--space-2);
 }
-.modal-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.modal-primary-button {
-  background-color: var(--primary-color);
-  color: var(--text-on-solid);
-  border: none;
-  box-shadow: var(--shadow-primary);
-}
-.modal-primary-button:hover:not(:disabled) {
-  background-color: var(--primary-hover);
-  transform: scale(1.02);
-  box-shadow: var(--shadow-primary-hover);
-}
-.modal-primary-button:active:not(:disabled) {
-  transform: scale(1);
-}
-
-/* CANCEL — grey hover, never blue */
-.modal-cancel-button {
-  background-color: var(--card-background);
-  color: var(--text-color);
-  border: 1px solid var(--border-color);
-  box-shadow: var(--card-shadow);
-}
-.modal-cancel-button:hover:not(:disabled) {
-  background-color: var(--button-hover);
-  border-color: var(--border-color);
-  transform: scale(1.02);
-  box-shadow: var(--shadow-hover);
-}
-.modal-cancel-button:active:not(:disabled) {
-  transform: scale(1);
-}
-
-.modal-delete-button {
-  background-color: var(--error-solid);
-  color: var(--text-on-solid);
-  border: none;
-  box-shadow: var(--shadow-danger);
-}
-.modal-delete-button:hover:not(:disabled) {
-  background-color: var(--error-solid-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-}
-.modal-delete-button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.modal-warning-button {
-  background-color: var(--warning-solid);
-  color: var(--text-on-warning);
-  border: none;
-  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
-}
-.modal-warning-button:hover:not(:disabled) {
-  background-color: var(--warning-solid-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25);
-}
-.modal-warning-button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
 /* ─── Refresh / Reset button helpers ───────────────────────────────── */
 .btn-refresh,
 .btn-reset {

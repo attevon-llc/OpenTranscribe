@@ -144,9 +144,6 @@ hold on a collection covers every file in it now **and every file added later**.
 
 ### Placing a hold in the application
 
-Where each of these appears is described from the design of the hold interface (see the note at the
-end of this section).
-
 - **From the gallery:** select one or more files and choose **Place legal hold** from the selection
   actions. A dialog shows how many files are affected, asks for the reason and an optional matter
   reference, and explains what a hold does. It is offered to administrators only.

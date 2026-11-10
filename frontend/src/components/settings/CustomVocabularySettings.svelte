@@ -239,7 +239,7 @@
                 </span>
               {:else}
                 <button
-                  class="btn btn-icon btn-icon-danger"
+                  class="btn btn-icon-only btn-icon-danger"
                   on:click={() => requestDeleteTerm(term)}
                   title={$t('settings.customVocabulary.removeTerm')}
                   aria-label={$t('settings.customVocabulary.removeTerm') + ': ' + term.term}

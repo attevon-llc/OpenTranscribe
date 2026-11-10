@@ -590,7 +590,7 @@
                 </button>
               {/if}
               <button
-                class="btn btn-icon btn-test"
+                class="btn btn-icon-only btn-test"
                 on:click={() => testConfiguration(config)}
                 disabled={testing}
                 title={$t('settings.asrProvider.testConnection')}
@@ -605,7 +605,7 @@
                 {/if}
               </button>
               <button
-                class="btn btn-icon btn-edit"
+                class="btn btn-icon-only btn-edit"
                 on:click={() => openEditModal(config)}
                 disabled={saving}
                 title={$t('settings.asrProvider.editConfig')}
@@ -616,7 +616,7 @@
                 </svg>
               </button>
               <button
-                class="btn btn-icon btn-icon-danger btn-delete"
+                class="btn btn-icon-only btn-icon-danger btn-delete"
                 on:click={() => confirmDelete(config)}
                 disabled={saving}
                 title={$t('settings.asrProvider.deleteConfirmTitle')}
@@ -682,7 +682,7 @@
                   {$t('settings.asrProvider.setActive')}
                 </button>
               {/if}
-              <button class="btn btn-icon btn-test" on:click={() => testConfiguration(config)} disabled={testing}>
+              <button class="btn btn-icon-only btn-test" on:click={() => testConfiguration(config)} disabled={testing}>
                 {#if testing && testingConfigId === config.uuid}
                   <Spinner size="small" />
                 {:else}
@@ -1107,7 +1107,7 @@
       gap: var(--space-2);
     }
 
-    .config-actions .btn-icon,
+    .config-actions .btn-icon-only,
     .config-actions .btn-activate {
       min-height: 44px;
     }

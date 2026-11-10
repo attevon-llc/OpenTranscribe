@@ -46,7 +46,7 @@
     <div class="settings-header-bar">
       <h2 id="settings-modal-title" class="settings-header-title">{$t('settings.title')}</h2>
       <button
-        class="btn btn-icon modal-close-button"
+        class="btn btn-icon-only modal-close-button"
         on:click={() => dispatch('close')}
         aria-label={$t('settings.modal.closeSettings')}
         title={$t('settings.modal.closeSettingsTitle')}

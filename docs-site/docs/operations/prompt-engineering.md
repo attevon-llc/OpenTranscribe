@@ -156,7 +156,7 @@ Chain-of-thought improves accuracy significantly but increases token usage and l
 
 ## Organization Context
 
-Organization context injects domain-specific knowledge into all AI prompts, helping the model correctly interpret jargon, acronyms, and references specific to your organization.
+Organization context injects domain-specific knowledge into the summarization prompt, helping the model correctly interpret jargon, acronyms, and references specific to your organization.
 
 Configure in **Settings → Organization Context**.
 
@@ -181,7 +181,7 @@ Focus on:
 - **Key personnel** and their roles
 - **Domain terminology** that might be ambiguous
 
-The context is injected as a preamble before the transcript in all LLM calls. It applies to both summarization and speaker identification.
+The context is added to the summarization system message. It is used only for summaries; speaker identification, topic extraction and chat do not receive it. Two switches on the same settings card decide which summaries get it: **Include with system prompts** (the built-in prompts) and **Include with custom prompts** (your own saved prompts).
 
 ## Per-Collection Prompts
 
@@ -221,15 +221,11 @@ The model weighs voice and speech patterns, expertise areas, conversational dyna
 
 ### Improving Speaker ID Accuracy
 
-Organization context significantly improves speaker identification. If the model knows the meeting participants, their roles, and their areas of responsibility, it can match speakers with much higher confidence.
-
-Example context for speaker ID:
+Organization context is not sent to speaker identification. The model works from the transcript, the descriptions on your known speaker profiles, and the file's title, description, author and tags. To help it match people with higher confidence, give speaker profiles a description (role and areas of expertise) and put participant names in the file's title or description, for example:
 
 ```
-Meeting participants typically include:
-- Dr. Sarah Chen (Chief Medical Officer) - discusses clinical trials
-- James Park (Head of Regulatory) - references FDA submissions
-- Maria Lopez (VP of Marketing) - discusses launch timelines
+Dr. Sarah Chen (Chief Medical Officer) - discusses clinical trials
+James Park (Head of Regulatory) - references FDA submissions
 ```
 
 Speaker identification suggestions are never auto-applied. They appear as recommendations in the speaker panel for manual verification.
@@ -474,7 +470,7 @@ OpenTranscribe uses response prefilling to force JSON output. If you still see p
 
 ### Speaker Identification Confidence Is Low
 
-- Add organization context with participant names and roles
+- Add descriptions (role, expertise) to your speaker profiles and participant names to the file's title or description
 - Ensure the transcript has enough content per speaker (very short utterances provide little signal)
 - Check that the transcript includes natural name mentions or role references
 - Lower confidence thresholds are expected for speakers who are only briefly mentioned

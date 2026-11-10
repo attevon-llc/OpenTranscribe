@@ -138,7 +138,7 @@ flowchart TD
         Nb --> Nc[Cosine similarity\nranked results]
     end
 
-    BM25c & Nc --> RRF["Reciprocal Rank Fusion (RRF)\nscore = 1/(60 + rank)"]
+    BM25c & Nc --> RRF["Reciprocal Rank Fusion (RRF)\nscore = 1/(k + rank)"]
     RRF --> Filter[Score filtering &\nweak result suppression]
     Filter --> Results([Merged Ranked Results])
 ```

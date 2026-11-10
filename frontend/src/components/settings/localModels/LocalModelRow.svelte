@@ -103,15 +103,11 @@
   </div>
 
   {#if view.inFlight}
-    <div
-      class="progress"
-      role="progressbar"
-      aria-label={$t('settings.localModels.progressAria', { model: entry.display_name })}
-      aria-valuemin="0"
-      aria-valuemax="100"
-      aria-valuenow={view.percent === null ? undefined : Math.round(view.percent)}
-    >
-      <ProgressBar percent={view.percent} />
+    <div class="progress">
+      <ProgressBar
+        percent={view.percent}
+        ariaLabel={$t('settings.localModels.progressAria', { model: entry.display_name })}
+      />
       {#if download && download.bytes_total}
         <span class="bytes">
           {$t('settings.localModels.ofBytes', {
@@ -185,14 +181,6 @@
   }
   :global([data-theme='dark']) .row-error {
     color: var(--error-color);
-  }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   @media (max-width: 640px) {
     .model-row {

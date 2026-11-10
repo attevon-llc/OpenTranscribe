@@ -7,6 +7,7 @@
   import { getErrorMessage } from '$lib/utils/apiError';
   import { formatDateTime } from '$lib/utils/formatting';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import { describeUserAgent } from '$lib/settings/userAgent';
 
@@ -31,7 +32,14 @@
   let total = 0;
   let loading = true;
   let signingOut = false;
-  let showSignOutConfirm = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   onMount(loadSessions);
 
@@ -62,6 +70,15 @@
    * session this tab was built on is gone, so discarding the whole JS heap is
    * the strongest guarantee that nothing from it survives into the login page.
    */
+  function askSignOutEverywhere() {
+    confirmDialog.request(
+      $t('settings.sessions.signOutEverywhere'),
+      $t('settings.sessions.signOutConfirmMessage'),
+      signOutEverywhere,
+      { confirmText: $t('settings.sessions.signOutEverywhere'), variant: 'danger' }
+    );
+  }
+
   async function signOutEverywhere() {
     signingOut = true;
     try {
@@ -180,7 +197,7 @@
     <button
       type="button"
       class="btn btn-danger"
-      on:click={() => (showSignOutConfirm = true)}
+      on:click={askSignOutEverywhere}
       disabled={signingOut || loading || sessions.length === 0}
     >
       {signingOut ? $t('settings.sessions.signingOut') : $t('settings.sessions.signOutEverywhere')}
@@ -189,14 +206,14 @@
 </div>
 
 <ConfirmationModal
-  bind:isOpen={showSignOutConfirm}
-  title={$t('settings.sessions.signOutEverywhere')}
-  message={$t('settings.sessions.signOutConfirmMessage')}
-  confirmText={$t('settings.sessions.signOutEverywhere')}
-  cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
-  on:confirm={signOutEverywhere}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>
@@ -291,49 +308,6 @@
   .panel-actions {
     display: flex;
     justify-content: flex-end;
-  }
-
-  .btn {
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-xl);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--button-hover);
-  }
-
-  .btn-danger {
-    background-color: rgba(239, 68, 68, 0.12);
-    color: #dc2626;
-    border: 1px solid rgba(239, 68, 68, 0.4);
-  }
-
-  .btn-danger:hover:not(:disabled) {
-    background-color: #ef4444;
-    color: var(--text-on-solid);
-  }
-
-  :global([data-theme='dark']) .btn-danger {
-    color: #f87171;
-  }
-
-  :global([data-theme='dark']) .btn-danger:hover:not(:disabled) {
-    color: var(--text-on-solid);
   }
 
   @media (max-width: 768px) {

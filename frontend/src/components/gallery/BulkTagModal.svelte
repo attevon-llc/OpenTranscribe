@@ -240,7 +240,7 @@
     />
 
     {#if selectionLoading}
-      <div class="selection-loading"><Spinner size="small" /></div>
+      <div class="selection-loading"><Spinner label={$t('common.loading')} size="small" /></div>
     {:else if chips.length > 0}
       <div class="current-tags">
         <span class="current-label">
@@ -319,7 +319,7 @@
   <svelte:fragment slot="footer">
     <button
       type="button"
-      class="modal-button modal-cancel-button"
+      class="btn btn-secondary btn-lg"
       disabled={busy}
       on:click={() => dispatch('close')}
     >
@@ -328,7 +328,7 @@
     <button
       type="submit"
       form={formId}
-      class="modal-button modal-primary-button"
+      class="btn btn-primary btn-lg"
       disabled={!canSubmit}
     >
       {#if busy}

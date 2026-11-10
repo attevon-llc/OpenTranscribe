@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import PerFileModelSelect from '$components/PerFileModelSelect.svelte';
@@ -58,20 +59,17 @@
   <!-- AI Summary -->
   <div class="section">
     <h4 class="section-title">{$t('upload.aiSummary')}</h4>
-    <label class="toggle-row">
-      <span class="toggle-text">
+    <div class="toggle-row">
+      <label class="toggle-text" for="generate-summary-toggle">
         <span class="toggle-label">{$t('upload.generateSummary')}</span>
         <span class="hint">{$t('upload.generateSummaryHint')}</span>
-      </span>
-      <label class="toggle-switch">
-        <input
-          type="checkbox"
-          checked={generateSummary}
-          on:change={(e) => toggleGenerateSummary(e.currentTarget.checked)}
-        />
-        <span class="toggle-slider"></span>
       </label>
-    </label>
+      <Toggle
+        id="generate-summary-toggle"
+        checked={generateSummary}
+        onchange={toggleGenerateSummary}
+      />
+    </div>
   </div>
 </div>
 
@@ -109,7 +107,6 @@
     justify-content: space-between;
     gap: var(--space-3);
     padding: var(--space-2-5) var(--space-3);
-    cursor: pointer;
   }
 
   .toggle-text {
@@ -124,38 +121,4 @@
     color: var(--text-primary);
   }
 
-  /* Toggle switch */
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 36px;
-    height: 20px;
-    flex-shrink: 0;
-    cursor: pointer;
-  }
-
-  .toggle-switch input { opacity: 0; width: 0; height: 0; }
-
-  .toggle-slider {
-    position: absolute;
-    inset: 0;
-    background: var(--border-color);
-    border-radius: 20px;
-    transition: background var(--duration-base) ease;
-  }
-
-  .toggle-slider::before {
-    content: '';
-    position: absolute;
-    width: 16px;
-    height: 16px;
-    left: 2px;
-    bottom: 2px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-  }
-
-  .toggle-switch input:checked + .toggle-slider { background: var(--primary-color); }
-  .toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
 </style>

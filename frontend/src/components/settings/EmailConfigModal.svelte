@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import { t } from '$stores/locale';
@@ -127,18 +128,16 @@
   </svelte:fragment>
 
   <div class="email-form">
-    <div class="form-group">
-      <label for="em-name">{$t('settings.emailNotifications.fields.name')}</label>
+    <FormField id="em-name" label={$t('settings.emailNotifications.fields.name')} labelSize="md">
       <input id="em-name" type="text" class="form-input" bind:value={form.name} />
-    </div>
-    <div class="form-group">
-      <label for="em-provider">{$t('settings.emailNotifications.fields.provider')}</label>
+    </FormField>
+    <FormField id="em-provider" label={$t('settings.emailNotifications.fields.provider')} labelSize="md">
       <select id="em-provider" class="form-select" bind:value={form.provider} disabled={!!editingConfig}>
         <option value="smtp">SMTP</option>
         <option value="m365">Microsoft 365</option>
         <option value="exchange">Exchange (on-prem)</option>
       </select>
-    </div>
+    </FormField>
 
     {#if form.provider === 'smtp'}
       <p class="provider-help">{$t('settings.emailNotifications.smtpHelp')}</p>
@@ -149,77 +148,63 @@
     {/if}
 
     <div class="form-row">
-      <div class="form-group">
-        <label for="em-from">{$t('settings.emailNotifications.fields.fromAddress')}</label>
+      <FormField id="em-from" label={$t('settings.emailNotifications.fields.fromAddress')} labelSize="md">
         <input dir="ltr" id="em-from" type="email" class="form-input" bind:value={form.from_address} />
-      </div>
-      <div class="form-group">
-        <label for="em-rcpt">{$t('settings.emailNotifications.fields.defaultRecipients')}</label>
+      </FormField>
+      <FormField id="em-rcpt" label={$t('settings.emailNotifications.fields.defaultRecipients')} labelSize="md">
         <input dir="ltr" id="em-rcpt" type="text" class="form-input" bind:value={form.default_recipients} placeholder="a@x.com, b@x.com" />
-      </div>
+      </FormField>
     </div>
 
     {#if form.provider === 'smtp'}
       <div class="form-row">
-        <div class="form-group">
-          <label for="em-host">{$t('settings.emailNotifications.fields.smtpHost')}</label>
+        <FormField id="em-host" label={$t('settings.emailNotifications.fields.smtpHost')} labelSize="md">
           <input dir="ltr" id="em-host" type="text" class="form-input" bind:value={form.smtp_host} />
-        </div>
-        <div class="form-group">
-          <label for="em-port">{$t('settings.emailNotifications.fields.smtpPort')}</label>
+        </FormField>
+        <FormField id="em-port" label={$t('settings.emailNotifications.fields.smtpPort')} labelSize="md">
           <input id="em-port" type="number" class="form-input" bind:value={form.smtp_port} />
-        </div>
+        </FormField>
       </div>
-      <div class="form-group">
-        <label for="em-user">{$t('settings.emailNotifications.fields.smtpUsername')}</label>
+      <FormField id="em-user" label={$t('settings.emailNotifications.fields.smtpUsername')} labelSize="md">
         <input id="em-user" type="text" class="form-input" bind:value={form.smtp_username} />
-      </div>
-      <div class="form-group">
-        <label for="em-pass">{$t('settings.emailNotifications.fields.smtpPassword')}</label>
+      </FormField>
+      <FormField id="em-pass" label={$t('settings.emailNotifications.fields.smtpPassword')} labelSize="md">
         <input dir="ltr" id="em-pass" type="password" class="form-input" bind:value={form.smtp_password} placeholder={editingConfig?.has_smtp_password ? $t('settings.watchSources.secretStored') : ''} />
-      </div>
+      </FormField>
       <label class="checkbox-row">
         <input type="checkbox" bind:checked={form.smtp_use_tls} />
         <span>{$t('settings.emailNotifications.fields.useTls')}</span>
       </label>
     {:else if form.provider === 'm365'}
-      <div class="form-group">
-        <label for="em-tenant">{$t('settings.emailNotifications.fields.tenantId')}</label>
+      <FormField id="em-tenant" label={$t('settings.emailNotifications.fields.tenantId')} labelSize="md">
         <input dir="ltr" id="em-tenant" type="text" class="form-input" bind:value={form.m365_tenant_id} />
-      </div>
-      <div class="form-group">
-        <label for="em-client">{$t('settings.emailNotifications.fields.clientId')}</label>
+      </FormField>
+      <FormField id="em-client" label={$t('settings.emailNotifications.fields.clientId')} labelSize="md">
         <input dir="ltr" id="em-client" type="text" class="form-input" bind:value={form.m365_client_id} />
-      </div>
-      <div class="form-group">
-        <label for="em-secret">{$t('settings.emailNotifications.fields.clientSecret')}</label>
+      </FormField>
+      <FormField id="em-secret" label={$t('settings.emailNotifications.fields.clientSecret')} labelSize="md">
         <input dir="ltr" id="em-secret" type="password" class="form-input" bind:value={form.m365_client_secret} placeholder={editingConfig?.has_m365_secret ? $t('settings.watchSources.secretStored') : ''} />
-      </div>
+      </FormField>
     {:else if form.provider === 'exchange'}
       <div class="form-row">
-        <div class="form-group">
-          <label for="em-exsrv">{$t('settings.emailNotifications.fields.exchangeServer')}</label>
+        <FormField id="em-exsrv" label={$t('settings.emailNotifications.fields.exchangeServer')} labelSize="md">
           <input dir="ltr" id="em-exsrv" type="text" class="form-input" bind:value={form.exchange_server} />
-        </div>
-        <div class="form-group">
-          <label for="em-export">{$t('settings.emailNotifications.fields.smtpPort')}</label>
+        </FormField>
+        <FormField id="em-export" label={$t('settings.emailNotifications.fields.smtpPort')} labelSize="md">
           <input id="em-export" type="number" class="form-input" bind:value={form.smtp_port} />
-        </div>
+        </FormField>
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label for="em-exdom">{$t('settings.emailNotifications.fields.exchangeDomain')}</label>
+        <FormField id="em-exdom" label={$t('settings.emailNotifications.fields.exchangeDomain')} labelSize="md">
           <input dir="ltr" id="em-exdom" type="text" class="form-input" bind:value={form.exchange_domain} />
-        </div>
-        <div class="form-group">
-          <label for="em-exuser">{$t('settings.emailNotifications.fields.exchangeUsername')}</label>
+        </FormField>
+        <FormField id="em-exuser" label={$t('settings.emailNotifications.fields.exchangeUsername')} labelSize="md">
           <input id="em-exuser" type="text" class="form-input" bind:value={form.exchange_username} />
-        </div>
+        </FormField>
       </div>
-      <div class="form-group">
-        <label for="em-expass">{$t('settings.emailNotifications.fields.exchangePassword')}</label>
+      <FormField id="em-expass" label={$t('settings.emailNotifications.fields.exchangePassword')} labelSize="md">
         <input id="em-expass" type="password" class="form-input" bind:value={form.exchange_password} placeholder={editingConfig?.has_exchange_password ? $t('settings.watchSources.secretStored') : ''} />
-      </div>
+      </FormField>
     {/if}
 
     <label class="checkbox-row">
@@ -263,19 +248,12 @@
   :global([data-theme='dark']) .experimental-badge {
     color: #fbbf24;
   }
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
+  .form-row > :global(.form-field) {
     flex: 1;
   }
   .form-row {
     display: flex;
     gap: var(--space-3);
-  }
-  .form-group label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
   }
   /* .form-input / .form-select inherit the global input/select styling. */
   .provider-help {

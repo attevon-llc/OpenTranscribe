@@ -55,7 +55,9 @@ describe('AutoLabelSettings: automatic suggestions switch', () => {
 
   it('renders the switch with its plain-language label and help, on by default', async () => {
     render(AutoLabelSettings);
-    const toggle = (await screen.findByLabelText('autoLabel.autoSuggestLabel')) as HTMLInputElement;
+    const toggle = (await screen.findByRole('switch', {
+      name: 'autoLabel.autoSuggestLabel',
+    })) as HTMLInputElement;
     expect(toggle.checked).toBe(true);
     expect(toggle.disabled).toBe(false);
     expect(screen.getByText('autoLabel.autoSuggestHelp')).toBeInTheDocument();
@@ -65,7 +67,9 @@ describe('AutoLabelSettings: automatic suggestions switch', () => {
   it('reflects an opted-out account', async () => {
     mockServer({ auto_topic_extraction: false });
     render(AutoLabelSettings);
-    const toggle = (await screen.findByLabelText('autoLabel.autoSuggestLabel')) as HTMLInputElement;
+    const toggle = (await screen.findByRole('switch', {
+      name: 'autoLabel.autoSuggestLabel',
+    })) as HTMLInputElement;
     expect(toggle.checked).toBe(false);
   });
 
@@ -74,7 +78,9 @@ describe('AutoLabelSettings: automatic suggestions switch', () => {
       data: { ...SERVER, auto_topic_extraction: false },
     });
     render(AutoLabelSettings);
-    await fireEvent.click(await screen.findByLabelText('autoLabel.autoSuggestLabel'));
+    await fireEvent.click(
+      await screen.findByRole('switch', { name: 'autoLabel.autoSuggestLabel' })
+    );
     await waitFor(() => expect(setDirty).toHaveBeenLastCalledWith('auto-labeling', true));
 
     await fireEvent.click(screen.getByRole('button', { name: 'autoLabel.saveSettings' }));
@@ -89,7 +95,9 @@ describe('AutoLabelSettings: automatic suggestions switch', () => {
   it('is disabled with an explanation when no AI provider is configured', async () => {
     llmState.set({ status: null, available: false, checking: false, lastChecked: new Date() });
     render(AutoLabelSettings);
-    const toggle = (await screen.findByLabelText('autoLabel.autoSuggestLabel')) as HTMLInputElement;
+    const toggle = (await screen.findByRole('switch', {
+      name: 'autoLabel.autoSuggestLabel',
+    })) as HTMLInputElement;
     expect(toggle.disabled).toBe(true);
     expect(screen.getByTestId('auto-suggest-no-provider')).toHaveTextContent(
       'autoLabel.autoSuggestNoProvider'
@@ -99,7 +107,9 @@ describe('AutoLabelSettings: automatic suggestions switch', () => {
   it('does not grey the switch out before the provider check has run', async () => {
     llmState.set({ status: null, available: false, checking: true, lastChecked: null });
     render(AutoLabelSettings);
-    const toggle = (await screen.findByLabelText('autoLabel.autoSuggestLabel')) as HTMLInputElement;
+    const toggle = (await screen.findByRole('switch', {
+      name: 'autoLabel.autoSuggestLabel',
+    })) as HTMLInputElement;
     expect(toggle.disabled).toBe(false);
   });
 

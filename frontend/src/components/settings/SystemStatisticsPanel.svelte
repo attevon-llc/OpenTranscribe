@@ -19,6 +19,9 @@
   import { t, locale } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
   import InfoTip from '$components/settings/transcription/InfoTip.svelte';
+  import Badge from '$components/ui/Badge.svelte';
+  import { badgeVariantForStatus } from '$lib/fileStatus/statusVariant';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   export let stats: SystemStats;
   export let statsLoading = false;
@@ -27,6 +30,12 @@
   export let searchHealthStatus: SearchHealthStatus | null = null;
 
   const dispatch = createEventDispatcher<{ refresh: void; openDetails: string }>();
+
+  // Backend sends usage as strings like "42.5%"; unparsable or missing reads as 0.
+  function meterValue(raw: unknown): number {
+    const value = parseFloat(String(raw));
+    return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+  }
 
   let currentGpuIndex = 0;
   $: activeGpu = stats.system?.gpus?.[currentGpuIndex] ?? stats.system?.gpus?.[0];
@@ -311,8 +320,15 @@
         <div class="stat-section">
           <h4>{$t('settings.statistics.cpuUsage')}</h4>
           <div class="stat-value">{stats.system?.cpu?.total_percent || '0%'}</div>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: {parseFloat(stats.system?.cpu?.total_percent) || 0}%"></div>
+          <div
+            class="meter"
+            role="meter"
+            aria-label={$t('settings.statistics.cpuUsage')}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={meterValue(stats.system?.cpu?.total_percent)}
+          >
+            <div class="meter-fill" style="width: {meterValue(stats.system?.cpu?.total_percent)}%"></div>
           </div>
         </div>
 
@@ -322,8 +338,15 @@
           <div class="stat-detail-compact">
             <bdi dir="ltr">{stats.system?.memory?.used || $t('common.unknown')} / {stats.system?.memory?.total || $t('common.unknown')}</bdi>
           </div>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: {parseFloat(stats.system?.memory?.percent) || 0}%"></div>
+          <div
+            class="meter"
+            role="meter"
+            aria-label={$t('settings.statistics.memoryUsage')}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={meterValue(stats.system?.memory?.percent)}
+          >
+            <div class="meter-fill" style="width: {meterValue(stats.system?.memory?.percent)}%"></div>
           </div>
         </div>
       </div>
@@ -338,8 +361,15 @@
             <span>{$t('settings.statistics.free')}: <bdi dir="ltr">{stats.system?.disk?.free || $t('common.unknown')}</bdi></span>
           </div>
         </div>
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {parseFloat(stats.system?.disk?.percent) || 0}%"></div>
+        <div
+          class="meter"
+          role="meter"
+          aria-label={$t('settings.statistics.diskUsage')}
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={meterValue(stats.system?.disk?.percent)}
+        >
+          <div class="meter-fill" style="width: {meterValue(stats.system?.disk?.percent)}%"></div>
         </div>
       </div>
 
@@ -371,8 +401,15 @@
               {/if}
             </div>
           </div>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: {parseFloat(activeGpu.memory_percent) || 0}%"></div>
+          <div
+            class="meter"
+            role="meter"
+            aria-label={$t('settings.statistics.gpuVram')}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={meterValue(activeGpu.memory_percent)}
+          >
+            <div class="meter-fill" style="width: {meterValue(activeGpu.memory_percent)}%"></div>
           </div>
         {:else if activeGpu?.loading}
           <div class="stat-card-content">
@@ -411,7 +448,7 @@
                   <td>{task.id.substring(0, 8)}...</td>
                   <td>{task.type}</td>
                   <td>
-                    <span class="status-badge status-{task.status}">{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</span>
+                    <Badge variant={badgeVariantForStatus(task.status)} size="md" class="status-badge">{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</Badge>
                   </td>
                   <td>{formatDateTime(task.created_at, '', $locale)}</td>
                   <td>{formatElapsed(task.elapsed)}</td>
@@ -424,7 +461,7 @@
     {:else}
       <div class="recent-tasks" class:stats-refreshing={statsRefreshing}>
         <h4>{$t('settings.statistics.recentTasks')}</h4>
-        <p class="empty-state">{$t('settings.statistics.noRecentTasks')}</p>
+        <EmptyState padding="var(--space-4)" description={$t('settings.statistics.noRecentTasks')} />
       </div>
     {/if}
   {/if}
@@ -494,37 +531,6 @@
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0 0 var(--space-5) 0;
-  }
-
-  .btn {
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    border: none;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-secondary {
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-hover);
-  }
-
-  .btn-secondary:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-secondary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .btn-refresh {
@@ -771,18 +777,18 @@
     white-space: nowrap;
   }
 
-  .progress-bar {
+  .meter {
     width: 100%;
-    height: 8px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-sm);
+    height: 6px;
+    background-color: var(--color-bg-tertiary);
+    border-radius: var(--radius-pill);
     overflow: hidden;
-    margin-top: 0;
   }
 
-  .progress-fill {
+  .meter-fill {
     height: 100%;
     background-color: var(--primary-color);
+    border-radius: var(--radius-pill);
     transition: width var(--duration-slow) ease;
   }
 
@@ -836,72 +842,6 @@
 
   .data-table tbody tr:hover {
     background-color: var(--background-color);
-  }
-
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-xl);
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-medium);
-    text-transform: capitalize;
-  }
-
-  .status-completed,
-  .status-success {
-    background-color: #d1fae5;
-    color: #065f46;
-  }
-
-  .status-running,
-  .status-processing,
-  .status-in_progress {
-    background-color: #dbeafe;
-    color: #1e40af;
-  }
-
-  .status-pending {
-    background-color: #fef3c7;
-    color: #92400e;
-  }
-
-  .status-failed,
-  .status-error {
-    background-color: #fee2e2;
-    color: #991b1b;
-  }
-
-  :global([data-theme='dark']) .status-completed,
-  :global([data-theme='dark']) .status-success {
-    background-color: #064e3b;
-    color: #6ee7b7;
-  }
-
-  :global([data-theme='dark']) .status-running,
-  :global([data-theme='dark']) .status-processing,
-  :global([data-theme='dark']) .status-in_progress {
-    background-color: #1e3a8a;
-    color: #93c5fd;
-  }
-
-  :global([data-theme='dark']) .status-pending {
-    background-color: #78350f;
-    color: #fde68a;
-  }
-
-  :global([data-theme='dark']) .status-failed,
-  :global([data-theme='dark']) .status-error {
-    background-color: #7f1d1d;
-    color: #fca5a5;
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: var(--space-4);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    font-style: italic;
   }
 
   /* AI Models Card Styles */
@@ -985,13 +925,6 @@
 
     .model-value {
       word-break: break-all;
-    }
-
-    .status-badge {
-      padding: 0.1rem 0.35rem;
-      font-size: var(--font-size-xs);
-      min-width: 24px;
-      text-align: center;
     }
 
     .data-table th,

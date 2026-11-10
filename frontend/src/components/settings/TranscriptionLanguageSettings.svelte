@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import {
     getTranscriptionSettings,
@@ -148,9 +149,8 @@
         description={$t('settings.transcription.languageSettingsDesc')}
         tooltip={$t('settings.transcription.languageSettingsTooltip')}
       >
-        <div class="form-group">
-          <label for="source-language" class="form-label">
-            {$t('settings.transcription.sourceLanguage')}
+        <FormField id="source-language" label={$t('settings.transcription.sourceLanguage')} labelSize="sm">
+          <svelte:fragment slot="label-inline">
             <InfoTip inline>
               <strong>{$t('settings.transcription.sourceLanguageTooltipAuto')}</strong>
               {$t('settings.transcription.sourceLanguageTooltipAutoDesc')}<br /><br />
@@ -158,7 +158,7 @@
               {$t('settings.transcription.sourceLanguageTooltipSpecificDesc')}<br /><br />
               {$t('settings.transcription.sourceLanguageTooltipTimestamps')}
             </InfoTip>
-          </label>
+          </svelte:fragment>
           <select id="source-language" class="form-select" bind:value={sourceLanguage}>
             <optgroup label={$t('settings.transcription.commonLanguages')}>
               {#each sourceLanguageGroups.common as lang (lang.code)}
@@ -178,9 +178,9 @@
               {$t('settings.transcription.englishOptimizedWarning')}
             </p>
           {/if}
-        </div>
+        </FormField>
 
-        <div class="form-group">
+        <div class="form-field">
           <div class="setting-row">
             <div class="setting-controls">
               <label class="toggle-label" class:disabled-toggle={translationDisabled}>
@@ -224,18 +224,16 @@
         title={$t('settings.transcription.aiLanguageHeading')}
         description={$t('settings.transcription.aiLanguageDesc')}
       >
-        <div class="form-group">
-          <label for="llm-output-language" class="form-label">
-            {$t('settings.transcription.aiSummaryLanguage')}
+        <FormField id="llm-output-language" label={$t('settings.transcription.aiSummaryLanguage')} labelSize="sm" hint={$t('settings.transcription.aiSummaryLanguageHint')} let:describedby>
+          <svelte:fragment slot="label-inline">
             <InfoTip inline>{$t('settings.transcription.aiSummaryLanguageTooltip')}</InfoTip>
-          </label>
-          <select id="llm-output-language" class="form-select" bind:value={llmOutputLanguage}>
+          </svelte:fragment>
+          <select id="llm-output-language" aria-describedby={describedby} class="form-select" bind:value={llmOutputLanguage}>
             {#each llmLanguageOptions as lang (lang.code)}
               <option value={lang.code}>{lang.name}</option>
             {/each}
           </select>
-          <p class="input-hint">{$t('settings.transcription.aiSummaryLanguageHint')}</p>
-        </div>
+        </FormField>
 
         <div class="defaults-info">
           <span class="defaults-label">{$t('settings.transcription.defaults')}</span>

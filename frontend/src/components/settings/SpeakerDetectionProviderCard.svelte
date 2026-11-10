@@ -12,6 +12,7 @@
   re-checks on save and answers 409 with a stable code, which the parent shows.
 -->
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import type { PipelineView } from '$lib/api/pipeline';
   import type { DiarizationSource } from '$lib/api/transcriptionSettings';
@@ -95,10 +96,7 @@
   title={$t('settings.speakerIdentification.detectionHeading')}
   description={$t('settings.speakerIdentification.detectionDesc')}
 >
-  <div class="form-group">
-    <label for="diarization-source" class="form-label">
-      {$t('settings.speakerIdentification.source.label')}
-    </label>
+  <FormField id="diarization-source" label={$t('settings.speakerIdentification.source.label')} labelSize="sm">
     <select
       id="diarization-source"
       class="form-select"
@@ -175,9 +173,7 @@
 
       {#if diarizationSource === 'asr_config'}
         {#if choices.length > 0}
-          <label for="diarization-asr-config" class="form-label sub-label">
-            {$t('settings.speakerIdentification.source.asrConfigSelect')}
-          </label>
+          <FormField class="sub-field" id="diarization-asr-config" label={$t('settings.speakerIdentification.source.asrConfigSelect')}>
           <select
             id="diarization-asr-config"
             class="form-select"
@@ -199,6 +195,7 @@
               <CapabilityBadges returnsSpeakers={chosen.returnsSpeakers} timing={chosen.timing} />
             </p>
           {/if}
+          </FormField>
         {:else}
           <p class="field-desc">
             {$t('settings.speakerIdentification.source.asrConfigNone')}
@@ -241,7 +238,7 @@
         />
       {/if}
     {/if}
-  </div>
+  </FormField>
 </SettingsCard>
 
 <style>
@@ -258,8 +255,7 @@
     gap: var(--space-2);
   }
 
-  .sub-label {
-    display: block;
+  :global(.form-field.sub-field) {
     margin-top: var(--space-3);
   }
 

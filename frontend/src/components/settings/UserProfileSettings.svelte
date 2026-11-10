@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import { onMount } from 'svelte';
   import { user as userStore, authStore, fetchUserInfo } from '$stores/auth';
@@ -172,20 +173,17 @@
     <div class="profile-card">
       <h4 class="card-title">{$t('settings.profile.accountInfo')}</h4>
       <form on:submit|preventDefault={updateProfile} class="settings-form">
-        <div class="form-group">
-          <label for="email">{$t('auth.email')}</label>
+        <FormField id="email" label={$t('auth.email')} hint={$t('settings.profile.emailCannotChange')} let:describedby>
           <input dir="ltr"
             type="email"
-            id="email"
+            id="email" aria-describedby={describedby}
             class="form-control"
             value={email}
             disabled
           />
-          <small class="form-text">{$t('settings.profile.emailCannotChange')}</small>
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <label for="fullName">{$t('settings.profile.fullName')}</label>
+        <FormField id="fullName" label={$t('settings.profile.fullName')}>
           <input
             type="text"
             id="fullName"
@@ -193,7 +191,7 @@
             bind:value={fullName}
             required
           />
-        </div>
+        </FormField>
 
         <div class="form-actions">
           <button
@@ -227,9 +225,8 @@
     <div class="profile-card">
       <h4 class="card-title">{$t('settings.profile.changePassword')}</h4>
       <form on:submit|preventDefault={updatePassword} class="settings-form">
-        <div class="form-group">
-          <div class="password-header">
-            <label for="currentPassword">{$t('settings.profile.currentPassword')}</label>
+        <FormField id="currentPassword" label={$t('settings.profile.currentPassword')}>
+          <svelte:fragment slot="label-after">
             <button
               type="button"
               class="toggle-password"
@@ -239,18 +236,17 @@
             >
               <EyeIcon visible={showCurrentPassword} />
             </button>
-          </div>
+          </svelte:fragment>
           <input
             type={showCurrentPassword ? 'text' : 'password'}
             id="currentPassword"
             class="form-control"
             bind:value={currentPassword}
           />
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <div class="password-header">
-            <label for="newPassword">{$t('settings.profile.newPassword')}</label>
+        <FormField id="newPassword" label={$t('settings.profile.newPassword')}>
+          <svelte:fragment slot="label-after">
             <button
               type="button"
               class="toggle-password"
@@ -260,7 +256,7 @@
             >
               <EyeIcon visible={showNewPassword} />
             </button>
-          </div>
+          </svelte:fragment>
           <input
             type={showNewPassword ? 'text' : 'password'}
             id="newPassword"
@@ -270,11 +266,10 @@
           <small class="form-text" data-testid="password-requirements"
             >{passwordRequirements.map((r) => $t(r.key, r.params)).join(' · ')}</small
           >
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <div class="password-header">
-            <label for="confirmPassword">{$t('settings.profile.confirmNewPassword')}</label>
+        <FormField id="confirmPassword" label={$t('settings.profile.confirmNewPassword')}>
+          <svelte:fragment slot="label-after">
             <button
               type="button"
               class="toggle-password"
@@ -284,14 +279,14 @@
             >
               <EyeIcon visible={showConfirmPassword} />
             </button>
-          </div>
+          </svelte:fragment>
           <input
             type={showConfirmPassword ? 'text' : 'password'}
             id="confirmPassword"
             class="form-control"
             bind:value={confirmPassword}
           />
-        </div>
+        </FormField>
 
         {#if passwordError}
           <p class="form-text password-error" role="alert">{passwordError}</p>
@@ -395,17 +390,7 @@
     gap: var(--space-4);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
-  }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
@@ -423,11 +408,6 @@
     margin-top: var(--space-0-5);
   }
 
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
 
   .toggle-password {
     background: none;
@@ -451,37 +431,6 @@
     gap: var(--space-3);
     margin-top: var(--space-3);
     justify-content: flex-end;
-  }
-
-  .btn {
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    border: none;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-primary {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   @media (max-width: 768px) {

@@ -313,7 +313,7 @@
           {#if maxTokensOverride !== null}
             <button
               type="button"
-              class="btn btn-secondary btn-small"
+              class="btn btn-secondary btn-sm"
               on:click={() => dispatch('change', { max_tokens: null })}
               {disabled}
               data-testid="chat-max-tokens-reset"

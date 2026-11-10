@@ -1,4 +1,6 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import InfoIcon from '$components/ui/InfoIcon.svelte';
   import { onMount } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -88,7 +90,7 @@
   {:else}
     <div class="settings-form">
       <!-- Auto Extract Enabled -->
-      <div class="form-group">
+      <div class="form-field">
         <div class="toggle-group">
           <div class="toggle-header">
             <label for="auto-extract" class="toggle-label">
@@ -97,25 +99,17 @@
                 {$t('settings.audioExtraction.enableExtractionDesc')}
               </span>
             </label>
-            <label class="toggle-switch">
-              <input
-                id="auto-extract"
-                type="checkbox"
-                bind:checked={autoExtractEnabled}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <Toggle id="auto-extract" checked={autoExtractEnabled} onchange={(next) => (autoExtractEnabled = next)} />
           </div>
           {#if autoExtractEnabled}
             <!-- Depends on the switch above, so it sits directly beneath it (label, then control). -->
             <div class="dependent-field" data-testid="threshold-field">
-              <label for="threshold" class="form-label">
-                {$t('settings.audioExtraction.threshold')}
-                <span class="label-hint">{$t('settings.audioExtraction.thresholdHint')}</span>
-              </label>
+              <FormField id="threshold" label={$t('settings.audioExtraction.threshold')} labelSize="md" hint={$t('settings.audioExtraction.thresholdInfo', { size: extractionThresholdMb })} let:describedby>
+                <span class="label-hint" slot="label-inline">{$t('settings.audioExtraction.thresholdHint')}</span>
               <div class="threshold-input-group">
                 <input
                   id="threshold"
+                  aria-describedby={describedby}
                   type="number"
                   min="1"
                   max="10000"
@@ -124,9 +118,7 @@
                 />
                 <span class="threshold-unit" dir="ltr">MB</span>
               </div>
-              <p class="input-hint">
-                {$t('settings.audioExtraction.thresholdInfo', { size: extractionThresholdMb })}
-              </p>
+              </FormField>
             </div>
           {/if}
         </div>
@@ -134,7 +126,7 @@
 
       {#if autoExtractEnabled}
         <!-- Show Modal -->
-        <div class="form-group">
+        <div class="form-field">
           <div class="toggle-group">
             <div class="toggle-header">
               <label for="show-modal" class="toggle-label">
@@ -143,20 +135,13 @@
                   {$t('settings.audioExtraction.showDialogDesc')}
                 </span>
               </label>
-              <label class="toggle-switch">
-                <input
-                  id="show-modal"
-                  type="checkbox"
-                  bind:checked={showModal}
-                />
-                <span class="toggle-slider"></span>
-              </label>
+              <Toggle id="show-modal" checked={showModal} onchange={(next) => (showModal = next)} />
             </div>
           </div>
         </div>
 
         <!-- Remember Choice -->
-        <div class="form-group">
+        <div class="form-field">
           <div class="toggle-group">
             <div class="toggle-header">
               <label for="remember-choice" class="toggle-label">
@@ -165,14 +150,7 @@
                   {$t('settings.audioExtraction.rememberChoiceDesc')}
                 </span>
               </label>
-              <label class="toggle-switch">
-                <input
-                  id="remember-choice"
-                  type="checkbox"
-                  bind:checked={rememberChoice}
-                />
-                <span class="toggle-slider"></span>
-              </label>
+              <Toggle id="remember-choice" checked={rememberChoice} onchange={(next) => (rememberChoice = next)} />
             </div>
           </div>
         </div>
@@ -181,7 +159,7 @@
       <!-- Save Button -->
       <div class="form-actions">
         <button
-          class="save-button"
+          class="btn btn-primary btn-lg save-button"
           on:click={saveSettings}
           disabled={saving || !settingsChanged}
         >
@@ -236,19 +214,7 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
 
-  .form-label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
 
   .label-hint {
     font-size: var(--font-size-sm);
@@ -294,53 +260,6 @@
     line-height: 1.4;
   }
 
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 48px;
-    height: 24px;
-    flex-shrink: 0;
-    cursor: pointer;
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--border-color);
-    transition: var(--duration-slow);
-    border-radius: 24px;
-  }
-
-  .toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: var(--duration-slow);
-    border-radius: var(--radius-round);
-  }
-
-  input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  input:checked + .toggle-slider:before {
-    transform: translateX(24px);
-  }
-
   .dependent-field {
     display: flex;
     flex-direction: column;
@@ -371,46 +290,11 @@
     font-size: var(--font-size-sm);
   }
 
-  .input-hint {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-  }
 
   .form-actions {
     display: flex;
     justify-content: flex-end;
     padding-top: var(--space-2);
-  }
-
-  .save-button {
-    padding: var(--space-3) var(--space-8);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-xl);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .save-button:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
-  }
-
-  .save-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .save-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .info-box {
@@ -449,11 +333,6 @@
     margin-bottom: var(--space-1);
   }
 
-  /* Dark mode */
-  :global([data-theme='dark']) .toggle-slider:before {
-    background-color: #e5e7eb;
-  }
-
   /* Responsive */
   @media (max-width: 640px) {
     .audio-extraction-settings {
@@ -472,10 +351,5 @@
       flex-direction: column;
     }
 
-    .save-button {
-      width: 100%;
-      min-height: 44px;
-      justify-content: center;
-    }
   }
 </style>

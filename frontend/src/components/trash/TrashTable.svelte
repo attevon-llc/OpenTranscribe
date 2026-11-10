@@ -83,7 +83,7 @@
               {#if canOfferRestore(file, now)}
                 <button
                   type="button"
-                  class="btn btn-secondary btn-small"
+                  class="btn btn-secondary btn-sm"
                   data-testid="trash-restore"
                   aria-label={$t('trash.restoreLabel', { name: displayName(file) })}
                   disabled={busy.includes(file.uuid)}
@@ -96,7 +96,7 @@
               {#if file.can_purge && state.kind !== 'due'}
                 <button
                   type="button"
-                  class="btn btn-danger btn-small"
+                  class="btn btn-danger btn-sm"
                   data-testid="trash-purge"
                   aria-label={$t('trash.deleteForeverLabel', { name: displayName(file) })}
                   disabled={busy.includes(file.uuid)}

@@ -31,6 +31,8 @@
   import { onMount } from 'svelte';
 
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   let phase: 'loading' | 'form' | 'error' | 'done' = 'loading';
   /** Server-supplied prose, rendered verbatim. Never inspected. */
@@ -136,7 +138,7 @@
       <div class="auth-header">
         <h1>{$t('auth.acceptInvite.title')}</h1>
       </div>
-      <div class="error-message" role="alert">{errorMessage}</div>
+      <Banner tone="error" size="base">{errorMessage}</Banner>
       <div class="auth-links">
         <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
@@ -179,8 +181,7 @@
       </div>
 
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
-        <div class="form-group">
-          <label for="invite-full-name">{$t('auth.acceptInvite.fullName')}</label>
+        <FormField id="invite-full-name" label={$t('auth.acceptInvite.fullName')} size="lg">
           <input
             type="text"
             id="invite-full-name"
@@ -189,23 +190,21 @@
             autocomplete="name"
             disabled={submitting}
           />
-        </div>
+        </FormField>
 
         {#if invitation.requires_password}
-          <div class="form-group">
-            <div class="password-header">
-              <label for="invite-password">{$t('auth.acceptInvite.createPassword')}</label>
-              <button
-                type="button"
-                class="toggle-password"
-                on:click={() => (showPassword = !showPassword)}
-                tabindex="-1"
-                aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-                title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-              >
-                <EyeIcon visible={showPassword} />
-              </button>
-            </div>
+          <FormField id="invite-password" label={$t('auth.acceptInvite.createPassword')} size="lg">
+            <button
+              slot="label-after"
+              type="button"
+              class="toggle-password"
+              on:click={() => (showPassword = !showPassword)}
+              tabindex="-1"
+              aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+              title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+            >
+              <EyeIcon visible={showPassword} />
+            </button>
             <input
               type={showPassword ? 'text' : 'password'}
               id="invite-password"
@@ -214,10 +213,9 @@
               autocomplete="new-password"
               disabled={submitting}
             />
-          </div>
+          </FormField>
 
-          <div class="form-group">
-            <label for="invite-confirm-password">{$t('auth.confirmPassword')}</label>
+          <FormField id="invite-confirm-password" label={$t('auth.confirmPassword')} size="lg">
             <input
               type={showPassword ? 'text' : 'password'}
               id="invite-confirm-password"
@@ -226,7 +224,7 @@
               autocomplete="new-password"
               disabled={submitting}
             />
-          </div>
+          </FormField>
 
           <div class="password-policy">
             <strong>{$t('auth.passwordRequirements')}</strong>
@@ -311,26 +309,8 @@
     gap: var(--space-5);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
-  }
-
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
   }
 
   .toggle-password {
@@ -410,15 +390,6 @@
 
   .auth-link:hover {
     text-decoration: underline;
-  }
-
-  .error-message {
-    background-color: var(--error-color-light);
-    color: var(--error-color);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    font-weight: var(--font-weight-medium);
   }
 
   .success-message {

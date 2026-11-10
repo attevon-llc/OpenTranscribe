@@ -1,4 +1,6 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
@@ -6,6 +8,7 @@
   import { PromptsApi, type SummaryPrompt } from '$lib/api/prompts';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import Spinner from '$components/ui/Spinner.svelte';
   import TagInput from '$components/ui/TagInput.svelte';
   import PromptCopyButton from './PromptCopyButton.svelte';
@@ -29,6 +32,7 @@
     type PromptFormData
   } from '$lib/settings/promptForm';
   import { withShareState } from '$lib/settings/shareState';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   export let onSettingsChange: (() => void) | null = null;
 
@@ -51,13 +55,16 @@
   // Shared prompts
   let sharedPrompts: SummaryPrompt[] = [];
 
-  // Delete confirmation modal
-  let showDeleteModal = false;
-  let promptToDelete: SummaryPrompt | null = null;
-
-  // Unsaved changes confirmation modal
-  let showUnsavedChangesModal = false;
-  let pendingCloseAction: (() => void) | null = null;
+  // Delete and unsaved-changes confirmations
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    cancelText: confirmCancelLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   // Form dirty state tracking
   let originalFormData: PromptFormData = blankPromptForm();
@@ -177,9 +184,16 @@
 
   function closeForm(force: boolean = false) {
     if (!force && isDirty) {
-      // Show professional confirmation modal instead of browser alert
-      pendingCloseAction = () => executeCloseForm();
-      showUnsavedChangesModal = true;
+      confirmDialog.request(
+        $t('prompts.unsavedChanges'),
+        $t('prompts.unsavedChangesMessage'),
+        executeCloseForm,
+        {
+          confirmText: $t('prompts.discardChanges'),
+          cancelText: $t('prompts.keepEditing'),
+          variant: 'warning',
+        }
+      );
       return;
     }
 
@@ -191,19 +205,6 @@
     editingPrompt = null;
     formData = blankPromptForm();
     originalFormData = cloneForm(formData);
-  }
-
-  function handleUnsavedChangesConfirm() {
-    if (pendingCloseAction) {
-      pendingCloseAction();
-      pendingCloseAction = null;
-    }
-    showUnsavedChangesModal = false;
-  }
-
-  function handleUnsavedChangesCancel() {
-    pendingCloseAction = null;
-    showUnsavedChangesModal = false;
   }
 
   async function savePrompt() {
@@ -255,14 +256,19 @@
       return;
     }
 
-    promptToDelete = prompt;
-    showDeleteModal = true;
+    confirmDialog.request(
+      $t('prompts.deleteConfirmTitle'),
+      $t('prompts.deleteConfirmMessage', { name: prompt.name }),
+      () => deletePrompt(prompt),
+      {
+        confirmText: $t('prompts.delete'),
+        cancelText: $t('prompts.cancel'),
+        variant: 'danger',
+      }
+    );
   }
 
-  async function deletePrompt() {
-    if (!promptToDelete) return;
-    const prompt = promptToDelete;
-
+  async function deletePrompt(prompt: SummaryPrompt) {
     saving = true;
 
     try {
@@ -312,8 +318,6 @@
       toastStore.error(getErrorMessage(err, $t('prompts.deleteFailed')));
     } finally {
       saving = false;
-      promptToDelete = null;
-      showDeleteModal = false;
     }
   }
 
@@ -400,7 +404,7 @@
       </div>
     {:else}
       <button
-        class="activate-button"
+        class="btn btn-success activate-button"
         on:click={() => setActivePrompt(prompt.uuid)}
         disabled={saving}
         title={$t('prompts.makeActive')}
@@ -413,7 +417,7 @@
 
 {#snippet viewButton(prompt: SummaryPrompt)}
     <button
-      class="view-button"
+      class="btn btn-secondary view-button"
       on:click={() => viewPrompt(prompt)}
       title={$t('prompts.viewPrompt')}
     >
@@ -498,7 +502,7 @@
           {$t('prompts.customPrompts')}
         </h4>
         {#if userPrompts.length > 0 || sharedPrompts.length > 0}
-          <button class="create-config-button" on:click={openCreateForm} title={$t('prompts.createNew')}>
+          <button class="btn btn-primary create-config-button" on:click={openCreateForm} title={$t('prompts.createNew')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
@@ -537,12 +541,10 @@
                   </div>
                 {/if}
                 <div class="share-toggle-row">
-                  <label class="toggle-label">
-                    <input type="checkbox" class="toggle-input" checked={prompt.is_shared}
-                      on:change={() => handleShareToggle(prompt)} disabled={saving} />
-                    <span class="toggle-switch"></span>
-                    <span class="toggle-text">{$t('prompts.shareGlobally')}</span>
-                  </label>
+                  <div class="toggle-label">
+                    <Toggle id="share-prompt-{prompt.uuid}" checked={!!prompt.is_shared} onchange={() => handleShareToggle(prompt)} disabled={saving} />
+                    <label class="toggle-text" for="share-prompt-{prompt.uuid}">{$t('prompts.shareGlobally')}</label>
+                  </div>
                 </div>
               </div>
               <div class="prompt-actions">
@@ -550,7 +552,7 @@
 
                 {@render viewButton(prompt)}
                 <button
-                  class="edit-button"
+                  class="btn btn-secondary edit-button"
                   on:click={() => openEditForm(prompt)}
                   disabled={saving}
                   title={$t('prompts.editPrompt')}
@@ -561,7 +563,7 @@
                   </svg>
                 </button>
                 <button
-                  class="delete-config-button"
+                  class="btn btn-danger-outline delete-config-button"
                   on:click={() => confirmDeletePrompt(prompt)}
                   disabled={saving}
                   title={`Delete prompt: ${prompt.name}`}
@@ -578,26 +580,22 @@
           {/each}
         </div>
       {:else}
-        <div class="empty-state">
-          <div class="empty-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14,2 14,8 20,8"/>
-              <line x1="16" y1="13" x2="8" y2="13"/>
-              <line x1="16" y1="17" x2="8" y2="17"/>
-              <polyline points="10,9 9,9 8,9"/>
-            </svg>
-          </div>
-          <h4>{$t('prompts.noCustomPrompts')}</h4>
-          <p>{$t('prompts.noCustomPromptsDesc')}</p>
-          <button class="create-first-config-btn" on:click={openCreateForm}>
+        <EmptyState bordered titleSize="xl" padding="var(--space-12) var(--space-8)" title={$t('prompts.noCustomPrompts')} description={$t('prompts.noCustomPromptsDesc')}>
+          <svg slot="icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14,2 14,8 20,8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10,9 9,9 8,9"/>
+          </svg>
+          <button class="btn btn-primary" on:click={openCreateForm}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
             {$t('prompts.createFirstPrompt')}
           </button>
-        </div>
+        </EmptyState>
       {/if}
     </div>
 
@@ -648,7 +646,7 @@
                 {@render activateControl(prompt)}
 
                 <button
-                  class="clone-button"
+                  class="btn btn-secondary clone-button"
                   on:click={() => handleClone(prompt)}
                   disabled={saving}
                   title={$t('prompts.clone')}
@@ -682,8 +680,7 @@
       {/if}
     </svelte:fragment>
     <form id="prompt-form" on:submit|preventDefault={savePrompt} class="prompt-form">
-      <div class="form-group">
-        <label for="name">{$t('prompts.promptName')}</label>
+      <FormField id="name" label={$t('prompts.promptName')}>
         <input
           type="text"
           id="name"
@@ -693,10 +690,9 @@
           placeholder={$t('prompts.promptNamePlaceholder')}
           required
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="content_type">{$t('prompts.contentType')}</label>
+      <FormField id="content_type" label={$t('prompts.contentType')}>
         <select
           id="content_type"
           bind:value={formData.content_type}
@@ -707,10 +703,9 @@
             <option value={type.value}>{type.label}</option>
           {/each}
         </select>
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="description">{$t('prompts.descriptionLabel')}</label>
+      <FormField id="description" label={$t('prompts.descriptionLabel')}>
         <input
           type="text"
           id="description"
@@ -719,32 +714,29 @@
           class="form-control"
           placeholder={$t('prompts.descriptionPlaceholder')}
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="tags">{$t('prompts.tags')}</label>
-        <TagInput id="tags" bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
-        <small class="form-text">{$t('prompts.tagsHelp')}</small>
-      </div>
+      <FormField id="tags" label={$t('prompts.tags')} hint={$t('prompts.tagsHelp')} let:describedby>
+        <TagInput id="tags" {describedby} bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
+      </FormField>
 
       <!-- Share with all users -->
       <div class="share-toggle-row">
-        <label class="toggle-label">
-          <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
-          <span class="toggle-switch"></span>
-          <span class="toggle-text">{$t('prompts.shareGlobally')}</span>
-        </label>
+        <div class="toggle-label">
+          <Toggle id="promptsettings-toggle-1" checked={formData.is_shared} onchange={(v) => (formData.is_shared = v)} disabled={saving} />
+          <label class="toggle-text" for="promptsettings-toggle-1">{$t('prompts.shareGlobally')}</label>
+        </div>
       </div>
 
-      <div class="form-group">
-        <div class="textarea-header">
-          <label for="prompt_text">{$t('prompts.promptText')}</label>
+      <FormField id="prompt_text" label={$t('prompts.promptText')} labelSize="sm" hint={$t('prompts.promptTextHelp')} let:describedby>
+        <svelte:fragment slot="label-after">
           {#if formData.prompt_text.trim()}
             <PromptCopyButton text={formData.prompt_text} />
           {/if}
-        </div>
+        </svelte:fragment>
         <textarea
           id="prompt_text"
+          aria-describedby={describedby}
           bind:value={formData.prompt_text}
           disabled={saving}
           class="form-control textarea"
@@ -752,9 +744,6 @@
           placeholder={$t('prompts.promptTextPlaceholder')}
           required
         ></textarea>
-        <small class="form-text">
-          {$t('prompts.promptTextHelp')}
-        </small>
         <div class="llm-hint">
           <strong>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tip-icon">
@@ -771,15 +760,15 @@
             {$t('prompts.llmTip')}
           </strong> {$t('prompts.llmTipText')}
         </div>
-      </div>
+      </FormField>
     </form>
     <svelte:fragment slot="footer">
-      <button type="button" class="modal-button modal-cancel-button"
+      <button type="button" class="btn btn-secondary btn-lg"
               on:click={() => closeForm()} disabled={saving}>
         {$t('prompts.cancel')}
       </button>
       <button type="submit" form="prompt-form"
-              class="modal-button modal-primary-button"
+              class="btn btn-primary btn-lg"
               disabled={saving || !isFormValid}>
         {#if saving}<Spinner size="small" color="white" />{/if}
         {editingPrompt ? $t('prompts.updatePrompt') : $t('prompts.createPromptBtn')}
@@ -828,32 +817,17 @@
     {/if}
   </BaseModal>
 
-  <!-- Delete Confirmation Modal -->
+  <!-- Delete and unsaved-changes confirmations -->
   <ConfirmationModal
-    bind:isOpen={showDeleteModal}
-    title={$t('prompts.deleteConfirmTitle')}
-    message={promptToDelete ? $t('prompts.deleteConfirmMessage', { name: promptToDelete.name }) : ''}
-    confirmText={$t('prompts.delete')}
-    cancelText={$t('prompts.cancel')}
-    confirmButtonClass="modal-delete-button"
-    cancelButtonClass="modal-cancel-button"
-    on:confirm={deletePrompt}
-    on:cancel={() => { promptToDelete = null; showDeleteModal = false; }}
-    on:close={() => { promptToDelete = null; showDeleteModal = false; }}
-  />
-
-  <!-- Unsaved Changes Confirmation Modal -->
-  <ConfirmationModal
-    bind:isOpen={showUnsavedChangesModal}
-    title={$t('prompts.unsavedChanges')}
-    message={$t('prompts.unsavedChangesMessage')}
-    confirmText={$t('prompts.discardChanges')}
-    cancelText={$t('prompts.keepEditing')}
-    confirmButtonClass="modal-warning-button"
-    cancelButtonClass="modal-primary-button"
-    on:confirm={handleUnsavedChangesConfirm}
-    on:cancel={handleUnsavedChangesCancel}
-    on:close={handleUnsavedChangesCancel}
+    bind:isOpen={$confirmOpen}
+    title={$confirmTitle}
+    message={$confirmMessage}
+    confirmText={$confirmLabel}
+    cancelText={$confirmCancelLabel}
+    variant={$confirmVariant}
+    on:confirm={confirmDialog.confirm}
+    on:cancel={confirmDialog.cancel}
+    on:close={confirmDialog.cancel}
   />
 </div>
 
@@ -880,31 +854,6 @@
 
 
   /* New button styles to match LLM provider page */
-  .create-config-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .create-config-button:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .create-config-button:active {
-    transform: scale(1);
-  }
 
   .config-status {
     display: inline-flex;
@@ -927,75 +876,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  .activate-button, .view-button, .edit-button, .delete-config-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: 1px solid;
-    height: 32px;
-    box-sizing: border-box;
-  }
-
-  .activate-button {
-    background-color: var(--success-color);
-    border-color: var(--success-color);
-    color: var(--text-on-solid);
-    padding: var(--space-2) var(--space-2);
-  }
-
-  .activate-button:hover:not(:disabled) {
-    background-color: #059669;
-    border-color: #059669;
-  }
-
-  .view-button {
-    background-color: transparent;
-    border-color: var(--primary-color);
-    color: var(--primary-on-surface);
-  }
-
-  .view-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .edit-button {
-    background-color: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .edit-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .delete-config-button {
-    background-color: transparent;
-    border-color: var(--error-color);
-    color: var(--error-color);
-  }
-
-  .delete-config-button:hover:not(:disabled) {
-    background-color: var(--error-color);
-    border-color: var(--error-color);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .delete-config-button:active:not(:disabled) {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .saved-configs-section {
@@ -1165,66 +1045,6 @@
     color: #60a5fa;
   }
 
-  .empty-state {
-    text-align: center;
-    padding: var(--space-12) var(--space-8);
-    border: 2px dashed var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--card-bg);
-  }
-
-  .empty-icon {
-    margin-bottom: var(--space-4);
-    color: var(--text-muted);
-    opacity: 0.6;
-  }
-
-  .empty-state h4 {
-    margin: 0 0 var(--space-2);
-    color: var(--text-color);
-    font-size: 1.125rem;
-    font-weight: var(--font-weight-medium);
-  }
-
-  .empty-state p {
-    margin: 0 0 var(--space-6);
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-    line-height: 1.5;
-  }
-
-  .create-first-config-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .create-first-config-btn:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .create-first-config-btn:active {
-    transform: scale(1);
-  }
-
-  .textarea-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
 
   .prompt-text-header {
     display: flex;
@@ -1240,11 +1060,6 @@
     gap: var(--space-5);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
 
   label {
     font-weight: var(--font-weight-medium);
@@ -1269,10 +1084,6 @@
     cursor: not-allowed;
   }
 
-  .form-text {
-    font-size: 0.8rem;
-    color: var(--text-light);
-  }
 
   @media (max-width: 768px) {
     .section-header {
@@ -1289,11 +1100,6 @@
       min-height: 44px;
     }
 
-    .create-config-button {
-      width: 100%;
-      justify-content: center;
-      min-height: 44px;
-    }
   }
 
   /* LLM Hint Styling */
@@ -1461,43 +1267,6 @@
     gap: var(--space-2);
     cursor: pointer;
     font-weight: var(--font-weight-regular);
-  }
-
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
   }
 
   .toggle-text {

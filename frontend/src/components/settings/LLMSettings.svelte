@@ -1,10 +1,12 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults } from '$lib/api/llmSettings';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import LLMConfigModal from './LLMConfigModal.svelte';
   import { toastStore } from '$stores/toast';
   import { llmStatusStore } from '$stores/llmStatus';
@@ -20,6 +22,7 @@
   import { withShareState } from '$lib/settings/shareState';
   import { UserSettingsApi } from '$lib/api/userSettings';
   import { AdminSettingsApi } from '$lib/api/adminSettings';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin: boolean = false;
@@ -43,10 +46,16 @@
   // Modal state
   let showConfigModal = false;
 
-  // Confirmation modals
-  let showDeleteConfigModal = false;
-  let configToDelete: UserLLMSettings | null = null;
-  let showDeleteAllModal = false;
+  // Confirmation dialog
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    cancelText: confirmCancelLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   // Auto-summary toggle state
   let autoSummaryEnabled = true;
@@ -268,14 +277,15 @@
   }
 
   function confirmDeleteConfiguration(config: UserLLMSettings) {
-    configToDelete = config;
-    showDeleteConfigModal = true;
+    confirmDialog.request(
+      $t('settings.llmProvider.deleteConfigConfirmTitle'),
+      $t('settings.llmProvider.deleteConfigConfirmMessage', { name: config.name }),
+      () => deleteConfiguration(config),
+      { confirmText: $t('common.delete'), variant: 'danger' }
+    );
   }
 
-  async function deleteConfiguration() {
-    if (!configToDelete) return;
-    const config = configToDelete;
-
+  async function deleteConfiguration(config: UserLLMSettings) {
     saving = true;
 
     try {
@@ -295,9 +305,6 @@
 
       toastStore.success($t('settings.llmProvider.configDeleted', { name: config.name }), 5000);
 
-      configToDelete = null;
-      showDeleteConfigModal = false;
-
       // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
@@ -311,7 +318,12 @@
   }
 
   function confirmDeleteAll() {
-    showDeleteAllModal = true;
+    confirmDialog.request(
+      $t('settings.llmProvider.deleteAllConfirmTitle'),
+      $t('settings.llmProvider.deleteAllConfirmMessage'),
+      deleteAllSettings,
+      { confirmText: $t('settings.llmProvider.deleteAll'), variant: 'danger' }
+    );
   }
 
   async function deleteAllSettings() {
@@ -335,8 +347,6 @@
       void llmStatusStore.invalidate();
 
       toastStore.success($t('settings.llmProvider.allDeleted'), 5000);
-
-      showDeleteAllModal = false;
 
       // Trigger parent component update
       if (onSettingsChange) {
@@ -410,7 +420,7 @@
 
   let _llmModalWasOpen = false;
   $: {
-    const _anyOpen = showConfigModal || showDeleteConfigModal || showDeleteAllModal;
+    const _anyOpen = showConfigModal;
     if (_anyOpen !== _llmModalWasOpen) {
       if (_anyOpen) lockScroll();
       else unlockScroll();
@@ -454,7 +464,7 @@
           {$t('settings.llmProvider.savedConfigs')}
         </h4>
         {#if savedConfigurations.length > 0 || sharedConfigurations.length > 0}
-          <button class="create-config-button" on:click={openCreateModal} title={$t('settings.llmProvider.createConfigTooltip')}>
+          <button class="btn btn-primary create-config-button" on:click={openCreateModal} title={$t('settings.llmProvider.createConfigTooltip')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
@@ -480,12 +490,10 @@
                   <div class="config-url">{config.base_url}</div>
                 {/if}
                 <div class="share-toggle-row">
-                  <label class="toggle-label">
-                    <input type="checkbox" class="toggle-input" checked={config.is_shared}
-                      on:change={() => handleShareToggle(config)} disabled={saving} />
-                    <span class="toggle-switch"></span>
-                    <span class="toggle-text">{$t('settings.llmProvider.shareGlobally')}</span>
-                  </label>
+                  <div class="toggle-label">
+                    <Toggle id="share-config-{config.uuid}" checked={!!config.is_shared} onchange={() => handleShareToggle(config)} disabled={saving} />
+                    <label class="toggle-text" for="share-config-{config.uuid}">{$t('settings.llmProvider.shareGlobally')}</label>
+                  </div>
                 </div>
               </div>
 
@@ -501,7 +509,7 @@
                   </div>
                 {:else}
                   <button
-                    class="activate-button"
+                    class="btn btn-success activate-button"
                     on:click={() => activateConfiguration(config.uuid)}
                     disabled={saving}
                     title={$t('settings.llmProvider.activateTooltip')}
@@ -512,7 +520,7 @@
                 {/if}
 
                 <button
-                  class="test-connection-button"
+                  class="btn btn-secondary test-connection-button"
                   on:click={() => testSavedConfiguration(config)}
                   disabled={testing}
                   title={$t('settings.llmProvider.testConnection') + ' ' + config.name}
@@ -525,7 +533,7 @@
                 </button>
 
                 <button
-                  class="test-connection-button"
+                  class="btn btn-secondary test-connection-button"
                   on:click={() => probeReasoning(config)}
                   disabled={probingReasoning !== null}
                   title={$t('settings.llmProvider.probeReasoning')}
@@ -539,7 +547,7 @@
                 </button>
 
                 <button
-                  class="test-connection-button"
+                  class="btn btn-secondary test-connection-button"
                   on:click={() => probeContextWindow(config)}
                   disabled={probingWindow !== null}
                   title={$t('settings.llmProvider.probeContextWindow')}
@@ -554,7 +562,7 @@
                 </button>
 
                 <button
-                  class="edit-button"
+                  class="btn btn-secondary edit-button"
                   on:click={() => editConfiguration(config)}
                   disabled={saving}
                   title={$t('settings.llmProvider.editConfig')}
@@ -566,7 +574,7 @@
                 </button>
 
                 <button
-                  class="delete-config-button"
+                  class="btn btn-danger-outline delete-config-button"
                   on:click={() => confirmDeleteConfiguration(config)}
                   disabled={saving}
                   title={$t('settings.llmProvider.deleteConfig') + ' ' + config.name}
@@ -586,7 +594,7 @@
         <!-- Delete All Button -->
         <div class="delete-all-section">
           <button
-            class="delete-all-button"
+            class="btn btn-danger delete-all-button"
             on:click={confirmDeleteAll}
             disabled={saving}
             title={$t('settings.llmProvider.deleteAllTooltip')}
@@ -641,7 +649,7 @@
                   </div>
                 {:else}
                   <button
-                    class="activate-button"
+                    class="btn btn-success activate-button"
                     on:click={() => activateConfiguration(config.uuid)}
                     disabled={saving}
                     title={$t('settings.llmProvider.activateTooltip')}
@@ -651,7 +659,7 @@
                   </button>
                 {/if}
                 <button
-                  class="test-connection-button"
+                  class="btn btn-secondary test-connection-button"
                   on:click={() => testSavedConfiguration(config)}
                   disabled={testing}
                   title={$t('settings.llmProvider.testConnection') + ' ' + config.name}
@@ -669,22 +677,18 @@
       {/if}
 
       {#if savedConfigurations.length === 0 && sharedConfigurations.length === 0}
-        <div class="empty-state">
-          <div class="empty-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14.828 14.828a4 4 0 0 1-5.656 0M9 10h.01M15 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 0 1-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-            </svg>
-          </div>
-          <h4>{$t('settings.llmProvider.noConfigs')}</h4>
-          <p>{$t('settings.llmProvider.noConfigsDesc')}</p>
-          <button class="create-first-config-btn" on:click={openCreateModal}>
+        <EmptyState bordered titleSize="xl" padding="var(--space-12) clamp(var(--space-4), 5vw, var(--space-8))" title={$t('settings.llmProvider.noConfigs')} description={$t('settings.llmProvider.noConfigsDesc')}>
+          <svg slot="icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.828 14.828a4 4 0 0 1-5.656 0M9 10h.01M15 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 0 1-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+          </svg>
+          <button class="btn btn-primary create-first-config-btn" on:click={openCreateModal}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
             {$t('settings.llmProvider.createFirstConfig')}
           </button>
-        </div>
+        </EmptyState>
       {/if}
     </div>
 
@@ -705,16 +709,12 @@
 
         <div class="summary-toggle-row">
           <div class="toggle-info">
-            <span class="toggle-title">{$t('settings.llm.autoSummary')}</span>
+            <span class="toggle-title" id="auto-summary-title">{$t('settings.llm.autoSummary')}</span>
             <span class="toggle-desc">{$t('settings.llm.autoSummaryDesc')}</span>
           </div>
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input"
-              bind:checked={autoSummaryEnabled}
-              on:change={saveAutoSummary}
-              disabled={autoSummaryLoading || (!systemSummaryEnabled && !isAdmin)} />
-            <span class="toggle-switch"></span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="auto-summary-toggle" labelledby="auto-summary-title" checked={autoSummaryEnabled} onchange={(v) => { autoSummaryEnabled = v; saveAutoSummary(); }} disabled={autoSummaryLoading || (!systemSummaryEnabled && !isAdmin)} />
+          </div>
         </div>
 
         {#if !autoSummaryEnabled}
@@ -732,19 +732,15 @@
         {#if isAdmin}
           <div class="summary-toggle-row admin-toggle">
             <div class="toggle-info">
-              <span class="toggle-title">
+              <span class="toggle-title" id="system-summary-title">
                 {$t('settings.llm.systemSummary')}
                 <span class="admin-badge">{$t('settings.sharing.adminBadge')}</span>
               </span>
               <span class="toggle-desc">{$t('settings.llm.systemSummaryDesc')}</span>
             </div>
-            <label class="toggle-label">
-              <input type="checkbox" class="toggle-input"
-                bind:checked={systemSummaryEnabled}
-                on:change={saveSystemSummary}
-                disabled={systemSummaryLoading} />
-              <span class="toggle-switch"></span>
-            </label>
+            <div class="toggle-label">
+              <Toggle id="system-summary-toggle" labelledby="system-summary-title" checked={systemSummaryEnabled} onchange={(v) => { systemSummaryEnabled = v; saveSystemSummary(); }} disabled={systemSummaryLoading} />
+            </div>
           </div>
 
           {#if !systemSummaryEnabled}
@@ -770,31 +766,17 @@
   }}
 />
 
-<!-- Confirmation Modals -->
+<!-- Confirmation dialog -->
 <ConfirmationModal
-  bind:isOpen={showDeleteConfigModal}
-  title={$t('settings.llmProvider.deleteConfigConfirmTitle')}
-  message={configToDelete ? $t('settings.llmProvider.deleteConfigConfirmMessage', { name: configToDelete.name }) : ''}
-  confirmText={$t('common.delete')}
-  cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
-  on:confirm={deleteConfiguration}
-  on:cancel={() => { configToDelete = null; showDeleteConfigModal = false; }}
-  on:close={() => { configToDelete = null; showDeleteConfigModal = false; }}
-/>
-
-<ConfirmationModal
-  bind:isOpen={showDeleteAllModal}
-  title={$t('settings.llmProvider.deleteAllConfirmTitle')}
-  message={$t('settings.llmProvider.deleteAllConfirmMessage')}
-  confirmText={$t('settings.llmProvider.deleteAll')}
-  cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
-  on:confirm={deleteAllSettings}
-  on:cancel={() => showDeleteAllModal = false}
-  on:close={() => showDeleteAllModal = false}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  cancelText={$confirmCancelLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>
@@ -825,32 +807,6 @@
     font-size: 1.125rem;
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
-  }
-
-  .create-config-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .create-config-button:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .create-config-button:active {
-    transform: scale(1);
   }
 
   .config-list {
@@ -935,166 +891,11 @@
     justify-content: center;
   }
 
-  .activate-button, .edit-button, .delete-config-button, .test-connection-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: 1px solid;
-    height: 32px;
-    box-sizing: border-box;
-  }
-
-  .activate-button {
-    background-color: var(--success-color);
-    border-color: var(--success-color);
-    color: var(--text-on-solid);
-    padding: var(--space-2) var(--space-2);
-  }
-
-  .activate-button:hover:not(:disabled) {
-    background-color: #059669;
-    border-color: #059669;
-  }
-
-  .test-connection-button {
-    background-color: transparent;
-    border-color: var(--primary-color);
-    color: var(--primary-on-surface);
-  }
-
-  .test-connection-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .edit-button {
-    background-color: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .edit-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .delete-config-button {
-    background-color: transparent;
-    border-color: var(--error-color);
-    color: var(--error-color);
-  }
-
-  .delete-config-button:hover:not(:disabled) {
-    background-color: var(--error-color);
-    border-color: var(--error-color);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .delete-config-button:active:not(:disabled) {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
   .delete-all-section {
     margin-top: var(--space-8);
     padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
     text-align: center;
-  }
-
-  .delete-all-button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: #ef4444;
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .delete-all-button:hover:not(:disabled) {
-    background: var(--error-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .delete-all-button:active:not(:disabled) {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .delete-all-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: var(--space-12) var(--space-8);
-    border: 2px dashed var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--card-background);
-  }
-
-  .empty-icon {
-    margin-bottom: var(--space-4);
-    color: var(--text-muted);
-    opacity: 0.6;
-  }
-
-  .empty-state h4 {
-    margin: 0 0 var(--space-2);
-    color: var(--text-color);
-    font-size: 1.125rem;
-    font-weight: var(--font-weight-medium);
-  }
-
-  .empty-state p {
-    margin: 0 0 var(--space-6);
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-    line-height: 1.5;
-  }
-
-  .create-first-config-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .create-first-config-btn:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .create-first-config-btn:active {
-    transform: scale(1);
   }
 
   button:disabled {
@@ -1175,40 +976,6 @@
     cursor: pointer;
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-  }
-
-  .toggle-input {
-    display: none;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 28px;
-    height: 16px;
-    background: var(--border-color);
-    border-radius: var(--radius-lg);
-    transition: background var(--duration-base);
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(12px);
   }
 
   .toggle-text {
@@ -1341,10 +1108,6 @@
       width: 100%;
       justify-content: center;
       min-height: 44px;
-    }
-
-    .empty-state {
-      padding: var(--space-8) var(--space-4);
     }
 
   }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import { onMount, onDestroy } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -16,6 +17,7 @@
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import Badge from '$components/ui/Badge.svelte';
 
   // ---- Types ---------------------------------------------------------------
 
@@ -288,16 +290,10 @@
   {:else}
     <!-- Enable toggle -->
     <div class="field-row">
-      <label class="toggle-label">
-        <input
-          type="checkbox"
-          class="toggle-input"
-          bind:checked={retentionEnabled}
-          on:change={handleEnableToggle}
-        />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.retention.enableLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle id="retentionsettings-toggle-1" checked={retentionEnabled} onchange={(v) => { retentionEnabled = v; handleEnableToggle(); }} />
+        <label class="toggle-text" for="retentionsettings-toggle-1">{$t('settings.retention.enableLabel')}</label>
+      </div>
     </div>
 
     <!-- Opt-in confirmation block -->
@@ -365,11 +361,10 @@
       </div>
 
       <div class="field-group toggle-field">
-        <label class="toggle-label">
-          <input type="checkbox" class="toggle-input" bind:checked={deleteErrorFiles} disabled={!retentionEnabled} />
-          <span class="toggle-switch"></span>
-          <span class="toggle-text">{$t('settings.retention.deleteErrorFiles')}</span>
-        </label>
+        <div class="toggle-label">
+          <Toggle id="retentionsettings-toggle-2" checked={deleteErrorFiles} onchange={(v) => (deleteErrorFiles = v)} disabled={!retentionEnabled} />
+          <label class="toggle-text" for="retentionsettings-toggle-2">{$t('settings.retention.deleteErrorFiles')}</label>
+        </div>
       </div>
     </div>
 
@@ -379,7 +374,7 @@
         <span class="status-label">{$t('settings.retention.lastRunSection')}:</span>
         <span class="status-value">{formatDateTime(lastRun, $t('settings.retention.lastRunNever'), $locale)}</span>
         {#if lastRun && lastRunDeleted !== null}
-          <span class="status-badge">{$t('settings.retention.lastRunLabel', { datetime: formatDateTime(lastRun, $t('settings.retention.lastRunNever'), $locale), count: lastRunDeleted })}</span>
+          <Badge variant="info" size="md" class="status-badge">{$t('settings.retention.lastRunLabel', { datetime: formatDateTime(lastRun, $t('settings.retention.lastRunNever'), $locale), count: lastRunDeleted })}</Badge>
         {/if}
       </div>
       <div class="status-item">
@@ -410,7 +405,7 @@
       {#if !runNowPending}
         <button
           type="button"
-          class="btn btn-secondary btn-danger-outline"
+          class="btn btn-danger"
           on:click={() => { runNowPending = true; }}
           disabled={runNowLoading}
         >
@@ -433,7 +428,7 @@
       {/if}
 
       {#if runNowTaskId}
-        <button type="button" class="btn btn-link" on:click={refreshStatus} disabled={statusLoading}>
+        <button type="button" class="btn btn-secondary" on:click={refreshStatus} disabled={statusLoading}>
           {statusLoading ? $t('settings.retention.refreshingStatus') : $t('settings.retention.refreshStatus')}
         </button>
       {/if}
@@ -578,49 +573,6 @@
     user-select: none;
   }
 
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
-  }
-
-  .toggle-input:disabled + .toggle-switch {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .toggle-text {
     font-size: var(--font-size-md);
     color: var(--text-color);
@@ -743,15 +695,6 @@
     color: var(--text-color);
   }
 
-  .status-badge {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border-radius: var(--radius-xl);
-    padding: 0 var(--space-2);
-    font-size: 0.72rem;
-    line-height: 1.6;
-  }
-
   /* Actions */
   .action-row {
     display: flex;
@@ -838,45 +781,6 @@
 
   .button-row .btn-secondary {
     margin-right: auto;
-  }
-
-  .btn-danger-outline {
-    background-color: #ef4444;
-    color: var(--text-on-solid);
-    border: none;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-danger-outline:hover:not(:disabled) {
-    background-color: var(--error-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .btn-danger-outline:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-link {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: var(--space-1-5) var(--space-2-5);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-link:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-hover);
-  }
-
-  .btn-link:active:not(:disabled) {
-    transform: scale(1);
   }
 
   @media (max-width: 768px) {

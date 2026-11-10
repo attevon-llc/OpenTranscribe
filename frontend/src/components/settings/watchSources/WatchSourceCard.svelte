@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   /**
    * One watch source in the settings list: badges, stats line, action row.
    *
@@ -109,35 +110,34 @@
     {/if}
   </div>
   <div class="source-actions">
-    <label class="enable-toggle" title={$t('settings.watchSources.fields.enabled')}>
-      <input
-        type="checkbox"
+    <span title={$t('settings.watchSources.fields.enabled')}>
+      <Toggle
         checked={source.is_enabled}
-        on:change={() => dispatch('toggle', source)}
+        onchange={() => dispatch('toggle', source)}
         disabled={saving}
+        label={$t('settings.watchSources.fields.enabled')}
       />
-      <span class="slider"></span>
-    </label>
-    <button class="btn btn-secondary btn-sm" on:click={() => dispatch('test', source)} disabled={testing}>
+    </span>
+    <button class="btn btn-secondary" on:click={() => dispatch('test', source)} disabled={testing}>
       {#if testing}<Spinner size="small" />{:else}{$t('settings.watchSources.test')}{/if}
     </button>
     <button
-      class="btn btn-secondary btn-sm"
+      class="btn btn-secondary"
       on:click={() => dispatch('scan', source)}
       disabled={!source.is_enabled}
     >
       {$t('settings.watchSources.scanNow')}
     </button>
-    <button class="btn btn-secondary btn-sm" on:click={() => dispatch('files', source)}>
+    <button class="btn btn-secondary" on:click={() => dispatch('files', source)}>
       {$t('settings.watchSources.files.button')}
     </button>
-    <button class="btn btn-secondary btn-sm" on:click={() => dispatch('notifications', source)}>
+    <button class="btn btn-secondary" on:click={() => dispatch('notifications', source)}>
       {$t('settings.emailNotifications.links.button')}
     </button>
-    <button class="btn btn-secondary btn-sm" on:click={() => dispatch('edit', source)}>
+    <button class="btn btn-secondary" on:click={() => dispatch('edit', source)}>
       {$t('common.edit')}
     </button>
-    <button class="btn btn-danger btn-sm" on:click={() => dispatch('delete', source)}>
+    <button class="btn btn-danger" on:click={() => dispatch('delete', source)}>
       {$t('common.delete')}
     </button>
   </div>
@@ -211,45 +211,5 @@
     align-items: center;
     gap: var(--space-1-5);
     flex-wrap: wrap;
-  }
-  .btn-sm {
-    padding: var(--space-1) var(--space-2-5);
-    font-size: 0.8rem;
-  }
-  .enable-toggle {
-    position: relative;
-    display: inline-block;
-    width: 36px;
-    height: 20px;
-  }
-  .enable-toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-  .slider {
-    position: absolute;
-    cursor: pointer;
-    inset: 0;
-    background: var(--border-color);
-    border-radius: 20px;
-    transition: var(--duration-base);
-  }
-  .slider::before {
-    content: '';
-    position: absolute;
-    height: 14px;
-    width: 14px;
-    left: 3px;
-    bottom: 3px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: var(--duration-base);
-  }
-  .enable-toggle input:checked + .slider {
-    background: var(--primary-color);
-  }
-  .enable-toggle input:checked + .slider::before {
-    transform: translateX(16px);
   }
 </style>

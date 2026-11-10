@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   /**
    * Which email configuration carries authentication mail (super_admin).
    *
@@ -108,8 +109,7 @@
 
   {#if !loading}
     <div class="auth-mail-row">
-      <div class="form-group">
-        <label for="auth-mail-config">{$t('settings.authentication.authMail.label')}</label>
+      <FormField id="auth-mail-config" label={$t('settings.authentication.authMail.label')} labelSize="md">
         <select id="auth-mail-config" class="form-select" bind:value={selected} disabled={saving}>
           <option value="">{$t('settings.authentication.authMail.none')}</option>
           {#each selectable as c (c.uuid)}
@@ -127,7 +127,7 @@
             </option>
           {/if}
         </select>
-      </div>
+      </FormField>
       <button class="btn btn-primary" on:click={save} disabled={saving || !dirty}>
         {saving ? $t('common.saving') : $t('common.save')}
       </button>
@@ -187,16 +187,6 @@
     display: flex;
     align-items: flex-end;
     gap: var(--space-3);
-  }
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    flex: 1;
-  }
-  .form-group label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
   }
   /* Both banners theme themselves from the shared tokens, so light and dark
      stay in parity without a second rule set. */

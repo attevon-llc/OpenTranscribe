@@ -1,10 +1,13 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher, onMount } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
+  import Badge from '$components/ui/Badge.svelte';
+  import Banner from '$components/ui/Banner.svelte';
   import {
     getMediaMirrorSettings,
     updateMediaMirrorSettings,
@@ -238,27 +241,26 @@
 
   {#if loading}
     <div class="loading-state">
-      <Spinner size="small" />
+      <Spinner label={$t('common.loading')} size="small" />
     </div>
   {:else}
     {#if enabled && !isS3 && !mountOk}
-      <div class="banner banner-warning">
+      <Banner tone="warning">
         {$t('settings.backup.mirror.mountMissing', { destination })}
-      </div>
+      </Banner>
     {/if}
     {#if enabled && isS3 && s3Status && !s3Status.reachable}
-      <div class="banner banner-warning">
+      <Banner tone="warning">
         {$t('settings.backup.mirror.s3Unreachable')}{s3Status.error ? `: ${s3Status.error}` : ''}
-      </div>
+      </Banner>
     {/if}
 
     <!-- Enable toggle -->
     <div class="field-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={enabled} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.backup.mirror.enableLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle id="mediamirrorsettings-toggle-1" checked={enabled} onchange={(v) => (enabled = v)} />
+        <label class="toggle-text" for="mediamirrorsettings-toggle-1">{$t('settings.backup.mirror.enableLabel')}</label>
+      </div>
     </div>
 
     <!-- Schedule + throttle -->
@@ -376,19 +378,19 @@
         <span class="status-label">{$t('settings.backup.mirror.lastRunSection')}:</span>
         <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.mirror.lastRunNever'), $locale)}</span>
         {#if running}
-          <span class="status-badge running">{$t('settings.backup.mirror.runningBadge')}</span>
+          <Badge variant="info" size="md" class="status-badge">{$t('settings.backup.mirror.runningBadge')}</Badge>
         {/if}
         {#if lastResult}
           {#if lastResult.ok}
-            <span class="status-badge ok">
+            <Badge variant="success" size="md" class="status-badge">
               {$t('settings.backup.mirror.lastRunOk', {
                 copied: lastResult.objects_copied ?? 0,
                 skipped: lastResult.objects_skipped ?? 0,
                 bytes: formatFileSize(lastResult.bytes_copied ?? 0),
               })}
-            </span>
+            </Badge>
           {:else}
-            <span class="status-badge bad" title={lastResult.error ?? ''}>{$t('settings.backup.mirror.lastRunFailed')}</span>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.error || null}>{$t('settings.backup.mirror.lastRunFailed')}</Badge>
           {/if}
         {/if}
       </div>
@@ -397,9 +399,9 @@
       {/if}
       {#if lastResult?.ok && (lastResult.objects_failed ?? 0) > 0}
         <div class="status-item">
-          <span class="status-badge bad">
+          <Badge variant="error" size="md" class="status-badge">
             {$t('settings.backup.mirror.failedObjects', { count: lastResult.objects_failed ?? 0 })}
-          </span>
+          </Badge>
         </div>
         {#each lastResult.errors ?? [] as errLine, i (i)}
           <div class="status-error">{errLine}</div>
@@ -428,7 +430,7 @@
           {$t('settings.backup.mirror.runNowButton')}
         </button>
       {/if}
-      <button type="button" class="btn btn-link" on:click={refreshStatus} disabled={statusLoading}>
+      <button type="button" class="btn btn-secondary" on:click={refreshStatus} disabled={statusLoading}>
         {statusLoading ? $t('settings.backup.mirror.refreshingStatus') : $t('settings.backup.mirror.refreshStatus')}
       </button>
     </div>
@@ -476,20 +478,6 @@
     display: flex;
     align-items: center;
     padding: var(--space-4);
-  }
-
-  .banner {
-    border-radius: var(--radius-md);
-    padding: 0.6rem var(--space-3);
-    margin-bottom: var(--space-3);
-    font-size: 0.82rem;
-    line-height: 1.4;
-  }
-
-  .banner-warning {
-    border: 1px solid var(--warning-color);
-    background-color: var(--warning-bg);
-    color: var(--warning-color);
   }
 
   .field-row {
@@ -552,44 +540,6 @@
     user-select: none;
   }
 
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
-  }
-
   .toggle-text {
     font-size: var(--font-size-md);
     color: var(--text-color);
@@ -633,26 +583,6 @@
     color: var(--text-color);
   }
 
-  .status-badge {
-    border-radius: var(--radius-xl);
-    padding: 0 var(--space-2);
-    font-size: 0.72rem;
-    line-height: 1.6;
-    color: var(--text-on-solid);
-  }
-
-  .status-badge.ok {
-    background-color: var(--success-color);
-  }
-
-  .status-badge.bad {
-    background-color: var(--error-color);
-  }
-
-  .status-badge.running {
-    background-color: var(--primary-color);
-  }
-
   .status-error {
     font-size: var(--font-size-xs);
     color: var(--error-color);
@@ -670,22 +600,6 @@
   .run-confirm-text {
     font-size: 0.8rem;
     color: var(--text-muted);
-  }
-
-  .btn-link {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: var(--space-1-5) var(--space-2-5);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-link:hover:not(:disabled) {
-    background-color: var(--button-hover);
   }
 
   .button-row {

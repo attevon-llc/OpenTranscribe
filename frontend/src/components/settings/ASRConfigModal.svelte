@@ -1,5 +1,7 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import { createEventDispatcher } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
@@ -280,8 +282,7 @@
     {/if}
   </svelte:fragment>
         <!-- Name -->
-        <div class="form-group">
-          <label for="asr-name">{$t('settings.asrProvider.fields.name')}</label>
+        <FormField id="asr-name" label={$t('settings.asrProvider.fields.name')}>
           <input
             id="asr-name"
             type="text"
@@ -289,11 +290,10 @@
             placeholder="e.g., Deepgram Production"
             class="form-input"
           />
-        </div>
+        </FormField>
 
         <!-- Provider -->
-        <div class="form-group">
-          <label for="asr-provider">{$t('settings.asrProvider.fields.provider')}</label>
+        <FormField id="asr-provider" label={$t('settings.asrProvider.fields.provider')}>
           <select
             id="asr-provider"
             bind:value={formData.provider}
@@ -318,7 +318,7 @@
           {#if editingConfig}
             <p class="field-hint">{$t('settings.asrProvider.providerLockedOnEdit')}</p>
           {/if}
-        </div>
+        </FormField>
 
         {#if selectedProvider}
           <!-- Provider capabilities -->
@@ -345,8 +345,7 @@
           {/if}
 
           <!-- Model -->
-          <div class="form-group">
-            <label for="asr-model">{$t('settings.asrProvider.fields.model')}</label>
+          <FormField id="asr-model" label={$t('settings.asrProvider.fields.model')}>
             {#if availableModels.length > 0}
               <select id="asr-model" bind:value={formData.model_name} on:change={onModelChange} class="form-select">
                 <option value="">{$t('settings.asrProvider.selectModel')}</option>
@@ -391,12 +390,11 @@
             {#if estimatedCostPerHour}
               <p class="cost-hint">{$t('settings.asrProvider.estimatedCost')}: <strong>{estimatedCostPerHour}</strong></p>
             {/if}
-          </div>
+          </FormField>
 
           <!-- Access Key ID (AWS) -->
           {#if selectedProvider.requires_access_key_id}
-            <div class="form-group">
-              <label for="asr-access-key-id">{$t('settings.asrProvider.fields.accessKeyId')}</label>
+            <FormField id="asr-access-key-id" label={$t('settings.asrProvider.fields.accessKeyId')}>
               <input dir="ltr"
                 id="asr-access-key-id"
                 type="text"
@@ -405,13 +403,12 @@
                 class="form-input"
                 autocomplete="off"
               />
-            </div>
+            </FormField>
           {/if}
 
           <!-- API Key / Secret Access Key -->
           {#if selectedProvider.requires_api_key}
-            <div class="form-group">
-              <label for="asr-apikey">{selectedProvider.requires_access_key_id ? $t('settings.asrProvider.fields.secretAccessKey') : $t('settings.asrProvider.fields.apiKey')}</label>
+            <FormField id="asr-apikey" label={selectedProvider.requires_access_key_id ? $t('settings.asrProvider.fields.secretAccessKey') : $t('settings.asrProvider.fields.apiKey')}>
               <div class="input-with-toggle">
                 <input dir="ltr"
                   id="asr-apikey"
@@ -425,26 +422,24 @@
                   {showApiKey ? 'Hide' : 'Show'}
                 </button>
               </div>
-            </div>
+            </FormField>
           {/if}
 
           <!-- Region (Azure / AWS) -->
           {#if needsRegion}
-            <div class="form-group">
-              <label for="asr-region">{$t('settings.asrProvider.fields.region')}</label>
+            <FormField id="asr-region" label={$t('settings.asrProvider.fields.region')}>
               <select id="asr-region" bind:value={formData.region} class="form-select">
                 <option value="">{$t('settings.asrProvider.selectRegion')}</option>
                 {#each regionOptions as r (r)}
                   <option value={r}>{r}</option>
                 {/each}
               </select>
-            </div>
+            </FormField>
           {/if}
 
           <!-- Base URL -->
           {#if selectedProvider.supports_base_url}
-            <div class="form-group">
-              <label for="asr-baseurl">{$t('settings.asrProvider.fields.baseUrl')}</label>
+            <FormField id="asr-baseurl" label={$t('settings.asrProvider.fields.baseUrl')}>
               <input dir="ltr"
                 id="asr-baseurl"
                 type="url"
@@ -452,7 +447,7 @@
                 placeholder="https://..."
                 class="form-input"
               />
-            </div>
+            </FormField>
           {/if}
         {/if}
 
@@ -473,17 +468,19 @@
 
         <!-- Share with all users -->
         <div class="share-toggle-row">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.asrProvider.shareGlobally')}</span>
-          </label>
+          <Toggle
+            checked={formData.is_shared}
+            onchange={(next) => (formData.is_shared = next)}
+            disabled={saving}
+            id="asr-share-globally-label"
+          />
+          <label class="toggle-text" for="asr-share-globally-label">{$t('settings.asrProvider.shareGlobally')}</label>
         </div>
 
   <svelte:fragment slot="footer">
     <div class="footer-row">
         <button
-          class="btn-test-conn"
+          class="btn btn-primary btn-test-conn"
           on:click={handleTest}
           disabled={testing || !formData.provider || !formData.model_name}
         >
@@ -494,8 +491,8 @@
           {/if}
         </button>
         <div class="footer-actions">
-          <button class="btn-cancel" on:click={handleClose}>{$t('common.cancel')}</button>
-          <button class="btn-save" on:click={handleSave} disabled={saving || !isFormValid}>
+          <button class="btn btn-secondary btn-cancel" on:click={handleClose}>{$t('common.cancel')}</button>
+          <button class="btn btn-primary btn-save" on:click={handleSave} disabled={saving || !isFormValid}>
             {saving ? 'Saving...' : (editingConfig ? 'Update' : 'Save')}
           </button>
         </div>
@@ -531,17 +528,7 @@
     flex-shrink: 0;
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
 
   .form-input, .form-select {
     padding: var(--space-2) var(--space-3);
@@ -666,52 +653,11 @@
     border-top: 1px dashed var(--border-color);
   }
 
-  .toggle-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-regular);
-    user-select: none;
-  }
-
-  .toggle-input {
-    display: none;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base);
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
-  }
-
   .toggle-text {
+    cursor: pointer;
     color: var(--text-color);
+    font-size: var(--font-size-sm);
+    user-select: none;
   }
 
   .footer-row {
@@ -727,69 +673,6 @@
     gap: var(--space-3);
   }
 
-  .btn-test-conn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3-5);
-    border: none;
-    color: var(--text-on-solid);
-    background: var(--primary-color);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-test-conn:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-test-conn:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-cancel {
-    padding: var(--space-2) var(--space-4);
-    border: 1px solid var(--border-color);
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    transition: all var(--duration-fast);
-    box-shadow: var(--shadow-md);
-  }
-
-  .btn-cancel:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    border-color: var(--border-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  }
-
-  .btn-cancel:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-save {
-    padding: var(--space-2) var(--space-5);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: background var(--duration-fast);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-save:hover:not(:disabled) { background: var(--primary-color); }
 
   button:disabled {
     opacity: 0.6;
@@ -815,8 +698,8 @@
       justify-content: center;
     }
 
-    .form-group input,
-    .form-group select {
+    :global(.form-field) input,
+    :global(.form-field) select {
       min-height: 44px;
       font-size: var(--font-size-base);
     }

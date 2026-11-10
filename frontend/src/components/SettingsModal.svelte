@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount, onDestroy, tick } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
@@ -721,11 +722,10 @@
         <p class="section-description">{$t('settings.recording.description')}</p>
 
         <form on:submit|preventDefault={saveRecordingSettings} class="settings-form">
-          <div class="form-group">
-            <label for="maxRecordingDuration">{$t('settings.recording.maxDuration')}</label>
+          <FormField id="maxRecordingDuration" label={$t('settings.recording.maxDuration')} hint={$t('settings.recording.durationRange')} let:describedby>
             <input
               type="number"
-              id="maxRecordingDuration"
+              id="maxRecordingDuration" aria-describedby={describedby}
               class="form-control"
               bind:value={maxRecordingDuration}
               on:input={handleRecordingSettingsChange}
@@ -733,13 +733,11 @@
               max="480"
               required
             />
-            <small class="form-text">{$t('settings.recording.durationRange')}</small>
-          </div>
+          </FormField>
 
-          <div class="form-group">
-            <label for="recordingQuality">{$t('settings.recording.quality')}</label>
+          <FormField id="recordingQuality" label={$t('settings.recording.quality')} hint={$t('settings.recording.qualityHelp')} let:describedby>
             <select
-              id="recordingQuality"
+              id="recordingQuality" aria-describedby={describedby}
               class="form-control"
               bind:value={recordingQuality}
               on:change={handleRecordingSettingsChange}
@@ -748,10 +746,9 @@
               <option value="high">{$t('settings.recording.qualityHigh')}</option>
               <option value="maximum">{$t('settings.recording.qualityMaximum')}</option>
             </select>
-            <small class="form-text">{$t('settings.recording.qualityHelp')}</small>
-          </div>
+          </FormField>
 
-          <div class="form-group">
+          <div class="form-field">
             <label class="checkbox-label">
               <input
                 type="checkbox"
@@ -1244,8 +1241,7 @@
   message={$t('settings.unsavedChangesMessage')}
   confirmText={$t('settings.closeWithoutSaving')}
   cancelText={$t('settings.keepEditing')}
-  confirmButtonClass="btn-danger"
-  cancelButtonClass="btn-secondary"
+  variant="danger"
   on:confirm={forceClose}
   on:cancel={() => showCloseConfirmation = false}
   on:close={() => showCloseConfirmation = false}
@@ -1258,8 +1254,7 @@
   message={$confirmMessage}
   confirmText={$t('settings.confirm')}
   cancelText={$t('settings.cancel')}
-  confirmButtonClass="btn-primary"
-  cancelButtonClass="btn-secondary"
+  variant="primary"
   on:confirm={confirmDialog.confirm}
   on:cancel={confirmDialog.cancel}
   on:close={confirmDialog.cancel}
@@ -1449,17 +1444,7 @@
     gap: var(--space-4);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
-  }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);

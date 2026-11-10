@@ -37,7 +37,7 @@
         </span>
         <button
           type="button"
-          class="reset-btn"
+          class="btn btn-secondary btn-sm"
           on:click
           disabled={resetting || disabled}
           title={$t('settings.engineSettings.resetKey')}
@@ -114,33 +114,6 @@
   :global([data-theme='dark']) .source-env {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
-  }
-
-  .reset-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: 0.2rem 0.6rem;
-    border-radius: var(--radius-sm);
-    font-size: 0.7rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    background: var(--surface-color);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
-    transition: all var(--duration-fast);
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .reset-btn:hover:not(:disabled) {
-    background: var(--button-hover);
-    color: var(--text-color);
-  }
-
-  .reset-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .field-hint {

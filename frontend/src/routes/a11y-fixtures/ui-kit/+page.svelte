@@ -1,7 +1,11 @@
 <script lang="ts">
+  import Button from '$components/ui/Button.svelte';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import Banner from '$components/ui/Banner.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import PrivacySwitchCard from '$components/privacy/PrivacySwitchCard.svelte';
   import { t } from '$stores/locale';
@@ -20,6 +24,7 @@
   // `a11y-fixtures/status-badges`.
   const noop = () => {};
   const buttonVariants = ['btn-primary', 'btn-secondary', 'btn-danger', 'btn-warning'] as const;
+  const bannerTones = ['info', 'success', 'warning', 'error', 'neutral'] as const;
   const badgeVariants = ['default', 'success', 'warning', 'error', 'info'] as const;
   const tintFamilies = [
     { name: 'error', bg: 'var(--danger-bg)', text: 'var(--color-error-text)' },
@@ -29,10 +34,10 @@
   ] as const;
 
   let confirmOpen = false;
-  let confirmClass = 'modal-delete-button';
+  let confirmVariant: 'primary' | 'danger' | 'warning' = 'danger';
 
-  function openConfirm(cls: string) {
-    confirmClass = cls;
+  function openConfirm(variant: 'primary' | 'danger' | 'warning') {
+    confirmVariant = variant;
     confirmOpen = true;
   }
 </script>
@@ -43,7 +48,7 @@
     {#each buttonVariants as variant (variant)}
       <div class="kit-row">
         <button type="button" class="btn {variant}">{$t('common.save')}</button>
-        <button type="button" class="btn {variant} btn-small">{$t('common.save')}</button>
+        <button type="button" class="btn {variant} btn-sm">{$t('common.save')}</button>
         <button type="button" class="btn {variant}" disabled>{$t('common.save')}</button>
         <button type="button" class="btn {variant}" aria-busy="true" aria-disabled="true">
           <Spinner size="small" />
@@ -52,10 +57,22 @@
       </div>
     {/each}
     <div class="kit-row">
-      <button type="button" class="modal-button modal-cancel-button">{$t('common.cancel')}</button>
-      <button type="button" class="modal-button modal-primary-button">{$t('common.save')}</button>
-      <button type="button" class="modal-button modal-delete-button">{$t('common.delete')}</button>
-      <button type="button" class="modal-button modal-warning-button">{$t('common.apply')}</button>
+      <button type="button" class="btn btn-success">{$t('common.save')}</button>
+      <button type="button" class="btn btn-ghost">{$t('common.cancel')}</button>
+      <button type="button" class="btn btn-link">{$t('common.edit')}</button>
+      <button type="button" class="btn btn-danger-outline btn-sm">{$t('common.delete')}</button>
+      <button type="button" class="btn btn-lg btn-primary">{$t('common.save')}</button>
+      <button type="button" class="btn btn-icon-only btn-sm" aria-label={$t('common.close')}>
+        <MenuIcon name="close" size={14} />
+      </button>
+      <Button variant="primary" busy>{$t('common.saving')}</Button>
+      <Button variant="ghost" size="sm">{$t('common.cancel')}</Button>
+    </div>
+    <div class="kit-row">
+      <button type="button" class="btn btn-lg btn-secondary">{$t('common.cancel')}</button>
+      <button type="button" class="btn btn-lg btn-primary">{$t('common.save')}</button>
+      <button type="button" class="btn btn-lg btn-danger">{$t('common.delete')}</button>
+      <button type="button" class="btn btn-lg btn-warning">{$t('common.apply')}</button>
     </div>
   </section>
 
@@ -134,6 +151,28 @@
     <ProgressBar percent={42} label={$t('common.processing')} />
     <ProgressBar percent={100} label={$t('common.completed')} />
     <ProgressBar percent={null} label={$t('common.loading')} />
+    <LiveProgressCard state="starting" title={$t('common.loading')} barLabel={$t('common.loading')} message={$t('upload.queued')} />
+    <LiveProgressCard
+      title={$t('common.processing')}
+      done={21}
+      total={50}
+      percent={42}
+      etaSeconds={125}
+      remainingLabel={$t('common.remaining')}
+      barLabel={$t('common.processing')}
+      stopLabel={$t('common.cancel')}
+      onStop={() => {}}
+    />
+    <LiveProgressCard
+      state="stopping"
+      title={$t('common.processing')}
+      done={21}
+      total={50}
+      percent={42}
+      barLabel={$t('common.processing')}
+      stopLabel={$t('common.cancel')}
+      onStop={() => {}}
+    />
     <div class="kit-row">
       <Spinner size="small" />
       <Spinner size="medium" />
@@ -148,11 +187,26 @@
         <Badge {variant}>{$t('common.status')}</Badge>
       {/each}
     </div>
+    <div class="kit-row">
+      {#each badgeVariants as variant (variant)}
+        <Badge {variant} size="md">{$t('common.status')}</Badge>
+      {/each}
+    </div>
   </section>
 
   <section data-kit-section="banners" aria-labelledby="kit-banners">
     <h2 id="kit-banners">{$t('common.moreInformation')}</h2>
-    <!-- No shared banner exists yet (lane 2.6 adds ui/Banner and fills this section). -->
+    {#each bannerTones as tone (tone)}
+      <Banner {tone} live="off">{$t('common.moreInformation')}</Banner>
+      <Banner {tone} live="off" title={$t('common.status')}>{$t('common.moreInformation')}</Banner>
+      <Banner {tone} live="off" title={$t('common.status')} dismissible>
+        {$t('common.moreInformation')}
+        <svelte:fragment slot="actions">
+          <button type="button" class="btn btn-secondary btn-sm" on:click={noop}>{$t('common.cancel')}</button>
+          <button type="button" class="btn btn-primary btn-sm" on:click={noop}>{$t('common.save')}</button>
+        </svelte:fragment>
+      </Banner>
+    {/each}
   </section>
 
   <section data-kit-section="status-text" aria-labelledby="kit-status-text">
@@ -172,7 +226,7 @@
         type="button"
         class="btn btn-danger"
         data-kit-trigger="confirm-danger"
-        on:click={() => openConfirm('modal-delete-button')}
+        on:click={() => openConfirm('danger')}
       >
         {$t('common.delete')}
       </button>
@@ -180,7 +234,7 @@
         type="button"
         class="btn btn-warning"
         data-kit-trigger="confirm-warning"
-        on:click={() => openConfirm('modal-warning-button')}
+        on:click={() => openConfirm('warning')}
       >
         {$t('common.apply')}
       </button>
@@ -188,7 +242,7 @@
         type="button"
         class="btn btn-primary"
         data-kit-trigger="confirm-primary"
-        on:click={() => openConfirm('confirm-button')}
+        on:click={() => openConfirm('primary')}
       >
         {$t('common.confirm')}
       </button>
@@ -198,7 +252,7 @@
 
 <ConfirmationModal
   bind:isOpen={confirmOpen}
-  confirmButtonClass={confirmClass}
+  variant={confirmVariant}
   on:confirm={noop}
   on:cancel={noop}
 />

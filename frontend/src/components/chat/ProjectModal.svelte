@@ -166,7 +166,7 @@
     {#if project && !confirmingDelete}
       <button
         type="button"
-        class="modal-button delete-button"
+        class="btn btn-lg btn-danger"
         on:click={() => (confirmingDelete = true)}
         data-testid="chat-project-delete"
       >
@@ -175,23 +175,23 @@
     {/if}
     {#if confirmingDelete}
       <span class="confirm-text">{$t('chat.projects.deleteConfirm')}</span>
-      <button type="button" class="modal-button delete-button" on:click={remove} disabled={saving}>
+      <button type="button" class="btn btn-lg btn-danger" on:click={remove} disabled={saving}>
         {$t('common.delete')}
       </button>
-      <button type="button" class="modal-button modal-cancel-button" on:click={() => (confirmingDelete = false)}>
+      <button type="button" class="btn btn-lg btn-secondary" on:click={() => (confirmingDelete = false)}>
         {$t('common.cancel')}
       </button>
     {:else}
       <button
         type="button"
-        class="modal-button modal-cancel-button"
+        class="btn btn-lg btn-secondary"
         on:click={() => dispatch('close')}
       >
         {$t('common.cancel')}
       </button>
       <button
         type="button"
-        class="modal-button modal-primary-button"
+        class="btn btn-lg btn-primary"
         on:click={save}
         disabled={saving || !name.trim()}
         data-testid="chat-project-save"

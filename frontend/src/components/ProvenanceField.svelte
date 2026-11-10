@@ -73,10 +73,10 @@
   {#if editing}
     <span class="editor">
       <input type="date" bind:value={draft} aria-label={label} />
-      <button type="button" class="btn btn-small btn-primary" on:click={save}>
+      <button type="button" class="btn btn-sm btn-primary" on:click={save}>
         {$t('provenance.save')}
       </button>
-      <button type="button" class="btn btn-small" on:click={cancel}>
+      <button type="button" class="btn btn-sm" on:click={cancel}>
         {$t('provenance.cancel')}
       </button>
     </span>

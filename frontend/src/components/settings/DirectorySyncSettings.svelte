@@ -1,10 +1,13 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { formatDateTime } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
+  import Badge from '$components/ui/Badge.svelte';
+  import Banner from '$components/ui/Banner.svelte';
   import {
     getDirectorySyncSettings,
     updateDirectorySyncSettings,
@@ -149,20 +152,19 @@
 
   {#if loading}
     <div class="loading-state">
-      <Spinner size="small" />
+      <Spinner label={$t('common.loading')} size="small" />
     </div>
   {:else}
     {#if enabled && dryRun}
-      <div class="banner banner-info">{$t('settings.directorySync.dryRunActiveBanner')}</div>
+      <Banner tone="info">{$t('settings.directorySync.dryRunActiveBanner')}</Banner>
     {/if}
 
     <!-- Enable toggle -->
     <div class="field-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={enabled} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.directorySync.enableLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={enabled} onchange={(next) => (enabled = next)} id="dirsync-toggle-label-1" />
+        <label class="toggle-text" for="dirsync-toggle-label-1">{$t('settings.directorySync.enableLabel')}</label>
+      </div>
       <span class="field-hint enable-hint">{$t('settings.directorySync.enableHint')}</span>
     </div>
 
@@ -198,11 +200,10 @@
 
     <!-- Dry run -->
     <div class="field-row dry-run-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={dryRun} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.directorySync.dryRunLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={dryRun} onchange={(next) => (dryRun = next)} id="dirsync-toggle-label-2" />
+        <label class="toggle-text" for="dirsync-toggle-label-2">{$t('settings.directorySync.dryRunLabel')}</label>
+      </div>
       <span class="field-hint enable-hint">{$t('settings.directorySync.dryRunHint')}</span>
     </div>
 
@@ -213,16 +214,16 @@
         <span class="status-value">{formatDateTime(lastRunAt, $t('settings.directorySync.lastRunNever'), $locale)}</span>
         {#if lastResult}
           {#if lastResult.status === 'ok'}
-            <span class="status-badge ok">
+            <Badge variant="success" size="md" class="status-badge">
               {$t('settings.directorySync.lastRunOk', {
                 disabled: lastResult.dry_run ? (lastResult.would_disable ?? 0) : (lastResult.disabled ?? 0),
                 reconciled: lastResult.reconciled ?? 0,
               })}
-            </span>
+            </Badge>
           {:else}
-            <span class="status-badge bad" title={lastResult.error ?? ''}>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.error || null}>
               {$t('settings.directorySync.lastRunFailed')}
-            </span>
+            </Badge>
           {/if}
         {/if}
       </div>
@@ -231,7 +232,7 @@
       {/if}
       {#if lastResult?.capped}
         <div class="status-item">
-          <span class="status-badge bad">{$t('settings.directorySync.cappedWarning')}</span>
+          <Badge variant="error" size="md" class="status-badge">{$t('settings.directorySync.cappedWarning')}</Badge>
         </div>
       {/if}
       <div class="status-item">
@@ -264,7 +265,7 @@
           {$t('settings.directorySync.runNowButton')}
         </button>
       {/if}
-      <button type="button" class="btn btn-link" on:click={() => refreshStatus(true)} disabled={statusLoading}>
+      <button type="button" class="btn btn-secondary" on:click={() => refreshStatus(true)} disabled={statusLoading}>
         {statusLoading ? $t('settings.directorySync.refreshingStatus') : $t('settings.directorySync.refreshStatus')}
       </button>
     </div>
@@ -309,20 +310,6 @@
     display: flex;
     align-items: center;
     padding: var(--space-4);
-  }
-
-  .banner {
-    border-radius: var(--radius-md);
-    padding: 0.6rem var(--space-3);
-    margin-bottom: var(--space-3);
-    font-size: 0.82rem;
-    line-height: 1.4;
-  }
-
-  .banner-info {
-    border: 1px solid var(--primary-color);
-    background-color: var(--background-secondary);
-    color: var(--text-color);
   }
 
   .field-row {
@@ -374,49 +361,11 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    cursor: pointer;
     user-select: none;
   }
 
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
-  }
-
   .toggle-text {
+    cursor: pointer;
     font-size: var(--font-size-md);
     color: var(--text-color);
   }
@@ -459,22 +408,6 @@
     color: var(--text-color);
   }
 
-  .status-badge {
-    border-radius: var(--radius-xl);
-    padding: 0 var(--space-2);
-    font-size: 0.72rem;
-    line-height: 1.6;
-    color: var(--text-on-solid);
-  }
-
-  .status-badge.ok {
-    background-color: var(--success-color);
-  }
-
-  .status-badge.bad {
-    background-color: var(--error-color);
-  }
-
   .status-error {
     font-size: var(--font-size-xs);
     color: var(--error-color);
@@ -493,22 +426,6 @@
   .run-confirm-text {
     font-size: 0.8rem;
     color: var(--text-muted);
-  }
-
-  .btn-link {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: var(--space-1-5) var(--space-2-5);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-link:hover:not(:disabled) {
-    background-color: var(--button-hover);
   }
 
   /* Button row */

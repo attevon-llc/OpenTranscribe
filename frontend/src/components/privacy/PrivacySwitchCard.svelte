@@ -11,6 +11,8 @@
   while the feature is still on (it would grow straight back).
 -->
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
+
   export let id: string;
   export let title: string;
   export let description: string;
@@ -31,13 +33,6 @@
   export let purgeHint = '';
   export let canPurge = false;
   export let onPurge: () => void = () => {};
-
-  function change(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    const next = input.checked;
-    input.checked = checked;
-    if (!locked && !busy) onToggle(next);
-  }
 </script>
 
 <section class="card" data-testid={`privacy-card-${id}`} aria-labelledby={`${id}-title`}>
@@ -53,20 +48,17 @@
       {/if}
     </div>
     {#if showSwitch}
-      <label class="toggle">
-        <input
-          type="checkbox"
-          role="switch"
-          {checked}
+      <span class="switch">
+        <Toggle
+          checked={checked}
           disabled={locked}
-          aria-disabled={busy ? 'true' : undefined}
-          aria-labelledby={`${id}-title`}
-          aria-describedby={`${id}-desc${notice ? ` ${id}-notice` : ''}${locked && lockedReason ? ` ${id}-locked` : ''}`}
-          data-testid={`${id}-switch`}
-          on:change={change}
+          {busy}
+          labelledby={`${id}-title`}
+          describedby={`${id}-desc${notice ? ` ${id}-notice` : ''}${locked && lockedReason ? ` ${id}-locked` : ''}`}
+          testid={`${id}-switch`}
+          onchange={(next) => onToggle(next)}
         />
-        <span class="slider" aria-hidden="true"></span>
-      </label>
+      </span>
     {/if}
   </div>
 
@@ -136,67 +128,9 @@
     font-weight: var(--font-weight-medium);
   }
 
-  .toggle {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-    flex-shrink: 0;
+  .switch {
     margin-top: 0.1rem;
-  }
-
-  .toggle input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    opacity: 0;
-    cursor: pointer;
-    z-index: var(--z-base);
-  }
-
-  .slider {
-    position: absolute;
-    inset: 0;
-    background-color: var(--border-color);
-    border-radius: 24px;
-    transition: background-color var(--duration-base);
-  }
-
-  .slider::before {
-    content: '';
-    position: absolute;
-    height: 18px;
-    width: 18px;
-    inset-inline-start: 3px;
-    bottom: 3px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: inset-inline-start var(--duration-base);
-  }
-
-  .toggle input:checked + .slider {
-    background-color: var(--primary-color);
-  }
-
-  .toggle input:checked + .slider::before {
-    inset-inline-start: 23px;
-  }
-
-  .toggle input:focus-visible + .slider {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .toggle input:disabled,
-  .toggle input[aria-disabled='true'] {
-    cursor: not-allowed;
-  }
-
-  .toggle input:disabled + .slider,
-  .toggle input[aria-disabled='true'] + .slider {
-    opacity: 0.5;
+    flex-shrink: 0;
   }
 
   .purge {

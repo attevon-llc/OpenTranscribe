@@ -17,6 +17,7 @@
   import { createEventDispatcher, onDestroy } from 'svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import SearchPagination from '$components/search/SearchPagination.svelte';
@@ -50,8 +51,14 @@
   let loading = false;
   let busyUuids = new Set<string>();
   let selectedUuids = new Set<string>();
-  let fileToDelete: WatchSourceFile | null = null;
-  let confirmBulkDelete = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
   /** Set once the user has changed something, so the parent refreshes its counts. */
   let dirty = false;
   const debouncedSearch = createDebouncedHandler(() => {
@@ -181,10 +188,28 @@
     }
   }
 
-  async function doDeleteOne() {
-    if (!source || !fileToDelete) return;
-    const target = fileToDelete;
-    fileToDelete = null;
+  function askDeleteOne(target: WatchSourceFile) {
+    confirmDialog.request(
+      $t('settings.watchSources.files.deleteConfirmTitle'),
+      $t('settings.watchSources.files.deleteConfirmMessage', { name: target.filename }),
+      () => doDeleteOne(target),
+      { confirmText: $t('common.delete'), variant: 'danger' }
+    );
+  }
+
+  function askDeleteSelected() {
+    confirmDialog.request(
+      $t('settings.watchSources.files.deleteSelectedConfirmTitle'),
+      $t('settings.watchSources.files.deleteSelectedConfirmMessage', {
+        count: selectedUuids.size,
+      }),
+      doDeleteSelected,
+      { confirmText: $t('common.delete'), variant: 'danger' }
+    );
+  }
+
+  async function doDeleteOne(target: WatchSourceFile) {
+    if (!source) return;
     markBusy([target.uuid], true);
     try {
       await deleteWatchSourceFile(source.uuid, target.uuid);
@@ -204,7 +229,6 @@
   async function doDeleteSelected() {
     if (!source) return;
     const uuids = [...selectedUuids];
-    confirmBulkDelete = false;
     if (uuids.length === 0) return;
     markBusy(uuids, true);
     try {
@@ -273,17 +297,17 @@
     {#if selectedUuids.size > 0}
       <div class="bulk-bar">
         <span>{$t('settings.watchSources.files.selectedCount', { count: selectedUuids.size })}</span>
-        <button class="btn btn-secondary btn-sm" on:click={() => retry([...selectedUuids])}>
+        <button class="btn btn-secondary" on:click={() => retry([...selectedUuids])}>
           {$t('settings.watchSources.files.retrySelected')}
         </button>
-        <button class="btn btn-danger btn-sm" on:click={() => (confirmBulkDelete = true)}>
+        <button class="btn btn-danger" on:click={askDeleteSelected}>
           {$t('settings.watchSources.files.deleteSelected')}
         </button>
       </div>
     {/if}
 
     {#if loading}
-      <div class="files-loading"><Spinner /></div>
+      <div class="files-loading"><Spinner label={$t('common.loading')} /></div>
     {:else if files.length === 0}
       <EmptyState
         title={$t('settings.watchSources.files.emptyTitle')}
@@ -298,7 +322,7 @@
         {selectedUuids}
         hasAgeLimit={source?.skip_files_older_than_days != null}
         on:retry={(e) => retry([e.detail.uuid])}
-        on:delete={(e) => (fileToDelete = e.detail)}
+        on:delete={(e) => askDeleteOne(e.detail)}
         on:toggleSelect={toggleSelect}
         on:toggleSelectAll={toggleSelectAll}
       />
@@ -314,33 +338,14 @@
 </BaseModal>
 
 <ConfirmationModal
-  isOpen={fileToDelete !== null}
-  title={$t('settings.watchSources.files.deleteConfirmTitle')}
-  message={fileToDelete
-    ? $t('settings.watchSources.files.deleteConfirmMessage', { name: fileToDelete.filename })
-    : ''}
-  confirmText={$t('common.delete')}
-  cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
-  on:confirm={doDeleteOne}
-  on:cancel={() => (fileToDelete = null)}
-  on:close={() => (fileToDelete = null)}
-/>
-
-<ConfirmationModal
-  isOpen={confirmBulkDelete}
-  title={$t('settings.watchSources.files.deleteSelectedConfirmTitle')}
-  message={$t('settings.watchSources.files.deleteSelectedConfirmMessage', {
-    count: selectedUuids.size,
-  })}
-  confirmText={$t('common.delete')}
-  cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
-  on:confirm={doDeleteSelected}
-  on:cancel={() => (confirmBulkDelete = false)}
-  on:close={() => (confirmBulkDelete = false)}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>
@@ -373,10 +378,6 @@
     display: flex;
     justify-content: center;
     padding: var(--space-8);
-  }
-  .btn-sm {
-    padding: var(--space-1) var(--space-2-5);
-    font-size: 0.8rem;
   }
   .modal-title {
     margin: 0;

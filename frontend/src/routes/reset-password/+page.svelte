@@ -7,6 +7,9 @@
   import { t } from '$stores/locale';
 
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   let newPassword = '';
   let confirmPassword = '';
@@ -80,31 +83,29 @@
         <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else if !tokenParam}
-      <div class="error-message" role="alert">
+      <Banner tone="error" size="base">
         {$t('auth.invalidResetLink')}
-      </div>
+      </Banner>
       <div class="auth-links">
         <a href={resolve('/forgot-password')} class="auth-link">{$t('auth.requestNewLink')}</a>
       </div>
     {:else}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
         {#if errorMessage}
-          <div class="error-message" role="alert">{errorMessage}</div>
+          <Banner tone="error" size="base">{errorMessage}</Banner>
         {/if}
 
-        <div class="form-group">
-          <div class="password-header">
-            <label for="newPassword">{$t('auth.newPassword')}</label>
-            <button
-              type="button"
-              class="toggle-password"
-              on:click={togglePasswordVisibility}
-              tabindex="-1"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              <EyeIcon visible={showPassword} />
-            </button>
-          </div>
+        <FormField id="newPassword" label={$t('auth.newPassword')} size="lg">
+          <button
+            slot="label-after"
+            type="button"
+            class="toggle-password"
+            on:click={togglePasswordVisibility}
+            tabindex="-1"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            <EyeIcon visible={showPassword} />
+          </button>
           <input
             type={showPassword ? 'text' : 'password'}
             id="newPassword"
@@ -113,10 +114,9 @@
             autocomplete="new-password"
             required
           />
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <label for="confirmPassword">{$t('auth.confirmPassword')}</label>
+        <FormField id="confirmPassword" label={$t('auth.confirmPassword')} size="lg">
           <input
             type={showPassword ? 'text' : 'password'}
             id="confirmPassword"
@@ -125,11 +125,11 @@
             autocomplete="new-password"
             required
           />
-        </div>
+        </FormField>
 
         <button type="submit" class="auth-button" disabled={loading}>
           {#if loading}
-            <span class="spinner"></span> {$t('auth.resetting')}
+            <Spinner size="inline" color="white" /> {$t('auth.resetting')}
           {:else}
             {$t('auth.resetPassword')}
           {/if}
@@ -184,25 +184,8 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
-  }
-
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
   }
 
   .toggle-password {
@@ -275,15 +258,6 @@
     font-weight: var(--font-weight-medium);
   }
 
-  .error-message {
-    background-color: var(--error-color-light);
-    color: var(--error-color);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    font-weight: var(--font-weight-medium);
-  }
-
   .auth-logo {
     text-align: center;
     margin-bottom: var(--space-6);
@@ -292,19 +266,5 @@
   .logo-image {
     max-width: 200px;
     height: auto;
-  }
-
-  .spinner {
-    display: inline-block;
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: var(--radius-round);
-    border-top-color: #fff;
-    animation: spin 1s ease-in-out infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 </style>

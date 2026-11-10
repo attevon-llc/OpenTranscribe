@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
@@ -76,23 +77,21 @@
         <p class="section-desc">{$t('settings.redactionPolicy.forceCategoriesDesc')}</p>
 
         <div class="setting-row">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={policy.force_pii} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.redactionPolicy.forcePii')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="redactionpolicysettings-toggle-1" checked={policy.force_pii} onchange={(v) => { if (policy) policy.force_pii = v; }} />
+            <label class="toggle-text" for="redactionpolicysettings-toggle-1">{$t('settings.redactionPolicy.forcePii')}</label>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.redactionPolicy.forcePiiHelp')}</p>
 
         <div class="setting-row" style="margin-top: 0.75rem;">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={policy.force_toxicity} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.redactionPolicy.forceToxicity')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="redactionpolicysettings-toggle-2" checked={policy.force_toxicity} onchange={(v) => { if (policy) policy.force_toxicity = v; }} />
+            <label class="toggle-text" for="redactionpolicysettings-toggle-2">{$t('settings.redactionPolicy.forceToxicity')}</label>
+          </div>
         </div>
         {#if policy.force_toxicity}
-          <div class="form-group" style="margin-top: 0.5rem;">
+          <div class="form-field">
             <RangeSlider
               id="force-tox"
               label={$t('settings.redactionPolicy.forceToxicityThreshold')}
@@ -105,11 +104,10 @@
         {/if}
 
         <div class="setting-row" style="margin-top: 0.75rem;">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={policy.force_profanity} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.redactionPolicy.forceProfanity')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="redactionpolicysettings-toggle-3" checked={policy.force_profanity} onchange={(v) => { if (policy) policy.force_profanity = v; }} />
+            <label class="toggle-text" for="redactionpolicysettings-toggle-3">{$t('settings.redactionPolicy.forceProfanity')}</label>
+          </div>
         </div>
       </div>
 
@@ -117,28 +115,18 @@
         <h3 class="section-title">{$t('settings.redactionPolicy.mandatesTitle')}</h3>
 
         <div class="setting-row">
-          <label class="toggle-label">
-            <input
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={policy.force_export_redacted}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.redactionPolicy.forceExportRedacted')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="redactionpolicysettings-toggle-4" checked={policy.force_export_redacted} onchange={(v) => { if (policy) policy.force_export_redacted = v; }} />
+            <label class="toggle-text" for="redactionpolicysettings-toggle-4">{$t('settings.redactionPolicy.forceExportRedacted')}</label>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.redactionPolicy.forceExportRedactedHelp')}</p>
 
         <div class="setting-row" style="margin-top: 0.75rem;">
-          <label class="toggle-label">
-            <input
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={policy.force_redact_before_llm}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.redactionPolicy.forceRedactBeforeLlm')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="redactionpolicysettings-toggle-5" checked={policy.force_redact_before_llm} onchange={(v) => { if (policy) policy.force_redact_before_llm = v; }} />
+            <label class="toggle-text" for="redactionpolicysettings-toggle-5">{$t('settings.redactionPolicy.forceRedactBeforeLlm')}</label>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.redactionPolicy.forceRedactBeforeLlmHelp')}</p>
       </div>
@@ -146,11 +134,10 @@
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.redactionPolicy.enhancedTitle')}</h3>
         <div class="setting-row">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={policy.pii_use_gliner} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.redactionPolicy.piiUseGliner')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="redactionpolicysettings-toggle-6" checked={policy.pii_use_gliner} onchange={(v) => { if (policy) policy.pii_use_gliner = v; }} />
+            <label class="toggle-text" for="redactionpolicysettings-toggle-6">{$t('settings.redactionPolicy.piiUseGliner')}</label>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.redactionPolicy.piiUseGlinerHelp')}</p>
       </div>
@@ -210,9 +197,6 @@
     margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
   }
-  .form-group {
-    margin: 0;
-  }
   .setting-row {
     display: flex;
     align-items: center;
@@ -225,39 +209,6 @@
     gap: var(--space-2);
     cursor: pointer;
     user-select: none;
-  }
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
   }
   .toggle-text {
     font-size: var(--font-size-md);

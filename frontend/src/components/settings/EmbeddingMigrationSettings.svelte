@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { formatEta } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
@@ -7,7 +6,7 @@
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
 
   /**
    * Every migration route is super_admin (the section itself is admin-tier, for the
@@ -440,30 +439,15 @@
         <!-- Progress Section (shown when migration is in progress) -->
         {#if migrationInProgress}
           <div class="progress-section">
-            {#if processedFiles === 0}
-              <div class="queued-message">
-                {progressMessage || $t('settings.embeddingMigration.queued')}
-              </div>
-              <ProgressBar percent={null} />
-            {:else}
-              <div class="progress-header">
-                <span class="progress-text">
-                  {$t('settings.embeddingMigration.processingFiles', { processed: processedFiles, total: totalFiles })}
-                </span>
-                <span class="progress-percent">
-                  <bdi dir="ltr">{Math.round((processedFiles / Math.max(totalFiles, 1)) * 100)}%</bdi>
-                  {#if formatEta(etaSeconds)}
-                    ({formatEta(etaSeconds)} {$t('common.remaining')})
-                  {/if}
-                </span>
-              </div>
-              <div class="progress-bar-container">
-                <div
-                  class="progress-bar-fill"
-                  style="width: {(processedFiles / Math.max(totalFiles, 1)) * 100}%"
-                ></div>
-              </div>
-            {/if}
+            <LiveProgressCard
+              state={processedFiles === 0 ? 'starting' : 'running'}
+              countLabel={processedFiles === 0 ? '' : $t('settings.embeddingMigration.processingFiles', { processed: processedFiles, total: totalFiles })}
+              percent={processedFiles === 0 ? null : (processedFiles / Math.max(totalFiles, 1)) * 100}
+              etaSeconds={etaSeconds}
+              remainingLabel={$t('common.remaining')}
+              message={processedFiles === 0 ? progressMessage || $t('settings.embeddingMigration.queued') : ''}
+              barLabel={$t('settings.embeddingMigration.progressBar')}
+            />
             {#if failedFiles.length > 0}
               <div class="failed-files-info">
                 <span class="failed-icon">
@@ -620,8 +604,6 @@
     color: var(--error-color);
   }
 
-
-
   .status-chips-row {
     display: flex;
     flex-wrap: wrap;
@@ -654,8 +636,6 @@
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
-
-
 
   .migration-box {
     display: flex;
@@ -773,49 +753,6 @@
 
   .progress-section {
     margin-top: var(--space-4);
-    padding: var(--space-4);
-    background: var(--background-color);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-  }
-
-  .progress-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
-
-  .progress-text {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-  }
-
-  .progress-percent {
-    font-size: 0.8rem;
-    font-weight: var(--font-weight-semibold);
-    color: var(--primary-on-surface);
-  }
-
-  .progress-bar-container {
-    height: 8px;
-    background: var(--border-color);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .progress-bar-fill {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: var(--radius-sm);
-    transition: width var(--duration-slow) ease;
-  }
-
-  .queued-message {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin-bottom: var(--space-2);
-    font-style: italic;
   }
 
   .failed-files-info {

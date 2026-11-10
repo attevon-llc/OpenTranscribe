@@ -431,10 +431,6 @@ button:disabled {
   font-family: inherit;
   white-space: nowrap;
 }
-.btn-small {
-  padding: var(--space-1) var(--space-2-5);
-  font-size: var(--font-size-xs);
-}
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -483,13 +479,13 @@ button:disabled {
   background-color: var(--error-solid);
   color: var(--text-on-solid);
   border: none;
-  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+  box-shadow: var(--shadow-danger);
 }
 .btn-danger:hover:not(:disabled) {
   background-color: var(--error-solid-hover);
   color: var(--text-on-solid);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+  box-shadow: var(--shadow-danger-hover);
 }
 .btn-danger:active:not(:disabled) {
   transform: scale(1) !important;
@@ -512,9 +508,85 @@ button:disabled {
   transform: scale(1) !important;
 }
 
+/* Success buttons — green, stays green on hover (white label is 5.48:1) */
+.btn-success {
+  background-color: var(--success-solid);
+  color: var(--text-on-solid);
+  border: none;
+}
+.btn-success:hover:not(:disabled) {
+  background-color: var(--success-solid-hover);
+  color: var(--text-on-solid);
+  transform: scale(1.02);
+}
+.btn-success:active:not(:disabled) {
+  transform: scale(1) !important;
+}
+
+/* Ghost — transparent until hovered */
+.btn-ghost {
+  background-color: transparent;
+  color: var(--text-color);
+  border: none;
+}
+.btn-ghost:hover:not(:disabled) {
+  background-color: var(--button-hover);
+}
+
+/* Link-styled button: no chrome, underline on hover */
+.btn-link {
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--primary-on-surface);
+}
+.btn-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* Outlined destructive action, e.g. a Stop button on a progress card */
+.btn-danger-outline {
+  background-color: transparent;
+  color: var(--error-text);
+  border: 1px solid var(--error-border);
+}
+.btn-danger-outline:hover:not(:disabled) {
+  background-color: var(--error-bg);
+}
+
+/* Sizes. `.btn-sm` is the canonical small; `.btn-lg` is the modal-footer size below. */
+.btn-sm {
+  padding: var(--space-1) var(--space-2-5);
+  font-size: var(--font-size-xs);
+  min-height: 28px;
+}
+
+/* Icon-only square button (give it an aria-label); combines with `.btn-sm` and any variant */
+.btn-icon-only {
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: var(--space-1-5);
+  background-color: transparent;
+  color: var(--text-color);
+  border: none;
+}
+.btn-icon-only:hover:not(:disabled) {
+  background-color: var(--button-hover);
+}
+
+/* Destructive icon button (remove / revoke): neutral at rest, danger signal on
+   hover and keyboard focus. --error-text is the AA-checked text red in both themes. */
+.btn-icon-only.btn-icon-danger:hover:not(:disabled),
+.btn-icon-only.btn-icon-danger:focus-visible {
+  background-color: var(--error-bg);
+  color: var(--error-text);
+}
+
 /* ─── Modal Action Buttons ──────────────────────────────────────────── */
 /* Base sizing shared by all modal footer buttons */
-.modal-button {
+.btn-lg {
   padding: 0.6rem 1.2rem;
   border-radius: var(--radius-xl);
   font-size: 0.95rem;
@@ -527,74 +599,6 @@ button:disabled {
   justify-content: center;
   gap: var(--space-2);
 }
-.modal-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.modal-primary-button {
-  background-color: var(--primary-color);
-  color: var(--text-on-solid);
-  border: none;
-  box-shadow: var(--shadow-primary);
-}
-.modal-primary-button:hover:not(:disabled) {
-  background-color: var(--primary-hover);
-  transform: scale(1.02);
-  box-shadow: var(--shadow-primary-hover);
-}
-.modal-primary-button:active:not(:disabled) {
-  transform: scale(1);
-}
-
-/* CANCEL — grey hover, never blue */
-.modal-cancel-button {
-  background-color: var(--card-background);
-  color: var(--text-color);
-  border: 1px solid var(--border-color);
-  box-shadow: var(--card-shadow);
-}
-.modal-cancel-button:hover:not(:disabled) {
-  background-color: var(--button-hover);
-  border-color: var(--border-color);
-  transform: scale(1.02);
-  box-shadow: var(--shadow-hover);
-}
-.modal-cancel-button:active:not(:disabled) {
-  transform: scale(1);
-}
-
-.modal-delete-button {
-  background-color: var(--error-solid);
-  color: var(--text-on-solid);
-  border: none;
-  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-}
-.modal-delete-button:hover:not(:disabled) {
-  background-color: var(--error-solid-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-}
-.modal-delete-button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.modal-warning-button {
-  background-color: var(--warning-solid);
-  color: var(--text-on-warning);
-  border: none;
-  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
-}
-.modal-warning-button:hover:not(:disabled) {
-  background-color: var(--warning-solid-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25);
-}
-.modal-warning-button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
 /* ─── Refresh / Reset button helpers ───────────────────────────────── */
 .btn-refresh,
 .btn-reset {
@@ -610,3 +614,81 @@ button:disabled {
   animation: spin 1s linear infinite;
 }
 /* @keyframes spin lives in animations.css (global). */
+
+/* ─── Form field layout (FormField.svelte) ─────────────────────────── */
+/* :where() keeps specificity at zero so a local rule always wins. */
+:where(.form-field) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+:where(.form-stack) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+:where(.form-field-lg) {
+  gap: var(--space-2);
+}
+:where(.form-field-label) {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-color);
+}
+/* After the base label rule: both are :where() (specificity 0), so order decides. */
+:where(.form-field-lg .form-field-label) {
+  font-size: var(--font-size-md);
+}
+:where(.form-field-label-md .form-field-label) {
+  font-size: var(--font-size-md);
+}
+:where(.form-field-label-base .form-field-label) {
+  font-size: var(--font-size-base);
+}
+:where(fieldset.form-field) {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+:where(.form-field > legend) {
+  padding: 0;
+  margin-bottom: var(--space-1-5);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-color);
+}
+:where(.form-field-lg > legend) {
+  font-size: var(--font-size-md);
+}
+:where(.form-field-label-md > legend) {
+  font-size: var(--font-size-md);
+}
+:where(.form-field-label-base > legend) {
+  font-size: var(--font-size-base);
+}
+:where(.form-field-hint) {
+  margin: 0;
+  /* sm, not xs: converted hints were up to 0.8rem and must not shrink. */
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+:where(.form-field-extra) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+:where(.form-field-error) {
+  margin: 0;
+  font-size: var(--font-size-md);
+  color: var(--error-text);
+}
+/* Label with controls beside it (a show-password toggle). The margin keeps the 8px the auth
+   label row has always had above the control, on top of the field gap. */
+:where(.form-field-header) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { formatDateTime } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
@@ -8,11 +9,21 @@
   import { createPoller } from '$lib/utils/poller';
   import { toastStore } from '$stores/toast';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import ReindexLiveProgress from './ReindexLiveProgress.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
-  let showModelChangeModal = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   interface EmbeddingModel {
     model_id: string;
@@ -98,7 +109,6 @@
   // Operator-triggered re-embed of neural-search degraded (text-only) files (issue #626,
   // the follow-up to #625's bootstrap self-heal). Preview + confirm, never dispatch-on-click.
   let degradedPreview: DegradedPreview | null = null;
-  let showReembedModal = false;
   let isCheckingDegraded = false;
   let isReembedding = false;
 
@@ -199,15 +209,22 @@
 
   function openReembedModal() {
     if (!degradedPreview || degradedPreview.total_files === 0) return;
-    showReembedModal = true;
+    const preview = degradedPreview;
+    const truncatedNote = preview.truncated
+      ? ' ' + $t('settings.search.reembedModalTruncated', { count: preview.total_files })
+      : '';
+    confirmDialog.request(
+      $t('settings.search.reembedModalTitle'),
+      $t('settings.search.reembedModalMessage', {
+        count: preview.total_files,
+        userPhrase: $t('settings.search.userCount', { count: preview.affected_users }),
+      }) + truncatedNote,
+      reembed,
+      { confirmText: $t('settings.search.reembedButton') }
+    );
   }
 
-  function cancelReembed() {
-    showReembedModal = false;
-  }
-
-  async function confirmReembed() {
-    showReembedModal = false;
+  async function reembed() {
     isReembedding = true;
     try {
       const res = await axiosInstance.post('/search/reembed-degraded');
@@ -261,7 +278,15 @@
 
   function handleModelChange() {
     if (selectedModelId === currentModelId) return;
-    showModelChangeModal = true;
+    confirmDialog.request(
+      $t('settings.search.modelChangeTitle'),
+      $t('search.modelChangeWarning'),
+      switchModel,
+      {
+        confirmText: $t('settings.search.applyAndReindex'),
+        onCancel: () => (selectedModelId = currentModelId),
+      }
+    );
   }
 
   // Downloading weights takes minutes, so this reports progress rather than blocking
@@ -292,8 +317,7 @@
     }
   }
 
-  async function confirmModelChange() {
-    showModelChangeModal = false;
+  async function switchModel() {
     isSwitchingModel = true;
     try {
       const res = await axiosInstance.post('/search/models', {
@@ -309,11 +333,6 @@
     } finally {
       isSwitchingModel = false;
     }
-  }
-
-  function cancelModelChange() {
-    showModelChangeModal = false;
-    selectedModelId = currentModelId;
   }
 
   async function handleReindexAll() {
@@ -420,18 +439,32 @@
   {/if}
 
   {#if statusUnknown}
-    <div class="banner banner-neutral" role="status">
-      <div class="banner-body">{$t('settings.search.statusUnavailable')}</div>
-    </div>
+    <Banner tone="neutral">{$t('settings.search.statusUnavailable')}</Banner>
   {/if}
 
   <!-- Live reindex progress -->
   {#if isReindexing}
-    <ReindexLiveProgress {reindexProgress} {isStopping} onstop={handleStopReindex} />
+    {@const hasCounts = !!reindexProgress && reindexProgress.total_files > 0}
+    <div class="reindex-card">
+      <LiveProgressCard
+        title={isStopping ? $t('search.stoppingReindex') : $t('search.reindexingInProgress')}
+        state={isStopping ? 'stopping' : hasCounts ? 'running' : 'starting'}
+        done={hasCounts ? reindexProgress?.indexed_files ?? null : null}
+        total={hasCounts ? reindexProgress?.total_files ?? null : null}
+        percent={hasCounts && reindexProgress ? reindexProgress.progress * 100 : null}
+        etaSeconds={reindexProgress?.eta_seconds ?? null}
+        remainingLabel={$t('upload.remaining')}
+        message={hasCounts ? reindexProgress?.message ?? '' : $t('search.reindexStarting')}
+        barLabel={$t('search.reindexProgressBar')}
+        stopLabel={$t('search.stopReindex')}
+        stoppingLabel={$t('search.stoppingReindex')}
+        onStop={handleStopReindex}
+      />
+    </div>
   {:else if indexStatus && indexStatus.total_files > 0 && progressPercent < 100}
     <div class="progress-container">
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: {progressPercent}%"></div>
+      <div class="progress-bar-slot">
+        <ProgressBar percent={progressPercent} ariaLabel={$t('search.reindexProgressBar')} />
       </div>
       <span class="progress-text">{$t('settings.search.percentIndexed', { percent: progressPercent })}</span>
     </div>
@@ -461,9 +494,8 @@
 
   <!-- Neural search bootstrap self-heal warning (issue #625) -->
   {#if bootstrapStatus?.state === 'degraded'}
-    <div class="banner banner-warning">
-      <div class="banner-title">{$t('settings.search.bootstrapDegradedTitle')}</div>
-      <div class="banner-body">
+    <Banner tone="warning" title={$t('settings.search.bootstrapDegradedTitle')}>
+      <div>
         {$t('settings.search.bootstrapDegradedBody', { count: bootstrapStatus.attempts })}
       </div>
       {#if bootstrapStatus.last_error}
@@ -481,29 +513,26 @@
           {$t('settings.search.bootstrapTextOnlyFiles', { count: bootstrapStatus.text_only_chunk_files ?? 0 })}
         </div>
       {/if}
-    </div>
+    </Banner>
   {/if}
 
   <!-- Re-embed degraded (text-only) files (issue #626, the #625 follow-up). Shown
        independently of the bootstrap banner above — a degraded window can leave text-only
        files behind even after the neural pipeline has since recovered. -->
   {#if degradedPreview && degradedPreview.total_files > 0}
-    <div class="banner banner-warning reembed-banner">
-      <div class="reembed-banner-text">
-        <div class="banner-title">{$t('settings.search.reembedButton')}</div>
-        <div class="banner-body">
-          {$t('settings.search.reembedButtonCount', { count: degradedPreview.total_files })}
-        </div>
-      </div>
-      <button
-        class="btn btn-secondary btn-sm reembed-btn"
-        on:click={openReembedModal}
-        disabled={isReembedding || isCheckingDegraded || isReindexing}
-      >
-        {#if isReembedding}<Spinner size="small" />{/if}
-        {$t('settings.search.reembedButton')}
-      </button>
-    </div>
+    <Banner tone="warning" title={$t('settings.search.reembedButton')}>
+      {$t('settings.search.reembedButtonCount', { count: degradedPreview.total_files })}
+      <svelte:fragment slot="actions">
+        <button
+          class="btn btn-secondary btn-sm reembed-btn"
+          on:click={openReembedModal}
+          disabled={isReembedding || isCheckingDegraded || isReindexing}
+        >
+          {#if isReembedding}<Spinner size="small" />{/if}
+          {$t('settings.search.reembedButton')}
+        </button>
+      </svelte:fragment>
+    </Banner>
   {/if}
 
   <!-- Embedding Model Selection -->
@@ -532,8 +561,7 @@
     </div>
   </div>
 
-  <div class="form-group">
-    <label for="embedding-model-select">{$t('settings.search.modelLabel')}</label>
+  <FormField class="embedding-model-field" id="embedding-model-select" label={$t('settings.search.modelLabel')}>
     <select
       id="embedding-model-select"
       class="form-control"
@@ -586,7 +614,7 @@
         </div>
       {/if}
     {/if}
-  </div>
+  </FormField>
 
   {#if modelChanged}
     <div class="form-actions">
@@ -611,32 +639,15 @@
 {/if}
 
 <ConfirmationModal
-  isOpen={showModelChangeModal}
-  title={$t('settings.search.modelChangeTitle')}
-  message={$t('search.modelChangeWarning')}
-  confirmText={$t('settings.search.applyAndReindex')}
-  on:confirm={confirmModelChange}
-  on:cancel={cancelModelChange}
-  on:close={cancelModelChange}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
-
-<ConfirmationModal
-  isOpen={showReembedModal}
-  title={$t('settings.search.reembedModalTitle')}
-  message={degradedPreview
-    ? $t('settings.search.reembedModalMessage', {
-        count: degradedPreview.total_files,
-        userPhrase: $t('settings.search.userCount', { count: degradedPreview.affected_users }),
-      }) + (degradedPreview.truncated
-        ? ' ' + $t('settings.search.reembedModalTruncated', { count: degradedPreview.total_files })
-        : '')
-    : ''}
-  confirmText={$t('settings.search.reembedButton')}
-  on:confirm={confirmReembed}
-  on:cancel={cancelReembed}
-  on:close={cancelReembed}
-/>
-
 
 <style>
 
@@ -681,19 +692,8 @@
     margin-bottom: var(--space-2);
   }
 
-  .progress-bar {
+  .progress-bar-slot {
     flex: 1;
-    height: 6px;
-    background: var(--border-color);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: 3px;
-    transition: width var(--duration-slow);
   }
 
   .progress-text {
@@ -702,17 +702,10 @@
     white-space: nowrap;
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-    margin-bottom: var(--space-3);
-  }
 
-  .form-group label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
+
+  :global(.form-field.embedding-model-field) {
+    margin-bottom: var(--space-3);
   }
 
   .form-control {
@@ -793,36 +786,6 @@
 
   /* Neural search bootstrap warning banner (#625). Colours come from theme vars so
      light/dark parity is automatic, matching the .lang-badge pattern above. */
-  .banner {
-    border-radius: var(--radius-md);
-    padding: var(--space-2-5) var(--space-3);
-    margin-bottom: var(--space-3);
-    font-size: var(--font-size-sm);
-    line-height: 1.4;
-  }
-
-  .banner-warning {
-    border: 1px solid var(--warning-color);
-    background-color: var(--warning-bg);
-    color: var(--text-color);
-  }
-
-  .banner-neutral {
-    border: 1px solid var(--border-color);
-    background-color: var(--surface-color);
-    color: var(--text-secondary);
-  }
-
-  .banner-title {
-    font-weight: var(--font-weight-semibold);
-    margin-bottom: var(--space-1);
-    color: var(--warning-color);
-  }
-
-  .banner-body {
-    margin-bottom: var(--space-0-5);
-  }
-
   .banner-detail {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
@@ -831,18 +794,6 @@
 
   /* Re-embed degraded files banner (#626) — same .banner-warning shell as the bootstrap
      banner above, laid out as text + action button. */
-  .reembed-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-  }
-
-  .reembed-banner-text {
-    flex: 1;
-    min-width: 0;
-  }
-
   .reembed-btn {
     display: inline-flex;
     align-items: center;
@@ -913,17 +864,7 @@
     color: var(--primary-on-surface);
   }
 
-  .btn-sm {
-    padding: var(--space-1) var(--space-3);
-    font-size: var(--font-size-xs);
-  }
-
   @media (max-width: 768px) {
-    .reembed-banner {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
     .reembed-btn {
       justify-content: center;
     }
@@ -958,5 +899,9 @@
     .subsection-actions .btn {
       min-height: 44px;
     }
+  }
+
+  .reindex-card {
+    margin-bottom: var(--space-3);
   }
 </style>

@@ -1,10 +1,14 @@
 <script lang="ts">
   import InfoIcon from '$components/ui/InfoIcon.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
   import type { UserTask } from '$lib/types/fileStatus';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import SearchPagination from '$components/search/SearchPagination.svelte';
   import { taskProgressPercent } from '$lib/utils/formatting';
+  import Badge from '$components/ui/Badge.svelte';
+  import { badgeVariantForStatus } from '$lib/fileStatus/statusVariant';
+  import Banner from '$components/ui/Banner.svelte';
 
   export let tasks: UserTask[] = [];
   export let filteredTasks: UserTask[] = [];
@@ -21,7 +25,7 @@
 {#if tasksLoading && tasks.length === 0}
   <div class="loading">{$t('fileStatus.loadingTasks')}</div>
 {:else if tasksError}
-  <div class="error-message">{tasksError}</div>
+  <Banner tone="error">{tasksError}</Banner>
 {:else if filteredTasks.length === 0}
   <div class="no-tasks">
     <p>{taskFilter !== 'all' || taskTypeFilter !== 'all' ? $t('fileStatus.noTasksFilters') : $t('fileStatus.noTasks')}</p>
@@ -79,7 +83,7 @@
             </td>
             <td>
               <div class="task-status-cell">
-                <span class="status-badge {task.status === 'completed' ? 'status-completed' : task.status === 'in_progress' ? 'status-processing' : task.status === 'pending' ? 'status-pending' : task.status === 'failed' ? 'status-error' : 'status-unknown'}">
+                <Badge variant={badgeVariantForStatus(task.status)} size="md" class="status-badge">
                   {#if task.status === 'pending'}
                     {$t('common.pending')}
                   {:else if task.status === 'in_progress'}
@@ -91,14 +95,17 @@
                   {:else}
                     {task.status}
                   {/if}
-                </span>
+                </Badge>
                 {#if task.status === 'in_progress'}
                   <!-- `taskProgressPercent` guards missing/null/out-of-range values.
                        This rendered `task.progress * 100` raw, so a task without a
                        progress field produced `style="width: NaN%"`. -->
                   {@const progressPercent = taskProgressPercent(task.progress)}
                   <div class="progress-bar-container">
-                    <div class="progress-bar" style="width: {progressPercent}%"></div>
+                    <ProgressBar
+                      percent={progressPercent}
+                      ariaLabel={task.media_file?.filename || $t('fileStatus.inProgress')}
+                    />
                   </div>
                   <span class="task-progress-text" dir="ltr">{progressPercent}%</span>
                 {/if}
@@ -157,85 +164,6 @@
 
   .info-button.small {
     padding: var(--space-1);
-  }
-
-  .status-badge {
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    text-transform: uppercase;
-  }
-
-  .status-completed {
-    background: rgba(16, 185, 129, 0.1);
-    /* The green FILL on its own 10%-green tint fails WCAG AA the same way the red fill
-     * does below (#10b981 on #e2f7f0 measures under 4.5:1) — --color-success-text is the
-     * text-weight equivalent, calibrated against this exact tint. */
-    color: var(--color-success-text);
-  }
-
-  .status-processing {
-    background: rgba(var(--accent-rgb), 0.1);
-    color: var(--primary-on-surface);
-  }
-
-  .status-pending {
-    background: rgba(245, 158, 11, 0.1);
-    color: var(--color-warning-text);
-  }
-
-  .status-error {
-    background: rgba(239, 68, 68, 0.1);
-    /* The red FILL on its own 10%-red tint measures 3.29:1 — the worst contrast on this
-     * page, and on the one badge a user most needs to read. --color-error-text is the
-     * text-weight red; the dark override below already used the dark equivalent. */
-    color: var(--color-error-text);
-  }
-
-  .status-unknown {
-    background: rgba(156, 163, 175, 0.1);
-    color: #6b7280;
-  }
-
-  :global([data-theme='dark']) .status-completed {
-    background: rgba(16, 185, 129, 0.2);
-    /* --color-success-text's dark value (#34d399... via the alias chain, currently
-     * #6ee7b7) already matched this literal — switched to the token so it can't drift
-     * from its sibling badges again (issue #972). */
-    color: var(--color-success-text);
-  }
-
-  :global([data-theme='dark']) .status-processing {
-    background: rgba(var(--accent-rgb), 0.2);
-    /* Was a one-off #60a5fa: computed ~4.42:1 against this badge's composited background
-     * (rgba(59,130,246,0.2) over the dark surface #1e293b -> rgb(36,59,96)) — just under
-     * AA's 4.5:1, same failure class as the dark .status-error bug below (issue #972).
-     * --color-info-text (#93c5fd, same value as --primary-on-surface in dark) computes to
-     * ~6.23:1 on the same composited background. */
-    color: var(--color-info-text);
-  }
-
-  :global([data-theme='dark']) .status-pending {
-    background: rgba(245, 158, 11, 0.2);
-    /* --color-warning-text's dark value already matched this literal (#fbbf24) — switched
-     * to the token for the same reason as .status-completed above (issue #972). */
-    color: var(--color-warning-text);
-  }
-
-  :global([data-theme='dark']) .status-error {
-    background: rgba(239, 68, 68, 0.2);
-    /* Measured 4.38:1 as #f87171 (the --color-error-text dark value): that colour is
-     * calibrated for the plain dark surface, where it clears AA at 5.29:1, but this
-     * badge composites a 20% red tint over that surface and the margin disappears.
-     * #fca5a5 measures 6.38:1 against the composited rgb(72,46,61). The a11y E2E suite
-     * used to scan light theme only, so nothing caught this class of dark-only miss —
-     * issue #972 adds the dark-theme scan and a fixture page
-     * (/a11y-fixtures/status-badges) that renders every badge state unconditionally, so
-     * this and its three sibling badges are gated going forward regardless of what the
-     * live task queue happens to hold. Deliberately a one-off hex, not
-     * --color-error-text: that token fails on this specific composited background. */
-    color: #fca5a5;
   }
 
   .tasks-table-wrapper {
@@ -340,17 +268,6 @@
 
   .task-status-cell .progress-bar-container {
     width: 60px;
-    height: 4px;
-    background: var(--border-color);
-    border-radius: var(--radius-xs);
-    overflow: hidden;
-  }
-
-  .task-status-cell .progress-bar {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: var(--radius-xs);
-    transition: width var(--duration-slow) ease;
   }
 
   .task-progress-text {
@@ -376,17 +293,4 @@
     color: var(--text-light);
   }
 
-  .error-message {
-    background: var(--error-background);
-    color: var(--error-color);
-    padding: var(--space-4);
-    border-radius: var(--radius-sm);
-    margin-bottom: var(--space-4);
-    border: 1px solid var(--error-border);
-  }
-
-  :global([data-theme='dark']) .error-message {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.3);
-  }
 </style>

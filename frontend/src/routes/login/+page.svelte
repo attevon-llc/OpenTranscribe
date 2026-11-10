@@ -43,6 +43,7 @@
 
   // Import logo asset for proper Vite processing
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
 
   // Form data
   let email = "";
@@ -646,8 +647,7 @@
           </p>
 
           <form on:submit|preventDefault={handleForcedPasswordChange} class="auth-form">
-            <div class="form-group">
-              <label for="forced-current-password">{$t('auth.forcedChange.currentPassword')}</label>
+            <FormField id="forced-current-password" label={$t('auth.forcedChange.currentPassword')} size="lg">
               <input
                 type="password"
                 id="forced-current-password"
@@ -655,10 +655,9 @@
                 autocomplete="current-password"
                 disabled={forcedChangeLoading}
               />
-            </div>
+            </FormField>
 
-            <div class="form-group">
-              <label for="forced-new-password">{$t('auth.newPassword')}</label>
+            <FormField id="forced-new-password" label={$t('auth.newPassword')} size="lg">
               <input
                 type="password"
                 id="forced-new-password"
@@ -667,10 +666,9 @@
                 autocomplete="new-password"
                 disabled={forcedChangeLoading}
               />
-            </div>
+            </FormField>
 
-            <div class="form-group">
-              <label for="forced-confirm-password">{$t('auth.confirmPassword')}</label>
+            <FormField id="forced-confirm-password" label={$t('auth.confirmPassword')} size="lg">
               <input
                 type="password"
                 id="forced-confirm-password"
@@ -679,7 +677,7 @@
                 autocomplete="new-password"
                 disabled={forcedChangeLoading}
               />
-            </div>
+            </FormField>
 
             <div class="password-policy">
               <strong>{$t('auth.passwordRequirements')}</strong>
@@ -690,7 +688,7 @@
               </ul>
             </div>
 
-            <button type="submit" class="auth-button" disabled={forcedChangeLoading}>
+            <button type="submit" class="btn btn-lg btn-primary" disabled={forcedChangeLoading}>
               {#if forcedChangeLoading}
                 <Spinner size="small" color="white" /> {$t('auth.forcedChange.submitting')}
               {:else}
@@ -702,7 +700,7 @@
           <div class="mfa-options">
             <button
               type="button"
-              class="text-button cancel-button"
+              class="btn btn-link text-button cancel-button"
               on:click={abandonForcedChange}
               disabled={forcedChangeLoading}
             >
@@ -724,10 +722,10 @@
           </p>
           <p class="lifecycle-hint">{$t('auth.pendingApproval.hint')}</p>
           <div class="mfa-options">
-            <button type="button" class="text-button" on:click={() => window.location.reload()}>
+            <button type="button" class="btn btn-link text-button" on:click={() => window.location.reload()}>
               {$t('auth.pendingApproval.checkAgain')}
             </button>
-            <button type="button" class="text-button cancel-button" on:click={() => logout()}>
+            <button type="button" class="btn btn-link text-button cancel-button" on:click={() => logout()}>
               {$t('nav.logout')}
             </button>
           </div>
@@ -743,7 +741,7 @@
           </p>
           <p class="lifecycle-hint">{$t('auth.accountRejected.contactAdmin')}</p>
           <div class="mfa-options">
-            <button type="button" class="text-button" on:click={clearAccountLifecycle}>
+            <button type="button" class="btn btn-link text-button" on:click={clearAccountLifecycle}>
               {$t('auth.backToLogin')}
             </button>
           </div>
@@ -758,7 +756,7 @@
           </p>
           <p class="lifecycle-hint">{$t('auth.accountExpired.contactAdmin')}</p>
           <div class="mfa-options">
-            <button type="button" class="text-button" on:click={clearAccountLifecycle}>
+            <button type="button" class="btn btn-link text-button" on:click={clearAccountLifecycle}>
               {$t('auth.backToLogin')}
             </button>
           </div>
@@ -806,14 +804,7 @@
         </p>
 
         <form on:submit|preventDefault={handleMFASubmit} class="auth-form">
-          <div class="form-group">
-            <label for="mfaCode">
-              {#if useBackupCode}
-                {$t('auth.backupCode')}
-              {:else}
-                {$t('auth.mfaCode')}
-              {/if}
-            </label>
+          <FormField id="mfaCode" label={useBackupCode ? $t('auth.backupCode') : $t('auth.mfaCode')} size="lg">
             <input
               type="text"
               id="mfaCode"
@@ -825,11 +816,11 @@
               maxlength={useBackupCode ? 9 : 6}
               use:focusOnMount
             />
-          </div>
+          </FormField>
 
           <button
             type="submit"
-            class="auth-button"
+            class="btn btn-lg btn-primary"
             disabled={mfaLoading}
           >
             {#if mfaLoading}
@@ -843,7 +834,7 @@
         <div class="mfa-options">
           <button
             type="button"
-            class="text-button"
+            class="btn btn-link text-button"
             on:click={() => useBackupCode = !useBackupCode}
           >
             {#if useBackupCode}
@@ -854,7 +845,7 @@
           </button>
           <button
             type="button"
-            class="text-button cancel-button"
+            class="btn btn-link text-button cancel-button"
             on:click={cancelMFA}
           >
             {$t('auth.cancel')}
@@ -869,8 +860,7 @@
         <p class="lifecycle-message">{$t('auth.verifyEmail.notVerifiedDescription')}</p>
 
         <form on:submit|preventDefault={handleResendVerification} class="auth-form">
-          <div class="form-group">
-            <label for="verify-email-address">{$t('auth.email')}</label>
+          <FormField id="verify-email-address" label={$t('auth.email')} size="lg">
             <input
               type="email"
               id="verify-email-address"
@@ -879,9 +869,9 @@
               autocomplete="email"
               disabled={resendPending}
             />
-          </div>
+          </FormField>
 
-          <button type="submit" class="auth-button" disabled={resendPending}>
+          <button type="submit" class="btn btn-lg btn-primary" disabled={resendPending}>
             {#if resendPending}
               <Spinner size="small" color="white" /> {$t('auth.verifyEmail.resending')}
             {:else}
@@ -897,7 +887,7 @@
         {/if}
 
         <div class="mfa-options">
-          <button type="button" class="text-button cancel-button" on:click={dismissEmailNotVerified}>
+          <button type="button" class="btn btn-link text-button cancel-button" on:click={dismissEmailNotVerified}>
             {$t('auth.backToLogin')}
           </button>
         </div>
@@ -928,42 +918,52 @@
         </div>
       {/if}
 
-      <div class="form-group {!emailValid && formSubmitted ? 'has-error' : ''}">
-        <label for="email">{$t('auth.emailOrUsername')}</label>
+      <FormField
+        id="email"
+        label={$t('auth.emailOrUsername')}
+        size="lg"
+        error={!emailValid && formSubmitted ? $t('auth.validIdentifierRequired') : ''}
+        let:describedby
+        let:invalid
+      >
         <input
           type="text"
           id="email"
           bind:value={email}
           placeholder={$t('auth.emailOrUsernamePlaceholder')}
-          aria-invalid={!emailValid && formSubmitted}
+          aria-describedby={describedby}
+          aria-invalid={invalid}
           autocomplete="username"
         />
-        {#if !emailValid && formSubmitted}
-          <div class="field-error">{$t('auth.validIdentifierRequired')}</div>
-        {/if}
-      </div>
+      </FormField>
 
-      <div class="form-group {!passwordValid && formSubmitted ? 'has-error' : ''}">
-        <div class="password-header">
-          <label for="password">{$t('auth.password')}</label>
-          <button
-            type="button"
-            class="toggle-password"
-            on:click={togglePasswordVisibility}
-            tabindex="-1"
-            aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-            title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-          >
-            <EyeIcon visible={showPassword} />
-          </button>
-        </div>
+      <FormField
+        id="password"
+        label={$t('auth.password')}
+        size="lg"
+        error={!passwordValid && formSubmitted ? $t('auth.passwordRequired') : ''}
+        let:describedby
+        let:invalid
+      >
+        <button
+          slot="label-after"
+          type="button"
+          class="toggle-password"
+          on:click={togglePasswordVisibility}
+          tabindex="-1"
+          aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+          title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+        >
+          <EyeIcon visible={showPassword} />
+        </button>
         {#if showPassword}
           <input
             type="text"
             id="password"
             bind:value={password}
             placeholder={$t('auth.passwordPlaceholder')}
-            aria-invalid={!passwordValid && formSubmitted}
+            aria-describedby={describedby}
+            aria-invalid={invalid}
             autocomplete="current-password"
           />
         {:else}
@@ -972,14 +972,12 @@
             id="password"
             bind:value={password}
             placeholder={$t('auth.passwordPlaceholder')}
-            aria-invalid={!passwordValid && formSubmitted}
+            aria-describedby={describedby}
+            aria-invalid={invalid}
             autocomplete="current-password"
           />
         {/if}
-        {#if !passwordValid && formSubmitted}
-          <div class="field-error">{$t('auth.passwordRequired')}</div>
-        {/if}
-      </div>
+      </FormField>
 
       <!-- Self-service reset only exists for passwords stored here. An
            LDAP-only deployment renders the form above but no reset link — the
@@ -994,7 +992,7 @@
 
       <button
         type="submit"
-        class="auth-button"
+        class="btn btn-lg btn-primary"
         disabled={loading || $retryRemaining > 0}
       >
         {#if loading}
@@ -1019,7 +1017,7 @@
         {#if authMethods.oidc_enabled}
           <button
             type="button"
-            class="external-auth-button oidc-button"
+            class="btn btn-secondary external-auth-button oidc-button"
             on:click={handleOIDCLogin}
             disabled={oidcLoading || loading}
           >
@@ -1037,7 +1035,7 @@
         {#if authMethods.pki_enabled}
           <button
             type="button"
-            class="external-auth-button pki-button"
+            class="btn btn-secondary external-auth-button pki-button"
             on:click={handlePKILogin}
             disabled={pkiLoading || loading}
           >
@@ -1143,53 +1141,9 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
   }
-
-  .auth-button {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-xl);
-    padding: 0.6rem 1.2rem;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-  }
-
-  .auth-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  .auth-button:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .auth-button:disabled {
-    background-color: var(--border-color);
-    cursor: not-allowed;
-  }
-
 
   /* Shown when the deployment advertises no usable sign-in method at all. */
   .no-auth-methods {
@@ -1239,13 +1193,6 @@
     text-decoration: underline;
   }
 
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
-
   .toggle-password {
     background: none;
     border: none;
@@ -1260,12 +1207,6 @@
 
   .toggle-password:hover {
     background-color: var(--surface-hover);
-  }
-
-  .field-error {
-    color: var(--error-color);
-    font-size: 0.85rem;
-    margin-top: var(--space-1);
   }
 
   .success-message {
@@ -1327,30 +1268,11 @@
   }
 
   .external-auth-button {
-    display: flex;
-    align-items: center;
     justify-content: center;
     gap: var(--space-3);
     width: 100%;
     padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    background-color: var(--surface-color);
-    color: var(--text-color);
     font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .external-auth-button:hover:not(:disabled) {
-    background-color: var(--surface-hover);
-    border-color: var(--primary-color);
-  }
-
-  .external-auth-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .external-auth-button svg {
@@ -1451,7 +1373,7 @@
     margin-bottom: var(--space-6);
   }
 
-  .mfa-form .form-group {
+  .mfa-form :global(.form-field) {
     text-align: left;
   }
 
@@ -1470,18 +1392,8 @@
   }
 
   .text-button {
-    background: none;
-    border: none;
-    color: var(--primary-on-surface);
-    font-size: 0.9rem;
-    cursor: pointer;
     padding: var(--space-2);
-    transition: color var(--duration-base);
-  }
-
-  .text-button:hover {
-    color: var(--primary-color-dark);
-    text-decoration: underline;
+    font-size: 0.9rem;
   }
 
   .text-button.cancel-button {

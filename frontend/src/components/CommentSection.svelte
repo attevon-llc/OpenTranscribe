@@ -349,8 +349,7 @@
   message={$confirmMessage}
   confirmText={$t('comments.delete')}
   cancelText={$t('comments.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={confirmDialog.confirm}
   on:cancel={confirmDialog.cancel}
   on:close={confirmDialog.cancel}

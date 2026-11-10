@@ -549,7 +549,7 @@ Buttons"):
 | `.btn-ghost` | New (14 local copies): transparent, `--text-color`, hover `--button-hover`. |
 | `.btn-link` | New (6): no padding or background, `--primary-on-surface`, underline on hover. |
 | `.btn-danger-outline` | New (5): transparent, `--error-text`, 1px `--error-border`, hover `--error-bg`. |
-| `.btn-icon` | New (21 `icon-btn/icon-button`): square, min 28x28, padding `--space-1-5`, ghost colours, combinable with `.btn-sm`. |
+| `.btn-icon-only` | New (21 `icon-btn/icon-button`): square, min 28x28, padding `--space-1-5`, ghost colours, combinable with `.btn-sm`. |
 
 The `.modal-*-button` family stays only as long as callers use it. Lane 2.3c moves
 `ConfirmationModal` and the other 23 `modal-button` markup uses to `btn btn-lg btn-<variant>`,
@@ -565,7 +565,7 @@ props:   variant: 'primary'|'secondary'|'danger'|'warning'|'success'|'ghost'|'li
          disabled = false
          busy = false        -> aria-disabled="true" + aria-busy="true", click swallowed, focus kept
                                 (the a0ca7755f pattern), ui/Spinner size="small" before the label
-         iconOnly = false    -> adds .btn-icon; requires ariaLabel (dev console.error if missing)
+         iconOnly = false    -> adds .btn-icon-only; requires ariaLabel (dev console.error if missing)
          ariaLabel = ''      form = ''  title = ''
 slots:   default (label), icon (leading; MenuIcon by convention)
 events:  on:click (forwarded; not fired while busy or disabled)
@@ -1052,7 +1052,7 @@ master merge (repo plan 0b point 10), so its conflict window is small.
 
 | Lane | Files | Expected changes | Screens |
 |---|---|---|---|
-| 2.0a | `form-elements.css`: add `.btn-sm`, `.btn-lg`, `.btn-success`, `.btn-ghost`, `.btn-link`, `.btn-danger-outline`, `.btn-icon`; base `.btn` and variants on tokens. `ui/Button.svelte` + test. ui-kit buttons section | None on existing screens (the new classes are unused; on-token values equal today's after Phase 1). ui-kit: new rows only. | ui-kit, controls |
+| 2.0a | `form-elements.css`: add `.btn-sm`, `.btn-lg`, `.btn-success`, `.btn-ghost`, `.btn-link`, `.btn-danger-outline`, `.btn-icon-only`; base `.btn` and variants on tokens. `ui/Button.svelte` + test. ui-kit buttons section | None on existing screens (the new classes are unused; on-token values equal today's after Phase 1). ui-kit: new rows only. | ui-kit, controls |
 | 2.0b | `form-elements.css` + `theme.css`: D3 (danger and warning fills and hovers, `.modal-delete-button`/`.modal-warning-button` too), D4 (`button:focus-visible` and field focus use `--focus-ring-color`), D6 (`--field-border: var(--control-border)`). Delete the `BACKLOG lane 2.0b` a11y rows | Danger buttons #ef4444 → #dc2626 (hover → #b91c1c). Warning buttons get dark text. Focus outline in dark becomes #60a5fa. Field borders darken (#d1d5db → #838fa1 light; #475569 → #7c8aa0 dark). | **all** screens (global); Opus reviewer |
 | 2.1a | `ui/Toggle.svelte` + test; `privacy/PrivacySwitchCard.svelte` consumes it | PrivacySwitchCard: off-track gains the `--control-border` outline. Otherwise none (it is the 44x24 reference). | `settings:content-redaction` / privacy surfaces, ui-kit |
 | 2.1b | Toggles in `settings/{ASRConfigModal,ASRSettings,AudioExtractionSettings,AuditContentAccessToggle,AutoLabelSettings,BackupSettings,ChatSettings,ContentRedactionSettings,CustomVocabularySettings,DirectorySyncSettings,DownloadSettings}` | D5: sizes become 44x24, `role=switch`, RTL mirroring, off-track outline | their `settings:*` screens |

@@ -107,7 +107,7 @@
   {:else if loadFailed}
     <div class="state-row error">
       <span>{$t('settings.lockedAccounts.loadFailed')}</span>
-      <button class="retry-btn" on:click={() => loadPage()}>{$t('common.retry')}</button>
+      <button class="btn btn-secondary" on:click={() => loadPage()}>{$t('common.retry')}</button>
     </div>
   {:else if !lockoutEnabled}
     <div class="state-row disabled">
@@ -172,7 +172,7 @@
       </table>
 
       {#if nextCursor}
-        <button class="load-more-btn" disabled={loading} on:click={() => loadPage(nextCursor, true)}>
+        <button class="btn btn-secondary load-more-btn" disabled={loading} on:click={() => loadPage(nextCursor, true)}>
           {loading ? $t('common.loading') : $t('common.loadMore')}
         </button>
       {/if}
@@ -217,15 +217,6 @@
 
   .state-row.disabled {
     color: var(--text-secondary);
-  }
-
-  .retry-btn {
-    padding: var(--space-1) var(--space-3);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
   }
 
   .degraded-banner {
@@ -285,12 +276,5 @@
 
   .load-more-btn {
     margin-top: var(--space-3);
-    padding: var(--space-1-5) var(--space-4);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: var(--bg-color);
-    color: var(--text-color);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
   }
 </style>

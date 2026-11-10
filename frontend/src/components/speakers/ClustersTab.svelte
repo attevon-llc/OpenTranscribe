@@ -5,6 +5,7 @@
   import { formatDateTime, formatRelativeTime } from '$lib/utils/formatting';
   import SpeakerClusterCard from '$components/speakers/SpeakerClusterCard.svelte';
   import ClusterMemberList from '$components/speakers/ClusterMemberList.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import ListRowSkeleton from '$components/ui/ListRowSkeleton.svelte';
   import type {
@@ -81,14 +82,15 @@
     <div class="clustering-progress">
       {#if clusteringProgress.total_steps === 0}
         <!-- Queued state: waiting for GPU -->
-        <div class="progress-bar">
-          <div class="progress-fill queued-pulse" style="width: 100%"></div>
+        <div class="queued-pulse">
+          <ProgressBar percent={100} ariaLabel={$t('speakers.clusters.reclustering')} />
         </div>
         <span class="progress-text">{clusteringProgress.message}</span>
       {:else}
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {clusteringProgress.progress * 100}%"></div>
-        </div>
+        <ProgressBar
+          percent={clusteringProgress.progress * 100}
+          ariaLabel={$t('speakers.clusters.reclustering')}
+        />
         <span class="progress-text">
           {clusteringProgress.message} ({Math.round(clusteringProgress.progress * 100)}%)
         </span>
@@ -316,21 +318,7 @@
     margin-top: var(--space-3);
   }
 
-  .progress-bar {
-    height: 6px;
-    background: var(--hover-color);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: 3px;
-    transition: width var(--duration-slow) ease;
-  }
-
-  .progress-fill.queued-pulse {
+  .queued-pulse {
     opacity: 0.4;
     animation: pulse 1.5s ease-in-out infinite;
   }

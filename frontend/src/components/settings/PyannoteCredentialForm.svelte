@@ -11,6 +11,7 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from 'svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import Spinner from '$components/ui/Spinner.svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -47,7 +48,14 @@
   let saving = false;
   let testing = false;
   let deleting = false;
-  let showDeleteConfirm = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
   let testResult: PyannoteTestResult | null = null;
 
   $: view = pyannoteCredentialView(status, diarizationSource);
@@ -105,6 +113,18 @@
     }
   }
 
+  function askDelete() {
+    confirmDialog.request(
+      $t('settings.speakerIdentification.pyannoteKey.delete'),
+      $t('settings.speakerIdentification.pyannoteKey.deleteConfirm'),
+      remove,
+      {
+        confirmText: $t('settings.speakerIdentification.pyannoteKey.delete'),
+        variant: 'danger',
+      }
+    );
+  }
+
   async function remove() {
     deleting = true;
     try {
@@ -134,7 +154,7 @@
   <p class="credential-desc">{$t('settings.speakerIdentification.pyannoteKey.description')}</p>
 
   {#if loading}
-    <Spinner size="small" />
+    <Spinner label={$t('common.loading')} size="small" />
   {:else}
     {#if view.warningKey}
       <p class="credential-warning" role="alert" data-testid="pyannote-warning">
@@ -158,7 +178,8 @@
       />
       <button
         type="button"
-        class="cred-btn primary"
+        class="btn btn-primary"
+        data-testid="pyannote-save"
         on:click={save}
         disabled={disabled || busy || !view.canSave || trimmedKey === ''}
       >
@@ -168,7 +189,7 @@
     </div>
 
     <div class="credential-actions">
-      <button type="button" class="cred-btn" on:click={test} disabled={!canTest}>
+      <button type="button" class="btn btn-secondary" data-testid="pyannote-test" on:click={test} disabled={!canTest}>
         {testing
           ? $t('settings.speakerIdentification.pyannoteKey.testing')
           : $t('settings.speakerIdentification.pyannoteKey.test')}
@@ -176,8 +197,9 @@
       {#if view.canDelete}
         <button
           type="button"
-          class="cred-btn danger"
-          on:click={() => (showDeleteConfirm = true)}
+          class="btn btn-danger-outline"
+          data-testid="pyannote-delete"
+          on:click={askDelete}
           disabled={disabled || busy}
         >
           {$t('settings.speakerIdentification.pyannoteKey.delete')}
@@ -199,18 +221,16 @@
   {/if}
 </div>
 
-{#if showDeleteConfirm}
-  <ConfirmationModal
-    bind:isOpen={showDeleteConfirm}
-    title={$t('settings.speakerIdentification.pyannoteKey.delete')}
-    message={$t('settings.speakerIdentification.pyannoteKey.deleteConfirm')}
-    confirmText={$t('settings.speakerIdentification.pyannoteKey.delete')}
-    cancelText={$t('common.cancel')}
-    confirmButtonClass="modal-delete-button"
-    cancelButtonClass="modal-cancel-button"
-    on:confirm={remove}
-  />
-{/if}
+<ConfirmationModal
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
+/>
 
 <style>
   .pyannote-credential {
@@ -301,38 +321,6 @@
     gap: var(--space-2);
     margin-top: var(--space-3);
     flex-wrap: wrap;
-  }
-
-  /* Own button classes: the enclosing form's tests and e2e select its Save and Reset
-     buttons by .btn-primary / .btn-secondary, so these must not collide with them. */
-  .cred-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    padding: var(--space-2) var(--space-4);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: var(--background-color);
-    color: var(--text-color);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-  }
-
-  .cred-btn.primary {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .cred-btn.danger {
-    color: var(--error-color);
-    border-color: var(--error-color);
-  }
-
-  .cred-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .credential-result {

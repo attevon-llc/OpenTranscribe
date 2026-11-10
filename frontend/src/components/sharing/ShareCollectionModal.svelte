@@ -200,9 +200,10 @@
                       on:change={(e) => handlePendingPermissionChange(index, e)}
                     />
                     <button
-                      class="remove-btn"
+                      class="btn btn-icon-only btn-sm btn-icon-danger remove-btn"
                       on:click={() => removePendingTarget(index)}
                       title={$t('sharing.remove')}
+                      aria-label={$t('sharing.remove')}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="18" y1="6" x2="6" y2="18"/>
@@ -216,7 +217,7 @@
 
             <div class="share-action">
               <button
-                class="share-btn"
+                class="btn btn-lg btn-primary share-btn"
                 on:click={shareWithTargets}
                 disabled={sharing || pendingTargets.length === 0}
               >
@@ -465,62 +466,10 @@
     flex-shrink: 0;
   }
 
-  .remove-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all var(--duration-fast) ease;
-  }
-
-  .remove-btn:hover {
-    color: var(--error-color);
-    background: rgba(239, 68, 68, 0.08);
-  }
-
   .share-action {
     display: flex;
     justify-content: flex-end;
     margin-top: var(--space-2);
-  }
-
-  .share-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) 1.2rem;
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-lg);
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-primary);
-  }
-
-  .share-btn:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  .share-btn:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .share-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
   }
 
   .divider {

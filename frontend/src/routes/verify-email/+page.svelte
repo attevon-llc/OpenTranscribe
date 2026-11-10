@@ -23,6 +23,8 @@
   import { onMount } from 'svelte';
 
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   let phase: 'loading' | 'verified' | 'failed' = 'loading';
   /** Server prose for either outcome. Rendered as-is. */
@@ -96,13 +98,12 @@
         <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else}
-      <div class="error-message" role="alert">{outcomeMessage}</div>
+      <Banner tone="error" size="base">{outcomeMessage}</Banner>
 
       <form on:submit|preventDefault={handleResend} class="auth-form">
         <p class="muted">{$t('auth.verifyEmail.resendDescription')}</p>
 
-        <div class="form-group">
-          <label for="resend-email">{$t('auth.email')}</label>
+        <FormField id="resend-email" label={$t('auth.email')} size="lg">
           <input
             type="email"
             id="resend-email"
@@ -112,7 +113,7 @@
             disabled={resendPending}
             required
           />
-        </div>
+        </FormField>
 
         <button type="submit" class="auth-button" disabled={resendPending || !resendAddress.trim()}>
           {#if resendPending}
@@ -183,19 +184,7 @@
     margin-top: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
   }
 
@@ -240,15 +229,6 @@
 
   .auth-link:hover {
     text-decoration: underline;
-  }
-
-  .error-message {
-    background-color: var(--error-color-light);
-    color: var(--error-color);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    font-weight: var(--font-weight-medium);
   }
 
   .success-message {

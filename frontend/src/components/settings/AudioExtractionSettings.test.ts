@@ -37,7 +37,9 @@ describe('AudioExtractionSettings layout', () => {
   it('labels the field above its control', async () => {
     const { container } = render(AudioExtractionSettings);
     const field = await screen.findByTestId('threshold-field');
-    const children = Array.from(field.children).map((c) => c.tagName + '.' + c.className);
+    const formField = field.querySelector('.form-field');
+    expect(formField).not.toBeNull();
+    const children = Array.from(formField!.children).map((c) => c.tagName + '.' + c.className);
     expect(children[0]).toMatch(/^LABEL/);
     expect(container.querySelector('label[for="threshold"]')).not.toBeNull();
   });

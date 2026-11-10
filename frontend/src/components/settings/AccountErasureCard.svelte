@@ -325,20 +325,6 @@
     gap: var(--space-2);
   }
 
-  .btn-danger {
-    background: var(--error-color);
-    color: var(--text-on-solid);
-    border: 1px solid transparent;
-    border-radius: var(--radius-md);
-    padding: var(--space-2) var(--space-3-5);
-    cursor: pointer;
-  }
-
-  .btn-danger:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .notice {
     margin: 0;
     padding: var(--space-2) var(--space-3);

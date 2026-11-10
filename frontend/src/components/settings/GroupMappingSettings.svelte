@@ -11,6 +11,7 @@
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import GroupMappingForm from './GroupMappingForm.svelte';
   import GroupMappingTester from './GroupMappingTester.svelte';
 
@@ -30,8 +31,14 @@
   let showForm = false;
   let editing: GroupMapping | null = null;
 
-  let showDeleteConfirm = false;
-  let pendingDelete: GroupMapping | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   onMount(async () => {
     // The picker options are source-independent, so they are fetched once.
@@ -68,14 +75,15 @@
   }
 
   function askDelete(mapping: GroupMapping) {
-    pendingDelete = mapping;
-    showDeleteConfirm = true;
+    confirmDialog.request(
+      $t('settings.groupMappings.deleteTitle'),
+      $t('settings.groupMappings.deleteMessage', { claim: mapping.claim_value }),
+      () => deleteMapping(mapping),
+      { confirmText: $t('common.delete') }
+    );
   }
 
-  async function confirmDelete() {
-    const target = pendingDelete;
-    pendingDelete = null;
-    if (!target) return;
+  async function deleteMapping(target: GroupMapping) {
     try {
       await GroupMappingsApi.remove(target.uuid);
       toastStore.success($t('settings.groupMappings.toast.deleted'));
@@ -189,10 +197,10 @@
               </td>
               <td class="numeric">{mapping.member_count}</td>
               <td class="actions-col">
-                <button type="button" class="btn btn-secondary btn-row" on:click={() => openEdit(mapping)}>
+                <button type="button" class="btn btn-secondary btn-sm btn-row" on:click={() => openEdit(mapping)}>
                   {$t('common.edit')}
                 </button>
-                <button type="button" class="btn btn-danger btn-row" on:click={() => askDelete(mapping)}>
+                <button type="button" class="btn btn-danger btn-sm btn-row" on:click={() => askDelete(mapping)}>
                   {$t('common.delete')}
                 </button>
               </td>
@@ -215,12 +223,14 @@
 />
 
 <ConfirmationModal
-  bind:isOpen={showDeleteConfirm}
-  title={$t('settings.groupMappings.deleteTitle')}
-  message={$t('settings.groupMappings.deleteMessage', { claim: pendingDelete?.claim_value ?? '' })}
-  confirmText={$t('common.delete')}
-  on:confirm={confirmDelete}
-  on:cancel={() => (pendingDelete = null)}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>
@@ -343,8 +353,6 @@
   }
 
   .btn-row {
-    padding: 0.3rem 0.65rem;
-    font-size: var(--font-size-xs);
     margin-left: 0.35rem;
   }
 

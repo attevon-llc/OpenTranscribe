@@ -6,6 +6,7 @@
   import { supportSession } from '$stores/supportSession';
   import StatusChip from './StatusChip.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import { SupportAccessApi } from '$lib/api/supportAccess';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { formatClock, formatTimeOfDay } from '$lib/utils/formatting';
@@ -16,7 +17,14 @@
    * separate live region that speaks only the start, the 5-minute and the 1-minute marks.
    */
   let height = 0;
-  let confirmOpen = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
   let revoking = false;
 
   $: s = $supportSession;
@@ -66,8 +74,15 @@
 
   $: if (s.active) announce(s.grantUuid, s.remainingSeconds);
 
+  function askRevoke() {
+    confirmDialog.request(
+      $t('supportAccess.revoke.title'),
+      $t('supportAccess.revoke.body', { name: s.targetLabel }),
+      revoke
+    );
+  }
+
   async function revoke() {
-    confirmOpen = false;
     if (!s.grantUuid) return;
     revoking = true;
     try {
@@ -119,7 +134,7 @@
       type="button"
       class="btn btn-danger sa-danger"
       disabled={revoking}
-      on:click={() => (confirmOpen = true)}
+      on:click={askRevoke}
     >
       {$t('supportAccess.action.revoke')}
     </button>
@@ -133,12 +148,14 @@
 </section>
 
 <ConfirmationModal
-  isOpen={confirmOpen}
-  title={$t('supportAccess.revoke.title')}
-  message={$t('supportAccess.revoke.body', { name: s.targetLabel })}
-  on:confirm={revoke}
-  on:cancel={() => (confirmOpen = false)}
-  on:close={() => (confirmOpen = false)}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>
@@ -182,17 +199,6 @@
   .buttons .btn {
     padding: var(--space-1) 0.7rem;
     font-size: var(--font-size-xs);
-  }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
   }
   @media (max-width: 768px) {
     .buttons .btn {

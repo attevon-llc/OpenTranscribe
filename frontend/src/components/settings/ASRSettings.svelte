@@ -1,5 +1,6 @@
 <script lang="ts">
   import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import type { MenuIconName } from '$lib/ui/menuIcons';
   import { ASR_TEST_STATUS_KEYS } from '$lib/i18n/keyMaps';
   import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
@@ -13,6 +14,7 @@
     type ASRProvider,
   } from '$lib/api/asrSettings';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import ASRConfigModal from './ASRConfigModal.svelte';
   import CloudProviderPolicy from './asr/CloudProviderPolicy.svelte';
   import LocalModelLibrary from './localModels/LocalModelLibrary.svelte';
@@ -25,6 +27,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin = false;
@@ -111,9 +114,14 @@
   const notEnabled = (providerId: string) => !isAdmin && providers.length > 0 && !enabledIds.has(providerId);
   $: noCloudEnabled = !isAdmin && providers.length > 0 && providers.every((p) => p.provider === 'local');
 
-  let showDeleteModal = false;
-  let configToDelete: UserASRSettingsResponse | null = null;
-  let showDeleteAllModal = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   let testingConfigId: string | null = null;
 
@@ -226,18 +234,28 @@
   }
 
   function confirmDelete(config: UserASRSettingsResponse) {
-    configToDelete = config;
-    showDeleteModal = true;
+    confirmDialog.request(
+      $t('settings.asrProvider.deleteConfirmTitle'),
+      $t('settings.asrProvider.deleteConfirmMessage', { name: config.name }),
+      () => deleteConfiguration(config),
+      { confirmText: $t('common.delete'), variant: 'danger' }
+    );
   }
 
-  async function deleteConfiguration() {
-    if (!configToDelete) return;
+  function confirmDeleteAll() {
+    confirmDialog.request(
+      $t('settings.asrProvider.deleteAllConfirmTitle'),
+      $t('settings.asrProvider.deleteAllConfirmMessage'),
+      deleteAllConfigurations,
+      { confirmText: $t('settings.asrProvider.deleteAll'), variant: 'danger' }
+    );
+  }
+
+  async function deleteConfiguration(config: UserASRSettingsResponse) {
     saving = true;
     try {
-      const deletedName = configToDelete.name;
-      const result = await ASRSettingsApi.deleteConfig(configToDelete.uuid);
-      configToDelete = null;
-      showDeleteModal = false;
+      const deletedName = config.name;
+      const result = await ASRSettingsApi.deleteConfig(config.uuid);
       // Re-fetch canonical state to pick up auto-promoted active config
       await loadData();
       toastStore.success(`"${deletedName}" deleted`);
@@ -258,7 +276,6 @@
       configurations = [];
       activeConfigurationId = null;
       usingLocalDefault = true;
-      showDeleteAllModal = false;
       toastStore.success($t('settings.asrProvider.deletedAll'));
       applyReset(result.diarizer_source_reverted);
       announce(changeMessages(result));
@@ -335,7 +352,7 @@
     }
   }
 
-  async function handleEnabledToggle(config: UserASRSettingsResponse, box: HTMLInputElement) {
+  async function handleEnabledToggle(config: UserASRSettingsResponse) {
     const enable = config.is_active === false;
     saving = true;
     try {
@@ -354,10 +371,8 @@
       );
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      // The row only changes on success, and Svelte would not redraw an unchanged value,
-      // so put the box back by hand; the toast says why.
+      // The row only changes on success and Toggle is controlled, so it stays where it was.
       toastStore.error(failure(err, 'settings.asrProvider.enableFailed'), 5000);
-      box.checked = !enable;
     } finally {
       saving = false;
     }
@@ -390,7 +405,7 @@
     else unlockScroll();
     _asrModalWasOpen = anyOpen;
   }
-  $: syncScrollLock(showConfigModal || showDeleteModal || showDeleteAllModal);
+  $: syncScrollLock(showConfigModal);
 </script>
 
 <div class="asr-settings">
@@ -471,7 +486,7 @@
           ({ASRSettingsApi.getProviderDisplayName(getActiveConfig()?.provider || '')} — {getActiveConfig()?.model_name || ''})
         </span>
         {#if !isLite}
-          <button class="btn-use-local" on:click={switchToLocal} disabled={saving}>
+          <button class="btn btn-secondary btn-sm btn-use-local" on:click={switchToLocal} disabled={saving}>
             {$t('settings.asrProvider.useLocal')}
           </button>
         {/if}
@@ -504,7 +519,7 @@
         {$t('settings.asrProvider.title')}
       </h4>
       {#if configurations.length > 0 || sharedConfigurations.length > 0}
-        <button class="add-button" on:click={openCreateModal} disabled={saving}>
+        <button class="btn btn-primary add-button" on:click={openCreateModal} disabled={saving}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
@@ -543,28 +558,30 @@
               </div>
               <div class="config-model">{config.model_name}</div>
               <div class="share-toggle-row">
-                <label class="toggle-label">
-                  <input type="checkbox" class="toggle-input" data-testid="asr-enabled-toggle"
-                    checked={config.is_active !== false}
-                    on:change={(e) => handleEnabledToggle(config, e.currentTarget)} disabled={saving} />
-                  <span class="toggle-switch"></span>
-                  <span class="toggle-text">{$t('settings.asrProvider.enabledToggle')}</span>
-                </label>
+                <Toggle
+                  checked={config.is_active !== false}
+                  onchange={() => handleEnabledToggle(config)}
+                  disabled={saving}
+                  id="asr-enabled-label-{config.uuid}"
+                  testid="asr-enabled-toggle"
+                />
+                <label class="toggle-text" for="asr-enabled-label-{config.uuid}">{$t('settings.asrProvider.enabledToggle')}</label>
               </div>
               <div class="share-toggle-row">
-                <label class="toggle-label">
-                  <input type="checkbox" class="toggle-input" checked={config.is_shared}
-                    on:change={() => handleShareToggle(config)} disabled={saving} />
-                  <span class="toggle-switch"></span>
-                  <span class="toggle-text">{$t('settings.asrProvider.shareGlobally')}</span>
-                </label>
+                <Toggle
+                  checked={config.is_shared === true}
+                  onchange={() => handleShareToggle(config)}
+                  disabled={saving}
+                  id="asr-share-label-{config.uuid}"
+                />
+                <label class="toggle-text" for="asr-share-label-{config.uuid}">{$t('settings.asrProvider.shareGlobally')}</label>
               </div>
             </div>
 
             <div class="config-actions">
               {#if config.uuid !== activeConfigurationId}
                 <button
-                  class="btn-activate"
+                  class="btn btn-success btn-activate"
                   on:click={() => activateConfiguration(config.uuid)}
                   disabled={saving || notEnabled(config.provider)}
                   title={$t('settings.asrProvider.setActive')}
@@ -573,7 +590,7 @@
                 </button>
               {/if}
               <button
-                class="btn-icon btn-test"
+                class="btn btn-icon-only btn-test"
                 on:click={() => testConfiguration(config)}
                 disabled={testing}
                 title={$t('settings.asrProvider.testConnection')}
@@ -588,7 +605,7 @@
                 {/if}
               </button>
               <button
-                class="btn-icon btn-edit"
+                class="btn btn-icon-only btn-edit"
                 on:click={() => openEditModal(config)}
                 disabled={saving}
                 title={$t('settings.asrProvider.editConfig')}
@@ -599,7 +616,7 @@
                 </svg>
               </button>
               <button
-                class="btn-icon btn-delete"
+                class="btn btn-icon-only btn-icon-danger btn-delete"
                 on:click={() => confirmDelete(config)}
                 disabled={saving}
                 title={$t('settings.asrProvider.deleteConfirmTitle')}
@@ -615,7 +632,7 @@
       </div>
 
       <div class="delete-all-section">
-        <button class="btn-delete-all" on:click={() => showDeleteAllModal = true} disabled={saving}>
+        <button class="btn btn-danger" on:click={confirmDeleteAll} disabled={saving}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3,6 5,6 21,6"/>
             <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
@@ -661,11 +678,11 @@
             </div>
             <div class="config-actions">
               {#if config.uuid !== activeConfigurationId}
-                <button class="btn-activate" on:click={() => activateConfiguration(config.uuid)} disabled={saving || notEnabled(config.provider)}>
+                <button class="btn btn-success btn-activate" on:click={() => activateConfiguration(config.uuid)} disabled={saving || notEnabled(config.provider)}>
                   {$t('settings.asrProvider.setActive')}
                 </button>
               {/if}
-              <button class="btn-icon btn-test" on:click={() => testConfiguration(config)} disabled={testing}>
+              <button class="btn btn-icon-only btn-test" on:click={() => testConfiguration(config)} disabled={testing}>
                 {#if testing && testingConfigId === config.uuid}
                   <Spinner size="small" />
                 {:else}
@@ -682,24 +699,20 @@
     {/if}
 
     {#if configurations.length === 0 && sharedConfigurations.length === 0}
-      <div class="empty-state">
-        <div class="empty-icon">
-          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
-        </div>
-        <h4>{$t('settings.asrProvider.emptyTitle')}</h4>
-        <p>{$t('settings.asrProvider.emptyDescription')}</p>
-        <button class="btn-add-first" on:click={openCreateModal}>
+      <EmptyState bordered titleSize="lg" padding="var(--space-10) var(--space-8)" title={$t('settings.asrProvider.emptyTitle')} description={$t('settings.asrProvider.emptyDescription')}>
+        <svg slot="icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <button class="btn btn-primary" on:click={openCreateModal}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           {$t('settings.asrProvider.addConfig')}
         </button>
-      </div>
+      </EmptyState>
     {/if}
     {/if}
   {/if}
@@ -723,29 +736,14 @@
 />
 
 <ConfirmationModal
-  bind:isOpen={showDeleteModal}
-  title={$t('settings.asrProvider.deleteConfirmTitle')}
-  message={configToDelete ? $t('settings.asrProvider.deleteConfirmMessage', { name: configToDelete.name }) : ''}
-  confirmText="Delete"
-  cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
-  on:confirm={deleteConfiguration}
-  on:cancel={() => { configToDelete = null; showDeleteModal = false; }}
-  on:close={() => { configToDelete = null; showDeleteModal = false; }}
-/>
-
-<ConfirmationModal
-  bind:isOpen={showDeleteAllModal}
-  title={$t('settings.asrProvider.deleteAllConfirmTitle')}
-  message={$t('settings.asrProvider.deleteAllConfirmMessage')}
-  confirmText={$t('settings.asrProvider.deleteAll')}
-  cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
-  on:confirm={deleteAllConfigurations}
-  on:cancel={() => showDeleteAllModal = false}
-  on:close={() => showDeleteAllModal = false}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>
@@ -814,18 +812,10 @@
     margin-bottom: var(--space-2);
   }
 
+
   .btn-use-local {
-    margin-left: auto;
-    padding: var(--space-1) var(--space-3);
-    font-size: var(--font-size-xs);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-color);
-    background: var(--surface-color);
-    color: var(--text-color);
-    cursor: pointer;
-    white-space: nowrap;
+    margin-inline-start: auto;
   }
-  .btn-use-local:hover:not(:disabled) { background: var(--button-hover); }
 
   .section-header {
     display: flex;
@@ -844,25 +834,6 @@
     font-size: 1.125rem;
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
-  }
-
-  .add-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: background var(--duration-base);
-  }
-
-  .add-button:hover:not(:disabled) {
-    background: var(--primary-color);
   }
 
   .config-list {
@@ -953,68 +924,6 @@
     flex-shrink: 0;
   }
 
-  .btn-activate {
-    padding: var(--space-1-5) var(--space-3);
-    border-radius: 5px;
-    font-size: 0.775rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    background: var(--success-color);
-    color: var(--text-on-solid);
-    border: none;
-    transition: background var(--duration-fast);
-    white-space: nowrap;
-  }
-
-  .btn-activate:hover:not(:disabled) { background: #059669; }
-
-  .btn-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: all var(--duration-fast);
-    border: 1px solid;
-    box-shadow: none;
-  }
-
-  .btn-test {
-    background: transparent;
-    border-color: var(--primary-color);
-    color: var(--primary-on-surface);
-  }
-
-  .btn-test:hover:not(:disabled) {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .btn-edit {
-    background: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .btn-edit:hover:not(:disabled) {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .btn-delete {
-    background: transparent;
-    border-color: var(--error-color);
-    color: var(--error-color);
-  }
-
-  .btn-delete:hover:not(:disabled) {
-    background: var(--error-color);
-    color: var(--text-on-solid);
-  }
 
   .delete-all-section {
     margin-top: var(--space-6);
@@ -1023,67 +932,7 @@
     text-align: center;
   }
 
-  .btn-delete-all {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: #ef4444;
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: background var(--duration-base);
-  }
 
-  .btn-delete-all:hover:not(:disabled) { background: var(--error-solid); }
-
-  .empty-state {
-    text-align: center;
-    padding: var(--space-10) var(--space-8);
-    border: 2px dashed var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--card-bg);
-  }
-
-  .empty-icon {
-    margin-bottom: var(--space-3-5);
-    color: var(--text-muted);
-    opacity: 0.6;
-  }
-
-  .empty-state h4 {
-    margin: 0 0 var(--space-2);
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .empty-state p {
-    margin: 0 0 var(--space-5);
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-    line-height: 1.5;
-  }
-
-  .btn-add-first {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-2) 1.1rem;
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: background var(--duration-base);
-  }
-
-  .btn-add-first:hover { background: var(--primary-color); }
 
   button:disabled {
     opacity: 0.6;
@@ -1124,26 +973,8 @@
     border-top: 1px dashed var(--border-color);
   }
 
-  .toggle-label {
-    display: flex; align-items: center; gap: var(--space-2);
-    cursor: pointer; font-size: var(--font-size-xs); color: var(--text-muted);
-  }
-
-  .toggle-input { display: none; }
-
-  .toggle-switch {
-    position: relative; width: 28px; height: 16px;
-    background: var(--border-color); border-radius: var(--radius-lg);
-    transition: background var(--duration-base); flex-shrink: 0;
-  }
-  .toggle-switch::after {
-    content: ''; position: absolute; top: 2px; left: 2px;
-    width: 12px; height: 12px; background: white;
-    border-radius: var(--radius-round); transition: transform var(--duration-base);
-  }
-  .toggle-input:checked + .toggle-switch { background: var(--primary-color); }
-  .toggle-input:checked + .toggle-switch::after { transform: translateX(12px); }
-  .toggle-text { user-select: none; }
+  .toggle-text {
+    cursor: pointer; user-select: none; font-size: var(--font-size-xs); color: var(--text-muted); }
 
   /* Local model section (all users) */
   .local-model-section {
@@ -1276,7 +1107,7 @@
       gap: var(--space-2);
     }
 
-    .config-actions .btn-icon,
+    .config-actions .btn-icon-only,
     .config-actions .btn-activate {
       min-height: 44px;
     }

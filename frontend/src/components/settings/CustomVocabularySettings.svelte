@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { onMount } from 'svelte';
   import {
     CustomVocabularyApi,
@@ -190,7 +191,7 @@
         placeholder={$t('settings.vocabulary.categoryPlaceholder')}
         class="category-input"
       />
-      <button class="btn-add" on:click={addTerm} disabled={addingTerm || !newTerm.trim()}>
+      <button class="btn btn-primary" on:click={addTerm} disabled={addingTerm || !newTerm.trim()}>
         {addingTerm ? '...' : $t('settings.customVocabulary.addTerm')}
       </button>
     </div>
@@ -218,28 +219,27 @@
             {/if}
           </div>
           <div class="term-actions">
-            <label class="toggle" title={term.is_active ? $t('settings.customVocabulary.disable') : $t('settings.customVocabulary.enable')}>
-              <input
-                type="checkbox"
-                checked={term.is_active}
-                on:change={() => toggleActive(term)}
-                disabled={term.is_system}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <span class="toggle-wrap" title={term.is_active ? $t('settings.customVocabulary.disable') : $t('settings.customVocabulary.enable')}>
+            <Toggle
+              checked={term.is_active}
+              onchange={() => toggleActive(term)}
+              disabled={term.is_system}
+              label={term.is_active ? $t('settings.customVocabulary.disable') : $t('settings.customVocabulary.enable')}
+            />
+            </span>
             {#if !term.is_system}
               {#if showDeleteConfirm && termToDelete?.id === term.id}
                 <span class="delete-confirm-inline">
-                  <button class="btn-confirm-delete" on:click={confirmDeleteTerm} title={$t('common.confirm')}>
+                  <button class="btn btn-danger btn-sm" on:click={confirmDeleteTerm} title={$t('common.confirm')}>
                     {$t('common.confirm')}
                   </button>
-                  <button class="btn-cancel-delete" on:click={cancelDelete} title={$t('common.cancel')}>
+                  <button class="btn btn-secondary btn-sm" on:click={cancelDelete} title={$t('common.cancel')}>
                     {$t('common.cancel')}
                   </button>
                 </span>
               {:else}
                 <button
-                  class="btn-delete-term"
+                  class="btn btn-icon-only btn-icon-danger"
                   on:click={() => requestDeleteTerm(term)}
                   title={$t('settings.customVocabulary.removeTerm')}
                   aria-label={$t('settings.customVocabulary.removeTerm') + ': ' + term.term}
@@ -261,7 +261,7 @@
 
   <!-- Bulk import toggle -->
   <div class="bulk-section">
-    <button class="btn-bulk-toggle" on:click={() => showBulkImport = !showBulkImport}>
+    <button class="btn btn-secondary" on:click={() => showBulkImport = !showBulkImport}>
       {showBulkImport ? $t('settings.customVocabulary.hideBulkImport') : $t('settings.customVocabulary.bulkImport')}
     </button>
 
@@ -279,7 +279,7 @@
               <option value={d}>{getDomainLabel(d)}</option>
             {/each}
           </select>
-          <button class="btn-import" on:click={bulkImport} disabled={importing || !bulkText.trim()}>
+          <button class="btn btn-primary" on:click={bulkImport} disabled={importing || !bulkText.trim()}>
             {importing ? $t('settings.vocabulary.importing') : $t('settings.vocabulary.import')}
           </button>
         </div>
@@ -362,30 +362,6 @@
     font-size: var(--font-size-sm);
   }
 
-  .btn-add {
-    padding: 0.45rem var(--space-4);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    white-space: nowrap;
-    transition: all var(--duration-fast);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-add:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-add:active:not(:disabled) {
-    transform: scale(1);
-  }
-
   .list-loading, .empty-terms {
     text-align: center;
     padding: var(--space-6);
@@ -461,75 +437,8 @@
     flex-shrink: 0;
   }
 
-  /* Toggle switch */
-  .toggle {
-    position: relative;
+  .toggle-wrap {
     display: inline-flex;
-    align-items: center;
-    cursor: pointer;
-  }
-
-  .toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-    position: absolute;
-  }
-
-  .toggle-slider {
-    display: inline-block;
-    width: 30px;
-    height: 16px;
-    background: var(--border-color);
-    border-radius: var(--radius-lg);
-    transition: background var(--duration-base);
-    position: relative;
-  }
-
-  .toggle-slider::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle input:checked + .toggle-slider {
-    background: var(--success-color);
-  }
-
-  .toggle input:checked + .toggle-slider::after {
-    transform: translateX(14px);
-  }
-
-  .toggle input:disabled + .toggle-slider {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-delete-term {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    background: transparent;
-    border: 1px solid var(--error-color);
-    color: var(--error-color);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all var(--duration-fast);
-    flex-shrink: 0;
-  }
-
-  .btn-delete-term:hover {
-    background: var(--error-color);
-    color: var(--text-on-solid);
   }
 
   .delete-confirm-inline {
@@ -538,58 +447,10 @@
     gap: var(--space-1);
   }
 
-  .btn-confirm-delete {
-    padding: var(--space-1) var(--space-2-5);
-    background: var(--error-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all var(--duration-fast);
-  }
-
-  .btn-confirm-delete:hover {
-    background: var(--error-color);
-    filter: brightness(0.85);
-  }
-
-  .btn-cancel-delete {
-    padding: var(--space-1) var(--space-2-5);
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-xs);
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all var(--duration-fast);
-  }
-
-  .btn-cancel-delete:hover {
-    color: var(--text-color);
-    background: var(--button-hover);
-  }
-
   .bulk-section {
     border-top: 1px solid var(--border-color);
     padding-top: var(--space-3-5);
   }
-
-  .btn-bulk-toggle {
-    padding: 0.4rem var(--space-3-5);
-    background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-muted);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: 0.8rem;
-    transition: all var(--duration-fast);
-  }
-
-  .btn-bulk-toggle:hover { color: var(--text-color); border-color: var(--border-hover); }
 
   .bulk-form {
     margin-top: var(--space-3);
@@ -611,29 +472,6 @@
     display: flex;
     gap: var(--space-2);
     align-items: center;
-  }
-
-  .btn-import {
-    padding: 0.45rem var(--space-4);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    white-space: nowrap;
-    transition: all var(--duration-fast);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-import:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-import:active:not(:disabled) {
-    transform: scale(1);
   }
 
   button:disabled {

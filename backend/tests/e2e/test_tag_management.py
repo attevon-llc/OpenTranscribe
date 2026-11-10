@@ -287,12 +287,12 @@ class TestTagMutations:
         # click, and have the modal's backdrop render on top an instant later
         # — "Locator.click: ... modal-backdrop intercepts pointer events" — or
         # it can click the trigger a second time with no confirm step at all.
-        # `.modal-delete-button` is ConfirmationModal's own confirm-button
-        # class (shared across every delete dialog in the app) and exists
+        # `confirm-dialog-confirm` is ConfirmationModal's own confirm-button test id
+        # (shared across every confirm dialog in the app) and exists
         # only once the modal has actually mounted, so waiting on it is
         # waiting on the right signal instead of racing two same-named
         # buttons.
-        confirm = tags_page.locator(".modal-delete-button")
+        confirm = tags_page.locator('[data-testid="confirm-dialog-confirm"]')
         expect(confirm).to_be_visible(timeout=10_000)
         confirm.click()
         expect(_row(tags_page, name)).to_have_count(0, timeout=10000)

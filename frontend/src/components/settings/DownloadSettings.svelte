@@ -1,4 +1,6 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -116,12 +118,18 @@
 {:else}
   <div class="settings-form">
     <!-- Video Quality -->
-    <div class="form-group">
-      <div class="form-group-header">
-        <label for="video-quality">{$t('settings.download.videoQuality')}</label>
-      </div>
+    <FormField
+      id="video-quality"
+      label={$t('settings.download.videoQuality')}
+      labelSize="md"
+      hint={audioOnly
+        ? $t('settings.download.videoQualityDisabledHint')
+        : $t('settings.download.videoQualityHint')}
+      let:describedby
+    >
       <select
         id="video-quality"
+        aria-describedby={describedby}
         bind:value={videoQuality}
         disabled={audioOnly}
         class="form-select"
@@ -134,37 +142,37 @@
           <option value="best">{$t('settings.download.bestAvailable')}</option>
         {/if}
       </select>
-      {#if audioOnly}
-        <p class="form-hint">{$t('settings.download.videoQualityDisabledHint')}</p>
-      {:else}
-        <p class="form-hint">{$t('settings.download.videoQualityHint')}</p>
-      {/if}
-    </div>
+    </FormField>
 
     <!-- Audio Only Toggle -->
-    <div class="form-group">
-      <div class="toggle-row">
-        <label for="audio-only" class="toggle-label">{$t('settings.download.audioOnly')}</label>
-        <label class="toggle-switch">
-          <input
-            id="audio-only"
-            type="checkbox"
-            bind:checked={audioOnly}
-          />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p class="form-hint">{$t('settings.download.audioOnlyHint')}</p>
-    </div>
+    <FormField
+      id="audio-only"
+      label={$t('settings.download.audioOnly')}
+      labelSize="md"
+      hint={$t('settings.download.audioOnlyHint')}
+    >
+      <svelte:fragment slot="label-after">
+        <Toggle
+          id="audio-only"
+          describedby="audio-only-hint"
+          checked={audioOnly}
+          onchange={(next) => (audioOnly = next)}
+        />
+      </svelte:fragment>
+    </FormField>
 
     <!-- Audio Quality -->
     {#if audioOnly}
-      <div class="form-group">
-        <div class="form-group-header">
-          <label for="audio-quality">{$t('settings.download.audioQuality')}</label>
-        </div>
+      <FormField
+        id="audio-quality"
+        label={$t('settings.download.audioQuality')}
+        labelSize="md"
+        hint={$t('settings.download.audioQualityHint')}
+        let:describedby
+      >
         <select
           id="audio-quality"
+          aria-describedby={describedby}
           bind:value={audioQuality}
           class="form-select"
         >
@@ -176,8 +184,7 @@
             <option value="best">{$t('settings.download.bestAvailable')}</option>
           {/if}
         </select>
-        <p class="form-hint">{$t('settings.download.audioQualityHint')}</p>
-      </div>
+      </FormField>
     {/if}
 
     <!-- Action Buttons -->
@@ -215,24 +222,8 @@
     gap: var(--space-5);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
 
-  .form-group-header label,
-  .toggle-label {
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
 
   .form-select {
     width: 100%;
@@ -245,62 +236,7 @@
     cursor: not-allowed;
   }
 
-  .form-hint {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-    margin: 0;
-  }
 
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 2.75rem;
-    height: 1.5rem;
-    cursor: pointer;
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--border-color);
-    border-radius: 1.5rem;
-    transition: background-color var(--duration-base);
-  }
-
-  .toggle-slider::before {
-    content: '';
-    position: absolute;
-    height: 1.125rem;
-    width: 1.125rem;
-    left: 0.1875rem;
-    bottom: 0.1875rem;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-switch input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-switch input:checked + .toggle-slider::before {
-    transform: translateX(1.25rem);
-  }
 
   .form-actions {
     display: flex;

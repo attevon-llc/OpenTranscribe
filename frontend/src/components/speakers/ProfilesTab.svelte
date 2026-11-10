@@ -45,7 +45,7 @@
           <div class="profile-header">
             <div class="profile-avatar-wrapper" role="button" tabindex="0" on:click|stopPropagation={() => pickAvatar(profile.uuid)} on:keydown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickAvatar(profile.uuid); } }} title={$t('speakers.tooltip.uploadAvatar')}>
               {#if avatarUploading.has(profile.uuid)}
-                <div class="avatar-spinner"><Spinner size="small" /></div>
+                <div class="avatar-spinner"><Spinner label={$t('common.loading')} size="small" /></div>
               {:else if profile.avatar_url}
                 <img
                   class="profile-avatar"

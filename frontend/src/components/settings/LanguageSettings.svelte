@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { locale, SUPPORTED_LANGUAGES, t } from "$stores/locale";
   import { toastStore } from "$stores/toast";
   import { isMachineTranslated } from "$lib/i18n/languages";
@@ -20,12 +21,9 @@
 </script>
 
 <div class="language-settings">
-  <div class="form-group">
-    <label for="ui-language" class="form-label">
-      {$t("settings.language.selectLabel")}
-    </label>
+  <FormField id="ui-language" label={$t("settings.language.selectLabel")} labelSize="md" hint={$t("settings.language.hint")} let:describedby>
     <select
-      id="ui-language"
+      id="ui-language" aria-describedby={describedby}
       class="form-select"
       value={$locale}
       on:change={handleLanguageChange}
@@ -38,8 +36,7 @@
         </option>
       {/each}
     </select>
-    <p class="input-hint">{$t("settings.language.hint")}</p>
-  </div>
+  </FormField>
 
   <div class="language-preview">
     <div class="preview-item">
@@ -59,17 +56,7 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
 
-  .form-label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-md);
-  }
 
   .form-select {
     transition:
@@ -80,11 +67,6 @@
     padding-right: var(--space-10);
   }
 
-  .input-hint {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-    margin: 0;
-  }
 
   .language-preview {
     background-color: var(--background-color);

@@ -6,6 +6,7 @@
   import { sharingStore } from '$stores/sharing';
   import PermissionLevelSelect from './PermissionLevelSelect.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import Spinner from '$components/ui/Spinner.svelte';
   import type { Share, PermissionLevel } from '$lib/types/groups';
 
@@ -15,8 +16,14 @@
 
   let updatingShareId: string | null = null;
   let revokingShareId: string | null = null;
-  let showRevokeConfirm = false;
-  let pendingRevokeShare: Share | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   async function handlePermissionChange(share: Share, event: CustomEvent<PermissionLevel>) {
     const newPermission = event.detail;
@@ -38,16 +45,15 @@
   }
 
   function requestRevoke(share: Share) {
-    pendingRevokeShare = share;
-    showRevokeConfirm = true;
+    confirmDialog.request(
+      $t('sharing.revokeAccess'),
+      $t('sharing.revokeConfirm', { name: share.target_name }),
+      () => executeRevoke(share),
+      { confirmText: $t('sharing.revokeAccess'), variant: 'danger' }
+    );
   }
 
-  async function executeRevoke() {
-    if (!pendingRevokeShare) return;
-    const share = pendingRevokeShare;
-    showRevokeConfirm = false;
-    pendingRevokeShare = null;
-
+  async function executeRevoke(share: Share) {
     revokingShareId = share.uuid;
     try {
       await SharingApi.revokeShare(collectionUuid, share.uuid);
@@ -102,10 +108,11 @@
               on:change={(e) => handlePermissionChange(share, e)}
             />
             <button
-              class="revoke-btn"
+              class="btn btn-icon-only btn-sm btn-icon-danger revoke-btn"
               on:click={() => requestRevoke(share)}
               disabled={revokingShareId === share.uuid}
               title={$t('sharing.revokeAccess')}
+              aria-label={$t('sharing.revokeAccess')}
             >
               {#if revokingShareId === share.uuid}
                 <Spinner size="small" />
@@ -128,15 +135,14 @@
 {/if}
 
 <ConfirmationModal
-  bind:isOpen={showRevokeConfirm}
-  title={$t('sharing.revokeAccess')}
-  message={pendingRevokeShare ? $t('sharing.revokeConfirm', { name: pendingRevokeShare.target_name }) : ''}
-  confirmText={$t('sharing.revokeAccess')}
-  cancelText={$t('modal.cancel')}
-  confirmButtonClass="modal-delete-button"
-  on:confirm={executeRevoke}
-  on:cancel={() => { showRevokeConfirm = false; pendingRevokeShare = null; }}
-  on:close={() => { showRevokeConfirm = false; pendingRevokeShare = null; }}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>
@@ -218,32 +224,6 @@
     font-size: 0.8rem;
     color: var(--text-secondary);
     padding: 0.35rem var(--space-2);
-  }
-
-  .revoke-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all var(--duration-fast) ease;
-  }
-
-  .revoke-btn:hover:not(:disabled) {
-    border-color: var(--error-color);
-    color: var(--error-color);
-    background: rgba(239, 68, 68, 0.08);
-  }
-
-  .revoke-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
 </style>

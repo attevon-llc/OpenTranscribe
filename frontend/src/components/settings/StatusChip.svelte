@@ -43,29 +43,29 @@
 
   /* Green */
   .status-chip.green {
-    border-color: rgba(34, 197, 94, 0.3);
-    background: rgba(34, 197, 94, 0.08);
+    border-color: rgba(var(--success-color-rgb), 0.3);
+    background: rgba(var(--success-color-rgb), 0.08);
   }
   .status-chip.green .chip-dot {
-    background: #22c55e;
+    background: var(--success-color);
   }
 
   /* Yellow */
   .status-chip.yellow {
-    border-color: rgba(251, 191, 36, 0.3);
-    background: rgba(251, 191, 36, 0.08);
+    border-color: rgba(var(--warning-color-rgb), 0.3);
+    background: rgba(var(--warning-color-rgb), 0.08);
   }
   .status-chip.yellow .chip-dot {
-    background: #f59e0b;
+    background: var(--warning-color);
   }
 
   /* Red */
   .status-chip.red {
-    border-color: rgba(239, 68, 68, 0.3);
-    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(var(--error-color-rgb), 0.3);
+    background: rgba(var(--error-color-rgb), 0.08);
   }
   .status-chip.red .chip-dot {
-    background: #ef4444;
+    background: var(--error-color);
   }
 
   /* Blue */

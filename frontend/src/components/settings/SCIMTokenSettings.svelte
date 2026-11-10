@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { formatDateTime } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
@@ -10,6 +11,7 @@
   import Badge from '$components/ui/Badge.svelte';
   import CopyButton from '$components/ui/CopyButton.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import BaseModal from '$components/ui/BaseModal.svelte';
 
   /**
@@ -27,8 +29,14 @@
   let creating = false;
   let justCreatedToken: string | null = null;
 
-  let showRevokeConfirm = false;
-  let pendingRevoke: ScimToken | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   onMount(loadTokens);
 
@@ -74,14 +82,15 @@
   }
 
   function askRevoke(token: ScimToken) {
-    pendingRevoke = token;
-    showRevokeConfirm = true;
+    confirmDialog.request(
+      $t('settings.scimTokens.revokeTitle'),
+      $t('settings.scimTokens.revokeMessage', { name: token.name }),
+      () => revoke(token),
+      { confirmText: $t('settings.scimTokens.revoke') }
+    );
   }
 
-  async function confirmRevoke() {
-    const target = pendingRevoke;
-    pendingRevoke = null;
-    if (!target) return;
+  async function revoke(target: ScimToken) {
     try {
       await ScimTokensApi.revoke(target.uuid);
       toastStore.success($t('settings.scimTokens.toast.revoked'));
@@ -185,18 +194,18 @@
       <CopyButton text={justCreatedToken} />
     </div>
   {:else}
-    <div class="form-group">
-      <label for="scim-token-name">{$t('settings.scimTokens.name')}</label>
+    <div class="form-stack">
+    <FormField id="scim-token-name" label={$t('settings.scimTokens.name')} labelSize="sm">
       <input
         id="scim-token-name"
         type="text"
         bind:value={newTokenName}
         placeholder={$t('settings.scimTokens.namePlaceholder')}
       />
-    </div>
-    <div class="form-group">
-      <label for="scim-token-expiry">{$t('settings.scimTokens.expiresOptional')}</label>
+    </FormField>
+    <FormField id="scim-token-expiry" label={$t('settings.scimTokens.expiresOptional')} labelSize="sm">
       <input id="scim-token-expiry" type="date" bind:value={newTokenExpiresAt} />
+    </FormField>
     </div>
   {/if}
   <svelte:fragment slot="footer">
@@ -221,12 +230,14 @@
 </BaseModal>
 
 <ConfirmationModal
-  bind:isOpen={showRevokeConfirm}
-  title={$t('settings.scimTokens.revokeTitle')}
-  message={$t('settings.scimTokens.revokeMessage', { name: pendingRevoke?.name ?? '' })}
-  confirmText={$t('settings.scimTokens.revoke')}
-  on:confirm={confirmRevoke}
-  on:cancel={() => (pendingRevoke = null)}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>
@@ -299,20 +310,10 @@
     font-size: var(--font-size-xs);
   }
 
-  .form-group {
-    margin-bottom: var(--space-4);
-  }
 
-  .form-group label {
-    display: block;
-    margin-bottom: 0.35rem;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
 
-  .form-group input[type='text'],
-  .form-group input[type='date'] {
+  :global(.form-field) input[type='text'],
+  :global(.form-field) input[type='date'] {
     width: 100%;
   }
 

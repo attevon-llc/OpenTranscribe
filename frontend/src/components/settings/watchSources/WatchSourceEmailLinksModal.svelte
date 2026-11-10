@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   /**
    * Attach email configs to ONE watch source, with per-link options (#490).
    *
@@ -167,7 +168,7 @@
     <p class="scope-note">{$t('settings.emailNotifications.links.perScanNote')}</p>
 
     {#if loading}
-      <div class="links-loading"><Spinner /></div>
+      <div class="links-loading"><Spinner label={$t('common.loading')} /></div>
     {:else}
       {#if links.length === 0}
         <EmptyState
@@ -183,7 +184,7 @@
                 <span class="link-name">{link.email_config_name}</span>
                 <span class="badge type-badge">{link.email_config_provider.toUpperCase()}</span>
                 <button
-                  class="btn btn-danger btn-sm unlink"
+                  class="btn btn-danger unlink"
                   disabled={savingUuid === link.email_config_uuid}
                   on:click={() => unlink(link)}
                 >
@@ -202,21 +203,22 @@
                 </label>
               </div>
 
-              <div class="form-group">
-                <label for={`recipients-${link.email_config_uuid}`}>
-                  {$t('settings.emailNotifications.links.additionalRecipients')}
-                </label>
+              <FormField
+                id={`recipients-${link.email_config_uuid}`}
+                label={$t('settings.emailNotifications.links.additionalRecipients')}
+                labelSize="md"
+                hint={$t('settings.emailNotifications.links.recipientsHint')}
+                let:describedby
+              >
                 <input
                   id={`recipients-${link.email_config_uuid}`}
+                  aria-describedby={describedby}
                   class="form-input"
                   type="text"
                   bind:value={link.additional_recipients}
                   placeholder={$t('settings.emailNotifications.links.recipientsPlaceholder')}
                 />
-                <small class="form-hint">
-                  {$t('settings.emailNotifications.links.recipientsHint')}
-                </small>
-              </div>
+              </FormField>
 
               {#each warningsFor(link) as warning (warning)}
                 <div class="link-warning">{warning}</div>
@@ -224,7 +226,7 @@
 
               <div class="link-actions">
                 <button
-                  class="btn btn-primary btn-sm"
+                  class="btn btn-primary"
                   disabled={savingUuid === link.email_config_uuid}
                   on:click={() => save(link)}
                 >
@@ -342,20 +344,6 @@
     cursor: pointer;
     accent-color: var(--primary-color);
   }
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-  .form-group label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-  }
-  .form-hint {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    font-style: italic;
-  }
   .link-warning {
     margin-top: var(--space-2);
     padding: var(--space-1-5) var(--space-2-5);
@@ -382,10 +370,6 @@
     color: var(--text-secondary);
     font-size: 0.85rem;
     margin: 0;
-  }
-  .btn-sm {
-    padding: var(--space-1) var(--space-2-5);
-    font-size: 0.8rem;
   }
   .modal-title {
     margin: 0;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount, onDestroy } from 'svelte';
@@ -7,6 +8,8 @@
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import Badge from '$components/ui/Badge.svelte';
+  import Banner from '$components/ui/Banner.svelte';
   import {
     getBackupSettings,
     updateBackupSettings,
@@ -304,31 +307,30 @@
 
   {#if loading}
     <div class="loading-state">
-      <Spinner size="small" />
+      <Spinner label={$t('common.loading')} size="small" />
     </div>
   {:else}
     <!-- Mount status banner (local destination only) -->
     {#if !isS3 && !mountOk}
-      <div class="banner banner-warning">
+      <Banner tone="warning">
         {$t('settings.backup.mountMissing', { destination })}
-      </div>
+      </Banner>
     {/if}
     {#if isS3 && s3Status && !s3Status.reachable}
-      <div class="banner banner-warning">
+      <Banner tone="warning">
         {$t('settings.backup.s3Unreachable')}{s3Status.error ? `: ${s3Status.error}` : ''}
-      </div>
+      </Banner>
     {/if}
     {#if !pgDumpAvailable}
-      <div class="banner banner-warning">{$t('settings.backup.pgDumpMissing')}</div>
+      <Banner tone="warning">{$t('settings.backup.pgDumpMissing')}</Banner>
     {/if}
 
     <!-- Enable toggle -->
     <div class="field-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={enabled} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.backup.enableLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={enabled} onchange={(next) => (enabled = next)} id="backup-toggle-label-1" />
+        <label class="toggle-text" for="backup-toggle-label-1">{$t('settings.backup.enableLabel')}</label>
+      </div>
     </div>
 
     <!-- Schedule -->
@@ -452,11 +454,10 @@
 
     <!-- Encryption -->
     <div class="field-row encryption-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={encrypt} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.backup.encryptLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={encrypt} onchange={(next) => (encrypt = next)} id="backup-toggle-label-2" />
+        <label class="toggle-text" for="backup-toggle-label-2">{$t('settings.backup.encryptLabel')}</label>
+      </div>
     </div>
     {#if encrypt}
       <div class="field-group encryption-field">
@@ -468,11 +469,10 @@
 
     <!-- OpenSearch snapshot -->
     <div class="field-row opensearch-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={includeOpensearch} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.backup.includeOpensearchLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={includeOpensearch} onchange={(next) => (includeOpensearch = next)} id="backup-toggle-label-3" />
+        <label class="toggle-text" for="backup-toggle-label-3">{$t('settings.backup.includeOpensearchLabel')}</label>
+      </div>
       <span class="field-hint opensearch-hint">{$t('settings.backup.includeOpensearchHint')}</span>
     </div>
     {#if includeOpensearch && osSnapshotStatus}
@@ -497,9 +497,9 @@
         <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.lastRunNever'), $locale)}</span>
         {#if lastResult}
           {#if lastResult.ok}
-            <span class="status-badge ok">{$t('settings.backup.lastRunOk', { size: formatFileSize(lastResult.size_bytes ?? 0), seconds: lastResult.duration_s ?? 0 })}</span>
+            <Badge variant="success" size="md" class="status-badge">{$t('settings.backup.lastRunOk', { size: formatFileSize(lastResult.size_bytes ?? 0), seconds: lastResult.duration_s ?? 0 })}</Badge>
           {:else}
-            <span class="status-badge bad" title={lastResult.error ?? ''}>{$t('settings.backup.lastRunFailed')}</span>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.error || null}>{$t('settings.backup.lastRunFailed')}</Badge>
           {/if}
         {/if}
       </div>
@@ -510,11 +510,11 @@
         <div class="status-item">
           <span class="status-label">{$t('settings.backup.opensearchSnapshotSection')}:</span>
           {#if lastResult.opensearch.status === 'ok'}
-            <span class="status-badge ok">{lastResult.opensearch.snapshot}</span>
+            <Badge variant="success" size="md" class="status-badge">{lastResult.opensearch.snapshot}</Badge>
           {:else if lastResult.opensearch.status === 'skipped'}
             <span class="status-value">{$t('settings.backup.opensearchSkipped')}</span>
           {:else}
-            <span class="status-badge bad" title={lastResult.opensearch.error ?? ''}>{$t('settings.backup.opensearchSnapshotFailed')}</span>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.opensearch.error || null}>{$t('settings.backup.opensearchSnapshotFailed')}</Badge>
           {/if}
         </div>
         {#if lastResult.opensearch.status !== 'ok' && lastResult.opensearch.status !== 'skipped' && lastResult.opensearch.error}
@@ -524,7 +524,7 @@
       {#if lastResult?.prune_error}
         <div class="status-item">
           <span class="status-label">{$t('settings.backup.pruneSection')}:</span>
-          <span class="status-badge bad" title={lastResult.prune_error}>{$t('settings.backup.pruneFailed')}</span>
+          <Badge variant="error" size="md" class="status-badge" title={lastResult.prune_error || null}>{$t('settings.backup.pruneFailed')}</Badge>
         </div>
         <div class="status-error">{lastResult.prune_error}</div>
       {/if}
@@ -532,11 +532,11 @@
         <div class="status-item">
           <span class="status-label">{$t('settings.backup.recoverySection')}:</span>
           {#if lastResult.recovery.status === 'keys_included'}
-            <span class="status-badge ok">{$t('settings.backup.recoveryKeysIncluded')}</span>
+            <Badge variant="success" size="md" class="status-badge">{$t('settings.backup.recoveryKeysIncluded')}</Badge>
           {:else if lastResult.recovery.status === 'readme_written'}
             <span class="status-value">{$t('settings.backup.recoveryReadmeWritten')}</span>
           {:else}
-            <span class="status-badge bad" title={lastResult.recovery.error ?? ''}>{$t('settings.backup.recoveryFailed')}</span>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.recovery.error || null}>{$t('settings.backup.recoveryFailed')}</Badge>
           {/if}
         </div>
         {#if lastResult.recovery.status === 'readme_written'}
@@ -564,7 +564,7 @@
           {$t('settings.backup.runNowButton')}
         </button>
       {/if}
-      <button type="button" class="btn btn-link" on:click={() => refreshStatus(true)} disabled={statusLoading}>
+      <button type="button" class="btn btn-secondary" on:click={() => refreshStatus(true)} disabled={statusLoading}>
         {statusLoading ? $t('settings.backup.refreshingStatus') : $t('settings.backup.refreshStatus')}
       </button>
     </div>
@@ -657,20 +657,6 @@
     padding: var(--space-4);
   }
 
-  .banner {
-    border-radius: var(--radius-md);
-    padding: 0.6rem var(--space-3);
-    margin-bottom: var(--space-3);
-    font-size: 0.82rem;
-    line-height: 1.4;
-  }
-
-  .banner-warning {
-    border: 1px solid var(--warning-color);
-    background-color: var(--warning-bg);
-    color: var(--warning-color);
-  }
-
   .field-row {
     margin-bottom: var(--space-3);
   }
@@ -751,49 +737,11 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    cursor: pointer;
     user-select: none;
   }
 
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
-  }
-
   .toggle-text {
+    cursor: pointer;
     font-size: var(--font-size-md);
     color: var(--text-color);
   }
@@ -835,22 +783,6 @@
 
   .status-value {
     color: var(--text-color);
-  }
-
-  .status-badge {
-    border-radius: var(--radius-xl);
-    padding: 0 var(--space-2);
-    font-size: 0.72rem;
-    line-height: 1.6;
-    color: var(--text-on-solid);
-  }
-
-  .status-badge.ok {
-    background-color: var(--success-color);
-  }
-
-  .status-badge.bad {
-    background-color: var(--error-color);
   }
 
   .status-error {
@@ -931,22 +863,6 @@
 
   .button-row .btn-secondary {
     margin-right: auto;
-  }
-
-  .btn-link {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: var(--space-1-5) var(--space-2-5);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-link:hover:not(:disabled) {
-    background-color: var(--button-hover);
   }
 
   @media (max-width: 768px) {

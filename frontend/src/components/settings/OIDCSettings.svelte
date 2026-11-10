@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { OIDCConfig, AuthMethodTestResponse } from '$lib/api/authConfig';
@@ -207,10 +208,10 @@
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.serverConfiguration')}</h3>
 
-    <div class="form-group">
-      <label for="oidc_provider_preset">{$t('settings.oidc.providerPreset')}</label>
+    <FormField size="lg" id="oidc_provider_preset" label={$t('settings.oidc.providerPreset')} hint={$t('settings.oidc.providerPresetHelp')} let:describedby>
       <select
         id="oidc_provider_preset"
+        aria-describedby={describedby}
         value={selectedPresetId}
         on:change={applyPreset}
         disabled={!formData.oidc_enabled}
@@ -220,69 +221,64 @@
           <option value={preset.id}>{$t(preset.labelKey)}</option>
         {/each}
       </select>
-      <span class="help-text">{$t('settings.oidc.providerPresetHelp')}</span>
-      {#if selectedPreset?.noteKey}
-        <p class="admission-warning" role="status">{$t(selectedPreset.noteKey)}</p>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        {#if selectedPreset?.noteKey}
+          <p class="admission-warning" role="status">{$t(selectedPreset.noteKey)}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_server_url">{$t('settings.oidc.serverUrlPublic')}</label>
+    <FormField size="lg" id="oidc_server_url" label={$t('settings.oidc.serverUrlPublic')} hint={$t('settings.oidc.serverUrlPublicHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_server_url"
+        id="oidc_server_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_server_url}
         on:input={handleChange}
         placeholder="https://idp.example.com"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.serverUrlPublicHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_internal_url">{$t('settings.oidc.serverUrlInternal')}</label>
+    <FormField size="lg" id="oidc_internal_url" label={$t('settings.oidc.serverUrlInternal')} hint={$t('settings.oidc.serverUrlInternalHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_internal_url"
+        id="oidc_internal_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_internal_url}
         on:input={handleChange}
         placeholder="http://idp:8080"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.serverUrlInternalHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_discovery_url">{$t('settings.oidc.discoveryUrl')}</label>
+    <FormField size="lg" id="oidc_discovery_url" label={$t('settings.oidc.discoveryUrl')} hint={$t('settings.oidc.discoveryUrlHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_discovery_url"
+        id="oidc_discovery_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_discovery_url}
         on:input={handleChange}
         placeholder="https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.discoveryUrlHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group" class:superseded={discoveryActive}>
-      <label for="oidc_realm">{$t('settings.oidc.realm')}</label>
+    <FormField size="lg" class={discoveryActive ? 'superseded' : ''} id="oidc_realm" label={$t('settings.oidc.realm')} hint={$t('settings.oidc.realmHelp')} let:describedby>
       <input dir="ltr"
         id="oidc_realm"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_realm}
         on:input={handleChange}
         placeholder="master"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.realmHelp')}</span>
-      {#if discoveryActive}
-        <span class="help-text superseded-note">{$t('settings.oidc.realmSupersededHelp')}</span>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        {#if discoveryActive}
+          <p class="form-field-hint superseded-note">{$t('settings.oidc.realmSupersededHelp')}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_timeout">{$t('settings.oidc.requestTimeout')}</label>
+    <FormField size="lg" id="oidc_timeout" label={$t('settings.oidc.requestTimeout')}>
       <input
         id="oidc_timeout"
         type="number"
@@ -292,15 +288,14 @@
         max="120"
         disabled={!formData.oidc_enabled}
       />
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.clientConfiguration')}</h3>
 
     <div class="form-row">
-      <div class="form-group">
-        <label for="oidc_client_id">{$t('settings.oidc.clientId')}</label>
+      <FormField size="lg" id="oidc_client_id" label={$t('settings.oidc.clientId')}>
         <input dir="ltr"
           id="oidc_client_id"
           type="text"
@@ -309,13 +304,13 @@
           placeholder="opentranscribe"
           disabled={!formData.oidc_enabled}
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="oidc_client_secret">{$t('settings.oidc.clientSecret')}</label>
+      <FormField size="lg" id="oidc_client_secret" label={$t('settings.oidc.clientSecret')} hint={clientSecretIsSet ? $t('settings.oidc.clientSecretSetHelp') : $t('settings.oidc.clientSecretHelp')} let:describedby>
         <div class="input-with-toggle">
           <input dir="ltr"
             id="oidc_client_secret"
+            aria-describedby={describedby}
             type={showSecret ? 'text' : 'password'}
             bind:value={clientSecretInput}
             on:input={handleChange}
@@ -334,19 +329,14 @@
             {showSecret ? $t('common.hide') : $t('common.show')}
           </button>
         </div>
-        <span class="help-text">
-          {clientSecretIsSet
-            ? $t('settings.oidc.clientSecretSetHelp')
-            : $t('settings.oidc.clientSecretHelp')}
-        </span>
-      </div>
+      </FormField>
     </div>
 
-    <div class="form-group">
-      <label for="oidc_callback_url">{$t('settings.oidc.callbackUrl')}</label>
+    <FormField size="lg" id="oidc_callback_url" label={$t('settings.oidc.callbackUrl')} hint={$t('settings.oidc.callbackUrlHelp')} let:describedby>
       <div class="input-with-button">
         <input dir="ltr"
           id="oidc_callback_url"
+        aria-describedby={describedby}
           type="text"
           bind:value={formData.oidc_callback_url}
           on:input={handleChange}
@@ -355,20 +345,21 @@
         />
         <button
           type="button"
-          class="btn btn-small"
+          class="btn btn-primary btn-sm"
           on:click={generateCallbackUrl}
           disabled={!formData.oidc_enabled}
         >
           {$t('settings.oidc.autoDetect')}
         </button>
       </div>
-      <span class="help-text">{$t('settings.oidc.callbackUrlHelp')}</span>
-      {#if callbackUrlIsApiRoute}
-        <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlApiWarning')}</p>
-      {:else if callbackUrlUnexpectedPath}
-        <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlPathWarning')}</p>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        {#if callbackUrlIsApiRoute}
+          <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlApiWarning')}</p>
+        {:else if callbackUrlUnexpectedPath}
+          <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlPathWarning')}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
@@ -406,115 +397,112 @@
     </label>
 
     {#if formData.oidc_verify_audience}
-      <div class="form-group indented">
-        <label for="oidc_audience">{$t('settings.oidc.expectedAudience')}</label>
+      <FormField size="lg" class="indented" id="oidc_audience" label={$t('settings.oidc.expectedAudience')} let:describedby>
         <input dir="ltr"
           id="oidc_audience"
+          aria-describedby={describedby}
           type="text"
           bind:value={formData.oidc_audience}
           on:input={handleChange}
           placeholder={$t('settings.oidc.expectedAudiencePlaceholder')}
           disabled={!formData.oidc_enabled}
         />
-      </div>
+      </FormField>
     {/if}
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.roleMapping')}</h3>
 
-    <div class="form-group">
-      <label for="oidc_admin_role">{$t('settings.oidc.adminRoleName')}</label>
+    <FormField size="lg" id="oidc_admin_role" label={$t('settings.oidc.adminRoleName')} hint={$t('settings.oidc.adminRoleHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_admin_role"
+        id="oidc_admin_role" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_admin_role}
         on:input={handleChange}
         placeholder="admin"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.adminRoleHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_roles_claim">{$t('settings.oidc.rolesClaim')}</label>
+    <FormField size="lg" id="oidc_roles_claim" label={$t('settings.oidc.rolesClaim')} hint={$t('settings.oidc.rolesClaimHelp')} let:describedby>
       <input dir="ltr"
         id="oidc_roles_claim"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_roles_claim}
         on:input={handleChange}
         placeholder="realm_access.roles"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.rolesClaimHelp')}</span>
-      <span class="help-text">{$t('settings.oidc.rolesClaimWarning')}</span>
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.oidc.rolesClaimWarning')}</p>
+      </svelte:fragment>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.admissionControl')}</h3>
     <p class="section-intro">{$t('settings.oidc.admissionControlHelp')}</p>
 
-    <div class="form-group">
-      <label for="oidc_allowed_groups">{$t('settings.oidc.allowedGroups')}</label>
+    <FormField size="lg" id="oidc_allowed_groups" label={$t('settings.oidc.allowedGroups')} hint={$t('settings.oidc.allowedGroupsHelp')} let:describedby>
       <input dir="ltr"
         id="oidc_allowed_groups"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_allowed_groups}
         on:input={handleChange}
         placeholder="opentranscribe-users;CN=Staff,OU=Groups,DC=example,DC=com"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.allowedGroupsHelp')}</span>
-      <span class="help-text">{$t('settings.oidc.groupsSemicolonHelp')}</span>
-      {#if allowListOpen}
-        <p class="admission-warning" role="status">{$t('settings.oidc.allowedGroupsEmptyWarning')}</p>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.oidc.groupsSemicolonHelp')}</p>
+        {#if allowListOpen}
+          <p class="admission-warning" role="status">{$t('settings.oidc.allowedGroupsEmptyWarning')}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_blocked_groups">{$t('settings.oidc.blockedGroups')}</label>
+    <FormField size="lg" id="oidc_blocked_groups" label={$t('settings.oidc.blockedGroups')} hint={$t('settings.oidc.blockedGroupsHelp')} let:describedby>
       <input dir="ltr"
         id="oidc_blocked_groups"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_blocked_groups}
         on:input={handleChange}
         placeholder="contractors;CN=Vendors,OU=Groups,DC=example,DC=com"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.blockedGroupsHelp')}</span>
-      <span class="help-text">{$t('settings.oidc.groupsSemicolonHelp')}</span>
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.oidc.groupsSemicolonHelp')}</p>
+      </svelte:fragment>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.advancedOptions')}</h3>
 
-    <div class="form-group">
-      <label for="oidc_scopes">{$t('settings.oidc.scopes')}</label>
+    <FormField size="lg" id="oidc_scopes" label={$t('settings.oidc.scopes')} hint={$t('settings.oidc.scopesHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_scopes"
+        id="oidc_scopes" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_scopes}
         on:input={handleChange}
         placeholder="openid email profile"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.scopesHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_issuer">{$t('settings.oidc.issuer')}</label>
+    <FormField size="lg" id="oidc_issuer" label={$t('settings.oidc.issuer')} hint={$t('settings.oidc.issuerHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_issuer"
+        id="oidc_issuer" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_issuer}
         on:input={handleChange}
         placeholder={$t('settings.oidc.issuerPlaceholder')}
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.issuerHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   {#if testResult?.success}
@@ -688,12 +676,7 @@
     margin-bottom: var(--space-4);
   }
 
-  .form-group {
-    flex: 1;
-    margin-bottom: var(--space-4);
-  }
-
-  .form-group.indented {
+  .section :global(.form-field.indented) {
     margin-left: var(--space-6);
   }
 
@@ -701,32 +684,35 @@
    * A discovery URL makes the realm irrelevant. Fade it rather than disable it —
    * an admin may be mid-edit, and a disabled field also loses its value on save.
    */
-  .form-group.superseded label,
-  .form-group.superseded input {
+  .section :global(.form-field.superseded label),
+  .section :global(.form-field.superseded input) {
     opacity: 0.55;
   }
+
+  .section :global(.form-field) {
+    flex: 1;
+    margin-bottom: var(--space-4);
+  }
+
+
+  /*
+   * A discovery URL makes the realm irrelevant. Fade it rather than disable it —
+   * an admin may be mid-edit, and a disabled field also loses its value on save.
+   */
 
   .superseded-note {
     color: var(--color-warning-text);
   }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
-
-  .form-group input[type="text"],
-  .form-group input[type="password"],
-  .form-group input[type="number"],
-  .form-group select {
+  .section :global(.form-field input[type="text"]),
+  .section :global(.form-field input[type="password"]),
+  .section :global(.form-field input[type="number"]),
+  .section :global(.form-field select) {
     width: 100%;
   }
 
-  .form-group input:disabled,
-  .form-group select:disabled {
+  .section :global(.form-field input:disabled),
+  .section :global(.form-field select:disabled) {
     cursor: not-allowed;
   }
 
@@ -759,25 +745,6 @@
   .toggle-visibility:disabled {
     cursor: not-allowed;
     opacity: 0.6;
-  }
-
-  .btn-small {
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--font-size-xs);
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-small:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-small:active:not(:disabled) {
-    transform: scale(1);
   }
 
   .help-text {

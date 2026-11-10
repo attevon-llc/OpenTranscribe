@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { SAMLConfig } from '$lib/api/authConfig';
@@ -97,78 +98,68 @@
   <div class="section" class:disabled={!formData.saml_enabled}>
     <h3>{$t('settings.saml.spIdentity')}</h3>
 
-    <div class="form-group">
-      <label for="saml_sp_entity_id">{$t('settings.saml.spEntityId')}</label>
+    <FormField size="lg" id="saml_sp_entity_id" label={$t('settings.saml.spEntityId')} hint={$t('settings.saml.spEntityIdHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_sp_entity_id"
+        id="saml_sp_entity_id" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_sp_entity_id}
         on:input={handleChange}
         placeholder="https://app.example.com/saml/metadata"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.spEntityIdHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_sp_acs_url">{$t('settings.saml.spAcsUrl')}</label>
+    <FormField size="lg" id="saml_sp_acs_url" label={$t('settings.saml.spAcsUrl')} hint={$t('settings.saml.spAcsUrlHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_sp_acs_url"
+        id="saml_sp_acs_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_sp_acs_url}
         on:input={handleChange}
         placeholder="https://app.example.com/api/auth/saml/acs"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.spAcsUrlHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_sp_sls_url">{$t('settings.saml.spSlsUrl')}</label>
+    <FormField size="lg" id="saml_sp_sls_url" label={$t('settings.saml.spSlsUrl')} hint={$t('settings.saml.spSlsUrlHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_sp_sls_url"
+        id="saml_sp_sls_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_sp_sls_url}
         on:input={handleChange}
         placeholder="https://app.example.com/api/auth/saml/sls"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.spSlsUrlHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_metadata_url">{$t('settings.saml.metadataUrl')}</label>
+    <FormField size="lg" id="saml_metadata_url" label={$t('settings.saml.metadataUrl')} hint={$t('settings.saml.metadataUrlHelp')} let:describedby>
       <div class="input-with-button">
-        <input dir="ltr" id="saml_metadata_url" type="text" value={metadataUrl} readonly />
-        <button type="button" class="btn btn-small" on:click={copyMetadataUrl}>
+        <input dir="ltr" id="saml_metadata_url" aria-describedby={describedby} type="text" value={metadataUrl} readonly />
+        <button type="button" class="btn btn-secondary btn-sm" on:click={copyMetadataUrl}>
           {$t('settings.saml.copy')}
         </button>
       </div>
-      <span class="help-text">{$t('settings.saml.metadataUrlHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.saml_enabled}>
     <h3>{$t('settings.saml.spCertificate')}</h3>
 
-    <div class="form-group">
-      <label for="saml_sp_x509_cert">{$t('settings.saml.spX509Cert')}</label>
+    <FormField size="lg" id="saml_sp_x509_cert" label={$t('settings.saml.spX509Cert')} hint={$t('settings.saml.spX509CertHelp')} let:describedby>
       <textarea dir="ltr"
-        id="saml_sp_x509_cert"
+        id="saml_sp_x509_cert" aria-describedby={describedby}
         bind:value={formData.saml_sp_x509_cert}
         on:input={handleChange}
         placeholder="-----BEGIN CERTIFICATE-----"
         rows="4"
         disabled={!formData.saml_enabled}
       ></textarea>
-      <span class="help-text">{$t('settings.saml.spX509CertHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_sp_private_key">{$t('settings.saml.spPrivateKey')}</label>
+    <FormField size="lg" id="saml_sp_private_key" label={$t('settings.saml.spPrivateKey')} hint={privateKeySet ? $t('settings.saml.spPrivateKeySetHelp') : $t('settings.saml.spPrivateKeyHelp')} let:describedby>
       <div class="input-with-toggle">
         <input dir="ltr"
           id="saml_sp_private_key"
+        aria-describedby={describedby}
           type={showPrivateKey ? 'text' : 'password'}
           bind:value={privateKeyInput}
           on:input={handleChange}
@@ -187,68 +178,55 @@
           {showPrivateKey ? $t('common.hide') : $t('common.show')}
         </button>
       </div>
-      <span class="help-text">
-        {privateKeySet
-          ? $t('settings.saml.spPrivateKeySetHelp')
-          : $t('settings.saml.spPrivateKeyHelp')}
-      </span>
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.saml_enabled}>
     <h3>{$t('settings.saml.idpIdentity')}</h3>
 
-    <div class="form-group">
-      <label for="saml_idp_entity_id">{$t('settings.saml.idpEntityId')}</label>
+    <FormField size="lg" id="saml_idp_entity_id" label={$t('settings.saml.idpEntityId')} hint={$t('settings.saml.idpEntityIdHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_idp_entity_id"
+        id="saml_idp_entity_id" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_idp_entity_id}
         on:input={handleChange}
         placeholder="https://idp.example.com/metadata"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.idpEntityIdHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_idp_sso_url">{$t('settings.saml.idpSsoUrl')}</label>
+    <FormField size="lg" id="saml_idp_sso_url" label={$t('settings.saml.idpSsoUrl')} hint={$t('settings.saml.idpSsoUrlHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_idp_sso_url"
+        id="saml_idp_sso_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_idp_sso_url}
         on:input={handleChange}
         placeholder="https://idp.example.com/sso"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.idpSsoUrlHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_idp_slo_url">{$t('settings.saml.idpSloUrl')}</label>
+    <FormField size="lg" id="saml_idp_slo_url" label={$t('settings.saml.idpSloUrl')} hint={$t('settings.saml.idpSloUrlHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_idp_slo_url"
+        id="saml_idp_slo_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_idp_slo_url}
         on:input={handleChange}
         placeholder="https://idp.example.com/slo"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.idpSloUrlHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_idp_x509_cert">{$t('settings.saml.idpX509Cert')}</label>
+    <FormField size="lg" id="saml_idp_x509_cert" label={$t('settings.saml.idpX509Cert')} hint={$t('settings.saml.idpX509CertHelp')} let:describedby>
       <textarea dir="ltr"
-        id="saml_idp_x509_cert"
+        id="saml_idp_x509_cert" aria-describedby={describedby}
         bind:value={formData.saml_idp_x509_cert}
         on:input={handleChange}
         placeholder="-----BEGIN CERTIFICATE-----"
         rows="4"
         disabled={!formData.saml_enabled}
       ></textarea>
-      <span class="help-text">{$t('settings.saml.idpX509CertHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.saml_enabled}>
@@ -291,88 +269,82 @@
   <div class="section" class:disabled={!formData.saml_enabled}>
     <h3>{$t('settings.saml.attributeMapping')}</h3>
 
-    <div class="form-group">
-      <label for="saml_email_attribute">{$t('settings.saml.emailAttribute')}</label>
+    <FormField size="lg" id="saml_email_attribute" label={$t('settings.saml.emailAttribute')} hint={$t('settings.saml.emailAttributeHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_email_attribute"
+        id="saml_email_attribute" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_email_attribute}
         on:input={handleChange}
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.emailAttributeHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_name_attribute">{$t('settings.saml.nameAttribute')}</label>
+    <FormField size="lg" id="saml_name_attribute" label={$t('settings.saml.nameAttribute')} hint={$t('settings.saml.nameAttributeHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_name_attribute"
+        id="saml_name_attribute" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_name_attribute}
         on:input={handleChange}
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.nameAttributeHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_groups_attribute">{$t('settings.saml.groupsAttribute')}</label>
+    <FormField size="lg" id="saml_groups_attribute" label={$t('settings.saml.groupsAttribute')} hint={$t('settings.saml.groupsAttributeHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_groups_attribute"
+        id="saml_groups_attribute" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_groups_attribute}
         on:input={handleChange}
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.groupsAttributeHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.saml_enabled}>
     <h3>{$t('settings.saml.admissionControl')}</h3>
 
-    <div class="form-group">
-      <label for="saml_admin_group">{$t('settings.saml.adminGroup')}</label>
+    <FormField size="lg" id="saml_admin_group" label={$t('settings.saml.adminGroup')} hint={$t('settings.saml.adminGroupHelp')} let:describedby>
       <input dir="ltr"
-        id="saml_admin_group"
+        id="saml_admin_group" aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_admin_group}
         on:input={handleChange}
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.adminGroupHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_allowed_groups">{$t('settings.saml.allowedGroups')}</label>
+    <FormField size="lg" id="saml_allowed_groups" label={$t('settings.saml.allowedGroups')} hint={$t('settings.saml.allowedGroupsHelp')} let:describedby>
       <input dir="ltr"
         id="saml_allowed_groups"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_allowed_groups}
         on:input={handleChange}
         placeholder="opentranscribe-users;CN=Staff,OU=Groups,DC=example,DC=com"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.allowedGroupsHelp')}</span>
-      <span class="help-text">{$t('settings.saml.groupsSemicolonHelp')}</span>
-      {#if allowListOpen}
-        <p class="admission-warning" role="status">{$t('settings.saml.allowedGroupsEmptyWarning')}</p>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.saml.groupsSemicolonHelp')}</p>
+        {#if allowListOpen}
+          <p class="admission-warning" role="status">{$t('settings.saml.allowedGroupsEmptyWarning')}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_blocked_groups">{$t('settings.saml.blockedGroups')}</label>
+    <FormField size="lg" id="saml_blocked_groups" label={$t('settings.saml.blockedGroups')} hint={$t('settings.saml.blockedGroupsHelp')} let:describedby>
       <input dir="ltr"
         id="saml_blocked_groups"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_blocked_groups}
         on:input={handleChange}
         placeholder="contractors;CN=Vendors,OU=Groups,DC=example,DC=com"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.blockedGroupsHelp')}</span>
-      <span class="help-text">{$t('settings.saml.groupsSemicolonHelp')}</span>
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.saml.groupsSemicolonHelp')}</p>
+      </svelte:fragment>
+    </FormField>
   </div>
 
   <div class="actions">
@@ -449,34 +421,26 @@
     color: var(--color-text-secondary);
   }
 
-  .form-group {
+  .section :global(.form-field) {
     flex: 1;
     margin-bottom: var(--space-4);
   }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
-
-  .form-group input[type="text"],
-  .form-group input[type="password"],
-  .form-group textarea {
+  .section :global(.form-field input[type="text"]),
+  .section :global(.form-field input[type="password"]),
+  .section :global(.form-field textarea) {
     width: 100%;
   }
 
-  .form-group textarea {
+  .section :global(.form-field textarea) {
     resize: vertical;
     min-height: 80px;
     font-family: monospace;
     font-size: var(--font-size-xs);
   }
 
-  .form-group input:disabled,
-  .form-group textarea:disabled {
+  .section :global(.form-field input:disabled),
+  .section :global(.form-field textarea:disabled) {
     cursor: not-allowed;
   }
 
@@ -509,12 +473,6 @@
   .toggle-visibility:disabled {
     cursor: not-allowed;
     opacity: 0.6;
-  }
-
-  .btn-small {
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--font-size-xs);
-    white-space: nowrap;
   }
 
   .help-text {

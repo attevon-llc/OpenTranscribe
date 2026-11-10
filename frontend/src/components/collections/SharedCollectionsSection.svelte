@@ -45,7 +45,7 @@
 
       {#if viewMode === 'add' && selectedMediaIds.length > 0 && shared.my_permission !== 'viewer'}
         <button
-          class="btn-add"
+          class="btn btn-primary btn-add"
           disabled={addingToCollection}
           on:click|stopPropagation={() => dispatch('add', shared.uuid)}
         >
@@ -152,28 +152,6 @@
   :global([data-theme='dark']) .badge.shared-permission {
     background: rgba(var(--accent-rgb), 0.15);
     color: #93c5fd;
-  }
-
-  .btn-add {
-    padding: var(--space-1-5) var(--space-3);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base);
-    white-space: nowrap;
-  }
-
-  .btn-add:hover:not(:disabled) {
-    background: var(--primary-color);
-  }
-
-  .btn-add:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   :global([data-theme='dark']) .collection-card {

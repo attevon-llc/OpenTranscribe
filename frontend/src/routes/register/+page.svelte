@@ -11,6 +11,7 @@
 
   // Import logo asset for proper Vite processing
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
 
   // Self-registration is a deployment setting. Probe it before rendering the
   // form: without this the user fills every field and the backend answers 403.
@@ -127,7 +128,7 @@
   <div class="auth-card">
     {#if checkingRegistration}
       <div class="registration-check">
-        <Spinner size="small" />
+        <Spinner label={$t('common.loading')} size="small" />
       </div>
     {:else if registrationAllowed}
     <div class="auth-header">
@@ -139,8 +140,7 @@
     </div>
 
     <form on:submit|preventDefault={handleSubmit} class="auth-form">
-      <div class="form-group">
-        <label for="username">{$t('auth.username')}</label>
+      <FormField id="username" label={$t('auth.username')} size="lg">
         <input
           id="username"
           type="text"
@@ -148,10 +148,9 @@
           placeholder={$t('auth.usernamePlaceholder')}
           disabled={loading}
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="email">{$t('auth.email')}</label>
+      <FormField id="email" label={$t('auth.email')} size="lg">
         <input
           id="email"
           type="email"
@@ -159,26 +158,23 @@
           placeholder={$t('auth.emailPlaceholder')}
           disabled={loading}
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <div class="password-header">
-          <div class="label-with-info">
-            <label for="password">{$t('auth.password')}</label>
-            <div class="info-tooltip">
-              <svg class="info-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M12 16v-4"></path>
-                <path d="M12 8h.01"></path>
-              </svg>
-              <div class="tooltip-content">
-                <strong>{$t('auth.passwordRequirements')}</strong>
-                <ul>
-                  {#each passwordRequirements as req (req.key)}
-                    <li>{$t(req.key, req.params)}</li>
-                  {/each}
-                </ul>
-              </div>
+      <FormField id="password" label={$t('auth.password')} size="lg">
+        <svelte:fragment slot="label-after">
+          <div class="info-tooltip">
+            <svg class="info-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 16v-4"></path>
+              <path d="M12 8h.01"></path>
+            </svg>
+            <div class="tooltip-content">
+              <strong>{$t('auth.passwordRequirements')}</strong>
+              <ul>
+                {#each passwordRequirements as req (req.key)}
+                  <li>{$t(req.key, req.params)}</li>
+                {/each}
+              </ul>
             </div>
           </div>
           <button
@@ -190,7 +186,7 @@
           >
             <EyeIcon visible={showPassword} />
           </button>
-        </div>
+        </svelte:fragment>
         {#if showPassword}
           <input
             id="password"
@@ -208,21 +204,19 @@
             disabled={loading}
           />
         {/if}
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <div class="password-header">
-          <label for="confirmPassword">{$t('auth.confirmPassword')}</label>
-          <button
-            type="button"
-            class="toggle-password"
-            on:click={toggleConfirmPasswordVisibility}
-            aria-label={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-            title={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-          >
-            <EyeIcon visible={showConfirmPassword} />
-          </button>
-        </div>
+      <FormField id="confirmPassword" label={$t('auth.confirmPassword')} size="lg">
+        <button
+          slot="label-after"
+          type="button"
+          class="toggle-password"
+          on:click={toggleConfirmPasswordVisibility}
+          aria-label={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+          title={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+        >
+          <EyeIcon visible={showConfirmPassword} />
+        </button>
         {#if showConfirmPassword}
           <input
             id="confirmPassword"
@@ -240,7 +234,7 @@
             disabled={loading}
           />
         {/if}
-      </div>
+      </FormField>
 
       {#if formError}
         <p class="form-error" role="alert">{formError}</p>
@@ -315,18 +309,7 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
   }
 
@@ -400,14 +383,8 @@
     border-radius: var(--radius-lg);
   }
 
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
-
   .toggle-password {
+    margin-inline-start: auto;
     background: none;
     border: none;
     cursor: pointer;
@@ -421,12 +398,6 @@
 
   .toggle-password:hover {
     background-color: var(--surface-hover);
-  }
-
-  .label-with-info {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
   }
 
   .info-tooltip {

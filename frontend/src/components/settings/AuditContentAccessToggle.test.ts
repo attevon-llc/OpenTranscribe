@@ -36,7 +36,7 @@ describe('AuditContentAccessToggle', () => {
     api.getContentAccessAudit.mockResolvedValue(off);
     render(AuditContentAccessToggle);
 
-    const toggle = (await screen.findByRole('checkbox')) as HTMLInputElement;
+    const toggle = (await screen.findByRole('switch')) as HTMLInputElement;
     expect(toggle.checked).toBe(false);
     expect(
       screen.getByText(/Roughly 34 KB per active user per day, about 1\.0 GB a month/)
@@ -50,7 +50,7 @@ describe('AuditContentAccessToggle', () => {
     api.setContentAccessAudit.mockResolvedValue({ ...off, enabled: true, active: true });
     render(AuditContentAccessToggle);
 
-    const toggle = (await screen.findByRole('checkbox')) as HTMLInputElement;
+    const toggle = (await screen.findByRole('switch')) as HTMLInputElement;
     await fireEvent.click(toggle);
 
     await waitFor(() => expect(api.setContentAccessAudit).toHaveBeenCalledWith(true));
@@ -63,7 +63,7 @@ describe('AuditContentAccessToggle', () => {
     api.setContentAccessAudit.mockRejectedValue(new Error('403'));
     render(AuditContentAccessToggle);
 
-    const toggle = (await screen.findByRole('checkbox')) as HTMLInputElement;
+    const toggle = (await screen.findByRole('switch')) as HTMLInputElement;
     await fireEvent.click(toggle);
 
     await waitFor(() =>

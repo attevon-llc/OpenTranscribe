@@ -128,3 +128,16 @@ describe('the per-configuration on/off switch', () => {
     expect(cardOf(container, 'a').querySelector('.active-badge')).not.toBeNull();
   });
 });
+
+describe('the switch text is part of the control', () => {
+  it('clicking the "enabled" text flips the switch', async () => {
+    asrApi.setEnabled.mockResolvedValue(config('a', false));
+    const { container } = await renderLoaded();
+
+    const card = cardOf(container, 'a');
+    await fireEvent.click(card.querySelector('label[for^="asr-enabled-label-"]')!);
+
+    await waitFor(() => expect(asrApi.setEnabled).toHaveBeenCalledWith('a', false));
+    expect(toggleOf(container, 'a').getAttribute('role')).toBe('switch');
+  });
+});

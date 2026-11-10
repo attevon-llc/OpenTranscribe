@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import type { TranscriptionSystemDefaults } from '$lib/api/transcriptionSettings';
   import { t } from '$stores/locale';
   import SettingsCard from './SettingsCard.svelte';
@@ -19,7 +20,7 @@
   title={$t('settings.transcription.vadTitle')}
   description={$t('settings.transcription.vadDesc')}
 >
-  <div class="form-group">
+  <div class="form-field">
     <RangeSlider
       id="vad-threshold"
       label={$t('settings.transcription.vadThreshold')}
@@ -33,14 +34,13 @@
     </RangeSlider>
   </div>
 
-  <div class="form-group">
-    <label for="vad-min-silence" class="form-label">
-      {$t('settings.transcription.vadMinSilence')}
+  <FormField id="vad-min-silence" label={$t('settings.transcription.vadMinSilence')} labelSize="sm" hint={$t('settings.transcription.vadMinSilenceHint')} let:describedby>
+    <svelte:fragment slot="label-inline">
       <InfoTip inline>{$t('settings.transcription.vadMinSilenceTooltip')}</InfoTip>
-    </label>
+    </svelte:fragment>
     <div class="inline-input">
       <input
-        id="vad-min-silence"
+        id="vad-min-silence" aria-describedby={describedby}
         type="number"
         min="100"
         max="5000"
@@ -50,17 +50,15 @@
       />
       <span class="input-suffix">ms</span>
     </div>
-    <p class="input-hint">{$t('settings.transcription.vadMinSilenceHint')}</p>
-  </div>
+  </FormField>
 
-  <div class="form-group">
-    <label for="vad-min-speech" class="form-label">
-      {$t('settings.transcription.vadMinSpeech')}
+  <FormField id="vad-min-speech" label={$t('settings.transcription.vadMinSpeech')} labelSize="sm" hint={$t('settings.transcription.vadMinSpeechHint')} let:describedby>
+    <svelte:fragment slot="label-inline">
       <InfoTip inline>{$t('settings.transcription.vadMinSpeechTooltip')}</InfoTip>
-    </label>
+    </svelte:fragment>
     <div class="inline-input">
       <input
-        id="vad-min-speech"
+        id="vad-min-speech" aria-describedby={describedby}
         type="number"
         min="50"
         max="5000"
@@ -70,17 +68,15 @@
       />
       <span class="input-suffix">ms</span>
     </div>
-    <p class="input-hint">{$t('settings.transcription.vadMinSpeechHint')}</p>
-  </div>
+  </FormField>
 
-  <div class="form-group">
-    <label for="vad-speech-pad" class="form-label">
-      {$t('settings.transcription.vadSpeechPad')}
+  <FormField id="vad-speech-pad" label={$t('settings.transcription.vadSpeechPad')} labelSize="sm" hint={$t('settings.transcription.vadSpeechPadHint')} let:describedby>
+    <svelte:fragment slot="label-inline">
       <InfoTip inline>{$t('settings.transcription.vadSpeechPadTooltip')}</InfoTip>
-    </label>
+    </svelte:fragment>
     <div class="inline-input">
       <input
-        id="vad-speech-pad"
+        id="vad-speech-pad" aria-describedby={describedby}
         type="number"
         min="0"
         max="2000"
@@ -90,8 +86,7 @@
       />
       <span class="input-suffix">ms</span>
     </div>
-    <p class="input-hint">{$t('settings.transcription.vadSpeechPadHint')}</p>
-  </div>
+  </FormField>
 
   {#if systemDefaults}
     <div class="defaults-info">
@@ -112,16 +107,15 @@
   title={$t('settings.transcription.accuracyTitle')}
   description={$t('settings.transcription.accuracyDesc')}
 >
-  <div class="form-group">
-    <label for="hallucination-toggle" class="form-label">
-      {$t('settings.transcription.hallucinationFilter')}
+  <FormField id="hallucination-toggle" label={$t('settings.transcription.hallucinationFilter')} labelSize="sm" hint={$t('settings.transcription.hallucinationHint')} let:describedby>
+    <svelte:fragment slot="label-inline">
       <InfoTip inline>{$t('settings.transcription.hallucinationFilterTooltip')}</InfoTip>
-    </label>
+    </svelte:fragment>
     <div class="setting-row">
       <div class="setting-controls">
         <label class="toggle-label">
           <input
-            id="hallucination-toggle"
+            id="hallucination-toggle" aria-describedby={describedby}
             type="checkbox"
             bind:checked={hallucinationEnabled}
             class="toggle-input"
@@ -145,10 +139,9 @@
         {/if}
       </div>
     </div>
-    <p class="input-hint">{$t('settings.transcription.hallucinationHint')}</p>
-  </div>
+  </FormField>
 
-  <div class="form-group">
+  <div class="form-field">
     <RangeSlider
       id="repetition-penalty"
       label={$t('settings.transcription.repetitionPenalty')}

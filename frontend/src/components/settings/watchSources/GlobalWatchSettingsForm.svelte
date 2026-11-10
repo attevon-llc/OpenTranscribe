@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   /**
    * Deployment-wide watch settings (super_admin tier).
    *
@@ -24,8 +25,7 @@
     <span>{$t('settings.watchSources.global.enabled')}</span>
   </label>
   <div class="form-row">
-    <div class="form-group">
-      <label for="gs-stab">{$t('settings.watchSources.global.fileStability')}</label>
+    <FormField id="gs-stab" label={$t('settings.watchSources.global.fileStability')} labelSize="md">
       <input
         id="gs-stab"
         type="number"
@@ -33,18 +33,16 @@
         class="form-input"
         bind:value={settings.file_stability_seconds}
       />
-    </div>
-    <div class="form-group">
-      <label for="gs-max-per-scan">{$t('settings.watchSources.global.maxImportsPerScan')}</label>
+    </FormField>
+    <FormField id="gs-max-per-scan" label={$t('settings.watchSources.global.maxImportsPerScan')} labelSize="md" hint={$t('settings.watchSources.global.maxImportsPerScanHelp')} let:describedby>
       <input
-        id="gs-max-per-scan"
+        id="gs-max-per-scan" aria-describedby={describedby}
         type="number"
         min="1"
         class="form-input"
         bind:value={settings.max_imports_per_scan}
       />
-      <small class="form-hint">{$t('settings.watchSources.global.maxImportsPerScanHelp')}</small>
-    </div>
+    </FormField>
   </div>
   <label class="checkbox-row">
     <input type="checkbox" bind:checked={settings.fs_events_enabled} />
@@ -52,27 +50,23 @@
   </label>
   {#if settings.fs_events_enabled}
     <div class="form-row">
-      <div class="form-group">
-        <label for="gs-fs-mode">{$t('settings.watchSources.global.fsEventsMode')}</label>
-        <select id="gs-fs-mode" class="form-input" bind:value={settings.fs_events_mode}>
+      <FormField id="gs-fs-mode" label={$t('settings.watchSources.global.fsEventsMode')} labelSize="md" hint={$t('settings.watchSources.global.fsEventsModeHelp')} let:describedby>
+        <select id="gs-fs-mode" aria-describedby={describedby} class="form-input" bind:value={settings.fs_events_mode}>
           <option value="auto">{$t('settings.watchSources.global.fsEventsModeAuto')}</option>
           <option value="native">{$t('settings.watchSources.global.fsEventsModeNative')}</option>
           <option value="polling">{$t('settings.watchSources.global.fsEventsModePolling')}</option>
           <option value="off">{$t('settings.watchSources.global.fsEventsModeOff')}</option>
         </select>
-        <small class="form-hint">{$t('settings.watchSources.global.fsEventsModeHelp')}</small>
-      </div>
-      <div class="form-group">
-        <label for="gs-fs-poll">{$t('settings.watchSources.global.fsEventsPollSeconds')}</label>
+      </FormField>
+      <FormField id="gs-fs-poll" label={$t('settings.watchSources.global.fsEventsPollSeconds')} labelSize="md" hint={$t('settings.watchSources.global.fsEventsPollSecondsHelp')} let:describedby>
         <input
-          id="gs-fs-poll"
+          id="gs-fs-poll" aria-describedby={describedby}
           type="number"
           min="1"
           class="form-input"
           bind:value={settings.fs_events_poll_seconds}
         />
-        <small class="form-hint">{$t('settings.watchSources.global.fsEventsPollSecondsHelp')}</small>
-      </div>
+      </FormField>
     </div>
   {/if}
   <div class="form-actions">
@@ -99,29 +93,12 @@
     border-top: 1px solid var(--border-color);
   }
   .global-settings,
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
+  .form-row > :global(.form-field) {
+    flex: 1;
   }
   .form-row {
     display: flex;
     gap: var(--space-3);
-  }
-  .form-group {
-    flex: 1;
-    gap: var(--space-1);
-  }
-  .form-group label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-  }
-  .form-hint {
-    display: block;
-    margin-top: 0.35rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    font-style: italic;
   }
   /* .form-input inherits the global input styling (form-elements.css). */
   .checkbox-row {

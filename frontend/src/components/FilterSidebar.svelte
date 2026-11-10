@@ -682,7 +682,7 @@
             }}
           />
           {#if searchingSpeakers}
-            <div class="speaker-search-status"><Spinner size="small" /></div>
+            <div class="speaker-search-status"><Spinner label={$t('common.loading')} size="small" /></div>
           {/if}
         </div>
       {/if}

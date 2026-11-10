@@ -1,4 +1,6 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import { onMount } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import {
@@ -194,7 +196,7 @@
               </svg>
               <span>{$t('settings.orgContext.usingSharedBanner', { name: activeShared.owner_name })}</span>
             </div>
-            <button class="btn-stop-shared" on:click={handleStopUsingShared} disabled={saving}>
+            <button class="btn btn-danger btn-sm" on:click={handleStopUsingShared} disabled={saving}>
               {$t('settings.orgContext.useOwn')}
             </button>
           </div>
@@ -202,11 +204,11 @@
       {/if}
 
       <!-- Context Text -->
-      <div class="form-group">
-        <label for="org-context-text" class="form-label">
-          {$t('settings.orgContext.label')}
+      <div class="form-stack">
+      <FormField id="org-context-text" label={$t('settings.orgContext.label')} labelSize="md">
+        <svelte:fragment slot="label-inline">
           <span class="label-hint">{$t('settings.orgContext.labelHint')}</span>
-        </label>
+        </svelte:fragment>
         <textarea
           id="org-context-text"
           class="form-textarea"
@@ -218,10 +220,11 @@
         <div class="char-counter" class:char-warning={charLimitWarning}>
           {charCount.toLocaleString()} / 10,000
         </div>
+      </FormField>
       </div>
 
       <!-- Include in Default Prompts -->
-      <div class="form-group">
+      <div class="form-field">
         <div class="toggle-group">
           <div class="toggle-header">
             <label for="include-default" class="toggle-label">
@@ -230,20 +233,13 @@
                 {$t('settings.orgContext.includeDefaultDesc')}
               </span>
             </label>
-            <label class="toggle-switch">
-              <input
-                id="include-default"
-                type="checkbox"
-                bind:checked={includeInDefaultPrompts}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <Toggle id="include-default" checked={includeInDefaultPrompts} onchange={(v) => (includeInDefaultPrompts = v)} />
           </div>
         </div>
       </div>
 
       <!-- Include in Custom Prompts -->
-      <div class="form-group">
+      <div class="form-field">
         <div class="toggle-group">
           <div class="toggle-header">
             <label for="include-custom" class="toggle-label">
@@ -252,20 +248,13 @@
                 {$t('settings.orgContext.includeCustomDesc')}
               </span>
             </label>
-            <label class="toggle-switch">
-              <input
-                id="include-custom"
-                type="checkbox"
-                bind:checked={includeInCustomPrompts}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <Toggle id="include-custom" checked={includeInCustomPrompts} onchange={(v) => (includeInCustomPrompts = v)} />
           </div>
         </div>
       </div>
 
       <!-- Share with all users -->
-      <div class="form-group">
+      <div class="form-field">
         <div class="toggle-group">
           <div class="toggle-header">
             <label for="share-context" class="toggle-label">
@@ -274,16 +263,7 @@
                 {$t('settings.orgContext.shareDescription')}
               </span>
             </label>
-            <label class="toggle-switch">
-              <input
-                id="share-context"
-                type="checkbox"
-                checked={isShared}
-                on:change={handleShareToggle}
-                disabled={!contextText.trim()}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <Toggle id="share-context" checked={isShared} onchange={handleShareToggle} disabled={!contextText.trim()} />
           </div>
         </div>
       </div>
@@ -335,7 +315,7 @@
                 <div class="shared-card-actions">
                   {#if shared.is_active}
                     <button
-                      class="btn-shared-action btn-stop"
+                      class="btn btn-danger btn-sm"
                       on:click={handleStopUsingShared}
                       disabled={saving}
                     >
@@ -343,7 +323,7 @@
                     </button>
                   {:else}
                     <button
-                      class="btn-shared-action btn-use"
+                      class="btn btn-primary btn-sm"
                       on:click={() => handleUseShared(shared.user_id)}
                       disabled={saving}
                     >
@@ -387,19 +367,7 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
 
-  .form-label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
 
   .label-hint {
     font-size: var(--font-size-sm);
@@ -468,53 +436,6 @@
     line-height: 1.4;
   }
 
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 48px;
-    height: 24px;
-    flex-shrink: 0;
-    cursor: pointer;
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--border-color);
-    transition: var(--duration-slow);
-    border-radius: 24px;
-  }
-
-  .toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: var(--duration-slow);
-    border-radius: var(--radius-round);
-  }
-
-  input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  input:checked + .toggle-slider:before {
-    transform: translateX(24px);
-  }
-
   .form-actions {
     display: flex;
     gap: var(--space-3);
@@ -549,35 +470,6 @@
 
   :global([data-theme='dark']) .banner-content {
     color: var(--primary-on-surface);
-  }
-
-  .btn-stop-shared {
-    padding: var(--space-1-5) var(--space-3);
-    background-color: #ef4444;
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    color: var(--text-on-solid);
-    transition: all var(--duration-fast);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-stop-shared:hover:not(:disabled) {
-    background-color: var(--error-solid);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
-  }
-
-  .btn-stop-shared:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-stop-shared:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   /* Shared by Others section */
@@ -674,60 +566,6 @@
 
   .shared-card-actions {
     flex-shrink: 0;
-  }
-
-  .btn-shared-action {
-    padding: var(--space-1-5) var(--space-3);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-fast);
-  }
-
-  .btn-use {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-use:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-use:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-stop {
-    background-color: #ef4444;
-    color: var(--text-on-solid);
-    border: none;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-stop:hover:not(:disabled) {
-    background-color: var(--error-solid);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
-  }
-
-  .btn-stop:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-shared-action:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  /* Dark mode */
-  :global([data-theme='dark']) .toggle-slider:before {
-    background-color: #e5e7eb;
   }
 
   /* Responsive */

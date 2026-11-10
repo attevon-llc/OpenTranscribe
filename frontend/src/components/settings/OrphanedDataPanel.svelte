@@ -13,6 +13,7 @@
   } from '$lib/api/dataIntegrity';
   import { formatFileSize } from '$lib/utils/formatting';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import Spinner from '$components/ui/Spinner.svelte';
 
   const LISTED_FILE_IDS = 8;
@@ -24,9 +25,14 @@
   let search: SearchOrphanReport | null = null;
   let storage: StorageOrphanReport | null = null;
 
-  let showConfirm = false;
-  let showOverride = false;
-  let showFinal = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   // What can go without anyone overriding a safety limit, and what is held back by one.
@@ -58,12 +64,38 @@
     return $t('settings.dataIntegrity.orphans.confirmStorageOnly', params);
   }
 
-  $: confirmMessage = describe(searchRemovable, storageRemovable, storageObjects, storageBytes);
-  $: overrideMessage = $t('settings.dataIntegrity.orphans.overrideMessage', {
-    docs: searchHeld,
-    files: heldFiles,
-    size: formatFileSize(heldBytes),
-  });
+  function askRemove() {
+    confirmDialog.request(
+      $t('settings.dataIntegrity.orphans.confirmTitle'),
+      describe(searchRemovable, storageRemovable, storageObjects, storageBytes),
+      () => run(false),
+      { confirmText: $t('settings.dataIntegrity.orphans.confirmAction'), variant: 'danger' }
+    );
+  }
+
+  // Overriding a safety limit takes two confirmations; the second is requested from the first's
+  // callback, which the helper runs only after it has closed and cleared the first.
+  function askOverride() {
+    confirmDialog.request(
+      $t('settings.dataIntegrity.orphans.overrideTitle'),
+      $t('settings.dataIntegrity.orphans.overrideMessage', {
+        docs: searchHeld,
+        files: heldFiles,
+        size: formatFileSize(heldBytes),
+      }),
+      askFinal,
+      { confirmText: $t('settings.dataIntegrity.orphans.overrideConfirm'), variant: 'danger' }
+    );
+  }
+
+  function askFinal() {
+    confirmDialog.request(
+      $t('settings.dataIntegrity.orphans.finalTitle'),
+      $t('settings.dataIntegrity.orphans.finalMessage'),
+      () => run(true),
+      { confirmText: $t('settings.dataIntegrity.orphans.finalConfirm'), variant: 'danger' }
+    );
+  }
 
   async function scan(quiet = false) {
     if (!quiet) scanning = true;
@@ -143,7 +175,7 @@
 <div class="orphans" data-testid="orphaned-data-panel">
   <div class="orphans-head">
     <h4 class="orphans-title">{$t('settings.dataIntegrity.orphans.title')}</h4>
-    <button class="btn btn-secondary btn-small" on:click={() => scan()} disabled={scanning || removing}>
+    <button class="btn btn-secondary btn-sm" on:click={() => scan()} disabled={scanning || removing}>
       {$t('settings.dataIntegrity.orphans.rescan')}
     </button>
   </div>
@@ -220,8 +252,8 @@
         {/if}
         <p>{$t('settings.dataIntegrity.orphans.guardExplain')}</p>
         <button
-          class="btn btn-secondary btn-small"
-          on:click={() => (showOverride = true)}
+          class="btn btn-secondary btn-sm"
+          on:click={askOverride}
           disabled={!canOverride}
         >
           {$t('settings.dataIntegrity.orphans.guardOverrideButton')}
@@ -232,7 +264,7 @@
     <div class="orphans-actions">
       <button
         class="btn btn-danger"
-        on:click={() => (showConfirm = true)}
+        on:click={askRemove}
         disabled={!canRemove}
         aria-describedby="orphans-hint"
       >
@@ -255,30 +287,14 @@
 </div>
 
 <ConfirmationModal
-  bind:isOpen={showConfirm}
-  title={$t('settings.dataIntegrity.orphans.confirmTitle')}
-  message={confirmMessage}
-  confirmText={$t('settings.dataIntegrity.orphans.confirmAction')}
-  confirmButtonClass="confirm-button delete-confirm"
-  on:confirm={() => run(false)}
-/>
-
-<ConfirmationModal
-  bind:isOpen={showOverride}
-  title={$t('settings.dataIntegrity.orphans.overrideTitle')}
-  message={overrideMessage}
-  confirmText={$t('settings.dataIntegrity.orphans.overrideConfirm')}
-  confirmButtonClass="confirm-button delete-confirm"
-  on:confirm={() => (showFinal = true)}
-/>
-
-<ConfirmationModal
-  bind:isOpen={showFinal}
-  title={$t('settings.dataIntegrity.orphans.finalTitle')}
-  message={$t('settings.dataIntegrity.orphans.finalMessage')}
-  confirmText={$t('settings.dataIntegrity.orphans.finalConfirm')}
-  confirmButtonClass="confirm-button delete-confirm"
-  on:confirm={() => run(true)}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

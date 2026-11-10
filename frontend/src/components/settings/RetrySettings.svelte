@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import SettingsCard from '$components/settings/transcription/SettingsCard.svelte';
   import { onMount } from 'svelte';
@@ -77,11 +78,10 @@
   {:else}
     <div class="setting-row">
       <div class="setting-controls">
-        <label class="toggle-label">
-          <input type="checkbox" bind:checked={retryLimitEnabled} class="toggle-input" />
-          <span class="toggle-switch"></span>
-          <span class="toggle-text">{$t('settings.retry.limitRetries')}</span>
-        </label>
+        <div class="toggle-label">
+          <Toggle id="retrysettings-toggle-1" checked={retryLimitEnabled} onchange={(v) => (retryLimitEnabled = v)} />
+          <label class="toggle-text" for="retrysettings-toggle-1">{$t('settings.retry.limitRetries')}</label>
+        </div>
         <div class="inline-input">
           <span class="input-label">{$t('settings.retry.max')}</span>
           <input
@@ -127,44 +127,6 @@
     gap: var(--space-2);
     cursor: pointer;
     user-select: none;
-  }
-
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
   }
 
   .toggle-text {

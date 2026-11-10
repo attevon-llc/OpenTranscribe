@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Shared `ui/Banner` notice (info, success, warning, error, neutral; `role="alert"` for errors, `role="status"` otherwise; each tone has its own icon and an inline-start accent bar), and a single global `.sr-only` utility. `ui/Spinner` takes an optional `label` and is otherwise hidden from assistive tech; status badges (`ui/Badge`, sizes `sm`/`md`) and settings empty states (`ui/EmptyState`) replace their local copies, which unifies badge radius and padding.
+- Shared button variants (`.btn-sm`, `.btn-lg`, `.btn-success`, `.btn-ghost`, `.btn-link`, `.btn-danger-outline`, `.btn-icon`) and a `ui/Button` component with busy and icon-only handling.
+
 ### Fixed
 
 - Re-running the corpus injector (`python -m app.scripts.corpus_injection`, also with `--force`) no longer rewrites an injected recording that is under a legal hold or in quarantine; the record says `skipped_protected` and no indexing or redaction is dispatched for it.

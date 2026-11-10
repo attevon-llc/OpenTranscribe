@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import {
@@ -259,34 +260,28 @@
         title={$t('settings.speakerIdentification.countHeading')}
         description={$t('settings.speakerIdentification.countDesc')}
       >
-        <div class="form-group">
-          <label for="speaker-behavior" class="form-label">
-            {$t('settings.speakerIdentification.countMode.label')}
+        <FormField
+          hint={$t(speakerBehaviorOptions.find((option) => option.value === speakerBehavior)?.desc ?? '')}
+          let:describedby
+          id="speaker-behavior" label={$t('settings.speakerIdentification.countMode.label')} labelSize="sm">
+          <svelte:fragment slot="label-inline">
             <InfoTip inline>
               {#each speakerBehaviorOptions as option, i (option.value)}
                 <strong>{$t(option.label)}:</strong>
                 {$t(option.desc)}{#if i < speakerBehaviorOptions.length - 1}<br /><br />{/if}
               {/each}
             </InfoTip>
-          </label>
-          <select id="speaker-behavior" class="form-select" bind:value={speakerBehavior}>
+          </svelte:fragment>
+          <select id="speaker-behavior" aria-describedby={describedby} class="form-select" bind:value={speakerBehavior}>
             {#each speakerBehaviorOptions as option (option.value)}
               <option value={option.value}>{$t(option.label)}</option>
             {/each}
           </select>
-          <p class="input-hint">
-            {$t(
-              speakerBehaviorOptions.find((option) => option.value === speakerBehavior)?.desc ?? ''
-            )}
-          </p>
-        </div>
+        </FormField>
 
         {#if speakerBehavior === 'use_custom' && diarizationSource !== 'off'}
           <div class="speaker-range-row">
-            <div class="form-group compact">
-              <label for="min-speakers" class="form-label">
-                {$t('settings.speakerIdentification.minSpeakers')}
-              </label>
+            <FormField id="min-speakers" label={$t('settings.speakerIdentification.minSpeakers')} labelSize="sm" class="compact">
               <input
                 id="min-speakers"
                 type="number"
@@ -295,11 +290,8 @@
                 class="form-input number-input"
                 bind:value={minSpeakers}
               />
-            </div>
-            <div class="form-group compact">
-              <label for="max-speakers" class="form-label">
-                {$t('settings.speakerIdentification.maxSpeakers')}
-              </label>
+            </FormField>
+            <FormField id="max-speakers" label={$t('settings.speakerIdentification.maxSpeakers')} labelSize="sm" class="compact">
               <input
                 id="max-speakers"
                 type="number"
@@ -308,7 +300,7 @@
                 class="form-input number-input"
                 bind:value={maxSpeakers}
               />
-            </div>
+            </FormField>
           </div>
           {#if hintsIgnored}
             <p class="field-desc dimmed" data-testid="hints-ignored-note">

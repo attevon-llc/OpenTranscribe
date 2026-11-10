@@ -1,4 +1,6 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { REDACTION_CATEGORY_KEYS, REDACTION_DETECTOR_KEYS, REDACTION_STYLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
@@ -131,11 +133,10 @@
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.general')}</h3>
         <div class="setting-row">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={settings.enabled} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.contentRedaction.enabled')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle checked={settings.enabled} onchange={(next) => (settings.enabled = next)} id="redaction-toggle-label-1" />
+            <label class="toggle-text" for="redaction-toggle-label-1">{$t('settings.contentRedaction.enabled')}</label>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.enabledHelp')}</p>
         <p class="perf-note">
@@ -143,10 +144,8 @@
           {$t('settings.contentRedaction.performanceNote')}
         </p>
 
-        <div class="form-group" style="margin-top: 1rem;">
-          <label class="form-label" for="redaction-style">
-            {$t('settings.contentRedaction.style')}
-          </label>
+        <div class="form-stack">
+        <FormField id="redaction-style" label={$t('settings.contentRedaction.style')} labelSize="sm">
           <select id="redaction-style" class="form-select" bind:value={settings.style}>
             {#each defaults?.available_styles ?? [] as style (style)}
               <option value={style}>{labelFor($t, REDACTION_STYLE_KEYS, style)}</option>
@@ -165,6 +164,7 @@
               <span class="example-text">{examplePlain}</span>
             {/if}
           </div>
+        </FormField>
         </div>
       </div>
 
@@ -255,7 +255,7 @@
       <!-- Toxicity threshold -->
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.toxicity')}</h3>
-        <div class="form-group">
+        <div class="form-field">
           <RangeSlider
             id="tox-threshold"
             label={$t('settings.contentRedaction.toxicityThreshold')}
@@ -271,10 +271,8 @@
       <!-- Custom words & allowlist -->
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.wordLists')}</h3>
-        <div class="form-group">
-          <label class="form-label" for="custom-words">
-            {$t('settings.contentRedaction.customWords')}
-          </label>
+        <div class="form-stack">
+        <FormField id="custom-words" label={$t('settings.contentRedaction.customWords')} labelSize="sm">
           <textarea
             id="custom-words"
             class="form-textarea"
@@ -282,11 +280,8 @@
             bind:value={customWordsText}
             placeholder={$t('settings.contentRedaction.customWordsPlaceholder')}
           ></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="allowlist">
-            {$t('settings.contentRedaction.allowlist')}
-          </label>
+        </FormField>
+        <FormField id="allowlist" label={$t('settings.contentRedaction.allowlist')} labelSize="sm">
           <textarea
             id="allowlist"
             class="form-textarea"
@@ -294,6 +289,7 @@
             bind:value={allowlistText}
             placeholder={$t('settings.contentRedaction.allowlistPlaceholder')}
           ></textarea>
+        </FormField>
         </div>
       </div>
 
@@ -301,36 +297,24 @@
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.privacy')}</h3>
         <div class="setting-row" class:disabled-toggle={llmLocked}>
-          <label class="toggle-label">
-            <input
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={settings.redact_before_llm}
-              disabled={llmLocked}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">
+          <div class="toggle-label">
+            <Toggle checked={settings.redact_before_llm} onchange={(next) => (settings.redact_before_llm = next)} disabled={llmLocked} id="redaction-toggle-label-2" />
+            <label class="toggle-text" for="redaction-toggle-label-2">
               {$t('settings.contentRedaction.redactBeforeLlm')}
               {#if llmLocked}<span class="lock-badge"><MenuIcon name="lock" size={13} /></span>{/if}
-            </span>
-          </label>
+            </label>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.redactBeforeLlmHelp')}</p>
 
         <div class="setting-row" class:disabled-toggle={exportLocked} style="margin-top: 0.75rem;">
-          <label class="toggle-label">
-            <input
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={settings.default_export_redacted}
-              disabled={exportLocked}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">
+          <div class="toggle-label">
+            <Toggle checked={settings.default_export_redacted} onchange={(next) => (settings.default_export_redacted = next)} disabled={exportLocked} id="redaction-toggle-label-3" />
+            <label class="toggle-text" for="redaction-toggle-label-3">
               {$t('settings.contentRedaction.exportRedacted')}
               {#if exportLocked}<span class="lock-badge"><MenuIcon name="lock" size={13} /></span>{/if}
-            </span>
-          </label>
+            </label>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.exportRedactedHelp')}</p>
       </div>
@@ -393,22 +377,7 @@
     line-height: 1.5;
   }
 
-  .form-group {
-    margin-bottom: 0;
-  }
-  .form-group + .form-group {
-    margin-top: var(--space-4);
-  }
 
-  .form-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    margin-bottom: var(--space-1-5);
-  }
 
   .form-select,
   .form-textarea {
@@ -551,43 +520,10 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    cursor: pointer;
     user-select: none;
   }
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
-  }
   .toggle-text {
+    cursor: pointer;
     font-size: var(--font-size-md);
     color: var(--text-color);
     display: inline-flex;

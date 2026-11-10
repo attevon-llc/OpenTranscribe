@@ -72,7 +72,7 @@ async function openOnSettingsStep(stage: 'transcription' | 'rediarize') {
   const index = stage === 'transcription' ? 0 : 1;
   await waitFor(() => expect(boxes()[index].disabled).toBe(false));
   await fireEvent.click(boxes()[index]);
-  await fireEvent.click(document.querySelector('.primary-button') as HTMLElement); // -> settings
+  await fireEvent.click(document.querySelector('.btn-primary') as HTMLElement); // -> settings
   await waitFor(() => expect(document.querySelector('#modal-min-speakers')).not.toBeNull());
   return view;
 }
@@ -80,9 +80,9 @@ async function openOnSettingsStep(stage: 'transcription' | 'rediarize') {
 const field = (id: string) => document.querySelector(id) as HTMLInputElement;
 
 async function submit() {
-  await fireEvent.click(document.querySelector('.primary-button') as HTMLElement); // -> review
-  await waitFor(() => expect(document.querySelector('.primary-button')).not.toBeNull());
-  await fireEvent.click(document.querySelector('.primary-button') as HTMLElement); // -> submit
+  await fireEvent.click(document.querySelector('.btn-primary') as HTMLElement); // -> review
+  await waitFor(() => expect(document.querySelector('.btn-primary')).not.toBeNull());
+  await fireEvent.click(document.querySelector('.btn-primary') as HTMLElement); // -> submit
   await waitFor(() => expect(mockAxios.post).toHaveBeenCalled());
   return mockAxios.post.mock.calls[0][1] as Record<string, unknown>;
 }

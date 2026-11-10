@@ -10,6 +10,7 @@
   export let maxTags = 20;
   export let maxLength = 50;
   export let id = 'tag-input';
+  export let describedby: string | undefined = undefined;
 
   const dispatch = createEventDispatcher();
 
@@ -71,6 +72,7 @@
         type="text"
         class="tag-input"
         {id}
+        aria-describedby={describedby}
         bind:value={inputValue}
         on:keydown={handleKeydown}
         on:blur={addTag}

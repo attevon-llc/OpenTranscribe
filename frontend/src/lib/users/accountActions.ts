@@ -100,8 +100,7 @@ export function createAccountActions(
         tr('userManagement.confirmSuperAdminTitle'),
         tr('userManagement.confirmSuperAdminPromote', { name: nameOf(target) }),
         () => updateUserRole(userId, newRole),
-        tr('userManagement.confirmSuperAdminButton'),
-        revert
+        { confirmText: tr('userManagement.confirmSuperAdminButton'), onCancel: revert }
       );
       return;
     }

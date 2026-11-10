@@ -116,7 +116,7 @@ describe('listing', () => {
 describe('sharing', () => {
   it('flips optimistically and keeps the new state on success', async () => {
     const { container } = await mount();
-    await fireEvent.click(item(container, 1).querySelector('.toggle-input') as HTMLElement);
+    await fireEvent.click(item(container, 1).querySelector('[role="switch"]') as HTMLElement);
     await waitFor(() => expect(api.toggleShare).toHaveBeenCalledWith('other', true));
     await waitFor(() => expect(item(container, 1).querySelector('.share-badge')).not.toBeNull());
     expect(toast.success).toHaveBeenCalledWith('settings.llmProvider.shareEnabled', 3000);
@@ -125,7 +125,7 @@ describe('sharing', () => {
   it('puts the previous state back when the server refuses', async () => {
     api.toggleShare.mockRejectedValueOnce(new Error('nope'));
     const { container } = await mount();
-    await fireEvent.click(item(container, 1).querySelector('.toggle-input') as HTMLElement);
+    await fireEvent.click(item(container, 1).querySelector('[role="switch"]') as HTMLElement);
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('nope', 5000));
     expect(item(container, 1).querySelector('.share-badge')).toBeNull();
   });

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
@@ -39,6 +41,7 @@
   import { user } from '$stores/auth';
   import Spinner from '$components/ui/Spinner.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import LLMLocalDiscovery from './LLMLocalDiscovery.svelte';
   import LLMBedrockFields from './LLMBedrockFields.svelte';
@@ -144,9 +147,16 @@
   $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
   const bedrockDefaults = getProviderDefaults('bedrock');
 
-  // Unsaved changes modal
-  let showUnsavedChangesModal = false;
-  let pendingCloseAction: (() => void) | null = null;
+  // Unsaved changes dialog
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    cancelText: confirmCancelLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   // Track when the modal was last opened to prevent repeated form population
   let lastEditingConfigId: string | null = null;
@@ -239,9 +249,16 @@
 
   function closeModal(force: boolean = false) {
     if (!force && isDirty) {
-      // Show professional confirmation modal instead of browser alert
-      pendingCloseAction = () => executeCloseModal();
-      showUnsavedChangesModal = true;
+      confirmDialog.request(
+        $t('llm.unsavedChanges'),
+        $t('llm.unsavedChangesMessage'),
+        executeCloseModal,
+        {
+          confirmText: $t('llm.discardChanges'),
+          cancelText: $t('llm.keepEditing'),
+          variant: 'warning',
+        }
+      );
       return;
     }
 
@@ -253,19 +270,6 @@
     dispatch('close');
     // Reset form state
     resetForm();
-  }
-
-  function handleUnsavedChangesConfirm() {
-    if (pendingCloseAction) {
-      pendingCloseAction();
-      pendingCloseAction = null;
-    }
-    showUnsavedChangesModal = false;
-  }
-
-  function handleUnsavedChangesCancel() {
-    showUnsavedChangesModal = false;
-    pendingCloseAction = null;
   }
 
   async function saveConfiguration() {
@@ -449,7 +453,7 @@ let _llmConfigModalWasOpen = false;
     else unlockScroll();
     _llmConfigModalWasOpen = anyOpen;
   }
-  $: syncScrollLock(show || showUnsavedChangesModal);
+  $: syncScrollLock(show);
 
   onDestroy(() => {
     if (_llmConfigModalWasOpen) unlockScroll();
@@ -465,10 +469,9 @@ let _llmConfigModalWasOpen = false;
     {/if}
   </svelte:fragment>
 
-      <form on:submit|preventDefault={saveConfiguration} class="config-form">
+      <form on:submit|preventDefault={saveConfiguration} class="config-form form-stack">
         <!-- Configuration Name -->
-        <div class="form-group">
-          <label for="config-name">{$t('llm.configName')}</label>
+        <FormField id="config-name" label={$t('llm.configName')} labelSize="base">
           <input
             type="text"
             id="config-name"
@@ -478,11 +481,10 @@ let _llmConfigModalWasOpen = false;
             placeholder={$t('llm.configNamePlaceholder')}
             required
           />
-        </div>
+        </FormField>
 
         <!-- Provider Selection -->
-        <div class="form-group">
-          <label for="provider">{$t('llm.provider')}</label>
+        <FormField id="provider" label={$t('llm.provider')} labelSize="base">
           <select
             id="provider"
             bind:value={formData.provider}
@@ -495,7 +497,7 @@ let _llmConfigModalWasOpen = false;
               <option value={provider.provider}>{llmProviderDisplayName(provider.provider, $t)}</option>
             {/each}
           </select>
-        </div>
+        </FormField>
 
         <!-- Local endpoint discovery (issue #644). Deliberately OUTSIDE the provider block
              below: "Use this" SETS the provider, so a user who has not picked one yet is
@@ -517,10 +519,8 @@ let _llmConfigModalWasOpen = false;
         {#if formData.provider}
           <!-- Base URL (if supported) -->
           {#if getProviderDefaults(formData.provider)?.supports_custom_url}
-            <div class="form-group">
-              <label for="base-url">
-                <span class="label-with-tooltip">
-                  {$t('llm.baseUrl')}
+            <FormField id="base-url" label={$t('llm.baseUrl')} labelSize="base">
+              <svelte:fragment slot="label-inline">
                   {#if formData.provider === 'vllm' || formData.provider === 'ollama'}
                     <span
                       class="info-tooltip"
@@ -548,8 +548,7 @@ let _llmConfigModalWasOpen = false;
                       </svg>
                     </span>
                   {/if}
-                </span>
-              </label>
+              </svelte:fragment>
               <input dir="ltr"
                 type="url"
                 id="base-url"
@@ -559,17 +558,16 @@ let _llmConfigModalWasOpen = false;
                 placeholder={getProviderDefaults(formData.provider)?.default_base_url || 'https://api.example.com/v1'}
                 required
               />
-            </div>
+            </FormField>
           {/if}
 
           <!-- Model Selection -->
-          <div class="form-group">
-            <div class="form-label-row">
-              <label for="model-name">{$t('llm.modelName')}</label>
+          <FormField id="model-name" label={$t('llm.modelName')} labelSize="base">
+            <svelte:fragment slot="label-after">
               {#if formData.provider === 'ollama'}
                 <button
                   type="button"
-                  class="discover-models-btn"
+                  class="btn btn-primary btn-sm discover-models-btn"
                   on:click={loadOllamaModels}
                   disabled={loadingOllamaModels || saving || !formData.base_url}
                   title={$t('llm.discoverModelsTooltip')}
@@ -584,7 +582,7 @@ let _llmConfigModalWasOpen = false;
               {:else if formData.provider === 'openai' || formData.provider === 'vllm' || formData.provider === 'openrouter'}
                 <button
                   type="button"
-                  class="discover-models-btn"
+                  class="btn btn-primary btn-sm discover-models-btn"
                   on:click={loadOpenAICompatibleModels}
                   disabled={loadingOpenAIModels || saving || loadingApiKey || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key?.trim() && !editingConfig?.has_api_key)}
                   title={$t('llm.discoverModelsTooltip')}
@@ -599,7 +597,7 @@ let _llmConfigModalWasOpen = false;
               {:else if formData.provider === 'anthropic' || formData.provider === 'claude'}
                 <button
                   type="button"
-                  class="discover-models-btn"
+                  class="btn btn-primary btn-sm discover-models-btn"
                   on:click={loadAnthropicModels}
                   disabled={loadingAnthropicModels || saving || loadingApiKey || (!formData.api_key?.trim() && !editingConfig?.has_api_key)}
                   title={$t('llm.discoverModelsTooltip')}
@@ -612,7 +610,7 @@ let _llmConfigModalWasOpen = false;
                   {$t('llm.discoverModels')}
                 </button>
               {/if}
-            </div>
+            </svelte:fragment>
             <input
               type="text"
               id="model-name"
@@ -702,7 +700,7 @@ let _llmConfigModalWasOpen = false;
               </div>
             {/if}
 
-          </div>
+          </FormField>
 
           {#if formData.provider === 'bedrock'}
             <LLMBedrockFields
@@ -721,11 +719,8 @@ let _llmConfigModalWasOpen = false;
 
           <!-- API Key (if required) -->
           {#if getProviderDefaults(formData.provider)?.requires_api_key || (editingConfig && editingConfig.has_api_key)}
-            <div class="form-group">
-              <div class="api-key-header">
-                <label for="api-key">
-                  {$t('llm.apiKey')} {#if !editingConfig}*{/if}
-                </label>
+            <FormField id="api-key" label={$t('llm.apiKey')} required={!editingConfig} labelSize="base">
+              <svelte:fragment slot="label-after">
                 <button
                   type="button"
                   class="toggle-password"
@@ -735,7 +730,7 @@ let _llmConfigModalWasOpen = false;
                 >
                   <EyeIcon visible={showApiKey} />
                 </button>
-              </div>
+              </svelte:fragment>
               <input dir="ltr"
                 type={showApiKey ? 'text' : 'password'}
                 id="api-key"
@@ -745,7 +740,7 @@ let _llmConfigModalWasOpen = false;
                 placeholder={$t('llm.apiKeyPlaceholder')}
                 required={!editingConfig}
               />
-            </div>
+            </FormField>
           {/if}
 
           <!-- Advanced Settings -->
@@ -753,8 +748,7 @@ let _llmConfigModalWasOpen = false;
             <h4>{$t('llm.advancedSettings')}</h4>
 
             <div class="form-row">
-              <div class="form-group">
-                <label for="max-tokens">{$t('llm.maxTokens')}</label>
+              <FormField id="max-tokens" label={$t('llm.maxTokens')} labelSize="base">
                 <input
                   type="number"
                   id="max-tokens"
@@ -765,10 +759,9 @@ let _llmConfigModalWasOpen = false;
                   max="2000000"
                 />
                 <p class="field-desc">{$t('llm.maxTokensHelp')}</p>
-              </div>
+              </FormField>
 
-              <div class="form-group">
-                <label for="temperature">{$t('llm.temperature')}</label>
+              <FormField id="temperature" label={$t('llm.temperature')} labelSize="base">
                 <input
                   type="text"
                   id="temperature"
@@ -777,7 +770,7 @@ let _llmConfigModalWasOpen = false;
                   class="form-control"
                   placeholder="0.3"
                 />
-              </div>
+              </FormField>
 
             </div>
           </div>
@@ -786,7 +779,7 @@ let _llmConfigModalWasOpen = false;
           <div class="test-section">
             <button
               type="button"
-              class="test-connection-btn"
+              class="btn btn-primary btn-lg"
               on:click={testConnection}
               disabled={testing || loadingApiKey || !isConnectionTestValid}
               title={$t('llm.testConnectionTooltip')}
@@ -807,21 +800,20 @@ let _llmConfigModalWasOpen = false;
 
         <!-- Share with all users -->
         <div class="share-toggle-row">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.llmProvider.shareGlobally')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="llmconfigmodal-toggle-1" checked={formData.is_shared} onchange={(v) => (formData.is_shared = v)} disabled={saving} />
+            <label class="toggle-text" for="llmconfigmodal-toggle-1">{$t('settings.llmProvider.shareGlobally')}</label>
+          </div>
         </div>
 
         <!-- Form Actions -->
         <div class="form-actions">
-          <button type="button" class="cancel-button" on:click={() => closeModal()} disabled={saving}>
+          <button type="button" class="btn btn-secondary btn-lg cancel-button" on:click={() => closeModal()} disabled={saving}>
             {$t('common.cancel')}
           </button>
           <button
             type="submit"
-            class="save-button primary"
+            class="btn btn-primary btn-lg save-button"
             disabled={saving || !isFormValid}
           >
             {#if saving}
@@ -840,18 +832,17 @@ let _llmConfigModalWasOpen = false;
       </form>
 </BaseModal>
 
-<!-- Unsaved Changes Modal -->
+<!-- Unsaved changes -->
 <ConfirmationModal
-  bind:isOpen={showUnsavedChangesModal}
-  title={$t('llm.unsavedChanges')}
-  message={$t('llm.unsavedChangesMessage')}
-  confirmText={$t('llm.discardChanges')}
-  cancelText={$t('llm.keepEditing')}
-  confirmButtonClass="modal-warning-button"
-  cancelButtonClass="modal-primary-button"
-  on:confirm={handleUnsavedChangesConfirm}
-  on:cancel={handleUnsavedChangesCancel}
-  on:close={handleUnsavedChangesCancel}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  cancelText={$confirmCancelLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>
@@ -880,62 +871,14 @@ let _llmConfigModalWasOpen = false;
     padding: var(--space-6);
   }
 
-  .form-group {
-    margin-bottom: var(--space-6);
-  }
 
-  .form-group label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-2);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
 
   .form-control {
     width: 100%;
   }
 
-  .form-label-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-2);
-  }
 
-  .form-label-row label {
-    margin-bottom: 0;
-  }
 
-  .discover-models-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs);
-    cursor: pointer;
-    transition: background-color var(--duration-base) ease;
-  }
-
-  .discover-models-btn:hover:not(:disabled) {
-    background: var(--primary-color);
-  }
-
-  .discover-models-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .api-key-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
 
   .toggle-password {
     background: none;
@@ -1040,37 +983,6 @@ let _llmConfigModalWasOpen = false;
     background: var(--card-bg);
   }
 
-  .test-connection-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .test-connection-btn:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .test-connection-btn:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .test-connection-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .share-toggle-row {
     display: flex;
     align-items: center;
@@ -1090,40 +1002,6 @@ let _llmConfigModalWasOpen = false;
     user-select: none;
   }
 
-  .toggle-input {
-    display: none;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base);
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
-  }
-
   .toggle-text {
     color: var(--text-color);
   }
@@ -1135,60 +1013,6 @@ let _llmConfigModalWasOpen = false;
     margin-top: var(--space-8);
     padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
-  }
-
-  .cancel-button {
-    background: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-md);
-  }
-
-  .cancel-button:hover:not(:disabled) {
-    background: var(--button-hover);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-hover);
-  }
-
-  .cancel-button:active {
-    transform: scale(1);
-  }
-
-  .save-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .save-button:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .save-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .save-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   /* Tooltip styles */
@@ -1239,11 +1063,6 @@ let _llmConfigModalWasOpen = false;
     margin-bottom: var(--space-2);
   }
 
-  .label-with-tooltip {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
 
   @media (max-width: 768px) {
     .form-actions {

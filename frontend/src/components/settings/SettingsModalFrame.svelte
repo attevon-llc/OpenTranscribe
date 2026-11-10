@@ -46,11 +46,10 @@
     <div class="settings-header-bar">
       <h2 id="settings-modal-title" class="settings-header-title">{$t('settings.title')}</h2>
       <button
-        class="modal-close-button"
+        class="btn btn-icon-only modal-close-button"
         on:click={() => dispatch('close')}
         aria-label={$t('settings.modal.closeSettings')}
         title={$t('settings.modal.closeSettingsTitle')}
-        style="position:static; margin:0; padding:0.5rem;"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -126,28 +125,6 @@
     margin-right: auto;
   }
 
-  .modal-close-button {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: var(--space-2);
-    color: var(--text-secondary);
-    transition: color var(--duration-base) ease;
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-sticky);
-  }
-
-  .modal-close-button:hover {
-    color: var(--text-color);
-    background: var(--button-hover);
-  }
-
   .settings-modal-container {
     display: flex;
     flex: 1;
@@ -215,7 +192,7 @@
     }
 
     /* Global mobile overrides for all settings panels */
-    .settings-content :global(.form-group) {
+    .settings-content :global(.form-field) {
       min-width: 0;
     }
 

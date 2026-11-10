@@ -215,10 +215,10 @@
   </div>
 
   <svelte:fragment slot="footer">
-    <button class="btn-secondary" on:click={handleClose} disabled={submitting}>
+    <button class="btn btn-secondary" on:click={handleClose} disabled={submitting}>
       {$t('common.cancel')}
     </button>
-    <button class="btn-destructive" on:click={handleSubmit} disabled={!canSubmit}>
+    <button class="btn btn-danger" on:click={handleSubmit} disabled={!canSubmit}>
       {#if submitting}
         <Spinner size="small" />
       {/if}
@@ -301,42 +301,5 @@
     margin: 0;
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-  }
-
-  .btn-secondary {
-    padding: var(--space-2) var(--space-4);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: var(--bg-color);
-    color: var(--text-color);
-    cursor: pointer;
-    font-size: var(--font-size-md);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--hover-color);
-  }
-
-  .btn-destructive {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    padding: var(--space-2) var(--space-4);
-    border: none;
-    border-radius: var(--radius-md);
-    background: var(--error-solid);
-    color: var(--text-on-solid);
-    cursor: pointer;
-    font-size: var(--font-size-md);
-  }
-
-  .btn-destructive:hover:not(:disabled) {
-    background: var(--error-solid-hover);
-  }
-
-  .btn-destructive:disabled,
-  .btn-secondary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 </style>

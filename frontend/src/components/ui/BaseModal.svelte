@@ -81,6 +81,10 @@
   /** Id of the <h2> title. Generated when omitted; pass one only where a test or a
    *  `aria-labelledby` consumer outside this component needs a stable value. */
   export let titleId = '';
+  /** WAI-ARIA role. Use `alertdialog` for a confirmation that interrupts the user (destructive confirms). */
+  export let role: 'dialog' | 'alertdialog' = 'dialog';
+  /** Id of an element inside the body that describes the dialog (`aria-describedby`). */
+  export let describedBy: string | undefined = undefined;
 
   // Stable id for wiring the dialog's accessible name to its <h2> title (when no
   // custom header slot is supplied). Generated once per instance.
@@ -131,8 +135,9 @@
       class="modal-container"
       class:fullscreen
       style="{fullscreen ? '' : `max-width: ${maxWidth}`}{height && !fullscreen ? `; height: ${height}` : ''}"
-      role="dialog"
+      {role}
       aria-modal="true"
+      aria-describedby={describedBy}
       aria-labelledby={$$slots.header ? undefined : resolvedTitleId}
       aria-label={$$slots.header ? title || undefined : undefined}
       use:focusTrap={{ enabled: isOpen }}
@@ -293,7 +298,7 @@
   }
 
   /* One footer-button size for every modal. The footer used to inherit whichever of three
-     vocabularies the caller used (`.btn`, `.modal-button`, an ad-hoc class), which made the
+     vocabularies the caller used (`.btn`, a bespoke footer-button class, an ad-hoc class), which made the
      same Cancel/Save row a different height and radius from modal to modal. Colour stays
      the caller's (`btn-primary`, `btn-secondary`, `btn-danger`...); size, radius and weight
      do not. A text-link style button opts out by having "link" in its class name. Order is

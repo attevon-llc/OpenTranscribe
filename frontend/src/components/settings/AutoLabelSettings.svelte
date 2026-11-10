@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { formatEta } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { llmStatusStore } from '$stores/llmStatus';
-  import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
   import RangeSlider from '$components/ui/RangeSlider.svelte';
 
   let autoTopicExtraction = true;
@@ -196,15 +196,7 @@
             </span>
           {/if}
         </div>
-        <label class="toggle-switch">
-          <input
-            type="checkbox"
-            id="auto-topic-extraction"
-            bind:checked={autoTopicExtraction}
-            disabled={noProvider}
-          />
-          <span class="toggle-slider"></span>
-        </label>
+        <Toggle id="auto-topic-extraction" checked={autoTopicExtraction} onchange={(next) => (autoTopicExtraction = next)} disabled={noProvider} />
       </div>
 
       <!-- Master Toggle -->
@@ -213,10 +205,7 @@
           <label for="auto-label-enabled" class="setting-label">{$t('autoLabel.enableLabel')}</label>
           <span class="setting-help">{$t('autoLabel.enableHelp')}</span>
         </div>
-        <label class="toggle-switch">
-          <input type="checkbox" id="auto-label-enabled" bind:checked={enabled} />
-          <span class="toggle-slider"></span>
-        </label>
+        <Toggle id="auto-label-enabled" checked={enabled} onchange={(next) => (enabled = next)} />
       </div>
 
       {#if enabled}
@@ -240,10 +229,7 @@
             <label for="auto-label-tags" class="setting-label">{$t('autoLabel.tagsLabel')}</label>
             <span class="setting-help">{$t('autoLabel.tagsHelp')}</span>
           </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="auto-label-tags" bind:checked={tagsEnabled} />
-            <span class="toggle-slider"></span>
-          </label>
+          <Toggle id="auto-label-tags" checked={tagsEnabled} onchange={(next) => (tagsEnabled = next)} />
         </div>
 
         <!-- Collections Toggle -->
@@ -252,10 +238,7 @@
             <label for="auto-label-collections" class="setting-label">{$t('autoLabel.collectionsLabel')}</label>
             <span class="setting-help">{$t('autoLabel.collectionsHelp')}</span>
           </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="auto-label-collections" bind:checked={collectionsEnabled} />
-            <span class="toggle-slider"></span>
-          </label>
+          <Toggle id="auto-label-collections" checked={collectionsEnabled} onchange={(next) => (collectionsEnabled = next)} />
         </div>
 
         <!-- Bulk Grouping Toggle -->
@@ -264,10 +247,7 @@
             <label for="auto-label-bulk" class="setting-label">{$t('autoLabel.bulkGroupingLabel')}</label>
             <span class="setting-help">{$t('autoLabel.bulkGroupingHelp')}</span>
           </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="auto-label-bulk" bind:checked={bulkGroupingEnabled} />
-            <span class="toggle-slider"></span>
-          </label>
+          <Toggle id="auto-label-bulk" checked={bulkGroupingEnabled} onchange={(next) => (bulkGroupingEnabled = next)} />
         </div>
       {/if}
     </div>
@@ -276,7 +256,7 @@
     {#if hasChanges}
       <div class="save-section">
         <button
-          class="btn-save"
+          class="btn btn-primary btn-lg btn-save"
           on:click={saveSettings}
           disabled={saving}
         >
@@ -292,7 +272,7 @@
         <span class="setting-help">{$t('autoLabel.retroactiveHelp')}</span>
       </div>
       <button
-        class="btn-retroactive"
+        class="btn btn-primary btn-lg btn-retroactive"
         on:click={triggerRetroactiveApply}
         disabled={retroactiveRunning || !enabled}
       >
@@ -301,30 +281,16 @@
 
       {#if retroactiveRunning}
         <div class="progress-section">
-          {#if retroactiveTotal === 0}
-            <div class="queued-message">
-              {retroactiveMessage || $t('autoLabel.retroactiveQueued')}
-            </div>
-            <ProgressBar percent={null} />
-          {:else}
-            <div class="progress-info">
-              <span class="progress-label">
-                {retroactiveProcessed} / {retroactiveTotal}
-              </span>
-              <span class="progress-percent">
-                <bdi dir="ltr">{Math.round((retroactiveProcessed / Math.max(retroactiveTotal, 1)) * 100)}%</bdi>
-                {#if formatEta(retroactiveEtaSeconds)}
-                  ({formatEta(retroactiveEtaSeconds)} {$t('common.remaining')})
-                {/if}
-              </span>
-            </div>
-            <div class="progress-bar-container">
-              <div
-                class="progress-bar-fill"
-                style="width: {(retroactiveProcessed / Math.max(retroactiveTotal, 1)) * 100}%"
-              ></div>
-            </div>
-          {/if}
+          <LiveProgressCard
+            state={retroactiveTotal === 0 ? 'starting' : 'running'}
+            done={retroactiveProcessed}
+            total={retroactiveTotal}
+            percent={retroactiveTotal === 0 ? null : (retroactiveProcessed / retroactiveTotal) * 100}
+            etaSeconds={retroactiveEtaSeconds}
+            remainingLabel={$t('common.remaining')}
+            message={retroactiveTotal === 0 ? retroactiveMessage || $t('autoLabel.retroactiveQueued') : ''}
+            barLabel={$t('autoLabel.progressBar')}
+          />
         </div>
       {/if}
     </div>
@@ -378,64 +344,6 @@
     line-height: 1.3;
   }
 
-  /* Toggle Switch */
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-    flex-shrink: 0;
-    margin-left: var(--space-4);
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--border-color);
-    transition: var(--duration-slow);
-    border-radius: 24px;
-  }
-
-  .toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: var(--toggle-button);
-    transition: var(--duration-slow);
-    border-radius: var(--radius-round);
-  }
-
-  .toggle-switch input:focus-visible + .toggle-slider {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .toggle-switch input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-switch input:disabled + .toggle-slider {
-    cursor: not-allowed;
-    opacity: 0.5;
-  }
-
-  .toggle-switch input:checked + .toggle-slider:before {
-    transform: translateX(20px);
-  }
-
   .setting-row--slider {
     display: block;
   }
@@ -445,34 +353,6 @@
     margin-top: var(--space-4);
     display: flex;
     justify-content: flex-end;
-  }
-
-  .btn-save {
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    border: none;
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    font-weight: var(--font-weight-medium);
-    font-size: 0.95rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-save:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-save:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-save:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   /* Retroactive Section */
@@ -486,34 +366,6 @@
 
   .btn-retroactive {
     margin-top: var(--space-3);
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    border: none;
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    font-weight: var(--font-weight-medium);
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-retroactive:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-retroactive:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-retroactive:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   /* Progress Section */
@@ -521,59 +373,13 @@
     margin-top: var(--space-3);
   }
 
-  .queued-message {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin-bottom: var(--space-2);
-  }
-
-  .progress-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
-
-  .progress-label {
-    font-size: 0.8rem;
-    color: var(--text-primary);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .progress-percent {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-  }
-
-  .progress-bar-container {
-    height: 8px;
-    background: var(--border-color);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .progress-bar-fill {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: var(--radius-sm);
-    transition: width var(--duration-slow) ease;
-  }
-
   /* Skeleton Loading */
-
-
-
-
 
   @media (max-width: 768px) {
     .setting-row {
       flex-direction: column;
       align-items: flex-start;
       gap: var(--space-3);
-    }
-
-    .toggle-switch {
-      margin-left: 0;
     }
 
     .btn-save,

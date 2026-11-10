@@ -11,6 +11,7 @@
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Tabs, { type TabItem } from '$components/ui/Tabs.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import WatchSourceModal from './WatchSourceModal.svelte';
   import EmailConfigModal from './EmailConfigModal.svelte';
   import WatchSourceCard from './watchSources/WatchSourceCard.svelte';
@@ -87,8 +88,6 @@
   // modals
   let showSourceModal = false;
   let editingSource: WatchSource | null = null;
-  let showDeleteModal = false;
-  let sourceToDelete: WatchSource | null = null;
   let filesSource: WatchSource | null = null;
   let linksSource: WatchSource | null = null;
 
@@ -98,7 +97,14 @@
   let editingEmail: EmailConfig | null = null;
   let showEmailHelp = false;
   let globalSettings: GlobalWatchSettings | null = null;
-  let configToDelete: EmailConfig | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   async function loadSources() {
     sources = await getWatchSources(scope);
@@ -192,20 +198,20 @@
   }
 
   function confirmDelete(s: WatchSource) {
-    sourceToDelete = s;
-    showDeleteModal = true;
+    confirmDialog.request(
+      $t('settings.watchSources.deleteConfirmTitle'),
+      $t('settings.watchSources.deleteConfirmMessage', { name: s.name }),
+      () => doDelete(s),
+      { confirmText: $t('common.delete'), variant: 'danger' }
+    );
   }
-  async function doDelete() {
-    if (!sourceToDelete) return;
+  async function doDelete(target: WatchSource) {
     try {
-      await deleteWatchSource(sourceToDelete.uuid);
+      await deleteWatchSource(target.uuid);
       toastStore.success($t('settings.watchSources.deleted'));
       await loadSources();
     } catch (err) {
       toastStore.error(getErrorMessage(err, $t('settings.watchSources.deleteFailed')));
-    } finally {
-      showDeleteModal = false;
-      sourceToDelete = null;
     }
   }
 
@@ -233,10 +239,18 @@
       toastStore.error(getErrorMessage(err, $t('settings.watchSources.testFailed')));
     }
   }
-  async function doDeleteEmailConfig() {
-    if (!configToDelete) return;
-    const target = configToDelete;
-    configToDelete = null;
+  function confirmDeleteEmailConfig(c: EmailConfig) {
+    confirmDialog.request(
+      $t('settings.emailNotifications.links.deleteConfigTitle'),
+      $t('settings.emailNotifications.links.deleteConfigMessage', {
+        name: c.name,
+        count: c.linked_source_count ?? 0,
+      }),
+      () => doDeleteEmailConfig(c),
+      { confirmText: $t('common.delete'), variant: 'danger' }
+    );
+  }
+  async function doDeleteEmailConfig(target: EmailConfig) {
     try {
       await deleteEmailConfig(target.uuid);
       emailConfigs = emailConfigs.filter((x) => x.uuid !== target.uuid);
@@ -367,7 +381,7 @@
       on:create={openEmailCreate}
       on:edit={(e) => openEmailEdit(e.detail)}
       on:test={(e) => handleEmailTest(e.detail)}
-      on:delete={(e) => (configToDelete = e.detail)}
+      on:delete={(e) => confirmDeleteEmailConfig(e.detail)}
       on:toggleHelp={() => (showEmailHelp = !showEmailHelp)}
     />
   {/if}
@@ -416,42 +430,14 @@
 />
 
 <ConfirmationModal
-  isOpen={showDeleteModal}
-  title={$t('settings.watchSources.deleteConfirmTitle')}
-  message={sourceToDelete
-    ? $t('settings.watchSources.deleteConfirmMessage', { name: sourceToDelete.name })
-    : ''}
-  confirmText={$t('common.delete')}
-  cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
-  on:confirm={doDelete}
-  on:cancel={() => {
-    showDeleteModal = false;
-    sourceToDelete = null;
-  }}
-  on:close={() => {
-    showDeleteModal = false;
-    sourceToDelete = null;
-  }}
-/>
-
-<ConfirmationModal
-  isOpen={configToDelete !== null}
-  title={$t('settings.emailNotifications.links.deleteConfigTitle')}
-  message={configToDelete
-    ? $t('settings.emailNotifications.links.deleteConfigMessage', {
-        name: configToDelete.name,
-        count: configToDelete.linked_source_count ?? 0,
-      })
-    : ''}
-  confirmText={$t('common.delete')}
-  cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
-  on:confirm={doDeleteEmailConfig}
-  on:cancel={() => (configToDelete = null)}
-  on:close={() => (configToDelete = null)}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

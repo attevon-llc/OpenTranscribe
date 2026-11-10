@@ -13,6 +13,8 @@
   } from '$stores/uploads';
   import { t } from '$stores/locale';
   import UploadProgress from './UploadProgress.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import EmptyState from './ui/EmptyState.svelte';
 
   // Component state
@@ -148,12 +150,7 @@
           <div class="upload-icon">
             {#if $hasActiveUploads}
               <!-- Proper spinner when uploading -->
-              <svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="15.708" stroke-dashoffset="15.708">
-                  <animate attributeName="stroke-dasharray" dur="1s" values="0 31.416;15.708 15.708;0 31.416" repeatCount="indefinite"/>
-                  <animate attributeName="stroke-dashoffset" dur="1s" values="0;-15.708;-31.416" repeatCount="indefinite"/>
-                </circle>
-              </svg>
+              <Spinner size="inline" color="currentColor" />
             {:else}
               <!-- Static upload icon when not uploading -->
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -227,16 +224,7 @@
         <!-- Overall Progress (if active uploads) -->
         {#if $hasActiveUploads}
           <div class="overall-progress">
-            <div class="progress-info">
-              <span class="progress-label">{$t('upload.overallProgress')}</span>
-              <span class="progress-percent" dir="ltr">{$totalProgress}%</span>
-            </div>
-            <div class="progress-bar">
-              <div
-                class="progress-fill"
-                style="width: {$totalProgress}%"
-              ></div>
-            </div>
+            <ProgressBar label={$t('upload.overallProgress')} percent={$totalProgress} />
           </div>
         {/if}
 
@@ -420,37 +408,6 @@
     background: var(--background-color);
   }
 
-  .progress-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-1-5);
-  }
-
-  .progress-label {
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
-  }
-
-  .progress-percent {
-    font-size: var(--font-size-md);
-    color: var(--text-secondary);
-  }
-
-  .progress-bar {
-    height: 6px;
-    background: var(--border-color);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--primary-on-surface);
-    transition: width var(--duration-slow) ease;
-  }
-
   /* Upload List */
   .upload-list {
     max-height: 40vh;
@@ -503,18 +460,6 @@
   :global([data-theme='dark']) .overall-progress {
     background: var(--background-color);
     border-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .progress-label {
-    color: var(--text-primary);
-  }
-
-  :global([data-theme='dark']) .progress-percent {
-    color: var(--text-secondary);
-  }
-
-  :global([data-theme='dark']) .progress-bar {
-    background: var(--border-color);
   }
 
   /* Mobile adjustments */

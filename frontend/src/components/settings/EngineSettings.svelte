@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -208,17 +209,10 @@
           disabled={saving}
           on:click={() => resetKey('diarizer_require_sidecar')}
         >
-          <label class="toggle-label" for="diarizer-require-sidecar-input">
-            <input
-              id="diarizer-require-sidecar-input"
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={draftDiarizerRequireSidecar}
-              disabled={saving || resetInProgress !== null}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text help-text">{$t('settings.engineSettings.diarizerRequireSidecarHelp')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="diarizer-require-sidecar-input" checked={draftDiarizerRequireSidecar} onchange={(v) => (draftDiarizerRequireSidecar = v)} disabled={saving || resetInProgress !== null} />
+            <label class="toggle-text help-text" for="diarizer-require-sidecar-input">{$t('settings.engineSettings.diarizerRequireSidecarHelp')}</label>
+          </div>
         </EngineSettingRow>
       {/if}
 
@@ -231,17 +225,10 @@
         disabled={saving}
         on:click={() => resetKey('boundary_smoothing_enabled')}
       >
-        <label class="toggle-label" for="boundary-smoothing-input">
-          <input
-            id="boundary-smoothing-input"
-            type="checkbox"
-            class="toggle-input"
-            bind:checked={draftBoundarySmoothing}
-            disabled={saving || resetInProgress !== null}
-          />
-          <span class="toggle-switch"></span>
-          <span class="toggle-text help-text">{$t('settings.engineSettings.boundarySmoothingHelp')}</span>
-        </label>
+        <div class="toggle-label">
+          <Toggle id="boundary-smoothing-input" checked={draftBoundarySmoothing} onchange={(v) => (draftBoundarySmoothing = v)} disabled={saving || resetInProgress !== null} />
+          <label class="toggle-text help-text" for="boundary-smoothing-input">{$t('settings.engineSettings.boundarySmoothingHelp')}</label>
+        </div>
       </EngineSettingRow>
 
       <EngineSettingRow
@@ -251,17 +238,10 @@
         disabled={saving}
         on:click={() => resetKey('boundary_acoustic_recheck_enabled')}
       >
-        <label class="toggle-label" for="boundary-acoustic-recheck-input">
-          <input
-            id="boundary-acoustic-recheck-input"
-            type="checkbox"
-            class="toggle-input"
-            bind:checked={draftAcousticRecheck}
-            disabled={saving || resetInProgress !== null}
-          />
-          <span class="toggle-switch"></span>
-          <span class="toggle-text help-text">{$t('settings.engineSettings.boundaryAcousticRecheckHelp')}</span>
-        </label>
+        <div class="toggle-label">
+          <Toggle id="boundary-acoustic-recheck-input" checked={draftAcousticRecheck} onchange={(v) => (draftAcousticRecheck = v)} disabled={saving || resetInProgress !== null} />
+          <label class="toggle-text help-text" for="boundary-acoustic-recheck-input">{$t('settings.engineSettings.boundaryAcousticRecheckHelp')}</label>
+        </div>
         <p class="field-hint scope-note" data-testid="recheck-scope">
           {$t('settings.engineSettings.boundaryAcousticScope')}
         </p>
@@ -395,53 +375,12 @@
   }
 
 
-  /* Toggle switch */
   .toggle-label {
     display: flex;
     align-items: flex-start;
     gap: var(--space-2);
     cursor: pointer;
     padding-top: var(--space-0-5);
-  }
-
-  .toggle-input {
-    display: none;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 32px;
-    height: 18px;
-    background: var(--border-color);
-    border-radius: 9px;
-    transition: background var(--duration-base);
-    flex-shrink: 0;
-    margin-top: 0.1rem;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(14px);
-  }
-
-  .toggle-input:disabled + .toggle-switch {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .toggle-text {
@@ -460,37 +399,6 @@
     justify-content: flex-end;
     padding-top: var(--space-2);
     border-top: 1px solid var(--border-color);
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    padding: var(--space-2) var(--space-5);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-fast);
-    border: none;
-    white-space: nowrap;
-  }
-
-  .btn-primary {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: 0 1px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
   }
 
 

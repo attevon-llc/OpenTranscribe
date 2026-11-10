@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { SessionConfig } from '$lib/api/authConfig';
@@ -88,14 +89,14 @@
          cookies, so a live change would desynchronise cookie and token expiry.
          Everything below is enforced against `refresh_token` rows per request
          and really is live. -->
-    <div class="form-group">
-      <label for="jwt_access_token_expire_minutes">
-        {$t('settings.session.accessTokenLifetime')}
+    <div class="form-stack">
+    <FormField id="jwt_access_token_expire_minutes" label={$t('settings.session.accessTokenLifetime')} labelSize="md" hint={$t('settings.session.accessTokenHelp')} let:describedby>
+      <svelte:fragment slot="label-inline">
         <span class="restart-badge">{$t('settings.session.restartRequired')}</span>
-      </label>
+      </svelte:fragment>
       <div class="input-with-preview">
         <input
-          id="jwt_access_token_expire_minutes"
+          id="jwt_access_token_expire_minutes" aria-describedby={describedby}
           type="number"
           bind:value={formData.jwt_access_token_expire_minutes}
           on:input={handleChange}
@@ -104,17 +105,15 @@
         />
         <span class="preview">({describeMinutes(formData.jwt_access_token_expire_minutes)})</span>
       </div>
-      <span class="help-text">{$t('settings.session.accessTokenHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="jwt_refresh_token_expire_days">
-        {$t('settings.session.refreshTokenLifetime')}
+    <FormField id="jwt_refresh_token_expire_days" label={$t('settings.session.refreshTokenLifetime')} labelSize="md" hint={$t('settings.session.refreshTokenHelp')} let:describedby>
+      <svelte:fragment slot="label-inline">
         <span class="restart-badge">{$t('settings.session.restartRequired')}</span>
-      </label>
+      </svelte:fragment>
       <div class="input-with-preview">
         <input
-          id="jwt_refresh_token_expire_days"
+          id="jwt_refresh_token_expire_days" aria-describedby={describedby}
           type="number"
           bind:value={formData.jwt_refresh_token_expire_days}
           on:input={handleChange}
@@ -123,7 +122,7 @@
         />
         <span class="preview">({formatDays(formData.jwt_refresh_token_expire_days)})</span>
       </div>
-      <span class="help-text">{$t('settings.session.refreshTokenHelp')}</span>
+    </FormField>
     </div>
 
     <div class="token-info">
@@ -140,11 +139,11 @@
   <div class="section">
     <h3>{$t('settings.session.sessionTimeouts')}</h3>
 
-    <div class="form-group">
-      <label for="session_idle_timeout_minutes">{$t('settings.session.idleTimeout')}</label>
+    <div class="form-stack">
+    <FormField id="session_idle_timeout_minutes" label={$t('settings.session.idleTimeout')} labelSize="md" hint={$t('settings.session.idleTimeoutHelp')} let:describedby>
       <div class="input-with-preview">
         <input
-          id="session_idle_timeout_minutes"
+          id="session_idle_timeout_minutes" aria-describedby={describedby}
           type="number"
           bind:value={formData.session_idle_timeout_minutes}
           on:input={handleChange}
@@ -153,14 +152,12 @@
         />
         <span class="preview">({describeMinutes(formData.session_idle_timeout_minutes)})</span>
       </div>
-      <span class="help-text">{$t('settings.session.idleTimeoutHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="session_absolute_timeout_minutes">{$t('settings.session.absoluteTimeout')}</label>
+    <FormField id="session_absolute_timeout_minutes" label={$t('settings.session.absoluteTimeout')} labelSize="md" hint={$t('settings.session.absoluteTimeoutHelp')} let:describedby>
       <div class="input-with-preview">
         <input
-          id="session_absolute_timeout_minutes"
+          id="session_absolute_timeout_minutes" aria-describedby={describedby}
           type="number"
           bind:value={formData.session_absolute_timeout_minutes}
           on:input={handleChange}
@@ -169,28 +166,27 @@
         />
         <span class="preview">({describeMinutes(formData.session_absolute_timeout_minutes)})</span>
       </div>
-      <span class="help-text">{$t('settings.session.absoluteTimeoutHelp')}</span>
+    </FormField>
     </div>
   </div>
 
   <div class="section">
     <h3>{$t('settings.session.concurrentSessions')}</h3>
 
-    <div class="form-group">
-      <label for="max_concurrent_sessions">{$t('settings.session.maxConcurrentSessions')}</label>
+    <div class="form-stack">
+    <FormField id="max_concurrent_sessions" label={$t('settings.session.maxConcurrentSessions')} labelSize="md" hint={$t('settings.session.maxConcurrentSessionsHelp')} let:describedby>
       <input
-        id="max_concurrent_sessions"
+        id="max_concurrent_sessions" aria-describedby={describedby}
         type="number"
         bind:value={formData.max_concurrent_sessions}
         on:input={handleChange}
         min="1"
         max="20"
       />
-      <span class="help-text">{$t('settings.session.maxConcurrentSessionsHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <span class="group-label">{$t('settings.session.sessionLimitPolicy')}</span>
+    <fieldset class="form-field form-field-label-md">
+      <legend>{$t('settings.session.sessionLimitPolicy')}</legend>
       <div class="radio-group">
         {#each sessionPolicies as policy (policy.value)}
           <label class="radio-label">
@@ -208,6 +204,7 @@
           </label>
         {/each}
       </div>
+    </fieldset>
     </div>
   </div>
 
@@ -274,20 +271,9 @@
     color: var(--color-text-secondary);
   }
 
-  .form-group {
-    margin-bottom: var(--space-4);
-  }
 
-  .form-group label,
-  .form-group .group-label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
 
-  .form-group input[type="number"] {
+  :global(.form-field) input[type="number"] {
     width: 120px;
   }
 
@@ -302,12 +288,6 @@
     color: var(--color-text-secondary);
   }
 
-  .help-text {
-    display: block;
-    margin-top: var(--space-1);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-tertiary);
-  }
 
   .restart-badge {
     display: inline-block;

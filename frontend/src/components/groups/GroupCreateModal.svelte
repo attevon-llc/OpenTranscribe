@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import type { Group } from '$lib/types/groups';
   import { GroupsApi } from '$lib/api/groups';
@@ -55,8 +56,7 @@
 <BaseModal {isOpen} title={$t('groups.createGroup')} size="sm" zIndex={1300} onClose={handleClose}>
   <form id="group-create-form" on:submit|preventDefault={handleSubmit}>
     <div class="modal-body">
-      <div class="form-group">
-        <label for="group-name">{$t('groups.groupName')}</label>
+      <FormField id="group-name" label={$t('groups.groupName')}>
         <input
           type="text"
           id="group-name"
@@ -66,26 +66,24 @@
           placeholder={$t('groups.groupNamePlaceholder')}
           required
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="group-description">{$t('groups.description')}</label>
+      <FormField id="group-description" label={$t('groups.description')} hint={$t('groups.descriptionHint')} let:describedby>
         <textarea
-          id="group-description"
+          id="group-description" aria-describedby={describedby}
           class="form-control form-textarea"
           bind:value={description}
           rows="3"
           placeholder={$t('groups.descriptionPlaceholder')}
         ></textarea>
-        <span class="form-hint">{$t('groups.descriptionHint')}</span>
-      </div>
+      </FormField>
     </div>
   </form>
 
   <svelte:fragment slot="footer">
     <button
       type="button"
-      class="modal-button cancel-button"
+      class="btn btn-lg btn-secondary"
       on:click={handleClose}
     >
       {$t('modal.cancel')}
@@ -93,7 +91,7 @@
     <button
       type="submit"
       form="group-create-form"
-      class="modal-button confirm-button"
+      class="btn btn-lg btn-primary"
       disabled={!name.trim() || isCreating}
     >
       {isCreating ? $t('groups.creating') : $t('groups.createGroup')}
@@ -109,17 +107,7 @@
     gap: var(--space-4);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
-  }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
@@ -136,60 +124,9 @@
     min-height: 60px;
   }
 
-  .modal-button {
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: var(--radius-lg);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .cancel-button {
-    background: var(--card-background);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--card-shadow);
-  }
-
-  .cancel-button:hover {
-    background: var(--button-hover);
-    border-color: var(--border-color);
-  }
-
-  .confirm-button {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: var(--shadow-primary);
-  }
-
-  .confirm-button:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  .confirm-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .confirm-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-  }
-
-  .form-hint {
-    display: block;
-    margin-top: 0.35rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    font-style: italic;
-  }
 
   @media (max-width: 768px) {
-    .modal-button {
+    .btn-lg {
       min-height: 44px;
       width: 100%;
     }

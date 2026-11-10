@@ -275,22 +275,6 @@
     margin-right: auto;
   }
 
-  .btn-danger-outline {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: var(--space-1-5) var(--space-2-5);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-danger-outline:hover:not(:disabled) {
-    background-color: var(--button-hover);
-  }
-
   @media (max-width: 768px) {
     .action-row {
       flex-direction: column;

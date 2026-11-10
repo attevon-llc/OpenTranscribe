@@ -33,7 +33,7 @@
       : $t('llm.discovery.summaryNone');
 </script>
 
-<div class="discovery-panel form-group">
+<div class="discovery-panel form-field">
   <ExpandableSection
     title={$t('llm.discovery.title')}
     bind:expanded
@@ -48,7 +48,7 @@
     <div class="discovery-toolbar">
       <button
         type="button"
-        class="discovery-rescan-btn"
+        class="btn btn-secondary btn-sm"
         on:click={() => dispatch('rescan')}
         disabled={loading}
         title={$t('llm.discovery.rescanTooltip')}
@@ -89,7 +89,7 @@
             {#if endpoint.reachable}
               <button
                 type="button"
-                class="btn btn-secondary discovery-use-btn"
+                class="btn btn-secondary btn-sm discovery-use-btn"
                 on:click={() => dispatch('use', endpoint)}
                 {disabled}
               >
@@ -135,32 +135,6 @@
     display: flex;
     justify-content: flex-end;
     margin-bottom: var(--space-2);
-  }
-
-  .discovery-rescan-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    background: none;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    padding: 0.2rem 0.6rem;
-    font-size: var(--font-size-xs);
-    color: var(--text-color);
-    cursor: pointer;
-    transition:
-      background-color var(--duration-base),
-      border-color var(--duration-base);
-  }
-
-  .discovery-rescan-btn:hover:not(:disabled) {
-    background: var(--hover-color);
-    border-color: var(--primary-color);
-  }
-
-  .discovery-rescan-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .discovery-list {
@@ -230,8 +204,6 @@
 
   .discovery-use-btn {
     flex-shrink: 0;
-    padding: 0.3rem var(--space-3);
-    font-size: var(--font-size-xs);
   }
 
   .discovery-warning {

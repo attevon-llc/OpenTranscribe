@@ -253,7 +253,7 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   credentials" opens `ASRConfigModal` with `presetProvider` and `presetShared` (create mode only) instead of a second key
   form. A 409 `own_asr_keys_disabled` or `asr_provider_not_allowed` renders through `pipelineFailureKey`
   (`POLICY_REFUSAL_KEYS` in `pipelineKeys.ts`), never the server sentence.
-- **Local models** (#1246) is `localModels/LocalModelLibrary.svelte` (+ `LocalModelRow`, `ActivateModelDialog`), mounted by
+- **Local models** (#1246) is `localModels/LocalModelLibrary.svelte` (+ `LocalModelRow`; its activate confirmation is the shared `createConfirmDialog`), mounted by
   `ASRSettings` under the model card for admins; it replaced the old select / Save / Restart controls, so no second path
   to set or restart the worker exists. Every route is super_admin: `locked` (an admin) renders the explanation and makes
   NO request. Row rules and every error sentence live in `$lib/settings/localModelView` (errors are fixed i18n sentences

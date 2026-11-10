@@ -27,6 +27,8 @@
   import { toDateInputValue } from '$lib/users/accountExpiry';
   import { createAccountActions } from '$lib/users/accountActions';
   import { createInvitationsController } from '$lib/users/invitationsController';
+  import Badge from '$components/ui/Badge.svelte';
+  import { badgeVariantForStatus } from '$lib/fileStatus/statusVariant';
 
   /**
    * @typedef {Object} User
@@ -187,7 +189,7 @@
         $t('userManagement.confirmSuperAdminTitle'),
         $t('userManagement.confirmSuperAdminCreate', { name: newUsername || newEmail }),
         () => executeCreateUser(),
-        $t('userManagement.confirmSuperAdminButton')
+        { confirmText: $t('userManagement.confirmSuperAdminButton') }
       );
       return;
     }
@@ -587,15 +589,15 @@
             <td>
               {currentUser.full_name || $t('userManagement.notAvailable')}
               {#if currentUser.is_active === false}
-                <span class="status-badge inactive">{$t('userManagement.inactiveBadge')}</span>
+                <Badge variant="error" class="status-badge">{$t('userManagement.inactiveBadge')}</Badge>
               {/if}
               <!-- Admission state (v381). `approved` is the overwhelming majority
                    and the backend's default, so only the two held states are
                    badged — chipping every row "Approved" would be noise. -->
               {#if currentUser.approval_status === 'pending'}
-                <span class="status-badge status-pending">{$t('userManagement.pendingBadge')}</span>
+                <Badge variant="info" class="status-badge">{$t('userManagement.pendingBadge')}</Badge>
               {:else if currentUser.approval_status === 'rejected'}
-                <span class="status-badge status-revoked">{$t('userManagement.rejectedBadge')}</span>
+                <Badge variant="error" class="status-badge">{$t('userManagement.rejectedBadge')}</Badge>
               {/if}
             </td>
             <td>
@@ -605,7 +607,7 @@
                    a separate flag), so `email_verified` is false there by default
                    and badging it would libel every LDAP/OIDC user. -->
               {#if currentUser.auth_type === 'local' && currentUser.email_verified === false}
-                <span class="status-badge unverified">{$t('userManagement.unverifiedBadge')}</span>
+                <Badge variant="warning" class="status-badge">{$t('userManagement.unverifiedBadge')}</Badge>
               {/if}
             </td>
             <td>
@@ -856,9 +858,9 @@
                 <td>{roleLabels[invitation.role] || invitation.role}</td>
                 <td>{authTypeLabels[invitation.auth_type] || invitation.auth_type}</td>
                 <td>
-                  <span class="status-badge status-{invitation.status}">
+                  <Badge variant={badgeVariantForStatus(invitation.status)} class="status-badge">
                     {invitationStatusLabels[invitation.status] || invitation.status}
-                  </span>
+                  </Badge>
                 </td>
                 <td>{formatDateTime(invitation.expires_at, $t('userManagement.notAvailable'), $locale)}</td>
                 <td>
@@ -892,8 +894,7 @@
   message={$confirmMessage}
   confirmText={$confirmLabel || $t('common.delete')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={confirmDialog.confirm}
   on:cancel={confirmDialog.cancel}
   on:close={confirmDialog.cancel}
@@ -1291,62 +1292,6 @@
 
   .link-identity-button:active:not(:disabled) {
     transform: scale(0.95);
-  }
-
-  .status-badge {
-    display: inline-block;
-    margin-left: var(--space-1-5);
-    padding: 0.0625rem var(--space-1-5);
-    border-radius: var(--radius-pill);
-    font-size: 0.625rem;
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
-    vertical-align: middle;
-  }
-
-  .status-badge.inactive,
-  .status-badge.status-revoked {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: rgb(220, 38, 38);
-  }
-
-  :global([data-theme='dark']) .status-badge.inactive,
-  :global([data-theme='dark']) .status-badge.status-revoked {
-    background-color: rgba(239, 68, 68, 0.2);
-    color: rgb(248, 113, 113);
-  }
-
-  .status-badge.unverified,
-  .status-badge.status-expired {
-    background-color: rgba(245, 158, 11, 0.18);
-    color: rgb(180, 83, 9);
-  }
-
-  :global([data-theme='dark']) .status-badge.unverified,
-  :global([data-theme='dark']) .status-badge.status-expired {
-    background-color: rgba(245, 158, 11, 0.22);
-    color: rgb(252, 211, 77);
-  }
-
-  .status-badge.status-pending {
-    background-color: rgba(14, 165, 233, 0.15);
-    color: rgb(2, 132, 199);
-  }
-
-  :global([data-theme='dark']) .status-badge.status-pending {
-    background-color: rgba(14, 165, 233, 0.22);
-    color: rgb(125, 211, 252);
-  }
-
-  .status-badge.status-accepted {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: rgb(4, 120, 87);
-  }
-
-  :global([data-theme='dark']) .status-badge.status-accepted {
-    background-color: rgba(16, 185, 129, 0.22);
-    color: rgb(110, 231, 183);
   }
 
   .form-hint {

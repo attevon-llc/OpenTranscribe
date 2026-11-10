@@ -5,7 +5,7 @@
 Small, reusable, theme-aware, accessible building blocks. Prefer these over hand-rolling
 the same pattern in a feature component. Import via `$components/ui/...`. Every primitive
 supports light/dark via CSS custom properties and most ship with a colocated `*.test.ts`
-(the pure-markup ones — `Spinner`, `ProgressBar`, `SkeletonLoader`, `ListRowSkeleton`,
+(the pure-markup ones — `SkeletonLoader`, `ListRowSkeleton`,
 `CardGridSkeleton`, `MetadataChips`, `TagInput`, `FilterPanelToggle` — have none).
 
 ## Catalog
@@ -22,7 +22,7 @@ primitive in the same spirit as this folder.
   consent banners, drawer/popover scrims). Width is `size="sm|md|lg|xl|2xl"` (480/600/720/960/1200),
   not a pixel prop; `titleId` is only for a caller that needs a stable `aria-labelledby`. The footer
   normalises every `<button>` to one size, radius and weight whatever class vocabulary the caller uses
-  (`btn`, `modal-button`, ad hoc) — colour stays the caller's; order is dismiss first, primary last;
+  (`btn`, a bespoke footer-button class, ad hoc) — colour stays the caller's; order is dismiss first, primary last;
   a form in the body is submitted from the footer with `<button type="submit" form="the-form-id">`.
   Its `zIndex` prop defaults to the shared `--z-modal` tier (H5, see `src/styles/theme.css`).
   **Escape closes only the topmost open BaseModal** (a module-level open stack): every instance
@@ -31,6 +31,8 @@ primitive in the same spirit as this folder.
   scrolls) and the `header-actions` slot puts controls before the close button
   (`legal/LegalDocumentViewer`'s full-screen toggle).
 - `ExportFormatMenu.svelte` — one Export button that opens a menu of formats (`formats`, `label`, `on:select`); `disabled` + `disabledReason` (tooltip) when there is nothing to export. Placed by `anchoredPanel`, dismissed by click-outside/Escape. Used by the takedown notices export.
+- `Button.svelte` — behaviour wrapper over the global `.btn` classes (`styles/form-elements.css`); looks live in CSS, not here. `variant` (primary/secondary/danger/warning/success/ghost/link/danger-outline), `size` (sm/md/lg), `type` defaults to `button`, `busy` (aria-disabled + aria-busy, focus kept, click swallowed, Spinner), `iconOnly` (adds `.btn-icon-only`, needs `ariaLabel`), `icon` slot, forwarded `on:click`. Destructive icon buttons (remove/revoke) add `.btn-icon-danger` (`.btn-icon-only.btn-icon-danger`, form-elements.css): neutral at rest, `--error-text` on `--error-bg` on hover and focus-visible. Plain buttons can keep `<button class="btn btn-primary">`.
+- `FormField.svelte` — label + control slot + hint + error for one control; layout is the global `.form-field*` classes (`styles/form-elements.css`, zero-specificity), the component owns the wiring: `<label for={id}>`, slot props `describedby` (hint/error ids) and `invalid` for the control's `aria-describedby`/`aria-invalid`, error with `role="alert"` (WCAG 1.3.1, 3.3.1). The caller renders the control and keeps its own `id`/`name`. `size="lg"` is the auth-page scale (label 0.875rem, gap 0.5rem); `label-after` slot puts a show-password toggle beside the label. A checkbox row keeps its markup.
 - `Stepper.svelte` — progress-only step indicator (`steps`, `current`, `label`, `doneLabel`): dots on a
   connector, check icon (`MenuIcon` `check`) on complete steps, `aria-current="step"`, labels under the
   dots and only the current one (as a caption) in a container under 520px. Same visual language as
@@ -68,7 +70,9 @@ primitive in the same spirit as this folder.
   "working".
 - `Tabs.svelte`'s `attention` item field draws a warning dot whose text is its accessible name
   and tooltip; use it for "this panel needs doing" without opening it.
-- `Badge.svelte` — semantic status pill (`default|success|warning|error|info`).
+- `Banner.svelte` — the one inline notice box: `tone` info|success|warning|error|neutral, `title`, `dismissible` (+ `dismissLabel`, `on:dismiss`), `actions` slot, `spaced`, `testid`. Tint `--{tone}-bg`, 3px inline-start accent bar, tone icon (`MenuIcon`) so the tone is never colour alone (WCAG 1.4.1). Live region: `live="auto"` (default) = `role="alert"` for error, `role="status"` otherwise; `live="off"` for a notice already on the page at load. `size` md (14px) or `body` (15px, auth pages). `AuthMailNotice` renders a Banner. Page-chrome bars (`SupportAccessBanner`, `ConnectionStatusBanner`, `DemoBanner`) keep their own fixed layout; `settings/StatusChip` (label + value pair) and `supportAccess/StatusChip` (contrast-calibrated for tinted bars) stay separate from Badge. Don't write a local `.banner` or `.error-message`.
+- `Badge.svelte` — semantic status pill (`default|success|warning|error|info`), `size` `sm` (11px) or `md` (12px), `class` forwarded to the root. The state is always the slotted text, never colour alone (WCAG 1.4.1). Map a task/file status to a variant with `badgeVariantForStatus` (`lib/fileStatus/statusVariant.ts`); never write a local `.status-badge`.
+- `Toggle.svelte` — the one 44x24 on/off switch (native checkbox with role=switch; Space and Enter; controlled via `onchange(next)`; `busy` keeps focus, `disabled` does not).
 - `Chip.svelte` — compact removable/selectable pill (tags, filters).
 - `MetadataChips.svelte` — renders a `Chip` row from a metadata object/list.
 - `CopyButton.svelte` — click-to-copy control with a transient "copied" state.
@@ -114,9 +118,16 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
 - `EmptyState.svelte` — icon -> title -> description -> actions, spaced by the
   `--empty-state-*` tokens. The default slot IS the action row (`.empty-actions`, flex, wraps);
   callers put buttons there with no margin of their own (issue #1243 item 16: a caller-spaced
-  "Open Review" sat 0px under its description).
-- `Spinner.svelte`, `ProgressBar.svelte`, `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`,
-  `CardGridSkeleton.svelte`, `TagInput.svelte`.
+  "Open Review" sat 0px under its description). `titleSize` (`body|lg|xl`) keeps a settings
+  panel's larger heading from shrinking; `bordered` is the dashed card outline for an empty list.
+  `chat/ChatEmptyState` stays separate on purpose (a chat greeting with suggestion chips).
+- `ProgressBar.svelte` — WAI-ARIA `role=progressbar` track (`percent` 0-100 or `null` = indeterminate, which omits `aria-valuenow`; `label` visible, `ariaLabel` when no visible label; `tone` primary|success|warning|error). Tested in `ProgressBar.test.ts`. Usage meters are not progress: do not use it for them.
+- `LiveProgressCard.svelte` — card for a running background job: optional spinner title, `done / total` (or `countLabel`) + percent in an `aria-live=polite` region, `ProgressBar` named by the required `barLabel` (a name like "Search indexing progress", never a status string), message + `formatEta` row, default slot, optional `danger-outline` stop `Button` (`onStop`, busy when `state="stopping"`). Used by SearchSettings, EmbeddingMigrationSettings, AutoLabelSettings, SpeakerAttributeBulkPanel. Tested in `LiveProgressCard.test.ts`.
+- `Spinner.svelte` — the one spinner (`size` small/inline/medium/large, `color`, `currentColor` for a
+  spinner on a solid button). Pass a translated `label` when no text sits beside it: it then
+  renders as `role="status"`; without a label it is `aria-hidden` (the adjacent text is the name).
+  Never write a local `.spinner` or `@keyframes spin` (the global one is in `styles/animations.css`).
+- `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`, `CardGridSkeleton.svelte`, `TagInput.svelte`.
 
 ## Conventions / patterns
 

@@ -14,6 +14,7 @@
   import "$styles/animations.css";
   import "$styles/search.css";
   import "$styles/support-access.css";
+  import "$styles/utilities.css";
 
   // Import auth store
   import { isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor, token, user } from "$stores/auth";

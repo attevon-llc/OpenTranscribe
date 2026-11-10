@@ -543,7 +543,7 @@
       {#if selectedEntries.length > 0}
         <button
           type="button"
-          class="btn btn-secondary btn-small back-button"
+          class="btn btn-secondary btn-sm back-button"
           on:click={() => setSelection([])}
         >
           {$t('tags.manager.back')}
@@ -753,18 +753,6 @@
 
   .load-error p {
     margin: 0;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
   }
 
   @media (max-width: 768px) {

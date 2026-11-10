@@ -8,20 +8,23 @@
   export let message = '';
   export let confirmText = '';
   export let cancelText = '';
-  export let confirmButtonClass = 'confirm-button';
-  export let cancelButtonClass = 'cancel-button';
+  /** Confirm button colour. `danger` also makes the dialog an `alertdialog` focused on Cancel. */
+  export let variant: 'primary' | 'danger' | 'warning' = 'primary';
 
   // Apply defaults from translations if not provided
   $: resolvedTitle = title || $t('modal.confirmAction');
   $: resolvedMessage = message || $t('modal.confirmMessage');
   $: resolvedConfirmText = confirmText || $t('modal.confirm');
   $: resolvedCancelText = cancelText || $t('modal.cancel');
+  $: destructive = variant === 'danger';
 
   const dispatch = createEventDispatcher();
 
+  // Close before dispatching: a confirm handler may open the next dialog on the same bound
+  // store (a two-step confirmation), and closing afterwards would shut that one too.
   function handleConfirm() {
-    dispatch('confirm');
     isOpen = false;
+    dispatch('confirm');
   }
 
   function handleCancel() {
@@ -44,6 +47,9 @@
       if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT') {
         return;
       }
+      // A focused button handles its own Enter; confirming on top of it would also confirm
+      // when the user pressed Enter on Cancel.
+      if (target?.tagName === 'BUTTON') return;
       handleConfirm();
     }
   }
@@ -51,13 +57,23 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<BaseModal {isOpen} title={resolvedTitle} onClose={handleClose} size="sm" zIndex={1300}>
+<BaseModal
+  {isOpen}
+  title={resolvedTitle}
+  onClose={handleClose}
+  size="sm"
+  zIndex={1300}
+  role={destructive ? 'alertdialog' : 'dialog'}
+  describedBy="modal-message"
+>
   <p id="modal-message" class="modal-message">{resolvedMessage}</p>
 
   <svelte:fragment slot="footer">
     {#if resolvedCancelText}
       <button
-        class="modal-button {cancelButtonClass}"
+        class="btn btn-lg btn-secondary"
+        data-testid="confirm-dialog-cancel"
+        data-autofocus={destructive ? '' : undefined}
         on:click={handleCancel}
         type="button"
       >
@@ -65,7 +81,8 @@
       </button>
     {/if}
     <button
-      class="modal-button {confirmButtonClass}"
+      class="btn btn-lg btn-{variant}"
+      data-testid="confirm-dialog-confirm"
       on:click={handleConfirm}
       type="button"
     >
@@ -80,108 +97,5 @@
     color: var(--text-secondary);
     line-height: 1.5;
     font-size: 0.95rem;
-  }
-
-  .modal-button {
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: var(--radius-lg);
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    min-width: 120px;
-  }
-
-  .cancel-button {
-    background: var(--card-background);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-lg);
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    cursor: pointer;
-    box-shadow: var(--card-shadow);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-    min-width: 120px;
-    /* Ensure high contrast */
-    opacity: 1;
-  }
-
-  .cancel-button:hover {
-    background: var(--button-hover);
-    border-color: var(--border-color);
-  }
-
-  .confirm-button {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: var(--shadow-primary);
-  }
-
-  .confirm-button:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.3);
-  }
-
-  .confirm-button:active {
-    transform: scale(1);
-    box-shadow: var(--shadow-primary);
-  }
-
-  /* Delete / destructive confirmation — red override */
-  .delete-confirm {
-    background: #ef4444;
-    color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .delete-confirm:hover {
-    background: var(--error-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
-  }
-
-  .delete-confirm:active {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  /* Dark mode adjustments */
-  :global([data-theme='dark']) .cancel-button:hover {
-    background: var(--button-hover);
-    border-color: var(--border-color);
-  }
-
-  /* Responsive design */
-  @media (max-width: 768px) {
-    .modal-button {
-      width: 100%;
-      min-height: 44px;
-    }
-  }
-
-  /* Focus styles for accessibility */
-  .modal-button:focus {
-    outline: 2px solid #3b82f6;
-    outline-offset: 2px;
-  }
-
-  .cancel-button:focus {
-    outline: 2px solid var(--text-color);
-    outline-offset: 2px;
-  }
-
-  /* Reduced motion support */
-  @media (prefers-reduced-motion: reduce) {
-    .modal-button {
-      transition: none;
-    }
   }
 </style>

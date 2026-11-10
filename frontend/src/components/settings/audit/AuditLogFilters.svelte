@@ -77,14 +77,14 @@
         />
       </label>
     {/if}
-    <button class="btn-apply" disabled={resourceInvalid} on:click={() => dispatch('apply')}>
+    <button class="btn btn-primary btn-sm btn-apply" disabled={resourceInvalid} on:click={() => dispatch('apply')}>
       {$t('settings.auditLog.apply')}
     </button>
-    <button class="btn-clear" on:click={clear}>{$t('common.clear')}</button>
+    <button class="btn btn-secondary btn-sm btn-clear" on:click={clear}>{$t('common.clear')}</button>
     {#if canExport}
       <div class="export-actions">
-        <button class="btn-secondary" on:click={() => dispatch('export', 'csv')}>CSV</button>
-        <button class="btn-secondary" on:click={() => dispatch('export', 'json')}>JSON</button>
+        <button class="btn btn-secondary btn-sm" on:click={() => dispatch('export', 'csv')}>CSV</button>
+        <button class="btn btn-secondary btn-sm" on:click={() => dispatch('export', 'json')}>JSON</button>
       </div>
     {/if}
   </div>
@@ -138,79 +138,13 @@
   }
 
   .btn-apply {
-    padding: var(--space-1) var(--space-2-5);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    height: 1.75rem;
-    white-space: nowrap;
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
     align-self: flex-end;
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-apply:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
-  }
-
-  .btn-apply:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-apply:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-clear {
-    padding: var(--space-1) var(--space-2-5);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    height: 1.75rem;
-    white-space: nowrap;
-    background: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-clear:hover {
-    background: var(--button-hover);
   }
 
   .export-actions {
     display: flex;
     gap: var(--space-1);
     margin-inline-start: auto;
-  }
-
-  .btn-secondary {
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-xs);
-    height: 1.75rem;
-    white-space: nowrap;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-secondary:hover {
-    background: var(--button-hover);
-    transform: scale(1.02);
-  }
-
-  .btn-secondary:active {
-    transform: scale(1);
   }
 
   @media (max-width: 768px) {

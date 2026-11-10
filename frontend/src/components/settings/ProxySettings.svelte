@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { ProxyConfig } from '$lib/api/authConfig';
@@ -93,24 +94,22 @@
   <div class="section" class:disabled={!formData.proxy_enabled}>
     <h3>{$t('settings.proxy.trustBoundary')}</h3>
 
-    <div class="form-group">
-      <label for="proxy_trusted_proxies">{$t('settings.proxy.trustedProxies')}</label>
+    <FormField size="lg" id="proxy_trusted_proxies" label={$t('settings.proxy.trustedProxies')} hint={$t('settings.proxy.trustedProxiesHelp')} let:describedby>
       <input dir="ltr"
-        id="proxy_trusted_proxies"
+        id="proxy_trusted_proxies" aria-describedby={describedby}
         type="text"
         bind:value={formData.proxy_trusted_proxies}
         on:input={handleChange}
         placeholder="e.g. 203.0.113.5/32 (your proxy's IP) or its docker subnet — never a whole private range"
         disabled={!formData.proxy_enabled}
       />
-      <span class="help-text">{$t('settings.proxy.trustedProxiesHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="proxy_shared_secret">{$t('settings.proxy.sharedSecret')}</label>
+    <FormField size="lg" id="proxy_shared_secret" label={$t('settings.proxy.sharedSecret')} hint={sharedSecretSet ? $t('settings.proxy.sharedSecretSetHelp') : $t('settings.proxy.sharedSecretHelp')} let:describedby>
       <div class="input-with-toggle">
         <input dir="ltr"
           id="proxy_shared_secret"
+        aria-describedby={describedby}
           type={showSecret ? 'text' : 'password'}
           bind:value={sharedSecretInput}
           on:input={handleChange}
@@ -129,89 +128,74 @@
           {showSecret ? $t('common.hide') : $t('common.show')}
         </button>
       </div>
-      <span class="help-text">
-        {sharedSecretSet
-          ? $t('settings.proxy.sharedSecretSetHelp')
-          : $t('settings.proxy.sharedSecretHelp')}
-      </span>
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.proxy_enabled}>
     <h3>{$t('settings.proxy.headerConfiguration')}</h3>
 
     <div class="form-row">
-      <div class="form-group">
-        <label for="proxy_email_header">{$t('settings.proxy.emailHeader')}</label>
+      <FormField size="lg" id="proxy_email_header" label={$t('settings.proxy.emailHeader')} hint={$t('settings.proxy.emailHeaderHelp')} let:describedby>
         <input dir="ltr"
-          id="proxy_email_header"
+          id="proxy_email_header" aria-describedby={describedby}
           type="text"
           bind:value={formData.proxy_email_header}
           on:input={handleChange}
           placeholder="X-Forwarded-Email"
           disabled={!formData.proxy_enabled}
         />
-        <span class="help-text">{$t('settings.proxy.emailHeaderHelp')}</span>
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="proxy_name_header">{$t('settings.proxy.nameHeader')}</label>
+      <FormField size="lg" id="proxy_name_header" label={$t('settings.proxy.nameHeader')} hint={$t('settings.proxy.nameHeaderHelp')} let:describedby>
         <input dir="ltr"
-          id="proxy_name_header"
+          id="proxy_name_header" aria-describedby={describedby}
           type="text"
           bind:value={formData.proxy_name_header}
           on:input={handleChange}
           placeholder="X-Forwarded-User"
           disabled={!formData.proxy_enabled}
         />
-        <span class="help-text">{$t('settings.proxy.nameHeaderHelp')}</span>
-      </div>
+      </FormField>
     </div>
 
     <div class="form-row">
-      <div class="form-group">
-        <label for="proxy_groups_header">{$t('settings.proxy.groupsHeader')}</label>
+      <FormField size="lg" id="proxy_groups_header" label={$t('settings.proxy.groupsHeader')} hint={$t('settings.proxy.groupsHeaderHelp')} let:describedby>
         <input dir="ltr"
-          id="proxy_groups_header"
+          id="proxy_groups_header" aria-describedby={describedby}
           type="text"
           bind:value={formData.proxy_groups_header}
           on:input={handleChange}
           placeholder="X-Forwarded-Groups"
           disabled={!formData.proxy_enabled}
         />
-        <span class="help-text">{$t('settings.proxy.groupsHeaderHelp')}</span>
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="proxy_groups_separator">{$t('settings.proxy.groupsSeparator')}</label>
+      <FormField size="lg" id="proxy_groups_separator" label={$t('settings.proxy.groupsSeparator')} hint={$t('settings.proxy.groupsSeparatorHelp')} let:describedby>
         <input dir="ltr"
-          id="proxy_groups_separator"
+          id="proxy_groups_separator" aria-describedby={describedby}
           type="text"
           bind:value={formData.proxy_groups_separator}
           on:input={handleChange}
           placeholder=","
           disabled={!formData.proxy_enabled}
         />
-        <span class="help-text">{$t('settings.proxy.groupsSeparatorHelp')}</span>
-      </div>
+      </FormField>
     </div>
   </div>
 
   <div class="section" class:disabled={!formData.proxy_enabled}>
     <h3>{$t('settings.proxy.authorization')}</h3>
 
-    <div class="form-group">
-      <label for="proxy_role_header">{$t('settings.proxy.roleHeader')}</label>
+    <FormField size="lg" id="proxy_role_header" label={$t('settings.proxy.roleHeader')} hint={$t('settings.proxy.roleHeaderHelp')} let:describedby>
       <input dir="ltr"
-        id="proxy_role_header"
+        id="proxy_role_header" aria-describedby={describedby}
         type="text"
         bind:value={formData.proxy_role_header}
         on:input={handleChange}
         placeholder="X-Forwarded-Role"
         disabled={!formData.proxy_enabled}
       />
-      <span class="help-text">{$t('settings.proxy.roleHeaderHelp')}</span>
-    </div>
+    </FormField>
 
     {#if roleHeaderOff}
       <p class="ceiling-warning" role="status">
@@ -219,18 +203,16 @@
       </p>
     {/if}
 
-    <div class="form-group">
-      <label for="proxy_allowed_domains">{$t('settings.proxy.allowedDomains')}</label>
+    <FormField size="lg" id="proxy_allowed_domains" label={$t('settings.proxy.allowedDomains')} hint={$t('settings.proxy.allowedDomainsHelp')} let:describedby>
       <input dir="ltr"
-        id="proxy_allowed_domains"
+        id="proxy_allowed_domains" aria-describedby={describedby}
         type="text"
         bind:value={formData.proxy_allowed_domains}
         on:input={handleChange}
         placeholder="example.com, example.org"
         disabled={!formData.proxy_enabled}
       />
-      <span class="help-text">{$t('settings.proxy.allowedDomainsHelp')}</span>
-    </div>
+    </FormField>
 
     <label class="checkbox-label">
       <input
@@ -328,25 +310,17 @@
     margin-bottom: var(--space-4);
   }
 
-  .form-group {
+  .section :global(.form-field) {
     flex: 1;
     margin-bottom: var(--space-4);
   }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
-
-  .form-group input[type="text"],
-  .form-group input[type="password"] {
+  .section :global(.form-field input[type="text"]),
+  .section :global(.form-field input[type="password"]) {
     width: 100%;
   }
 
-  .form-group input:disabled {
+  .section :global(.form-field input:disabled) {
     cursor: not-allowed;
   }
 

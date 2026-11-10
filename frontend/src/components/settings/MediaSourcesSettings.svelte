@@ -16,6 +16,7 @@
   import { isPlainHttpSource, isPrivateHostRefusal } from '$lib/utils/mediaHost';
   import { user } from '$stores/auth';
   import MediaPrivateHostsCard from './MediaPrivateHostsCard.svelte';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   let loading = true;
   $: isSuperAdmin = $user?.role === 'super_admin';
@@ -267,7 +268,7 @@
               {@render metaBadges(source)}
             </div>
             <div class="source-actions">
-              <button class="btn btn-sm btn-ghost" on:click={() => startEdit(source)} disabled={saving}>
+              <button class="btn btn-sm btn-secondary" on:click={() => startEdit(source)} disabled={saving}>
                 {$t('common.edit')}
               </button>
               {#if deletingUuid === source.uuid}
@@ -276,12 +277,12 @@
                   <button class="btn btn-sm btn-danger" on:click={() => handleDelete(source.uuid)} disabled={saving}>
                     {$t('common.yes')}
                   </button>
-                  <button class="btn btn-sm btn-ghost" on:click={() => deletingUuid = null}>
+                  <button class="btn btn-sm btn-secondary" on:click={() => deletingUuid = null}>
                     {$t('common.no')}
                   </button>
                 </span>
               {:else}
-                <button class="btn btn-sm btn-ghost btn-danger-text" on:click={() => deletingUuid = source.uuid} disabled={saving}>
+                <button class="btn btn-sm btn-danger-outline" on:click={() => deletingUuid = source.uuid} disabled={saving}>
                   {$t('common.delete')}
                 </button>
               {/if}
@@ -335,22 +336,18 @@
 
     <!-- Empty state -->
     {#if sources.length === 0 && sharedSources.length === 0 && !showAddForm}
-      <div class="empty-state">
-        <div class="empty-icon">
-          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-            <path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
-          </svg>
-        </div>
-        <h4>{$t('settings.mediaSources.noSources')}</h4>
-        <p>{$t('settings.mediaSources.noSourcesHint')}</p>
-        <button class="btn-add-first" on:click={() => { showAddForm = true; editingUuid = null; deletingUuid = null; }}>
+      <EmptyState bordered titleSize="lg" padding="var(--space-10) var(--space-8)" title={$t('settings.mediaSources.noSources')} description={$t('settings.mediaSources.noSourcesHint')}>
+        <svg slot="icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
+          <path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
+        </svg>
+        <button class="btn btn-primary" on:click={() => { showAddForm = true; editingUuid = null; deletingUuid = null; }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           {$t('settings.mediaSources.addSource')}
         </button>
-      </div>
+      </EmptyState>
     {/if}
 
     <!-- Add Form -->
@@ -407,7 +404,7 @@
 
     <!-- Add Button — shown below existing sources list -->
     {#if (sources.length > 0 || sharedSources.length > 0) && !showAddForm}
-      <button class="btn btn-add" on:click={() => { showAddForm = true; editingUuid = null; deletingUuid = null; }}>
+      <button class="btn btn-primary" on:click={() => { showAddForm = true; editingUuid = null; deletingUuid = null; }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
@@ -437,56 +434,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: var(--space-10) var(--space-8);
-    border: 2px dashed var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--card-background);
-  }
-
-  .empty-icon {
-    margin-bottom: var(--space-3-5);
-    color: var(--text-secondary);
-    opacity: 0.6;
-  }
-
-  .empty-state h4 {
-    margin: 0 0 var(--space-2);
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .empty-state p {
-    margin: 0 0 var(--space-5);
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    line-height: 1.5;
-  }
-
-  .btn-add-first {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-2) 1.1rem;
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-primary);
-  }
-
-  .btn-add-first:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-primary-hover);
   }
 
   .source-card {
@@ -732,78 +679,11 @@
     padding-top: var(--space-1);
   }
 
-  .btn-sm {
-    padding: var(--space-1) var(--space-2);
-    font-size: var(--font-size-xs);
-    border-radius: var(--radius-md);
-  }
-
   /* Pattern B — grey ghost (inline actions like Edit, No) */
-  .btn-ghost {
-    background: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-ghost:hover:not(:disabled) {
-    background: var(--button-hover);
-    transform: scale(1.02);
-  }
 
   /* Destructive text-only indicator */
-  .btn-danger-text {
-    color: var(--error-color);
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-danger-text:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
-    transform: scale(1.02);
-  }
 
   /* Destructive solid — red confirm */
-  .btn-danger {
-    background: var(--error-color);
-    color: var(--text-on-solid);
-    border: none;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-danger:hover:not(:disabled) {
-    background: var(--error-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
-  }
-
-  .btn-add {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-1-5);
-    padding: var(--space-2) var(--space-4);
-    border: none;
-    border-radius: var(--radius-lg);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-primary);
-  }
-
-  .btn-add:hover {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  .btn-add:active {
-    transform: scale(1);
-  }
 
   .section-hint {
     font-size: 0.7rem;

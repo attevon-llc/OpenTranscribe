@@ -112,7 +112,7 @@
             </td>
             <td class="ip" dir="ltr">{event.source_ip}</td>
             <td>
-              <button class="details-btn" on:click={() => showDetails(event.details)}>...</button>
+              <button class="btn btn-secondary btn-sm" on:click={() => showDetails(event.details)}>...</button>
             </td>
           </tr>
         {/each}
@@ -227,29 +227,6 @@
   :global([data-theme='dark']) .outcome.failure {
     background: rgba(239, 68, 68, 0.2);
     color: rgb(248, 113, 113);
-  }
-
-  .details-btn {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    padding: var(--space-0-5) var(--space-1-5);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: 0.625rem;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
-    transition: all var(--duration-base) ease;
-  }
-
-  .details-btn:hover {
-    background: var(--button-hover);
-    color: var(--text-color);
-    transform: scale(1.02);
-  }
-
-  .details-btn:active {
-    transform: scale(1);
   }
 
   .no-logs {

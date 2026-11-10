@@ -181,7 +181,7 @@ describe('/trash page actions', () => {
     render(Page);
     await waitFor(() => expect(rows()).toHaveLength(1));
     await fireEvent.click(screen.getByTestId('trash-purge'));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(/cannot be undone/)).toBeTruthy();
     expect(axiosMock.delete).not.toHaveBeenCalled();
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Delete forever' }));
@@ -195,7 +195,7 @@ describe('/trash page actions', () => {
     render(Page);
     await waitFor(() => expect(rows()).toHaveLength(1));
     await fireEvent.click(screen.getByTestId('trash-empty'));
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(/Files on hold stay in the trash/)).toBeTruthy();
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Empty trash' }));
     await waitFor(() => expect(axiosMock.post).toHaveBeenCalledWith('/files/trash/empty'));

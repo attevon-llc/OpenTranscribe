@@ -41,7 +41,7 @@ describe('ASRConfigModal presets (adding shared credentials from the policy pane
     });
     expect(select.value).toBe('assemblyai');
     expect((document.querySelector('#asr-name') as HTMLInputElement).value).toBe('name:assemblyai');
-    expect((document.querySelector('.toggle-input') as HTMLInputElement).checked).toBe(true);
+    expect((document.querySelector('[role="switch"]') as HTMLInputElement).checked).toBe(true);
   });
 
   it('creates the shared config with is_shared true and the preset provider', async () => {
@@ -72,6 +72,20 @@ describe('ASRConfigModal presets (adding shared credentials from the policy pane
       () => document.querySelector('#asr-provider') as HTMLSelectElement
     );
     expect(select.value).toBe('');
-    expect((document.querySelector('.toggle-input') as HTMLInputElement).checked).toBe(false);
+    expect((document.querySelector('[role="switch"]') as HTMLInputElement).checked).toBe(false);
+  });
+});
+
+describe('ASRConfigModal share switch', () => {
+  it('flips when its text is clicked', async () => {
+    render(ASRConfigModal, { props: { show: true, providers: PROVIDERS } });
+    const sw = (await waitFor(() => {
+      const el = document.querySelector('[role="switch"]') as HTMLInputElement;
+      expect(el).not.toBeNull();
+      return el;
+    })) as HTMLInputElement;
+    expect(sw.checked).toBe(false);
+    await fireEvent.click(document.querySelector('label[for="asr-share-globally-label"]')!);
+    await waitFor(() => expect(sw.checked).toBe(true));
   });
 });

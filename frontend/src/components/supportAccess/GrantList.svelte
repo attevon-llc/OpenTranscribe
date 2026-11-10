@@ -68,8 +68,8 @@
   const BUTTON_CLASS: Record<Exclude<RowAction, 'inUse'>, string> = {
     start: 'btn btn-primary',
     approve: 'btn btn-primary',
-    deny: 'btn btn-danger sa-danger',
-    revoke: 'btn btn-danger sa-danger',
+    deny: 'btn btn-danger',
+    revoke: 'btn btn-danger',
     viewLog: 'btn btn-secondary',
   };
 </script>

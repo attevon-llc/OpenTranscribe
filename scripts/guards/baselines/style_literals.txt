@@ -127,7 +127,6 @@ colour::frontend/src/routes/search/+page.svelte	13	styling layer: pre-migration 
 colour::frontend/src/styles/form-elements.css	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/styles/range-slider.css	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/styles/search.css	14	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/styles/support-access.css	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/FileUploader.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/SelectiveReprocessModal.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/UserFileStatus.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

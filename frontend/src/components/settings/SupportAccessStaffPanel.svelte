@@ -136,7 +136,7 @@
       <span class="bg-wrap" title={isSuperAdmin ? undefined : $t('supportAccess.breakGlass.superAdminOnly')}>
         <button
           type="button"
-          class="btn btn-danger sa-danger"
+          class="btn btn-danger"
           disabled={!isSuperAdmin}
           aria-describedby={isSuperAdmin ? undefined : 'bg-locked-reason'}
           on:click={() => (breakGlassOpen = true)}

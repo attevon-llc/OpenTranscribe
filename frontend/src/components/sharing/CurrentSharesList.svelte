@@ -6,6 +6,7 @@
   import { sharingStore } from '$stores/sharing';
   import PermissionLevelSelect from './PermissionLevelSelect.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import Spinner from '$components/ui/Spinner.svelte';
   import type { Share, PermissionLevel } from '$lib/types/groups';
 
@@ -15,8 +16,14 @@
 
   let updatingShareId: string | null = null;
   let revokingShareId: string | null = null;
-  let showRevokeConfirm = false;
-  let pendingRevokeShare: Share | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   async function handlePermissionChange(share: Share, event: CustomEvent<PermissionLevel>) {
     const newPermission = event.detail;
@@ -38,16 +45,15 @@
   }
 
   function requestRevoke(share: Share) {
-    pendingRevokeShare = share;
-    showRevokeConfirm = true;
+    confirmDialog.request(
+      $t('sharing.revokeAccess'),
+      $t('sharing.revokeConfirm', { name: share.target_name }),
+      () => executeRevoke(share),
+      { confirmText: $t('sharing.revokeAccess'), variant: 'danger' }
+    );
   }
 
-  async function executeRevoke() {
-    if (!pendingRevokeShare) return;
-    const share = pendingRevokeShare;
-    showRevokeConfirm = false;
-    pendingRevokeShare = null;
-
+  async function executeRevoke(share: Share) {
     revokingShareId = share.uuid;
     try {
       await SharingApi.revokeShare(collectionUuid, share.uuid);
@@ -129,15 +135,14 @@
 {/if}
 
 <ConfirmationModal
-  bind:isOpen={showRevokeConfirm}
-  title={$t('sharing.revokeAccess')}
-  message={pendingRevokeShare ? $t('sharing.revokeConfirm', { name: pendingRevokeShare.target_name }) : ''}
-  confirmText={$t('sharing.revokeAccess')}
-  cancelText={$t('modal.cancel')}
-  variant="danger"
-  on:confirm={executeRevoke}
-  on:cancel={() => { showRevokeConfirm = false; pendingRevokeShare = null; }}
-  on:close={() => { showRevokeConfirm = false; pendingRevokeShare = null; }}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

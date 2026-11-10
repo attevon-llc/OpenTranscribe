@@ -11,6 +11,7 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from 'svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import Spinner from '$components/ui/Spinner.svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -47,7 +48,14 @@
   let saving = false;
   let testing = false;
   let deleting = false;
-  let showDeleteConfirm = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
   let testResult: PyannoteTestResult | null = null;
 
   $: view = pyannoteCredentialView(status, diarizationSource);
@@ -103,6 +111,18 @@
     } finally {
       testing = false;
     }
+  }
+
+  function askDelete() {
+    confirmDialog.request(
+      $t('settings.speakerIdentification.pyannoteKey.delete'),
+      $t('settings.speakerIdentification.pyannoteKey.deleteConfirm'),
+      remove,
+      {
+        confirmText: $t('settings.speakerIdentification.pyannoteKey.delete'),
+        variant: 'danger',
+      }
+    );
   }
 
   async function remove() {
@@ -179,7 +199,7 @@
           type="button"
           class="btn btn-danger-outline"
           data-testid="pyannote-delete"
-          on:click={() => (showDeleteConfirm = true)}
+          on:click={askDelete}
           disabled={disabled || busy}
         >
           {$t('settings.speakerIdentification.pyannoteKey.delete')}
@@ -201,17 +221,16 @@
   {/if}
 </div>
 
-{#if showDeleteConfirm}
-  <ConfirmationModal
-    bind:isOpen={showDeleteConfirm}
-    title={$t('settings.speakerIdentification.pyannoteKey.delete')}
-    message={$t('settings.speakerIdentification.pyannoteKey.deleteConfirm')}
-    confirmText={$t('settings.speakerIdentification.pyannoteKey.delete')}
-    cancelText={$t('common.cancel')}
-    variant="danger"
-    on:confirm={remove}
-  />
-{/if}
+<ConfirmationModal
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
+/>
 
 <style>
   .pyannote-credential {

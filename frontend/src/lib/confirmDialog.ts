@@ -6,11 +6,11 @@
  * screen has its own button labels; only the state machine lives here.
  *
  *     const confirmDialog = createConfirmDialog();
- *     const { isOpen, title, message, confirmText, variant } = confirmDialog;
+ *     const { isOpen, title, message, confirmText, cancelText, variant } = confirmDialog;
  *     confirmDialog.request('Delete?', 'Really?', () => remove(id), { variant: 'danger' });
  *
  *     <ConfirmationModal bind:isOpen={$isOpen} title={$title} message={$message}
- *       confirmText={$confirmText} variant={$variant}
+ *       confirmText={$confirmText} cancelText={$cancelText} variant={$variant}
  *       on:confirm={confirmDialog.confirm} on:cancel={confirmDialog.cancel}
  *       on:close={confirmDialog.cancel} />
  */
@@ -21,6 +21,8 @@ export type ConfirmVariant = 'primary' | 'danger' | 'warning';
 export interface ConfirmRequestOptions {
   /** Confirm button label (empty keeps the modal's default). */
   confirmText?: string;
+  /** Cancel button label (empty keeps the modal's default). */
+  cancelText?: string;
   /** Runs when the user backs out (cancel or close), never after a confirm. */
   onCancel?: () => void;
   /** Confirm button colour; `danger` also makes the modal an `alertdialog`. Default `primary`. */
@@ -33,6 +35,7 @@ export interface ConfirmDialog {
   title: Writable<string>;
   message: Writable<string>;
   confirmText: Writable<string>;
+  cancelText: Writable<string>;
   variant: Writable<ConfirmVariant>;
   request(
     title: string,
@@ -49,6 +52,7 @@ export function createConfirmDialog(): ConfirmDialog {
   const title = writable('');
   const message = writable('');
   const confirmText = writable('');
+  const cancelText = writable('');
   const variant = writable<ConfirmVariant>('primary');
   let onConfirm: (() => void | Promise<void>) | null = null;
   let onCancel: (() => void) | null = null;
@@ -58,11 +62,13 @@ export function createConfirmDialog(): ConfirmDialog {
     title,
     message,
     confirmText,
+    cancelText,
     variant,
     request(newTitle, newMessage, callback, options = {}) {
       title.set(newTitle);
       message.set(newMessage);
       confirmText.set(options.confirmText ?? '');
+      cancelText.set(options.cancelText ?? '');
       variant.set(options.variant ?? 'primary');
       onConfirm = callback;
       onCancel = options.onCancel ?? null;

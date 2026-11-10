@@ -13,8 +13,10 @@ under ``tests/e2e``'s own rootdir, so this loads them with that directory on ``s
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import numpy as np
 import pytest
@@ -202,3 +204,50 @@ def test_select_screens_globs_and_rejects_unknown() -> None:
 def test_split_step_keeps_colons_inside_selectors() -> None:
     assert ab.split_step("click:a:hover") == ("click", "a:hover")
     assert ab.split_step("settings:profile") == ("settings", "profile")
+
+
+# --- upload-state screens ---------------------------------------------------------------
+def test_sample_wav_is_a_fixed_decodable_file() -> None:
+    import io
+    import wave
+
+    first = ab.sample_wav()
+    assert first == ab.sample_wav()
+    with wave.open(io.BytesIO(first)) as w:
+        assert (w.getnchannels(), w.getframerate(), w.getnframes()) == (1, 8000, 800)
+
+
+def test_upload_screens_are_in_the_manifest_and_well_formed() -> None:
+    by_id = screens.by_id()
+    for sid in ("upload-tags", "upload-record", "upload-failed", "upload-active"):
+        assert sid in by_id
+        assert screens.validate((by_id[sid],)) == []
+
+
+def test_new_step_kinds_are_rejected_when_malformed() -> None:
+    bad = (screens.Screen("x", "/", steps=("pause", "route:")),)
+    problems = "\n".join(screens.validate(bad))
+    assert "malformed step 'pause'" in problems
+    assert "malformed step 'route:'" in problems
+
+
+def test_mock_route_zero_holds_the_request_and_other_status_answers_it() -> None:
+    registered: list[Callable[[Any], Any]] = []
+
+    class FakePage:
+        def route(self, glob: str, handler: Callable[[Any], Any]) -> None:
+            registered.append(handler)
+
+    class FakeRoute:
+        fulfilled: dict[str, object] | None = None
+
+        def fulfill(self, **kw: object) -> None:
+            self.fulfilled = kw
+
+    ab._mock_route(FakePage(), "**/x", 0)
+    ab._mock_route(FakePage(), "**/x", 500)
+    held, failing = registered
+    route = FakeRoute()
+    assert held(route) is None and route.fulfilled is None
+    failing(route)
+    assert route.fulfilled is not None and route.fulfilled["status"] == 500

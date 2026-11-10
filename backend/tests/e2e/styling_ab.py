@@ -333,6 +333,39 @@ def _open_settings(page: Any) -> None:
     page.wait_for_selector(".settings-sidebar .nav-item", timeout=15000)
 
 
+SAMPLE_WAV_NAME = "styling-sample.wav"
+
+
+def sample_wav() -> bytes:
+    """A fixed 0.1 s mono 8 kHz silent WAV: the same bytes (so the same hash) on every run."""
+    import struct
+
+    frames = 800
+    data = b"\x00\x00" * frames
+    header = b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt "
+    header += struct.pack("<IHHIIHH", 16, 1, 1, 8000, 16000, 2, 16) + b"data"
+    return header + struct.pack("<I", len(data)) + data
+
+
+def _mock_route(page: Any, glob: str, status: int) -> None:
+    """Answer ``glob`` with a fixed JSON error (``status`` > 0), or never (``status`` 0).
+
+    Never answering holds the request open, which freezes a client in its in-flight state
+    (an upload on "preparing") so the photograph does not depend on server timing.
+    """
+    if status == 0:
+        page.route(glob, lambda route: None)
+        return
+    page.route(
+        glob,
+        lambda route: route.fulfill(
+            status=status,
+            content_type="application/json",
+            body='{"detail": "Simulated upload failure"}',
+        ),
+    )
+
+
 def run_step(page: Any, step: str) -> None:
     """Execute one manifest step (vocabulary in ``styling_screens``)."""
     kind, arg = split_step(step)
@@ -369,6 +402,18 @@ def run_step(page: Any, step: str) -> None:
             )
         elif kind == "tab":
             page.locator(f"#tab-{arg}").first.click()
+        elif kind == "local":
+            key, _, value = arg.partition("=")
+            page.evaluate("([k, v]) => localStorage.setItem(k, v)", [key, value])
+        elif kind == "file":
+            page.locator(arg).first.set_input_files(
+                {"name": SAMPLE_WAV_NAME, "mimeType": "audio/wav", "buffer": sample_wav()}
+            )
+        elif kind == "route":
+            glob, _, status = arg.rpartition("|")
+            _mock_route(page, glob, int(status))
+        elif kind == "pause":
+            page.wait_for_timeout(int(arg))
         else:
             raise StepError(f"unknown step kind in {step!r}")
     except (StepError, ScreenUnavailableError):

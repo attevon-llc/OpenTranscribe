@@ -21,7 +21,22 @@ LOCALES = ("en", "ar")
 #: ``<locale>-<theme>``. All four always run: captures are cheap.
 VARIANTS = tuple(f"{loc}-{theme}" for loc in LOCALES for theme in THEMES)
 
-STEP_KINDS = frozenset({"click", "hover", "focus", "wait", "press", "settings", "tab", "scroll"})
+STEP_KINDS = frozenset(
+    {
+        "click",
+        "hover",
+        "focus",
+        "wait",
+        "press",
+        "settings",
+        "tab",
+        "scroll",
+        "local",
+        "file",
+        "route",
+        "pause",
+    }
+)
 
 #: Masked on every screen: the navbar bell renders an unread-count pill that exists in one
 #: notification state and not the other (same reasoning as test_visual_regression.py).
@@ -86,6 +101,12 @@ _LOGGED_OUT = tuple(
 
 _GALLERY_MASKS = (".count-chip", ".meta-line")
 
+_UPLOAD_OPEN = ("click:.upload-btn", "wait:.tab-button")
+_UPLOAD_FILE = (*_UPLOAD_OPEN, "file:.drop-zone input[type=file]", "wait:.file-name")
+#: Submit with the review-with-defaults shortcut; the mocked route decides what the queue shows.
+_UPLOAD_SUBMIT = ("click:.nav-review-defaults", "click:.nav-submit")
+_UPLOAD_PREPARE = "route:**/api/files/prepare|"
+
 _APP = (
     Screen("gallery", "/", masks=_GALLERY_MASKS, ready=".gallery-action-buttons"),
     Screen(
@@ -109,6 +130,64 @@ _APP = (
         masks=_GALLERY_MASKS,
         full_page=False,
         ready=".upload-btn",
+    ),
+    Screen(
+        "upload-tags",
+        "/",
+        # Remembered tags from the last submit restore as chips on the Tags step.
+        steps=(
+            'local:opentr:uploadPreviousValues={"tagNames":["interview","q4-review"],'
+            '"collectionIds":[],"skippedSteps":[],"timestamp":1}',
+            *_UPLOAD_FILE,
+            "click:.nav-next",
+            "wait:.selected-chips .chip",
+        ),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".upload-btn",
+        notes="chip + previous-values banner, both themes",
+    ),
+    Screen(
+        "upload-record",
+        "/",
+        steps=(*_UPLOAD_OPEN, "click:.tab-button >> nth=2", "wait:.start-button, .unsupported-msg"),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".upload-btn",
+        notes="idle recorder only: no microphone in the capture browser, so the level bars and "
+        "paused dot are not reachable",
+    ),
+    Screen(
+        "upload-failed",
+        "/",
+        steps=(
+            _UPLOAD_PREPARE + "500",
+            *_UPLOAD_FILE,
+            *_UPLOAD_SUBMIT,
+            # 3 retries with 1-2 s, 2-4 s and 4-8 s backoff: after 16 s the row stays failed.
+            "pause:16000",
+            "wait:.error-message",
+        ),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".upload-btn",
+        notes="UploadManager panel with a failed row and its error message",
+    ),
+    Screen(
+        "upload-active",
+        "/",
+        steps=(
+            _UPLOAD_PREPARE + "0",
+            *_UPLOAD_FILE,
+            *_UPLOAD_SUBMIT,
+            "wait:.upload-item",
+            "click:.collapse-btn",
+            "wait:.activity-indicator",
+        ),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".upload-btn",
+        notes="minimised badge with the activity dot while a request is held in flight",
     ),
     Screen("file-detail", "/files/{file_uuid}", ready=".transcript-segment"),
     Screen(

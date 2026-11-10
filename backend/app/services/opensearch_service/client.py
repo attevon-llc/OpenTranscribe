@@ -35,6 +35,7 @@ from opensearchpy.exceptions import SerializationError
 from opensearchpy.exceptions import TransportError
 
 from app.core.config import settings
+from app.core.exceptions import SearchIndexError
 from app.core.opensearch_auth import opensearch_connection_kwargs
 
 if TYPE_CHECKING:
@@ -43,12 +44,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class OpenSearchUnavailableError(RuntimeError):
+class OpenSearchUnavailableError(SearchIndexError, RuntimeError):
     """The cluster could not answer a request (connection/auth/transport).
 
     Raised by the index-introspection helpers instead of returning a
     "not present" answer, so a broken cluster can never be mistaken for an
     empty one by index bootstrap, alias migration, or index deletion logic.
+
+    A :class:`SearchIndexError`, so an outage that reaches a route is answered 503 by the
+    application error handler (``main.handle_app_error``), which returns ``exc.message``. Raise
+    sites therefore never interpolate the caught exception into the message (it can quote the
+    cluster's own error body); the cause stays on ``__cause__`` for the log.
     """
 
 
@@ -280,7 +286,7 @@ def _is_alias(name: str) -> bool:
     except NotFoundError:
         return False
     except CLUSTER_UNAVAILABLE_ERRORS as e:
-        raise OpenSearchUnavailableError(f"Could not check alias '{name}': {e}") from e
+        raise OpenSearchUnavailableError(f"Could not check alias '{name}'") from e
 
 
 def _get_alias_target(alias_name: str) -> str | None:
@@ -305,7 +311,7 @@ def _get_alias_target(alias_name: str) -> str | None:
     except NotFoundError:
         return None
     except CLUSTER_UNAVAILABLE_ERRORS as e:
-        raise OpenSearchUnavailableError(f"Could not resolve alias '{alias_name}': {e}") from e
+        raise OpenSearchUnavailableError(f"Could not resolve alias '{alias_name}'") from e
 
 
 def _safe_index_exists(index_name: str) -> bool:
@@ -328,7 +334,7 @@ def _safe_index_exists(index_name: str) -> bool:
     except NotFoundError:
         return False
     except CLUSTER_UNAVAILABLE_ERRORS as e:
-        raise OpenSearchUnavailableError(f"Could not check index '{index_name}': {e}") from e
+        raise OpenSearchUnavailableError(f"Could not check index '{index_name}'") from e
 
 
 def _get_index_embedding_dimension(index_name: str) -> int | None:
@@ -351,7 +357,7 @@ def _get_index_embedding_dimension(index_name: str) -> int | None:
     except NotFoundError:
         return None
     except CLUSTER_UNAVAILABLE_ERRORS as e:
-        raise OpenSearchUnavailableError(f"Could not read mapping for '{index_name}': {e}") from e
+        raise OpenSearchUnavailableError(f"Could not read mapping for '{index_name}'") from e
 
     props = mapping.get(index_name, {}).get("mappings", {}).get("properties", {})
     dim = props.get("embedding", {}).get("dimension")
@@ -463,7 +469,7 @@ def _supports_ann_search(index_name: str) -> bool:
     except NotFoundError:
         return False
     except CLUSTER_UNAVAILABLE_ERRORS as e:
-        raise OpenSearchUnavailableError(f"Could not read mapping for '{concrete}': {e}") from e
+        raise OpenSearchUnavailableError(f"Could not read mapping for '{concrete}'") from e
 
     embedding = (
         mapping.get(concrete, {}).get("mappings", {}).get("properties", {}).get("embedding", {})

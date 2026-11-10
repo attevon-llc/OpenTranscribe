@@ -382,7 +382,7 @@ def create_singleton_cluster(
             organization_id=organization_id,
         )
     except Exception as e:
-        raise OpenSearchUnavailableError(f"centroid of cluster {cluster.uuid}: {e}") from e
+        raise OpenSearchUnavailableError(f"centroid of cluster {cluster.uuid}") from e
     if not stored:
         raise OpenSearchUnavailableError(f"centroid of cluster {cluster.uuid} was not stored")
     return cluster

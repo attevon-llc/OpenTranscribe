@@ -200,7 +200,7 @@ def msearch_profile_knn_batch(
     except OpenSearchException as e:
         logger.exception(f"Error in batch profile kNN search: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"profile kNN search failed: {e}") from e
+            raise OpenSearchUnavailableError("profile kNN search failed") from e
         return {uid: [] for uid in speaker_embeddings}
 
 
@@ -248,7 +248,7 @@ def get_profile_embedding(profile_uuid: str, *, strict: bool = False) -> list[fl
     except OpenSearchException as e:
         logger.exception(f"Error getting profile embedding: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"profile embedding lookup failed: {e}") from e
+            raise OpenSearchUnavailableError("profile embedding lookup failed") from e
         return None
 
 
@@ -449,5 +449,5 @@ def find_matching_profiles(
     except OpenSearchException as e:
         logger.exception(f"Error finding matching profiles: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"profile search failed: {e}") from e
+            raise OpenSearchUnavailableError("profile search failed") from e
         return []

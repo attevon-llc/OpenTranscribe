@@ -65,7 +65,7 @@ def get_speaker_document(speaker_uuid: str, *, strict: bool = False) -> dict[str
     except OpenSearchException as e:
         logger.exception(f"Error getting speaker document for {speaker_uuid}: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"speaker document lookup failed: {e}") from e
+            raise OpenSearchUnavailableError("speaker document lookup failed") from e
         return None
 
 
@@ -127,15 +127,17 @@ def get_speaker_embedding(speaker_uuid: str, *, strict: bool = False) -> list[fl
                         f"Retry after repair failed for speaker {speaker_uuid}: {retry_err}"
                     )
                     if strict:
-                        raise OpenSearchUnavailableError(str(retry_err)) from retry_err
+                        raise OpenSearchUnavailableError(
+                            "retry after refreshing the index also failed"
+                        ) from retry_err
             if strict:
-                raise OpenSearchUnavailableError(f"speaker index unreadable: {e}") from e
+                raise OpenSearchUnavailableError("speaker index unreadable") from e
             return None
         # NotFoundError is expected for speakers not in active index
         if "NotFoundError" not in type(e).__name__:
             logger.error(f"Error getting speaker embedding: {e}")
             if strict:
-                raise OpenSearchUnavailableError(f"speaker embedding lookup failed: {e}") from e
+                raise OpenSearchUnavailableError("speaker embedding lookup failed") from e
         return None
 
 
@@ -180,7 +182,7 @@ def get_speaker_embeddings_batch(
     except OpenSearchException as e:
         logger.exception(f"Error batch-fetching speaker embeddings: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"speaker embedding batch fetch failed: {e}") from e
+            raise OpenSearchUnavailableError("speaker embedding batch fetch failed") from e
         return {}
 
 
@@ -222,7 +224,7 @@ def _iter_embeddings_by_uuid(
                 yield batch
         except OpenSearchException as e:
             logger.exception("mget batch failed: %s", e)
-            raise OpenSearchUnavailableError(f"speaker mget batch failed: {e}") from e
+            raise OpenSearchUnavailableError("speaker mget batch failed") from e
 
 
 def _iter_user_embeddings(
@@ -258,7 +260,7 @@ def _iter_user_embeddings(
             response = os_client.search(index=active_index, body=query)
         except OpenSearchException as e:
             logger.exception("Scroll failed: %s", e)
-            raise OpenSearchUnavailableError(f"speaker scroll failed: {e}") from e
+            raise OpenSearchUnavailableError("speaker scroll failed") from e
 
         hits = response["hits"]["hits"]
         if not hits:
@@ -401,5 +403,5 @@ def get_all_speaker_embeddings(
     except OpenSearchException as e:
         logger.exception(f"Error fetching speaker embeddings: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"speaker embedding scan failed: {e}") from e
+            raise OpenSearchUnavailableError("speaker embedding scan failed") from e
         return []

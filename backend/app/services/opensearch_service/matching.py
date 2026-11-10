@@ -161,11 +161,13 @@ def find_matching_speaker(
                 except Exception as retry_err:
                     logger.error(f"Retry after repair failed for speaker matching: {retry_err}")
                     if strict:
-                        raise OpenSearchUnavailableError(str(retry_err)) from retry_err
+                        raise OpenSearchUnavailableError(
+                            "retry after refreshing the index also failed"
+                        ) from retry_err
                     return None
         logger.error(f"Error finding matching speaker: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"speaker kNN failed: {e}") from e
+            raise OpenSearchUnavailableError("speaker kNN failed") from e
         return None
 
 
@@ -271,5 +273,5 @@ def msearch_speaker_similarities(
     except OpenSearchException as e:
         logger.exception(f"Error in msearch speaker similarities: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"speaker similarity search failed: {e}") from e
+            raise OpenSearchUnavailableError("speaker similarity search failed") from e
         return [[] for _ in speaker_data]

@@ -115,7 +115,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-xl);
     z-index: var(--z-dropdown);
     overflow: hidden;
   }

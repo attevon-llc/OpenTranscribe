@@ -613,11 +613,6 @@
     text-transform: capitalize;
   }
 
-  :global([data-theme='dark']) .shared-chip {
-    background: rgba(var(--accent-rgb), 0.15);
-    color: #60a5fa;
-  }
-
   .title-edit-container {
     display: flex;
     align-items: flex-start;

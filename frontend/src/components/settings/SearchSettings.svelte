@@ -10,7 +10,7 @@
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import ReindexLiveProgress from './ReindexLiveProgress.svelte';
+  import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
 
   let showModelChangeModal = false;
 
@@ -427,7 +427,23 @@
 
   <!-- Live reindex progress -->
   {#if isReindexing}
-    <ReindexLiveProgress {reindexProgress} {isStopping} onstop={handleStopReindex} />
+    {@const hasCounts = !!reindexProgress && reindexProgress.total_files > 0}
+    <div class="reindex-card">
+      <LiveProgressCard
+        title={isStopping ? $t('search.stoppingReindex') : $t('search.reindexingInProgress')}
+        state={isStopping ? 'stopping' : hasCounts ? 'running' : 'starting'}
+        done={hasCounts ? reindexProgress?.indexed_files ?? null : null}
+        total={hasCounts ? reindexProgress?.total_files ?? null : null}
+        percent={hasCounts && reindexProgress ? reindexProgress.progress * 100 : null}
+        etaSeconds={reindexProgress?.eta_seconds ?? null}
+        remainingLabel={$t('upload.remaining')}
+        message={hasCounts ? reindexProgress?.message ?? '' : $t('search.reindexStarting')}
+        barLabel={$t('search.reindexProgressBar')}
+        stopLabel={$t('search.stopReindex')}
+        stoppingLabel={$t('search.stoppingReindex')}
+        onStop={handleStopReindex}
+      />
+    </div>
   {:else if indexStatus && indexStatus.total_files > 0 && progressPercent < 100}
     <div class="progress-container">
       <div class="progress-bar">
@@ -958,5 +974,9 @@
     .subsection-actions .btn {
       min-height: 44px;
     }
+  }
+
+  .reindex-card {
+    margin-bottom: var(--space-3);
   }
 </style>

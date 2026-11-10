@@ -3,6 +3,7 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import PrivacySwitchCard from '$components/privacy/PrivacySwitchCard.svelte';
@@ -148,6 +149,28 @@
     <ProgressBar percent={42} label={$t('common.processing')} />
     <ProgressBar percent={100} label={$t('common.completed')} />
     <ProgressBar percent={null} label={$t('common.loading')} />
+    <LiveProgressCard state="starting" title={$t('common.loading')} barLabel={$t('common.loading')} message={$t('upload.queued')} />
+    <LiveProgressCard
+      title={$t('common.processing')}
+      done={21}
+      total={50}
+      percent={42}
+      etaSeconds={125}
+      remainingLabel={$t('common.remaining')}
+      barLabel={$t('common.processing')}
+      stopLabel={$t('common.cancel')}
+      onStop={() => {}}
+    />
+    <LiveProgressCard
+      state="stopping"
+      title={$t('common.processing')}
+      done={21}
+      total={50}
+      percent={42}
+      barLabel={$t('common.processing')}
+      stopLabel={$t('common.cancel')}
+      onStop={() => {}}
+    />
     <div class="kit-row">
       <Spinner size="small" />
       <Spinner size="medium" />

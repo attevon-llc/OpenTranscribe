@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { formatEta } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import Toggle from '$components/ui/Toggle.svelte';
@@ -9,7 +8,7 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { llmStatusStore } from '$stores/llmStatus';
-  import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
   import RangeSlider from '$components/ui/RangeSlider.svelte';
 
   let autoTopicExtraction = true;
@@ -282,30 +281,16 @@
 
       {#if retroactiveRunning}
         <div class="progress-section">
-          {#if retroactiveTotal === 0}
-            <div class="queued-message">
-              {retroactiveMessage || $t('autoLabel.retroactiveQueued')}
-            </div>
-            <ProgressBar percent={null} ariaLabel={$t('autoLabel.retroactiveQueued')} />
-          {:else}
-            <div class="progress-info">
-              <span class="progress-label">
-                {retroactiveProcessed} / {retroactiveTotal}
-              </span>
-              <span class="progress-percent">
-                <bdi dir="ltr">{Math.round((retroactiveProcessed / Math.max(retroactiveTotal, 1)) * 100)}%</bdi>
-                {#if formatEta(retroactiveEtaSeconds)}
-                  ({formatEta(retroactiveEtaSeconds)} {$t('common.remaining')})
-                {/if}
-              </span>
-            </div>
-            <div class="progress-bar-container">
-              <div
-                class="progress-bar-fill"
-                style="width: {(retroactiveProcessed / Math.max(retroactiveTotal, 1)) * 100}%"
-              ></div>
-            </div>
-          {/if}
+          <LiveProgressCard
+            state={retroactiveTotal === 0 ? 'starting' : 'running'}
+            done={retroactiveProcessed}
+            total={retroactiveTotal}
+            percent={retroactiveTotal === 0 ? null : (retroactiveProcessed / retroactiveTotal) * 100}
+            etaSeconds={retroactiveEtaSeconds}
+            remainingLabel={$t('common.remaining')}
+            message={retroactiveTotal === 0 ? retroactiveMessage || $t('autoLabel.retroactiveQueued') : ''}
+            barLabel={$t('autoLabel.progressBar')}
+          />
         </div>
       {/if}
     </div>
@@ -444,49 +429,7 @@
     margin-top: var(--space-3);
   }
 
-  .queued-message {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin-bottom: var(--space-2);
-  }
-
-  .progress-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
-
-  .progress-label {
-    font-size: 0.8rem;
-    color: var(--text-primary);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .progress-percent {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-  }
-
-  .progress-bar-container {
-    height: 8px;
-    background: var(--border-color);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .progress-bar-fill {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: var(--radius-sm);
-    transition: width var(--duration-slow) ease;
-  }
-
   /* Skeleton Loading */
-
-
-
-
 
   @media (max-width: 768px) {
     .setting-row {

@@ -112,7 +112,7 @@ qrcode[pil]==8.2
 
 # AI/ML Stack - All cuDNN 9 compatible for CUDA 12.8
 # NumPy 2.x - required by whisperx>=3.7.6
-# Capped <2.5.0: presidio-anonymizer/presidio-analyzer declare numpy<2.5.0 in their own
+# Capped <2.5.0: presidio-analyzer declares numpy<2.5.0 in its own
 # metadata. `pip install numpy==2.5.3 presidio-analyzer==2.2.366` is a real
 # ResolutionImpossible, verified directly, not a resolver preference. Dependabot PR #949
 # proposed 2.5.3; caught by pip refusing the install outright before this ever reached a
@@ -171,7 +171,7 @@ tqdm==4.70.1
 # huggingface-hub<1.0.0, but it is installed --no-deps (requirements-nodeps.txt), so pip
 # never enforces that cap, and the app does not import whisperx at runtime. What matters is
 # what actually runs against hub 1.x: pyannote.audio (fork), faster-whisper, sentence-transformers,
-# gliner (caps transformers<5.17.0, so 5.10.x-5.16.x only) and detoxify all load and run on
+# and gliner (caps transformers<5.17.0, so 5.10.x-5.16.x only) all load and run on
 # transformers 5.10 + hub 1.x. The 1.x client is httpx, not requests, and it has no
 # reset_sessions(): see app/utils/hf_hub_offline.py and services/local_models/downloader.py.
 # huggingface-hub is held at 1.17.0, the last release that downloads into the shared

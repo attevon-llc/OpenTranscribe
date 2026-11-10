@@ -7,13 +7,13 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import { AdminApi, type ContentAccessAuditStatus } from '$lib/api/admin';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
 
   let status: ContentAccessAuditStatus | null = null;
   let saving = false;
-  let toggle: HTMLInputElement;
 
   $: perUserDayKb = status ? Math.round(status.bytes_per_active_user_per_day_estimate / 1000) : 0;
   // 1,000 active users for 30 days, in GB with one decimal.
@@ -31,8 +31,7 @@
     }
   });
 
-  async function change(event: Event) {
-    const enabled = (event.target as HTMLInputElement).checked;
+  async function change(enabled: boolean) {
     saving = true;
     try {
       status = await AdminApi.setContentAccessAudit(enabled);
@@ -50,9 +49,6 @@
       status = await AdminApi.getContentAccessAudit().catch(() => status);
     } finally {
       saving = false;
-      // A click flips the box before the server answers; when the answer is "no change" the
-      // `checked` attribute binding sees the same value and leaves the box as clicked.
-      if (toggle && status) toggle.checked = status.enabled;
     }
   }
 </script>
@@ -77,17 +73,12 @@
         </p>
       {/if}
     </div>
-    <label class="toggle-switch">
-      <input
-        bind:this={toggle}
-        id="content-access-audit-toggle"
-        type="checkbox"
-        checked={status.enabled}
-        disabled={saving}
-        on:change={change}
-      />
-      <span class="toggle-slider"></span>
-    </label>
+    <Toggle
+      id="content-access-audit-toggle"
+      checked={status.enabled}
+      busy={saving}
+      onchange={change}
+    />
   </div>
 {/if}
 
@@ -124,62 +115,5 @@
     margin: 0.4rem 0 0;
     font-size: var(--font-size-xs);
     color: var(--text-color);
-  }
-
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    inset: 0;
-    background-color: var(--border-color);
-    transition: var(--duration-slow);
-    border-radius: 24px;
-  }
-
-  .toggle-slider:before {
-    position: absolute;
-    content: '';
-    height: 18px;
-    width: 18px;
-    inset-inline-start: 3px;
-    bottom: 3px;
-    background-color: var(--toggle-button);
-    transition: var(--duration-slow);
-    border-radius: var(--radius-round);
-  }
-
-  .toggle-switch input:focus-visible + .toggle-slider {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .toggle-switch input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-switch input:disabled + .toggle-slider {
-    cursor: not-allowed;
-    opacity: 0.5;
-  }
-
-  .toggle-switch input:checked + .toggle-slider:before {
-    transform: translateX(20px);
-  }
-
-  :global([dir='rtl']) .toggle-switch input:checked + .toggle-slider:before {
-    transform: translateX(-20px);
   }
 </style>

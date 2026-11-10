@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount, onDestroy } from 'svelte';
@@ -324,11 +325,10 @@
 
     <!-- Enable toggle -->
     <div class="field-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={enabled} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.backup.enableLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={enabled} onchange={(next) => (enabled = next)} labelledby="backup-toggle-label-1" />
+        <span class="toggle-text" id="backup-toggle-label-1">{$t('settings.backup.enableLabel')}</span>
+      </div>
     </div>
 
     <!-- Schedule -->
@@ -452,11 +452,10 @@
 
     <!-- Encryption -->
     <div class="field-row encryption-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={encrypt} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.backup.encryptLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={encrypt} onchange={(next) => (encrypt = next)} labelledby="backup-toggle-label-2" />
+        <span class="toggle-text" id="backup-toggle-label-2">{$t('settings.backup.encryptLabel')}</span>
+      </div>
     </div>
     {#if encrypt}
       <div class="field-group encryption-field">
@@ -468,11 +467,10 @@
 
     <!-- OpenSearch snapshot -->
     <div class="field-row opensearch-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={includeOpensearch} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.backup.includeOpensearchLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={includeOpensearch} onchange={(next) => (includeOpensearch = next)} labelledby="backup-toggle-label-3" />
+        <span class="toggle-text" id="backup-toggle-label-3">{$t('settings.backup.includeOpensearchLabel')}</span>
+      </div>
       <span class="field-hint opensearch-hint">{$t('settings.backup.includeOpensearchHint')}</span>
     </div>
     {#if includeOpensearch && osSnapshotStatus}
@@ -751,46 +749,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    cursor: pointer;
     user-select: none;
-  }
-
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
   }
 
   .toggle-text {

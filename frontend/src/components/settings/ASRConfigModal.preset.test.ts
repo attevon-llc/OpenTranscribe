@@ -41,7 +41,7 @@ describe('ASRConfigModal presets (adding shared credentials from the policy pane
     });
     expect(select.value).toBe('assemblyai');
     expect((document.querySelector('#asr-name') as HTMLInputElement).value).toBe('name:assemblyai');
-    expect((document.querySelector('.toggle-input') as HTMLInputElement).checked).toBe(true);
+    expect((document.querySelector('[role="switch"]') as HTMLInputElement).checked).toBe(true);
   });
 
   it('creates the shared config with is_shared true and the preset provider', async () => {
@@ -72,6 +72,6 @@ describe('ASRConfigModal presets (adding shared credentials from the policy pane
       () => document.querySelector('#asr-provider') as HTMLSelectElement
     );
     expect(select.value).toBe('');
-    expect((document.querySelector('.toggle-input') as HTMLInputElement).checked).toBe(false);
+    expect((document.querySelector('[role="switch"]') as HTMLInputElement).checked).toBe(false);
   });
 });

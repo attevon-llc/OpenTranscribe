@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { formatDateTime } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount } from 'svelte';
@@ -158,11 +159,10 @@
 
     <!-- Enable toggle -->
     <div class="field-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={enabled} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.directorySync.enableLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={enabled} onchange={(next) => (enabled = next)} labelledby="dirsync-toggle-label-1" />
+        <span class="toggle-text" id="dirsync-toggle-label-1">{$t('settings.directorySync.enableLabel')}</span>
+      </div>
       <span class="field-hint enable-hint">{$t('settings.directorySync.enableHint')}</span>
     </div>
 
@@ -198,11 +198,10 @@
 
     <!-- Dry run -->
     <div class="field-row dry-run-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={dryRun} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.directorySync.dryRunLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle checked={dryRun} onchange={(next) => (dryRun = next)} labelledby="dirsync-toggle-label-2" />
+        <span class="toggle-text" id="dirsync-toggle-label-2">{$t('settings.directorySync.dryRunLabel')}</span>
+      </div>
       <span class="field-hint enable-hint">{$t('settings.directorySync.dryRunHint')}</span>
     </div>
 
@@ -374,46 +373,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    cursor: pointer;
     user-select: none;
-  }
-
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
   }
 
   .toggle-text {

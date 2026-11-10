@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { REDACTION_CATEGORY_KEYS, REDACTION_DETECTOR_KEYS, REDACTION_STYLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
@@ -131,11 +132,10 @@
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.general')}</h3>
         <div class="setting-row">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={settings.enabled} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.contentRedaction.enabled')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle checked={settings.enabled} onchange={(next) => (settings.enabled = next)} labelledby="redaction-toggle-label-1" />
+            <span class="toggle-text" id="redaction-toggle-label-1">{$t('settings.contentRedaction.enabled')}</span>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.enabledHelp')}</p>
         <p class="perf-note">
@@ -301,36 +301,24 @@
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.privacy')}</h3>
         <div class="setting-row" class:disabled-toggle={llmLocked}>
-          <label class="toggle-label">
-            <input
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={settings.redact_before_llm}
-              disabled={llmLocked}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">
+          <div class="toggle-label">
+            <Toggle checked={settings.redact_before_llm} onchange={(next) => (settings.redact_before_llm = next)} disabled={llmLocked} labelledby="redaction-toggle-label-2" />
+            <span class="toggle-text" id="redaction-toggle-label-2">
               {$t('settings.contentRedaction.redactBeforeLlm')}
               {#if llmLocked}<span class="lock-badge"><MenuIcon name="lock" size={13} /></span>{/if}
             </span>
-          </label>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.redactBeforeLlmHelp')}</p>
 
         <div class="setting-row" class:disabled-toggle={exportLocked} style="margin-top: 0.75rem;">
-          <label class="toggle-label">
-            <input
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={settings.default_export_redacted}
-              disabled={exportLocked}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">
+          <div class="toggle-label">
+            <Toggle checked={settings.default_export_redacted} onchange={(next) => (settings.default_export_redacted = next)} disabled={exportLocked} labelledby="redaction-toggle-label-3" />
+            <span class="toggle-text" id="redaction-toggle-label-3">
               {$t('settings.contentRedaction.exportRedacted')}
               {#if exportLocked}<span class="lock-badge"><MenuIcon name="lock" size={13} /></span>{/if}
             </span>
-          </label>
+          </div>
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.exportRedactedHelp')}</p>
       </div>
@@ -551,41 +539,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    cursor: pointer;
     user-select: none;
-  }
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
   }
   .toggle-text {
     font-size: var(--font-size-md);

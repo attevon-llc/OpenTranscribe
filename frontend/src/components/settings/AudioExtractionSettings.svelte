@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import InfoIcon from '$components/ui/InfoIcon.svelte';
   import { onMount } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -97,14 +98,7 @@
                 {$t('settings.audioExtraction.enableExtractionDesc')}
               </span>
             </label>
-            <label class="toggle-switch">
-              <input
-                id="auto-extract"
-                type="checkbox"
-                bind:checked={autoExtractEnabled}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <Toggle id="auto-extract" checked={autoExtractEnabled} onchange={(next) => (autoExtractEnabled = next)} />
           </div>
           {#if autoExtractEnabled}
             <!-- Depends on the switch above, so it sits directly beneath it (label, then control). -->
@@ -143,14 +137,7 @@
                   {$t('settings.audioExtraction.showDialogDesc')}
                 </span>
               </label>
-              <label class="toggle-switch">
-                <input
-                  id="show-modal"
-                  type="checkbox"
-                  bind:checked={showModal}
-                />
-                <span class="toggle-slider"></span>
-              </label>
+              <Toggle id="show-modal" checked={showModal} onchange={(next) => (showModal = next)} />
             </div>
           </div>
         </div>
@@ -165,14 +152,7 @@
                   {$t('settings.audioExtraction.rememberChoiceDesc')}
                 </span>
               </label>
-              <label class="toggle-switch">
-                <input
-                  id="remember-choice"
-                  type="checkbox"
-                  bind:checked={rememberChoice}
-                />
-                <span class="toggle-slider"></span>
-              </label>
+              <Toggle id="remember-choice" checked={rememberChoice} onchange={(next) => (rememberChoice = next)} />
             </div>
           </div>
         </div>
@@ -294,53 +274,6 @@
     line-height: 1.4;
   }
 
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 48px;
-    height: 24px;
-    flex-shrink: 0;
-    cursor: pointer;
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--border-color);
-    transition: var(--duration-slow);
-    border-radius: 24px;
-  }
-
-  .toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: var(--duration-slow);
-    border-radius: var(--radius-round);
-  }
-
-  input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  input:checked + .toggle-slider:before {
-    transform: translateX(24px);
-  }
-
   .dependent-field {
     display: flex;
     flex-direction: column;
@@ -447,11 +380,6 @@
 
   .info-content li {
     margin-bottom: var(--space-1);
-  }
-
-  /* Dark mode */
-  :global([data-theme='dark']) .toggle-slider:before {
-    background-color: #e5e7eb;
   }
 
   /* Responsive */

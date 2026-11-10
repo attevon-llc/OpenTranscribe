@@ -119,7 +119,7 @@ describe('add shared credentials', () => {
       return el;
     });
     expect(select.value).toBe('assemblyai');
-    expect((document.querySelector('.toggle-input') as HTMLInputElement).checked).toBe(true);
+    expect((document.querySelector('[role="switch"]') as HTMLInputElement).checked).toBe(true);
   });
 
   it('the ordinary Add button still opens an empty private editor afterwards', async () => {
@@ -139,7 +139,7 @@ describe('add shared credentials', () => {
       () => document.querySelector('#asr-provider') as HTMLSelectElement
     );
     expect(select.value).toBe('');
-    expect((document.querySelector('.toggle-input') as HTMLInputElement).checked).toBe(false);
+    expect((document.querySelector('[role="switch"]') as HTMLInputElement).checked).toBe(false);
   });
 });
 

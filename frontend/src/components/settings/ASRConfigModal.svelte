@@ -1,5 +1,6 @@
 <script lang="ts">
   import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import { createEventDispatcher } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
@@ -473,11 +474,13 @@
 
         <!-- Share with all users -->
         <div class="share-toggle-row">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.asrProvider.shareGlobally')}</span>
-          </label>
+          <Toggle
+            checked={formData.is_shared}
+            onchange={(next) => (formData.is_shared = next)}
+            disabled={saving}
+            id="asr-share-globally-label"
+          />
+          <label class="toggle-text" for="asr-share-globally-label">{$t('settings.asrProvider.shareGlobally')}</label>
         </div>
 
   <svelte:fragment slot="footer">
@@ -666,52 +669,11 @@
     border-top: 1px dashed var(--border-color);
   }
 
-  .toggle-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-regular);
-    user-select: none;
-  }
-
-  .toggle-input {
-    display: none;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base);
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
-  }
-
   .toggle-text {
+    cursor: pointer;
     color: var(--text-color);
+    font-size: var(--font-size-sm);
+    user-select: none;
   }
 
   .footer-row {

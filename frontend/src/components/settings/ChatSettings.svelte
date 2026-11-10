@@ -7,6 +7,7 @@
   while "always use my transcripts" is an account-level habit.
 -->
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { SEARCH_MODE_KEYS } from '$lib/i18n/keyMaps';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
@@ -76,15 +77,12 @@
       <label class="toggle-label" for="chat-use-context">
         {$t('chat.settings.useContextDefault')}
       </label>
-      <label class="toggle-switch">
-        <input
-          id="chat-use-context"
-          type="checkbox"
-          bind:checked={settings.use_context_default}
-          data-testid="chat-settings-use-context"
-        />
-        <span class="toggle-slider"></span>
-      </label>
+      <Toggle
+        id="chat-use-context"
+        checked={settings.use_context_default}
+        onchange={(next) => (settings.use_context_default = next)}
+        testid="chat-settings-use-context"
+      />
     </div>
 
     <div class="setting-row">
@@ -146,24 +144,17 @@
       <label class="toggle-label" for="chat-rerank">
         {$t('chat.settings.rerank')}
       </label>
-      <label class="toggle-switch">
-        <input
-          id="chat-rerank"
-          type="checkbox"
-          checked={settings.rerank_enabled !== false}
-          on:change={(e) => {
-            // null (inherit) and true both show as on; only an explicit off is
-            // stored, because a preference can never enable what the admin
-            // disabled.
-            settings = {
-              ...settings,
-              rerank_enabled: (e.target as HTMLInputElement).checked ? null : false,
-            };
-          }}
-          data-testid="chat-settings-rerank"
-        />
-        <span class="toggle-slider"></span>
-      </label>
+      <Toggle
+        id="chat-rerank"
+        checked={settings.rerank_enabled !== false}
+        onchange={(next) => {
+          // null (inherit) and true both show as on; only an explicit off is
+          // stored, because a preference can never enable what the admin
+          // disabled.
+          settings = { ...settings, rerank_enabled: next ? null : false };
+        }}
+        testid="chat-settings-rerank"
+      />
     </div>
     <span class="hint standalone-hint">{$t('chat.settings.rerankHint')}</span>
 
@@ -201,11 +192,6 @@
     gap: 0.4rem;
   }
 
-  /* Toggle switch, matching DownloadSettings / ContentRedactionSettings. A bare
-     checkbox cannot be used here: form-elements.css sets `input { width: 100% }`
-     with no type exemption, which stretched the box to 733px and pushed its
-     label off to the right edge. The native input stays in the DOM (keyboard +
-     screen-reader) but is sized to zero and painted by .toggle-slider. */
   .toggle-row {
     flex-direction: row;
     align-items: center;
@@ -218,54 +204,6 @@
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
     cursor: pointer;
-  }
-
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    flex-shrink: 0;
-    width: 2.75rem;
-    height: 1.5rem;
-    cursor: pointer;
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    inset: 0;
-    background-color: var(--border-color);
-    border-radius: 1.5rem;
-    transition: background-color var(--duration-base);
-  }
-
-  .toggle-slider::before {
-    content: '';
-    position: absolute;
-    height: 1.125rem;
-    width: 1.125rem;
-    left: 0.1875rem;
-    bottom: 0.1875rem;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-switch input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-switch input:checked + .toggle-slider::before {
-    transform: translateX(1.25rem);
-  }
-
-  .toggle-switch input:focus-visible + .toggle-slider {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
   }
 
   .field-label {

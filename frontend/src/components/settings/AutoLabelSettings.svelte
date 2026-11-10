@@ -2,6 +2,7 @@
   import { formatEta } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
@@ -196,15 +197,7 @@
             </span>
           {/if}
         </div>
-        <label class="toggle-switch">
-          <input
-            type="checkbox"
-            id="auto-topic-extraction"
-            bind:checked={autoTopicExtraction}
-            disabled={noProvider}
-          />
-          <span class="toggle-slider"></span>
-        </label>
+        <Toggle id="auto-topic-extraction" checked={autoTopicExtraction} onchange={(next) => (autoTopicExtraction = next)} disabled={noProvider} />
       </div>
 
       <!-- Master Toggle -->
@@ -213,10 +206,7 @@
           <label for="auto-label-enabled" class="setting-label">{$t('autoLabel.enableLabel')}</label>
           <span class="setting-help">{$t('autoLabel.enableHelp')}</span>
         </div>
-        <label class="toggle-switch">
-          <input type="checkbox" id="auto-label-enabled" bind:checked={enabled} />
-          <span class="toggle-slider"></span>
-        </label>
+        <Toggle id="auto-label-enabled" checked={enabled} onchange={(next) => (enabled = next)} />
       </div>
 
       {#if enabled}
@@ -240,10 +230,7 @@
             <label for="auto-label-tags" class="setting-label">{$t('autoLabel.tagsLabel')}</label>
             <span class="setting-help">{$t('autoLabel.tagsHelp')}</span>
           </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="auto-label-tags" bind:checked={tagsEnabled} />
-            <span class="toggle-slider"></span>
-          </label>
+          <Toggle id="auto-label-tags" checked={tagsEnabled} onchange={(next) => (tagsEnabled = next)} />
         </div>
 
         <!-- Collections Toggle -->
@@ -252,10 +239,7 @@
             <label for="auto-label-collections" class="setting-label">{$t('autoLabel.collectionsLabel')}</label>
             <span class="setting-help">{$t('autoLabel.collectionsHelp')}</span>
           </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="auto-label-collections" bind:checked={collectionsEnabled} />
-            <span class="toggle-slider"></span>
-          </label>
+          <Toggle id="auto-label-collections" checked={collectionsEnabled} onchange={(next) => (collectionsEnabled = next)} />
         </div>
 
         <!-- Bulk Grouping Toggle -->
@@ -264,10 +248,7 @@
             <label for="auto-label-bulk" class="setting-label">{$t('autoLabel.bulkGroupingLabel')}</label>
             <span class="setting-help">{$t('autoLabel.bulkGroupingHelp')}</span>
           </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="auto-label-bulk" bind:checked={bulkGroupingEnabled} />
-            <span class="toggle-slider"></span>
-          </label>
+          <Toggle id="auto-label-bulk" checked={bulkGroupingEnabled} onchange={(next) => (bulkGroupingEnabled = next)} />
         </div>
       {/if}
     </div>
@@ -376,64 +357,6 @@
     font-size: 0.775rem;
     color: var(--text-muted);
     line-height: 1.3;
-  }
-
-  /* Toggle Switch */
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-    flex-shrink: 0;
-    margin-left: var(--space-4);
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--border-color);
-    transition: var(--duration-slow);
-    border-radius: 24px;
-  }
-
-  .toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: var(--toggle-button);
-    transition: var(--duration-slow);
-    border-radius: var(--radius-round);
-  }
-
-  .toggle-switch input:focus-visible + .toggle-slider {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .toggle-switch input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-switch input:disabled + .toggle-slider {
-    cursor: not-allowed;
-    opacity: 0.5;
-  }
-
-  .toggle-switch input:checked + .toggle-slider:before {
-    transform: translateX(20px);
   }
 
   .setting-row--slider {
@@ -570,10 +493,6 @@
       flex-direction: column;
       align-items: flex-start;
       gap: var(--space-3);
-    }
-
-    .toggle-switch {
-      margin-left: 0;
     }
 
     .btn-save,

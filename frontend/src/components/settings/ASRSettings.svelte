@@ -1,5 +1,6 @@
 <script lang="ts">
   import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import Toggle from '$components/ui/Toggle.svelte';
   import type { MenuIconName } from '$lib/ui/menuIcons';
   import { ASR_TEST_STATUS_KEYS } from '$lib/i18n/keyMaps';
   import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
@@ -335,7 +336,7 @@
     }
   }
 
-  async function handleEnabledToggle(config: UserASRSettingsResponse, box: HTMLInputElement) {
+  async function handleEnabledToggle(config: UserASRSettingsResponse) {
     const enable = config.is_active === false;
     saving = true;
     try {
@@ -354,10 +355,8 @@
       );
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      // The row only changes on success, and Svelte would not redraw an unchanged value,
-      // so put the box back by hand; the toast says why.
+      // The row only changes on success and Toggle is controlled, so it stays where it was.
       toastStore.error(failure(err, 'settings.asrProvider.enableFailed'), 5000);
-      box.checked = !enable;
     } finally {
       saving = false;
     }
@@ -543,21 +542,23 @@
               </div>
               <div class="config-model">{config.model_name}</div>
               <div class="share-toggle-row">
-                <label class="toggle-label">
-                  <input type="checkbox" class="toggle-input" data-testid="asr-enabled-toggle"
-                    checked={config.is_active !== false}
-                    on:change={(e) => handleEnabledToggle(config, e.currentTarget)} disabled={saving} />
-                  <span class="toggle-switch"></span>
-                  <span class="toggle-text">{$t('settings.asrProvider.enabledToggle')}</span>
-                </label>
+                <Toggle
+                  checked={config.is_active !== false}
+                  onchange={() => handleEnabledToggle(config)}
+                  disabled={saving}
+                  id="asr-enabled-label-{config.uuid}"
+                  testid="asr-enabled-toggle"
+                />
+                <label class="toggle-text" for="asr-enabled-label-{config.uuid}">{$t('settings.asrProvider.enabledToggle')}</label>
               </div>
               <div class="share-toggle-row">
-                <label class="toggle-label">
-                  <input type="checkbox" class="toggle-input" checked={config.is_shared}
-                    on:change={() => handleShareToggle(config)} disabled={saving} />
-                  <span class="toggle-switch"></span>
-                  <span class="toggle-text">{$t('settings.asrProvider.shareGlobally')}</span>
-                </label>
+                <Toggle
+                  checked={config.is_shared === true}
+                  onchange={() => handleShareToggle(config)}
+                  disabled={saving}
+                  id="asr-share-label-{config.uuid}"
+                />
+                <label class="toggle-text" for="asr-share-label-{config.uuid}">{$t('settings.asrProvider.shareGlobally')}</label>
               </div>
             </div>
 
@@ -1124,26 +1125,8 @@
     border-top: 1px dashed var(--border-color);
   }
 
-  .toggle-label {
-    display: flex; align-items: center; gap: var(--space-2);
-    cursor: pointer; font-size: var(--font-size-xs); color: var(--text-muted);
-  }
-
-  .toggle-input { display: none; }
-
-  .toggle-switch {
-    position: relative; width: 28px; height: 16px;
-    background: var(--border-color); border-radius: var(--radius-lg);
-    transition: background var(--duration-base); flex-shrink: 0;
-  }
-  .toggle-switch::after {
-    content: ''; position: absolute; top: 2px; left: 2px;
-    width: 12px; height: 12px; background: white;
-    border-radius: var(--radius-round); transition: transform var(--duration-base);
-  }
-  .toggle-input:checked + .toggle-switch { background: var(--primary-color); }
-  .toggle-input:checked + .toggle-switch::after { transform: translateX(12px); }
-  .toggle-text { user-select: none; }
+  .toggle-text {
+    cursor: pointer; user-select: none; font-size: var(--font-size-xs); color: var(--text-muted); }
 
   /* Local model section (all users) */
   .local-model-section {

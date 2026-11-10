@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { onMount } from 'svelte';
   import {
     CustomVocabularyApi,
@@ -218,15 +219,14 @@
             {/if}
           </div>
           <div class="term-actions">
-            <label class="toggle" title={term.is_active ? $t('settings.customVocabulary.disable') : $t('settings.customVocabulary.enable')}>
-              <input
-                type="checkbox"
-                checked={term.is_active}
-                on:change={() => toggleActive(term)}
-                disabled={term.is_system}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <span class="toggle-wrap" title={term.is_active ? $t('settings.customVocabulary.disable') : $t('settings.customVocabulary.enable')}>
+            <Toggle
+              checked={term.is_active}
+              onchange={() => toggleActive(term)}
+              disabled={term.is_system}
+              label={term.is_active ? $t('settings.customVocabulary.disable') : $t('settings.customVocabulary.enable')}
+            />
+            </span>
             {#if !term.is_system}
               {#if showDeleteConfirm && termToDelete?.id === term.id}
                 <span class="delete-confirm-inline">
@@ -461,54 +461,8 @@
     flex-shrink: 0;
   }
 
-  /* Toggle switch */
-  .toggle {
-    position: relative;
+  .toggle-wrap {
     display: inline-flex;
-    align-items: center;
-    cursor: pointer;
-  }
-
-  .toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-    position: absolute;
-  }
-
-  .toggle-slider {
-    display: inline-block;
-    width: 30px;
-    height: 16px;
-    background: var(--border-color);
-    border-radius: var(--radius-lg);
-    transition: background var(--duration-base);
-    position: relative;
-  }
-
-  .toggle-slider::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle input:checked + .toggle-slider {
-    background: var(--success-color);
-  }
-
-  .toggle input:checked + .toggle-slider::after {
-    transform: translateX(14px);
-  }
-
-  .toggle input:disabled + .toggle-slider {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .btn-delete-term {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -145,14 +146,7 @@
     <div class="form-group">
       <div class="toggle-row">
         <label for="audio-only" class="toggle-label">{$t('settings.download.audioOnly')}</label>
-        <label class="toggle-switch">
-          <input
-            id="audio-only"
-            type="checkbox"
-            bind:checked={audioOnly}
-          />
-          <span class="toggle-slider"></span>
-        </label>
+        <Toggle id="audio-only" checked={audioOnly} onchange={(next) => (audioOnly = next)} />
       </div>
       <p class="form-hint">{$t('settings.download.audioOnlyHint')}</p>
     </div>
@@ -255,51 +249,6 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-  }
-
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 2.75rem;
-    height: 1.5rem;
-    cursor: pointer;
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--border-color);
-    border-radius: 1.5rem;
-    transition: background-color var(--duration-base);
-  }
-
-  .toggle-slider::before {
-    content: '';
-    position: absolute;
-    height: 1.125rem;
-    width: 1.125rem;
-    left: 0.1875rem;
-    bottom: 0.1875rem;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-switch input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-switch input:checked + .toggle-slider::before {
-    transform: translateX(1.25rem);
   }
 
   .form-actions {

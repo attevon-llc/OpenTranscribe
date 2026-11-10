@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `sweep_orphan_voiceprints --apply` no longer deletes the voiceprint of a speaker created while it scanned: it re-reads the database before deleting and never deletes a document written after the sweep started (reported as `skipped_recent`).
 - Security: the last-active-super-administrator rule is now checked every time an account erasure runs, not only at its first execution. A self-erasure deferred by a legal hold could otherwise erase the last super administrator when the hold was released.
 - Voiceprint retention no longer misses due recordings while a speaker index migration is in progress: the presence check now sizes its multi-index search for one hit per index per id, so a voiceprint held in both the v3 and v4 index cannot crowd other ids out of the answer.
 - Security: a GDPR erasure (account, organization member or whole organization) no longer destroys the voiceprints of speakers on a recording under a legal hold, nor deletes the speaker profiles linked to them (which unlinked the held recording's speakers). Both are kept, like the recording, and a kept profile defers the erasure until the hold lifts; the receipt no longer reports the kept voiceprints as residual.

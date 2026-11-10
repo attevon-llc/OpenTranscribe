@@ -41,7 +41,7 @@
   pointer-events: none;
 }
 
-.auth-panel .section h3 {
+.auth-panel .section > h3 {
   margin: 0 0 var(--space-4) 0;
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);

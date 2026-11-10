@@ -580,7 +580,7 @@ in every mode, FIPS included.** This is a compliant configuration, not a gap:
   comfortably above the 112-bit minimum **SP 800-131A Rev. 2** requires through 2030 and
   beyond.
 
-:::info[Refresh tokens were HS512 until this release, on every deployment]
+:::info[Refresh tokens used to be HS512 on every deployment]
 An earlier revision of this page said FIPS mode switched JWT signing to HS512, and that
 was corrected to "HS256 always" -- but **both statements were wrong about refresh
 tokens**. `token_service.create_refresh_token` selected its algorithm with

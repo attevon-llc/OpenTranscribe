@@ -707,6 +707,9 @@ button:disabled {
   font-weight: var(--font-weight-medium);
   color: var(--text-color);
 }
+:where(.form-field-label-md .form-field-label) {
+  font-size: var(--font-size-md);
+}
 :where(.form-field-hint) {
   margin: 0;
   font-size: var(--font-size-xs);

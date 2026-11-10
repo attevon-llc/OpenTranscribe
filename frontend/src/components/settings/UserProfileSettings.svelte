@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import { onMount } from 'svelte';
   import { user as userStore, authStore, fetchUserInfo } from '$stores/auth';
@@ -172,8 +173,7 @@
     <div class="profile-card">
       <h4 class="card-title">{$t('settings.profile.accountInfo')}</h4>
       <form on:submit|preventDefault={updateProfile} class="settings-form">
-        <div class="form-group">
-          <label for="email">{$t('auth.email')}</label>
+        <FormField id="email" label={$t('auth.email')}>
           <input dir="ltr"
             type="email"
             id="email"
@@ -182,10 +182,9 @@
             disabled
           />
           <small class="form-text">{$t('settings.profile.emailCannotChange')}</small>
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <label for="fullName">{$t('settings.profile.fullName')}</label>
+        <FormField id="fullName" label={$t('settings.profile.fullName')}>
           <input
             type="text"
             id="fullName"
@@ -193,7 +192,7 @@
             bind:value={fullName}
             required
           />
-        </div>
+        </FormField>
 
         <div class="form-actions">
           <button

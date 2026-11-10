@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { GROUP_MAPPING_ROLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -86,8 +87,7 @@
   {/if}
 
   {#if mode === 'claims'}
-    <div class="form-group">
-      <label for="mapping-test-claims">{$t('settings.groupMappings.test.claimsLabel')}</label>
+    <FormField class="tester-field" id="mapping-test-claims" label={$t('settings.groupMappings.test.claimsLabel')}>
       <textarea dir="ltr"
         id="mapping-test-claims"
         class="form-control form-textarea"
@@ -98,10 +98,9 @@
           : $t('settings.groupMappings.claimValuePlaceholderOidc')}
       ></textarea>
       <span class="help-text">{$t('settings.groupMappings.test.claimsHelp')}</span>
-    </div>
+    </FormField>
   {:else}
-    <div class="form-group">
-      <label for="mapping-test-username">{$t('settings.groupMappings.test.usernameLabel')}</label>
+    <FormField class="tester-field" id="mapping-test-username" label={$t('settings.groupMappings.test.usernameLabel')}>
       <input
         id="mapping-test-username"
         type="text"
@@ -111,7 +110,7 @@
         placeholder={$t('settings.groupMappings.test.usernamePlaceholder')}
       />
       <span class="help-text">{$t('settings.groupMappings.test.usernameHelp')}</span>
-    </div>
+    </FormField>
   {/if}
 
   <div class="tester-actions">
@@ -240,17 +239,10 @@
     cursor: not-allowed;
   }
 
-  .form-group {
-    margin: var(--space-3) 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
+
+  :global(.form-field.tester-field) {
+    margin: var(--space-3) 0;
   }
 
   .form-control {

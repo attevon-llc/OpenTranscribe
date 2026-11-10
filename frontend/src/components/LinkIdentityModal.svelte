@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import BaseModal from './ui/BaseModal.svelte';
   import { t } from '$stores/locale';
@@ -84,21 +85,19 @@
 >
   <form id="link-identity-form" on:submit|preventDefault={handleSubmit}>
     <div class="modal-body">
-      <div class="form-group">
-        <label for="link-identity-mode">{$t('userManagement.linkIdentity.mode')}</label>
+      <FormField labelSize="md" id="link-identity-mode" label={$t('userManagement.linkIdentity.mode')}>
         <select id="link-identity-mode" class="form-control" bind:value={mode}>
           <option value="identifier">{$t('userManagement.linkIdentity.modeIdentifier')}</option>
           <option value="email">{$t('userManagement.linkIdentity.modeEmail')}</option>
         </select>
-      </div>
+      </FormField>
 
       {#if mode === 'email'}
         <p class="modal-intro">
           {$t('userManagement.linkIdentity.emailIntro', { name: targetName })}
         </p>
 
-        <div class="form-group">
-          <label for="link-identity-email">{$t('userManagement.linkIdentity.emailLabel')}</label>
+        <FormField labelSize="md" id="link-identity-email" label={$t('userManagement.linkIdentity.emailLabel')}>
           <input
             type="email"
             id="link-identity-email"
@@ -107,7 +106,7 @@
             maxlength="255"
             required
           />
-        </div>
+        </FormField>
 
         <p class="modal-note">{$t('userManagement.linkIdentity.emailNote')}</p>
       {:else}
@@ -115,14 +114,13 @@
           {$t('userManagement.linkIdentity.intro', { name: targetName })}
         </p>
 
-        <div class="form-group">
-          <label for="link-identity-provider">{$t('userManagement.linkIdentity.provider')}</label>
+        <FormField labelSize="md" id="link-identity-provider" label={$t('userManagement.linkIdentity.provider')}>
           <select id="link-identity-provider" class="form-control" bind:value={provider}>
             <option value="oidc">{$t('userManagement.linkIdentity.providerOidc')}</option>
             <option value="ldap">{$t('userManagement.linkIdentity.providerLdap')}</option>
             <option value="pki">{$t('userManagement.linkIdentity.providerPki')}</option>
           </select>
-        </div>
+        </FormField>
 
         <div class="form-group">
           <label for="link-identity-identifier">

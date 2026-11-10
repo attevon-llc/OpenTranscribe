@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount, onDestroy, tick } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
@@ -721,8 +722,7 @@
         <p class="section-description">{$t('settings.recording.description')}</p>
 
         <form on:submit|preventDefault={saveRecordingSettings} class="settings-form">
-          <div class="form-group">
-            <label for="maxRecordingDuration">{$t('settings.recording.maxDuration')}</label>
+          <FormField id="maxRecordingDuration" label={$t('settings.recording.maxDuration')}>
             <input
               type="number"
               id="maxRecordingDuration"
@@ -734,10 +734,9 @@
               required
             />
             <small class="form-text">{$t('settings.recording.durationRange')}</small>
-          </div>
+          </FormField>
 
-          <div class="form-group">
-            <label for="recordingQuality">{$t('settings.recording.quality')}</label>
+          <FormField id="recordingQuality" label={$t('settings.recording.quality')}>
             <select
               id="recordingQuality"
               class="form-control"
@@ -749,7 +748,7 @@
               <option value="maximum">{$t('settings.recording.qualityMaximum')}</option>
             </select>
             <small class="form-text">{$t('settings.recording.qualityHelp')}</small>
-          </div>
+          </FormField>
 
           <div class="form-group">
             <label class="checkbox-label">

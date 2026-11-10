@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { GROUP_MAPPING_ROLE_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher } from 'svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
@@ -101,8 +102,7 @@
 >
   <form id="group-mapping-form" on:submit|preventDefault={handleSubmit}>
     <div class="modal-body">
-      <div class="form-group">
-        <label for="mapping-claim">{$t('settings.groupMappings.claimValue')}</label>
+      <FormField id="mapping-claim" label={$t('settings.groupMappings.claimValue')}>
         <input dir="ltr"
           type="text"
           id="mapping-claim"
@@ -119,10 +119,9 @@
             ? $t('settings.groupMappings.claimValueHelpLdap')
             : $t('settings.groupMappings.claimValueHelpOidc')}
         </span>
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="mapping-group">{$t('settings.groupMappings.targetGroup')}</label>
+      <FormField id="mapping-group" label={$t('settings.groupMappings.targetGroup')}>
         <select id="mapping-group" class="form-control" bind:value={groupUuid}>
           <option value="">{$t('settings.groupMappings.noGroup')}</option>
           {#each groups as group (group.uuid)}
@@ -130,10 +129,9 @@
           {/each}
         </select>
         <span class="form-hint">{$t('settings.groupMappings.targetGroupHelp')}</span>
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="mapping-role">{$t('settings.groupMappings.grantsRole')}</label>
+      <FormField id="mapping-role" label={$t('settings.groupMappings.grantsRole')}>
         <select id="mapping-role" class="form-control" bind:value={grantsRole}>
           <option value="">{$t('settings.groupMappings.noRole')}</option>
           {#each GRANTABLE_ROLES as role (role)}
@@ -141,10 +139,9 @@
           {/each}
         </select>
         <span class="form-hint">{$t('settings.groupMappings.grantsRoleHelp')}</span>
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="mapping-description">{$t('settings.groupMappings.descriptionLabel')}</label>
+      <FormField id="mapping-description" label={$t('settings.groupMappings.descriptionLabel')}>
         <textarea
           id="mapping-description"
           class="form-control form-textarea"
@@ -153,7 +150,7 @@
           maxlength="2000"
           placeholder={$t('settings.groupMappings.descriptionPlaceholder')}
         ></textarea>
-      </div>
+      </FormField>
 
       {#if grantsNothing}
         <p class="warning-banner" role="alert">
@@ -180,17 +177,7 @@
     gap: var(--space-4);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
-  }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);

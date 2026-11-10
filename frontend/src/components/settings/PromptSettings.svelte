@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
@@ -681,8 +682,7 @@
       {/if}
     </svelte:fragment>
     <form id="prompt-form" on:submit|preventDefault={savePrompt} class="prompt-form">
-      <div class="form-group">
-        <label for="name">{$t('prompts.promptName')}</label>
+      <FormField id="name" label={$t('prompts.promptName')}>
         <input
           type="text"
           id="name"
@@ -692,10 +692,9 @@
           placeholder={$t('prompts.promptNamePlaceholder')}
           required
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="content_type">{$t('prompts.contentType')}</label>
+      <FormField id="content_type" label={$t('prompts.contentType')}>
         <select
           id="content_type"
           bind:value={formData.content_type}
@@ -706,10 +705,9 @@
             <option value={type.value}>{type.label}</option>
           {/each}
         </select>
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="description">{$t('prompts.descriptionLabel')}</label>
+      <FormField id="description" label={$t('prompts.descriptionLabel')}>
         <input
           type="text"
           id="description"
@@ -718,13 +716,12 @@
           class="form-control"
           placeholder={$t('prompts.descriptionPlaceholder')}
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="tags">{$t('prompts.tags')}</label>
+      <FormField id="tags" label={$t('prompts.tags')}>
         <TagInput id="tags" bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
         <small class="form-text">{$t('prompts.tagsHelp')}</small>
-      </div>
+      </FormField>
 
       <!-- Share with all users -->
       <div class="share-toggle-row">

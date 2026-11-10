@@ -25,6 +25,8 @@
   export let error = '';
   export let required = false;
   export let size: 'md' | 'lg' = 'md';
+  // 'md' keeps a 14px label (--font-size-md) for forms whose labels were already that large.
+  export let labelSize: 'sm' | 'md' = 'sm';
   // Extra class on the wrapper, e.g. a fixed-width or flex rule from the parent form.
   let className = '';
   export { className as class };
@@ -36,7 +38,9 @@
   $: invalid = error !== '';
 </script>
 
-<div class="form-field {className}" class:form-field-lg={size === 'lg'}>
+<div class="form-field {className}" class:form-field-lg={size === 'lg'}
+  class:form-field-label-md={labelSize === 'md'}
+>
   {#if $$slots['label-after']}
     <div class="form-field-header">
       <label for={id} class="form-field-label">{label}{#if required}<span aria-hidden="true"> *</span>{/if}</label>

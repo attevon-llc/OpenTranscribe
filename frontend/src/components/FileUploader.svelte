@@ -428,7 +428,7 @@
     if (bulkRegularFiles.length > 0) {
       uploadsStore.addFiles(bulkRegularFiles, collectionIds, tagNames, transcriptionParams);
     }
-    if (bulkVideosToExtract.length > 0) startBulkExtraction(bulkVideosToExtract, transcriptionParams);
+    if (bulkVideosToExtract.length > 0) startBulkExtraction(bulkVideosToExtract, transcriptionParams, { collectionIds, tagNames });
     dispatch('uploadComplete', { multiple: true, count: bulkVideosToExtract.length + bulkRegularFiles.length });
     closeBulkModal();
   }
@@ -488,14 +488,15 @@
     if (needsExtraction && extractionChoice === 'extract') {
       // Extract audio in background, then queue the result
       const fileToExtract = file;
+      const extractionParams = getTranscriptionParams();
+      const organize = getOrganizeParams();
       savePreviousValues();
       resetAllState();
       dispatch('uploadComplete', { isFile: true });
       toastStore.info($t('uploader.extractingAudioFrom', { count: 1 }));
 
-      // Extraction runs in background — result is queued when done. Captured now: the wizard
-      // resets its state before extraction finishes.
-      void extractAndQueue(fileToExtract, getTranscriptionParams());
+      // Queued when extraction finishes; params were read above, before resetAllState() cleared consent.
+      void extractAndQueue(fileToExtract, extractionParams, organize);
       return;
     }
 

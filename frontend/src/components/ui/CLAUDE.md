@@ -5,7 +5,7 @@
 Small, reusable, theme-aware, accessible building blocks. Prefer these over hand-rolling
 the same pattern in a feature component. Import via `$components/ui/...`. Every primitive
 supports light/dark via CSS custom properties and most ship with a colocated `*.test.ts`
-(the pure-markup ones — `Spinner`, `ProgressBar`, `SkeletonLoader`, `ListRowSkeleton`,
+(the pure-markup ones — `Spinner`, `SkeletonLoader`, `ListRowSkeleton`,
 `CardGridSkeleton`, `MetadataChips`, `TagInput`, `FilterPanelToggle` — have none).
 
 ## Catalog
@@ -115,7 +115,8 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
   `--empty-state-*` tokens. The default slot IS the action row (`.empty-actions`, flex, wraps);
   callers put buttons there with no margin of their own (issue #1243 item 16: a caller-spaced
   "Open Review" sat 0px under its description).
-- `Spinner.svelte`, `ProgressBar.svelte`, `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`,
+- `ProgressBar.svelte` — WAI-ARIA `role=progressbar` track (`percent` 0-100 or `null` = indeterminate, which omits `aria-valuenow`; `label` visible, `ariaLabel` when no visible label; `tone` primary|success|warning|error). Tested in `ProgressBar.test.ts`. Usage meters are not progress: do not use it for them.
+- `Spinner.svelte`, `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`,
   `CardGridSkeleton.svelte`, `TagInput.svelte`.
 
 ## Conventions / patterns

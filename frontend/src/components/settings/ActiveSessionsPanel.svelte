@@ -7,6 +7,7 @@
   import { getErrorMessage } from '$lib/utils/apiError';
   import { formatDateTime } from '$lib/utils/formatting';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import { describeUserAgent } from '$lib/settings/userAgent';
 
@@ -31,7 +32,14 @@
   let total = 0;
   let loading = true;
   let signingOut = false;
-  let showSignOutConfirm = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   onMount(loadSessions);
 
@@ -62,6 +70,15 @@
    * session this tab was built on is gone, so discarding the whole JS heap is
    * the strongest guarantee that nothing from it survives into the login page.
    */
+  function askSignOutEverywhere() {
+    confirmDialog.request(
+      $t('settings.sessions.signOutEverywhere'),
+      $t('settings.sessions.signOutConfirmMessage'),
+      signOutEverywhere,
+      { confirmText: $t('settings.sessions.signOutEverywhere'), variant: 'danger' }
+    );
+  }
+
   async function signOutEverywhere() {
     signingOut = true;
     try {
@@ -180,7 +197,7 @@
     <button
       type="button"
       class="btn btn-danger"
-      on:click={() => (showSignOutConfirm = true)}
+      on:click={askSignOutEverywhere}
       disabled={signingOut || loading || sessions.length === 0}
     >
       {signingOut ? $t('settings.sessions.signingOut') : $t('settings.sessions.signOutEverywhere')}
@@ -189,13 +206,14 @@
 </div>
 
 <ConfirmationModal
-  bind:isOpen={showSignOutConfirm}
-  title={$t('settings.sessions.signOutEverywhere')}
-  message={$t('settings.sessions.signOutConfirmMessage')}
-  confirmText={$t('settings.sessions.signOutEverywhere')}
-  cancelText={$t('common.cancel')}
-  variant="danger"
-  on:confirm={signOutEverywhere}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

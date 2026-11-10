@@ -6,6 +6,7 @@
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults } from '$lib/api/llmSettings';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import LLMConfigModal from './LLMConfigModal.svelte';
   import { toastStore } from '$stores/toast';
   import { llmStatusStore } from '$stores/llmStatus';
@@ -44,10 +45,16 @@
   // Modal state
   let showConfigModal = false;
 
-  // Confirmation modals
-  let showDeleteConfigModal = false;
-  let configToDelete: UserLLMSettings | null = null;
-  let showDeleteAllModal = false;
+  // Confirmation dialog
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    cancelText: confirmCancelLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   // Auto-summary toggle state
   let autoSummaryEnabled = true;
@@ -269,14 +276,15 @@
   }
 
   function confirmDeleteConfiguration(config: UserLLMSettings) {
-    configToDelete = config;
-    showDeleteConfigModal = true;
+    confirmDialog.request(
+      $t('settings.llmProvider.deleteConfigConfirmTitle'),
+      $t('settings.llmProvider.deleteConfigConfirmMessage', { name: config.name }),
+      () => deleteConfiguration(config),
+      { confirmText: $t('common.delete'), variant: 'danger' }
+    );
   }
 
-  async function deleteConfiguration() {
-    if (!configToDelete) return;
-    const config = configToDelete;
-
+  async function deleteConfiguration(config: UserLLMSettings) {
     saving = true;
 
     try {
@@ -296,9 +304,6 @@
 
       toastStore.success($t('settings.llmProvider.configDeleted', { name: config.name }), 5000);
 
-      configToDelete = null;
-      showDeleteConfigModal = false;
-
       // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
@@ -312,7 +317,12 @@
   }
 
   function confirmDeleteAll() {
-    showDeleteAllModal = true;
+    confirmDialog.request(
+      $t('settings.llmProvider.deleteAllConfirmTitle'),
+      $t('settings.llmProvider.deleteAllConfirmMessage'),
+      deleteAllSettings,
+      { confirmText: $t('settings.llmProvider.deleteAll'), variant: 'danger' }
+    );
   }
 
   async function deleteAllSettings() {
@@ -336,8 +346,6 @@
       void llmStatusStore.invalidate();
 
       toastStore.success($t('settings.llmProvider.allDeleted'), 5000);
-
-      showDeleteAllModal = false;
 
       // Trigger parent component update
       if (onSettingsChange) {
@@ -411,7 +419,7 @@
 
   let _llmModalWasOpen = false;
   $: {
-    const _anyOpen = showConfigModal || showDeleteConfigModal || showDeleteAllModal;
+    const _anyOpen = showConfigModal;
     if (_anyOpen !== _llmModalWasOpen) {
       if (_anyOpen) lockScroll();
       else unlockScroll();
@@ -761,29 +769,17 @@
   }}
 />
 
-<!-- Confirmation Modals -->
+<!-- Confirmation dialog -->
 <ConfirmationModal
-  bind:isOpen={showDeleteConfigModal}
-  title={$t('settings.llmProvider.deleteConfigConfirmTitle')}
-  message={configToDelete ? $t('settings.llmProvider.deleteConfigConfirmMessage', { name: configToDelete.name }) : ''}
-  confirmText={$t('common.delete')}
-  cancelText={$t('common.cancel')}
-  variant="danger"
-  on:confirm={deleteConfiguration}
-  on:cancel={() => { configToDelete = null; showDeleteConfigModal = false; }}
-  on:close={() => { configToDelete = null; showDeleteConfigModal = false; }}
-/>
-
-<ConfirmationModal
-  bind:isOpen={showDeleteAllModal}
-  title={$t('settings.llmProvider.deleteAllConfirmTitle')}
-  message={$t('settings.llmProvider.deleteAllConfirmMessage')}
-  confirmText={$t('settings.llmProvider.deleteAll')}
-  cancelText={$t('common.cancel')}
-  variant="danger"
-  on:confirm={deleteAllSettings}
-  on:cancel={() => showDeleteAllModal = false}
-  on:close={() => showDeleteAllModal = false}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  cancelText={$confirmCancelLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

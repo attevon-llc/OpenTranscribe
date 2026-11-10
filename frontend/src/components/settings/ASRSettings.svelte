@@ -14,6 +14,7 @@
     type ASRProvider,
   } from '$lib/api/asrSettings';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import ASRConfigModal from './ASRConfigModal.svelte';
   import CloudProviderPolicy from './asr/CloudProviderPolicy.svelte';
   import LocalModelLibrary from './localModels/LocalModelLibrary.svelte';
@@ -112,9 +113,14 @@
   const notEnabled = (providerId: string) => !isAdmin && providers.length > 0 && !enabledIds.has(providerId);
   $: noCloudEnabled = !isAdmin && providers.length > 0 && providers.every((p) => p.provider === 'local');
 
-  let showDeleteModal = false;
-  let configToDelete: UserASRSettingsResponse | null = null;
-  let showDeleteAllModal = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   let testingConfigId: string | null = null;
 
@@ -227,18 +233,28 @@
   }
 
   function confirmDelete(config: UserASRSettingsResponse) {
-    configToDelete = config;
-    showDeleteModal = true;
+    confirmDialog.request(
+      $t('settings.asrProvider.deleteConfirmTitle'),
+      $t('settings.asrProvider.deleteConfirmMessage', { name: config.name }),
+      () => deleteConfiguration(config),
+      { confirmText: $t('common.delete'), variant: 'danger' }
+    );
   }
 
-  async function deleteConfiguration() {
-    if (!configToDelete) return;
+  function confirmDeleteAll() {
+    confirmDialog.request(
+      $t('settings.asrProvider.deleteAllConfirmTitle'),
+      $t('settings.asrProvider.deleteAllConfirmMessage'),
+      deleteAllConfigurations,
+      { confirmText: $t('settings.asrProvider.deleteAll'), variant: 'danger' }
+    );
+  }
+
+  async function deleteConfiguration(config: UserASRSettingsResponse) {
     saving = true;
     try {
-      const deletedName = configToDelete.name;
-      const result = await ASRSettingsApi.deleteConfig(configToDelete.uuid);
-      configToDelete = null;
-      showDeleteModal = false;
+      const deletedName = config.name;
+      const result = await ASRSettingsApi.deleteConfig(config.uuid);
       // Re-fetch canonical state to pick up auto-promoted active config
       await loadData();
       toastStore.success(`"${deletedName}" deleted`);
@@ -259,7 +275,6 @@
       configurations = [];
       activeConfigurationId = null;
       usingLocalDefault = true;
-      showDeleteAllModal = false;
       toastStore.success($t('settings.asrProvider.deletedAll'));
       applyReset(result.diarizer_source_reverted);
       announce(changeMessages(result));
@@ -389,7 +404,7 @@
     else unlockScroll();
     _asrModalWasOpen = anyOpen;
   }
-  $: syncScrollLock(showConfigModal || showDeleteModal || showDeleteAllModal);
+  $: syncScrollLock(showConfigModal);
 </script>
 
 <div class="asr-settings">
@@ -616,7 +631,7 @@
       </div>
 
       <div class="delete-all-section">
-        <button class="btn-delete-all" on:click={() => showDeleteAllModal = true} disabled={saving}>
+        <button class="btn-delete-all" on:click={confirmDeleteAll} disabled={saving}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3,6 5,6 21,6"/>
             <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
@@ -724,27 +739,14 @@
 />
 
 <ConfirmationModal
-  bind:isOpen={showDeleteModal}
-  title={$t('settings.asrProvider.deleteConfirmTitle')}
-  message={configToDelete ? $t('settings.asrProvider.deleteConfirmMessage', { name: configToDelete.name }) : ''}
-  confirmText="Delete"
-  cancelText={$t('common.cancel')}
-  variant="danger"
-  on:confirm={deleteConfiguration}
-  on:cancel={() => { configToDelete = null; showDeleteModal = false; }}
-  on:close={() => { configToDelete = null; showDeleteModal = false; }}
-/>
-
-<ConfirmationModal
-  bind:isOpen={showDeleteAllModal}
-  title={$t('settings.asrProvider.deleteAllConfirmTitle')}
-  message={$t('settings.asrProvider.deleteAllConfirmMessage')}
-  confirmText={$t('settings.asrProvider.deleteAll')}
-  cancelText={$t('common.cancel')}
-  variant="danger"
-  on:confirm={deleteAllConfigurations}
-  on:cancel={() => showDeleteAllModal = false}
-  on:close={() => showDeleteAllModal = false}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

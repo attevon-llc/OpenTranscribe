@@ -11,6 +11,7 @@
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import GroupMappingForm from './GroupMappingForm.svelte';
   import GroupMappingTester from './GroupMappingTester.svelte';
 
@@ -30,8 +31,14 @@
   let showForm = false;
   let editing: GroupMapping | null = null;
 
-  let showDeleteConfirm = false;
-  let pendingDelete: GroupMapping | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   onMount(async () => {
     // The picker options are source-independent, so they are fetched once.
@@ -68,14 +75,15 @@
   }
 
   function askDelete(mapping: GroupMapping) {
-    pendingDelete = mapping;
-    showDeleteConfirm = true;
+    confirmDialog.request(
+      $t('settings.groupMappings.deleteTitle'),
+      $t('settings.groupMappings.deleteMessage', { claim: mapping.claim_value }),
+      () => deleteMapping(mapping),
+      { confirmText: $t('common.delete') }
+    );
   }
 
-  async function confirmDelete() {
-    const target = pendingDelete;
-    pendingDelete = null;
-    if (!target) return;
+  async function deleteMapping(target: GroupMapping) {
     try {
       await GroupMappingsApi.remove(target.uuid);
       toastStore.success($t('settings.groupMappings.toast.deleted'));
@@ -215,12 +223,14 @@
 />
 
 <ConfirmationModal
-  bind:isOpen={showDeleteConfirm}
-  title={$t('settings.groupMappings.deleteTitle')}
-  message={$t('settings.groupMappings.deleteMessage', { claim: pendingDelete?.claim_value ?? '' })}
-  confirmText={$t('common.delete')}
-  on:confirm={confirmDelete}
-  on:cancel={() => (pendingDelete = null)}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

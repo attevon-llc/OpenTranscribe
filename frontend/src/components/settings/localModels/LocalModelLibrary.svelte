@@ -12,7 +12,8 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import SettingsCard from '$components/settings/transcription/SettingsCard.svelte';
   import LocalModelRow from './LocalModelRow.svelte';
-  import ActivateModelDialog from './ActivateModelDialog.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import {
     cancelLocalModelDownload,
     getLocalModelCatalog,
@@ -47,7 +48,15 @@
   let notice = '';
   let rowErrors: Record<string, string> = {};
 
-  let confirmFor: string | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    cancelText: confirmCancelLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
   let switching = false;
   let switchModel = '';
   let switchPhase: 'restarting' | 'running' | 'pending' | null = null;
@@ -139,10 +148,16 @@
     }
   }
 
-  async function confirmActivation() {
-    const modelId = confirmFor;
-    confirmFor = null;
-    if (!modelId) return;
+  function askActivate(modelId: string) {
+    confirmDialog.request(
+      $t('settings.localModels.activateDialog.title'),
+      $t('settings.localModels.activateDialog.message', { model: nameOf(modelId) }),
+      () => activate(modelId),
+      { confirmText: $t('settings.localModels.activateDialog.confirm') }
+    );
+  }
+
+  async function activate(modelId: string) {
     notice = '';
     switching = true;
     switchModel = modelId;
@@ -225,7 +240,7 @@
             errorText={rowErrors[entry.id] ?? ''}
             on:download={(e) => startDownload(e.detail)}
             on:cancel={cancelDownload}
-            on:activate={(e) => (confirmFor = e.detail)}
+            on:activate={(e) => askActivate(e.detail)}
           />
         {/each}
       </ul>
@@ -247,11 +262,16 @@
   </SettingsCard>
 </div>
 
-<ActivateModelDialog
-  isOpen={confirmFor !== null}
-  model={confirmFor ? nameOf(confirmFor) : ''}
-  on:confirm={confirmActivation}
-  on:cancel={() => (confirmFor = null)}
+<ConfirmationModal
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  cancelText={$confirmCancelLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

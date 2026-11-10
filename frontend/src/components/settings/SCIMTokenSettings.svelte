@@ -10,6 +10,7 @@
   import Badge from '$components/ui/Badge.svelte';
   import CopyButton from '$components/ui/CopyButton.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import BaseModal from '$components/ui/BaseModal.svelte';
 
   /**
@@ -27,8 +28,14 @@
   let creating = false;
   let justCreatedToken: string | null = null;
 
-  let showRevokeConfirm = false;
-  let pendingRevoke: ScimToken | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   onMount(loadTokens);
 
@@ -74,14 +81,15 @@
   }
 
   function askRevoke(token: ScimToken) {
-    pendingRevoke = token;
-    showRevokeConfirm = true;
+    confirmDialog.request(
+      $t('settings.scimTokens.revokeTitle'),
+      $t('settings.scimTokens.revokeMessage', { name: token.name }),
+      () => revoke(token),
+      { confirmText: $t('settings.scimTokens.revoke') }
+    );
   }
 
-  async function confirmRevoke() {
-    const target = pendingRevoke;
-    pendingRevoke = null;
-    if (!target) return;
+  async function revoke(target: ScimToken) {
     try {
       await ScimTokensApi.revoke(target.uuid);
       toastStore.success($t('settings.scimTokens.toast.revoked'));
@@ -221,12 +229,14 @@
 </BaseModal>
 
 <ConfirmationModal
-  bind:isOpen={showRevokeConfirm}
-  title={$t('settings.scimTokens.revokeTitle')}
-  message={$t('settings.scimTokens.revokeMessage', { name: pendingRevoke?.name ?? '' })}
-  confirmText={$t('settings.scimTokens.revoke')}
-  on:confirm={confirmRevoke}
-  on:cancel={() => (pendingRevoke = null)}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

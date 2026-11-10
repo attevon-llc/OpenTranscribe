@@ -11,6 +11,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import Spinner from '$components/ui/Spinner.svelte';
   import InfoTip from '$components/settings/transcription/InfoTip.svelte';
   import { t } from '$stores/locale';
@@ -34,7 +35,14 @@
   let saving = false;
   let testing = false;
   let removing = false;
-  let showRemoveConfirm = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
   let testResult: HfTokenTestResult | { ok: false; code: 'error' } | null = null;
 
   $: view = hfTokenView(status);
@@ -84,6 +92,15 @@
     } finally {
       testing = false;
     }
+  }
+
+  function askRemove() {
+    confirmDialog.request(
+      $t('settings.engineSettings.hfToken.remove'),
+      $t('settings.engineSettings.hfToken.removeConfirm'),
+      remove,
+      { confirmText: $t('settings.engineSettings.hfToken.remove'), variant: 'danger' }
+    );
   }
 
   async function remove() {
@@ -155,7 +172,7 @@
         <button
           type="button"
           class="btn btn-danger"
-          on:click={() => (showRemoveConfirm = true)}
+          on:click={askRemove}
           disabled={busy}
         >
           {$t('settings.engineSettings.hfToken.remove')}
@@ -171,17 +188,16 @@
   {/if}
 </section>
 
-{#if showRemoveConfirm}
-  <ConfirmationModal
-    bind:isOpen={showRemoveConfirm}
-    title={$t('settings.engineSettings.hfToken.remove')}
-    message={$t('settings.engineSettings.hfToken.removeConfirm')}
-    confirmText={$t('settings.engineSettings.hfToken.remove')}
-    cancelText={$t('common.cancel')}
-    variant="danger"
-    on:confirm={remove}
-  />
-{/if}
+<ConfirmationModal
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
+/>
 
 <style>
   .hf-token {

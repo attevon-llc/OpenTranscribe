@@ -7,6 +7,7 @@
   import { PromptsApi, type SummaryPrompt } from '$lib/api/prompts';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import Spinner from '$components/ui/Spinner.svelte';
   import TagInput from '$components/ui/TagInput.svelte';
   import PromptCopyButton from './PromptCopyButton.svelte';
@@ -52,13 +53,16 @@
   // Shared prompts
   let sharedPrompts: SummaryPrompt[] = [];
 
-  // Delete confirmation modal
-  let showDeleteModal = false;
-  let promptToDelete: SummaryPrompt | null = null;
-
-  // Unsaved changes confirmation modal
-  let showUnsavedChangesModal = false;
-  let pendingCloseAction: (() => void) | null = null;
+  // Delete and unsaved-changes confirmations
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    cancelText: confirmCancelLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   // Form dirty state tracking
   let originalFormData: PromptFormData = blankPromptForm();
@@ -178,9 +182,16 @@
 
   function closeForm(force: boolean = false) {
     if (!force && isDirty) {
-      // Show professional confirmation modal instead of browser alert
-      pendingCloseAction = () => executeCloseForm();
-      showUnsavedChangesModal = true;
+      confirmDialog.request(
+        $t('prompts.unsavedChanges'),
+        $t('prompts.unsavedChangesMessage'),
+        executeCloseForm,
+        {
+          confirmText: $t('prompts.discardChanges'),
+          cancelText: $t('prompts.keepEditing'),
+          variant: 'warning',
+        }
+      );
       return;
     }
 
@@ -192,19 +203,6 @@
     editingPrompt = null;
     formData = blankPromptForm();
     originalFormData = cloneForm(formData);
-  }
-
-  function handleUnsavedChangesConfirm() {
-    if (pendingCloseAction) {
-      pendingCloseAction();
-      pendingCloseAction = null;
-    }
-    showUnsavedChangesModal = false;
-  }
-
-  function handleUnsavedChangesCancel() {
-    pendingCloseAction = null;
-    showUnsavedChangesModal = false;
   }
 
   async function savePrompt() {
@@ -256,14 +254,19 @@
       return;
     }
 
-    promptToDelete = prompt;
-    showDeleteModal = true;
+    confirmDialog.request(
+      $t('prompts.deleteConfirmTitle'),
+      $t('prompts.deleteConfirmMessage', { name: prompt.name }),
+      () => deletePrompt(prompt),
+      {
+        confirmText: $t('prompts.delete'),
+        cancelText: $t('prompts.cancel'),
+        variant: 'danger',
+      }
+    );
   }
 
-  async function deletePrompt() {
-    if (!promptToDelete) return;
-    const prompt = promptToDelete;
-
+  async function deletePrompt(prompt: SummaryPrompt) {
     saving = true;
 
     try {
@@ -313,8 +316,6 @@
       toastStore.error(getErrorMessage(err, $t('prompts.deleteFailed')));
     } finally {
       saving = false;
-      promptToDelete = null;
-      showDeleteModal = false;
     }
   }
 
@@ -826,30 +827,17 @@
     {/if}
   </BaseModal>
 
-  <!-- Delete Confirmation Modal -->
+  <!-- Delete and unsaved-changes confirmations -->
   <ConfirmationModal
-    bind:isOpen={showDeleteModal}
-    title={$t('prompts.deleteConfirmTitle')}
-    message={promptToDelete ? $t('prompts.deleteConfirmMessage', { name: promptToDelete.name }) : ''}
-    confirmText={$t('prompts.delete')}
-    cancelText={$t('prompts.cancel')}
-    variant="danger"
-    on:confirm={deletePrompt}
-    on:cancel={() => { promptToDelete = null; showDeleteModal = false; }}
-    on:close={() => { promptToDelete = null; showDeleteModal = false; }}
-  />
-
-  <!-- Unsaved Changes Confirmation Modal -->
-  <ConfirmationModal
-    bind:isOpen={showUnsavedChangesModal}
-    title={$t('prompts.unsavedChanges')}
-    message={$t('prompts.unsavedChangesMessage')}
-    confirmText={$t('prompts.discardChanges')}
-    cancelText={$t('prompts.keepEditing')}
-    variant="warning"
-    on:confirm={handleUnsavedChangesConfirm}
-    on:cancel={handleUnsavedChangesCancel}
-    on:close={handleUnsavedChangesCancel}
+    bind:isOpen={$confirmOpen}
+    title={$confirmTitle}
+    message={$confirmMessage}
+    confirmText={$confirmLabel}
+    cancelText={$confirmCancelLabel}
+    variant={$confirmVariant}
+    on:confirm={confirmDialog.confirm}
+    on:cancel={confirmDialog.cancel}
+    on:close={confirmDialog.cancel}
   />
 </div>
 

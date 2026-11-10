@@ -40,6 +40,7 @@
   import { user } from '$stores/auth';
   import Spinner from '$components/ui/Spinner.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import LLMLocalDiscovery from './LLMLocalDiscovery.svelte';
   import LLMBedrockFields from './LLMBedrockFields.svelte';
@@ -145,9 +146,16 @@
   $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
   const bedrockDefaults = getProviderDefaults('bedrock');
 
-  // Unsaved changes modal
-  let showUnsavedChangesModal = false;
-  let pendingCloseAction: (() => void) | null = null;
+  // Unsaved changes dialog
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    cancelText: confirmCancelLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   // Track when the modal was last opened to prevent repeated form population
   let lastEditingConfigId: string | null = null;
@@ -240,9 +248,16 @@
 
   function closeModal(force: boolean = false) {
     if (!force && isDirty) {
-      // Show professional confirmation modal instead of browser alert
-      pendingCloseAction = () => executeCloseModal();
-      showUnsavedChangesModal = true;
+      confirmDialog.request(
+        $t('llm.unsavedChanges'),
+        $t('llm.unsavedChangesMessage'),
+        executeCloseModal,
+        {
+          confirmText: $t('llm.discardChanges'),
+          cancelText: $t('llm.keepEditing'),
+          variant: 'warning',
+        }
+      );
       return;
     }
 
@@ -254,19 +269,6 @@
     dispatch('close');
     // Reset form state
     resetForm();
-  }
-
-  function handleUnsavedChangesConfirm() {
-    if (pendingCloseAction) {
-      pendingCloseAction();
-      pendingCloseAction = null;
-    }
-    showUnsavedChangesModal = false;
-  }
-
-  function handleUnsavedChangesCancel() {
-    showUnsavedChangesModal = false;
-    pendingCloseAction = null;
   }
 
   async function saveConfiguration() {
@@ -450,7 +452,7 @@ let _llmConfigModalWasOpen = false;
     else unlockScroll();
     _llmConfigModalWasOpen = anyOpen;
   }
-  $: syncScrollLock(show || showUnsavedChangesModal);
+  $: syncScrollLock(show);
 
   onDestroy(() => {
     if (_llmConfigModalWasOpen) unlockScroll();
@@ -840,17 +842,17 @@ let _llmConfigModalWasOpen = false;
       </form>
 </BaseModal>
 
-<!-- Unsaved Changes Modal -->
+<!-- Unsaved changes -->
 <ConfirmationModal
-  bind:isOpen={showUnsavedChangesModal}
-  title={$t('llm.unsavedChanges')}
-  message={$t('llm.unsavedChangesMessage')}
-  confirmText={$t('llm.discardChanges')}
-  cancelText={$t('llm.keepEditing')}
-  variant="warning"
-  on:confirm={handleUnsavedChangesConfirm}
-  on:cancel={handleUnsavedChangesCancel}
-  on:close={handleUnsavedChangesCancel}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  cancelText={$confirmCancelLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

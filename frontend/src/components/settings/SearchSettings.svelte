@@ -8,12 +8,20 @@
   import { createPoller } from '$lib/utils/poller';
   import { toastStore } from '$stores/toast';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
   import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
 
-  let showModelChangeModal = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   interface EmbeddingModel {
     model_id: string;
@@ -99,7 +107,6 @@
   // Operator-triggered re-embed of neural-search degraded (text-only) files (issue #626,
   // the follow-up to #625's bootstrap self-heal). Preview + confirm, never dispatch-on-click.
   let degradedPreview: DegradedPreview | null = null;
-  let showReembedModal = false;
   let isCheckingDegraded = false;
   let isReembedding = false;
 
@@ -200,15 +207,22 @@
 
   function openReembedModal() {
     if (!degradedPreview || degradedPreview.total_files === 0) return;
-    showReembedModal = true;
+    const preview = degradedPreview;
+    const truncatedNote = preview.truncated
+      ? ' ' + $t('settings.search.reembedModalTruncated', { count: preview.total_files })
+      : '';
+    confirmDialog.request(
+      $t('settings.search.reembedModalTitle'),
+      $t('settings.search.reembedModalMessage', {
+        count: preview.total_files,
+        userPhrase: $t('settings.search.userCount', { count: preview.affected_users }),
+      }) + truncatedNote,
+      reembed,
+      { confirmText: $t('settings.search.reembedButton') }
+    );
   }
 
-  function cancelReembed() {
-    showReembedModal = false;
-  }
-
-  async function confirmReembed() {
-    showReembedModal = false;
+  async function reembed() {
     isReembedding = true;
     try {
       const res = await axiosInstance.post('/search/reembed-degraded');
@@ -262,7 +276,15 @@
 
   function handleModelChange() {
     if (selectedModelId === currentModelId) return;
-    showModelChangeModal = true;
+    confirmDialog.request(
+      $t('settings.search.modelChangeTitle'),
+      $t('search.modelChangeWarning'),
+      switchModel,
+      {
+        confirmText: $t('settings.search.applyAndReindex'),
+        onCancel: () => (selectedModelId = currentModelId),
+      }
+    );
   }
 
   // Downloading weights takes minutes, so this reports progress rather than blocking
@@ -293,8 +315,7 @@
     }
   }
 
-  async function confirmModelChange() {
-    showModelChangeModal = false;
+  async function switchModel() {
     isSwitchingModel = true;
     try {
       const res = await axiosInstance.post('/search/models', {
@@ -310,11 +331,6 @@
     } finally {
       isSwitchingModel = false;
     }
-  }
-
-  function cancelModelChange() {
-    showModelChangeModal = false;
-    selectedModelId = currentModelId;
   }
 
   async function handleReindexAll() {
@@ -628,32 +644,15 @@
 {/if}
 
 <ConfirmationModal
-  isOpen={showModelChangeModal}
-  title={$t('settings.search.modelChangeTitle')}
-  message={$t('search.modelChangeWarning')}
-  confirmText={$t('settings.search.applyAndReindex')}
-  on:confirm={confirmModelChange}
-  on:cancel={cancelModelChange}
-  on:close={cancelModelChange}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
-
-<ConfirmationModal
-  isOpen={showReembedModal}
-  title={$t('settings.search.reembedModalTitle')}
-  message={degradedPreview
-    ? $t('settings.search.reembedModalMessage', {
-        count: degradedPreview.total_files,
-        userPhrase: $t('settings.search.userCount', { count: degradedPreview.affected_users }),
-      }) + (degradedPreview.truncated
-        ? ' ' + $t('settings.search.reembedModalTruncated', { count: degradedPreview.total_files })
-        : '')
-    : ''}
-  confirmText={$t('settings.search.reembedButton')}
-  on:confirm={confirmReembed}
-  on:cancel={cancelReembed}
-  on:close={cancelReembed}
-/>
-
 
 <style>
 

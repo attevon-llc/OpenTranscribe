@@ -610,3 +610,32 @@ to `start` or `reset` is an error rather than being ignored (a mistyped `--fresh
 against the live stack), `rebuild-frontend` and `rebuild-backend` refuse options they do not
 implement, and a declined `reset`, `remove` or `purge` confirmation exits `1`. `--dry-run` writes
 nothing, including with `--with-pki`, and does not build or pull images.
+
+## Extensions that import OpenTranscribe modules
+
+**Check this if...** you run your own Python package on top of the backend image (extra routers,
+a capability resolver, custom sign-in) and it imports from `app.*`.
+
+`CLOUD_SEAM_VERSION` (`backend/app/auth/constants.py`) is now `14` (it was `13`). Several large
+modules were split by concern and no compatibility aliases were kept, so an extension that
+imports a moved name fails when it is imported, not when a request arrives.
+
+| Old import | New import |
+|---|---|
+| `app.core.constants.CeleryQueues` | `app.core.queues.CeleryQueues` |
+| `app.services.task_detection_service.RECOVERED_AFTER_STUCK` | `app.core.task_config.RECOVERED_AFTER_STUCK` |
+| `app.core.constants.DEFAULT_CHAT_*` | `app.core.chat_defaults.DEFAULT_CHAT_*` |
+| `app.auth.audit.query_audit_logs` | `app.auth.audit_query.query_audit_logs` |
+| `app.core.capabilities.require_capability` | `app.api.capability_dependency.require_capability` |
+| `app.core.security.create_access_token` | `app.auth.direct_auth.create_access_token` (signature changed) |
+
+The second access-token issuer was removed. Call
+`app.auth.direct_auth.create_access_token(data, expires_delta)` and put your own claims in
+`data` beside `sub`. The issuer always sets `exp`, `iat`, `jti` and `type` itself and ignores
+your values for them, and tokens no longer carry an `alg_version` claim. Code that read the
+client address from `app.auth.dependencies._get_client_info` should call
+`app.utils.client_ip.resolve_client_ip(request)` instead.
+
+After updating the imports, run `python -c "import <your_extension>"` in the new backend image
+before you deploy. The names an extension may rely on are listed in
+`backend/tests/fixtures/extension_surface.txt`; a test fails when one of them moves.

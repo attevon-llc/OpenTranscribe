@@ -13,6 +13,7 @@ from collections.abc import Callable
 from app.core.pipeline_constants import ASR_SEGMENT_MAX_DURATION_SECONDS
 from app.core.pipeline_constants import ASR_SEGMENT_MIN_GAP_SECONDS
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
+from app.utils.module_probe import module_available
 
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
@@ -51,9 +52,7 @@ class AssemblyAIProvider(ASRProvider):
     def validate_connection(self) -> tuple[bool, str, float]:
         """Test connectivity with a lightweight list-transcripts call (limit=1)."""
         start = time.time()
-        try:
-            import assemblyai as aai  # noqa: F401 - import-availability probe
-        except ImportError:
+        if not module_available("assemblyai"):
             return False, "assemblyai not installed. Run: pip install 'assemblyai>=0.30.0'", 0.0
         try:
             import requests as _requests

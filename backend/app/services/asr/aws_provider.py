@@ -33,6 +33,7 @@ from app.core.env import env_str
 from app.core.pipeline_constants import ASR_SEGMENT_MAX_DURATION_SECONDS
 from app.core.pipeline_constants import ASR_SEGMENT_MIN_GAP_SECONDS
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
+from app.utils.module_probe import module_available
 
 from .base import ASRProvider
 from .types import ASRConfig
@@ -226,9 +227,7 @@ class AWSTranscribeProvider(ASRProvider):
     def validate_connection(self) -> tuple[bool, str, float]:
         """Test credentials by listing transcription jobs (MaxResults=1)."""
         start = time.time()
-        try:
-            import boto3  # noqa: F401 - import-availability probe
-        except ImportError:
+        if not module_available("boto3"):
             return False, "boto3 not installed. Run: pip install boto3", 0.0
         if not settings.AWS_TRANSCRIBE_BUCKET.strip():
             return False, BUCKET_REQUIRED_MESSAGE, 0.0
@@ -252,7 +251,6 @@ class AWSTranscribeProvider(ASRProvider):
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> ASRResult:
         try:
-            import boto3  # noqa: F401 - import-availability probe
             from botocore.exceptions import ClientError
         except ImportError as err:
             raise RuntimeError("boto3 not installed. Run: pip install boto3") from err

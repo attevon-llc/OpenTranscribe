@@ -19,6 +19,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
+from app.utils.module_probe import module_available
 
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
@@ -59,9 +60,7 @@ class SpeechmaticsProvider(ASRProvider):
     def validate_connection(self) -> tuple[bool, str, float]:
         """Test credentials with a lightweight list-jobs call (limit=1)."""
         start = time.time()
-        try:
-            import speechmatics.batch  # noqa: F401 - import-availability probe
-        except ImportError:
+        if not module_available("speechmatics.batch"):
             return (
                 False,
                 "speechmatics-batch not installed. Run: pip install speechmatics-batch",

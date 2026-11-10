@@ -408,8 +408,7 @@
 
           <!-- API Key / Secret Access Key -->
           {#if selectedProvider.requires_api_key}
-            <div class="form-group">
-              <label for="asr-apikey">{selectedProvider.requires_access_key_id ? $t('settings.asrProvider.fields.secretAccessKey') : $t('settings.asrProvider.fields.apiKey')}</label>
+            <FormField id="asr-apikey" label={selectedProvider.requires_access_key_id ? $t('settings.asrProvider.fields.secretAccessKey') : $t('settings.asrProvider.fields.apiKey')}>
               <div class="input-with-toggle">
                 <input dir="ltr"
                   id="asr-apikey"
@@ -423,7 +422,7 @@
                   {showApiKey ? 'Hide' : 'Show'}
                 </button>
               </div>
-            </div>
+            </FormField>
           {/if}
 
           <!-- Region (Azure / AWS) -->
@@ -529,17 +528,7 @@
     flex-shrink: 0;
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
 
   .form-input, .form-select {
     padding: var(--space-2) var(--space-3);
@@ -772,7 +761,6 @@
       justify-content: center;
     }
 
-    .form-group input,
     :global(.form-field) input,
     :global(.form-field) select {
       min-height: 44px;

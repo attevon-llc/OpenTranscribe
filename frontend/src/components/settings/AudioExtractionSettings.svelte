@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import Toggle from '$components/ui/Toggle.svelte';
   import InfoIcon from '$components/ui/InfoIcon.svelte';
   import { onMount } from 'svelte';
@@ -89,7 +90,7 @@
   {:else}
     <div class="settings-form">
       <!-- Auto Extract Enabled -->
-      <div class="form-group">
+      <div class="form-field">
         <div class="toggle-group">
           <div class="toggle-header">
             <label for="auto-extract" class="toggle-label">
@@ -103,13 +104,12 @@
           {#if autoExtractEnabled}
             <!-- Depends on the switch above, so it sits directly beneath it (label, then control). -->
             <div class="dependent-field" data-testid="threshold-field">
-              <label for="threshold" class="form-label">
-                {$t('settings.audioExtraction.threshold')}
-                <span class="label-hint">{$t('settings.audioExtraction.thresholdHint')}</span>
-              </label>
+              <FormField id="threshold" label={$t('settings.audioExtraction.threshold')} labelSize="md" hint={$t('settings.audioExtraction.thresholdInfo', { size: extractionThresholdMb })} let:describedby>
+                <span class="label-hint" slot="label-inline">{$t('settings.audioExtraction.thresholdHint')}</span>
               <div class="threshold-input-group">
                 <input
                   id="threshold"
+                  aria-describedby={describedby}
                   type="number"
                   min="1"
                   max="10000"
@@ -118,9 +118,7 @@
                 />
                 <span class="threshold-unit" dir="ltr">MB</span>
               </div>
-              <p class="input-hint">
-                {$t('settings.audioExtraction.thresholdInfo', { size: extractionThresholdMb })}
-              </p>
+              </FormField>
             </div>
           {/if}
         </div>
@@ -128,7 +126,7 @@
 
       {#if autoExtractEnabled}
         <!-- Show Modal -->
-        <div class="form-group">
+        <div class="form-field">
           <div class="toggle-group">
             <div class="toggle-header">
               <label for="show-modal" class="toggle-label">
@@ -143,7 +141,7 @@
         </div>
 
         <!-- Remember Choice -->
-        <div class="form-group">
+        <div class="form-field">
           <div class="toggle-group">
             <div class="toggle-header">
               <label for="remember-choice" class="toggle-label">
@@ -216,19 +214,7 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
 
-  .form-label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
 
   .label-hint {
     font-size: var(--font-size-sm);
@@ -304,11 +290,6 @@
     font-size: var(--font-size-sm);
   }
 
-  .input-hint {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-  }
 
   .form-actions {
     display: flex;

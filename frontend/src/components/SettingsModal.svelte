@@ -748,7 +748,7 @@
             </select>
           </FormField>
 
-          <div class="form-group">
+          <div class="form-field">
             <label class="checkbox-label">
               <input
                 type="checkbox"
@@ -1444,17 +1444,7 @@
     gap: var(--space-4);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
-  }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);

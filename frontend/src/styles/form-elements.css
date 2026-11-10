@@ -696,6 +696,9 @@ button:disabled {
   flex-direction: column;
   gap: var(--space-1-5);
 }
+:where(.form-field-spaced) {
+  margin-bottom: var(--space-4);
+}
 :where(.form-field-lg) {
   gap: var(--space-2);
 }
@@ -709,6 +712,28 @@ button:disabled {
 }
 :where(.form-field-label-md .form-field-label) {
   font-size: var(--font-size-md);
+}
+:where(.form-field-label-base .form-field-label) {
+  font-size: var(--font-size-base);
+}
+:where(fieldset.form-field) {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+:where(.form-field > legend) {
+  padding: 0;
+  margin-bottom: var(--space-1-5);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-color);
+}
+:where(.form-field-label-md > legend) {
+  font-size: var(--font-size-md);
+}
+:where(.form-field-label-base > legend) {
+  font-size: var(--font-size-base);
 }
 :where(.form-field-hint) {
   margin: 0;

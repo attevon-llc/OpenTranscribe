@@ -122,16 +122,15 @@
           </select>
         </FormField>
 
-        <div class="form-group">
-          <label for="link-identity-identifier">
-            {#if provider === 'oidc'}
-              {$t('userManagement.linkIdentity.identifierOidc')}
-            {:else if provider === 'ldap'}
-              {$t('userManagement.linkIdentity.identifierLdap')}
-            {:else}
-              {$t('userManagement.linkIdentity.identifierPki')}
-            {/if}
-          </label>
+        <FormField
+          id="link-identity-identifier"
+          labelSize="md"
+          label={provider === 'oidc'
+            ? $t('userManagement.linkIdentity.identifierOidc')
+            : provider === 'ldap'
+              ? $t('userManagement.linkIdentity.identifierLdap')
+              : $t('userManagement.linkIdentity.identifierPki')}
+        >
           <input
             type="text"
             id="link-identity-identifier"
@@ -140,7 +139,7 @@
             maxlength="512"
             required
           />
-        </div>
+        </FormField>
 
         <p class="modal-note">{$t('userManagement.linkIdentity.note')}</p>
       {/if}
@@ -194,15 +193,5 @@
     line-height: 1.5;
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
 
-  .form-group label {
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
 </style>

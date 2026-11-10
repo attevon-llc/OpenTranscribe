@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import Toggle from '$components/ui/Toggle.svelte';
   import { onMount } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -203,11 +204,10 @@
       {/if}
 
       <!-- Context Text -->
-      <div class="form-group">
-        <label for="org-context-text" class="form-label">
-          {$t('settings.orgContext.label')}
+      <FormField class="form-field-spaced" id="org-context-text" label={$t('settings.orgContext.label')} labelSize="md">
+        <svelte:fragment slot="label-inline">
           <span class="label-hint">{$t('settings.orgContext.labelHint')}</span>
-        </label>
+        </svelte:fragment>
         <textarea
           id="org-context-text"
           class="form-textarea"
@@ -219,10 +219,10 @@
         <div class="char-counter" class:char-warning={charLimitWarning}>
           {charCount.toLocaleString()} / 10,000
         </div>
-      </div>
+      </FormField>
 
       <!-- Include in Default Prompts -->
-      <div class="form-group">
+      <div class="form-field">
         <div class="toggle-group">
           <div class="toggle-header">
             <label for="include-default" class="toggle-label">
@@ -237,7 +237,7 @@
       </div>
 
       <!-- Include in Custom Prompts -->
-      <div class="form-group">
+      <div class="form-field">
         <div class="toggle-group">
           <div class="toggle-header">
             <label for="include-custom" class="toggle-label">
@@ -252,7 +252,7 @@
       </div>
 
       <!-- Share with all users -->
-      <div class="form-group">
+      <div class="form-field">
         <div class="toggle-group">
           <div class="toggle-header">
             <label for="share-context" class="toggle-label">
@@ -365,19 +365,7 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
 
-  .form-label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
 
   .label-hint {
     font-size: var(--font-size-sm);

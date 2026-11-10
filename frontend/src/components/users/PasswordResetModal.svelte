@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
@@ -68,9 +69,8 @@
   </p>
 
   <form id="password-reset-form" on:submit|preventDefault={executePasswordReset} class="password-reset-form">
-    <div class="form-group">
-      <div class="password-header">
-        <label for="reset-password">{$t('userManagement.newPassword')}</label>
+    <FormField class="form-field-spaced" id="reset-password" label={$t('userManagement.newPassword')} hint={$t('userManagement.minimumCharacters', { min: passwordMinLength })} let:describedby>
+      <svelte:fragment slot="label-after">
         <button
           type="button"
           class="toggle-password"
@@ -80,22 +80,20 @@
         >
           <EyeIcon visible={showResetPassword} />
         </button>
-      </div>
+      </svelte:fragment>
       <input
         type={showResetPassword ? 'text' : 'password'}
-        id="reset-password"
+        id="reset-password" aria-describedby={describedby}
         class="form-control"
         bind:value={resetPassword}
         placeholder={$t('userManagement.enterNewPassword')}
         required
         minlength={passwordMinLength}
       />
-      <small class="form-text">{$t('userManagement.minimumCharacters', { min: passwordMinLength })}</small>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <div class="password-header">
-        <label for="confirm-reset-password">{$t('userManagement.confirmPassword')}</label>
+    <FormField class="form-field-spaced" id="confirm-reset-password" label={$t('userManagement.confirmPassword')}>
+      <svelte:fragment slot="label-after">
         <button
           type="button"
           class="toggle-password"
@@ -105,7 +103,7 @@
         >
           <EyeIcon visible={showConfirmResetPassword} />
         </button>
-      </div>
+      </svelte:fragment>
       <input
         type={showConfirmResetPassword ? 'text' : 'password'}
         id="confirm-reset-password"
@@ -115,7 +113,7 @@
         required
         minlength={passwordMinLength}
       />
-    </div>
+    </FormField>
   </form>
 
   <svelte:fragment slot="footer">
@@ -141,17 +139,9 @@
 <style>
   /* Declarations and order carried over from UserManagementTable.svelte, on tokens of the
      same value. */
-  .form-group {
-    margin-block-end: var(--space-2);
-  }
 
-  .form-group label {
-    display: block;
-    margin-block-end: var(--space-1);
-    font-size: var(--font-size-sm);
-  }
 
-  .form-group input {
+  :global(.form-field) input {
     width: 100%;
     padding: var(--space-2);
     font-size: var(--font-size-sm);
@@ -173,23 +163,8 @@
     gap: var(--space-4);
   }
 
-  .password-reset-form .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .password-reset-form label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
-  }
 
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
 
   .toggle-password {
     background: none;
@@ -213,9 +188,4 @@
     font-size: var(--font-size-sm);
   }
 
-  .password-reset-form .form-text {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-    margin-block-start: var(--space-0-5);
-  }
 </style>

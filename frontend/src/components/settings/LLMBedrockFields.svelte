@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   /**
    * The Amazon Bedrock account fields of an LLM configuration: region and (optionally) the
    * configuration's own AWS access key.
@@ -99,18 +100,16 @@
     {/if}
   </p>
 
-  <div class="form-group">
-    <label for="bedrock-region">{$t('llm.bedrock.region')}</label>
+  <FormField class="form-field-spaced" id="bedrock-region" label={$t('llm.bedrock.region')} labelSize="base">
     <select id="bedrock-region" class="form-control" bind:value={region} {disabled} dir="ltr">
       <option value="">{$t('llm.bedrock.regionServerDefault')}</option>
       {#each regionOptions as option (option)}
         <option value={option}>{option}</option>
       {/each}
     </select>
-  </div>
+  </FormField>
 
-  <div class="form-group">
-    <label for="bedrock-access-key-id">{$t('llm.bedrock.accessKeyId')}</label>
+  <FormField class="form-field-spaced" id="bedrock-access-key-id" label={$t('llm.bedrock.accessKeyId')} labelSize="base">
     <input
       type="text"
       id="bedrock-access-key-id"
@@ -123,10 +122,9 @@
       dir="ltr"
       placeholder={hasSavedCredentials ? $t('llm.bedrock.savedHint') : ''}
     />
-  </div>
+  </FormField>
 
-  <div class="form-group">
-    <label for="bedrock-secret-access-key">{$t('llm.bedrock.secretAccessKey')}</label>
+  <FormField class="form-field-spaced" id="bedrock-secret-access-key" label={$t('llm.bedrock.secretAccessKey')} labelSize="base">
     <input
       type="password"
       id="bedrock-secret-access-key"
@@ -141,10 +139,9 @@
     {#if pairIncomplete}
       <p class="field-error" role="alert">{$t('llm.bedrock.pairRequired')}</p>
     {/if}
-  </div>
+  </FormField>
 
-  <div class="form-group">
-    <label for="bedrock-session-token">{$t('llm.bedrock.sessionToken')}</label>
+  <FormField class="form-field-spaced" id="bedrock-session-token" label={$t('llm.bedrock.sessionToken')} labelSize="base">
     <input
       type="password"
       id="bedrock-session-token"
@@ -155,7 +152,7 @@
       spellcheck="false"
       dir="ltr"
     />
-  </div>
+  </FormField>
 
   {#if hasSavedCredentials}
     <label class="remove-row" for="bedrock-clear-credentials">
@@ -226,16 +223,7 @@
     color: var(--text-muted);
   }
 
-  .form-group {
-    margin-bottom: var(--space-4);
-  }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
 
   .form-control {
     width: 100%;

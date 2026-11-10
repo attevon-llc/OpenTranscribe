@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   /**
    * Attach email configs to ONE watch source, with per-link options (#490).
    *
@@ -202,21 +203,22 @@
                 </label>
               </div>
 
-              <div class="form-group">
-                <label for={`recipients-${link.email_config_uuid}`}>
-                  {$t('settings.emailNotifications.links.additionalRecipients')}
-                </label>
+              <FormField
+                id={`recipients-${link.email_config_uuid}`}
+                label={$t('settings.emailNotifications.links.additionalRecipients')}
+                labelSize="md"
+                hint={$t('settings.emailNotifications.links.recipientsHint')}
+                let:describedby
+              >
                 <input
                   id={`recipients-${link.email_config_uuid}`}
+                  aria-describedby={describedby}
                   class="form-input"
                   type="text"
                   bind:value={link.additional_recipients}
                   placeholder={$t('settings.emailNotifications.links.recipientsPlaceholder')}
                 />
-                <small class="form-hint">
-                  {$t('settings.emailNotifications.links.recipientsHint')}
-                </small>
-              </div>
+              </FormField>
 
               {#each warningsFor(link) as warning (warning)}
                 <div class="link-warning">{warning}</div>
@@ -341,20 +343,6 @@
     flex: none;
     cursor: pointer;
     accent-color: var(--primary-color);
-  }
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-  .form-group label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-  }
-  .form-hint {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    font-style: italic;
   }
   .link-warning {
     margin-top: var(--space-2);

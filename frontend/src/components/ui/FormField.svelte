@@ -13,6 +13,8 @@
       <input id="email" aria-describedby={describedby} aria-invalid={invalid} bind:value={email} />
     </FormField>
 
+  The `label-inline` slot sits inside the label (an InfoTip or a muted hint span); the `label-after` slot sits beside it.
+
   `required` only draws the asterisk (aria-hidden); the caller also sets `required` on the control
   so the state is announced natively. The `after-hint` slot holds a second hint line or a
   conditional warning below the hint; it gets an id and is part of `describedby`. The `label-after` slot puts controls beside the label, such
@@ -26,7 +28,7 @@
   export let required = false;
   export let size: 'md' | 'lg' = 'md';
   // 'md' keeps a 14px label (--font-size-md) for forms whose labels were already that large.
-  export let labelSize: 'sm' | 'md' = 'sm';
+  export let labelSize: 'sm' | 'md' | 'base' = 'sm';
   // Extra class on the wrapper, e.g. a fixed-width or flex rule from the parent form.
   let className = '';
   export { className as class };
@@ -40,14 +42,15 @@
 
 <div class="form-field {className}" class:form-field-lg={size === 'lg'}
   class:form-field-label-md={labelSize === 'md'}
+  class:form-field-label-base={labelSize === 'base'}
 >
   {#if $$slots['label-after']}
     <div class="form-field-header">
-      <label for={id} class="form-field-label">{label}{#if required}<span aria-hidden="true"> *</span>{/if}</label>
+      <label for={id} class="form-field-label">{label}{#if required}<span aria-hidden="true"> *</span>{/if}<slot name="label-inline" /></label>
       <slot name="label-after" />
     </div>
   {:else}
-    <label for={id} class="form-field-label">{label}{#if required}<span aria-hidden="true"> *</span>{/if}</label>
+    <label for={id} class="form-field-label">{label}{#if required}<span aria-hidden="true"> *</span>{/if}<slot name="label-inline" /></label>
   {/if}
   <slot {describedby} {invalid} />
   {#if hint}

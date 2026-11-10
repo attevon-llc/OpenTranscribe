@@ -730,15 +730,15 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <div class="textarea-header">
-          <label for="prompt_text">{$t('prompts.promptText')}</label>
+      <FormField id="prompt_text" label={$t('prompts.promptText')} labelSize="sm" hint={$t('prompts.promptTextHelp')} let:describedby>
+        <svelte:fragment slot="label-after">
           {#if formData.prompt_text.trim()}
             <PromptCopyButton text={formData.prompt_text} />
           {/if}
-        </div>
+        </svelte:fragment>
         <textarea
           id="prompt_text"
+          aria-describedby={describedby}
           bind:value={formData.prompt_text}
           disabled={saving}
           class="form-control textarea"
@@ -746,9 +746,6 @@
           placeholder={$t('prompts.promptTextPlaceholder')}
           required
         ></textarea>
-        <small class="form-text">
-          {$t('prompts.promptTextHelp')}
-        </small>
         <div class="llm-hint">
           <strong>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tip-icon">
@@ -765,7 +762,7 @@
             {$t('prompts.llmTip')}
           </strong> {$t('prompts.llmTipText')}
         </div>
-      </div>
+      </FormField>
     </form>
     <svelte:fragment slot="footer">
       <button type="button" class="modal-button modal-cancel-button"
@@ -1211,12 +1208,6 @@
     transform: scale(1);
   }
 
-  .textarea-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
 
   .prompt-text-header {
     display: flex;
@@ -1232,11 +1223,6 @@
     gap: var(--space-5);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
 
   label {
     font-weight: var(--font-weight-medium);
@@ -1261,10 +1247,6 @@
     cursor: not-allowed;
   }
 
-  .form-text {
-    font-size: 0.8rem;
-    color: var(--text-light);
-  }
 
   @media (max-width: 768px) {
     .section-header {

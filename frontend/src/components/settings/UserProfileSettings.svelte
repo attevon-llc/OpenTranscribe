@@ -225,9 +225,8 @@
     <div class="profile-card">
       <h4 class="card-title">{$t('settings.profile.changePassword')}</h4>
       <form on:submit|preventDefault={updatePassword} class="settings-form">
-        <div class="form-group">
-          <div class="password-header">
-            <label for="currentPassword">{$t('settings.profile.currentPassword')}</label>
+        <FormField id="currentPassword" label={$t('settings.profile.currentPassword')}>
+          <svelte:fragment slot="label-after">
             <button
               type="button"
               class="toggle-password"
@@ -237,18 +236,17 @@
             >
               <EyeIcon visible={showCurrentPassword} />
             </button>
-          </div>
+          </svelte:fragment>
           <input
             type={showCurrentPassword ? 'text' : 'password'}
             id="currentPassword"
             class="form-control"
             bind:value={currentPassword}
           />
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <div class="password-header">
-            <label for="newPassword">{$t('settings.profile.newPassword')}</label>
+        <FormField id="newPassword" label={$t('settings.profile.newPassword')}>
+          <svelte:fragment slot="label-after">
             <button
               type="button"
               class="toggle-password"
@@ -258,7 +256,7 @@
             >
               <EyeIcon visible={showNewPassword} />
             </button>
-          </div>
+          </svelte:fragment>
           <input
             type={showNewPassword ? 'text' : 'password'}
             id="newPassword"
@@ -268,11 +266,10 @@
           <small class="form-text" data-testid="password-requirements"
             >{passwordRequirements.map((r) => $t(r.key, r.params)).join(' · ')}</small
           >
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <div class="password-header">
-            <label for="confirmPassword">{$t('settings.profile.confirmNewPassword')}</label>
+        <FormField id="confirmPassword" label={$t('settings.profile.confirmNewPassword')}>
+          <svelte:fragment slot="label-after">
             <button
               type="button"
               class="toggle-password"
@@ -282,14 +279,14 @@
             >
               <EyeIcon visible={showConfirmPassword} />
             </button>
-          </div>
+          </svelte:fragment>
           <input
             type={showConfirmPassword ? 'text' : 'password'}
             id="confirmPassword"
             class="form-control"
             bind:value={confirmPassword}
           />
-        </div>
+        </FormField>
 
         {#if passwordError}
           <p class="form-text password-error" role="alert">{passwordError}</p>
@@ -393,17 +390,7 @@
     gap: var(--space-4);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
-  }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
@@ -421,11 +408,6 @@
     margin-top: var(--space-0-5);
   }
 
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
 
   .toggle-password {
     background: none;

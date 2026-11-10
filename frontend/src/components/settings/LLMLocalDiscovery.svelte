@@ -33,7 +33,7 @@
       : $t('llm.discovery.summaryNone');
 </script>
 
-<div class="discovery-panel form-group">
+<div class="discovery-panel form-field">
   <ExpandableSection
     title={$t('llm.discovery.title')}
     bind:expanded

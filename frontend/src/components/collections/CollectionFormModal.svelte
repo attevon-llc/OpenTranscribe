@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
@@ -41,8 +42,7 @@
 
 <BaseModal isOpen={true} {title} {titleId} size="md" onClose={() => dispatch('close')}>
   <form id="{idPrefix}-form" on:submit|preventDefault={() => dispatch('submit')} class="config-form">
-    <div class="form-group">
-      <label for={`${idPrefix}-name`}>{$t('collectionsPanel.name')}</label>
+    <FormField class="form-field-spaced" id={`${idPrefix}-name`} label={$t('collectionsPanel.name')} labelSize="base" hint={$t('collectionsPanel.nameHint')}>
       <input
         id={`${idPrefix}-name`}
         type="text"
@@ -52,11 +52,9 @@
         required
         disabled={busy}
       />
-      <span class="form-hint">{$t('collectionsPanel.nameHint')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for={`${idPrefix}-description`}>{$t('collectionsPanel.description')}</label>
+    <FormField class="form-field-spaced" id={`${idPrefix}-description`} label={$t('collectionsPanel.description')} labelSize="base" hint={$t('collectionsPanel.descriptionHint')}>
       <textarea
         id={`${idPrefix}-description`}
         bind:value={description}
@@ -65,11 +63,9 @@
         maxlength="500"
         disabled={busy}
       ></textarea>
-      <span class="form-hint">{$t('collectionsPanel.descriptionHint')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for={`${idPrefix}-prompt`}>{$t('collectionsPanel.defaultPrompt')}</label>
+    <FormField class="form-field-spaced" id={`${idPrefix}-prompt`} label={$t('collectionsPanel.defaultPrompt')} labelSize="base" hint={$t('collectionsPanel.defaultPromptHint')}>
       <select
         id={`${idPrefix}-prompt`}
         bind:value={promptId}
@@ -82,11 +78,10 @@
           </option>
         {/each}
       </select>
-      <span class="form-hint">{$t('collectionsPanel.defaultPromptHint')}</span>
-    </div>
+    </FormField>
 
     {#if showVisibility}
-      <fieldset class="form-group visibility-group" disabled={busy}>
+      <fieldset class="form-field form-field-spaced form-field-label-base visibility-group" disabled={busy}>
         <legend>{$t('collectionsPanel.visibility.label')}</legend>
         <label class="visibility-option" class:chosen={visibility === 'organization'}>
           <input
@@ -149,20 +144,8 @@
     margin: 0;
   }
 
-  .form-group {
-    margin-bottom: var(--space-5);
-  }
 
-  .form-group:last-child {
-    margin-bottom: 0;
-  }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
 
   .visibility-group {
     border: 0;

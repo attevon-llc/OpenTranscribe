@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { formatDateTime } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
@@ -185,19 +186,17 @@
       <CopyButton text={justCreatedToken} />
     </div>
   {:else}
-    <div class="form-group">
-      <label for="scim-token-name">{$t('settings.scimTokens.name')}</label>
+    <FormField class="form-field-spaced" id="scim-token-name" label={$t('settings.scimTokens.name')} labelSize="sm">
       <input
         id="scim-token-name"
         type="text"
         bind:value={newTokenName}
         placeholder={$t('settings.scimTokens.namePlaceholder')}
       />
-    </div>
-    <div class="form-group">
-      <label for="scim-token-expiry">{$t('settings.scimTokens.expiresOptional')}</label>
+    </FormField>
+    <FormField class="form-field-spaced" id="scim-token-expiry" label={$t('settings.scimTokens.expiresOptional')} labelSize="sm">
       <input id="scim-token-expiry" type="date" bind:value={newTokenExpiresAt} />
-    </div>
+    </FormField>
   {/if}
   <svelte:fragment slot="footer">
     {#if justCreatedToken}
@@ -299,20 +298,10 @@
     font-size: var(--font-size-xs);
   }
 
-  .form-group {
-    margin-bottom: var(--space-4);
-  }
 
-  .form-group label {
-    display: block;
-    margin-bottom: 0.35rem;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
 
-  .form-group input[type='text'],
-  .form-group input[type='date'] {
+  :global(.form-field) input[type='text'],
+  :global(.form-field) input[type='date'] {
     width: 100%;
   }
 

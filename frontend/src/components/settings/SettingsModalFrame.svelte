@@ -215,7 +215,7 @@
     }
 
     /* Global mobile overrides for all settings panels */
-    .settings-content :global(.form-group) {
+    .settings-content :global(.form-field) {
       min-width: 0;
     }
 

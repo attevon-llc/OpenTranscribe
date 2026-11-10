@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import Toggle from '$components/ui/Toggle.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
@@ -143,10 +144,7 @@
           {$t('settings.contentRedaction.performanceNote')}
         </p>
 
-        <div class="form-group" style="margin-top: 1rem;">
-          <label class="form-label" for="redaction-style">
-            {$t('settings.contentRedaction.style')}
-          </label>
+        <FormField class="form-field-spaced" id="redaction-style" label={$t('settings.contentRedaction.style')} labelSize="sm">
           <select id="redaction-style" class="form-select" bind:value={settings.style}>
             {#each defaults?.available_styles ?? [] as style (style)}
               <option value={style}>{labelFor($t, REDACTION_STYLE_KEYS, style)}</option>
@@ -165,7 +163,7 @@
               <span class="example-text">{examplePlain}</span>
             {/if}
           </div>
-        </div>
+        </FormField>
       </div>
 
       <!-- Detectors -->
@@ -255,7 +253,7 @@
       <!-- Toxicity threshold -->
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.toxicity')}</h3>
-        <div class="form-group">
+        <div class="form-field">
           <RangeSlider
             id="tox-threshold"
             label={$t('settings.contentRedaction.toxicityThreshold')}
@@ -271,10 +269,7 @@
       <!-- Custom words & allowlist -->
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.wordLists')}</h3>
-        <div class="form-group">
-          <label class="form-label" for="custom-words">
-            {$t('settings.contentRedaction.customWords')}
-          </label>
+        <FormField class="form-field-spaced" id="custom-words" label={$t('settings.contentRedaction.customWords')} labelSize="sm">
           <textarea
             id="custom-words"
             class="form-textarea"
@@ -282,11 +277,8 @@
             bind:value={customWordsText}
             placeholder={$t('settings.contentRedaction.customWordsPlaceholder')}
           ></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="allowlist">
-            {$t('settings.contentRedaction.allowlist')}
-          </label>
+        </FormField>
+        <FormField class="form-field-spaced" id="allowlist" label={$t('settings.contentRedaction.allowlist')} labelSize="sm">
           <textarea
             id="allowlist"
             class="form-textarea"
@@ -294,7 +286,7 @@
             bind:value={allowlistText}
             placeholder={$t('settings.contentRedaction.allowlistPlaceholder')}
           ></textarea>
-        </div>
+        </FormField>
       </div>
 
       <!-- Privacy -->
@@ -381,22 +373,7 @@
     line-height: 1.5;
   }
 
-  .form-group {
-    margin-bottom: 0;
-  }
-  .form-group + .form-group {
-    margin-top: var(--space-4);
-  }
 
-  .form-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    margin-bottom: var(--space-1-5);
-  }
 
   .form-select,
   .form-textarea {

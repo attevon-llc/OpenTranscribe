@@ -140,10 +140,9 @@ The key insight is that speaker diarization segments are typically 2-30 seconds 
 
 ### Audio Enhancement
 
-- Noise reduction (automatic)
-- Volume normalization
-- Sample rate conversion
-- Multi-channel audio support
+- Conversion to 16 kHz, mono, 16-bit PCM WAV before transcription (FFmpeg)
+- Multi-channel audio is mixed down to mono; a chosen audio track is used when the file has several
+- No noise reduction or volume normalization is applied; the audio is transcribed as recorded
 
 ## Available Models (Advanced)
 
@@ -424,10 +423,8 @@ Improve transcription accuracy for domain-specific terminology by adding custom 
 
 ### Punctuation & Formatting
 
-- Automatic punctuation
-- Sentence capitalization
-- Paragraph breaks
-- Quote detection
+- Punctuation and capitalization come from the Whisper model itself (cloud providers return their own)
+- Long VAD chunks are split into sentence-level segments with NLTK; there is no paragraph or quote detection
 
 ### Confidence Scoring
 

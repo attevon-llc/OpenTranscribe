@@ -23,6 +23,8 @@
   export let dismissible: boolean = false;
   /** Translated accessible name of the dismiss button; defaults to "Close". */
   export let dismissLabel: string = '';
+  /** `md` (14px) is the default; `body` (15px) where the text it replaces was reading size (auth pages). */
+  export let size: 'md' | 'body' = 'md';
   export let live: 'auto' | 'off' | 'polite' | 'assertive' = 'auto';
   /** Bottom margin after the banner; `false` where the parent already spaces its children. */
   export let spaced: boolean = true;
@@ -51,7 +53,7 @@
 </script>
 
 <div
-  class="banner banner-{tone} {className}"
+  class="banner banner-{tone} size-{size} {className}"
   class:spaced
   {role}
   data-testid={testid || undefined}
@@ -84,6 +86,10 @@
     color: var(--text-color);
     font-size: var(--font-size-md);
     line-height: 1.45;
+  }
+
+  .banner.size-body {
+    font-size: var(--font-size-body);
   }
 
   .banner.spaced {

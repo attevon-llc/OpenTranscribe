@@ -138,7 +138,7 @@
       <div class="auth-header">
         <h1>{$t('auth.acceptInvite.title')}</h1>
       </div>
-      <Banner tone="error">{errorMessage}</Banner>
+      <Banner tone="error" size="body">{errorMessage}</Banner>
       <div class="auth-links">
         <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>

@@ -82,3 +82,15 @@ describe('Banner structure', () => {
     expect(screen.getByRole('button').getAttribute('aria-label')).toBeTruthy();
   });
 });
+
+describe('Banner size', () => {
+  it('defaults to md and offers the larger body size', () => {
+    const a = render(Banner);
+    expect(a.container.querySelector('.banner')?.classList.contains('size-md')).toBe(true);
+    a.unmount();
+    const b = render(Banner, { props: { size: 'body' } });
+    const root = b.container.querySelector('.banner');
+    expect(root?.classList.contains('size-body')).toBe(true);
+    expect(root?.classList.contains('size-md')).toBe(false);
+  });
+});

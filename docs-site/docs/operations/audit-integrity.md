@@ -78,14 +78,14 @@ connection strings yourself, set `MIGRATION_DATABASE_URL` to the owner and point
 at the application role; setting `POSTGRES_APP_USER` together with an explicit `DATABASE_URL`
 and no `MIGRATION_DATABASE_URL` is refused at startup.
 
-On every start the backend migrates as the owner, creates or updates the role, re-applies its
-grants from one registry, and verifies by measurement that the runtime role really cannot
+On every start the one-shot `migrate` service migrates as the owner, creates or updates the role,
+and re-applies its grants from one registry; the backend and workers then verify by measurement that the runtime role really cannot
 rewrite audit rows. **If you asked for the split and it is not effective** (for example the
 role turned out to be a superuser, or owns a protected table), the backend and the workers
 refuse to start and log the reason.
 
 The `docker-compose.db-roles.yml` overlay is loaded automatically when `POSTGRES_APP_USER` is
-set. It removes the owner password from every service except the backend, so a worker that
+set. It removes the owner password from every service except the one-shot `migrate` service, so a worker that
 runs ffmpeg or model code on untrusted media never holds it.
 
 To disable, unset both values and recreate. Everything connects as the owner again; the
@@ -139,7 +139,7 @@ migration runner applies and that only the table owner can use.
 ## Restores
 
 A backup is taken with `--no-acl`, so a restored database has no grants for the application
-role. The backend re-applies them on its next start (or run `python -m app.db.roles reconcile`
+role. The next run of the `migrate` service (every start of the shipped stack) re-applies them (or run `python -m app.db.roles reconcile`
 in a migrate-job deployment). The immutability triggers are part of the dump and come back
 with it.
 

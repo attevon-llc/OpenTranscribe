@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC
 from datetime import datetime
+from datetime import timedelta
 
 
 # =============================================================================
@@ -80,27 +81,35 @@ def _matches(dt: datetime, cron: tuple[set[int], set[int], set[int], set[int], s
     return dt.day in dom and cron_dow in dow
 
 
-def is_due(schedule: str, last_run_at: str | None, now: datetime | None = None) -> bool:
-    """Decide whether a backup should run at ``now`` given the last run time.
+# A never-run schedule is caught up if its cron minute fell within this window. It must exceed
+# the slowest beat tick interval (directory sync ticks every 15 min) so some tick always lands
+# inside it, yet stay short so enabling a schedule does not fire a stale occurrence at once.
+FIRST_RUN_GRACE = timedelta(minutes=30)
 
-    Fires if any cron-matching minute falls in the window ``(last_run_at, now]``.
-    On the first run (``last_run_at`` is None) only the current minute is checked, so the
-    beat can't trigger an immediate backup the instant scheduling is enabled — it waits for
-    the next matching minute. ``now`` defaults to the current UTC time (truncated to minute).
+
+def is_due(schedule: str, last_run_at: str | None, now: datetime | None = None) -> bool:
+    """Decide whether a scheduled job should run at ``now`` given the last run time.
+
+    Fires if any cron-matching minute falls in the window ``(last_run_at, now]``. Callers stamp
+    ``last_run_at`` when they dispatch, so a given occurrence fires once. A schedule that has
+    never run (``last_run_at`` None or unparseable) uses ``(now - FIRST_RUN_GRACE, now]``: any
+    beat tick shortly after the cron minute catches it, rather than only a tick landing exactly
+    on that minute. ``now`` defaults to the current UTC time (truncated to minute).
     """
     cron = parse_cron(schedule)
     now = (now or datetime.now(UTC)).replace(second=0, microsecond=0)
     if now.tzinfo is None:
         now = now.replace(tzinfo=UTC)
 
-    if not last_run_at:
-        return _matches(now, cron)
-
-    try:
-        last = datetime.fromisoformat(last_run_at)
-    except (ValueError, TypeError):
-        return _matches(now, cron)
-    if last.tzinfo is None:
+    last: datetime | None = None
+    if last_run_at:
+        try:
+            last = datetime.fromisoformat(last_run_at)
+        except (ValueError, TypeError):
+            last = None
+    if last is None:
+        last = now - FIRST_RUN_GRACE
+    elif last.tzinfo is None:
         last = last.replace(tzinfo=UTC)
     last = last.replace(second=0, microsecond=0)
 
@@ -108,8 +117,6 @@ def is_due(schedule: str, last_run_at: str | None, now: datetime | None = None) 
         return False
     # Walk minute-by-minute through the gap; cap the scan so a stale/old last_run
     # (e.g. weeks of downtime) can't loop forever — one matching minute is enough.
-    from datetime import timedelta
-
     cursor = last + timedelta(minutes=1)
     scanned = 0
     while cursor <= now and scanned < 44640:  # 31 days of minutes

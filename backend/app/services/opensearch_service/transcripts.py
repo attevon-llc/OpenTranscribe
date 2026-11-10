@@ -16,7 +16,7 @@ could never have succeeded:
 It survived because a **different** function with the same name — the real HTTP
 endpoint in ``api/endpoints/search.py`` — is live and heavily used, so grepping the
 name found working code one directory away. It was deleted rather than repaired: the
-capability was already provided elsewhere (``files/filtering.py`` builds its own
+capability was already provided elsewhere (``services/file_list_filters.py`` builds its own
 keyword query against this index for the gallery filter), so keeping a second,
 broken implementation bought nothing.
 
@@ -28,7 +28,7 @@ Who still uses this index — it is very much alive:
 
 * written here on every transcription (``tasks/transcription/{postprocess,background}``,
   ``tasks/search_indexing_task``) and retitled from ``files/crud``;
-* read directly by ``api/endpoints/files/filtering.py`` (the gallery's
+* read directly by ``services/file_list_filters.py`` (the gallery's
   transcript-content filter), ``opensearch_service/speaker_metadata.py``, the
   integrity task and ``opensearch_erasure``.
 

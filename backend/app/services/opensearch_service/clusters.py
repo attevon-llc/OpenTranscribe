@@ -218,7 +218,7 @@ def find_matching_clusters(
     except Exception as e:
         logger.error(f"Error finding matching clusters: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"cluster kNN failed: {e}") from e
+            raise OpenSearchUnavailableError("cluster kNN failed") from e
         return []
 
 

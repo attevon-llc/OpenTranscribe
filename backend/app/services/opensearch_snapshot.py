@@ -291,6 +291,11 @@ def snapshot_status() -> dict[str, Any]:
         result["repository_registered"] = bool(repos and REPO_NAME in repos)
     except NotFoundError:  # not registered yet
         result["repository_registered"] = False
+    except OpenSearchException:
+        # A timeout, a security-plugin refusal or a 5xx after a successful ping: report the
+        # repository as not registered rather than failing the whole status panel.
+        logger.warning("Could not read the OpenSearch snapshot repository", exc_info=True)
+        result["repository_registered"] = False
     names = sorted(list_snapshot_names(client), reverse=True)
     if names:
         result["last_snapshot"] = names[0]

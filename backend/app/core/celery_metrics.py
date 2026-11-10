@@ -317,7 +317,7 @@ def update_transcription_lease_metrics() -> None:
         if all(run.state != RunState.UNKNOWN for run in runs.values()):
             dead = sum(1 for run in runs.values() if run.state == RunState.DEAD)
             transcription_runs_without_lease.set(dead)
-        threshold = env_int("TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD", 3, minimum=1)
+        threshold = env_int("TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD", 3, minimum=1, clamp=True)
         requeued = files_requeued_at_least(threshold)
         if requeued is not None:
             transcription_files_infra_requeued.set(_count_in_flight(requeued))

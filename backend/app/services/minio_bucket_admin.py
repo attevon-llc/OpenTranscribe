@@ -125,12 +125,14 @@ class MinIOService:
     def list_objects(
         self, bucket_name: str, prefix: str | None = None, recursive: bool = False
     ) -> Iterator[Object]:
-        """List objects in a bucket."""
+        """List objects in a bucket.
+
+        A generator on purpose: minio-py's ``list_objects`` is lazy, so the request (and its
+        ``S3Error``) happens when the caller iterates, not when the call returns. Wrapping the
+        iteration is what makes the ``StorageError`` translation actually run.
+        """
         try:
-            objects: Iterator[Object] = self.client.list_objects(
-                bucket_name, prefix=prefix, recursive=recursive
-            )
-            return objects
+            yield from self.client.list_objects(bucket_name, prefix=prefix, recursive=recursive)
         except STORAGE_CLIENT_ERRORS as e:
             raise storage_failure("listing objects", e) from e
 

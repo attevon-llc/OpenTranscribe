@@ -308,7 +308,7 @@ def _execute_knn_search(
                     logger.exception(f"KNN search retry after repair failed: {retry_err}")
         logger.error(f"Error in OpenSearch KNN search: {e}")
         if strict:
-            raise OpenSearchUnavailableError(f"profile kNN failed: {e}") from e
+            raise OpenSearchUnavailableError("profile kNN failed") from e
         return []
 
     return _extract_matches_from_response(response, threshold)
@@ -705,5 +705,5 @@ class ProfileEmbeddingService:
             if strict:
                 if isinstance(e, OpenSearchUnavailableError):
                     raise
-                raise OpenSearchUnavailableError(f"profile similarity search failed: {e}") from e
+                raise OpenSearchUnavailableError("profile similarity search failed") from e
             return []

@@ -202,7 +202,7 @@ def _poisoned_requeue_allowed(task_id: str) -> bool:
     ``GPU_POISONED_MAX_REQUEUES`` (default 2). A Redis failure allows the requeue: Redis is
     the broker, so if it is unreachable the requeue cannot loop anyway.
     """
-    cap = env_int("GPU_POISONED_MAX_REQUEUES", 2, minimum=0)
+    cap = env_int("GPU_POISONED_MAX_REQUEUES", 2, minimum=0, clamp=True)
     key = _POISONED_REQUEUE_KEY.format(task_id=task_id)
     try:
         client = redis_core.get_redis()

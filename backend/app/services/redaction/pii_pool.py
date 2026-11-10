@@ -73,7 +73,7 @@ def _mp_context() -> BaseContext:
 
 
 def _worker_count() -> int:
-    configured = env_int("REDACTION_PII_WORKERS", 0, minimum=1)
+    configured = env_int("REDACTION_PII_WORKERS", 0, minimum=1, clamp=True)
     if configured:
         return min(MAX_WORKERS, configured)
     cores = effective_cpu_count()

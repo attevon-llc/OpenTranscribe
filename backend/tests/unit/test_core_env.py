@@ -125,3 +125,24 @@ def test_no_truthy_copies_outside_core_env():
             if _TRUTHY_ASSIGN.search(line) or _TRUTHY_LITERAL.search(line):
                 offenders.append(f"{path.relative_to(_APP)}:{lineno}")
     assert offenders == [], f"use app.core.env.is_truthy/env_bool instead: {offenders}"
+
+
+def test_env_int_clamp_pulls_an_out_of_range_value_to_the_bound(monkeypatch, caplog):
+    monkeypatch.setenv(VAR, "-5")
+    with caplog.at_level(logging.WARNING):
+        assert env_int(VAR, 2, minimum=0, clamp=True) == 0
+    assert VAR in caplog.text
+
+    monkeypatch.setenv(VAR, "900")
+    assert env_int(VAR, 2, minimum=0, maximum=100, clamp=True) == 100
+
+
+def test_env_int_clamp_still_defaults_on_unset_and_malformed(monkeypatch):
+    assert env_int(VAR, 2, minimum=1, clamp=True) == 2
+    monkeypatch.setenv(VAR, "many")
+    assert env_int(VAR, 2, minimum=1, clamp=True) == 2
+
+
+def test_env_int_without_clamp_keeps_using_the_default_out_of_range(monkeypatch):
+    monkeypatch.setenv(VAR, "-5")
+    assert env_int(VAR, 2, minimum=0) == 2

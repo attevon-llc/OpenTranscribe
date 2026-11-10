@@ -66,7 +66,7 @@ class ChunkPlaneMixin(OrphanProbeMixin):
             return 0
         except CLUSTER_UNAVAILABLE_ERRORS as e:
             logger.error(f"Error deleting chunks for file {file_uuid}: {e}")
-            raise OpenSearchUnavailableError(f"Could not delete chunks for {file_uuid}: {e}") from e
+            raise OpenSearchUnavailableError(f"Could not delete chunks for {file_uuid}") from e
 
         deleted: int = response.get("deleted", 0)
         logger.info(f"Deleted {deleted} chunks for file {file_uuid}")

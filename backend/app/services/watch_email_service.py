@@ -213,6 +213,17 @@ def _test_smtp(config: EmailNotificationConfig) -> tuple[bool, str]:
 # --------------------------------------------------------------------------- #
 # Microsoft 365 (Graph)
 # --------------------------------------------------------------------------- #
+class M365AuthError(ValueError):
+    """MSAL refused to issue a Graph token (bad secret, wrong tenant, missing consent).
+
+    MSAL reports this as an error dict, not an exception
+    (https://msal-python.readthedocs.io/en/latest/#msal.ConfidentialClientApplication.acquire_token_for_client).
+    The message is fixed: ``error_description`` can quote the tenant and client ids and must
+    not reach a response or the persisted ``test_message``. A ``ValueError`` so the existing
+    send/test handlers classify it as a failed attempt (retried by the sender).
+    """
+
+
 def _m365_token(config: EmailNotificationConfig) -> str:
     import msal
 
@@ -228,7 +239,8 @@ def _m365_token(config: EmailNotificationConfig) -> str:
     )
     result = app.acquire_token_for_client(scopes=_GRAPH_SCOPE)
     if "access_token" not in result:
-        raise RuntimeError(result.get("error_description", "MSAL token acquisition failed"))
+        logger.warning("MSAL token acquisition failed: %s", result.get("error", "unknown_error"))
+        raise M365AuthError("Microsoft 365 rejected the client credentials")
     return str(result["access_token"])
 
 

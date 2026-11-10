@@ -15,8 +15,6 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
-from minio.error import S3Error
-
 from app.core.celery import celery_app
 from app.core.queues import GPUPriority
 from app.db.session_utils import session_scope
@@ -154,6 +152,7 @@ def _stage_audio_for_embeddings(file_uuid: str, inputs: dict, temp_dir: str) -> 
     """
     import os
 
+    from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
     from app.services.minio_service import download_file
     from app.services.minio_service import download_temp_audio
     from app.services.temp_audio_probe import temp_audio_available
@@ -166,7 +165,7 @@ def _stage_audio_for_embeddings(file_uuid: str, inputs: dict, temp_dir: str) -> 
             download_temp_audio(file_uuid, audio_file_path)
             logger.info("Using preprocessed WAV for speaker embedding extraction")
             return audio_file_path
-        except (S3Error, OSError) as temp_err:
+        except STORAGE_UNAVAILABLE_ERRORS as temp_err:
             logger.warning(
                 f"Temp WAV fetch failed ({temp_err}); falling back to original", exc_info=True
             )
@@ -436,7 +435,7 @@ def extract_speaker_embeddings_task(
         # now that we're done. No-op if postprocess already cleaned it.
         try:
             cleanup_temp_audio(file_uuid)
-        except (S3Error, OSError) as cleanup_err:
+        except OSError as cleanup_err:
             logger.warning(
                 f"Temp audio cleanup after embedding extraction failed: {cleanup_err}",
                 exc_info=True,
@@ -478,7 +477,7 @@ def _fail_embedding_task(
     benchmark_timing.mark(pipeline_task_id, "speaker_upsert_end")
     try:
         cleanup_temp_audio(file_uuid)
-    except (S3Error, OSError) as cleanup_err:
+    except OSError as cleanup_err:
         logger.warning(
             f"Temp audio cleanup after embedding error failed: {cleanup_err}", exc_info=True
         )

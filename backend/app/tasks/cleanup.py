@@ -18,10 +18,10 @@ from minio.error import MinioException
 from urllib3.exceptions import HTTPError as Urllib3HTTPError
 
 from app.core.celery import celery_app
+from app.core.exceptions import StorageError
 from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
 from app.services.file_cleanup_cycle import cleanup_service
-from app.services.storage_versions import StorageDeleteIncompleteError
 from app.utils.time_format import age_seconds
 
 if TYPE_CHECKING:
@@ -30,9 +30,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: What a MinIO stat/delete can raise: an S3 error reply, a transport failure, a version
-#: that survived the delete. Anything else is a programming error and propagates.
-_STORAGE_ERRORS = (MinioException, Urllib3HTTPError, OSError, StorageDeleteIncompleteError)
+#: What ``object_exists_and_size`` (a raw client call) can raise: an S3 error reply or a
+#: transport failure. ``delete_file`` is different: it raises ``StorageError``. Anything else
+#: is a programming error and propagates.
+_STAT_ERRORS = (MinioException, Urllib3HTTPError, OSError)
 
 #: Slowest upload rate the orphan sweeper assumes a real client can sustain
 #: (~1.1 Mbit/s). A PENDING row younger than ``file_size`` at this rate may still
@@ -312,7 +313,7 @@ def orphan_upload_sweeper(self: Any, max_age_minutes: int = 30) -> dict[str, int
                 if storage_path:
                     try:
                         minio_size = object_exists_and_size(storage_path)
-                    except _STORAGE_ERRORS as stat_err:
+                    except _STAT_ERRORS as stat_err:
                         skipped_uncertain += 1
                         logger.warning(
                             f"orphan_upload_sweeper: could not confirm object absence for "
@@ -366,7 +367,7 @@ def orphan_upload_sweeper(self: Any, max_age_minutes: int = 30) -> dict[str, int
                     try:
                         delete_file(storage_path)
                         deleted_objects += 1
-                    except _STORAGE_ERRORS as obj_err:
+                    except StorageError as obj_err:
                         logger.debug(
                             f"orphan_upload_sweeper: {storage_path} not deletable "
                             f"({obj_err}); its row is already gone",

@@ -285,7 +285,8 @@ def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]
         TranscriptIndexingService().delete_transcript_chunks(file_uuid)
     except Exception as e:  # any failure is a residual; the count still runs
         logger.exception("Erasure: transcript chunk delete failed for file %s", file_uuid)
-        fail("transcript_chunks", e)
+        # The typed outage carries a fixed message; the residual keeps the cluster's own reason.
+        fail("transcript_chunks", e.__cause__ or e)
 
     try:
         from app.services.search.indexing_service import TranscriptIndexingService

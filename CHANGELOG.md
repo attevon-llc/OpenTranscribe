@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The frontend coverage floors are enforced in the local commit gate as well as CI, and were raised to the measured coverage (lines 74.1, statements 72.8, functions 71.5, branches 67.7).
 - Frontend CSS linting: Stylelint (`stylelint-config-standard`, Svelte `<style>` blocks via `postcss-html`) as `npm run lint:css` and two pre-commit hooks (staged files at commit, whole tree at push), ratcheted per file so existing `no-descending-specificity` debt can only shrink.
 - Shared `ui/Banner` notice (info, success, warning, error, neutral; `role="alert"` for errors, `role="status"` otherwise; each tone has its own icon and an inline-start accent bar), and a single global `.sr-only` utility. `ui/Spinner` takes an optional `label` and is otherwise hidden from assistive tech; status badges (`ui/Badge`, sizes `sm`/`md`) and settings empty states (`ui/EmptyState`) replace their local copies, which unifies badge radius and padding.
 - Shared button variants (`.btn-sm`, `.btn-lg`, `.btn-success`, `.btn-ghost`, `.btn-link`, `.btn-danger-outline`, `.btn-icon`) and a `ui/Button` component with busy and icon-only handling.

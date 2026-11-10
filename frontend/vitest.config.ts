@@ -102,11 +102,17 @@ export default defineConfig({
       // RATCHETED 2026-10-29: measured lines 65.70 / statements 64.25 / functions
       // 64.22 / branches 58.87 (4495 tests). The floors above were 40 points stale, so
       // CI could have lost most of its coverage and stayed green. Now measured - 1.5.
+      //
+      // RATCHETED 2026-11-10: measured lines 75.13 / statements 73.80 / functions 72.56 /
+      // branches 68.70 (721 files, 6953 tests), so the floors had drifted 11 points stale again.
+      // Now measured - 1.0: tight enough that losing a covered module fails, loose enough that
+      // a wave of parallel lanes landing new code together does not. scripts/frontend-check.sh
+      // runs `test:coverage`, so the floor fails the local commit gate as well as CI.
       thresholds: {
-        lines: 64.2,
-        statements: 62.7,
-        functions: 62.7,
-        branches: 57.3,
+        lines: 74.1,
+        statements: 72.8,
+        functions: 71.5,
+        branches: 67.7,
       },
     },
   },

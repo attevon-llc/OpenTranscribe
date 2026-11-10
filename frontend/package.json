@@ -24,6 +24,7 @@
     "test": "NODE_OPTIONS=--no-experimental-webstorage vitest run",
     "test:watch": "NODE_OPTIONS=--no-experimental-webstorage vitest",
     "test:ui": "NODE_OPTIONS=--no-experimental-webstorage vitest --ui",
+    "pretest:coverage": "svelte-kit sync",
     "test:coverage": "NODE_OPTIONS=--no-experimental-webstorage vitest run --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

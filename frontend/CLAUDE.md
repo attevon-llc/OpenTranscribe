@@ -58,6 +58,13 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   `backend/tests/unit/test_node_version_consistency.py`, gated on `.nvmrc` so it lapses if we ever
   drop below 26. If you run bare `npx vitest` on Node 26 you will hit this.
 - `npm run test:audit` — finds tests that pass whether the code works or not (below).
+- `npm run test:coverage` — the suite with v8 coverage. `coverage.thresholds` in
+  `vitest.config.ts` is **enforced, not report-only**: a run below any of the four floors exits
+  non-zero, in CI and in `scripts/frontend-check.sh` (the commit-stage hook runs
+  `test:coverage`). The floors are a **ratchet** set about 1 point under the measured value, like
+  the backend's `fail_under`: raise them (and `FLOOR_TABLE` in
+  `backend/tests/unit/test_frontend_coverage_gate.py`) when coverage rises, never lower them to
+  make a run pass.
 - **Before committing**: lint + svelte-check + build + test must be green (pre-commit enforces
   it via `scripts/frontend-check.sh`: the commit stage runs it with `--check-only`, i.e. everything
   except `vite build`, and the build runs at the push stage).

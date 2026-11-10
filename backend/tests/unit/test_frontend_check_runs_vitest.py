@@ -47,7 +47,7 @@ pytestmark = pytest.mark.skipif(
 
 #: The npm scripts that carry the frontend's actual test evidence, and what each is for.
 _REQUIRED_STEPS = {
-    "npm run test": "the vitest suite itself — 189 files, ~1,750 tests",
+    "npm run test:coverage": "the vitest suite itself, with the coverage floors evaluated",
     "npm run test:audit:selftest": (
         "the auditor's own 27 cases. It runs FIRST because a detector that stops matching "
         "reports zero findings, which is indistinguishable from a clean suite"

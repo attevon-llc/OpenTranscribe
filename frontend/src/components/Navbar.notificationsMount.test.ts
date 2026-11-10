@@ -86,6 +86,10 @@ describe('the notifications panel is mounted once', () => {
     await tick();
     expect(document.querySelectorAll('.notifications-panel')).toHaveLength(1);
     expect(document.querySelectorAll('.notifications-backdrop')).toHaveLength(1);
+    // Opening the panel starts the lazy import of its body. Let it finish inside the test:
+    // left pending, it resolves after jsdom is torn down and vitest fails the run with an
+    // EnvironmentTeardownError (seen under `test:coverage`, whose instrumentation is slower).
+    await vi.dynamicImportSettled();
   });
 
   it('only routes/+layout.svelte mounts <NotificationsPanel> anywhere in src', () => {

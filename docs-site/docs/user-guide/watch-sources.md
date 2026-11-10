@@ -14,7 +14,7 @@ be able to see the folder. Start the stack with the watch overlay and point it a
 folder:
 
 ```bash
-# WATCH_HOST_PATH is the only watch-related environment variable.
+# WATCH_HOST_PATH is the only variable the local-folder mount needs.
 WATCH_HOST_PATH=/path/to/your/media ./opentr.sh start dev --with-watch
 ```
 
@@ -23,7 +23,10 @@ This mounts your host folder to `/watch` inside the containers and creates it if
 the **Local Folder** type is hidden and only S3 and SMB sources are available (those need no
 mount).
 
-S3 and SMB need no special startup — just the connection details below.
+S3 and SMB need no special startup — just the connection details below. By default they may point
+at private or LAN addresses (a NAS is the normal case). An operator who wants S3 and SMB sources
+limited to publicly reachable hosts sets `WATCH_ALLOW_PRIVATE_ENDPOINTS=false` in `.env`; a source
+that targets an internal address is then refused when it is saved or tested.
 
 ## Adding a watch source
 

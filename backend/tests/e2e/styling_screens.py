@@ -69,6 +69,9 @@ class Screen:
     #: Wait for this selector after navigation (and before the steps) so a half-rendered
     #: page is never photographed.
     ready: str | None = None
+    #: False for a screen that holds a request open on purpose (``route:...|0``), which would
+    #: keep ``networkidle`` from ever firing.
+    network_idle: bool = True
     notes: str = field(default="", compare=False)
 
 
@@ -182,13 +185,14 @@ _APP = (
             _UPLOAD_PREPARE + "0",
             *_UPLOAD_FILE,
             *_UPLOAD_SUBMIT,
-            "wait:.upload-item",
-            "click:.collapse-btn",
+            "pause:3000",
+            "press:Escape",
             "wait:.activity-indicator",
         ),
         masks=_GALLERY_MASKS,
         full_page=False,
         ready=".upload-btn",
+        network_idle=False,
         notes="minimised badge with the activity dot while a request is held in flight",
     ),
     Screen("file-detail", "/files/{file_uuid}", ready=".transcript-segment"),

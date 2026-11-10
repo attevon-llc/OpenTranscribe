@@ -224,6 +224,13 @@ def test_upload_screens_are_in_the_manifest_and_well_formed() -> None:
         assert screens.validate((by_id[sid],)) == []
 
 
+def test_only_screens_that_hold_a_request_skip_network_idle() -> None:
+    # A held request keeps `networkidle` from firing, so exactly those screens opt out.
+    held = {s.id for s in screens.SCREENS if any(st.endswith("|0") for st in s.steps)}
+    skipping = {s.id for s in screens.SCREENS if not s.network_idle}
+    assert held == skipping == {"upload-active"}
+
+
 def test_new_step_kinds_are_rejected_when_malformed() -> None:
     bad = (screens.Screen("x", "/", steps=("pause", "route:")),)
     problems = "\n".join(screens.validate(bad))

@@ -491,7 +491,7 @@ def capture(
             # sits there differs run to run depending on timing.
             page.mouse.move(0, 0)
         page.add_style_tag(content=TRANSIENT_HIDE_CSS)
-        stabilize(page)
+        stabilize(page, network_idle=screen.network_idle)
         # The settings sidebar list scrolls the active row into view; how far it ended up
         # depends on layout timing (rows above it fill in as counts arrive), not on styling.
         # Park it at the top on both sides so the photograph is deterministic.

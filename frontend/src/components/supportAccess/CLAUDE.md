@@ -42,8 +42,7 @@ reports `tenancy_mode === 'multi'`.
 
 - `StatusChip` exists because `ui/Badge` uses brand colours as TEXT (amber on pale tint is 1.8:1).
   Use it for every grant status; keep text at AA in both themes.
-- Destructive buttons use `.btn.sa-danger` (`styles/support-access.css`), not `.btn-danger`, for the
-  same contrast reason.
+- Destructive buttons use plain `.btn-danger` (`--error-solid` fill, white label 4.83:1).
 - Times and ids render inside `<bdi>` so Arabic (RTL) does not reorder them.
 
 ## Gotchas

@@ -164,7 +164,7 @@
   }
 
   .input-shell:focus-within {
-    border-color: var(--primary-color);
+    border-color: var(--focus-ring-color);
     box-shadow: var(--field-focus-ring);
   }
 

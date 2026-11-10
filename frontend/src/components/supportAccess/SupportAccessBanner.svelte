@@ -132,7 +132,7 @@
     </button>
     <button
       type="button"
-      class="btn btn-danger sa-danger"
+      class="btn btn-danger"
       disabled={revoking}
       on:click={askRevoke}
     >

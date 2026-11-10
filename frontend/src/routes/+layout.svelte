@@ -13,7 +13,6 @@
   import "$styles/tables.css";
   import "$styles/animations.css";
   import "$styles/search.css";
-  import "$styles/support-access.css";
   import "$styles/settings-auth-panels.css";
   import "$styles/settings-ops-panels.css";
   import "$styles/settings-form-panels.css";

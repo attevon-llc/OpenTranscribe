@@ -169,7 +169,7 @@
       <button type="button" class="btn btn-secondary" on:click={close}>
         {$t('common.cancel')}
       </button>
-      <button type="submit" form="break-glass-form" class="btn btn-danger sa-danger" disabled={!canReview}>
+      <button type="submit" form="break-glass-form" class="btn btn-danger" disabled={!canReview}>
         {$t('supportAccess.breakGlass.review')}
       </button>
     {:else if step === 'confirm'}
@@ -179,7 +179,7 @@
       <button
         type="submit"
         form="break-glass-confirm"
-        class="btn btn-danger sa-danger"
+        class="btn btn-danger"
         aria-describedby="bg-typed-label"
         disabled={!nameMatches || submitting}
       >
@@ -206,7 +206,7 @@
     outline: none;
   }
   .step:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring-color);
     outline-offset: 2px;
   }
   .warning {

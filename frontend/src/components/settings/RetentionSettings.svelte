@@ -632,7 +632,7 @@
   }
 
   .confirm-check-label input[type='checkbox']:focus {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring-color);
     outline-offset: 1px;
   }
 

@@ -1486,10 +1486,6 @@
     justify-content: flex-end;
   }
 
-  .form-actions .btn-secondary {
-    margin-right: auto;
-  }
-
   .btn {
     padding: 0.6rem 1.2rem;
     border-radius: var(--radius-xl);
@@ -1506,6 +1502,11 @@
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
+  .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .btn-primary:hover:not(:disabled) {
     background-color: var(--primary-color);
     transform: scale(1.02);
@@ -1516,15 +1517,19 @@
     transform: scale(1);
   }
 
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .btn-secondary {
     background-color: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .form-actions .btn-secondary {
+    margin-right: auto;
   }
 
   .btn-secondary:hover:not(:disabled) {
@@ -1535,11 +1540,6 @@
 
   .btn-secondary:active:not(:disabled) {
     transform: scale(1);
-  }
-
-  .btn-secondary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   /* Responsive Design */

@@ -689,6 +689,11 @@
     box-shadow: var(--shadow-primary);
   }
 
+  .btn-create:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .btn-create:hover:not(:disabled) {
     background-color: var(--primary-color);
     color: var(--text-on-solid);
@@ -699,11 +704,6 @@
 
   .btn-create:active:not(:disabled) {
     transform: scale(1);
-  }
-
-  .btn-create:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .icon {

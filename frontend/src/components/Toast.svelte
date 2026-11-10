@@ -187,6 +187,11 @@
     transition: all var(--duration-base);
   }
 
+  .toast-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .toast-action:hover:not(:disabled) {
     background: var(--toast-color);
     color: var(--text-on-solid);
@@ -194,11 +199,6 @@
 
   :global([data-theme='dark']) .toast-action:hover:not(:disabled) {
     color: var(--background-color);
-  }
-
-  .toast-action:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .toast-close {

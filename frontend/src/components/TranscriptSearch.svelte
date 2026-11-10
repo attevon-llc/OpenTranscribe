@@ -411,13 +411,13 @@
     flex-shrink: 0;
   }
 
-  .jump-button:hover:not(:disabled) {
-    background: var(--primary-hover);
-  }
-
   .jump-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .jump-button:hover:not(:disabled) {
+    background: var(--primary-hover);
   }
 
   .close-button {
@@ -480,13 +480,13 @@
     height: 100%;
   }
 
-  .search-trigger-button:hover:not(:disabled) {
-    background: var(--hover-color);
-    color: var(--text-color);
-  }
-
   .search-trigger-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .search-trigger-button:hover:not(:disabled) {
+    background: var(--hover-color);
+    color: var(--text-color);
   }
 </style>

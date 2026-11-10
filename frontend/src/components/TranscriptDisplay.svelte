@@ -299,14 +299,14 @@
       color var(--duration-fast) ease;
   }
 
-  .jump-to-playhead-button:hover:not(:disabled) {
-    background: var(--button-hover);
-    color: var(--text-color);
-  }
-
   .jump-to-playhead-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .jump-to-playhead-button:hover:not(:disabled) {
+    background: var(--button-hover);
+    color: var(--text-color);
   }
 
 </style>

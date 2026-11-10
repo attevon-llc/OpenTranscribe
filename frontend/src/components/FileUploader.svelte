@@ -903,17 +903,17 @@
 
   .step-item:not(:disabled) { cursor: pointer; }
 
+  .step-item:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
   .step-item:not(:disabled):hover {
     background: rgba(var(--accent-rgb), 0.08);
   }
 
   :global([data-theme='dark']) .step-item:not(:disabled):hover {
     background: rgba(var(--accent-rgb), 0.12);
-  }
-
-  .step-item:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
   }
 
   /* Dot (child of .step-item, no longer a button itself) */
@@ -1190,18 +1190,18 @@
     box-shadow: var(--shadow-primary);
   }
 
-  .nav-next:hover:not(:disabled), .nav-submit:hover:not(:disabled) {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    box-shadow: var(--shadow-primary-hover);
-    transform: translateY(-1px);
-  }
-
   .nav-next:disabled, .nav-submit:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+  }
+
+  .nav-next:hover:not(:disabled), .nav-submit:hover:not(:disabled) {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow-primary-hover);
+    transform: translateY(-1px);
   }
 
   /* ── Responsive ── */

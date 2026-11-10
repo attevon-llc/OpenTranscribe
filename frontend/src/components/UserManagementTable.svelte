@@ -1005,6 +1005,12 @@
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
+  .create-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
   .create-button:hover:not(:disabled),
   .create-button:focus:not(:disabled) {
     background-color: var(--primary-color);
@@ -1016,12 +1022,6 @@
 
   .create-button:active:not(:disabled) {
     transform: scale(1);
-  }
-
-  .create-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
   }
 
   .users-table {
@@ -1237,6 +1237,10 @@
     color: #475569;
   }
 
+  :global([data-theme='dark']) .force-logout-button {
+    color: #cbd5e1;
+  }
+
   .force-logout-button:hover:not(:disabled) {
     background-color: #475569;
     color: var(--text-on-solid);
@@ -1245,10 +1249,6 @@
 
   .force-logout-button:active:not(:disabled) {
     transform: scale(0.95);
-  }
-
-  :global([data-theme='dark']) .force-logout-button {
-    color: #cbd5e1;
   }
 
   :global([data-theme='dark']) .force-logout-button:hover:not(:disabled) {

@@ -111,14 +111,14 @@
 
   <svelte:fragment slot="footer">
     <button
-      class="modal-button secondary-button"
+      class="btn btn-lg btn-secondary bulk-extract-button"
       on:click={handleUploadAllFull}
       type="button"
     >
       {$t('extraction.uploadAllAsVideo')}
     </button>
     <button
-      class="modal-button primary-button"
+      class="btn btn-lg btn-primary bulk-extract-button"
       on:click={handleExtractAudio}
       type="button"
     >
@@ -293,57 +293,13 @@
     font-size: var(--font-size-md);
   }
 
-  .modal-button {
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: var(--radius-xl);
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
+  .bulk-extract-button {
     min-width: 140px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-  }
-
-  .secondary-button {
-    background: var(--card-background);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  }
-
-  .secondary-button:hover {
-    background: var(--button-hover);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
-  }
-
-  .secondary-button:active {
-    transform: scale(1);
-  }
-
-  .primary-button {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: var(--shadow-primary);
-  }
-
-  .primary-button:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
-  }
-
-  .primary-button:active {
-    transform: scale(1);
   }
 
   /* Responsive design */
   @media (max-width: 768px) {
-    .modal-button {
+    .bulk-extract-button {
       width: 100%;
       min-height: 44px;
     }
@@ -360,13 +316,6 @@
     /* The glyph is already mirrored in RTL; a quarter turn the other way still points down. */
     :global([dir='rtl']) .comparison-arrow {
       transform: rotate(-90deg);
-    }
-  }
-
-  /* Reduced motion support */
-  @media (prefers-reduced-motion: reduce) {
-    .modal-button {
-      transition: none;
     }
   }
 </style>

@@ -160,12 +160,12 @@
       </div>
 
       <div class="footer-actions">
-        <button type="button" class="modal-button modal-cancel-button" on:click={close}>
+        <button type="button" class="btn btn-lg btn-secondary" on:click={close}>
           {$t('chat.picker.cancel')}
         </button>
         <button
           type="button"
-          class="modal-button modal-primary-button"
+          class="btn btn-lg btn-primary"
           on:click={confirm}
           data-testid="picker-confirm"
         >

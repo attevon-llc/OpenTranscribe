@@ -96,19 +96,18 @@
       <p class="new-speaker-hint">{$t('speaker.newSpeakerSlotHint', { label: speakerSlot })}</p>
     {/if}
     <svelte:fragment slot="footer">
-      <!-- `modal-button` / `modal-cancel-button` / `modal-primary-button` are the
-         global classes in `src/styles/form-elements.css`; the `create-speaker-*`
+      <!-- `btn` variants are the global classes in `src/styles/form-elements.css`; the `create-speaker-*`
          classes are selector hooks only and carry no styling of their own. -->
       <button
         type="button"
-        class="modal-button modal-cancel-button create-speaker-cancel"
+        class="btn btn-lg btn-secondary create-speaker-cancel"
         on:click={close}
       >
         {$t('common.cancel')}
       </button>
       <button
         type="button"
-        class="modal-button modal-primary-button create-speaker-confirm"
+        class="btn btn-lg btn-primary create-speaker-confirm"
         on:click={confirmCreate}
         disabled={!canCreate}
       >

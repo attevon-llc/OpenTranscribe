@@ -81,7 +81,7 @@
   <svelte:fragment slot="header-actions">
     <button
       type="button"
-      class="btn btn-secondary btn-small legal-fullscreen-toggle"
+      class="btn btn-secondary btn-sm legal-fullscreen-toggle"
       data-testid="legal-fullscreen-toggle"
       on:click={() => (fullscreen = !fullscreen)}
     >

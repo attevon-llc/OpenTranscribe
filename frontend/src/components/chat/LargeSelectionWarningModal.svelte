@@ -37,14 +37,14 @@
     <div class="warning-actions">
       <button
         type="button"
-        class="modal-button modal-cancel-button"
+        class="btn btn-lg btn-secondary"
         on:click={() => dispatch('cancel')}
       >
         {$t('common.cancel')}
       </button>
       <button
         type="button"
-        class="modal-button modal-primary-button"
+        class="btn btn-lg btn-primary"
         on:click={() => dispatch('proceed')}
         data-testid="chat-large-selection-proceed"
       >

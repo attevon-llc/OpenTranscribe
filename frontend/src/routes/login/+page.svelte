@@ -688,7 +688,7 @@
               </ul>
             </div>
 
-            <button type="submit" class="auth-button" disabled={forcedChangeLoading}>
+            <button type="submit" class="btn btn-lg btn-primary" disabled={forcedChangeLoading}>
               {#if forcedChangeLoading}
                 <Spinner size="small" color="white" /> {$t('auth.forcedChange.submitting')}
               {:else}
@@ -700,7 +700,7 @@
           <div class="mfa-options">
             <button
               type="button"
-              class="text-button cancel-button"
+              class="btn btn-link text-button cancel-button"
               on:click={abandonForcedChange}
               disabled={forcedChangeLoading}
             >
@@ -722,10 +722,10 @@
           </p>
           <p class="lifecycle-hint">{$t('auth.pendingApproval.hint')}</p>
           <div class="mfa-options">
-            <button type="button" class="text-button" on:click={() => window.location.reload()}>
+            <button type="button" class="btn btn-link text-button" on:click={() => window.location.reload()}>
               {$t('auth.pendingApproval.checkAgain')}
             </button>
-            <button type="button" class="text-button cancel-button" on:click={() => logout()}>
+            <button type="button" class="btn btn-link text-button cancel-button" on:click={() => logout()}>
               {$t('nav.logout')}
             </button>
           </div>
@@ -741,7 +741,7 @@
           </p>
           <p class="lifecycle-hint">{$t('auth.accountRejected.contactAdmin')}</p>
           <div class="mfa-options">
-            <button type="button" class="text-button" on:click={clearAccountLifecycle}>
+            <button type="button" class="btn btn-link text-button" on:click={clearAccountLifecycle}>
               {$t('auth.backToLogin')}
             </button>
           </div>
@@ -756,7 +756,7 @@
           </p>
           <p class="lifecycle-hint">{$t('auth.accountExpired.contactAdmin')}</p>
           <div class="mfa-options">
-            <button type="button" class="text-button" on:click={clearAccountLifecycle}>
+            <button type="button" class="btn btn-link text-button" on:click={clearAccountLifecycle}>
               {$t('auth.backToLogin')}
             </button>
           </div>
@@ -820,7 +820,7 @@
 
           <button
             type="submit"
-            class="auth-button"
+            class="btn btn-lg btn-primary"
             disabled={mfaLoading}
           >
             {#if mfaLoading}
@@ -834,7 +834,7 @@
         <div class="mfa-options">
           <button
             type="button"
-            class="text-button"
+            class="btn btn-link text-button"
             on:click={() => useBackupCode = !useBackupCode}
           >
             {#if useBackupCode}
@@ -845,7 +845,7 @@
           </button>
           <button
             type="button"
-            class="text-button cancel-button"
+            class="btn btn-link text-button cancel-button"
             on:click={cancelMFA}
           >
             {$t('auth.cancel')}
@@ -871,7 +871,7 @@
             />
           </FormField>
 
-          <button type="submit" class="auth-button" disabled={resendPending}>
+          <button type="submit" class="btn btn-lg btn-primary" disabled={resendPending}>
             {#if resendPending}
               <Spinner size="small" color="white" /> {$t('auth.verifyEmail.resending')}
             {:else}
@@ -887,7 +887,7 @@
         {/if}
 
         <div class="mfa-options">
-          <button type="button" class="text-button cancel-button" on:click={dismissEmailNotVerified}>
+          <button type="button" class="btn btn-link text-button cancel-button" on:click={dismissEmailNotVerified}>
             {$t('auth.backToLogin')}
           </button>
         </div>
@@ -992,7 +992,7 @@
 
       <button
         type="submit"
-        class="auth-button"
+        class="btn btn-lg btn-primary"
         disabled={loading || $retryRemaining > 0}
       >
         {#if loading}
@@ -1017,7 +1017,7 @@
         {#if authMethods.oidc_enabled}
           <button
             type="button"
-            class="external-auth-button oidc-button"
+            class="btn btn-secondary external-auth-button oidc-button"
             on:click={handleOIDCLogin}
             disabled={oidcLoading || loading}
           >
@@ -1035,7 +1035,7 @@
         {#if authMethods.pki_enabled}
           <button
             type="button"
-            class="external-auth-button pki-button"
+            class="btn btn-secondary external-auth-button pki-button"
             on:click={handlePKILogin}
             disabled={pkiLoading || loading}
           >
@@ -1143,38 +1143,6 @@
 
   .auth-form input {
     font-size: var(--font-size-base);
-  }
-
-  .auth-button {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-xl);
-    padding: 0.6rem 1.2rem;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-  }
-
-  .auth-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  .auth-button:active:not(:disabled) {
-    transform: translateY(0);
-  }
-
-  .auth-button:disabled {
-    background-color: var(--border-color);
-    cursor: not-allowed;
   }
 
   /* Shown when the deployment advertises no usable sign-in method at all. */
@@ -1300,30 +1268,11 @@
   }
 
   .external-auth-button {
-    display: flex;
-    align-items: center;
     justify-content: center;
     gap: var(--space-3);
     width: 100%;
     padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    background-color: var(--surface-color);
-    color: var(--text-color);
     font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .external-auth-button:hover:not(:disabled) {
-    background-color: var(--surface-hover);
-    border-color: var(--primary-color);
-  }
-
-  .external-auth-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .external-auth-button svg {
@@ -1443,18 +1392,8 @@
   }
 
   .text-button {
-    background: none;
-    border: none;
-    color: var(--primary-on-surface);
-    font-size: 0.9rem;
-    cursor: pointer;
     padding: var(--space-2);
-    transition: color var(--duration-base);
-  }
-
-  .text-button:hover {
-    color: var(--primary-color-dark);
-    text-decoration: underline;
+    font-size: 0.9rem;
   }
 
   .text-button.cancel-button {

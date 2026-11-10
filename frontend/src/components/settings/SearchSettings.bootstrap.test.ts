@@ -5,16 +5,9 @@ vi.mock('$lib/axios', async () => (await import('$testMocks/serviceMocks')).axio
 
 vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
-vi.mock('$stores/locale', () => ({
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-  // Identity translator with interpolation so assertions can match on the
-  // i18n key and its params, same pattern as ActiveSessionsPanel.test.ts.
-  t: {
-    subscribe: (
-      run: (value: (key: string, params?: Record<string, unknown>) => string) => void
-    ) => (run((k, params) => (params ? `${k}:${JSON.stringify(params)}` : k)), () => {}),
-  },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyColonVarsLocale()
+);
 
 import axiosInstance from '$lib/axios';
 import SearchSettings from './SearchSettings.svelte';

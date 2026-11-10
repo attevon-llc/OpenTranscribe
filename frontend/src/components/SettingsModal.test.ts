@@ -14,12 +14,11 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
+vi.mock('$lib/axios', async () =>
+  (await import('$testMocks/settingsModalMocks')).settingsAxiosMock(mockAxios)
+);
 
-vi.mock('$stores/auth', async () => {
-  const { writable } = await import('svelte/store');
-  return { user: writable<{ role: string } | null>(null), readAccountLifecycle: () => null };
-});
+vi.mock('$stores/auth', async () => (await import('$testMocks/settingsModalMocks')).authUserMock());
 
 vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
@@ -67,7 +66,8 @@ import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
-import { resetAppStores } from '$testMocks/app-state.svelte';
+import { RECORDING_SETTINGS } from '$testMocks/settingsModalMocks';
+import { resetSettingsModalState } from '$testMocks/settingsModalState';
 import { sectionLoaders, startIdlePrefetch } from '$lib/settings/sectionLoaders';
 import { afterNavigateCallbacks } from '$testMocks/app-navigation';
 import { stampSettingsReturn } from '$lib/settings/returnToSettings';
@@ -87,24 +87,11 @@ beforeAll(async () => {
 }, 180_000);
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  resetAppStores();
+  resetSettingsModalState();
   afterNavigateCallbacks.length = 0;
-  settingsModalStore.reset();
-  capabilities.set({
-    edition: 'community',
-    loaded: true,
-    capabilities: {},
-    audience: {},
-    maxUploadBytes: undefined,
-  });
   mockAxios.get.mockResolvedValue({ data: {} });
   mockAxios.post.mockResolvedValue({ data: {} });
-  mockUserSettingsApi.getRecordingSettings.mockResolvedValue({
-    max_recording_duration: 120,
-    recording_quality: 'high',
-    auto_stop_enabled: true,
-  });
+  mockUserSettingsApi.getRecordingSettings.mockResolvedValue(RECORDING_SETTINGS);
   mockUserApprovalsApi.list.mockResolvedValue([]);
   setUser('user');
 });

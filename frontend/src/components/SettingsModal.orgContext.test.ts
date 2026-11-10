@@ -7,12 +7,11 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
+vi.mock('$lib/axios', async () =>
+  (await import('$testMocks/settingsModalMocks')).settingsAxiosMock(mockAxios)
+);
 
-vi.mock('$stores/auth', async () => {
-  const { writable } = await import('svelte/store');
-  return { user: writable<{ role: string } | null>(null), readAccountLifecycle: () => null };
-});
+vi.mock('$stores/auth', async () => (await import('$testMocks/settingsModalMocks')).authUserMock());
 
 vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
@@ -42,8 +41,7 @@ vi.mock('$lib/settings/sectionLoaders', async (importOriginal) => {
 import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore } from '$stores/settingsModalStore';
-import { capabilities } from '$stores/capabilities';
-import { resetAppStores } from '$testMocks/app-state.svelte';
+import { resetSettingsModalState } from '$testMocks/settingsModalState';
 import { sectionLoaders } from '$lib/settings/sectionLoaders';
 
 beforeAll(async () => {
@@ -51,16 +49,7 @@ beforeAll(async () => {
 }, 180_000);
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  resetAppStores();
-  settingsModalStore.reset();
-  capabilities.set({
-    edition: 'community',
-    loaded: true,
-    capabilities: {},
-    audience: {},
-    maxUploadBytes: undefined,
-  });
+  resetSettingsModalState();
   mockAxios.get.mockResolvedValue({ data: {} });
   (mockUser as unknown as { set: (v: unknown) => void }).set({ role: 'user' });
 });

@@ -16,14 +16,9 @@ const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(
 vi.mock('$lib/api/localModels', () => api);
 vi.mock('$lib/api/asrSettings', () => ({ ASRSettingsApi: asr }));
 vi.mock('$stores/toast', () => ({ toastStore: toast }));
-vi.mock('$stores/locale', () => ({
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-  t: {
-    subscribe: (
-      run: (value: (key: string, params?: Record<string, unknown>) => string) => void
-    ) => (run((k, params) => (params ? `${k}:${JSON.stringify(params)}` : k)), () => {}),
-  },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyColonVarsLocale()
+);
 
 import LocalModelLibrary from './LocalModelLibrary.svelte';
 

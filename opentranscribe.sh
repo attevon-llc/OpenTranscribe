@@ -2162,11 +2162,9 @@ update_pin_image_tag() {
 # down, postgres included, so this is the last point a plain
 # `docker compose exec postgres` can reach it.
 update_check_rollback_compat() {
-    apply_deployment_pins
-    local rollback_compose_files rollback_live_head
+    local rollback_live_head
     local -a rollback_chain
-    rollback_compose_files=$(get_compose_files)
-    read -r -a rollback_chain <<< "$rollback_compose_files"
+    read -r -a rollback_chain <<< "$1"
     rollback_live_head=$(docker compose "${rollback_chain[@]}" exec -T postgres psql -tA \
         -U "${POSTGRES_USER:-postgres}" "${POSTGRES_DB:-opentranscribe}" \
         -c 'SELECT version_num FROM alembic_version;' 2>/dev/null | tr -d '[:space:]')
@@ -2197,6 +2195,7 @@ run_upgrade_sequence() {
     preflight_upgrade_env || exit 1
     compose_down_for_upgrade "$compose_files" || exit 1
     compose_pull_for_upgrade "$compose_files" || exit 1
+    [ -z "${UPDATE_TARGET_VERSION:-}" ] || update_pin_image_tag
 
     if ! perform_phased_restart "$compose_files"; then
         echo -e "${RED}❌ Upgrade did not complete successfully.${NC}"
@@ -2215,13 +2214,17 @@ cmd_update() {
 
     # Optional target: `update --version vX.Y.Z` moves this install to a
     # specific release; `--rollback` returns it to the previous one. Both
-    # work by rewriting OT_IMAGE_TAG in .env, which the compose files read as
-    # ${OT_IMAGE_TAG:-latest}. With no argument, behaviour is unchanged.
+    # work by rewriting OT_IMAGE_TAG in .env (compose reads ${OT_IMAGE_TAG:-latest}), but only
+    # after every refusal and the pull; until then the exported variable stands in for it.
     shift || true
     update_parse_args "$@"
 
     UPDATE_CURRENT_TAG=$(read_env_value OT_IMAGE_TAG)
     UPDATE_CURRENT_TAG="${UPDATE_CURRENT_TAG:-latest}"
+
+    apply_deployment_pins
+    local compose_files
+    compose_files=$(get_compose_files)
 
     if [ "$UPDATE_ROLLBACK" = true ]; then
         update_resolve_rollback_target
@@ -2238,17 +2241,14 @@ cmd_update() {
                 ;;
         esac
         update_refuse_unforced_downgrade
-        update_pin_image_tag
+        export OT_IMAGE_TAG="$UPDATE_TARGET_VERSION"
         if [ "$UPDATE_ROLLBACK" = true ] && [ "$UPDATE_FORCE_DOWNGRADE" = false ]; then
-            update_check_rollback_compat
+            update_check_rollback_compat "$compose_files"
         fi
     else
         echo -e "${YELLOW}📥 Updating to the newest images for tag '${UPDATE_CURRENT_TAG}'...${NC}"
     fi
 
-    apply_deployment_pins
-    local compose_files
-    compose_files=$(get_compose_files)
     run_upgrade_sequence "$compose_files"
 
     echo -e "${GREEN}✅ OpenTranscribe containers updated!${NC}"

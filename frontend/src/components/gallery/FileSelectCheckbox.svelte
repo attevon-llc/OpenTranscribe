@@ -14,7 +14,7 @@
 
 <label
   role="presentation"
-  class="select-box {variant}"
+  class="file-selector {variant}"
   on:click|stopPropagation={(e) => handleCheckboxLabelClick(fileId, e)}
 >
   <input
@@ -28,20 +28,20 @@
 </label>
 
 <style>
-  .select-box {
+  .file-selector {
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  .select-box.card {
+  .file-selector.card {
     position: absolute;
     top: 6px;
     inset-inline-end: 6px;
     z-index: var(--z-sticky);
   }
 
-  .select-box.row {
+  .file-selector.row {
     width: var(--file-list-check);
     min-width: 0;
     position: relative;
@@ -58,7 +58,7 @@
     transition: all var(--duration-base) ease;
   }
 
-  .select-box:hover .checkmark {
+  .file-selector:hover .checkmark {
     border-color: var(--info-color);
   }
 
@@ -94,7 +94,7 @@
   }
 
   @media (max-width: 768px) {
-    .select-box.card {
+    .file-selector.card {
       top: 4px;
       inset-inline-end: 4px;
     }

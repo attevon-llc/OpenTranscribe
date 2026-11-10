@@ -48,7 +48,7 @@
   class="btn btn-{variant}"
   class:btn-sm={size === 'sm'}
   class:btn-lg={size === 'lg'}
-  class:btn-icon={iconOnly}
+  class:btn-icon-only={iconOnly}
   aria-label={ariaLabel || undefined}
   aria-disabled={busy ? 'true' : undefined}
   aria-busy={busy ? 'true' : undefined}

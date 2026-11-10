@@ -68,10 +68,10 @@ describe('Button', () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
-  it('iconOnly adds btn-icon and uses ariaLabel as the name', () => {
+  it('iconOnly adds btn-icon-only and uses ariaLabel as the name', () => {
     render(Button, { props: { iconOnly: true, ariaLabel: 'Close' } });
     const btn = screen.getByRole('button', { name: 'Close' });
-    expect(btn).toHaveClass('btn-icon');
+    expect(btn).toHaveClass('btn-icon-only');
   });
 
   it('iconOnly without ariaLabel logs a console error', () => {
@@ -89,15 +89,15 @@ describe('button classes in form-elements.css', () => {
     '.btn-ghost',
     '.btn-link',
     '.btn-danger-outline',
-    '.btn-icon',
+    '.btn-icon-only',
   ])('%s is defined', (sel) => {
     expect(rule(sel)).not.toBe('');
   });
 
   it('small and icon buttons meet the WCAG 2.5.8 24px target', () => {
     expect(rule('.btn-sm')).toMatch(/min-height:\s*28px/);
-    expect(rule('.btn-icon')).toMatch(/min-width:\s*28px/);
-    expect(rule('.btn-icon')).toMatch(/min-height:\s*28px/);
+    expect(rule('.btn-icon-only')).toMatch(/min-width:\s*28px/);
+    expect(rule('.btn-icon-only')).toMatch(/min-height:\s*28px/);
   });
 
   it('success and danger-outline use tokens', () => {

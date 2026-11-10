@@ -96,7 +96,7 @@
   .lpc-count {
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-    color: var(--text-secondary);
+    color: var(--text-on-tint);
   }
 
   .lpc-details {
@@ -106,7 +106,7 @@
     gap: var(--space-2);
     margin-top: var(--space-2);
     font-size: var(--font-size-xs);
-    color: var(--text-secondary);
+    color: var(--text-on-tint);
   }
 
   .lpc-message {

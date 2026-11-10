@@ -408,7 +408,7 @@
   $: syncScrollLock(showConfigModal);
 </script>
 
-<div class="asr-settings">
+<div class="asr-settings provider-panel">
   {#if loading}
     <div class="loading">{$t('settings.asrProvider.loading')}</div>
   {:else}
@@ -557,7 +557,7 @@
                 {#if config.is_shared}<span class="share-badge">{$t('settings.asrProvider.shared')}</span>{/if}
               </div>
               <div class="config-model">{config.model_name}</div>
-              <div class="share-toggle-row">
+              <div class="provider-share-row">
                 <Toggle
                   checked={config.is_active !== false}
                   onchange={() => handleEnabledToggle(config)}
@@ -567,7 +567,7 @@
                 />
                 <label class="toggle-text" for="asr-enabled-label-{config.uuid}">{$t('settings.asrProvider.enabledToggle')}</label>
               </div>
-              <div class="share-toggle-row">
+              <div class="provider-share-row">
                 <Toggle
                   checked={config.is_shared === true}
                   onchange={() => handleShareToggle(config)}
@@ -812,7 +812,6 @@
     margin-bottom: var(--space-2);
   }
 
-
   .btn-use-local {
     margin-inline-start: auto;
   }
@@ -861,11 +860,6 @@
 
   .config-card:hover:not(.active) {
     border-color: var(--border-hover);
-  }
-
-  .config-info {
-    flex: 1;
-    min-width: 0;
   }
 
   .config-badges {
@@ -924,7 +918,6 @@
     flex-shrink: 0;
   }
 
-
   .delete-all-section {
     margin-top: var(--space-6);
     padding-top: var(--space-4);
@@ -932,20 +925,11 @@
     text-align: center;
   }
 
-
-
-  button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .config-card.shared {
     border-left: 3px solid var(--info-color);
     background: rgba(var(--primary-color-rgb), 0.04);
   }
   :global([data-theme='dark']) .config-card.shared { background: rgba(96, 165, 250, 0.06); }
-
-  .shared-section-header { margin-top: var(--space-6); }
 
   .share-badge {
     display: inline-flex; align-items: center;
@@ -965,12 +949,6 @@
   .shared-by {
     font-size: 0.725rem; color: var(--text-muted);
     font-style: italic; margin-top: var(--space-0-5);
-  }
-
-  .share-toggle-row {
-    display: flex; align-items: center; gap: var(--space-3);
-    margin-top: var(--space-2); padding-top: var(--space-2);
-    border-top: 1px dashed var(--border-color);
   }
 
   .toggle-text {
@@ -1111,5 +1089,10 @@
     .config-actions .btn-activate {
       min-height: 44px;
     }
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>

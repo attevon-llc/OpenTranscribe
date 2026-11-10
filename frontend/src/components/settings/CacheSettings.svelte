@@ -94,7 +94,7 @@
 
 </script>
 
-<div class="cache-settings">
+<div class="cache-settings ops-panel">
   <div class="title-row">
     <h3 class="section-title">{$t('settings.cache.title')}</h3>
   </div>
@@ -123,9 +123,9 @@
           bind:value={retentionDays}
           min="0"
           max="3650"
-          class="form-input number-input"
+          class="ops-form-input number-input"
         />
-        <span class="input-suffix">{$t('settings.cache.daysUnit')}</span>
+        <span class="ops-input-suffix">{$t('settings.cache.daysUnit')}</span>
       </div>
       <p class="hint">{$t('settings.cache.retentionHint')}</p>
     </div>
@@ -166,10 +166,6 @@
 </div>
 
 <style>
-  .cache-settings {
-    padding: var(--space-2) 0;
-  }
-
   .section-title {
     font-size: 0.95rem;
     font-weight: var(--font-weight-semibold);
@@ -183,7 +179,6 @@
     margin: var(--space-1) 0 var(--space-4) 0;
     line-height: 1.4;
   }
-
 
   .status-block {
     margin: 0 0 var(--space-4) 0;
@@ -199,15 +194,6 @@
     align-items: center;
     gap: 0.4rem;
     flex-wrap: wrap;
-  }
-
-  .status-label {
-    color: var(--text-muted);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .status-value {
-    color: var(--text-color);
   }
 
   .field-group {
@@ -229,11 +215,6 @@
     gap: 0.4rem;
   }
 
-  .input-suffix {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-  }
-
   .hint {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
@@ -241,34 +222,14 @@
     line-height: 1.4;
   }
 
-  .form-input {
-    padding: var(--space-1-5) var(--space-2);
-    font-size: var(--font-size-md);
-  }
-
   .number-input {
     width: 70px;
     text-align: center;
   }
 
-  .action-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-    margin-bottom: var(--space-3);
-  }
-
   .run-confirm-text {
     font-size: 0.8rem;
     color: var(--text-muted);
-  }
-
-  .button-row {
-    display: flex;
-    gap: var(--space-2);
-    justify-content: flex-end;
-    margin-top: var(--space-2);
   }
 
   .button-row .btn-secondary {

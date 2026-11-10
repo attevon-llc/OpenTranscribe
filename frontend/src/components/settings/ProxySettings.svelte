@@ -74,7 +74,7 @@
   }
 </script>
 
-<div class="settings-panel">
+<div class="settings-panel auth-panel">
   <div class="enable-toggle">
     <label class="toggle-label">
       <input
@@ -238,77 +238,6 @@
 </div>
 
 <style>
-  .settings-panel {
-    max-width: 800px;
-  }
-
-  .enable-toggle {
-    margin-bottom: var(--space-6);
-    padding-bottom: var(--space-4);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .toggle-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    cursor: pointer;
-  }
-
-  .toggle-label input[type="checkbox"] {
-    width: 1.25rem;
-    height: 1.25rem;
-    cursor: pointer;
-  }
-
-  .toggle-text {
-    font-weight: var(--font-weight-medium);
-    font-size: var(--font-size-base);
-  }
-
-  .warning-box {
-    background: var(--color-warning-bg);
-    border: 1px solid var(--color-warning-border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-4);
-    margin-bottom: var(--space-6);
-  }
-
-  .warning-box strong {
-    color: var(--color-warning-text);
-  }
-
-  .warning-box p {
-    margin: var(--space-2) 0 0 0;
-    font-size: var(--font-size-md);
-    color: var(--color-text-secondary);
-  }
-
-  .section {
-    margin-bottom: var(--space-8);
-    padding: var(--space-4);
-    background: var(--color-bg-secondary);
-    border-radius: var(--radius-lg);
-    transition: opacity var(--duration-base);
-  }
-
-  .section.disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
-
-  .section h3 {
-    margin: 0 0 var(--space-4) 0;
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-secondary);
-  }
-
-  .form-row {
-    display: flex;
-    gap: var(--space-4);
-    margin-bottom: var(--space-4);
-  }
 
   .section :global(.form-field) {
     flex: 1;
@@ -333,33 +262,6 @@
     flex: 1;
   }
 
-  .toggle-visibility {
-    padding: var(--space-2) var(--space-3);
-    background: var(--color-bg-tertiary);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-xs);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .toggle-visibility:hover:not(:disabled) {
-    background: var(--color-bg-hover);
-  }
-
-  .toggle-visibility:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-  }
-
-  .help-text {
-    display: block;
-    margin-top: var(--space-1);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-tertiary);
-  }
-
   .help-text.indented {
     margin-left: var(--space-6);
     margin-bottom: var(--space-3);
@@ -382,24 +284,6 @@
     cursor: pointer;
     font-size: var(--font-size-md);
     margin-bottom: var(--space-2);
-  }
-
-  .checkbox-label input[type="checkbox"] {
-    width: 1rem;
-    height: 1rem;
-    cursor: pointer;
-  }
-
-  .checkbox-label input:disabled {
-    cursor: not-allowed;
-  }
-
-  .actions {
-    display: flex;
-    gap: var(--space-4);
-    justify-content: flex-end;
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--color-border);
   }
 
   @media (max-width: 768px) {

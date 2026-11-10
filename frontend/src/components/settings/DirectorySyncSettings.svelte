@@ -144,7 +144,7 @@
   $: saveDisabled = saving || !hasChanges;
 </script>
 
-<div class="directory-sync-settings">
+<div class="directory-sync-settings ops-panel">
   <div class="title-row">
     <h3 class="section-title">{$t('settings.directorySync.title')}</h3>
   </div>
@@ -176,7 +176,7 @@
           id="dirsync-schedule"
           type="text"
           bind:value={schedule}
-          class="form-input"
+          class="ops-form-input"
           placeholder="0 4 * * *"
           spellcheck="false"
         />
@@ -192,7 +192,7 @@
           bind:value={maxDisablesPerRun}
           min="1"
           max="100000"
-          class="form-input number-input"
+          class="ops-form-input number-input"
         />
         <span class="field-hint">{$t('settings.directorySync.maxDisablesPerRunHint')}</span>
       </div>
@@ -283,16 +283,6 @@
 </div>
 
 <style>
-  .directory-sync-settings {
-    padding: var(--space-2) 0;
-  }
-
-  .title-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
   .section-title {
     font-size: 0.95rem;
     font-weight: var(--font-weight-semibold);
@@ -304,16 +294,6 @@
     font-size: 0.8rem;
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
-  }
-
-  .loading-state {
-    display: flex;
-    align-items: center;
-    padding: var(--space-4);
-  }
-
-  .field-row {
-    margin-bottom: var(--space-3);
   }
 
   .dry-run-row {
@@ -370,11 +350,6 @@
     color: var(--text-color);
   }
 
-  .form-input {
-    padding: var(--space-1-5) var(--space-2);
-    font-size: var(--font-size-md);
-  }
-
   .number-input {
     width: 110px;
   }
@@ -399,41 +374,9 @@
     flex-wrap: wrap;
   }
 
-  .status-label {
-    color: var(--text-muted);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .status-value {
-    color: var(--text-color);
-  }
-
-  .status-error {
-    font-size: var(--font-size-xs);
-    color: var(--error-color);
-    word-break: break-word;
-  }
-
-  /* Actions */
-  .action-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-    margin-bottom: var(--space-3);
-  }
-
   .run-confirm-text {
     font-size: 0.8rem;
     color: var(--text-muted);
-  }
-
-  /* Button row */
-  .button-row {
-    display: flex;
-    gap: var(--space-2);
-    justify-content: flex-end;
-    margin-top: var(--space-2);
   }
 
   .button-row .btn-secondary {

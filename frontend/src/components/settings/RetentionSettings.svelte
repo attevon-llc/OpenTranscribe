@@ -279,7 +279,7 @@
   $: saveDisabled = saving || !hasChanges || (retentionEnabled && showEnableConfirm);
 </script>
 
-<div class="retention-settings">
+<div class="retention-settings ops-panel">
   <div class="title-row">
     <h3 class="section-title">{$t('settings.retention.title')}</h3>
   </div>
@@ -333,10 +333,10 @@
             bind:value={retentionDays}
             min="1"
             max="3650"
-            class="form-input number-input"
+            class="ops-form-input number-input"
             disabled={!retentionEnabled}
           />
-          <span class="input-suffix">{$t('settings.retention.daysUnit')}</span>
+          <span class="ops-input-suffix">{$t('settings.retention.daysUnit')}</span>
         </div>
       </div>
 
@@ -346,14 +346,14 @@
           id="run-time"
           type="time"
           bind:value={runTime}
-          class="form-input"
+          class="ops-form-input"
           disabled={!retentionEnabled}
         />
       </div>
 
       <div class="field-group">
         <label class="field-label" for="timezone">{$t('settings.retention.timezone')}</label>
-        <select id="timezone" bind:value={timezone} class="form-input" disabled={!retentionEnabled}>
+        <select id="timezone" bind:value={timezone} class="ops-form-input" disabled={!retentionEnabled}>
           {#each TIMEZONES as tz (tz)}
             <option value={tz}>{tz}</option>
           {/each}
@@ -502,16 +502,6 @@
 </div>
 
 <style>
-  .retention-settings {
-    padding: var(--space-2) 0;
-  }
-
-  .title-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
   .section-title {
     font-size: 0.95rem;
     font-weight: var(--font-weight-semibold);
@@ -523,11 +513,6 @@
     font-size: 0.8rem;
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
-  }
-
-
-  .field-row {
-    margin-bottom: var(--space-3);
   }
 
   .fields-grid {
@@ -560,11 +545,6 @@
     gap: 0.4rem;
   }
 
-  .input-suffix {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-  }
-
   .toggle-label {
     display: flex;
     align-items: center;
@@ -578,17 +558,12 @@
     color: var(--text-color);
   }
 
-  .form-input {
-    padding: var(--space-1-5) var(--space-2);
-    font-size: var(--font-size-md);
-  }
-
-  .form-input:disabled {
+  .ops-form-input:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  select.form-input {
+  select.ops-form-input {
     width: 100%;
   }
 
@@ -686,24 +661,6 @@
     flex-wrap: wrap;
   }
 
-  .status-label {
-    color: var(--text-muted);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .status-value {
-    color: var(--text-color);
-  }
-
-  /* Actions */
-  .action-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-    margin-bottom: var(--space-3);
-  }
-
   .run-confirm-text {
     font-size: 0.8rem;
     color: var(--text-muted);
@@ -760,23 +717,11 @@
     vertical-align: middle;
   }
 
-  .preview-table tr:last-child td {
-    border-bottom: none;
-  }
-
   .col-title {
     max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  /* Button row */
-  .button-row {
-    display: flex;
-    gap: var(--space-2);
-    justify-content: flex-end;
-    margin-top: var(--space-2);
   }
 
   .button-row .btn-secondary {

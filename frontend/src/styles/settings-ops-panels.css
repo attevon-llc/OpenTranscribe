@@ -1,0 +1,117 @@
+/* Shared by the ops panels (backup, cache, retention, mirror, directory sync, embedding, integrity), rooted at .ops-panel. */
+
+.ops-panel .title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ops-panel .loading-state {
+  display: flex;
+  align-items: center;
+  padding: var(--space-4);
+}
+
+.ops-panel .field-row {
+  margin-bottom: var(--space-3);
+}
+
+.ops-panel .destination-type-group {
+  max-width: 280px;
+  margin: var(--space-2) 0 var(--space-3) 0;
+}
+
+.ops-panel .ops-form-input {
+  padding: var(--space-1-5) var(--space-2);
+  font-size: var(--font-size-md);
+}
+
+.ops-panel .status-label {
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
+}
+
+.ops-panel .status-value {
+  color: var(--text-color);
+}
+
+.ops-panel .status-error {
+  font-size: var(--font-size-xs);
+  color: var(--error-color);
+  word-break: break-word;
+}
+
+.ops-panel .action-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.ops-panel .preview-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ops-panel .button-row {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+
+.ops-panel .ops-input-suffix {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.ops-panel .settings-section {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.ops-panel .status-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.ops-panel .action-content {
+  flex: 1;
+}
+
+.ops-panel .progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.ops-panel .progress-bar-container {
+  height: 8px;
+  background: var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.ops-panel .progress-bar-fill {
+  height: 100%;
+  background: var(--primary-color);
+  border-radius: var(--radius-sm);
+  transition: width var(--duration-slow) ease;
+}
+
+.ops-panel .results-section {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  background: var(--background-color);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.ops-panel {
+  padding: var(--space-2) 0;
+}

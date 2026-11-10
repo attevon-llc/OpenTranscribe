@@ -1,0 +1,129 @@
+/* Shared by the auth config panels (LDAP, OIDC, SAML, PKI, Proxy, Local), rooted at .auth-panel. */
+
+.auth-panel .settings-panel {
+  max-width: 800px;
+}
+
+.auth-panel .enable-toggle {
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.auth-panel .toggle-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+
+.auth-panel .toggle-label input[type='checkbox'] {
+  width: 1.25rem;
+  height: 1.25rem;
+  cursor: pointer;
+}
+
+.auth-panel .toggle-text {
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-base);
+}
+
+.auth-panel .section {
+  margin-bottom: var(--space-8);
+  padding: var(--space-4);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  transition: opacity var(--duration-base);
+}
+
+.auth-panel .section.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.auth-panel .section h3 {
+  margin: 0 0 var(--space-4) 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.auth-panel .form-row {
+  display: flex;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.auth-panel .help-text {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+.auth-panel .checkbox-label input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.auth-panel .checkbox-label input:disabled {
+  cursor: not-allowed;
+}
+
+.auth-panel .actions {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: flex-end;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.auth-panel .input-with-toggle,
+.auth-panel .input-with-button {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.auth-panel .input-with-toggle input,
+.auth-panel .input-with-button input {
+  flex: 1;
+}
+
+.auth-panel .toggle-visibility {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.auth-panel .toggle-visibility:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+
+.auth-panel .toggle-visibility:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.auth-panel .warning-box {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.auth-panel .warning-box strong {
+  color: var(--color-warning-text);
+}
+
+.auth-panel .warning-box p {
+  margin: var(--space-2) 0 0 0;
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
+}

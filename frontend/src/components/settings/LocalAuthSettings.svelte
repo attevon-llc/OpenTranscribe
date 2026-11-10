@@ -96,7 +96,7 @@
   }
 </script>
 
-<div class="settings-panel">
+<div class="settings-panel auth-panel">
   <div class="enable-toggle">
     <label class="toggle-label">
       <input
@@ -377,33 +377,6 @@
 </div>
 
 <style>
-  .settings-panel {
-    max-width: 800px;
-  }
-
-  .enable-toggle {
-    margin-bottom: var(--space-6);
-    padding-bottom: var(--space-4);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .toggle-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    cursor: pointer;
-  }
-
-  .toggle-label input[type="checkbox"] {
-    width: 1.25rem;
-    height: 1.25rem;
-    cursor: pointer;
-  }
-
-  .toggle-text {
-    font-weight: var(--font-weight-medium);
-    font-size: var(--font-size-base);
-  }
 
   .warning-banner {
     margin: 0 0 var(--space-6) 0;
@@ -416,26 +389,6 @@
     line-height: 1.45;
   }
 
-  .section {
-    margin-bottom: var(--space-8);
-    padding: var(--space-4);
-    background: var(--color-bg-secondary);
-    border-radius: var(--radius-lg);
-    transition: opacity var(--duration-base);
-  }
-
-  .section.disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
-
-  .section h3 {
-    margin: 0 0 var(--space-4) 0;
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-secondary);
-  }
-
   .info-note {
     margin: var(--space-2) 0 0 var(--space-6);
     padding: 0.6rem var(--space-3);
@@ -445,12 +398,6 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-xs);
     line-height: 1.5;
-  }
-
-  .form-row {
-    display: flex;
-    gap: var(--space-4);
-    margin-bottom: var(--space-4);
   }
 
   .section :global(.form-field) {
@@ -469,18 +416,10 @@
     cursor: not-allowed;
   }
 
-  .help-text {
-    display: block;
-    margin-top: var(--space-1);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-tertiary);
-  }
-
   .help-text.indented {
     margin-left: var(--space-6);
     margin-bottom: var(--space-3);
   }
-
 
   .checkbox-label {
     display: flex;
@@ -491,27 +430,9 @@
     margin-bottom: var(--space-2);
   }
 
-  .checkbox-label input[type="checkbox"] {
-    width: 1rem;
-    height: 1rem;
-    cursor: pointer;
-  }
-
-  .checkbox-label input:disabled {
-    cursor: not-allowed;
-  }
-
   .mfa-options {
     margin-top: var(--space-4);
     padding-left: var(--space-6);
-  }
-
-  .actions {
-    display: flex;
-    gap: var(--space-4);
-    justify-content: flex-end;
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--color-border);
   }
 
   @media (max-width: 768px) {

@@ -1,0 +1,73 @@
+/* Shared by the audio, organisation-context and redaction form panels, rooted at .form-panel. */
+
+.form-panel .loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12);
+  gap: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.form-panel .settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.form-panel .label-hint {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--text-secondary);
+}
+
+.form-panel .toggle-group {
+  padding: var(--space-4);
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  transition: all var(--duration-base) ease;
+}
+
+.form-panel .toggle-group:hover {
+  border-color: var(--primary-color);
+}
+
+.form-panel .toggle-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.form-panel .label-text {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-color);
+}
+
+.form-panel .label-description {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.form-panel .settings-section {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.form-panel .field-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin: var(--space-1-5) 0 0 0;
+  line-height: 1.5;
+}
+
+.form-panel .button-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}

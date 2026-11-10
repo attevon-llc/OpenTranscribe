@@ -177,7 +177,7 @@
   }
 </script>
 
-<div class="org-context-settings">
+<div class="org-context-settings form-panel">
   {#if loading}
     <div class="loading-state">
       <Spinner size="large" />
@@ -351,30 +351,6 @@
     padding: var(--space-6) 0;
   }
 
-  .loading-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-12);
-    gap: var(--space-4);
-    color: var(--text-secondary);
-  }
-
-  .settings-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-  }
-
-
-
-  .label-hint {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-regular);
-    color: var(--text-secondary);
-  }
-
   .form-textarea {
     padding: var(--space-3);
     font-size: var(--font-size-sm);
@@ -398,42 +374,12 @@
     color: var(--warning-color);
   }
 
-  .toggle-group {
-    padding: var(--space-4);
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    transition: all var(--duration-base) ease;
-  }
-
-  .toggle-group:hover {
-    border-color: var(--primary-color);
-  }
-
-  .toggle-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--space-4);
-  }
-
   .toggle-label {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
     cursor: pointer;
-  }
-
-  .label-text {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .label-description {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    line-height: 1.4;
   }
 
   .form-actions {

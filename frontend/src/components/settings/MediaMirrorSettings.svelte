@@ -234,7 +234,7 @@
   $: saveDisabled = saving || !hasChanges;
 </script>
 
-<div class="mirror-settings">
+<div class="mirror-settings ops-panel">
   <h4 class="subsection-title">{$t('settings.backup.mirror.title')}</h4>
   <p class="subsection-desc">{$t('settings.backup.mirror.description')}</p>
   <p class="never-delete-note">{$t('settings.backup.mirror.neverDeleteNote')}</p>
@@ -271,7 +271,7 @@
           id="mirror-schedule"
           type="text"
           bind:value={schedule}
-          class="form-input"
+          class="ops-form-input"
           placeholder="30 3 * * *"
           spellcheck="false"
         />
@@ -285,7 +285,7 @@
           bind:value={throttleMs}
           min="0"
           max="60000"
-          class="form-input number-input"
+          class="ops-form-input number-input"
         />
         <span class="field-hint">{$t('settings.backup.mirror.throttleHint')}</span>
       </div>
@@ -294,7 +294,7 @@
     <!-- Destination type -->
     <div class="field-group destination-type-group">
       <label class="field-label" for="mirror-dest-type">{$t('settings.backup.mirror.destinationType')}</label>
-      <select id="mirror-dest-type" class="form-input" bind:value={destinationType}>
+      <select id="mirror-dest-type" class="ops-form-input" bind:value={destinationType}>
         <option value="local">{$t('settings.backup.mirror.destinationLocal')}</option>
         <option value="s3">{$t('settings.backup.mirror.destinationS3')}</option>
       </select>
@@ -304,7 +304,7 @@
       <div class="fields-grid">
         <div class="field-group">
           <label class="field-label" for="mirror-destination">{$t('settings.backup.mirror.destination')}</label>
-          <input dir="ltr" id="mirror-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
+          <input dir="ltr" id="mirror-destination" type="text" bind:value={destination} class="ops-form-input" spellcheck="false" />
           <span class="field-hint">
             {#if mountOk}
               <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mirror.mountOk')}</span>
@@ -319,23 +319,23 @@
       <div class="fields-grid">
         <div class="field-group">
           <label class="field-label" for="mirror-s3-endpoint">{$t('settings.backup.mirror.s3Endpoint')}</label>
-          <input dir="ltr" id="mirror-s3-endpoint" type="text" bind:value={s3EndpointUrl} class="form-input" placeholder="https://s3.amazonaws.com" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-endpoint" type="text" bind:value={s3EndpointUrl} class="ops-form-input" placeholder="https://s3.amazonaws.com" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-region">{$t('settings.backup.mirror.s3Region')}</label>
-          <input dir="ltr" id="mirror-s3-region" type="text" bind:value={s3Region} class="form-input" placeholder="us-east-1" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-region" type="text" bind:value={s3Region} class="ops-form-input" placeholder="us-east-1" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-bucket">{$t('settings.backup.mirror.s3Bucket')}</label>
-          <input dir="ltr" id="mirror-s3-bucket" type="text" bind:value={s3Bucket} class="form-input" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-bucket" type="text" bind:value={s3Bucket} class="ops-form-input" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-prefix">{$t('settings.backup.mirror.s3Prefix')}</label>
-          <input dir="ltr" id="mirror-s3-prefix" type="text" bind:value={s3Prefix} class="form-input" placeholder="opentranscribe-media/" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-prefix" type="text" bind:value={s3Prefix} class="ops-form-input" placeholder="opentranscribe-media/" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-access-key">{$t('settings.backup.mirror.s3AccessKey')}</label>
-          <input dir="ltr" id="mirror-s3-access-key" type="text" bind:value={s3AccessKeyId} class="form-input" autocomplete="off" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-access-key" type="text" bind:value={s3AccessKeyId} class="ops-form-input" autocomplete="off" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-secret-key">{$t('settings.backup.mirror.s3SecretKey')}</label>
@@ -343,7 +343,7 @@
             id="mirror-s3-secret-key"
             type="password"
             bind:value={s3SecretKey}
-            class="form-input"
+            class="ops-form-input"
             autocomplete="new-password"
             spellcheck="false"
             placeholder={s3SecretKeySet ? $t('settings.backup.mirror.s3SecretConfigured') : ''}
@@ -449,6 +449,7 @@
 
 <style>
   .mirror-settings {
+    padding: 0;
     margin-top: var(--space-6);
     padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
@@ -474,16 +475,6 @@
     font-style: italic;
   }
 
-  .loading-state {
-    display: flex;
-    align-items: center;
-    padding: var(--space-4);
-  }
-
-  .field-row {
-    margin-bottom: var(--space-3);
-  }
-
   .fields-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -498,12 +489,7 @@
     gap: var(--space-1);
   }
 
-  .destination-type-group {
-    max-width: 280px;
-    margin: var(--space-2) 0 var(--space-3) 0;
-  }
-
-  select.form-input {
+  select.ops-form-input {
     cursor: pointer;
   }
 
@@ -545,11 +531,6 @@
     color: var(--text-color);
   }
 
-  .form-input {
-    padding: var(--space-1-5) var(--space-2);
-    font-size: var(--font-size-md);
-  }
-
   .number-input {
     width: 110px;
     text-align: center;
@@ -574,39 +555,9 @@
     flex-wrap: wrap;
   }
 
-  .status-label {
-    color: var(--text-muted);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .status-value {
-    color: var(--text-color);
-  }
-
-  .status-error {
-    font-size: var(--font-size-xs);
-    color: var(--error-color);
-    word-break: break-word;
-  }
-
-  .action-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-    margin-bottom: var(--space-3);
-  }
-
   .run-confirm-text {
     font-size: 0.8rem;
     color: var(--text-muted);
-  }
-
-  .button-row {
-    display: flex;
-    gap: var(--space-2);
-    justify-content: flex-end;
-    margin-top: var(--space-2);
   }
 
   .button-row .btn-secondary {

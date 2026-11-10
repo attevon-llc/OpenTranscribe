@@ -74,6 +74,31 @@ def _set_status(task_id: str, status: str, *, completed: bool = False) -> None:
         logger.exception("privacy purge %s: could not update the task row", task_id)
 
 
+def _end_without_a_pass(
+    task_id: str, actor_user_id: int | None, wanted: list[str], *, final: bool
+) -> None:
+    """Record a pass skipped because every file is now held or quarantined.
+
+    After pass 1 (``final``) the record keeps what pass 1 removed, since that removal happened;
+    an empty record would tell the requester nothing was purged. The pending row is settled as
+    the final pass would: dropped when it owes no centroid document, else kept with exactly
+    those ids for the re-verify to delete (their cluster rows are already gone).
+    """
+    previous = purge.read_record(task_id) if final else None
+    counts = previous.get("counts") if previous else None
+    purge.write_record(
+        task_id,
+        actor_user_id,
+        counts if isinstance(counts, dict) else {},
+        targets=wanted,
+        reason="files_protected",
+    )
+    if final and purge.VOICEPRINTS in wanted:
+        with session_scope() as db:
+            owed = purge_pending.cluster_uuids(db, task_id)
+        purge_pending.settle(SessionLocal, task_id, owed, final=True)
+
+
 @celery_app.task(bind=True, name=TASK_NAME, priority=CPUPriority.USER_TRIGGERED)
 def privacy_purge_task(
     self: Any,
@@ -135,7 +160,7 @@ def privacy_purge_task(
     if guarded_scope is None and wanted and not blocked:
         logger.warning("privacy purge %s aborted: every file is held or quarantined", task_id)
         audit(f"pass_{phase}_aborted", AuditOutcome.FAILURE, reason="files_protected")
-        purge.write_record(task_id, actor_user_id, {}, targets=wanted, reason="files_protected")
+        _end_without_a_pass(task_id, actor_user_id, wanted, final=phase > 1)
         _set_status(task_id, TASK_STATUS_FAILED, completed=True)
         return {"status": "aborted", "reason": "files_protected"}
     if guarded_scope is not None:

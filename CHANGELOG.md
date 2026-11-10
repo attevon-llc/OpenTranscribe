@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- When every file of a file-scoped voiceprint purge was placed under a hold between its two passes, the purge status now still reports what the first pass removed (it showed nothing), and the purge's pending record is settled like a final pass instead of being left for the hourly re-verify.
 - A file-scoped voiceprint purge (retention or a per-file opt-out) now applies the legal-hold and quarantine check in every statement it runs, not only when the task starts, so a hold placed while the purge is queued or running keeps the file's voiceprints.
 - A legal hold placed while a recording is being permanently deleted (trash purge, delete forever, a plain delete, an erasure) now keeps the recording. The delete re-checks the hold under a row lock before it destroys the stored copies and again right before it deletes the database row; the second check was missing, so a hold placed in between was removed with the recording and its transcript, speakers and summary. If the hold lands after the stored copies are gone, the database record is kept and the trash purge audits the purge as partial.
 - Deleting an account no longer destroys the speakers of the organization recordings it hands over to an administrator. The speakers (with their voiceprints), topic suggestions and processing records of each handed-over recording now move with it; before, the transcript lost every speaker name and the voiceprints were erased. A held recording's speakers stay with it.

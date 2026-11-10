@@ -568,7 +568,7 @@ button:disabled {
 }
 
 /* Icon-only square button (give it an aria-label); combines with `.btn-sm` and any variant */
-.btn-icon {
+.btn-icon-only {
   justify-content: center;
   min-width: 28px;
   min-height: 28px;
@@ -577,7 +577,7 @@ button:disabled {
   color: var(--text-color);
   border: none;
 }
-.btn-icon:hover:not(:disabled) {
+.btn-icon-only:hover:not(:disabled) {
   background-color: var(--button-hover);
 }
 

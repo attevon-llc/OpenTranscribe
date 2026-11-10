@@ -60,7 +60,7 @@
       <button type="button" class="btn btn-link">{$t('common.edit')}</button>
       <button type="button" class="btn btn-danger-outline btn-sm">{$t('common.delete')}</button>
       <button type="button" class="btn btn-lg btn-primary">{$t('common.save')}</button>
-      <button type="button" class="btn btn-icon btn-sm" aria-label={$t('common.close')}>
+      <button type="button" class="btn btn-icon-only btn-sm" aria-label={$t('common.close')}>
         <MenuIcon name="close" size={14} />
       </button>
       <Button variant="primary" busy>{$t('common.saving')}</Button>

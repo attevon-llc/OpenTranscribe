@@ -111,13 +111,13 @@
           {/if}
         </div>
         <div class="email-actions">
-          <button class="btn btn-secondary btn-sm" on:click={() => dispatch('test', c)}>
+          <button class="btn btn-secondary" on:click={() => dispatch('test', c)}>
             {$t('settings.emailNotifications.test')}
           </button>
-          <button class="btn btn-secondary btn-sm" on:click={() => dispatch('edit', c)}>
+          <button class="btn btn-secondary" on:click={() => dispatch('edit', c)}>
             {$t('common.edit')}
           </button>
-          <button class="btn btn-danger btn-sm" on:click={() => dispatch('delete', c)}>
+          <button class="btn btn-danger" on:click={() => dispatch('delete', c)}>
             {$t('common.delete')}
           </button>
         </div>
@@ -188,10 +188,6 @@
     align-items: center;
     gap: var(--space-1-5);
     flex-wrap: wrap;
-  }
-  .btn-sm {
-    padding: var(--space-1) var(--space-2-5);
-    font-size: 0.8rem;
   }
   .muted {
     color: var(--text-secondary);

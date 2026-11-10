@@ -570,7 +570,7 @@ let _llmConfigModalWasOpen = false;
               {#if formData.provider === 'ollama'}
                 <button
                   type="button"
-                  class="discover-models-btn"
+                  class="btn btn-primary btn-sm discover-models-btn"
                   on:click={loadOllamaModels}
                   disabled={loadingOllamaModels || saving || !formData.base_url}
                   title={$t('llm.discoverModelsTooltip')}
@@ -585,7 +585,7 @@ let _llmConfigModalWasOpen = false;
               {:else if formData.provider === 'openai' || formData.provider === 'vllm' || formData.provider === 'openrouter'}
                 <button
                   type="button"
-                  class="discover-models-btn"
+                  class="btn btn-primary btn-sm discover-models-btn"
                   on:click={loadOpenAICompatibleModels}
                   disabled={loadingOpenAIModels || saving || loadingApiKey || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key?.trim() && !editingConfig?.has_api_key)}
                   title={$t('llm.discoverModelsTooltip')}
@@ -600,7 +600,7 @@ let _llmConfigModalWasOpen = false;
               {:else if formData.provider === 'anthropic' || formData.provider === 'claude'}
                 <button
                   type="button"
-                  class="discover-models-btn"
+                  class="btn btn-primary btn-sm discover-models-btn"
                   on:click={loadAnthropicModels}
                   disabled={loadingAnthropicModels || saving || loadingApiKey || (!formData.api_key?.trim() && !editingConfig?.has_api_key)}
                   title={$t('llm.discoverModelsTooltip')}
@@ -787,7 +787,7 @@ let _llmConfigModalWasOpen = false;
           <div class="test-section">
             <button
               type="button"
-              class="test-connection-btn"
+              class="btn btn-primary btn-lg"
               on:click={testConnection}
               disabled={testing || loadingApiKey || !isConnectionTestValid}
               title={$t('llm.testConnectionTooltip')}
@@ -816,12 +816,12 @@ let _llmConfigModalWasOpen = false;
 
         <!-- Form Actions -->
         <div class="form-actions">
-          <button type="button" class="cancel-button" on:click={() => closeModal()} disabled={saving}>
+          <button type="button" class="btn btn-secondary btn-lg cancel-button" on:click={() => closeModal()} disabled={saving}>
             {$t('common.cancel')}
           </button>
           <button
             type="submit"
-            class="save-button primary"
+            class="btn btn-primary btn-lg save-button"
             disabled={saving || !isFormValid}
           >
             {#if saving}
@@ -905,29 +905,6 @@ let _llmConfigModalWasOpen = false;
 
   .form-label-row label {
     margin-bottom: 0;
-  }
-
-  .discover-models-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs);
-    cursor: pointer;
-    transition: background-color var(--duration-base) ease;
-  }
-
-  .discover-models-btn:hover:not(:disabled) {
-    background: var(--primary-color);
-  }
-
-  .discover-models-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .api-key-header {
@@ -1039,37 +1016,6 @@ let _llmConfigModalWasOpen = false;
     background: var(--card-bg);
   }
 
-  .test-connection-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .test-connection-btn:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .test-connection-btn:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .test-connection-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .share-toggle-row {
     display: flex;
     align-items: center;
@@ -1100,60 +1046,6 @@ let _llmConfigModalWasOpen = false;
     margin-top: var(--space-8);
     padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
-  }
-
-  .cancel-button {
-    background: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-md);
-  }
-
-  .cancel-button:hover:not(:disabled) {
-    background: var(--button-hover);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-hover);
-  }
-
-  .cancel-button:active {
-    transform: scale(1);
-  }
-
-  .save-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .save-button:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .save-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .save-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   /* Tooltip styles */

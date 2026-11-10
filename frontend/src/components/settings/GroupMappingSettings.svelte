@@ -189,10 +189,10 @@
               </td>
               <td class="numeric">{mapping.member_count}</td>
               <td class="actions-col">
-                <button type="button" class="btn btn-secondary btn-row" on:click={() => openEdit(mapping)}>
+                <button type="button" class="btn btn-secondary btn-sm btn-row" on:click={() => openEdit(mapping)}>
                   {$t('common.edit')}
                 </button>
-                <button type="button" class="btn btn-danger btn-row" on:click={() => askDelete(mapping)}>
+                <button type="button" class="btn btn-danger btn-sm btn-row" on:click={() => askDelete(mapping)}>
                   {$t('common.delete')}
                 </button>
               </td>
@@ -343,8 +343,6 @@
   }
 
   .btn-row {
-    padding: 0.3rem 0.65rem;
-    font-size: var(--font-size-xs);
     margin-left: 0.35rem;
   }
 

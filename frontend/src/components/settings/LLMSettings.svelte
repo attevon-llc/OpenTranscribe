@@ -455,7 +455,7 @@
           {$t('settings.llmProvider.savedConfigs')}
         </h4>
         {#if savedConfigurations.length > 0 || sharedConfigurations.length > 0}
-          <button class="create-config-button" on:click={openCreateModal} title={$t('settings.llmProvider.createConfigTooltip')}>
+          <button class="btn btn-primary create-config-button" on:click={openCreateModal} title={$t('settings.llmProvider.createConfigTooltip')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
@@ -500,7 +500,7 @@
                   </div>
                 {:else}
                   <button
-                    class="activate-button"
+                    class="btn btn-success activate-button"
                     on:click={() => activateConfiguration(config.uuid)}
                     disabled={saving}
                     title={$t('settings.llmProvider.activateTooltip')}
@@ -511,7 +511,7 @@
                 {/if}
 
                 <button
-                  class="test-connection-button"
+                  class="btn btn-secondary test-connection-button"
                   on:click={() => testSavedConfiguration(config)}
                   disabled={testing}
                   title={$t('settings.llmProvider.testConnection') + ' ' + config.name}
@@ -524,7 +524,7 @@
                 </button>
 
                 <button
-                  class="test-connection-button"
+                  class="btn btn-secondary test-connection-button"
                   on:click={() => probeReasoning(config)}
                   disabled={probingReasoning !== null}
                   title={$t('settings.llmProvider.probeReasoning')}
@@ -538,7 +538,7 @@
                 </button>
 
                 <button
-                  class="test-connection-button"
+                  class="btn btn-secondary test-connection-button"
                   on:click={() => probeContextWindow(config)}
                   disabled={probingWindow !== null}
                   title={$t('settings.llmProvider.probeContextWindow')}
@@ -553,7 +553,7 @@
                 </button>
 
                 <button
-                  class="edit-button"
+                  class="btn btn-secondary edit-button"
                   on:click={() => editConfiguration(config)}
                   disabled={saving}
                   title={$t('settings.llmProvider.editConfig')}
@@ -565,7 +565,7 @@
                 </button>
 
                 <button
-                  class="delete-config-button"
+                  class="btn btn-danger-outline delete-config-button"
                   on:click={() => confirmDeleteConfiguration(config)}
                   disabled={saving}
                   title={$t('settings.llmProvider.deleteConfig') + ' ' + config.name}
@@ -585,7 +585,7 @@
         <!-- Delete All Button -->
         <div class="delete-all-section">
           <button
-            class="delete-all-button"
+            class="btn btn-danger delete-all-button"
             on:click={confirmDeleteAll}
             disabled={saving}
             title={$t('settings.llmProvider.deleteAllTooltip')}
@@ -640,7 +640,7 @@
                   </div>
                 {:else}
                   <button
-                    class="activate-button"
+                    class="btn btn-success activate-button"
                     on:click={() => activateConfiguration(config.uuid)}
                     disabled={saving}
                     title={$t('settings.llmProvider.activateTooltip')}
@@ -650,7 +650,7 @@
                   </button>
                 {/if}
                 <button
-                  class="test-connection-button"
+                  class="btn btn-secondary test-connection-button"
                   on:click={() => testSavedConfiguration(config)}
                   disabled={testing}
                   title={$t('settings.llmProvider.testConnection') + ' ' + config.name}
@@ -676,7 +676,7 @@
           </div>
           <h4>{$t('settings.llmProvider.noConfigs')}</h4>
           <p>{$t('settings.llmProvider.noConfigsDesc')}</p>
-          <button class="create-first-config-btn" on:click={openCreateModal}>
+          <button class="btn btn-primary create-first-config-btn" on:click={openCreateModal}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
@@ -816,32 +816,6 @@
     color: var(--text-color);
   }
 
-  .create-config-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .create-config-button:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .create-config-button:active {
-    transform: scale(1);
-  }
-
   .config-list {
     display: flex;
     flex-direction: column;
@@ -924,112 +898,11 @@
     justify-content: center;
   }
 
-  .activate-button, .edit-button, .delete-config-button, .test-connection-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: 1px solid;
-    height: 32px;
-    box-sizing: border-box;
-  }
-
-  .activate-button {
-    background-color: var(--success-color);
-    border-color: var(--success-color);
-    color: var(--text-on-solid);
-    padding: var(--space-2) var(--space-2);
-  }
-
-  .activate-button:hover:not(:disabled) {
-    background-color: #059669;
-    border-color: #059669;
-  }
-
-  .test-connection-button {
-    background-color: transparent;
-    border-color: var(--primary-color);
-    color: var(--primary-on-surface);
-  }
-
-  .test-connection-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .edit-button {
-    background-color: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .edit-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .delete-config-button {
-    background-color: transparent;
-    border-color: var(--error-color);
-    color: var(--error-color);
-  }
-
-  .delete-config-button:hover:not(:disabled) {
-    background-color: var(--error-color);
-    border-color: var(--error-color);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .delete-config-button:active:not(:disabled) {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
   .delete-all-section {
     margin-top: var(--space-8);
     padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
     text-align: center;
-  }
-
-  .delete-all-button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: #ef4444;
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .delete-all-button:hover:not(:disabled) {
-    background: var(--error-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .delete-all-button:active:not(:disabled) {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .delete-all-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .empty-state {
@@ -1058,32 +931,6 @@
     color: var(--text-muted);
     font-size: var(--font-size-sm);
     line-height: 1.5;
-  }
-
-  .create-first-config-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .create-first-config-btn:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .create-first-config-btn:active {
-    transform: scale(1);
   }
 
   button:disabled {
@@ -1290,12 +1137,6 @@
     .config-status {
       width: 100%;
       justify-content: center;
-    }
-
-    .delete-all-button {
-      width: 100%;
-      justify-content: center;
-      min-height: 44px;
     }
 
     .empty-state {

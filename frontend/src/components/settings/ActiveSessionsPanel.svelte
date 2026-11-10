@@ -292,49 +292,6 @@
     justify-content: flex-end;
   }
 
-  .btn {
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-xl);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--button-hover);
-  }
-
-  .btn-danger {
-    background-color: rgba(239, 68, 68, 0.12);
-    color: #dc2626;
-    border: 1px solid rgba(239, 68, 68, 0.4);
-  }
-
-  .btn-danger:hover:not(:disabled) {
-    background-color: #ef4444;
-    color: var(--text-on-solid);
-  }
-
-  :global([data-theme='dark']) .btn-danger {
-    color: #f87171;
-  }
-
-  :global([data-theme='dark']) .btn-danger:hover:not(:disabled) {
-    color: var(--text-on-solid);
-  }
-
   @media (max-width: 768px) {
     .panel-header {
       flex-direction: column;

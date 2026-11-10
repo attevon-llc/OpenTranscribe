@@ -919,11 +919,6 @@
     color: var(--primary-on-surface);
   }
 
-  .btn-sm {
-    padding: var(--space-1) var(--space-3);
-    font-size: var(--font-size-xs);
-  }
-
   @media (max-width: 768px) {
     .reembed-banner {
       flex-direction: column;

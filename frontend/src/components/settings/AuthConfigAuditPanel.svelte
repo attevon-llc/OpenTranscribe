@@ -115,7 +115,7 @@
         {/each}
       </select>
     </label>
-    <button type="button" class="btn-secondary" on:click={loadEntries} disabled={loading}>
+    <button type="button" class="btn btn-secondary btn-sm" on:click={loadEntries} disabled={loading}>
       {$t('settings.authAudit.refresh')}
     </button>
   </div>
@@ -168,7 +168,7 @@
 
     {#if hasMore}
       <div class="more-actions">
-        <button type="button" class="btn-secondary" on:click={loadMore} disabled={loadingMore}>
+        <button type="button" class="btn btn-secondary btn-sm" on:click={loadMore} disabled={loadingMore}>
           {loadingMore ? $t('settings.authAudit.loading') : $t('settings.authAudit.loadMore')}
         </button>
       </div>
@@ -223,27 +223,6 @@
     font-size: var(--font-size-xs);
     min-width: 12rem;
     height: 1.75rem;
-  }
-
-  .btn-secondary {
-    padding: var(--space-1) var(--space-2-5);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-xs);
-    height: 1.75rem;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--button-hover);
-  }
-
-  .btn-secondary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .table-scroll {

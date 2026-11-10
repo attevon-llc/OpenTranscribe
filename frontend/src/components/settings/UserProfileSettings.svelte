@@ -453,37 +453,6 @@
     justify-content: flex-end;
   }
 
-  .btn {
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    border: none;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-primary {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   @media (max-width: 768px) {
     .form-actions {
       flex-direction: column-reverse;

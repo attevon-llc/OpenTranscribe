@@ -183,7 +183,7 @@
                 <span class="link-name">{link.email_config_name}</span>
                 <span class="badge type-badge">{link.email_config_provider.toUpperCase()}</span>
                 <button
-                  class="btn btn-danger btn-sm unlink"
+                  class="btn btn-danger unlink"
                   disabled={savingUuid === link.email_config_uuid}
                   on:click={() => unlink(link)}
                 >
@@ -224,7 +224,7 @@
 
               <div class="link-actions">
                 <button
-                  class="btn btn-primary btn-sm"
+                  class="btn btn-primary"
                   disabled={savingUuid === link.email_config_uuid}
                   on:click={() => save(link)}
                 >
@@ -382,10 +382,6 @@
     color: var(--text-secondary);
     font-size: 0.85rem;
     margin: 0;
-  }
-  .btn-sm {
-    padding: var(--space-1) var(--space-2-5);
-    font-size: 0.8rem;
   }
   .modal-title {
     margin: 0;

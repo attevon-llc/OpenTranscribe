@@ -180,7 +180,7 @@
   {:else if loadFailed}
     <div class="state-row error">
       <span>{$t('settings.quarantine.loadFailed')}</span>
-      <button class="retry-btn" on:click={() => load(offset)}>{$t('common.retry')}</button>
+      <button class="btn btn-secondary" on:click={() => load(offset)}>{$t('common.retry')}</button>
     </div>
   {:else if total === 0}
     <EmptyState
@@ -349,15 +349,6 @@
   .state-row.error {
     color: #dc2626;
     justify-content: space-between;
-  }
-
-  .retry-btn {
-    padding: var(--space-1) var(--space-3);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
   }
 
   .quarantine-table {

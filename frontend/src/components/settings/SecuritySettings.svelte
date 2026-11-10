@@ -246,7 +246,7 @@
             <img src="data:image/png;base64,{setupData.qr_code_base64}" alt={$t('settings.security.qrCodeAlt')} />
           </div>
 
-          <button class="btn-link" on:click={() => showManualEntry = !showManualEntry}>
+          <button class="btn btn-link" on:click={() => showManualEntry = !showManualEntry}>
             {showManualEntry ? $t('settings.security.hideManualEntry') : $t('settings.security.showManualEntry')}
           </button>
 
@@ -503,20 +503,6 @@
     display: block;
     width: 200px;
     height: 200px;
-  }
-
-  .btn-link {
-    background: none;
-    border: none;
-    color: var(--primary-on-surface);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    text-decoration: underline;
-    padding: 0;
-  }
-
-  .btn-link:hover {
-    color: var(--primary-hover);
   }
 
   .manual-entry {

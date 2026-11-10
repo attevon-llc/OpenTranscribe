@@ -195,7 +195,7 @@
               </svg>
               <span>{$t('settings.orgContext.usingSharedBanner', { name: activeShared.owner_name })}</span>
             </div>
-            <button class="btn-stop-shared" on:click={handleStopUsingShared} disabled={saving}>
+            <button class="btn btn-danger btn-sm" on:click={handleStopUsingShared} disabled={saving}>
               {$t('settings.orgContext.useOwn')}
             </button>
           </div>
@@ -313,7 +313,7 @@
                 <div class="shared-card-actions">
                   {#if shared.is_active}
                     <button
-                      class="btn-shared-action btn-stop"
+                      class="btn btn-danger btn-sm"
                       on:click={handleStopUsingShared}
                       disabled={saving}
                     >
@@ -321,7 +321,7 @@
                     </button>
                   {:else}
                     <button
-                      class="btn-shared-action btn-use"
+                      class="btn btn-primary btn-sm"
                       on:click={() => handleUseShared(shared.user_id)}
                       disabled={saving}
                     >
@@ -482,35 +482,6 @@
     color: var(--primary-on-surface);
   }
 
-  .btn-stop-shared {
-    padding: var(--space-1-5) var(--space-3);
-    background-color: #ef4444;
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    color: var(--text-on-solid);
-    transition: all var(--duration-fast);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-stop-shared:hover:not(:disabled) {
-    background-color: var(--error-solid);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
-  }
-
-  .btn-stop-shared:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-stop-shared:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   /* Shared by Others section */
   .shared-section {
     margin-top: var(--space-2);
@@ -605,55 +576,6 @@
 
   .shared-card-actions {
     flex-shrink: 0;
-  }
-
-  .btn-shared-action {
-    padding: var(--space-1-5) var(--space-3);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-fast);
-  }
-
-  .btn-use {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-use:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-use:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-stop {
-    background-color: #ef4444;
-    color: var(--text-on-solid);
-    border: none;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-stop:hover:not(:disabled) {
-    background-color: var(--error-solid);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
-  }
-
-  .btn-stop:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-shared-action:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   /* Responsive */

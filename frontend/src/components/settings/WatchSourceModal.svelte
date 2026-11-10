@@ -350,7 +350,7 @@
               <div class="folder-browser">
                 <div class="fb-header">
                   <span class="fb-current">/{listing.current_path}</span>
-                  <button type="button" class="btn-link" on:click={() => selectFolder(listing?.current_path ?? '')}>{$t('settings.watchSources.selectThisFolder')}</button>
+                  <button type="button" class="btn btn-link" on:click={() => selectFolder(listing?.current_path ?? '')}>{$t('settings.watchSources.selectThisFolder')}</button>
                 </div>
                 {#if listing.parent_path !== null && listing.parent_path !== undefined}
                   <button type="button" class="fb-entry" on:click={() => openBrowser(listing?.parent_path ?? '')}>.. ({$t('settings.watchSources.parent')})</button>
@@ -847,15 +847,6 @@
     padding: var(--space-2) var(--space-2-5);
     color: var(--text-secondary);
     font-size: 0.8rem;
-  }
-  .btn-link {
-    background: none;
-    border: none;
-    box-shadow: none;
-    color: var(--primary-on-surface);
-    cursor: pointer;
-    font-size: 0.8rem;
-    padding: 0;
   }
   .test-result {
     display: flex;

@@ -273,10 +273,10 @@
     {#if selectedUuids.size > 0}
       <div class="bulk-bar">
         <span>{$t('settings.watchSources.files.selectedCount', { count: selectedUuids.size })}</span>
-        <button class="btn btn-secondary btn-sm" on:click={() => retry([...selectedUuids])}>
+        <button class="btn btn-secondary" on:click={() => retry([...selectedUuids])}>
           {$t('settings.watchSources.files.retrySelected')}
         </button>
-        <button class="btn btn-danger btn-sm" on:click={() => (confirmBulkDelete = true)}>
+        <button class="btn btn-danger" on:click={() => (confirmBulkDelete = true)}>
           {$t('settings.watchSources.files.deleteSelected')}
         </button>
       </div>
@@ -371,10 +371,6 @@
     display: flex;
     justify-content: center;
     padding: var(--space-8);
-  }
-  .btn-sm {
-    padding: var(--space-1) var(--space-2-5);
-    font-size: 0.8rem;
   }
   .modal-title {
     margin: 0;

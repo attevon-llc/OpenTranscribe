@@ -161,7 +161,7 @@
       <!-- Save Button -->
       <div class="form-actions">
         <button
-          class="save-button"
+          class="btn btn-primary save-button"
           on:click={saveSettings}
           disabled={saving || !settingsChanged}
         >
@@ -316,36 +316,6 @@
     padding-top: var(--space-2);
   }
 
-  .save-button {
-    padding: var(--space-3) var(--space-8);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-xl);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .save-button:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
-  }
-
-  .save-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .save-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .info-box {
     display: flex;
     gap: var(--space-4);
@@ -400,10 +370,5 @@
       flex-direction: column;
     }
 
-    .save-button {
-      width: 100%;
-      min-height: 44px;
-      justify-content: center;
-    }
   }
 </style>

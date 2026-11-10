@@ -219,12 +219,14 @@
             {/if}
           </div>
           <div class="term-actions">
+            <span class="toggle-wrap" title={term.is_active ? $t('settings.customVocabulary.disable') : $t('settings.customVocabulary.enable')}>
             <Toggle
               checked={term.is_active}
               onchange={() => toggleActive(term)}
               disabled={term.is_system}
               label={term.is_active ? $t('settings.customVocabulary.disable') : $t('settings.customVocabulary.enable')}
             />
+            </span>
             {#if !term.is_system}
               {#if showDeleteConfirm && termToDelete?.id === term.id}
                 <span class="delete-confirm-inline">
@@ -457,6 +459,10 @@
     align-items: center;
     gap: var(--space-2);
     flex-shrink: 0;
+  }
+
+  .toggle-wrap {
+    display: inline-flex;
   }
 
   .btn-delete-term {

@@ -326,8 +326,8 @@
     <!-- Enable toggle -->
     <div class="field-row">
       <div class="toggle-label">
-        <Toggle checked={enabled} onchange={(next) => (enabled = next)} labelledby="backup-toggle-label-1" />
-        <span class="toggle-text" id="backup-toggle-label-1">{$t('settings.backup.enableLabel')}</span>
+        <Toggle checked={enabled} onchange={(next) => (enabled = next)} id="backup-toggle-label-1" />
+        <label class="toggle-text" for="backup-toggle-label-1">{$t('settings.backup.enableLabel')}</label>
       </div>
     </div>
 
@@ -453,8 +453,8 @@
     <!-- Encryption -->
     <div class="field-row encryption-row">
       <div class="toggle-label">
-        <Toggle checked={encrypt} onchange={(next) => (encrypt = next)} labelledby="backup-toggle-label-2" />
-        <span class="toggle-text" id="backup-toggle-label-2">{$t('settings.backup.encryptLabel')}</span>
+        <Toggle checked={encrypt} onchange={(next) => (encrypt = next)} id="backup-toggle-label-2" />
+        <label class="toggle-text" for="backup-toggle-label-2">{$t('settings.backup.encryptLabel')}</label>
       </div>
     </div>
     {#if encrypt}
@@ -468,8 +468,8 @@
     <!-- OpenSearch snapshot -->
     <div class="field-row opensearch-row">
       <div class="toggle-label">
-        <Toggle checked={includeOpensearch} onchange={(next) => (includeOpensearch = next)} labelledby="backup-toggle-label-3" />
-        <span class="toggle-text" id="backup-toggle-label-3">{$t('settings.backup.includeOpensearchLabel')}</span>
+        <Toggle checked={includeOpensearch} onchange={(next) => (includeOpensearch = next)} id="backup-toggle-label-3" />
+        <label class="toggle-text" for="backup-toggle-label-3">{$t('settings.backup.includeOpensearchLabel')}</label>
       </div>
       <span class="field-hint opensearch-hint">{$t('settings.backup.includeOpensearchHint')}</span>
     </div>
@@ -753,6 +753,7 @@
   }
 
   .toggle-text {
+    cursor: pointer;
     font-size: var(--font-size-md);
     color: var(--text-color);
   }

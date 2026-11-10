@@ -160,8 +160,8 @@
     <!-- Enable toggle -->
     <div class="field-row">
       <div class="toggle-label">
-        <Toggle checked={enabled} onchange={(next) => (enabled = next)} labelledby="dirsync-toggle-label-1" />
-        <span class="toggle-text" id="dirsync-toggle-label-1">{$t('settings.directorySync.enableLabel')}</span>
+        <Toggle checked={enabled} onchange={(next) => (enabled = next)} id="dirsync-toggle-label-1" />
+        <label class="toggle-text" for="dirsync-toggle-label-1">{$t('settings.directorySync.enableLabel')}</label>
       </div>
       <span class="field-hint enable-hint">{$t('settings.directorySync.enableHint')}</span>
     </div>
@@ -199,8 +199,8 @@
     <!-- Dry run -->
     <div class="field-row dry-run-row">
       <div class="toggle-label">
-        <Toggle checked={dryRun} onchange={(next) => (dryRun = next)} labelledby="dirsync-toggle-label-2" />
-        <span class="toggle-text" id="dirsync-toggle-label-2">{$t('settings.directorySync.dryRunLabel')}</span>
+        <Toggle checked={dryRun} onchange={(next) => (dryRun = next)} id="dirsync-toggle-label-2" />
+        <label class="toggle-text" for="dirsync-toggle-label-2">{$t('settings.directorySync.dryRunLabel')}</label>
       </div>
       <span class="field-hint enable-hint">{$t('settings.directorySync.dryRunHint')}</span>
     </div>
@@ -377,6 +377,7 @@
   }
 
   .toggle-text {
+    cursor: pointer;
     font-size: var(--font-size-md);
     color: var(--text-color);
   }

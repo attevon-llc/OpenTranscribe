@@ -75,3 +75,17 @@ describe('ASRConfigModal presets (adding shared credentials from the policy pane
     expect((document.querySelector('[role="switch"]') as HTMLInputElement).checked).toBe(false);
   });
 });
+
+describe('ASRConfigModal share switch', () => {
+  it('flips when its text is clicked', async () => {
+    render(ASRConfigModal, { props: { show: true, providers: PROVIDERS } });
+    const sw = (await waitFor(() => {
+      const el = document.querySelector('[role="switch"]') as HTMLInputElement;
+      expect(el).not.toBeNull();
+      return el;
+    })) as HTMLInputElement;
+    expect(sw.checked).toBe(false);
+    await fireEvent.click(document.querySelector('label[for="asr-share-globally-label"]')!);
+    await waitFor(() => expect(sw.checked).toBe(true));
+  });
+});

@@ -478,9 +478,9 @@
             checked={formData.is_shared}
             onchange={(next) => (formData.is_shared = next)}
             disabled={saving}
-            labelledby="asr-share-globally-label"
+            id="asr-share-globally-label"
           />
-          <span class="toggle-text" id="asr-share-globally-label">{$t('settings.asrProvider.shareGlobally')}</span>
+          <label class="toggle-text" for="asr-share-globally-label">{$t('settings.asrProvider.shareGlobally')}</label>
         </div>
 
   <svelte:fragment slot="footer">
@@ -670,6 +670,7 @@
   }
 
   .toggle-text {
+    cursor: pointer;
     color: var(--text-color);
     font-size: var(--font-size-sm);
     user-select: none;

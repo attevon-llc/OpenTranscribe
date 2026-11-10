@@ -133,8 +133,8 @@
         <h3 class="section-title">{$t('settings.contentRedaction.general')}</h3>
         <div class="setting-row">
           <div class="toggle-label">
-            <Toggle checked={settings.enabled} onchange={(next) => (settings.enabled = next)} labelledby="redaction-toggle-label-1" />
-            <span class="toggle-text" id="redaction-toggle-label-1">{$t('settings.contentRedaction.enabled')}</span>
+            <Toggle checked={settings.enabled} onchange={(next) => (settings.enabled = next)} id="redaction-toggle-label-1" />
+            <label class="toggle-text" for="redaction-toggle-label-1">{$t('settings.contentRedaction.enabled')}</label>
           </div>
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.enabledHelp')}</p>
@@ -302,22 +302,22 @@
         <h3 class="section-title">{$t('settings.contentRedaction.privacy')}</h3>
         <div class="setting-row" class:disabled-toggle={llmLocked}>
           <div class="toggle-label">
-            <Toggle checked={settings.redact_before_llm} onchange={(next) => (settings.redact_before_llm = next)} disabled={llmLocked} labelledby="redaction-toggle-label-2" />
-            <span class="toggle-text" id="redaction-toggle-label-2">
+            <Toggle checked={settings.redact_before_llm} onchange={(next) => (settings.redact_before_llm = next)} disabled={llmLocked} id="redaction-toggle-label-2" />
+            <label class="toggle-text" for="redaction-toggle-label-2">
               {$t('settings.contentRedaction.redactBeforeLlm')}
               {#if llmLocked}<span class="lock-badge"><MenuIcon name="lock" size={13} /></span>{/if}
-            </span>
+            </label>
           </div>
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.redactBeforeLlmHelp')}</p>
 
         <div class="setting-row" class:disabled-toggle={exportLocked} style="margin-top: 0.75rem;">
           <div class="toggle-label">
-            <Toggle checked={settings.default_export_redacted} onchange={(next) => (settings.default_export_redacted = next)} disabled={exportLocked} labelledby="redaction-toggle-label-3" />
-            <span class="toggle-text" id="redaction-toggle-label-3">
+            <Toggle checked={settings.default_export_redacted} onchange={(next) => (settings.default_export_redacted = next)} disabled={exportLocked} id="redaction-toggle-label-3" />
+            <label class="toggle-text" for="redaction-toggle-label-3">
               {$t('settings.contentRedaction.exportRedacted')}
               {#if exportLocked}<span class="lock-badge"><MenuIcon name="lock" size={13} /></span>{/if}
-            </span>
+            </label>
           </div>
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.exportRedactedHelp')}</p>
@@ -542,6 +542,7 @@
     user-select: none;
   }
   .toggle-text {
+    cursor: pointer;
     font-size: var(--font-size-md);
     color: var(--text-color);
     display: inline-flex;

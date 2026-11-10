@@ -546,19 +546,19 @@
                   checked={config.is_active !== false}
                   onchange={() => handleEnabledToggle(config)}
                   disabled={saving}
-                  labelledby="asr-enabled-label-{config.uuid}"
+                  id="asr-enabled-label-{config.uuid}"
                   testid="asr-enabled-toggle"
                 />
-                <span class="toggle-text" id="asr-enabled-label-{config.uuid}">{$t('settings.asrProvider.enabledToggle')}</span>
+                <label class="toggle-text" for="asr-enabled-label-{config.uuid}">{$t('settings.asrProvider.enabledToggle')}</label>
               </div>
               <div class="share-toggle-row">
                 <Toggle
                   checked={config.is_shared === true}
                   onchange={() => handleShareToggle(config)}
                   disabled={saving}
-                  labelledby="asr-share-label-{config.uuid}"
+                  id="asr-share-label-{config.uuid}"
                 />
-                <span class="toggle-text" id="asr-share-label-{config.uuid}">{$t('settings.asrProvider.shareGlobally')}</span>
+                <label class="toggle-text" for="asr-share-label-{config.uuid}">{$t('settings.asrProvider.shareGlobally')}</label>
               </div>
             </div>
 
@@ -1125,7 +1125,8 @@
     border-top: 1px dashed var(--border-color);
   }
 
-  .toggle-text { user-select: none; font-size: var(--font-size-xs); color: var(--text-muted); }
+  .toggle-text {
+    cursor: pointer; user-select: none; font-size: var(--font-size-xs); color: var(--text-muted); }
 
   /* Local model section (all users) */
   .local-model-section {

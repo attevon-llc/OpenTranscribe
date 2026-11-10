@@ -6,11 +6,11 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 from typing import Any
 
-from minio.error import S3Error
 from sqlalchemy import case
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import subqueryload
 
+from app.core.exceptions import StorageError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
@@ -173,7 +173,7 @@ def list_clusters(
                 from app.services.minio_service import get_file_url
 
                 promoted_avatar_url = get_file_url(promoted_profile.avatar_path, expires=3600)
-            except (S3Error, OSError):
+            except StorageError:
                 logger.debug("Failed to get avatar URL for profile", exc_info=True)
 
         # Build gender composition from batch query

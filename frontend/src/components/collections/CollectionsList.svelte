@@ -71,7 +71,7 @@
     {#if viewMode === 'manage'}
       <div class="collection-actions">
         <button
-          class="share-button"
+          class="btn btn-secondary share-button"
           title={$t('sharing.shareCollection')}
           on:click|stopPropagation={() => dispatch('share', collection)}
         >
@@ -82,7 +82,7 @@
           </svg>
         </button>
         <button
-          class="edit-button"
+          class="btn btn-secondary edit-button"
           title={$t('collectionsPanel.editCollection')}
           on:click|stopPropagation={() => dispatch('edit', collection)}
         >
@@ -95,7 +95,7 @@
              their creator or an org admin (my_permission "owner") may delete one. -->
         {#if (collection.my_permission ?? 'owner') === 'owner'}
           <button
-            class="delete-config-button"
+            class="btn btn-danger-outline delete-config-button"
             title={$t('collectionsPanel.deleteCollection')}
             on:click|stopPropagation={() => dispatch('delete', collection)}
           >
@@ -110,7 +110,7 @@
       </div>
     {:else if viewMode === 'add' && selectedMediaIds.length > 0}
       <button
-        class="btn-add"
+        class="btn btn-primary btn-add"
         disabled={addingToCollection}
         on:click|stopPropagation={() => dispatch('add', collection.uuid)}
       >
@@ -219,86 +219,6 @@
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     padding: var(--space-1) 0;
-  }
-
-  .share-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: 1px solid;
-    background-color: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .share-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .edit-button, .delete-config-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: 1px solid;
-  }
-
-  .edit-button {
-    background-color: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .edit-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .delete-config-button {
-    background-color: transparent;
-    border-color: var(--error-color);
-    color: var(--error-color);
-  }
-
-  .delete-config-button:hover:not(:disabled) {
-    background-color: var(--error-color);
-    border-color: var(--error-color);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-  }
-
-  .btn-add {
-    padding: var(--space-1-5) var(--space-3);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base);
-    white-space: nowrap;
-  }
-
-  .btn-add:hover:not(:disabled) {
-    background: var(--primary-color);
-  }
-
-  .btn-add:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   :global([data-theme='dark']) .collection-card {

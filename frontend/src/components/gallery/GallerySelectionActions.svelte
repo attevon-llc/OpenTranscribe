@@ -169,7 +169,7 @@
     <!-- Selection mode: consolidated into dropdown groups -->
     <div class="selection-actions">
       <button
-        class="action-btn select-all-btn"
+        class="btn btn-primary action-btn select-all-btn"
         on:click={handleSelectAllFiles}
         title={$t('gallery.bulk.selectAllTooltip')}
       >
@@ -184,7 +184,7 @@
       <div class="dropdown-container">
         <button
           bind:this={processBtn}
-          class="action-btn process-btn"
+          class="btn btn-primary action-btn process-btn"
           on:click={toggleProcessMenu}
           title={$t('gallery.bulk.processTooltip')}
         >
@@ -313,7 +313,7 @@
       <div class="dropdown-container">
         <button
           bind:this={organizeBtn}
-          class="action-btn organize-btn"
+          class="btn btn-secondary action-btn organize-btn"
           on:click={toggleOrganizeMenu}
           title={$t('gallery.bulk.organizeTooltip')}
         >
@@ -450,7 +450,7 @@
 
       {#if !$supportSessionGate.readOnly}
       <button
-        class="action-btn delete-btn"
+        class="btn btn-danger action-btn delete-btn"
         on:click={handleDeleteSelected}
         disabled={$selectedCount === 0 || !hasDeletableSelected}
         title={$selectedCount > 0 && !hasDeletableSelected
@@ -468,9 +468,10 @@
       {/if}
 
       <button
-        class="action-btn cancel-btn"
+        class="btn btn-secondary action-btn cancel-btn"
         on:click={handleCancelSelection}
         title={$t('gallery.bulk.cancelSelectionTooltip')}
+        aria-label={$t('gallery.bulk.cancelSelectionTooltip')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -480,7 +481,7 @@
     </div>
   {:else}
     <button
-      class="action-btn select-btn"
+      class="btn btn-secondary action-btn select-btn"
       on:click={handleSelectFilesClick}
       title={$t('gallery.bulk.selectFilesTooltip')}
     >
@@ -511,33 +512,11 @@
 
   /* Base button style */
   .action-btn {
-    color: var(--text-on-solid);
-    border: none;
     padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-xl);
     font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    display: flex;
-    align-items: center;
     gap: 0.35rem;
-    white-space: nowrap;
     flex-shrink: 0;
-    font-family: inherit;
-  }
-
-  .action-btn:hover:not(:disabled) {
-    transform: scale(1.02);
-  }
-
-  .action-btn:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .action-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .action-btn svg {
@@ -554,82 +533,9 @@
     transform: rotate(180deg);
   }
 
-  /*
-   * Button color system — 2-color toolbar (Apple HIG / Material Design):
-   *   PRIMARY (blue)    — one main action per view (Select All, Process)
-   *   SECONDARY (surface/border) — all other toolbar actions
-   *   DANGER (red)      — destructive actions only (Delete)
-   *   CANCEL (gray)     — dismiss / exit mode
-   */
-
-  .select-btn {
-    background-color: var(--surface-color);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  }
-
-  .select-btn:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  }
-
-  :global([data-theme='dark']) .select-btn:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.08);
-  }
-
-  /* Primary actions — solid blue */
-  .select-all-btn,
-  .process-btn {
-    background-color: var(--primary-color);
-    box-shadow: var(--shadow-primary);
-  }
-
-  .select-all-btn:hover:not(:disabled),
-  .process-btn:hover:not(:disabled) {
-    background-color: var(--primary-hover);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  /* Secondary — surface with border */
-  .organize-btn {
-    background-color: var(--surface-color);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  }
-
-  .organize-btn:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  }
-
-  :global([data-theme='dark']) .organize-btn:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.08);
-  }
-
-  /* Danger — red, destructive only */
-  .delete-btn {
-    background-color: var(--error-solid);
-    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
-  }
-
-  .delete-btn:hover:not(:disabled) {
-    background-color: #b91c1c;
-    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25);
-  }
-
-  /* Cancel — neutral gray */
   .cancel-btn {
-    background-color: #6b7280;
-    box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
     padding: var(--space-1-5) var(--space-2);
     align-self: stretch;
-  }
-
-  .cancel-btn:hover:not(:disabled) {
-    background-color: #4b5563;
-    box-shadow: 0 4px 8px rgba(107, 114, 128, 0.25);
   }
 
   /* Dropdown */
@@ -685,7 +591,7 @@
     margin: var(--space-1) 0;
   }
 
-  /* Matches .delete-btn's destructive red — this is also a takedown action.
+  /* Matches .btn-danger's destructive red — this is also a takedown action.
      Uses --color-error-text rather than the fill red: measured, #dc2626 on this
      rule's own hover tint (rgba(220,38,38,0.1) over white = rgb(251,233,233)) is
      4.12:1, under WCAG AA. See the v0.6.0 text-vs-fill status-colour split. */

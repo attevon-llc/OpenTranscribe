@@ -137,7 +137,7 @@
   <div class="groups-overview">
     <!-- Header with Create button -->
     <div class="overview-header">
-      <button class="btn-create" on:click={() => (showCreateModal = true)}>
+      <button class="btn btn-lg btn-primary btn-create" on:click={() => (showCreateModal = true)}>
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -154,7 +154,7 @@
     {:else if $groupsStore.error}
       <div class="error-state">
         <p>{$groupsStore.error}</p>
-        <button class="btn-retry" on:click={loadGroups}>{$t('groups.retry')}</button>
+        <button class="btn btn-primary btn-sm btn-retry" on:click={loadGroups}>{$t('groups.retry')}</button>
       </div>
     {:else if $groupsStore.groups.length === 0}
       <EmptyState title={$t('groups.emptyTitle')} description={$t('groups.emptyDescription')} padding="2.5rem 1rem">
@@ -243,32 +243,6 @@
     justify-content: flex-end;
   }
 
-  .btn-create {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    padding: 0.6rem 1.2rem;
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-xl);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-primary);
-  }
-
-  .btn-create:hover {
-    background-color: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  .btn-create:active {
-    transform: scale(1);
-  }
-
   .loading-state {
     display: flex;
     flex-direction: column;
@@ -292,29 +266,6 @@
 
   .error-state p {
     margin: 0 0 var(--space-3);
-  }
-
-  .btn-retry {
-    padding: var(--space-1-5) var(--space-3);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-primary);
-  }
-
-  .btn-retry:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  .btn-retry:active:not(:disabled) {
-    transform: scale(1);
   }
 
   .search-wrapper {

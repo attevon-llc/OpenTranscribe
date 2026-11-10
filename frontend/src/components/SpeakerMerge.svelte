@@ -214,14 +214,14 @@
 
       <div class="merge-actions">
         <button
-          class="btn-secondary"
+          class="btn btn-lg btn-secondary"
           on:click={clearSelection}
           disabled={selectedSpeakers.size === 0}
         >
           {$t('speaker.clearSelection')}
         </button>
         <button
-          class="btn-primary"
+          class="btn btn-lg btn-primary"
           on:click={openTargetDialog}
           disabled={!canMerge}
           title={canMerge ? $t('speaker.selectTargetAndMerge') : $t('speaker.selectAtLeastTwo')}
@@ -269,11 +269,11 @@
     </div>
 
     <svelte:fragment slot="footer">
-      <button class="btn-secondary" on:click={closeTargetDialog} disabled={merging}>
+      <button class="btn btn-lg btn-secondary" on:click={closeTargetDialog} disabled={merging}>
         {$t('common.cancel')}
       </button>
       <button
-        class="btn-primary"
+        class="btn btn-lg btn-primary"
         on:click={performMerge}
         disabled={!targetSpeaker || merging}
       >
@@ -428,66 +428,6 @@
     display: flex;
     gap: var(--space-3);
     justify-content: flex-end;
-  }
-
-  .btn-primary,
-  .btn-secondary {
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: none;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .btn-primary {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-primary:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-  }
-
-  .btn-secondary {
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--card-shadow);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    border-color: var(--border-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  }
-
-  .btn-secondary:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-secondary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .modal-description {

@@ -165,7 +165,7 @@
 <div class="group-detail">
   <!-- Header with back button -->
   <div class="detail-header">
-    <button class="btn-back" on:click={() => dispatch('back')}>
+    <button class="btn btn-ghost btn-back" on:click={() => dispatch('back')}>
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="19" y1="12" x2="5" y2="12"></line>
         <polyline points="12 19 5 12 12 5"></polyline>
@@ -175,7 +175,7 @@
 
     {#if canDelete}
       <button
-        class="btn-delete"
+        class="btn btn-danger-outline btn-sm btn-delete"
         on:click={requestDelete}
         disabled={isDeleting}
         title={$t('groups.deleteGroup')}
@@ -201,10 +201,10 @@
           on:keydown={handleNameKeydown}
         />
         <div class="edit-actions">
-          <button class="btn-inline-save" on:click={saveName} disabled={isSaving}>
+          <button class="btn btn-primary btn-sm btn-inline-save" on:click={saveName} disabled={isSaving}>
             {$t('common.save')}
           </button>
-          <button class="btn-inline-cancel" on:click={cancelEditName}>
+          <button class="btn btn-secondary btn-sm btn-inline-cancel" on:click={cancelEditName}>
             {$t('modal.cancel')}
           </button>
         </div>
@@ -234,10 +234,10 @@
           on:keydown={handleDescKeydown}
         ></textarea>
         <div class="edit-actions">
-          <button class="btn-inline-save" on:click={saveDescription} disabled={isSaving}>
+          <button class="btn btn-primary btn-sm btn-inline-save" on:click={saveDescription} disabled={isSaving}>
             {$t('common.save')}
           </button>
-          <button class="btn-inline-cancel" on:click={cancelEditDescription}>
+          <button class="btn btn-secondary btn-sm btn-inline-cancel" on:click={cancelEditDescription}>
             {$t('modal.cancel')}
           </button>
         </div>
@@ -319,49 +319,6 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: var(--space-1);
-  }
-
-  .btn-back {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--primary-on-surface);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    padding: var(--space-1-5) var(--space-2);
-    border-radius: var(--radius-md);
-    transition: background-color var(--duration-fast);
-  }
-
-  .btn-back:hover {
-    background-color: var(--primary-light);
-  }
-
-  .btn-delete {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    padding: var(--space-1-5) var(--space-3);
-    border: 1px solid var(--danger-color);
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--danger-color);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-fast);
-  }
-
-  .btn-delete:hover:not(:disabled) {
-    background-color: rgba(220, 38, 38, 0.08);
-  }
-
-  .btn-delete:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .detail-name-section {
@@ -457,39 +414,8 @@
     gap: var(--space-2);
   }
 
-  .btn-inline-save,
-  .btn-inline-cancel {
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-fast);
-  }
-
-  .btn-inline-save {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-  }
-
-  .btn-inline-save:hover:not(:disabled) {
-    background: var(--primary-color);
-  }
-
-  .btn-inline-save:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-inline-cancel {
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-inline-cancel:hover {
-    background: var(--button-hover);
+  .btn-back {
+    color: var(--primary-on-surface);
   }
 
   .detail-meta {

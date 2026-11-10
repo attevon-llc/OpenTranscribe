@@ -118,26 +118,26 @@
         label={$t('settings.watchSources.fields.enabled')}
       />
     </span>
-    <button class="btn btn-secondary btn-sm" on:click={() => dispatch('test', source)} disabled={testing}>
+    <button class="btn btn-secondary" on:click={() => dispatch('test', source)} disabled={testing}>
       {#if testing}<Spinner size="small" />{:else}{$t('settings.watchSources.test')}{/if}
     </button>
     <button
-      class="btn btn-secondary btn-sm"
+      class="btn btn-secondary"
       on:click={() => dispatch('scan', source)}
       disabled={!source.is_enabled}
     >
       {$t('settings.watchSources.scanNow')}
     </button>
-    <button class="btn btn-secondary btn-sm" on:click={() => dispatch('files', source)}>
+    <button class="btn btn-secondary" on:click={() => dispatch('files', source)}>
       {$t('settings.watchSources.files.button')}
     </button>
-    <button class="btn btn-secondary btn-sm" on:click={() => dispatch('notifications', source)}>
+    <button class="btn btn-secondary" on:click={() => dispatch('notifications', source)}>
       {$t('settings.emailNotifications.links.button')}
     </button>
-    <button class="btn btn-secondary btn-sm" on:click={() => dispatch('edit', source)}>
+    <button class="btn btn-secondary" on:click={() => dispatch('edit', source)}>
       {$t('common.edit')}
     </button>
-    <button class="btn btn-danger btn-sm" on:click={() => dispatch('delete', source)}>
+    <button class="btn btn-danger" on:click={() => dispatch('delete', source)}>
       {$t('common.delete')}
     </button>
   </div>
@@ -211,9 +211,5 @@
     align-items: center;
     gap: var(--space-1-5);
     flex-wrap: wrap;
-  }
-  .btn-sm {
-    padding: var(--space-1) var(--space-2-5);
-    font-size: 0.8rem;
   }
 </style>

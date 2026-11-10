@@ -143,7 +143,7 @@
 <div class="orphans" data-testid="orphaned-data-panel">
   <div class="orphans-head">
     <h4 class="orphans-title">{$t('settings.dataIntegrity.orphans.title')}</h4>
-    <button class="btn btn-secondary btn-small" on:click={() => scan()} disabled={scanning || removing}>
+    <button class="btn btn-secondary btn-sm" on:click={() => scan()} disabled={scanning || removing}>
       {$t('settings.dataIntegrity.orphans.rescan')}
     </button>
   </div>
@@ -220,7 +220,7 @@
         {/if}
         <p>{$t('settings.dataIntegrity.orphans.guardExplain')}</p>
         <button
-          class="btn btn-secondary btn-small"
+          class="btn btn-secondary btn-sm"
           on:click={() => (showOverride = true)}
           disabled={!canOverride}
         >

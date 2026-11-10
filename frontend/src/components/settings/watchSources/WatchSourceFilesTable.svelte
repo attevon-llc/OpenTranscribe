@@ -125,7 +125,7 @@
         <td class="actions-col">
           {#if RETRYABLE_FILE_STATUSES.has(file.status)}
             <button
-              class="btn btn-secondary btn-sm"
+              class="btn btn-secondary"
               disabled={busyUuids.has(file.uuid)}
               on:click={() => dispatch('retry', file)}
             >
@@ -137,7 +137,7 @@
             </button>
           {/if}
           <button
-            class="btn btn-danger btn-sm"
+            class="btn btn-danger"
             disabled={busyUuids.has(file.uuid)}
             on:click={() => dispatch('delete', file)}
           >
@@ -201,10 +201,6 @@
   }
   .actions-col .btn {
     margin-left: var(--space-1);
-  }
-  .btn-sm {
-    padding: var(--space-1) var(--space-2-5);
-    font-size: 0.8rem;
   }
   /* Override the global `input { width:100% }` base so checkboxes stay square. */
   .files-table input[type='checkbox'] {

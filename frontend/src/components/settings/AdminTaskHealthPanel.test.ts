@@ -153,7 +153,7 @@ describe('Recovery tab: lists and page consistency', () => {
     for (const b of retry) {
       expect(b.classList.contains('btn')).toBe(true);
       expect(b.classList.contains('btn-secondary')).toBe(true);
-      expect(b.classList.contains('btn-small')).toBe(true);
+      expect(b.classList.contains('btn-sm')).toBe(true);
     }
     expect(container.textContent).toContain('meeting.mp4');
 

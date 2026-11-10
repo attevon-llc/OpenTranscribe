@@ -96,7 +96,9 @@ async function changeBehavior(container: HTMLElement, value: string) {
 }
 
 async function clickSave(container: HTMLElement) {
-  await fireEvent.click(container.querySelector('.btn-primary') as HTMLButtonElement);
+  await fireEvent.click(
+    container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement
+  );
   await waitFor(() => expect(api.updateTranscriptionSettings).toHaveBeenCalledOnce());
   return api.updateTranscriptionSettings.mock.calls[0][0] as Record<string, unknown>;
 }
@@ -125,7 +127,9 @@ describe('SpeakerDetectionSettings', () => {
       speaker_prompt_behavior: 'use_defaults',
     });
     const { container } = await renderLoaded();
-    await fireEvent.click(container.querySelector('.btn-secondary') as HTMLButtonElement);
+    await fireEvent.click(
+      container.querySelector('[data-testid="form-actions-reset"]') as HTMLButtonElement
+    );
     await waitFor(() => expect(api.resetTranscriptionSettings).toHaveBeenCalledWith('speakers'));
     await waitFor(() =>
       expect((container.querySelector('#speaker-behavior') as HTMLSelectElement).value).toBe(
@@ -142,7 +146,9 @@ describe('SpeakerDetectionSettings', () => {
     });
     api.getTranscriptionSettings.mockResolvedValue({ ...SETTINGS, diarization_source: 'off' });
     const { container } = await renderLoaded();
-    await fireEvent.click(container.querySelector('.btn-secondary') as HTMLButtonElement);
+    await fireEvent.click(
+      container.querySelector('[data-testid="form-actions-reset"]') as HTMLButtonElement
+    );
     await waitFor(() =>
       expect((container.querySelector('#diarization-source') as HTMLSelectElement).value).toBe(
         'provider'
@@ -174,6 +180,8 @@ describe('SpeakerDetectionSettings', () => {
     expect(container.querySelector('.validation-error')?.textContent).toContain(
       'settings.speakerIdentification.validationMinMax'
     );
-    expect((container.querySelector('.btn-primary') as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (container.querySelector('[data-testid="form-actions-save"]') as HTMLButtonElement).disabled
+    ).toBe(true);
   });
 });

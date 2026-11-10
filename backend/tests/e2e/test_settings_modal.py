@@ -381,7 +381,9 @@ class TestTranscriptionSettingsPersistence:
             expect(select).to_be_visible(timeout=8000)
             select.select_option(new_behavior)
 
-            save_btn = app_page.locator(".speaker-detection-settings .btn-primary")
+            save_btn = app_page.locator(
+                ".speaker-detection-settings [data-testid='form-actions-save']"
+            )
             expect(save_btn).to_be_enabled(timeout=5000)
             save_btn.click()
             expect(app_page.locator(".toast.toast-success")).to_be_visible(timeout=10000)

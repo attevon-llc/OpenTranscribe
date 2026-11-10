@@ -470,7 +470,7 @@
           ({ASRSettingsApi.getProviderDisplayName(getActiveConfig()?.provider || '')} — {getActiveConfig()?.model_name || ''})
         </span>
         {#if !isLite}
-          <button class="btn-use-local" on:click={switchToLocal} disabled={saving}>
+          <button class="btn btn-secondary btn-sm btn-use-local" on:click={switchToLocal} disabled={saving}>
             {$t('settings.asrProvider.useLocal')}
           </button>
         {/if}
@@ -503,7 +503,7 @@
         {$t('settings.asrProvider.title')}
       </h4>
       {#if configurations.length > 0 || sharedConfigurations.length > 0}
-        <button class="add-button" on:click={openCreateModal} disabled={saving}>
+        <button class="btn btn-primary add-button" on:click={openCreateModal} disabled={saving}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
@@ -565,7 +565,7 @@
             <div class="config-actions">
               {#if config.uuid !== activeConfigurationId}
                 <button
-                  class="btn-activate"
+                  class="btn btn-success btn-activate"
                   on:click={() => activateConfiguration(config.uuid)}
                   disabled={saving || notEnabled(config.provider)}
                   title={$t('settings.asrProvider.setActive')}
@@ -574,7 +574,7 @@
                 </button>
               {/if}
               <button
-                class="btn-icon btn-test"
+                class="btn btn-icon btn-test"
                 on:click={() => testConfiguration(config)}
                 disabled={testing}
                 title={$t('settings.asrProvider.testConnection')}
@@ -589,7 +589,7 @@
                 {/if}
               </button>
               <button
-                class="btn-icon btn-edit"
+                class="btn btn-icon btn-edit"
                 on:click={() => openEditModal(config)}
                 disabled={saving}
                 title={$t('settings.asrProvider.editConfig')}
@@ -600,7 +600,7 @@
                 </svg>
               </button>
               <button
-                class="btn-icon btn-delete"
+                class="btn btn-icon btn-icon-danger btn-delete"
                 on:click={() => confirmDelete(config)}
                 disabled={saving}
                 title={$t('settings.asrProvider.deleteConfirmTitle')}
@@ -616,7 +616,7 @@
       </div>
 
       <div class="delete-all-section">
-        <button class="btn-delete-all" on:click={() => showDeleteAllModal = true} disabled={saving}>
+        <button class="btn btn-danger" on:click={() => showDeleteAllModal = true} disabled={saving}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3,6 5,6 21,6"/>
             <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
@@ -662,11 +662,11 @@
             </div>
             <div class="config-actions">
               {#if config.uuid !== activeConfigurationId}
-                <button class="btn-activate" on:click={() => activateConfiguration(config.uuid)} disabled={saving || notEnabled(config.provider)}>
+                <button class="btn btn-success btn-activate" on:click={() => activateConfiguration(config.uuid)} disabled={saving || notEnabled(config.provider)}>
                   {$t('settings.asrProvider.setActive')}
                 </button>
               {/if}
-              <button class="btn-icon btn-test" on:click={() => testConfiguration(config)} disabled={testing}>
+              <button class="btn btn-icon btn-test" on:click={() => testConfiguration(config)} disabled={testing}>
                 {#if testing && testingConfigId === config.uuid}
                   <Spinner size="small" />
                 {:else}
@@ -694,7 +694,7 @@
         </div>
         <h4>{$t('settings.asrProvider.emptyTitle')}</h4>
         <p>{$t('settings.asrProvider.emptyDescription')}</p>
-        <button class="btn-add-first" on:click={openCreateModal}>
+        <button class="btn btn-primary" on:click={openCreateModal}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
@@ -813,18 +813,10 @@
     margin-bottom: var(--space-2);
   }
 
+
   .btn-use-local {
-    margin-left: auto;
-    padding: var(--space-1) var(--space-3);
-    font-size: var(--font-size-xs);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-color);
-    background: var(--surface-color);
-    color: var(--text-color);
-    cursor: pointer;
-    white-space: nowrap;
+    margin-inline-start: auto;
   }
-  .btn-use-local:hover:not(:disabled) { background: var(--button-hover); }
 
   .section-header {
     display: flex;
@@ -843,25 +835,6 @@
     font-size: 1.125rem;
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
-  }
-
-  .add-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: background var(--duration-base);
-  }
-
-  .add-button:hover:not(:disabled) {
-    background: var(--primary-color);
   }
 
   .config-list {
@@ -952,68 +925,6 @@
     flex-shrink: 0;
   }
 
-  .btn-activate {
-    padding: var(--space-1-5) var(--space-3);
-    border-radius: 5px;
-    font-size: 0.775rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    background: var(--success-color);
-    color: var(--text-on-solid);
-    border: none;
-    transition: background var(--duration-fast);
-    white-space: nowrap;
-  }
-
-  .btn-activate:hover:not(:disabled) { background: #059669; }
-
-  .btn-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: all var(--duration-fast);
-    border: 1px solid;
-    box-shadow: none;
-  }
-
-  .btn-test {
-    background: transparent;
-    border-color: var(--primary-color);
-    color: var(--primary-on-surface);
-  }
-
-  .btn-test:hover:not(:disabled) {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .btn-edit {
-    background: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .btn-edit:hover:not(:disabled) {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .btn-delete {
-    background: transparent;
-    border-color: var(--error-color);
-    color: var(--error-color);
-  }
-
-  .btn-delete:hover:not(:disabled) {
-    background: var(--error-color);
-    color: var(--text-on-solid);
-  }
 
   .delete-all-section {
     margin-top: var(--space-6);
@@ -1022,22 +933,6 @@
     text-align: center;
   }
 
-  .btn-delete-all {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: #ef4444;
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: background var(--duration-base);
-  }
-
-  .btn-delete-all:hover:not(:disabled) { background: var(--error-solid); }
 
   .empty-state {
     text-align: center;
@@ -1067,22 +962,6 @@
     line-height: 1.5;
   }
 
-  .btn-add-first {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: var(--space-2) 1.1rem;
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: background var(--duration-base);
-  }
-
-  .btn-add-first:hover { background: var(--primary-color); }
 
   button:disabled {
     opacity: 0.6;

@@ -401,37 +401,6 @@
     border-top: 1px solid var(--border-color);
   }
 
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    padding: var(--space-2) var(--space-5);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-fast);
-    border: none;
-    white-space: nowrap;
-  }
-
-  .btn-primary {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: 0 1px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-  }
-
 
   .advanced-fields {
     display: flex;

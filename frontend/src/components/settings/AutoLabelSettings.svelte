@@ -256,7 +256,7 @@
     {#if hasChanges}
       <div class="save-section">
         <button
-          class="btn-save"
+          class="btn btn-primary btn-lg btn-save"
           on:click={saveSettings}
           disabled={saving}
         >
@@ -272,7 +272,7 @@
         <span class="setting-help">{$t('autoLabel.retroactiveHelp')}</span>
       </div>
       <button
-        class="btn-retroactive"
+        class="btn btn-primary btn-lg btn-retroactive"
         on:click={triggerRetroactiveApply}
         disabled={retroactiveRunning || !enabled}
       >
@@ -355,34 +355,6 @@
     justify-content: flex-end;
   }
 
-  .btn-save {
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    border: none;
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    font-weight: var(--font-weight-medium);
-    font-size: 0.95rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-save:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-save:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-save:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   /* Retroactive Section */
   .retroactive-section {
     margin-top: var(--space-6);
@@ -394,34 +366,6 @@
 
   .btn-retroactive {
     margin-top: var(--space-3);
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    border: none;
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    font-weight: var(--font-weight-medium);
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-retroactive:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-retroactive:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-retroactive:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   /* Progress Section */

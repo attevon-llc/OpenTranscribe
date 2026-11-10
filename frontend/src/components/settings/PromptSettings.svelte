@@ -401,7 +401,7 @@
       </div>
     {:else}
       <button
-        class="activate-button"
+        class="btn btn-success activate-button"
         on:click={() => setActivePrompt(prompt.uuid)}
         disabled={saving}
         title={$t('prompts.makeActive')}
@@ -414,7 +414,7 @@
 
 {#snippet viewButton(prompt: SummaryPrompt)}
     <button
-      class="view-button"
+      class="btn btn-secondary view-button"
       on:click={() => viewPrompt(prompt)}
       title={$t('prompts.viewPrompt')}
     >
@@ -499,7 +499,7 @@
           {$t('prompts.customPrompts')}
         </h4>
         {#if userPrompts.length > 0 || sharedPrompts.length > 0}
-          <button class="create-config-button" on:click={openCreateForm} title={$t('prompts.createNew')}>
+          <button class="btn btn-primary create-config-button" on:click={openCreateForm} title={$t('prompts.createNew')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
@@ -549,7 +549,7 @@
 
                 {@render viewButton(prompt)}
                 <button
-                  class="edit-button"
+                  class="btn btn-secondary edit-button"
                   on:click={() => openEditForm(prompt)}
                   disabled={saving}
                   title={$t('prompts.editPrompt')}
@@ -560,7 +560,7 @@
                   </svg>
                 </button>
                 <button
-                  class="delete-config-button"
+                  class="btn btn-danger-outline delete-config-button"
                   on:click={() => confirmDeletePrompt(prompt)}
                   disabled={saving}
                   title={`Delete prompt: ${prompt.name}`}
@@ -589,7 +589,7 @@
           </div>
           <h4>{$t('prompts.noCustomPrompts')}</h4>
           <p>{$t('prompts.noCustomPromptsDesc')}</p>
-          <button class="create-first-config-btn" on:click={openCreateForm}>
+          <button class="btn btn-primary" on:click={openCreateForm}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
@@ -647,7 +647,7 @@
                 {@render activateControl(prompt)}
 
                 <button
-                  class="clone-button"
+                  class="btn btn-secondary clone-button"
                   on:click={() => handleClone(prompt)}
                   disabled={saving}
                   title={$t('prompts.clone')}
@@ -772,12 +772,12 @@
       </div>
     </form>
     <svelte:fragment slot="footer">
-      <button type="button" class="modal-button modal-cancel-button"
+      <button type="button" class="btn btn-secondary btn-lg"
               on:click={() => closeForm()} disabled={saving}>
         {$t('prompts.cancel')}
       </button>
       <button type="submit" form="prompt-form"
-              class="modal-button modal-primary-button"
+              class="btn btn-primary btn-lg"
               disabled={saving || !isFormValid}>
         {#if saving}<Spinner size="small" color="white" />{/if}
         {editingPrompt ? $t('prompts.updatePrompt') : $t('prompts.createPromptBtn')}
@@ -876,31 +876,6 @@
 
 
   /* New button styles to match LLM provider page */
-  .create-config-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .create-config-button:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .create-config-button:active {
-    transform: scale(1);
-  }
 
   .config-status {
     display: inline-flex;
@@ -923,75 +898,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  .activate-button, .view-button, .edit-button, .delete-config-button {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: 1px solid;
-    height: 32px;
-    box-sizing: border-box;
-  }
-
-  .activate-button {
-    background-color: var(--success-color);
-    border-color: var(--success-color);
-    color: var(--text-on-solid);
-    padding: var(--space-2) var(--space-2);
-  }
-
-  .activate-button:hover:not(:disabled) {
-    background-color: #059669;
-    border-color: #059669;
-  }
-
-  .view-button {
-    background-color: transparent;
-    border-color: var(--primary-color);
-    color: var(--primary-on-surface);
-  }
-
-  .view-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .edit-button {
-    background-color: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .edit-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .delete-config-button {
-    background-color: transparent;
-    border-color: var(--error-color);
-    color: var(--error-color);
-  }
-
-  .delete-config-button:hover:not(:disabled) {
-    background-color: var(--error-color);
-    border-color: var(--error-color);
-    color: var(--text-on-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .delete-config-button:active:not(:disabled) {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .saved-configs-section {
@@ -1189,32 +1095,6 @@
     line-height: 1.5;
   }
 
-  .create-first-config-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .create-first-config-btn:hover {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .create-first-config-btn:active {
-    transform: scale(1);
-  }
-
   .textarea-header {
     display: flex;
     justify-content: space-between;
@@ -1285,11 +1165,6 @@
       min-height: 44px;
     }
 
-    .create-config-button {
-      width: 100%;
-      justify-content: center;
-      min-height: 44px;
-    }
   }
 
   /* LLM Hint Styling */

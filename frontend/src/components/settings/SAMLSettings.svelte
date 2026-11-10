@@ -134,7 +134,7 @@
     <FormField size="lg" id="saml_metadata_url" label={$t('settings.saml.metadataUrl')} hint={$t('settings.saml.metadataUrlHelp')} let:describedby>
       <div class="input-with-button">
         <input dir="ltr" id="saml_metadata_url" aria-describedby={describedby} type="text" value={metadataUrl} readonly />
-        <button type="button" class="btn btn-small" on:click={copyMetadataUrl}>
+        <button type="button" class="btn btn-secondary btn-sm" on:click={copyMetadataUrl}>
           {$t('settings.saml.copy')}
         </button>
       </div>
@@ -473,12 +473,6 @@
   .toggle-visibility:disabled {
     cursor: not-allowed;
     opacity: 0.6;
-  }
-
-  .btn-small {
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--font-size-xs);
-    white-space: nowrap;
   }
 
   .help-text {

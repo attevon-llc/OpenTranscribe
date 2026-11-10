@@ -486,7 +486,7 @@
   <svelte:fragment slot="footer">
     <div class="footer-row">
         <button
-          class="btn-test-conn"
+          class="btn btn-primary btn-test-conn"
           on:click={handleTest}
           disabled={testing || !formData.provider || !formData.model_name}
         >
@@ -497,8 +497,8 @@
           {/if}
         </button>
         <div class="footer-actions">
-          <button class="btn-cancel" on:click={handleClose}>{$t('common.cancel')}</button>
-          <button class="btn-save" on:click={handleSave} disabled={saving || !isFormValid}>
+          <button class="btn btn-secondary btn-cancel" on:click={handleClose}>{$t('common.cancel')}</button>
+          <button class="btn btn-primary btn-save" on:click={handleSave} disabled={saving || !isFormValid}>
             {saving ? 'Saving...' : (editingConfig ? 'Update' : 'Save')}
           </button>
         </div>
@@ -689,69 +689,6 @@
     gap: var(--space-3);
   }
 
-  .btn-test-conn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3-5);
-    border: none;
-    color: var(--text-on-solid);
-    background: var(--primary-color);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-test-conn:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-test-conn:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-cancel {
-    padding: var(--space-2) var(--space-4);
-    border: 1px solid var(--border-color);
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    transition: all var(--duration-fast);
-    box-shadow: var(--shadow-md);
-  }
-
-  .btn-cancel:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    border-color: var(--border-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  }
-
-  .btn-cancel:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-save {
-    padding: var(--space-2) var(--space-5);
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    transition: background var(--duration-fast);
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-save:hover:not(:disabled) { background: var(--primary-color); }
 
   button:disabled {
     opacity: 0.6;

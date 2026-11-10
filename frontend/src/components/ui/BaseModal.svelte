@@ -298,7 +298,7 @@
   }
 
   /* One footer-button size for every modal. The footer used to inherit whichever of three
-     vocabularies the caller used (`.btn`, `.modal-button`, an ad-hoc class), which made the
+     vocabularies the caller used (`.btn`, a bespoke footer-button class, an ad-hoc class), which made the
      same Cancel/Save row a different height and radius from modal to modal. Colour stays
      the caller's (`btn-primary`, `btn-secondary`, `btn-danger`...); size, radius and weight
      do not. A text-link style button opts out by having "link" in its class name. Order is

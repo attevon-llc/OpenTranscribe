@@ -36,6 +36,7 @@
   <button
     type="button"
     class="btn btn-secondary"
+    data-testid="form-actions-reset"
     on:click={() => dispatch('reset')}
     disabled={saving || resetting}
   >
@@ -44,6 +45,7 @@
   <button
     type="button"
     class="btn btn-primary"
+    data-testid="form-actions-save"
     on:click={() => dispatch('save')}
     disabled={saving || resetting || !dirty || !!validationError}
   >

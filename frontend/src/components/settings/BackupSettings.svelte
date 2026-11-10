@@ -562,7 +562,7 @@
           {$t('settings.backup.runNowButton')}
         </button>
       {/if}
-      <button type="button" class="btn btn-link" on:click={() => refreshStatus(true)} disabled={statusLoading}>
+      <button type="button" class="btn btn-secondary" on:click={() => refreshStatus(true)} disabled={statusLoading}>
         {statusLoading ? $t('settings.backup.refreshingStatus') : $t('settings.backup.refreshStatus')}
       </button>
     </div>
@@ -891,22 +891,6 @@
 
   .button-row .btn-secondary {
     margin-right: auto;
-  }
-
-  .btn-link {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: var(--space-1-5) var(--space-2-5);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-link:hover:not(:disabled) {
-    background-color: var(--button-hover);
   }
 
   @media (max-width: 768px) {

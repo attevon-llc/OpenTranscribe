@@ -345,7 +345,7 @@
         />
         <button
           type="button"
-          class="btn btn-small"
+          class="btn btn-primary btn-sm"
           on:click={generateCallbackUrl}
           disabled={!formData.oidc_enabled}
         >
@@ -745,25 +745,6 @@
   .toggle-visibility:disabled {
     cursor: not-allowed;
     opacity: 0.6;
-  }
-
-  .btn-small {
-    padding: var(--space-2) var(--space-3);
-    font-size: var(--font-size-xs);
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
-  }
-
-  .btn-small:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
-  }
-
-  .btn-small:active:not(:disabled) {
-    transform: scale(1);
   }
 
   .help-text {

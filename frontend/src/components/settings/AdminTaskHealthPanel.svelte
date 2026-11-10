@@ -297,7 +297,7 @@
                     <td><Badge variant={badgeVariant(task.status)}>{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</Badge></td>
                     <td>{formatDateTime(task.created_at, '', $locale)}</td>
                     <td>
-                      <button type="button" class="btn btn-secondary btn-small" on:click={() => retryTask(task.id)}>
+                      <button type="button" class="btn btn-secondary btn-sm" on:click={() => retryTask(task.id)}>
                         {$t('settings.taskHealth.retry')}
                       </button>
                     </td>
@@ -328,7 +328,7 @@
                     <td>{file.filename}</td>
                     <td><Badge variant={badgeVariant(file.status)}>{#if isMobileView && taskStatusIcon(file.status)}<span class="status-glyph" role="img" aria-label={formatStatus(file.status)} title={formatStatus(file.status)}><MenuIcon name={taskStatusIcon(file.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(file.status)}{/if}</Badge></td>
                     <td>
-                      <button type="button" class="btn btn-secondary btn-small" on:click={() => retryFile(file.uuid)}>
+                      <button type="button" class="btn btn-secondary btn-sm" on:click={() => retryFile(file.uuid)}>
                         {$t('settings.taskHealth.retry')}
                       </button>
                     </td>

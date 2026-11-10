@@ -188,7 +188,7 @@
       {#if canMutate}
         <button
           type="button"
-          class="btn btn-secondary btn-small"
+          class="btn btn-secondary btn-sm"
           title={$t('tags.manager.detail.renameTooltip')}
           disabled={busy !== null}
           on:click={startEditing}

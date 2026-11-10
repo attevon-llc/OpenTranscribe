@@ -530,37 +530,6 @@
     margin: 0 0 var(--space-5) 0;
   }
 
-  .btn {
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    border: none;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-secondary {
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-hover);
-  }
-
-  .btn-secondary:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-secondary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .btn-refresh {
     display: inline-flex;
     align-items: center;

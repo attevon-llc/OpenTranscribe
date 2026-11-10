@@ -252,8 +252,8 @@ These are easy to regress and hard to notice without a keyboard:
 
 - Svelte **4 idiom** (`export let`, `$:`, `createEventDispatcher`, `on:click`) —
   Svelte 5 is installed but the codebase has not migrated.
-- Global button classes only (`.btn`, `.modal-button` + `.modal-primary-button` /
-  `.modal-cancel-button`). No local button CSS.
+- Global button classes only (`.btn` with `.btn-primary` / `.btn-secondary` / `.btn-lg`).
+  No local button CSS.
 - All colors via CSS vars; light/dark parity is mandatory.
 - Stable `data-testid` hooks are consumed by `backend/tests/e2e/test_chat.py` —
   renaming one breaks E2E.

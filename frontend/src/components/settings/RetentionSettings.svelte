@@ -404,7 +404,7 @@
       {#if !runNowPending}
         <button
           type="button"
-          class="btn btn-secondary btn-danger-outline"
+          class="btn btn-danger"
           on:click={() => { runNowPending = true; }}
           disabled={runNowLoading}
         >
@@ -427,7 +427,7 @@
       {/if}
 
       {#if runNowTaskId}
-        <button type="button" class="btn btn-link" on:click={refreshStatus} disabled={statusLoading}>
+        <button type="button" class="btn btn-secondary" on:click={refreshStatus} disabled={statusLoading}>
           {statusLoading ? $t('settings.retention.refreshingStatus') : $t('settings.retention.refreshStatus')}
         </button>
       {/if}
@@ -789,45 +789,6 @@
 
   .button-row .btn-secondary {
     margin-right: auto;
-  }
-
-  .btn-danger-outline {
-    background-color: #ef4444;
-    color: var(--text-on-solid);
-    border: none;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn-danger-outline:hover:not(:disabled) {
-    background-color: var(--error-solid);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .btn-danger-outline:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .btn-link {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-    padding: var(--space-1-5) var(--space-2-5);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font-size: 0.8rem;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-  }
-
-  .btn-link:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-hover);
-  }
-
-  .btn-link:active:not(:disabled) {
-    transform: scale(1);
   }
 
   @media (max-width: 768px) {

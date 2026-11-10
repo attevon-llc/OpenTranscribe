@@ -319,7 +319,7 @@
   <svelte:fragment slot="footer">
     <button
       type="button"
-      class="modal-button modal-cancel-button"
+      class="btn btn-secondary btn-lg"
       disabled={busy}
       on:click={() => dispatch('close')}
     >
@@ -328,7 +328,7 @@
     <button
       type="submit"
       form={formId}
-      class="modal-button modal-primary-button"
+      class="btn btn-primary btn-lg"
       disabled={!canSubmit}
     >
       {#if busy}

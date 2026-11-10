@@ -103,7 +103,7 @@
     <h2>{$t('tags.manager.bulk.title', { count: tags.length })}</h2>
     <button
       type="button"
-      class="btn btn-secondary btn-small"
+      class="btn btn-secondary btn-sm"
       disabled={locked}
       on:click={() => dispatch('clear')}
     >

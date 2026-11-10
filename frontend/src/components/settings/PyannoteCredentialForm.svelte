@@ -158,7 +158,8 @@
       />
       <button
         type="button"
-        class="cred-btn primary"
+        class="btn btn-primary"
+        data-testid="pyannote-save"
         on:click={save}
         disabled={disabled || busy || !view.canSave || trimmedKey === ''}
       >
@@ -168,7 +169,7 @@
     </div>
 
     <div class="credential-actions">
-      <button type="button" class="cred-btn" on:click={test} disabled={!canTest}>
+      <button type="button" class="btn btn-secondary" data-testid="pyannote-test" on:click={test} disabled={!canTest}>
         {testing
           ? $t('settings.speakerIdentification.pyannoteKey.testing')
           : $t('settings.speakerIdentification.pyannoteKey.test')}
@@ -176,7 +177,8 @@
       {#if view.canDelete}
         <button
           type="button"
-          class="cred-btn danger"
+          class="btn btn-danger-outline"
+          data-testid="pyannote-delete"
           on:click={() => (showDeleteConfirm = true)}
           disabled={disabled || busy}
         >
@@ -300,38 +302,6 @@
     gap: var(--space-2);
     margin-top: var(--space-3);
     flex-wrap: wrap;
-  }
-
-  /* Own button classes: the enclosing form's tests and e2e select its Save and Reset
-     buttons by .btn-primary / .btn-secondary, so these must not collide with them. */
-  .cred-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    padding: var(--space-2) var(--space-4);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: var(--background-color);
-    color: var(--text-color);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-  }
-
-  .cred-btn.primary {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--text-on-solid);
-  }
-
-  .cred-btn.danger {
-    color: var(--error-color);
-    border-color: var(--error-color);
-  }
-
-  .cred-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .credential-result {

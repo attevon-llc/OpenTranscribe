@@ -178,7 +178,7 @@
     gap: 0.75rem;
     padding: 0.625rem 0.75rem;
     border-radius: 8px;
-    transition: background-color 0.15s;
+    transition: background-color var(--duration-fast);
   }
 
   .member-row:hover {
@@ -273,7 +273,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-remove:hover:not(:disabled) {
@@ -295,7 +295,7 @@
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     white-space: nowrap;
   }
 

@@ -102,7 +102,7 @@
   }
   .chevron {
     flex-shrink: 0;
-    transition: transform 0.15s ease;
+    transition: transform var(--duration-fast) ease;
   }
   .chevron.open {
     transform: rotate(90deg);

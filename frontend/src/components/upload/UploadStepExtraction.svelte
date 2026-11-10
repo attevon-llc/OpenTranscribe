@@ -181,7 +181,7 @@
     border: 2px solid var(--border-color);
     border-radius: 8px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     background: var(--background-color);
   }
 

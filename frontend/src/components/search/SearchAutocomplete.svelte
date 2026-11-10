@@ -279,7 +279,7 @@
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: color 0.15s, background-color 0.15s;
+    transition: color var(--duration-fast), background-color var(--duration-fast);
   }
 
   .clear-btn:hover {

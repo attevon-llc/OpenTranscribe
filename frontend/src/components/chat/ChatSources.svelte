@@ -212,7 +212,7 @@
   }
 
   .chevron {
-    transition: transform 0.15s ease;
+    transition: transform var(--duration-fast) ease;
   }
 
   .chevron.open {
@@ -239,8 +239,8 @@
     background-color: var(--surface-color);
     overflow: hidden;
     transition:
-      border-color 0.15s ease,
-      background-color 0.15s ease;
+      border-color var(--duration-fast) ease,
+      background-color var(--duration-fast) ease;
   }
 
   .source-item:hover {

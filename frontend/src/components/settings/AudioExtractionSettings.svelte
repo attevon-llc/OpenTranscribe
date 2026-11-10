@@ -261,7 +261,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .toggle-group:hover {
@@ -317,7 +317,7 @@
     right: 0;
     bottom: 0;
     background-color: var(--border-color);
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 24px;
   }
 
@@ -329,7 +329,7 @@
     left: 3px;
     bottom: 3px;
     background-color: white;
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 50%;
   }
 
@@ -391,7 +391,7 @@
     border-radius: 10px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     gap: 0.5rem;

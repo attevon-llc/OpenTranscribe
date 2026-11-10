@@ -635,7 +635,7 @@
     line-height: 1.5;
     padding: 0.5rem 0.75rem;
     border-radius: 6px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .credit-link:hover {

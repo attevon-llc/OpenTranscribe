@@ -209,8 +209,8 @@
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
     display: flex;
     align-items: center;
     justify-content: center;

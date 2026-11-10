@@ -503,7 +503,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-secondary {
@@ -515,7 +515,7 @@
   .btn-secondary:hover:not(:disabled) {
     background-color: var(--button-hover);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-hover);
   }
 
   .btn-secondary:active:not(:disabled) {
@@ -535,7 +535,7 @@
 
   .refresh-icon {
     flex-shrink: 0;
-    transition: transform 0.3s ease;
+    transition: transform var(--duration-slow) ease;
   }
 
   .refresh-icon.spinning {
@@ -545,7 +545,7 @@
   .stats-refreshing {
     opacity: 0.45;
     pointer-events: none;
-    transition: opacity 0.3s ease;
+    transition: opacity var(--duration-slow) ease;
   }
 
   .section-header-row {
@@ -591,7 +591,7 @@
 
   .stat-card-clickable {
     cursor: pointer;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    transition: border-color var(--duration-base), box-shadow var(--duration-base);
   }
 
   .stat-card-clickable:hover {
@@ -754,7 +754,7 @@
     font-size: 0.875rem;
     line-height: 1;
     padding: 0 0.3rem;
-    transition: background-color 0.15s, color 0.15s;
+    transition: background-color var(--duration-fast), color var(--duration-fast);
   }
 
   .gpu-step-btn:hover {
@@ -783,7 +783,7 @@
   .progress-fill {
     height: 100%;
     background-color: var(--primary-color);
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   .recent-tasks {

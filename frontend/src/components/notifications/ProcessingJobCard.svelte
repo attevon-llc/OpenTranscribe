@@ -352,7 +352,7 @@
   }
 
   .chevron {
-    transition: transform 0.15s ease;
+    transition: transform var(--duration-fast) ease;
   }
 
   .chevron.open {

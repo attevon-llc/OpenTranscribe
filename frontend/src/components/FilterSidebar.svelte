@@ -945,7 +945,7 @@
     background-color: var(--surface-color);
     border-radius: 8px;
     padding: 0.75rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
     display: flex;
     flex-direction: column;
     /* #750 items 3+4: more breathing room between sections, and a thinner,
@@ -982,7 +982,7 @@
     font-size: 0.75rem;
     font-weight: 400;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .reset-button:hover:not(:disabled) {
@@ -1042,7 +1042,7 @@
     background-color: var(--background-color);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .clear-inline-btn:hover {
@@ -1098,7 +1098,7 @@
     padding: 0.3rem 0.8rem;
     font-size: 0.75rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .retry-button:hover {

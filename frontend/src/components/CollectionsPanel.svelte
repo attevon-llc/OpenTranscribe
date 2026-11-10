@@ -686,15 +686,15 @@
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-create:hover:not(:disabled) {
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
     text-decoration: none;
   }
 
@@ -757,7 +757,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.15s;
+    transition: color var(--duration-fast);
   }
 
   .search-clear:hover {

@@ -584,7 +584,7 @@
     cursor: pointer;
     padding: 2px;
     border-radius: 50%;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .legend-info-icon:hover {
@@ -604,8 +604,8 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 1000;
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-dropdown);
     padding: 0.75rem;
     min-width: 200px;
     margin-top: 4px;
@@ -679,7 +679,7 @@
     background: var(--surface-color);
     color: var(--primary-on-surface);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     line-height: 1.4;
   }
 
@@ -688,7 +688,7 @@
     color: var(--text-on-solid);
     border-color: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
   }
 
   .timestamp-more {
@@ -717,7 +717,7 @@
     border: 1px solid;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     color: var(--speaker-light);
     flex-shrink: 0;
   }
@@ -786,7 +786,7 @@
     flex-shrink: 0; /* Don't shrink the badge */
     text-decoration: none;
     cursor: pointer;
-    transition: background 0.15s ease, transform 0.15s ease;
+    transition: background var(--duration-fast) ease, transform var(--duration-fast) ease;
   }
 
   .speaker-profile-badge:hover {
@@ -826,14 +826,14 @@
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .save-speakers-button:hover {
     background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .save-speakers-button:active {
@@ -940,7 +940,7 @@
     padding: 0.15rem;
     border-radius: 3px;
     color: var(--text-color-secondary);
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -951,7 +951,7 @@
   }
 
   .dropdown-arrow svg {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .dropdown-arrow svg.rotated {
@@ -987,7 +987,7 @@
     border-radius: 3px;
     font-size: 0.65rem;
     cursor: help;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
   }
 
   .compact-match:hover {
@@ -1038,8 +1038,8 @@
     background: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 1000;
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-dropdown);
     min-width: 250px;
     max-width: 350px;
     padding: 0.5rem;
@@ -1120,7 +1120,7 @@
     color: var(--text-secondary-color);
     font-size: 0.75rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     width: 100%;
     text-align: left;
   }
@@ -1131,7 +1131,7 @@
   }
 
   .suggestions-toggle svg {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -1200,7 +1200,7 @@
     font-size: 0.7rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     color: var(--text-on-solid);
     white-space: nowrap;
   }

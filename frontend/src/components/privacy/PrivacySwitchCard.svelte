@@ -153,7 +153,7 @@
     margin: 0;
     opacity: 0;
     cursor: pointer;
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .slider {
@@ -161,7 +161,7 @@
     inset: 0;
     background-color: var(--border-color);
     border-radius: 24px;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
   }
 
   .slider::before {
@@ -173,7 +173,7 @@
     bottom: 3px;
     background-color: white;
     border-radius: 50%;
-    transition: inset-inline-start 0.2s;
+    transition: inset-inline-start var(--duration-base);
   }
 
   .toggle input:checked + .slider {

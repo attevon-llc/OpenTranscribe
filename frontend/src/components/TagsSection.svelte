@@ -105,7 +105,7 @@
     border-radius: 8px;
     padding: 12px 16px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .tags-header:hover {
@@ -149,7 +149,7 @@
   }
 
   .dropdown-toggle svg {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .tags-content {

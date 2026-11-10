@@ -238,7 +238,7 @@
     height: 20px;
     background-color: var(--border-color);
     border-radius: 10px;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
   .toggle-switch::after {
@@ -250,8 +250,8 @@
     height: 16px;
     background-color: white;
     border-radius: 50%;
-    transition: transform 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform var(--duration-base) ease;
+    box-shadow: var(--shadow-thumb);
   }
   .toggle-input:checked + .toggle-switch {
     background-color: var(--primary-color);

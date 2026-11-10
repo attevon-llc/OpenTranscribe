@@ -32,7 +32,7 @@
     color: var(--primary-on-surface);
     font-weight: 600;
     font-size: 1.25rem;
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
     border-radius: 8px;
     padding: 0.25rem;
     background: none;

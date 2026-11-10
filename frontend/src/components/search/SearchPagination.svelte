@@ -131,7 +131,7 @@
     color: var(--text-color);
     font-size: 0.875rem;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .page-btn:hover:not(:disabled):not(.active) {

@@ -438,7 +438,7 @@
     display: flex;
     align-items: center;
     border-radius: 4px;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
   }
 
   .toggle-password:hover {
@@ -460,7 +460,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-primary {

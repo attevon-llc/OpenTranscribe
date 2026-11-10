@@ -181,7 +181,7 @@
     gap: 0.75rem;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--border-color);
-    transition: background 0.15s;
+    transition: background var(--duration-fast);
   }
 
   .file-item:last-child {
@@ -300,7 +300,7 @@
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     min-width: 140px;
     display: flex;
     align-items: center;
@@ -328,7 +328,7 @@
   .primary-button {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .primary-button:hover {

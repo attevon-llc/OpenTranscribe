@@ -404,7 +404,7 @@
     color: var(--text-secondary);
     text-decoration: none;
     flex-shrink: 0;
-    transition: background 0.15s, color 0.15s;
+    transition: background var(--duration-fast), color var(--duration-fast);
   }
 
   .back-to-gallery:hover {
@@ -429,7 +429,7 @@
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -2px;
-    transition: color 0.15s ease, border-bottom-color 0.15s ease;
+    transition: color var(--duration-fast) ease, border-bottom-color var(--duration-fast) ease;
     display: flex;
     align-items: center;
     gap: 8px;

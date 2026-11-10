@@ -686,7 +686,7 @@
     height: 20px;
     background: var(--border-color);
     border-radius: 10px;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
     flex-shrink: 0;
   }
 
@@ -699,7 +699,7 @@
     height: 16px;
     background: white;
     border-radius: 50%;
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
   }
 
   .toggle-input:checked + .toggle-switch {
@@ -739,7 +739,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -761,8 +761,8 @@
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.8125rem;
-    transition: all 0.15s;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all var(--duration-fast);
+    box-shadow: var(--shadow-md);
   }
 
   .btn-cancel:hover:not(:disabled) {
@@ -785,7 +785,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: background 0.15s;
+    transition: background var(--duration-fast);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 

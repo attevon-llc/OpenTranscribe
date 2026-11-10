@@ -414,7 +414,7 @@
     height: 18px;
     background: var(--border-color);
     border-radius: 9px;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
     flex-shrink: 0;
     margin-top: 0.1rem;
   }
@@ -428,7 +428,7 @@
     height: 12px;
     background: white;
     border-radius: 50%;
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
   }
 
   .toggle-input:checked + .toggle-switch {
@@ -471,7 +471,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     border: none;
     white-space: nowrap;
   }

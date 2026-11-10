@@ -54,7 +54,7 @@
     gap: 12px;
     padding: 16px 20px;
     border-bottom: 1px solid var(--border-color);
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
     background: var(--background-color);
     list-style: none;
   }
@@ -182,8 +182,8 @@
     align-items: center;
     justify-content: center;
     transition:
-      background-color 0.2s ease,
-      color 0.2s ease;
+      background-color var(--duration-base) ease,
+      color var(--duration-base) ease;
     opacity: 0.6;
   }
 

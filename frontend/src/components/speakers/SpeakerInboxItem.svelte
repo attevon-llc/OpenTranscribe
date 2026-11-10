@@ -179,7 +179,7 @@
     background: none;
     color: var(--primary-on-surface);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     box-shadow: none;
   }
 
@@ -305,7 +305,7 @@
     color: var(--text-color);
     font-size: 13px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     box-shadow: none;
   }
 

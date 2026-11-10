@@ -228,7 +228,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     box-shadow: none;
-    transition: color 0.2s, border-color 0.2s;
+    transition: color var(--duration-base), border-color var(--duration-base);
   }
 
   .tab:hover {

@@ -91,8 +91,8 @@
     background: var(--field-bg);
     min-height: 2.375rem;
     transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease;
+      border-color var(--duration-fast) ease,
+      box-shadow var(--duration-fast) ease;
     cursor: text;
   }
 
@@ -144,7 +144,7 @@
     font-size: 0.875rem;
     line-height: 1;
     opacity: 0.7;
-    transition: opacity 0.15s;
+    transition: opacity var(--duration-fast);
   }
 
   .tag-remove:hover {

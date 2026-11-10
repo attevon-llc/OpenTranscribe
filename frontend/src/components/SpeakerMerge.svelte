@@ -308,7 +308,7 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
   }
 
   .merge-header-toggle:hover {
@@ -336,7 +336,7 @@
 
   .chevron-icon {
     color: var(--text-secondary);
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -371,7 +371,7 @@
     border: 2px solid var(--border-color);
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .speaker-card:hover {
@@ -437,7 +437,7 @@
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: none;
     display: inline-flex;
     align-items: center;
@@ -512,7 +512,7 @@
     border: 2px solid var(--border-color);
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .target-option:hover {

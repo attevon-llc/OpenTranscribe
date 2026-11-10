@@ -247,7 +247,7 @@
     background-color: var(--error-solid);
     color: var(--text-on-solid);
     box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .start-button:hover {
@@ -341,7 +341,7 @@
     color: var(--text-color);
     cursor: pointer;
     font-size: 0.75rem;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
   }
 
   .ctrl-btn:hover { background: var(--button-hover); }

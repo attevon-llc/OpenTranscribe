@@ -196,8 +196,8 @@
     text-align: start;
     cursor: pointer;
     transition:
-      border-color 0.15s ease,
-      background-color 0.15s ease;
+      border-color var(--duration-fast) ease,
+      background-color var(--duration-fast) ease;
   }
 
   .suggestion-card:hover {

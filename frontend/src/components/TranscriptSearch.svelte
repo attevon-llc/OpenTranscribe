@@ -406,8 +406,8 @@
     color: var(--text-on-solid);
     cursor: pointer;
     transition:
-      background 0.15s ease,
-      opacity 0.15s ease;
+      background var(--duration-fast) ease,
+      opacity var(--duration-fast) ease;
     flex-shrink: 0;
   }
 
@@ -439,8 +439,8 @@
     color: var(--text-secondary);
     cursor: pointer;
     transition:
-      background 0.15s ease,
-      color 0.15s ease;
+      background var(--duration-fast) ease,
+      color var(--duration-fast) ease;
     flex-shrink: 0;
   }
 
@@ -473,8 +473,8 @@
     font-size: 0.9rem;
     font-weight: 500;
     transition:
-      background 0.15s ease,
-      color 0.15s ease;
+      background var(--duration-fast) ease,
+      color var(--duration-fast) ease;
     border-radius: 6px;
     width: 100%;
     height: 100%;

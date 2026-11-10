@@ -329,7 +329,7 @@
     padding: 1rem;
     background: var(--color-bg-secondary);
     border-radius: 8px;
-    transition: opacity 0.2s;
+    transition: opacity var(--duration-base);
   }
 
   .section.disabled {
@@ -358,7 +358,7 @@
     border: 1px solid var(--color-border);
     border-radius: 8px;
     cursor: pointer;
-    transition: border-color 0.2s, background-color 0.2s;
+    transition: border-color var(--duration-base), background-color var(--duration-base);
   }
 
   .radio-label:hover {

@@ -93,7 +93,7 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    transition: all 0.3s ease;
+    transition: all var(--duration-slow) ease;
   }
 
   /* Expanded state */
@@ -153,7 +153,7 @@
       height: calc(100dvh - var(--content-top));
       background: var(--surface-color);
       z-index: var(--z-modal);
-      transition: left 0.3s ease;
+      transition: left var(--duration-slow) ease;
       border-right: 1px solid var(--border-color);
       border-top: 1px solid var(--border-color);
       box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);

@@ -290,7 +290,7 @@
     position: sticky;
     top: 0;
     background-color: var(--surface-color);
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .new-chat-btn {
@@ -307,7 +307,7 @@
     font-size: 0.87rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
   }
 
   .new-chat-btn:hover {
@@ -441,7 +441,7 @@
 
   .chevron {
     flex: none;
-    transition: transform 0.15s ease;
+    transition: transform var(--duration-fast) ease;
   }
 
   .chevron.open {

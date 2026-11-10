@@ -184,7 +184,7 @@
     font-weight: 600;
     cursor: pointer;
     flex-shrink: 0;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
   }
 
   .toast-action:hover:not(:disabled) {
@@ -211,7 +211,7 @@
     justify-content: center;
     border-radius: 4px;
     color: var(--text-secondary);
-    transition: all 0.2s;
+    transition: all var(--duration-base);
   }
 
   .toast-close:hover {

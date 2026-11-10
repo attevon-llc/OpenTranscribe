@@ -666,7 +666,7 @@
     background: var(--surface-color);
     color: var(--text-secondary);
     flex-shrink: 0;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
   .step-item.active .step-dot,
   .step-item.completed .step-dot {

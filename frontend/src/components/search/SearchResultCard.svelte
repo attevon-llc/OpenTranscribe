@@ -227,8 +227,8 @@
     border: 1px solid transparent;
     border-radius: 10px;
     transition:
-      border-color 0.15s,
-      background-color 0.15s;
+      border-color var(--duration-fast),
+      background-color var(--duration-fast);
   }
 
   .result-card:hover,
@@ -293,7 +293,7 @@
   /* Collapsed: chevron points down ("open me"); open: it turns to point up. */
   .matches-toggle :global(.menu-icon),
   .details-btn.disclosure :global(.menu-icon) {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .matches-toggle[aria-expanded='true'] :global(.menu-icon),

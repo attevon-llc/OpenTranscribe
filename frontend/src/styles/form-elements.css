@@ -73,9 +73,9 @@
   -webkit-appearance: none;
   appearance: none;
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    background-color 0.15s ease;
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    background-color var(--duration-fast) ease;
 }
 
 :where(textarea) {
@@ -312,10 +312,10 @@ button {
   padding: 0.6rem 1.2rem;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-base) ease;
   font-weight: 500;
   font-size: 0.95rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
 }
 
 /*
@@ -373,7 +373,7 @@ button.primary {
   background-color: var(--primary-color);
   color: var(--text-on-solid) !important;
   border: none;
-  box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+  box-shadow: var(--shadow-primary);
 }
 
 /* `:focus` deliberately omitted — see the `button:focus-visible` note above (#746). */
@@ -381,7 +381,7 @@ button.primary:hover:not(:disabled) {
   background-color: var(--primary-hover);
   color: var(--text-on-solid) !important;
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+  box-shadow: var(--shadow-primary-hover);
 }
 
 button:disabled {
@@ -395,7 +395,7 @@ button:disabled {
   background-color: var(--card-background);
   color: var(--text-color);
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-xl);
   border: 1px solid var(--border-color);
 }
 
@@ -427,7 +427,7 @@ button:disabled {
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-base) ease;
   font-family: inherit;
   white-space: nowrap;
 }
@@ -451,12 +451,12 @@ button:disabled {
   background-color: var(--primary-color);
   color: var(--text-on-solid);
   border: none;
-  box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+  box-shadow: var(--shadow-primary);
 }
 .btn-primary:hover:not(:disabled) {
   background-color: var(--primary-hover);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+  box-shadow: var(--shadow-primary-hover);
 }
 .btn-primary:active:not(:disabled) {
   transform: scale(1) !important;
@@ -467,12 +467,12 @@ button:disabled {
   background-color: var(--surface-color);
   color: var(--text-color);
   border: 1px solid var(--border-color);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-xs);
 }
 .btn-secondary:hover:not(:disabled) {
   background-color: var(--button-hover);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-hover);
 }
 .btn-secondary:active:not(:disabled) {
   transform: scale(1) !important;
@@ -520,7 +520,7 @@ button:disabled {
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-base) ease;
   min-width: 100px;
   display: inline-flex;
   align-items: center;
@@ -537,12 +537,12 @@ button:disabled {
   background-color: var(--primary-color);
   color: var(--text-on-solid);
   border: none;
-  box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+  box-shadow: var(--shadow-primary);
 }
 .modal-primary-button:hover:not(:disabled) {
   background-color: var(--primary-hover);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+  box-shadow: var(--shadow-primary-hover);
 }
 .modal-primary-button:active:not(:disabled) {
   transform: scale(1);
@@ -559,7 +559,7 @@ button:disabled {
   background-color: var(--button-hover);
   border-color: var(--border-color);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-hover);
 }
 .modal-cancel-button:active:not(:disabled) {
   transform: scale(1);
@@ -604,7 +604,7 @@ button:disabled {
 }
 .refresh-icon {
   flex-shrink: 0;
-  transition: transform 0.3s ease;
+  transition: transform var(--duration-slow) ease;
 }
 .refresh-icon.spinning {
   animation: spin 1s linear infinite;

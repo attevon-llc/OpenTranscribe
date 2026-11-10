@@ -839,7 +839,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -867,7 +867,7 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-background);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .config-item.active {
@@ -943,7 +943,7 @@
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: 1px solid;
     height: 32px;
     box-sizing: border-box;
@@ -1023,7 +1023,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
@@ -1083,7 +1083,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -1187,7 +1187,7 @@
     height: 16px;
     background: var(--border-color);
     border-radius: 8px;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
     flex-shrink: 0;
   }
 
@@ -1200,7 +1200,7 @@
     height: 12px;
     background: white;
     border-radius: 50%;
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
   }
 
   .toggle-input:checked + .toggle-switch {

@@ -569,7 +569,7 @@
     background-color: var(--navbar-bg);
     border-bottom: 1px solid var(--navbar-border);
     box-shadow: var(--navbar-shadow);
-    z-index: 1200;
+    z-index: var(--z-navbar);
     overflow: visible; /* Allow button hover effects to display properly */
   }
 
@@ -599,7 +599,7 @@
     text-decoration: none;
     padding: 0.5rem 1rem;
     border-radius: 6px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -679,7 +679,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
   }
 
   .notifications-btn:hover {
@@ -811,7 +811,7 @@
       border-bottom: 1px solid var(--border-color);
       padding: 0.75rem 1rem;
       z-index: 1100;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      box-shadow: var(--shadow-lg);
       max-height: calc(100vh - 60px - env(safe-area-inset-top, 0px));
       max-height: calc(100dvh - 60px - env(safe-area-inset-top, 0px));
       overflow-y: auto;
@@ -940,7 +940,7 @@
     font-family: inherit;
     font-size: 0.85rem;
     font-weight: 600;
-    transition: all 0.3s ease;
+    transition: all var(--duration-slow) ease;
     overflow: hidden;
   }
 
@@ -995,7 +995,7 @@
 
   .mic-icon {
     flex-shrink: 0;
-    z-index: 1;
+    z-index: var(--z-base);
     color: currentColor; /* Use the current button color */
   }
 
@@ -1176,7 +1176,7 @@
     border-radius: 8px;
     padding: 0.5rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     justify-content: center;

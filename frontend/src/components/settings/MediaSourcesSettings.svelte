@@ -479,14 +479,14 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-add-first:hover {
     background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .source-card {
@@ -494,7 +494,7 @@
     border-radius: 0.5rem;
     padding: 0.75rem 1rem;
     background: var(--card-background);
-    transition: border-color 0.15s;
+    transition: border-color var(--duration-fast);
   }
 
   .source-card:hover:not(.editing):not(.add-card) {
@@ -790,15 +790,15 @@
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-add:hover {
     background: var(--primary-color);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-add:active {

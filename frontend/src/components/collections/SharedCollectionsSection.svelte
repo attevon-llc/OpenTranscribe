@@ -63,7 +63,7 @@
     border-radius: 8px;
     padding: 16px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
     display: flex;
     justify-content: space-between;
     align-items: start;
@@ -163,7 +163,7 @@
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
     white-space: nowrap;
   }
 

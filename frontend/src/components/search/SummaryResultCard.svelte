@@ -114,7 +114,7 @@
     padding: 0.875rem 1rem;
     margin-bottom: 0.5rem;
     border-radius: 10px;
-    transition: background-color 0.15s;
+    transition: background-color var(--duration-fast);
   }
 
   .summary-result-card:hover,
@@ -170,8 +170,8 @@
     text-align: start;
     cursor: pointer;
     transition:
-      border-color 0.15s,
-      background-color 0.15s;
+      border-color var(--duration-fast),
+      background-color var(--duration-fast);
   }
 
   .summary-match-row:hover {

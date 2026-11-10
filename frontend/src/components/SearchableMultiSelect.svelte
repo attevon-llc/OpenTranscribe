@@ -175,7 +175,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
   }
 
   .multiselect-toggle:hover:not(.disabled) {
@@ -195,7 +195,7 @@
   }
 
   .toggle-icon {
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
     color: var(--text-secondary);
   }
 
@@ -245,7 +245,7 @@
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
     cursor: pointer;
-    transition: background-color 0.15s;
+    transition: background-color var(--duration-fast);
     user-select: none;
     background-color: var(--card-background);
     width: 100%;

@@ -99,7 +99,7 @@
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;
-    transition: background-color 0.2s ease, transform 0.2s ease;
+    transition: background-color var(--duration-base) ease, transform var(--duration-base) ease;
   }
 
   /* Primary action — "Go home". */

@@ -47,7 +47,7 @@
   color: var(--text-secondary);
   font-size: 0.6875rem;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--duration-fast) ease;
 }
 
 .previous-banner-clear:hover {
@@ -175,7 +175,7 @@
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: all var(--duration-fast) ease;
 }
 
 .create-btn:hover:not(:disabled) {

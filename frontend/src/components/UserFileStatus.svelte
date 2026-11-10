@@ -500,13 +500,13 @@
     border: none;
     border-radius: 10px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     font-weight: 500;
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.95rem;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .flower-btn {
@@ -518,7 +518,7 @@
   .recovery-btn:hover {
     background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .recovery-btn:active {
@@ -591,8 +591,8 @@
     border-radius: 6px;
     padding: 1rem;
     text-align: center;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    transition: all 0.2s ease;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--duration-base) ease;
   }
 
   .status-card:hover {

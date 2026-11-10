@@ -520,7 +520,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     gap: 0.35rem;
@@ -549,7 +549,7 @@
   }
 
   .chevron {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .chevron.open {
@@ -584,13 +584,13 @@
   .select-all-btn,
   .process-btn {
     background-color: var(--primary-color);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .select-all-btn:hover:not(:disabled),
   .process-btn:hover:not(:disabled) {
     background-color: var(--primary-hover);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   /* Secondary — surface with border */
@@ -645,7 +645,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-lg);
     min-width: 200px;
     padding: 0.25rem 0;
   }
@@ -662,7 +662,7 @@
     font-size: 0.8125rem;
     cursor: pointer;
     text-align: start;
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
     font-family: inherit;
   }
 

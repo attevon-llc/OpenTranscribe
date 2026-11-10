@@ -156,7 +156,7 @@
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     line-height: 1;
     display: inline-flex;
     align-items: center;
@@ -196,13 +196,13 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--card-background);
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--duration-fast) ease;
     overflow: hidden;
     min-width: 0;
   }
 
   .profile-card:hover {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
   }
 
   .profile-avatar-wrapper {
@@ -248,7 +248,7 @@
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity var(--duration-fast) ease;
     color: var(--text-on-solid);
   }
 
@@ -330,7 +330,7 @@
     background: var(--card-background);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     box-shadow: none;
     font-size: 0;
   }

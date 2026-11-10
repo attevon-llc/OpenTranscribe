@@ -804,7 +804,7 @@
 
   /* Only animate after initial mount to prevent flicker on navigation */
   .filter-sidebar.animate {
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   /* Expanded state */
@@ -872,7 +872,7 @@
     color: var(--text-secondary);
     text-decoration: none;
     flex-shrink: 0;
-    transition: background 0.15s, color 0.15s;
+    transition: background var(--duration-fast), color var(--duration-fast);
   }
 
   .back-to-gallery:hover {
@@ -915,7 +915,7 @@
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .search-btn:hover:not(:disabled) {
@@ -969,7 +969,7 @@
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     white-space: nowrap;
   }
 
@@ -1087,8 +1087,8 @@
       height: calc(100vh - var(--content-top));
       height: calc(100dvh - var(--content-top));
       background: var(--surface-color);
-      z-index: 1000;
-      transition: left 0.3s ease;
+      z-index: var(--z-dropdown);
+      transition: left var(--duration-slow) ease;
       border-right: none;
       border-top: 1px solid var(--border-color);
     }

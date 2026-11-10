@@ -47,11 +47,11 @@
     border-radius: 8px;
     padding: 0;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
   }
 
   .filter-toggle-btn:hover {
@@ -72,7 +72,7 @@
   .toggle-chevron {
     flex-shrink: 0;
     opacity: 0.8;
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .toggle-chevron.rotated {

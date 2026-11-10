@@ -121,8 +121,8 @@
     font-size: 0.8rem;
     cursor: pointer;
     transition:
-      border-color 0.15s ease,
-      background-color 0.15s ease;
+      border-color var(--duration-fast) ease,
+      background-color var(--duration-fast) ease;
   }
 
   .tag-chip:hover {

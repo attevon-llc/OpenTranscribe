@@ -145,7 +145,7 @@
     cursor: pointer;
     inset: 0;
     background-color: var(--border-color);
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 24px;
   }
 
@@ -157,7 +157,7 @@
     inset-inline-start: 3px;
     bottom: 3px;
     background-color: var(--toggle-button);
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 50%;
   }
 

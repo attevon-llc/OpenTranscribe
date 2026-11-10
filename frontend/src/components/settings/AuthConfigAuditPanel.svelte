@@ -234,7 +234,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-secondary:hover:not(:disabled) {
@@ -273,7 +273,7 @@
   .audit-table th {
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: var(--z-base);
     background: var(--color-bg-secondary);
     font-weight: 600;
     font-size: 0.6875rem;

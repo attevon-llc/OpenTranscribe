@@ -99,8 +99,8 @@
     cursor: pointer;
     opacity: 0.7;
     transition:
-      opacity 0.15s ease,
-      background 0.15s ease;
+      opacity var(--duration-fast) ease,
+      background var(--duration-fast) ease;
   }
   .chip-remove:hover {
     opacity: 1;

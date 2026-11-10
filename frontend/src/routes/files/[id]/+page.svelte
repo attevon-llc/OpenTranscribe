@@ -1010,7 +1010,7 @@
   :global(.transcript-segment .segment-content) {
     border: 1px solid transparent;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   :global(.transcript-segment.active-segment .segment-content) {

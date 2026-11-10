@@ -333,7 +333,7 @@
     font-weight: 500;
     padding: 0.375rem 0.5rem;
     border-radius: 6px;
-    transition: background-color 0.15s;
+    transition: background-color var(--duration-fast);
   }
 
   .btn-back:hover {
@@ -352,7 +352,7 @@
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-delete:hover:not(:disabled) {
@@ -379,7 +379,7 @@
     padding: 0.25rem 0.5rem;
     margin: -0.25rem -0.5rem;
     border-radius: 6px;
-    transition: background-color 0.15s;
+    transition: background-color var(--duration-fast);
   }
 
   .display-name.editable:hover {
@@ -396,7 +396,7 @@
   .edit-icon {
     color: var(--text-secondary);
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--duration-fast);
   }
 
   .display-name.editable:hover .edit-icon {
@@ -412,7 +412,7 @@
     padding: 0.25rem 0.5rem;
     margin: -0.25rem -0.5rem;
     border-radius: 6px;
-    transition: background-color 0.15s;
+    transition: background-color var(--duration-fast);
   }
 
   .display-description.editable:hover {
@@ -464,7 +464,7 @@
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-inline-save {

@@ -109,9 +109,9 @@
     line-height: 1;
     cursor: pointer;
     transition:
-      background 0.15s ease,
-      border-color 0.15s ease,
-      color 0.15s ease;
+      background var(--duration-fast) ease,
+      border-color var(--duration-fast) ease,
+      color var(--duration-fast) ease;
   }
   .copy-button.icon-only {
     padding: 6px;

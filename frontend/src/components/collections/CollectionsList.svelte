@@ -127,7 +127,7 @@
     border-radius: 8px;
     padding: 16px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
     display: flex;
     justify-content: space-between;
     align-items: start;
@@ -229,7 +229,7 @@
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: 1px solid;
     background-color: transparent;
     border-color: var(--border-color);
@@ -250,7 +250,7 @@
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: 1px solid;
   }
 
@@ -288,7 +288,7 @@
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
     white-space: nowrap;
   }
 

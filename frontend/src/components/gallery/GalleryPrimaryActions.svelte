@@ -70,7 +70,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     gap: 0.35rem;
@@ -101,12 +101,12 @@
   /* Primary action — solid blue */
   .upload-btn {
     background-color: var(--primary-color);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .upload-btn:hover:not(:disabled) {
     background-color: var(--primary-hover);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   /* Secondary actions — surface with border (not colored) */

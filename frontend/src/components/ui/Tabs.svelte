@@ -221,9 +221,9 @@
     font-weight: 500;
     cursor: pointer;
     transition:
-      color 0.15s ease,
-      border-color 0.15s ease,
-      background 0.15s ease;
+      color var(--duration-fast) ease,
+      border-color var(--duration-fast) ease,
+      background var(--duration-fast) ease;
   }
   /* Neutralize the global `button:hover/:focus { transform: scale; box-shadow }`
      so tabs never lift, round, or shadow on hover/focus. */

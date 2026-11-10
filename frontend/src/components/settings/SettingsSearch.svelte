@@ -171,15 +171,15 @@
   .settings-search {
     position: relative;
     /* Above the list it heads, so the raised shadow is not painted over by the list. */
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .search-field {
     padding: 0 0 12px;
     border-bottom: 1px solid transparent;
     transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease;
+      border-color var(--duration-fast) ease,
+      box-shadow var(--duration-fast) ease;
   }
 
   .sidebar {

@@ -1000,7 +1000,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     margin-top: 0.5rem;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -1066,7 +1066,7 @@
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .icon-button svg {

@@ -73,8 +73,8 @@
 
   .form-select {
     transition:
-      border-color 0.15s,
-      box-shadow 0.15s;
+      border-color var(--duration-fast),
+      box-shadow var(--duration-fast);
     cursor: pointer;
     max-width: 300px;
     padding-right: 2.5rem;

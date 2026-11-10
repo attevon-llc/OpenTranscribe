@@ -295,8 +295,8 @@
     cursor: pointer;
     flex-shrink: 0;
     transition:
-      background 0.15s ease,
-      color 0.15s ease;
+      background var(--duration-fast) ease,
+      color var(--duration-fast) ease;
   }
 
   .jump-to-playhead-button:hover:not(:disabled) {

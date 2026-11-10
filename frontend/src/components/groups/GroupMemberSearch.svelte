@@ -241,7 +241,7 @@
     color: var(--text-color);
     cursor: pointer;
     text-align: left;
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
   }
 
   .result-item:hover:not(:disabled) {

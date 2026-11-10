@@ -892,7 +892,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -937,7 +937,7 @@
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: 1px solid;
     height: 32px;
     box-sizing: border-box;
@@ -1041,7 +1041,7 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-bg);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .config-item.active {
@@ -1075,7 +1075,7 @@
     color: var(--text-muted);
     opacity: 0.6;
     cursor: help;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--duration-base) ease;
     position: relative;
   }
 
@@ -1097,7 +1097,7 @@
     font-weight: normal;
     max-width: 320px;
     white-space: normal;
-    z-index: 9999;
+    z-index: var(--z-toast);
     line-height: 1.4;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     text-align: left;
@@ -1205,7 +1205,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -1476,7 +1476,7 @@
     height: 20px;
     background-color: var(--border-color);
     border-radius: 10px;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -1489,7 +1489,7 @@
     height: 16px;
     background-color: white;
     border-radius: 50%;
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .toggle-input:checked + .toggle-switch {

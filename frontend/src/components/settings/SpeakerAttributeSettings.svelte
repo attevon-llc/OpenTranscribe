@@ -362,7 +362,7 @@
     inset: 0;
     background-color: var(--border-color);
     border-radius: 24px;
-    transition: 0.2s;
+    transition: var(--duration-base);
   }
 
   .toggle-slider::before {
@@ -374,7 +374,7 @@
     bottom: 3px;
     background-color: white;
     border-radius: 50%;
-    transition: 0.2s;
+    transition: var(--duration-base);
   }
 
   .toggle input:checked + .toggle-slider {

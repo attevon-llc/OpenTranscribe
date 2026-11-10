@@ -164,7 +164,7 @@
   .skel-thumb-icon {
     color: rgba(100, 116, 139, 0.35);
     position: relative;
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   :global([data-theme='dark']) .skel-thumb-icon {

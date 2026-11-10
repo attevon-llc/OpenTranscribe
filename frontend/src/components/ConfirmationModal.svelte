@@ -89,7 +89,7 @@
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     min-width: 120px;
   }
 
@@ -101,7 +101,7 @@
     border-radius: 8px;
     font-size: 0.95rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     cursor: pointer;
     box-shadow: var(--card-shadow);
     display: flex;
@@ -121,7 +121,7 @@
   .confirm-button {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .confirm-button:hover {
@@ -132,7 +132,7 @@
 
   .confirm-button:active {
     transform: scale(1);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   /* Delete / destructive confirmation — red override */

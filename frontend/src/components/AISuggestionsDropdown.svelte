@@ -203,7 +203,7 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
   }
 
   .ai-suggestions-header:hover:not(:disabled) {
@@ -239,7 +239,7 @@
 
   .dropdown-icon {
     margin-left: auto;
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
     color: var(--text-secondary);
   }
 
@@ -287,7 +287,7 @@
     font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: none;
     min-width: 60px;
     display: inline-flex;
@@ -298,13 +298,13 @@
   .btn-save {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-save:hover:not(:disabled) {
     background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-save:active {
@@ -350,7 +350,7 @@
     padding: 4px 6px 4px 4px;
     border-radius: 16px;
     border: 1px solid;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
   }
 
   .chip-name {
@@ -369,7 +369,7 @@
     cursor: pointer;
     padding: 2px;
     border-radius: 50%;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     color: var(--text-secondary);
   }
 

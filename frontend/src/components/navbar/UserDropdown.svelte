@@ -330,7 +330,7 @@
     padding: 0.5rem 1rem;
     color: var(--text-color) !important;
     text-decoration: none !important;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     font-size: 0.9rem;
     font-weight: 500;
     border: none;
@@ -359,7 +359,7 @@
     font-weight: 500 !important;
     border-radius: 6px !important;
     background-color: transparent !important;
-    transition: all 0.2s ease !important;
+    transition: all var(--duration-base) ease !important;
   }
 
   .dropdown-menu :global(a.dropdown-item:hover) {
@@ -417,7 +417,7 @@
     height: 16px;
     flex-shrink: 0;
     opacity: 0.7;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   /* Ensure SVGs in Link components behave the same as button SVGs */
@@ -426,7 +426,7 @@
     height: 16px !important;
     flex-shrink: 0 !important;
     opacity: 0.7 !important;
-    transition: all 0.2s ease !important;
+    transition: all var(--duration-base) ease !important;
   }
 
   .dropdown-menu :global(a.dropdown-item:hover svg) {

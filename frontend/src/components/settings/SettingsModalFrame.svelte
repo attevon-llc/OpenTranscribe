@@ -135,12 +135,12 @@
     cursor: pointer;
     padding: 0.5rem;
     color: var(--text-secondary);
-    transition: color 0.2s ease;
+    transition: color var(--duration-base) ease;
     border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10;
+    z-index: var(--z-sticky);
   }
 
   .modal-close-button:hover {

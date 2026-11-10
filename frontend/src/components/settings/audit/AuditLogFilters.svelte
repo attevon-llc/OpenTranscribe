@@ -149,7 +149,7 @@
     color: var(--text-on-solid);
     border: none;
     align-self: flex-end;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -201,7 +201,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-secondary:hover {

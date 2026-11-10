@@ -211,11 +211,11 @@
     border-radius: 8px;
     background: var(--card-background);
     overflow: hidden;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--duration-fast) ease;
   }
 
   .cluster-card:hover {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
   }
 
   .card-header {
@@ -366,7 +366,7 @@
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
   }
 
   .action-btn:disabled {

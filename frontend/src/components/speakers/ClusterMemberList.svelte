@@ -287,7 +287,7 @@
     background: var(--card-background);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     flex-shrink: 0;
     box-shadow: none;
     font-size: 0;

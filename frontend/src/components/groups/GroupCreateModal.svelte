@@ -143,7 +143,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .cancel-button {
@@ -161,13 +161,13 @@
   .confirm-button {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .confirm-button:hover:not(:disabled) {
     background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .confirm-button:active:not(:disabled) {

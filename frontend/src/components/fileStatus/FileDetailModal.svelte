@@ -389,7 +389,7 @@
     border: 1px solid var(--border-color);
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
     background: var(--success-color);
     color: var(--text-on-solid);
     border-color: var(--success-color);

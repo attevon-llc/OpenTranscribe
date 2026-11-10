@@ -99,7 +99,7 @@
   border-radius: calc(var(--slider-thumb-size) / 2);
   background: var(--slider-accent);
   box-shadow: var(--slider-thumb-shadow);
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow var(--duration-fast) ease;
 }
 
 .range-input::-moz-range-thumb {
@@ -110,7 +110,7 @@
   border-radius: calc(var(--slider-thumb-size) / 2);
   background: var(--slider-accent);
   box-shadow: var(--slider-thumb-shadow);
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow var(--duration-fast) ease;
 }
 
 .range-input::-moz-focus-outer {

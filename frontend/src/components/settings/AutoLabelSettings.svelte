@@ -402,7 +402,7 @@
     right: 0;
     bottom: 0;
     background-color: var(--border-color);
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 24px;
   }
 
@@ -414,7 +414,7 @@
     left: 3px;
     bottom: 3px;
     background-color: var(--toggle-button);
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 50%;
   }
 
@@ -456,7 +456,7 @@
     font-weight: 500;
     font-size: 0.95rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -494,7 +494,7 @@
     font-weight: 500;
     font-size: 0.9rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
@@ -556,7 +556,7 @@
     height: 100%;
     background: var(--primary-color);
     border-radius: 4px;
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   /* Skeleton Loading */

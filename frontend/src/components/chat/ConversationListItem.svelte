@@ -248,7 +248,7 @@
     display: flex;
     gap: 0.1rem;
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity var(--duration-fast) ease;
   }
 
   .conversation-item:hover .item-actions,

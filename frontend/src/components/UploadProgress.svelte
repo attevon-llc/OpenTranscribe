@@ -267,7 +267,7 @@
     font-size: 12px;
     line-height: 1;
     color: var(--text-secondary);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .upload-action-btn:hover {
@@ -302,7 +302,7 @@
 
   .progress-fill {
     height: 100%;
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   .progress-text {

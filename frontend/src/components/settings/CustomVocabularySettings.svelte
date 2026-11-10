@@ -324,7 +324,7 @@
     background: transparent;
     border: 1px solid var(--border-color);
     color: var(--text-muted);
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .domain-tab:hover { color: var(--text-color); border-color: var(--border-hover); }
@@ -372,7 +372,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     white-space: nowrap;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -407,7 +407,7 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-background);
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     gap: 0.75rem;
   }
 
@@ -482,7 +482,7 @@
     height: 16px;
     background: var(--border-color);
     border-radius: 8px;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
     position: relative;
   }
 
@@ -495,7 +495,7 @@
     height: 12px;
     background: white;
     border-radius: 50%;
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
   }
 
   .toggle input:checked + .toggle-slider {
@@ -523,7 +523,7 @@
     color: var(--error-color);
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     flex-shrink: 0;
   }
 
@@ -548,7 +548,7 @@
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-confirm-delete:hover {
@@ -565,7 +565,7 @@
     font-size: 0.75rem;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-cancel-delete:hover {
@@ -586,7 +586,7 @@
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.8rem;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-bulk-toggle:hover { color: var(--text-color); border-color: var(--border-hover); }
@@ -622,7 +622,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     white-space: nowrap;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 

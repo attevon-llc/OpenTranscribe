@@ -362,7 +362,7 @@
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     border-radius: 12px;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    transition: transform var(--duration-base) ease, box-shadow var(--duration-base) ease, border-color var(--duration-base) ease;
     cursor: pointer;
     overflow: hidden;
     display: flex;
@@ -472,7 +472,7 @@
     position: absolute;
     top: 6px;
     right: 6px;
-    z-index: 10;
+    z-index: var(--z-sticky);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -486,7 +486,7 @@
     border-radius: 4px;
     position: relative;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .file-selector:hover .checkmark {
@@ -542,7 +542,7 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.3s ease;
+    transition: transform var(--duration-slow) ease;
   }
 
   .placeholder {

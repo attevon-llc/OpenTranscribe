@@ -128,7 +128,7 @@
     background: var(--surface-color);
     color: var(--text-muted);
     border: 1px solid var(--border-color);
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     white-space: nowrap;
     flex-shrink: 0;
   }

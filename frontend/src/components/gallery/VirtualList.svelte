@@ -318,7 +318,7 @@
     position: relative;
     border-bottom: 1px solid var(--border-color);
     background: var(--surface-color);
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
     overflow: hidden;
   }
 
@@ -429,7 +429,7 @@
     border-radius: 4px;
     position: relative;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .list-cell-checkbox:hover .checkmark {

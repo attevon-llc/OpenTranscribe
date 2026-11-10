@@ -278,7 +278,7 @@
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .export-transcript-button:hover,
@@ -310,7 +310,7 @@
     color: var(--text-primary);
     font-size: 14px;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
   }
 
   .export-dropdown-content button:hover {

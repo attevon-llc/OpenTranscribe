@@ -435,7 +435,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .toggle-group:hover {
@@ -491,7 +491,7 @@
     right: 0;
     bottom: 0;
     background-color: var(--border-color);
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 24px;
   }
 
@@ -503,7 +503,7 @@
     left: 3px;
     bottom: 3px;
     background-color: white;
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 50%;
   }
 
@@ -560,7 +560,7 @@
     font-weight: 500;
     cursor: pointer;
     color: var(--text-on-solid);
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
@@ -602,7 +602,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     margin-bottom: 0.75rem;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
   }
 
   .shared-card.active {
@@ -682,7 +682,7 @@
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-use {

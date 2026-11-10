@@ -233,7 +233,7 @@
     inset: 0;
     background: var(--border-color);
     border-radius: 20px;
-    transition: 0.2s;
+    transition: var(--duration-base);
   }
   .slider::before {
     content: '';
@@ -244,7 +244,7 @@
     bottom: 3px;
     background: white;
     border-radius: 50%;
-    transition: 0.2s;
+    transition: var(--duration-base);
   }
   .enable-toggle input:checked + .slider {
     background: var(--primary-color);

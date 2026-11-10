@@ -46,7 +46,7 @@
     bottom: 1rem;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 1200;
+    z-index: var(--z-navbar);
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -88,7 +88,7 @@
     font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
   }
 
   .connection-retry:hover {

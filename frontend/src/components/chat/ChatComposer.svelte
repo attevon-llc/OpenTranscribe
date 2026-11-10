@@ -159,8 +159,8 @@
     border-radius: 24px;
     background-color: var(--field-bg);
     transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease;
+      border-color var(--duration-fast) ease,
+      box-shadow var(--duration-fast) ease;
   }
 
   .input-shell:focus-within {
@@ -213,8 +213,8 @@
     color: var(--text-on-solid);
     cursor: pointer;
     transition:
-      background-color 0.15s ease,
-      opacity 0.15s ease;
+      background-color var(--duration-fast) ease,
+      opacity var(--duration-fast) ease;
   }
 
   .send-button:disabled {

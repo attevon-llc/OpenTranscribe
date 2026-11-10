@@ -431,7 +431,7 @@
     height: 100%;
     background: linear-gradient(90deg, var(--primary-color), rgba(var(--primary-color-rgb), 0.8));
     border-radius: 4px;
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
     animation: progress-shimmer 1.5s infinite;
   }
 
@@ -469,7 +469,7 @@
     right: calc(-50% + 12px);
     height: 2px;
     background: var(--border-color);
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .stage.active:not(:last-child)::after {
@@ -484,7 +484,7 @@
     border: 2px solid var(--surface-color);
     position: relative;
     z-index: 2;
-    transition: all 0.3s ease;
+    transition: all var(--duration-slow) ease;
   }
 
   .stage.active .stage-dot {
@@ -533,7 +533,7 @@
     font-size: 16px;
     color: var(--text-secondary);
     line-height: 1.5;
-    transition: max-height 0.3s ease-in-out;
+    transition: max-height var(--duration-slow) ease-in-out;
     overflow: hidden;
   }
 
@@ -566,7 +566,7 @@
     font-weight: 500;
     text-decoration: none;
     white-space: nowrap;
-    transition: color 0.2s ease;
+    transition: color var(--duration-base) ease;
   }
 
   .expand-link:hover {
@@ -600,7 +600,7 @@
     cursor: pointer;
     padding: 8px;
     border-radius: 6px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -675,7 +675,7 @@
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: 1px solid;
     height: 32px;
     box-sizing: border-box;

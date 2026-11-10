@@ -116,7 +116,7 @@
     border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
-    z-index: 1000;
+    z-index: var(--z-dropdown);
     overflow: hidden;
   }
 
@@ -210,7 +210,7 @@
     text-decoration: none;
     padding: 0.25rem 0.5rem;
     border-radius: 6px;
-    transition: background 0.15s;
+    transition: background var(--duration-fast);
   }
 
   .preview-detail-link:hover {
@@ -229,7 +229,7 @@
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: color 0.2s ease, background 0.2s ease;
+    transition: color var(--duration-base) ease, background var(--duration-base) ease;
   }
 
   .preview-close:hover {

@@ -284,7 +284,7 @@
     cursor: pointer;
     font-size: 0.8rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-danger-outline:hover:not(:disabled) {

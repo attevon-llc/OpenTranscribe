@@ -197,7 +197,7 @@
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 1rem 1.125rem;
-    transition: border-color 0.15s;
+    transition: border-color var(--duration-fast);
   }
 
   .info-card.panel.pinned {

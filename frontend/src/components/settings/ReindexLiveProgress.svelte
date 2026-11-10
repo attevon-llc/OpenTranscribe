@@ -182,7 +182,7 @@
     height: 100%;
     background: var(--primary-color);
     border-radius: 3px;
-    transition: width 0.3s;
+    transition: width var(--duration-slow);
   }
 
   .progress-text {

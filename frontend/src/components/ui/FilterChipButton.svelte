@@ -68,7 +68,7 @@
     font-weight: 400;
     padding: 0.35rem 0.7rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     white-space: nowrap;
   }
 

@@ -269,7 +269,7 @@
     z-index: var(--z-toast);
     font-family: var(--font-family);
     user-select: none;
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
     margin-bottom: env(safe-area-inset-bottom, 0px);
   }
 
@@ -286,7 +286,7 @@
     padding: 8px 12px;
     cursor: grab;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     position: relative;
     backdrop-filter: blur(8px);
   }
@@ -405,7 +405,7 @@
     border-radius: 4px;
     font-size: 0.75rem;
     cursor: pointer;
-    transition: background 0.2s ease;
+    transition: background var(--duration-base) ease;
   }
 
   .clear-btn:hover,
@@ -448,7 +448,7 @@
   .progress-fill {
     height: 100%;
     background: var(--primary-on-surface);
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   /* Upload List */

@@ -565,7 +565,7 @@
     height: 20px;
     background-color: var(--border-color);
     border-radius: 10px;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -578,8 +578,8 @@
     height: 16px;
     background-color: white;
     border-radius: 50%;
-    transition: transform 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform var(--duration-base) ease;
+    box-shadow: var(--shadow-thumb);
   }
 
   .toggle-input:checked + .toggle-switch {
@@ -681,7 +681,7 @@
     cursor: pointer;
     font-size: 0.8rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-link:hover:not(:disabled) {

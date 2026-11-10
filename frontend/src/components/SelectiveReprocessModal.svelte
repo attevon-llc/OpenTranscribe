@@ -693,7 +693,7 @@
     color: var(--text-secondary);
     margin-left: 0.35rem;
     white-space: nowrap;
-    transition: color 0.2s ease;
+    transition: color var(--duration-base) ease;
   }
 
   .step-label.active {
@@ -759,7 +759,7 @@
     border-radius: 4px;
     cursor: pointer;
     white-space: nowrap;
-    transition: background-color 0.15s, border-color 0.15s;
+    transition: background-color var(--duration-fast), border-color var(--duration-fast);
   }
 
   .select-all-btn:hover {
@@ -804,7 +804,7 @@
     padding: 0.6rem 0.75rem;
     border-radius: 8px;
     cursor: pointer;
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
     margin-bottom: 0.25rem;
   }
 
@@ -836,7 +836,7 @@
     width: 18px;
     height: 18px;
     cursor: pointer;
-    z-index: 1;
+    z-index: var(--z-base);
     margin: 0;
   }
 
@@ -852,7 +852,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     background: var(--background-color);
   }
 
@@ -1096,7 +1096,7 @@
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     min-width: 100px;
     display: flex;
     align-items: center;
@@ -1124,7 +1124,7 @@
   .primary-button {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .primary-button:hover:not(:disabled) {

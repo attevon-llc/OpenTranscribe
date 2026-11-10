@@ -574,7 +574,7 @@
     padding: 0.5rem 0.75rem;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     font-size: 0.85rem;
   }
 
@@ -613,7 +613,7 @@
     font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .reprocess-button-header:hover:not(:disabled) {

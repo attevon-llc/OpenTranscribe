@@ -160,7 +160,7 @@
     gap: 8px;
     padding: 0.5rem 0.6rem;
     border-radius: 6px;
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
   }
 
   .share-row:hover {
@@ -232,7 +232,7 @@
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
   }
 
   .revoke-btn:hover:not(:disabled) {

@@ -842,7 +842,7 @@
     font-size: 0.95rem !important;
     font-weight: 500 !important;
     cursor: pointer !important;
-    transition: all 0.2s ease !important;
+    transition: all var(--duration-base) ease !important;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
   }
 
@@ -857,6 +857,6 @@
     color: var(--text-color) !important;
     border-color: var(--border-color) !important;
     transform: scale(1.02) !important;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: var(--shadow-hover) !important;
   }
 </style>

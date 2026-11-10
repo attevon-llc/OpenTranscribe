@@ -149,8 +149,8 @@
     color: var(--text-color);
     cursor: pointer;
     transition:
-      background-color 0.2s,
-      border-color 0.2s;
+      background-color var(--duration-base),
+      border-color var(--duration-base);
   }
 
   .discovery-rescan-btn:hover:not(:disabled) {

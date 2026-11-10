@@ -844,7 +844,7 @@
       width: min(17rem, 82vw);
       z-index: 30;
       transform: translateX(-100%);
-      transition: transform 0.2s ease;
+      transition: transform var(--duration-base) ease;
     }
 
     .chat-page.sidebar-open .sidebar-pane {

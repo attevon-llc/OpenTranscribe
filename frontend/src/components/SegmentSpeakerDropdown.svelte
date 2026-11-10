@@ -363,7 +363,7 @@
       border: none;
       border-radius: 6px;
       cursor: pointer;
-      transition: background-color 0.15s ease;
+      transition: background-color var(--duration-fast) ease;
       color: var(--text-primary);
       font-size: 14px;
       text-align: start;
@@ -605,7 +605,7 @@
     border: 1px solid;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     color: var(--speaker-light);
   }
 
@@ -627,7 +627,7 @@
 
   .dropdown-arrow {
     color: var(--text-secondary);
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
     flex-shrink: 0;
   }
 

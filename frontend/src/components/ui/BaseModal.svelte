@@ -255,7 +255,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.2s ease, background-color 0.2s ease;
+    transition: color var(--duration-base) ease, background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
 

@@ -160,7 +160,7 @@
     color: var(--color-text-secondary);
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .audit-table tbody tr:hover {
@@ -239,7 +239,7 @@
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .details-btn:hover {

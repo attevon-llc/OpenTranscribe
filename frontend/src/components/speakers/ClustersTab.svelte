@@ -252,7 +252,7 @@
     color: var(--text-secondary);
     padding: 4px;
     border-radius: 50%;
-    transition: color 0.15s, background 0.15s;
+    transition: color var(--duration-fast), background var(--duration-fast);
   }
 
   .search-clear-btn:hover {
@@ -282,14 +282,14 @@
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
-    transition: all 0.2s ease;
+    box-shadow: var(--shadow-primary);
+    transition: all var(--duration-base) ease;
   }
 
   .btn-recluster:hover:not(:disabled) {
     background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-recluster:active:not(:disabled) {
@@ -327,7 +327,7 @@
     height: 100%;
     background: var(--primary-color);
     border-radius: 3px;
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   .progress-fill.queued-pulse {
@@ -368,7 +368,7 @@
     width: 100%;
     text-align: left;
     border-radius: 4px;
-    transition: background 0.15s ease;
+    transition: background var(--duration-fast) ease;
     box-shadow: none;
   }
 
@@ -400,7 +400,7 @@
     justify-content: center;
     width: 16px;
     flex-shrink: 0;
-    transition: transform 0.15s ease;
+    transition: transform var(--duration-fast) ease;
   }
 
   .section-empty-note {

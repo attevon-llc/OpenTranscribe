@@ -477,7 +477,7 @@
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
   }
 
   .remove-btn:hover {
@@ -503,14 +503,14 @@
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .share-btn:hover:not(:disabled) {
     background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .share-btn:active:not(:disabled) {

@@ -255,14 +255,14 @@
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-create:hover {
     background-color: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-create:active {
@@ -303,14 +303,14 @@
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-retry:hover:not(:disabled) {
     background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-retry:active:not(:disabled) {
@@ -356,7 +356,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.15s;
+    transition: color var(--duration-fast);
   }
 
   .search-clear:hover {
@@ -402,7 +402,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     text-align: left;
     width: 100%;
   }

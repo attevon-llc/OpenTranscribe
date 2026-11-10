@@ -63,9 +63,9 @@
     color: var(--primary-on-surface);
     cursor: pointer;
     transition:
-      background-color 0.15s,
-      border-color 0.15s,
-      color 0.15s;
+      background-color var(--duration-fast),
+      border-color var(--duration-fast),
+      color var(--duration-fast);
   }
 
   .preview-btn:hover {

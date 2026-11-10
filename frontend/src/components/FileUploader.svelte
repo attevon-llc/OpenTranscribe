@@ -921,7 +921,7 @@
     border: none;
     border-radius: 6px;
     cursor: default;
-    transition: background 0.15s ease;
+    transition: background var(--duration-fast) ease;
     flex-shrink: 0;
   }
 
@@ -984,7 +984,7 @@
     font-weight: 500;
     color: var(--text-secondary);
     white-space: nowrap;
-    transition: color 0.2s ease;
+    transition: color var(--duration-base) ease;
   }
 
   /* --primary-on-surface, not --primary-color: the accent is a FILL colour tuned for a
@@ -1057,7 +1057,7 @@
     font-size: 0.9rem;
     font-weight: 500;
     border-radius: 6px 6px 0 0;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     position: relative;
   }
 
@@ -1090,7 +1090,7 @@
     cursor: pointer;
     font-weight: 500;
     font-size: 0.8125rem;
-    transition: background 0.15s ease;
+    transition: background var(--duration-fast) ease;
   }
 
   .btn-acknowledge:hover { background: var(--primary-color); }
@@ -1149,7 +1149,7 @@
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
     position: relative;
-    z-index: 1;
+    z-index: var(--z-base);
     /* Transparent, NOT `var(--background-color)`. That token is the PAGE
        background (#0f172a in dark), while the dialog surface is
        `--surface-color` (#1e293b) — so the footer painted a visibly different,
@@ -1176,7 +1176,7 @@
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     white-space: nowrap;
   }
 
@@ -1213,13 +1213,13 @@
     background: var(--primary-color);
     border: 1px solid #3b82f6;
     color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .nav-next:hover:not(:disabled), .nav-submit:hover:not(:disabled) {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
     transform: translateY(-1px);
   }
 

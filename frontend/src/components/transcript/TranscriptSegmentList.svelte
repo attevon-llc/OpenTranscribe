@@ -494,7 +494,7 @@
     right: 0;
     height: 3px;
     background: var(--border-color);
-    z-index: 10;
+    z-index: var(--z-sticky);
     border-radius: 0;
   }
 
@@ -552,9 +552,9 @@
     border-radius: 10px;
     cursor: pointer;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     font-size: 0.95rem;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
   }
 
   .cancel-button:hover {
@@ -621,7 +621,7 @@
     border: none;
     text-align: left;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border-radius: 4px;
     margin: 2px 4px;
     min-width: 0; /* Allow grid to shrink */
@@ -665,7 +665,7 @@
     border: 1px solid;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     color: var(--speaker-light);
   }
 
@@ -739,7 +739,7 @@
     cursor: pointer;
     font-size: 12px;
     font-weight: 400;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     text-decoration: underline;
     text-decoration-color: transparent;
   }
@@ -778,7 +778,7 @@
     font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: none;
     min-width: 60px;
     display: inline-flex;
@@ -789,13 +789,13 @@
   .segment-edit-actions .save-button {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .segment-edit-actions .save-button:hover:not(:disabled) {
     background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .segment-edit-actions .save-button:active:not(:disabled) {
@@ -811,7 +811,7 @@
     background: #6b7280;
     color: var(--text-on-solid);
     border: 1px solid #6b7280;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
   }
 
   .segment-edit-actions .cancel-button:hover {

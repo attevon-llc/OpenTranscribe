@@ -398,7 +398,7 @@
   .panel-header {
     position: sticky;
     top: -1rem;
-    z-index: 1;
+    z-index: var(--z-base);
     margin: -1rem -1rem 0;
     padding: 1rem 1rem 0.6rem;
     background-color: var(--card-background);

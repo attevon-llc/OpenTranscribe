@@ -208,7 +208,7 @@
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
   }
 
   .notice-dismiss:hover {

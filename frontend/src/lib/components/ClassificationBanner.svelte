@@ -199,7 +199,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
+    z-index: var(--z-critical);
     padding: 1rem;
     overflow: hidden;
     overscroll-behavior: none;
@@ -315,7 +315,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: none;
   }
 

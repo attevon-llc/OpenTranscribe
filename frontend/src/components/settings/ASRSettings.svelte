@@ -858,7 +858,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
   }
 
   .add-button:hover:not(:disabled) {
@@ -879,7 +879,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--card-bg);
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     gap: 1rem;
   }
 
@@ -962,7 +962,7 @@
     background: var(--success-color);
     color: var(--text-on-solid);
     border: none;
-    transition: background 0.15s;
+    transition: background var(--duration-fast);
     white-space: nowrap;
   }
 
@@ -977,7 +977,7 @@
     padding: 0;
     border-radius: 5px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     border: 1px solid;
     box-shadow: none;
   }
@@ -1035,7 +1035,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
   }
 
   .btn-delete-all:hover:not(:disabled) { background: var(--error-solid); }
@@ -1080,7 +1080,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
   }
 
   .btn-add-first:hover { background: var(--primary-color); }
@@ -1134,12 +1134,12 @@
   .toggle-switch {
     position: relative; width: 28px; height: 16px;
     background: var(--border-color); border-radius: 8px;
-    transition: background 0.2s; flex-shrink: 0;
+    transition: background var(--duration-base); flex-shrink: 0;
   }
   .toggle-switch::after {
     content: ''; position: absolute; top: 2px; left: 2px;
     width: 12px; height: 12px; background: white;
-    border-radius: 50%; transition: transform 0.2s;
+    border-radius: 50%; transition: transform var(--duration-base);
   }
   .toggle-input:checked + .toggle-switch { background: var(--primary-color); }
   .toggle-input:checked + .toggle-switch::after { transform: translateX(12px); }

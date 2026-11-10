@@ -101,7 +101,7 @@
   .gallery-toolbar {
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: var(--z-sticky);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -172,7 +172,7 @@
     border-radius: 8px;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     flex-shrink: 0;
   }
 

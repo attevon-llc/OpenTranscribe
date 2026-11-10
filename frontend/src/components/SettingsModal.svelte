@@ -1321,7 +1321,7 @@
     color: var(--text-color);
     text-align: left;
     cursor: pointer;
-    transition: background-color 0.15s, color 0.15s;
+    transition: background-color var(--duration-fast), color var(--duration-fast);
     font-size: 0.8125rem;
     position: relative;
   }
@@ -1510,7 +1510,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-primary {
@@ -1543,7 +1543,7 @@
   .btn-secondary:hover:not(:disabled) {
     background-color: var(--button-hover);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-hover);
   }
 
   .btn-secondary:active:not(:disabled) {

@@ -341,7 +341,7 @@
     align-items: center;
     gap: 0.15rem;
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity var(--duration-fast) ease;
   }
 
   .chat-message:hover .actions,

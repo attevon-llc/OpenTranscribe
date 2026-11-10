@@ -445,7 +445,7 @@
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.875rem;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
   }
 
   .retry-button:hover {

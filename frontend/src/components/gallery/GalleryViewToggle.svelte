@@ -125,7 +125,7 @@
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     color: var(--text-secondary);
   }
 

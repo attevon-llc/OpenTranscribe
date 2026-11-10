@@ -258,8 +258,8 @@
     border: 1px solid var(--field-border);
     border-radius: var(--field-radius);
     transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease;
+      border-color var(--duration-fast) ease,
+      box-shadow var(--duration-fast) ease;
   }
 
   .search-bar-md {
@@ -401,8 +401,8 @@
     color: var(--text-secondary);
     cursor: pointer;
     transition:
-      background 0.15s ease,
-      color 0.15s ease;
+      background var(--duration-fast) ease,
+      color var(--duration-fast) ease;
     flex-shrink: 0;
   }
 

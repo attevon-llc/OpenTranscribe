@@ -321,8 +321,8 @@
     border-radius: 4px;
     display: flex;
     align-items: center;
-    transition: all 0.15s ease;
-    z-index: 1;
+    transition: all var(--duration-fast) ease;
+    z-index: var(--z-base);
   }
 
   .paste-button:hover:not(:disabled) { background: var(--button-hover); color: var(--primary-on-surface); }
@@ -376,7 +376,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     list-style: none;
-    transition: background 0.15s ease;
+    transition: background var(--duration-fast) ease;
   }
 
   .download-options-summary::-webkit-details-marker { display: none; }
@@ -415,7 +415,7 @@
     inset: 0;
     background-color: var(--border-color);
     border-radius: 20px;
-    transition: background 0.2s ease;
+    transition: background var(--duration-base) ease;
   }
 
   .download-toggle-slider::before {
@@ -427,7 +427,7 @@
     bottom: 2px;
     background: white;
     border-radius: 50%;
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .download-toggle input:checked + .download-toggle-slider { background-color: var(--primary-color); }

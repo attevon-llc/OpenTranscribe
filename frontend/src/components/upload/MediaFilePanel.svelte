@@ -220,7 +220,7 @@
     border-radius: 12px;
     background-color: var(--surface-color);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     text-align: center;
   }
 
@@ -341,7 +341,7 @@
     border-radius: 6px;
     cursor: pointer;
     color: var(--text-secondary);
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
   }
 
   .file-remove:hover {

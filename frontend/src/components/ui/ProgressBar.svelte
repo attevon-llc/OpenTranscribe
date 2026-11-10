@@ -67,7 +67,7 @@
     height: 100%;
     background-color: var(--accent-color);
     border-radius: 3px;
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   .progress-fill.indeterminate {

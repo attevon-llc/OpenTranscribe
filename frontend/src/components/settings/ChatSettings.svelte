@@ -240,7 +240,7 @@
     inset: 0;
     background-color: var(--border-color);
     border-radius: 1.5rem;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
   }
 
   .toggle-slider::before {
@@ -252,7 +252,7 @@
     bottom: 0.1875rem;
     background-color: white;
     border-radius: 50%;
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
   }
 
   .toggle-switch input:checked + .toggle-slider {

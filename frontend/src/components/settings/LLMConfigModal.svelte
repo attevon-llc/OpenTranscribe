@@ -919,7 +919,7 @@ let _llmConfigModalWasOpen = false;
     border-radius: 4px;
     font-size: 0.75rem;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
   }
 
   .discover-models-btn:hover:not(:disabled) {
@@ -946,7 +946,7 @@ let _llmConfigModalWasOpen = false;
     display: flex;
     align-items: center;
     border-radius: 4px;
-    transition: background-color 0.2s, color 0.2s;
+    transition: background-color var(--duration-base), color var(--duration-base);
   }
 
   .toggle-password:hover {
@@ -1004,7 +1004,7 @@ let _llmConfigModalWasOpen = false;
     margin-bottom: 0.25rem;
     border-radius: 4px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .model-item:hover {
@@ -1052,7 +1052,7 @@ let _llmConfigModalWasOpen = false;
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -1100,7 +1100,7 @@ let _llmConfigModalWasOpen = false;
     height: 20px;
     background: var(--border-color);
     border-radius: 10px;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
     flex-shrink: 0;
   }
 
@@ -1113,7 +1113,7 @@ let _llmConfigModalWasOpen = false;
     height: 16px;
     background: white;
     border-radius: 50%;
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
   }
 
   .toggle-input:checked + .toggle-switch {
@@ -1146,14 +1146,14 @@ let _llmConfigModalWasOpen = false;
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-md);
   }
 
   .cancel-button:hover:not(:disabled) {
     background: var(--button-hover);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-hover);
   }
 
   .cancel-button:active {
@@ -1172,7 +1172,7 @@ let _llmConfigModalWasOpen = false;
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -1198,7 +1198,7 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-muted);
     opacity: 0.6;
     cursor: help;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--duration-base) ease;
     position: relative;
     margin-left: 0.5rem;
   }
@@ -1221,7 +1221,7 @@ let _llmConfigModalWasOpen = false;
     font-weight: normal;
     max-width: 320px;
     white-space: normal;
-    z-index: 9999;
+    z-index: var(--z-toast);
     line-height: 1.4;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     text-align: left;

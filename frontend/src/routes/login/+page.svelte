@@ -1167,8 +1167,8 @@
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1178,7 +1178,7 @@
   .auth-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .auth-button:active:not(:disabled) {
@@ -1255,7 +1255,7 @@
     display: flex;
     align-items: center;
     border-radius: 4px;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
   }
 
   .toggle-password:hover {
@@ -1340,7 +1340,7 @@
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .external-auth-button:hover:not(:disabled) {
@@ -1476,7 +1476,7 @@
     font-size: 0.9rem;
     cursor: pointer;
     padding: 0.5rem;
-    transition: color 0.2s;
+    transition: color var(--duration-base);
   }
 
   .text-button:hover {

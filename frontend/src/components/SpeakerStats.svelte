@@ -370,7 +370,7 @@
     background-color: var(--surface-color);
     border-radius: 8px;
     padding: 1rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
   }
 
   /* Analytics Overview Cards */
@@ -389,7 +389,7 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 0.75rem;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .overview-card:hover {
@@ -473,7 +473,7 @@
 
   .speaker-segment-large {
     height: 100%;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     cursor: pointer;
   }
 
@@ -494,7 +494,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 0.75rem;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .speaker-chip:hover {

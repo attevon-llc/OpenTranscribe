@@ -218,8 +218,8 @@
     border-radius: 4px;
     cursor: pointer;
     transition:
-      background-color 0.2s ease,
-      color 0.2s ease;
+      background-color var(--duration-base) ease,
+      color var(--duration-base) ease;
     border: 1px solid;
     box-sizing: border-box;
   }

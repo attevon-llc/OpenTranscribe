@@ -434,7 +434,7 @@
     padding: 1rem;
     background: var(--color-bg-secondary);
     border-radius: 8px;
-    transition: opacity 0.2s;
+    transition: opacity var(--duration-base);
   }
 
   .section.disabled {

@@ -141,7 +141,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -350,7 +350,7 @@
     height: 100%;
     background: var(--primary-color);
     border-radius: 2px;
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   .task-progress-text {

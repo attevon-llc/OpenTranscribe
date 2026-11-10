@@ -103,7 +103,7 @@
 </script>
 
 <div class="settings-panel">
-  <div class="info-box">
+  <div class="settings-info-box">
     <strong>{$t('settings.scimTokens.infoTitle')}</strong>
     <p>{$t('settings.scimTokens.infoDescription')}</p>
   </div>
@@ -245,31 +245,11 @@
     max-width: 900px;
   }
 
-  .info-box {
-    background: var(--color-info-bg);
-    border: 1px solid var(--color-info-border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-4);
-    margin-bottom: var(--space-6);
-  }
-
-  .info-box strong {
-    color: var(--color-text);
-  }
-
-  .info-box p {
-    margin: var(--space-2) 0 0 0;
-    font-size: var(--font-size-md);
-    color: var(--color-text-secondary);
-    line-height: 1.5;
-  }
-
   .toolbar {
     display: flex;
     justify-content: flex-end;
     margin-bottom: var(--space-4);
   }
-
 
   .table-wrap {
     overflow-x: auto;
@@ -309,8 +289,6 @@
     padding: 0.3rem 0.65rem;
     font-size: var(--font-size-xs);
   }
-
-
 
   :global(.form-field) input[type='text'],
   :global(.form-field) input[type='date'] {

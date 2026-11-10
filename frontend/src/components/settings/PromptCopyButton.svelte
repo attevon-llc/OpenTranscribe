@@ -35,7 +35,7 @@
 
 <button
   type="button"
-  class="copy-button-header"
+  class="settings-copy-button"
   class:copied={isCopied}
   on:click={copy}
   aria-label={$t('prompts.copy')}
@@ -57,28 +57,14 @@
 
 <style>
   /* Matches the SummaryModal copy button. */
-  .copy-button-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    font-size: var(--font-size-sm);
-  }
-
-  .copy-button-header:hover {
+  .settings-copy-button:hover {
     background-color: var(--hover-bg);
     color: var(--primary-on-surface);
     border-color: var(--primary-color);
   }
 
-  .copy-button-header.copied,
-  .copy-button-header.copied:hover {
+  .settings-copy-button.copied,
+  .settings-copy-button.copied:hover {
     background-color: var(--success-bg);
     border-color: var(--success-color);
     color: var(--success-color);

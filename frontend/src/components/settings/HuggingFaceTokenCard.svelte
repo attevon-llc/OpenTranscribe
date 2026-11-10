@@ -123,7 +123,7 @@
     <h3 id="hf-token-heading" class="title">{$t('settings.engineSettings.hfToken.heading')}</h3>
     <InfoTip inline label={$t('settings.engineSettings.hfToken.helpLabel')}>{$t('settings.engineSettings.hfToken.help')}</InfoTip>
     {#if !loading}
-      <span class="status-chip status-{view.badge}" data-testid="hf-token-status">{$t(view.badgeKey)}</span>
+      <span class="settings-pill status-{view.badge}" data-testid="hf-token-status">{$t(view.badgeKey)}</span>
     {/if}
   </div>
   <p class="desc">{$t('settings.engineSettings.hfToken.description')}</p>
@@ -221,16 +221,6 @@
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-  }
-
-  .status-chip {
-    margin-inline-start: auto;
-    padding: var(--space-0-5) var(--space-2-5);
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--border-color);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-secondary);
   }
 
   .status-app,

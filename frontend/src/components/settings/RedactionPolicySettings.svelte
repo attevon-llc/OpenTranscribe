@@ -65,7 +65,7 @@
   }
 </script>
 
-<div class="redaction-policy-settings">
+<div class="redaction-policy-settings form-panel">
   {#if loading || !policy}
     <SettingsSkeleton variant="form" count={3} label={$t('common.loading')} />
   {:else}
@@ -163,22 +163,11 @@
   .redaction-policy-settings {
     padding: var(--space-2) 0;
   }
-  .settings-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-  }
   .intro-desc {
     font-size: 0.85rem;
     color: var(--text-muted);
     margin: 0;
     line-height: 1.5;
-  }
-  .settings-section {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: var(--space-5);
   }
   .section-title {
     font-size: 0.95rem;
@@ -190,12 +179,6 @@
     font-size: 0.8rem;
     color: var(--text-muted);
     margin: 0 0 var(--space-4) 0;
-  }
-  .field-desc {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-    margin: var(--space-1-5) 0 0 0;
-    line-height: 1.5;
   }
   .setting-row {
     display: flex;
@@ -213,10 +196,5 @@
   .toggle-text {
     font-size: var(--font-size-md);
     color: var(--text-color);
-  }
-  .button-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-3);
   }
 </style>

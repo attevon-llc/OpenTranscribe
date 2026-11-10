@@ -118,7 +118,7 @@
         ? $t('settings.emailNotifications.editTitle')
         : $t('settings.emailNotifications.addTitle')}
     </h2>
-    <span class="experimental-badge" title={$t('settings.emailNotifications.experimentalNote')}>
+    <span class="settings-experimental-badge" title={$t('settings.emailNotifications.experimentalNote')}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M9 3h6M10 3v6.5L5.2 18a2 2 0 0 0 1.8 3h10a2 2 0 0 0 1.8-3L14 9.5V3" />
         <path d="M7.5 14h9" />
@@ -231,22 +231,8 @@
     margin: 0;
     font-size: 1.1rem;
   }
-  .experimental-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
+  .settings-experimental-badge {
     margin-left: var(--space-2);
-    font-size: 0.68rem;
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-xl);
-    background: rgba(234, 179, 8, 0.15);
-    color: #b45309;
-  }
-  :global([data-theme='dark']) .experimental-badge {
-    color: #fbbf24;
   }
   .form-row > :global(.form-field) {
     flex: 1;

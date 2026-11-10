@@ -122,7 +122,7 @@
   }
 </script>
 
-<div class="content-redaction-settings">
+<div class="content-redaction-settings form-panel">
   {#if loading}
     <SettingsSkeleton variant="form" count={3} label={$t('common.loading')} />
   {:else}
@@ -336,25 +336,11 @@
     padding: var(--space-2) 0;
   }
 
-
-  .settings-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-  }
-
   .intro-desc {
     font-size: 0.85rem;
     color: var(--text-muted);
     margin: 0;
     line-height: 1.5;
-  }
-
-  .settings-section {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: var(--space-5);
   }
 
   .section-title {
@@ -369,15 +355,6 @@
     color: var(--text-muted);
     margin: 0 0 var(--space-4) 0;
   }
-
-  .field-desc {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-    margin: var(--space-1-5) 0 0 0;
-    line-height: 1.5;
-  }
-
-
 
   .form-select,
   .form-textarea {
@@ -532,11 +509,5 @@
   }
   .disabled-toggle {
     opacity: 0.65;
-  }
-
-  .button-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-3);
   }
 </style>

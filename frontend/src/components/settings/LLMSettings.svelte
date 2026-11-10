@@ -450,7 +450,7 @@
   }
 </script>
 
-<div class="llm-settings">
+<div class="llm-settings provider-panel">
   {#if loading}
     <SettingsSkeleton variant="dashboard" label={$t('common.loading')} />
   {:else}
@@ -489,7 +489,7 @@
                 {#if config.base_url}
                   <div class="config-url">{config.base_url}</div>
                 {/if}
-                <div class="share-toggle-row">
+                <div class="provider-share-row">
                   <div class="toggle-label">
                     <Toggle id="share-config-{config.uuid}" checked={!!config.is_shared} onchange={() => handleShareToggle(config)} disabled={saving} />
                     <label class="toggle-text" for="share-config-{config.uuid}">{$t('settings.llmProvider.shareGlobally')}</label>
@@ -785,11 +785,6 @@
     margin: 0 auto;
   }
 
-
-  .saved-configs-section {
-    margin-bottom: var(--space-8);
-  }
-
   .section-header {
     display: flex;
     align-items: center;
@@ -824,21 +819,6 @@
     border-radius: var(--radius-md);
     background: var(--card-background);
     transition: all var(--duration-base) ease;
-  }
-
-  .config-item.active {
-    border-color: var(--primary-color);
-    background: var(--primary-bg);
-  }
-
-  .config-item:hover:not(.active) {
-    border-color: var(--border-hover);
-    background: var(--hover-color);
-  }
-
-  .config-info {
-    flex: 1;
-    min-width: 0;
   }
 
   .config-name {
@@ -879,18 +859,6 @@
     width: fit-content;
   }
 
-  .config-status.currently-active {
-    background-color: var(--success-bg);
-    color: var(--success-color);
-    border: 1px solid var(--success-border);
-  }
-
-  .status-indicator {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
   .delete-all-section {
     margin-top: var(--space-8);
     padding-top: var(--space-4);
@@ -898,19 +866,10 @@
     text-align: center;
   }
 
-  button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   /* Shared config styling */
   .config-item.shared {
     border-left: 3px solid var(--primary-color);
     background: rgba(var(--primary-color-rgb), 0.04);
-  }
-
-  .shared-section-header {
-    margin-top: var(--space-6);
   }
 
   .share-badge {
@@ -958,15 +917,6 @@
     color: var(--text-muted);
     font-style: italic;
     margin-top: var(--space-0-5);
-  }
-
-  .share-toggle-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    margin-top: var(--space-2);
-    padding-top: var(--space-2);
-    border-top: 1px dashed var(--border-color);
   }
 
   .toggle-label {
@@ -1110,5 +1060,10 @@
       min-height: 44px;
     }
 
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>

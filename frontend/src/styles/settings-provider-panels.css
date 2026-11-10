@@ -1,0 +1,45 @@
+/* Shared by the ASR, LLM, prompt and engine panels, rooted at .provider-panel. */
+
+.provider-panel .config-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.provider-panel .shared-section-header {
+  margin-top: var(--space-6);
+}
+
+.provider-panel .provider-share-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border-color);
+}
+
+.provider-panel .saved-configs-section {
+  margin-bottom: var(--space-8);
+}
+
+.provider-panel .config-item.active {
+  border-color: var(--primary-color);
+  background: var(--primary-bg);
+}
+
+.provider-panel .config-item:hover:not(.active) {
+  border-color: var(--border-hover);
+  background: var(--hover-color);
+}
+
+.provider-panel .config-status.currently-active {
+  background-color: var(--success-bg);
+  color: var(--success-color);
+  border: 1px solid var(--success-border);
+}
+
+.provider-panel .status-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

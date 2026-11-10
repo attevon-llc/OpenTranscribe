@@ -114,13 +114,8 @@ describe('panel section headings are sentence-case muted labels', () => {
     ['components/collections/SharedCollectionsSection.svelte', '.section-label'],
     ['components/groups/GroupsOverview.svelte', '.groups-section-title'],
     ['components/settings/SystemStatisticsPanel.svelte', '.stat-section h4'],
-    ['components/settings/LDAPSettings.svelte', '.section h3'],
-    ['components/settings/OIDCSettings.svelte', '.section h3'],
-    ['components/settings/SAMLSettings.svelte', '.section h3'],
-    ['components/settings/PKISettings.svelte', '.section h3'],
-    ['components/settings/ProxySettings.svelte', '.section h3'],
+    ['styles/settings-auth-panels.css', '.auth-panel .section > h3'],
     ['components/settings/SessionSettings.svelte', '.section h3'],
-    ['components/settings/LocalAuthSettings.svelte', '.section h3'],
   ];
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

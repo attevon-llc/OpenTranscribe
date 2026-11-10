@@ -95,7 +95,7 @@
 </script>
 
 <div class="settings-panel">
-  <div class="info-box">
+  <div class="settings-info-box">
     <strong>{$t('settings.groupMappings.infoTitle')}</strong>
     <p>{$t('settings.groupMappings.infoDescription')}</p>
   </div>
@@ -238,25 +238,6 @@
     max-width: 900px;
   }
 
-  .info-box {
-    background: var(--color-info-bg);
-    border: 1px solid var(--color-info-border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-4);
-    margin-bottom: var(--space-6);
-  }
-
-  .info-box strong {
-    color: var(--color-text);
-  }
-
-  .info-box p {
-    margin: var(--space-2) 0 0 0;
-    font-size: var(--font-size-md);
-    color: var(--color-text-secondary);
-    line-height: 1.5;
-  }
-
   .source-row {
     display: flex;
     align-items: center;
@@ -295,7 +276,6 @@
     background: var(--color-primary);
     color: var(--text-on-solid);
   }
-
 
   .table-wrap {
     overflow-x: auto;

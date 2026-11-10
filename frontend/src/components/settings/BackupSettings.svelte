@@ -299,7 +299,7 @@
   $: saveDisabled = saving || !hasChanges;
 </script>
 
-<div class="backup-settings">
+<div class="backup-settings ops-panel">
   <div class="title-row">
     <h3 class="section-title">{$t('settings.backup.title')}</h3>
   </div>
@@ -341,7 +341,7 @@
           id="backup-schedule"
           type="text"
           bind:value={schedule}
-          class="form-input"
+          class="ops-form-input"
           placeholder="0 3 * * *"
           spellcheck="false"
         />
@@ -353,7 +353,7 @@
     <h4 class="subsection-title">{$t('settings.backup.destinationTitle')}</h4>
     <div class="field-group destination-type-group">
       <label class="field-label" for="backup-dest-type">{$t('settings.backup.destinationType')}</label>
-      <select id="backup-dest-type" class="form-input" bind:value={destinationType}>
+      <select id="backup-dest-type" class="ops-form-input" bind:value={destinationType}>
         <option value="local">{$t('settings.backup.destinationLocal')}</option>
         <option value="s3">{$t('settings.backup.destinationS3')}</option>
       </select>
@@ -364,7 +364,7 @@
       <div class="fields-grid">
         <div class="field-group">
           <label class="field-label" for="backup-destination">{$t('settings.backup.destination')}</label>
-          <input dir="ltr" id="backup-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
+          <input dir="ltr" id="backup-destination" type="text" bind:value={destination} class="ops-form-input" spellcheck="false" />
           <span class="field-hint">
             {#if mountOk}
               <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mountOk')}</span>
@@ -380,24 +380,24 @@
       <div class="fields-grid">
         <div class="field-group">
           <label class="field-label" for="s3-endpoint">{$t('settings.backup.s3Endpoint')}</label>
-          <input dir="ltr" id="s3-endpoint" type="text" bind:value={s3EndpointUrl} class="form-input" placeholder="https://s3.amazonaws.com" spellcheck="false" />
+          <input dir="ltr" id="s3-endpoint" type="text" bind:value={s3EndpointUrl} class="ops-form-input" placeholder="https://s3.amazonaws.com" spellcheck="false" />
           <span class="field-hint">{$t('settings.backup.s3EndpointHint')}</span>
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-region">{$t('settings.backup.s3Region')}</label>
-          <input dir="ltr" id="s3-region" type="text" bind:value={s3Region} class="form-input" placeholder="us-east-1" spellcheck="false" />
+          <input dir="ltr" id="s3-region" type="text" bind:value={s3Region} class="ops-form-input" placeholder="us-east-1" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-bucket">{$t('settings.backup.s3Bucket')}</label>
-          <input dir="ltr" id="s3-bucket" type="text" bind:value={s3Bucket} class="form-input" spellcheck="false" />
+          <input dir="ltr" id="s3-bucket" type="text" bind:value={s3Bucket} class="ops-form-input" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-prefix">{$t('settings.backup.s3Prefix')}</label>
-          <input dir="ltr" id="s3-prefix" type="text" bind:value={s3Prefix} class="form-input" placeholder="opentranscribe/" spellcheck="false" />
+          <input dir="ltr" id="s3-prefix" type="text" bind:value={s3Prefix} class="ops-form-input" placeholder="opentranscribe/" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-access-key">{$t('settings.backup.s3AccessKey')}</label>
-          <input dir="ltr" id="s3-access-key" type="text" bind:value={s3AccessKeyId} class="form-input" autocomplete="off" spellcheck="false" />
+          <input dir="ltr" id="s3-access-key" type="text" bind:value={s3AccessKeyId} class="ops-form-input" autocomplete="off" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-secret-key">{$t('settings.backup.s3SecretKey')}</label>
@@ -405,7 +405,7 @@
             id="s3-secret-key"
             type="password"
             bind:value={s3SecretKey}
-            class="form-input"
+            class="ops-form-input"
             autocomplete="new-password"
             spellcheck="false"
             placeholder={s3SecretKeySet ? $t('settings.backup.s3SecretConfigured') : ''}
@@ -440,15 +440,15 @@
     <div class="fields-grid">
       <div class="field-group">
         <label class="field-label" for="ret-daily">{$t('settings.backup.retentionDaily')}</label>
-        <input id="ret-daily" type="number" bind:value={retentionDaily} min="0" max="3650" class="form-input number-input" />
+        <input id="ret-daily" type="number" bind:value={retentionDaily} min="0" max="3650" class="ops-form-input number-input" />
       </div>
       <div class="field-group">
         <label class="field-label" for="ret-weekly">{$t('settings.backup.retentionWeekly')}</label>
-        <input id="ret-weekly" type="number" bind:value={retentionWeekly} min="0" max="520" class="form-input number-input" />
+        <input id="ret-weekly" type="number" bind:value={retentionWeekly} min="0" max="520" class="ops-form-input number-input" />
       </div>
       <div class="field-group">
         <label class="field-label" for="ret-monthly">{$t('settings.backup.retentionMonthly')}</label>
-        <input id="ret-monthly" type="number" bind:value={retentionMonthly} min="0" max="600" class="form-input number-input" />
+        <input id="ret-monthly" type="number" bind:value={retentionMonthly} min="0" max="600" class="ops-form-input number-input" />
       </div>
     </div>
 
@@ -462,7 +462,7 @@
     {#if encrypt}
       <div class="field-group encryption-field">
         <label class="field-label" for="passphrase-file">{$t('settings.backup.passphraseFile')}</label>
-        <input dir="ltr" id="passphrase-file" type="text" bind:value={passphraseFile} class="form-input" placeholder="/backups/.passphrase" spellcheck="false" />
+        <input dir="ltr" id="passphrase-file" type="text" bind:value={passphraseFile} class="ops-form-input" placeholder="/backups/.passphrase" spellcheck="false" />
         <span class="field-hint">{$t('settings.backup.passphraseFileHint')}</span>
       </div>
     {/if}
@@ -616,16 +616,6 @@
 </div>
 
 <style>
-  .backup-settings {
-    padding: var(--space-2) 0;
-  }
-
-  .title-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
   .section-title {
     font-size: 0.95rem;
     font-weight: var(--font-weight-semibold);
@@ -649,16 +639,6 @@
 
   .subsection-desc {
     margin: 0 0 var(--space-3) 0;
-  }
-
-  .loading-state {
-    display: flex;
-    align-items: center;
-    padding: var(--space-4);
-  }
-
-  .field-row {
-    margin-bottom: var(--space-3);
   }
 
   .encryption-row {
@@ -699,12 +679,7 @@
     max-width: 400px;
   }
 
-  .destination-type-group {
-    max-width: 280px;
-    margin: var(--space-2) 0 var(--space-3) 0;
-  }
-
-  select.form-input {
+  select.ops-form-input {
     cursor: pointer;
   }
 
@@ -746,11 +721,6 @@
     color: var(--text-color);
   }
 
-  .form-input {
-    padding: var(--space-1-5) var(--space-2);
-    font-size: var(--font-size-md);
-  }
-
   .number-input {
     width: 90px;
     text-align: center;
@@ -774,30 +744,6 @@
     align-items: center;
     gap: 0.4rem;
     flex-wrap: wrap;
-  }
-
-  .status-label {
-    color: var(--text-muted);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .status-value {
-    color: var(--text-color);
-  }
-
-  .status-error {
-    font-size: var(--font-size-xs);
-    color: var(--error-color);
-    word-break: break-word;
-  }
-
-  /* Actions */
-  .action-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-    margin-bottom: var(--space-3);
   }
 
   .run-confirm-text {
@@ -842,23 +788,11 @@
     vertical-align: middle;
   }
 
-  .preview-table tr:last-child td {
-    border-bottom: none;
-  }
-
   .col-title {
     max-width: 260px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  /* Button row */
-  .button-row {
-    display: flex;
-    gap: var(--space-2);
-    justify-content: flex-end;
-    margin-top: var(--space-2);
   }
 
   .button-row .btn-secondary {

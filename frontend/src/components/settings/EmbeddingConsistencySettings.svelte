@@ -175,7 +175,7 @@
   });
 </script>
 
-<div class="consistency-settings">
+<div class="consistency-settings ops-panel">
   <div class="settings-section">
     <div class="title-row">
       <h3 class="section-title">{$t('settings.embeddingConsistency.title')}</h3>
@@ -348,10 +348,6 @@
 </div>
 
 <style>
-  .consistency-settings {
-    padding: var(--space-2) 0;
-  }
-
   .error-state {
     display: flex;
     flex-direction: column;
@@ -360,21 +356,6 @@
     padding: var(--space-6);
     gap: var(--space-2);
     color: var(--error-color);
-  }
-
-
-
-  .settings-section {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: var(--space-5);
-  }
-
-  .title-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
   }
 
   .section-title {
@@ -388,13 +369,6 @@
     font-size: 0.8rem;
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
-  }
-
-  .status-chips-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    margin-bottom: var(--space-4);
   }
 
   .counts-section {
@@ -468,10 +442,6 @@
     color: var(--primary-on-surface);
   }
 
-  .action-content {
-    flex: 1;
-  }
-
   .action-content h4 {
     margin: 0 0 var(--space-1) 0;
     font-size: 0.9rem;
@@ -498,13 +468,6 @@
     border: 1px solid var(--border-color);
   }
 
-  .progress-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
-
   .progress-text {
     font-size: 0.8rem;
     color: var(--text-secondary);
@@ -522,20 +485,6 @@
     color: var(--text-secondary);
   }
 
-  .progress-bar-container {
-    height: 8px;
-    background: var(--border-color);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .progress-bar-fill {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: var(--radius-sm);
-    transition: width var(--duration-slow) ease;
-  }
-
   .progress-stats {
     display: flex;
     gap: var(--space-4);
@@ -546,14 +495,6 @@
 
   .failed-count {
     color: var(--error-color);
-  }
-
-  .results-section {
-    margin-top: var(--space-4);
-    padding: var(--space-4);
-    background: var(--background-color);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
   }
 
   .results-title {

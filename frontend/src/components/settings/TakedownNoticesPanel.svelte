@@ -170,9 +170,9 @@
   {/if}
 
   {#if loading && notices.length === 0}
-    <div class="state-row"><Spinner size="small" /><span>{$t('common.loading')}</span></div>
+    <div class="settings-state-row"><Spinner size="small" /><span>{$t('common.loading')}</span></div>
   {:else if loadFailed}
-    <div class="state-row error">
+    <div class="settings-state-row error">
       <span>{$t('takedown.admin.loadFailed')}</span>
       <button class="btn btn-secondary" on:click={() => load(offset)}>{$t('common.retry')}</button>
     </div>
@@ -261,17 +261,7 @@
     border-radius: var(--radius-md);
   }
 
-  .state-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--bg-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .state-row.error {
+  .settings-state-row.error {
     color: var(--color-error-text);
     justify-content: space-between;
   }

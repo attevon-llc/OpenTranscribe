@@ -428,7 +428,7 @@
     </button>
 {/snippet}
 
-<div class="prompt-settings">
+<div class="prompt-settings provider-panel">
   {#if loading}
     <SettingsSkeleton variant="form" count={3} label={$t('prompts.loading')} />
   {:else}
@@ -540,7 +540,7 @@
                     {/each}
                   </div>
                 {/if}
-                <div class="share-toggle-row">
+                <div class="provider-share-row">
                   <div class="toggle-label">
                     <Toggle id="share-prompt-{prompt.uuid}" checked={!!prompt.is_shared} onchange={() => handleShareToggle(prompt)} disabled={saving} />
                     <label class="toggle-text" for="share-prompt-{prompt.uuid}">{$t('prompts.shareGlobally')}</label>
@@ -721,7 +721,7 @@
       </FormField>
 
       <!-- Share with all users -->
-      <div class="share-toggle-row">
+      <div class="provider-share-row">
         <div class="toggle-label">
           <Toggle id="promptsettings-toggle-1" checked={formData.is_shared} onchange={(v) => (formData.is_shared = v)} disabled={saving} />
           <label class="toggle-text" for="promptsettings-toggle-1">{$t('prompts.shareGlobally')}</label>
@@ -836,8 +836,6 @@
     max-width: 800px;
   }
 
-
-
   .section-header {
     display: flex;
     justify-content: space-between;
@@ -852,7 +850,6 @@
     align-items: center;
   }
 
-
   /* New button styles to match LLM provider page */
 
   .config-status {
@@ -864,22 +861,6 @@
     font-size: 0.8rem;
     font-weight: var(--font-weight-medium);
     width: fit-content;
-  }
-
-  .config-status.currently-active {
-    background-color: var(--success-bg);
-    color: var(--success-color);
-    border: 1px solid var(--success-border);
-  }
-
-  .status-indicator {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .saved-configs-section {
-    margin-bottom: var(--space-8);
   }
 
   .section-header {
@@ -901,11 +882,6 @@
     color: var(--text-color);
   }
 
-  button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   /* Additional styles to match LLM provider structure */
   .config-list {
     display: flex;
@@ -922,21 +898,6 @@
     border-radius: var(--radius-md);
     background: var(--card-bg);
     transition: all var(--duration-base) ease;
-  }
-
-  .config-item.active {
-    border-color: var(--primary-color);
-    background: var(--primary-bg);
-  }
-
-  .config-item:hover:not(.active) {
-    border-color: var(--border-hover);
-    background: var(--hover-color);
-  }
-
-  .config-info {
-    flex: 1;
-    min-width: 0;
   }
 
   .config-name {
@@ -984,7 +945,6 @@
     pointer-events: none;
     transform: translate(-50%, 8px);
   }
-
 
   .config-provider {
     font-size: 0.8rem;
@@ -1045,7 +1005,6 @@
     color: #60a5fa;
   }
 
-
   .prompt-text-header {
     display: flex;
     justify-content: space-between;
@@ -1059,7 +1018,6 @@
     flex-direction: column;
     gap: var(--space-5);
   }
-
 
   label {
     font-weight: var(--font-weight-medium);
@@ -1083,7 +1041,6 @@
     opacity: 0.6;
     cursor: not-allowed;
   }
-
 
   @media (max-width: 768px) {
     .section-header {
@@ -1251,16 +1208,6 @@
     color: #60a5fa;
   }
 
-  /* Share toggle */
-  .share-toggle-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    margin-top: var(--space-2);
-    padding-top: var(--space-2);
-    border-top: 1px dashed var(--border-color);
-  }
-
   .toggle-label {
     display: flex;
     align-items: center;
@@ -1286,5 +1233,10 @@
     align-items: center;
     color: var(--warning-color);
     flex-shrink: 0;
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>

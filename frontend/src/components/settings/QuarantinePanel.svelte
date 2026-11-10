@@ -173,12 +173,12 @@
   </div>
 
   {#if loading && files.length === 0}
-    <div class="state-row">
+    <div class="settings-state-row">
       <Spinner size="small" />
       <span>{$t('common.loading')}</span>
     </div>
   {:else if loadFailed}
-    <div class="state-row error">
+    <div class="settings-state-row error">
       <span>{$t('settings.quarantine.loadFailed')}</span>
       <button class="btn btn-secondary" on:click={() => load(offset)}>{$t('common.retry')}</button>
     </div>
@@ -336,17 +336,7 @@
     border-color: var(--accent-color);
   }
 
-  .state-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--bg-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .state-row.error {
+  .settings-state-row.error {
     color: #dc2626;
     justify-content: space-between;
   }

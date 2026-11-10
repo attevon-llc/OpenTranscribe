@@ -318,7 +318,7 @@
   });
 </script>
 
-<div class="migration-settings">
+<div class="migration-settings ops-panel">
   <div class="settings-section">
     <div class="title-row">
       <h3 class="section-title">{$t('settings.embeddingMigration.title')}</h3>
@@ -569,10 +569,6 @@
 </div>
 
 <style>
-  .migration-settings {
-    padding: var(--space-2) 0;
-  }
-
   .locked-state {
     display: flex;
     flex-direction: column;
@@ -602,26 +598,6 @@
     padding: var(--space-6);
     gap: var(--space-2);
     color: var(--error-color);
-  }
-
-  .status-chips-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    margin-bottom: var(--space-4);
-  }
-
-  .settings-section {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: var(--space-5);
-  }
-
-  .title-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
   }
 
   .section-title {

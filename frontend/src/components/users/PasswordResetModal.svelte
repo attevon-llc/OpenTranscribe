@@ -74,7 +74,7 @@
       <svelte:fragment slot="label-after">
         <button
           type="button"
-          class="toggle-password"
+          class="settings-toggle-password"
           on:click={() => showResetPassword = !showResetPassword}
           tabindex="-1"
           aria-label={showResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
@@ -97,7 +97,7 @@
       <svelte:fragment slot="label-after">
         <button
           type="button"
-          class="toggle-password"
+          class="settings-toggle-password"
           on:click={() => showConfirmResetPassword = !showConfirmResetPassword}
           tabindex="-1"
           aria-label={showConfirmResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
@@ -142,7 +142,6 @@
   /* Declarations and order carried over from UserManagementTable.svelte, on tokens of the
      same value. */
 
-
   :global(.form-field) input {
     width: 100%;
     padding: var(--space-2);
@@ -165,25 +164,6 @@
     gap: var(--space-4);
   }
 
-
-
-
-  .toggle-password {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: var(--space-1);
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    border-radius: var(--radius-sm);
-    transition: background-color var(--duration-base);
-  }
-
-  .toggle-password:hover {
-    background-color: var(--background-color);
-    color: var(--text-color);
-  }
 
   .password-reset-form .form-control {
     padding: var(--space-2) var(--space-2-5);

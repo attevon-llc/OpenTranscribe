@@ -166,7 +166,7 @@
   $: dispatch('change', { hasChanges: isDirty });
 </script>
 
-<div class="engine-settings">
+<div class="engine-settings provider-panel">
   {#if loading}
     <SettingsSkeleton variant="form" count={4} label={$t('settings.asrProvider.loading')} />
   {:else if settings}
@@ -342,7 +342,6 @@
     margin-top: var(--space-2);
   }
 
-
   .settings-form {
     display: flex;
     flex-direction: column;
@@ -374,7 +373,6 @@
     cursor: not-allowed;
   }
 
-
   .toggle-label {
     display: flex;
     align-items: flex-start;
@@ -400,7 +398,6 @@
     padding-top: var(--space-2);
     border-top: 1px solid var(--border-color);
   }
-
 
   .advanced-fields {
     display: flex;

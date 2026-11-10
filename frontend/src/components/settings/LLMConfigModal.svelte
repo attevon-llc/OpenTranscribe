@@ -723,7 +723,7 @@ let _llmConfigModalWasOpen = false;
               <svelte:fragment slot="label-after">
                 <button
                   type="button"
-                  class="toggle-password"
+                  class="settings-toggle-password"
                   on:click={() => showApiKey = !showApiKey}
                   tabindex="-1"
                   aria-label={showApiKey ? $t('llm.hideApiKey') : $t('llm.showApiKey')}
@@ -871,30 +871,8 @@ let _llmConfigModalWasOpen = false;
     padding: var(--space-6);
   }
 
-
-
   .form-control {
     width: 100%;
-  }
-
-
-
-
-  .toggle-password {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: var(--space-1);
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    border-radius: var(--radius-sm);
-    transition: background-color var(--duration-base), color var(--duration-base);
-  }
-
-  .toggle-password:hover {
-    background-color: var(--background-color);
-    color: var(--text-color);
   }
 
   .advanced-settings {
@@ -903,6 +881,10 @@ let _llmConfigModalWasOpen = false;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background: var(--card-bg);
+  }
+
+  .settings-toggle-password {
+    transition: background-color var(--duration-base), color var(--duration-base);
   }
 
   .advanced-settings h4 {
@@ -1062,7 +1044,6 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-color);
     margin-bottom: var(--space-2);
   }
-
 
   @media (max-width: 768px) {
     .form-actions {

@@ -304,6 +304,12 @@
     color: var(--error-text);
   }
 
+  .task-error {
+    color: var(--error-text);
+    font-size: var(--font-size-md);
+    margin-top: var(--space-1);
+  }
+
   .task-error-details .task-error {
     margin-top: var(--space-2);
     font-family: monospace;
@@ -371,11 +377,5 @@
   .task-details h4 {
     color: var(--text-color);
     margin: 0 0 var(--space-4) 0;
-  }
-
-  .task-error {
-    color: var(--error-text);
-    font-size: var(--font-size-md);
-    margin-top: var(--space-1);
   }
 </style>

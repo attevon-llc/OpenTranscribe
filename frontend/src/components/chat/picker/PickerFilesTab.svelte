@@ -191,14 +191,14 @@
     cursor: pointer;
   }
 
-  .picker-row:has(input:checked) {
-    background-color: rgba(var(--primary-color-rgb), 0.12);
-    font-weight: var(--font-weight-semibold);
-  }
-
   .picker-row:focus-within {
     outline: 2px solid var(--primary-color);
     outline-offset: -2px;
+  }
+
+  .picker-row:has(input:checked) {
+    background-color: rgba(var(--primary-color-rgb), 0.12);
+    font-weight: var(--font-weight-semibold);
   }
 
   .row-label {

@@ -344,8 +344,8 @@
     transition: opacity var(--duration-fast) ease;
   }
 
-  .chat-message:hover .actions,
   .actions:focus-within,
+  .chat-message:hover .actions,
   .actions.always-visible {
     opacity: 1;
   }

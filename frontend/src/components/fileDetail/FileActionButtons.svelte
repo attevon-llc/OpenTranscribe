@@ -151,6 +151,11 @@
     width: 40px;
   }
 
+  .header-action-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .header-action-btn:hover:not(:disabled) {
     background-color: var(--hover-bg);
     border-color: var(--primary-color);
@@ -159,11 +164,6 @@
 
   .header-action-btn:active:not(:disabled) {
     transform: scale(0.98);
-  }
-
-  .header-action-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .header-action-btn .btn-icon {

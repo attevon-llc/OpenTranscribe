@@ -220,13 +220,13 @@
     cursor: pointer;
   }
 
-  .chip-remove:hover:not(:disabled) {
-    background-color: rgba(var(--primary-color-rgb), 0.2);
-  }
-
   .chip-remove:disabled {
     cursor: not-allowed;
     opacity: 0.5;
+  }
+
+  .chip-remove:hover:not(:disabled) {
+    background-color: rgba(var(--primary-color-rgb), 0.2);
   }
 
   .chip-estimate {
@@ -253,15 +253,15 @@
     cursor: pointer;
   }
 
-  .add-context:hover:not(:disabled),
-  .text-action:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    color: var(--text-color);
-  }
-
   .add-context:disabled,
   .text-action:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .add-context:hover:not(:disabled),
+  .text-action:hover:not(:disabled) {
+    background-color: var(--button-hover);
+    color: var(--text-color);
   }
 </style>

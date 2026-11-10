@@ -90,13 +90,13 @@
     cursor: pointer;
   }
 
-  .demo-button:hover:not(:disabled) {
-    background-color: var(--primary-hover);
-  }
-
   .demo-button:disabled {
     background-color: var(--border-color);
     cursor: not-allowed;
+  }
+
+  .demo-button:hover:not(:disabled) {
+    background-color: var(--primary-hover);
   }
 
   .demo-hint,

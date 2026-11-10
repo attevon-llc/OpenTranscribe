@@ -22,6 +22,11 @@ describe('wizard steps', () => {
     expect(withoutExtractionStep(withIt)).toEqual(defaultSteps());
   });
 
+  it('never puts an undefined step in the list when there is no media step to follow', () => {
+    const steps = withExtractionStep([]);
+    expect(steps.map((s) => s?.id)).toEqual(['extraction']);
+  });
+
   it('re-skips only optional steps', () => {
     const out = applySkippedSteps(defaultSteps(), ['tags', 'model']);
     expect(out.find((s) => s.id === 'tags')?.skipped).toBe(true);

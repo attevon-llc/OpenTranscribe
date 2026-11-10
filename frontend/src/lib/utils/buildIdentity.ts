@@ -39,10 +39,10 @@ const COMMIT_RE = /^([0-9a-f]{7,40})(-dirty)?$/i;
 /** Classify a version string: a release (`v0.6.0` / `0.6.0`), a dev image, or unusable. */
 export function parseBuildVersion(v: string | null | undefined): ParsedVersion {
   const text = (v ?? '').trim();
-  const release = RELEASE_RE.exec(text);
-  if (release) return { kind: 'release', semver: release[1] };
-  const dev = DEV_RE.exec(text);
-  if (dev) return { kind: 'dev', commit: dev[1].toLowerCase() };
+  const semver = RELEASE_RE.exec(text)?.[1];
+  if (semver) return { kind: 'release', semver };
+  const devCommit = DEV_RE.exec(text)?.[1];
+  if (devCommit) return { kind: 'dev', commit: devCommit.toLowerCase() };
   return { kind: 'unknown' };
 }
 
@@ -54,8 +54,9 @@ export function normalizeCommit(
   c: string | null | undefined
 ): { sha: string; dirty: boolean } | null {
   const match = COMMIT_RE.exec((c ?? '').trim());
-  if (!match) return null;
-  return { sha: match[1].toLowerCase(), dirty: Boolean(match[2]) };
+  const sha = match?.[1];
+  if (!match || !sha) return null;
+  return { sha: sha.toLowerCase(), dirty: Boolean(match[2]) };
 }
 
 /** The explicit commit if there is a usable one, else the commit inside a `dev-<sha>` version. */

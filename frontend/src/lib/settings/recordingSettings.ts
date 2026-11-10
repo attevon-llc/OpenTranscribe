@@ -32,8 +32,9 @@ export async function loadRecording(t: Translate): Promise<RecordingSettings | n
 
 export async function saveRecording(settings: RecordingSettings, t: Translate): Promise<boolean> {
   const validationErrors = RecordingSettingsHelper.validateSettings(settings);
-  if (validationErrors.length > 0) {
-    toastStore.error(validationErrors[0]);
+  const [firstError] = validationErrors;
+  if (firstError !== undefined) {
+    toastStore.error(firstError);
     return false;
   }
   try {

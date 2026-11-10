@@ -28,14 +28,13 @@ function createPanelActions(update: Writable<WebSocketState>['update']) {
   const markAsRead = (id: string) => {
     update((state: WebSocketState) => {
       const index = state.notifications.findIndex((n: Notification) => n.id === id);
-      if (index !== -1) {
-        const notification = state.notifications[index];
-
+      const notification = index !== -1 ? state.notifications[index] : undefined;
+      if (notification) {
         // If it's a processing notification, auto-regenerate it
         if (notification.status === 'processing' && !notification.dismissible) {
           // Mark as read but keep the notification
-          state.notifications[index].read = true;
-          state.notifications[index].readAt = new Date();
+          notification.read = true;
+          notification.readAt = new Date();
           // Re-add as unread after a short delay (simulated by creating a duplicate)
           setTimeout(() => {
             update((s: WebSocketState) => {
@@ -52,8 +51,8 @@ function createPanelActions(update: Writable<WebSocketState>['update']) {
           }, 100);
         } else {
           // Regular dismissal for completed/error notifications
-          state.notifications[index].read = true;
-          state.notifications[index].readAt = new Date();
+          notification.read = true;
+          notification.readAt = new Date();
         }
 
         saveNotificationsToStorage(state.notifications);
@@ -113,14 +112,15 @@ function createPanelActions(update: Writable<WebSocketState>['update']) {
         const existingIndex = state.notifications.findIndex(
           (n) => n.progressId === notification.progressId
         );
-        if (existingIndex !== -1) {
+        const existing = existingIndex !== -1 ? state.notifications[existingIndex] : undefined;
+        if (existing) {
           // Update existing notification
           state.notifications[existingIndex] = {
-            ...state.notifications[existingIndex],
+            ...existing,
             ...newNotification,
             readAt: undefined,
-            id: state.notifications[existingIndex].id, // Keep original ID
-            timestamp: state.notifications[existingIndex].timestamp, // Keep original timestamp
+            id: existing.id, // Keep original ID
+            timestamp: existing.timestamp, // Keep original timestamp
           };
         } else {
           // Add new notification at the beginning. Capped like every WS-delivered
@@ -144,9 +144,10 @@ function createPanelActions(update: Writable<WebSocketState>['update']) {
   const updateNotification = (progressId: string, updates: Partial<Notification>) => {
     update((state: WebSocketState) => {
       const existingIndex = state.notifications.findIndex((n) => n.progressId === progressId);
-      if (existingIndex !== -1) {
+      const existing = existingIndex !== -1 ? state.notifications[existingIndex] : undefined;
+      if (existing) {
         state.notifications[existingIndex] = {
-          ...state.notifications[existingIndex],
+          ...existing,
           ...updates,
         };
         saveNotificationsToStorage(state.notifications);

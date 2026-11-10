@@ -37,6 +37,7 @@ HOOK_GUARDS=(
   "suppressions=guard-suppressions"
   "vulture=guard-vulture"
   "svelte-unused=guard-svelte-unused"
+  "nuia=guard-nuia"
   "api-boundary=guard-api-boundary"
   "raw-env=guard-raw-env"
   "ruff-ratchet=guard-ruff-ratchet"

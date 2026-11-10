@@ -60,7 +60,9 @@ function declarations(body: string): Map<string, string> {
   const map = new Map<string, string>();
   for (const decl of splitDeclarations(body)) {
     const m = decl.match(/^\s*(--[\w-]+)\s*:\s*([\s\S]*?)\s*$/);
-    if (m) map.set(m[1], m[2].replace(/\s+/g, ' '));
+    const prop = m?.[1];
+    const value = m?.[2];
+    if (prop !== undefined && value !== undefined) map.set(prop, value.replace(/\s+/g, ' '));
   }
   return map;
 }
@@ -127,8 +129,8 @@ function resolveValue(sets: TokenSets, theme: Theme, value: string, trail: strin
   let out = value;
   for (let guard = 0; guard < 50; guard++) {
     const m = out.match(VAR_RE);
-    if (!m) return out.trim();
-    const name = m[1];
+    const name = m?.[1];
+    if (!m || name === undefined) return out.trim();
     if (trail.includes(name)) throw new Error(`token cycle: ${[...trail, name].join(' -> ')}`);
     const raw = effectiveRaw(sets, theme, name);
     let replacement: string;
@@ -150,9 +152,9 @@ export function resolveToken(sets: TokenSets, theme: Theme, name: string): strin
 export function parseColour(value: string): Colour {
   const v = value.trim().toLowerCase();
   if (v === 'white') return { rgb: [255, 255, 255], alpha: 1 };
-  const hex = v.match(/^#([0-9a-f]{3,8})$/);
-  if (hex) {
-    let h = hex[1];
+  const digits = v.match(/^#([0-9a-f]{3,8})$/)?.[1];
+  if (digits !== undefined) {
+    let h = digits;
     if (h.length === 3 || h.length === 4) h = [...h].map((c) => c + c).join('');
     if (h.length !== 6 && h.length !== 8) throw new Error(`bad hex colour: ${value}`);
     const n = (i: number) => parseInt(h.slice(i, i + 2), 16);
@@ -174,7 +176,9 @@ export function tokenColour(sets: TokenSets, theme: Theme, name: string): Colour
 
 /** Alpha-composite `fg` over an opaque `bg`. */
 export function compositeOver(fg: Colour, bg: Rgb): Rgb {
-  return fg.rgb.map((c, i) => Math.round(bg[i] * (1 - fg.alpha) + c * fg.alpha)) as Rgb;
+  const mix = (back: number, front: number) => Math.round(back * (1 - fg.alpha) + front * fg.alpha);
+  const [r, g, b] = fg.rgb;
+  return [mix(bg[0], r), mix(bg[1], g), mix(bg[2], b)];
 }
 
 // WCAG 2.2 relative luminance (https://www.w3.org/TR/WCAG22/#dfn-relative-luminance). The spec
@@ -188,7 +192,10 @@ function relativeLuminance([r, g, b]: Rgb): number {
 }
 
 export function contrastRatio(a: Rgb, b: Rgb): number {
-  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  const lumA = relativeLuminance(a);
+  const lumB = relativeLuminance(b);
+  const hi = Math.max(lumA, lumB);
+  const lo = Math.min(lumA, lumB);
   return (hi + 0.05) / (lo + 0.05);
 }
 

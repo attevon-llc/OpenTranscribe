@@ -167,7 +167,8 @@ export function createStreamActions(ctx: ChatStoreContext) {
       if (isBusy(state.streamStatus)) return;
 
       const index = state.messages.findIndex((m) => m.uuid === messageUuid);
-      if (index === -1) return;
+      const original = state.messages[index];
+      if (!original) return;
 
       setStatus('submitting');
       const assistantLocalId = generateId('local-assistant');
@@ -177,7 +178,7 @@ export function createStreamActions(ctx: ChatStoreContext) {
         tokenUsage: null,
         messages: [
           ...s.messages.slice(0, index),
-          { ...s.messages[index], content: trimmed, pending: true },
+          { ...original, content: trimmed, pending: true },
           streamingPlaceholder(assistantLocalId),
         ],
         streamingMessageId: assistantLocalId,

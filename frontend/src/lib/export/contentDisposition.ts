@@ -14,9 +14,10 @@ export function parseContentDispositionFilename(header: unknown): string | null 
   if (typeof header !== 'string' || header.length === 0) return null;
 
   const extended = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
-  if (extended) {
+  const encodedName = extended?.[1];
+  if (encodedName !== undefined) {
     try {
-      const decoded = decodeURIComponent(extended[1].trim());
+      const decoded = decodeURIComponent(encodedName.trim());
       if (decoded) return decoded;
     } catch {
       // A malformed escape: fall through to the ASCII form rather than lose the name.

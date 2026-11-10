@@ -50,7 +50,8 @@ const SOURCE_TYPE_HINTS = new Set([
 ]);
 
 function baseType(contentType: string): string {
-  return contentType.split(';', 1)[0].trim().toLowerCase();
+  const [essence = ''] = contentType.split(';', 1);
+  return essence.trim().toLowerCase();
 }
 
 /** Canonical spelling of a media MIME type. Unknown types pass through unchanged. */

@@ -442,13 +442,15 @@
     {:else}
       <!-- Regular Segment -->
       {@const segment = group.segments[0]}
-      <div
-        class="transcript-segment"
-        data-segment-id="{segment.uuid}"
-        data-seg-index={group.startSegmentIndex}
-      >
-        {@render segmentBody(segment)}
-      </div>
+      {#if segment}
+        <div
+          class="transcript-segment"
+          data-segment-id="{segment.uuid}"
+          data-seg-index={group.startSegmentIndex}
+        >
+          {@render segmentBody(segment)}
+        </div>
+      {/if}
     {/if}
   {/each}
 

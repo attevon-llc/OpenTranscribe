@@ -175,10 +175,11 @@ export function createFrameFolds(update: Writable<WebSocketState>['update']) {
     update((s: WebSocketState) => {
       const existingIndex = s.notifications.findIndex((n) => n.progressId === recovered.progressId);
 
+      const existing = existingIndex !== -1 ? s.notifications[existingIndex] : undefined;
       const notificationData = recoveredNotification(
         task,
         recovered,
-        existingIndex !== -1 ? s.notifications[existingIndex].id : generateId('ws'),
+        existing ? existing.id : generateId('ws'),
         getNotificationTitle(recovered.notificationType)
       );
 

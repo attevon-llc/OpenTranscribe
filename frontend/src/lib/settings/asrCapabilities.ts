@@ -49,8 +49,8 @@ export function providerCapability(
   const all = provider.models
     .map((m) => modelCapability(providers, providerId, m.id))
     .filter((c): c is ModelCapability => c !== null);
-  if (all.length === 0) return modelCapability(providers, providerId, '');
   const [first] = all;
+  if (!first) return modelCapability(providers, providerId, '');
   const same = all.every(
     (c) => c.returnsSpeakers === first.returnsSpeakers && c.timing === first.timing
   );

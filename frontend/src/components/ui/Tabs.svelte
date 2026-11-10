@@ -58,7 +58,7 @@
   onMount(() => {
     if (!sticky || !sentinel || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(([entry]) => {
-      stuck = !entry.isIntersecting;
+      if (entry) stuck = !entry.isIntersecting;
     });
     observer.observe(sentinel);
     return () => observer.disconnect();
@@ -104,6 +104,7 @@
     }
     event.preventDefault();
     const target = enabled[nextPos];
+    if (!target) return;
     select(target.t.id);
     tabEls[target.i]?.focus();
   }

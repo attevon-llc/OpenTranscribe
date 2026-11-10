@@ -114,7 +114,8 @@
       case 'Enter':
         if (highlighted >= 0 && highlighted < results.length) {
           event.preventDefault();
-          selectItem(results[highlighted]);
+          const item = results[highlighted];
+          if (item !== undefined) selectItem(item);
         }
         break;
       default:

@@ -146,8 +146,10 @@ export class RevealPacer {
   private releaseGroup(): string[] {
     const head = this.queue[0];
     const group: string[] = [];
-    while (this.queue.length && this.queue[0].parent === head.parent) {
-      const item = this.queue.shift() as PacedItem;
+    if (!head) return group;
+    while (this.queue[0]?.parent === head.parent) {
+      const item = this.queue.shift();
+      if (!item) break;
       this.revealed.add(item.key);
       group.push(item.key);
     }

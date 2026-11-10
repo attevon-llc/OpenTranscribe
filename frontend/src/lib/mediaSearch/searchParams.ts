@@ -180,8 +180,8 @@ export function applyFilterDetail(detail: FilterSidebarDetail): void {
   if (detail.collectionId !== undefined) searchStore.setCollectionId(detail.collectionId);
   if (detail.language !== undefined) searchStore.setLanguage(detail.language);
   if (detail.dates !== undefined) {
-    const dateFrom = detail.dates?.from ? detail.dates.from.toISOString().split('T')[0] : '';
-    const dateTo = detail.dates?.to ? detail.dates.to.toISOString().split('T')[0] : '';
+    const dateFrom = detail.dates?.from ? detail.dates.from.toISOString().split('T')[0] ?? '' : '';
+    const dateTo = detail.dates?.to ? detail.dates.to.toISOString().split('T')[0] ?? '' : '';
     searchStore.setDateRange(dateFrom, dateTo);
   }
   if (detail.durationRange !== undefined) searchStore.setDurationRange(detail.durationRange);

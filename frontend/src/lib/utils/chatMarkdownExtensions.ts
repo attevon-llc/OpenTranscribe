@@ -79,7 +79,8 @@ const LANGUAGE_ALIASES: Record<string, string> = { 'c++': 'cpp', 'c#': 'csharp' 
 
 /** The fence's info-string language, normalised to something safe for a class name. */
 function fenceLanguage(info: string | undefined): string {
-  const first = (info ?? '').trim().split(/\s+/)[0].toLowerCase();
+  const [word = ''] = (info ?? '').trim().split(/\s+/);
+  const first = word.toLowerCase();
   const aliased = LANGUAGE_ALIASES[first] ?? first;
   return aliased.replace(/[^\w-]/g, '');
 }
@@ -189,11 +190,12 @@ export const chatMarkdownExtensions: MarkedExtension = {
       start: (src) => src.match(/^ {0,3}(\$\$|\\\[)/m)?.index,
       tokenizer(src) {
         const match = BLOCK_DOLLAR.exec(src) ?? BLOCK_BRACKET.exec(src);
-        if (!match || !match[1].trim()) return undefined;
+        const body = match?.[1]?.trim();
+        if (!match || !body) return undefined;
         return {
           type: 'chatMath',
           raw: match[0],
-          text: match[1].trim(),
+          text: body,
           display: true,
           block: true,
         };
@@ -206,8 +208,9 @@ export const chatMarkdownExtensions: MarkedExtension = {
       tokenizer(src) {
         for (const [rule, display] of INLINE_RULES) {
           const match = rule.exec(src);
-          if (match && match[1].trim()) {
-            return { type: 'chatMath', raw: match[0], text: match[1].trim(), display };
+          const body = match?.[1]?.trim();
+          if (match && body) {
+            return { type: 'chatMath', raw: match[0], text: body, display };
           }
         }
         return undefined;

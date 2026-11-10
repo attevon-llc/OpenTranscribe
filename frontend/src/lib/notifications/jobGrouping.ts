@@ -26,7 +26,13 @@ export const JOB_TASK_BY_TYPE: Partial<Record<NotificationType, MemberTask>> = {
   post_processing_status: 'postProcessing',
 };
 
-export type JobItem = { kind: 'job'; key: string; fileId: string; members: Notification[] };
+/** `members` starts with the notification that opened the job, so it is never empty. */
+export type JobItem = {
+  kind: 'job';
+  key: string;
+  fileId: string;
+  members: [Notification, ...Notification[]];
+};
 export type PanelItem = JobItem | { kind: 'single'; key: string; notification: Notification };
 
 function fileIdOf(n: Notification): string | null {

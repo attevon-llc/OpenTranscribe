@@ -44,10 +44,11 @@ export function defaultSteps(): StepConfig[] {
 
 /** Insert the extraction step right after `media`. */
 export function withExtractionStep(steps: StepConfig[]): StepConfig[] {
+  const [media, ...rest] = steps;
   return [
-    steps[0], // media
+    ...(media ? [media] : []),
     { id: 'extraction', labelKey: 'uploader.stepExtraction', optional: false, skipped: false },
-    ...steps.slice(1),
+    ...rest,
   ];
 }
 

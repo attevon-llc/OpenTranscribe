@@ -56,8 +56,9 @@
     const files = target.files;
     if (!files || files.length === 0) return;
 
-    if (files.length === 1) {
-      handleFileSelect(files[0]);
+    const [only] = files;
+    if (files.length === 1 && only) {
+      handleFileSelect(only);
     } else {
       dispatch('multipleFiles', { files: Array.from(files) });
     }
@@ -91,8 +92,9 @@
 
     const files = dt.files;
     if (files && files.length > 0) {
-      if (files.length === 1) {
-        handleFileSelect(files[0]);
+      const [only] = files;
+      if (files.length === 1 && only) {
+        handleFileSelect(only);
       } else {
         dispatch('multipleFiles', { files: Array.from(files) });
       }

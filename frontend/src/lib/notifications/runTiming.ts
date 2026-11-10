@@ -77,8 +77,9 @@ function appendMark(
   const markStage = stage || last?.stage;
   if (last && last.p === progress && markStage === last.stage) return stepLog;
   stepLog.push(markStage ? { p: progress, at: now, stage: markStage } : { p: progress, at: now });
-  if (stepLog.length > STEP_LOG_LIMIT) {
-    stepLog = [stepLog[0], ...stepLog.slice(stepLog.length - (STEP_LOG_LIMIT - 1))];
+  const origin = stepLog[0];
+  if (origin && stepLog.length > STEP_LOG_LIMIT) {
+    stepLog = [origin, ...stepLog.slice(stepLog.length - (STEP_LOG_LIMIT - 1))];
   }
   return stepLog;
 }

@@ -62,11 +62,12 @@ export async function performBulkSave(
     })
   );
 
-  const failed = speakersToUpdate.filter((_, i) => results[i].status === 'rejected');
+  const failed = speakersToUpdate.filter((_, i) => results[i]?.status === 'rejected');
   const failedUuids = new Set(failed.map((speaker) => speaker.uuid));
   results.forEach((result, i) => {
-    if (result.status === 'rejected') {
-      console.error(`Failed to save speaker ${speakersToUpdate[i].uuid}:`, result.reason);
+    const speaker = speakersToUpdate[i];
+    if (result.status === 'rejected' && speaker) {
+      console.error(`Failed to save speaker ${speaker.uuid}:`, result.reason);
     }
   });
 

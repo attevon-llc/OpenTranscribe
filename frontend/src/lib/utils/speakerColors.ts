@@ -1,6 +1,15 @@
 // Curated pleasant color palette for speaker identification (expandable to 30+ speakers)
 // Each color has both light and dark theme variants for optimal readability
-const speakerColors = [
+interface SpeakerColor {
+  bg: string;
+  border: string;
+  textLight: string;
+  textDark: string;
+  solid: string;
+}
+
+// The tuple type guarantees a first entry, so `speakerColors[0]` is a safe fallback.
+const speakerColors: [SpeakerColor, ...SpeakerColor[]] = [
   // Primary set - most distinct and pleasant colors (first 15)
   {
     bg: 'rgba(99, 102, 241, 0.15)',
@@ -224,16 +233,7 @@ const speakerColors = [
  * @returns Object with background, border, text, and solid color values
  */
 export function getSpeakerColor(speakerName: string) {
-  if (!speakerName) {
-    const color = speakerColors[0];
-    return {
-      bg: color.bg,
-      border: color.border,
-      textLight: color.textLight,
-      textDark: color.textDark,
-      solid: color.solid,
-    };
-  }
+  if (!speakerName) return { ...speakerColors[0] };
 
   // Create a consistent hash from speaker name
   let hash = 0;
@@ -244,13 +244,5 @@ export function getSpeakerColor(speakerName: string) {
   }
 
   const index = Math.abs(hash) % speakerColors.length;
-  const color = speakerColors[index];
-
-  return {
-    bg: color.bg,
-    border: color.border,
-    textLight: color.textLight,
-    textDark: color.textDark,
-    solid: color.solid,
-  };
+  return { ...(speakerColors[index] ?? speakerColors[0]) };
 }

@@ -13,7 +13,7 @@ export function latestNotificationForFile(
   const forFile = notifications.filter((n) => String(n.data?.file_id || '') === String(fileId));
   if (forFile.length === 0) return null;
   forFile.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  return forFile[0];
+  return forFile[0] ?? null;
 }
 
 /**

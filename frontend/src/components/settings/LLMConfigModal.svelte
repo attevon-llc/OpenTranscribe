@@ -114,8 +114,9 @@
     formData = { ...formData };
     await tick();
     formData.base_url = endpoint.base_url;
-    if (endpoint.models.length > 0) {
-      formData.model_name = endpoint.models[0];
+    const [firstModel] = endpoint.models;
+    if (firstModel !== undefined) {
+      formData.model_name = firstModel;
     }
     formData = { ...formData };
   }

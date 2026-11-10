@@ -116,7 +116,8 @@ export interface ProgressFields {
 }
 
 function progressIdFor(type: string, data: ProgressFrameData): string {
-  if (type in ADMIN_TASK_PROGRESS_IDS) return ADMIN_TASK_PROGRESS_IDS[type];
+  const adminId = type in ADMIN_TASK_PROGRESS_IDS ? ADMIN_TASK_PROGRESS_IDS[type] : undefined;
+  if (adminId !== undefined) return adminId;
   if (type === 'playlist_processing_status') {
     return `playlist_processing_${data.playlist_id || 'unknown'}`;
   }

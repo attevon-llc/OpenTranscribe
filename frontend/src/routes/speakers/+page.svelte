@@ -226,9 +226,8 @@
       if (speakerPreviewData) { closeSpeakerPreview(); return; }
     }
 
-    if (activeTab !== 'inbox' || !inboxItems.length) return;
-
     const first = inboxItems[0];
+    if (activeTab !== 'inbox' || !first) return;
     const shortcut = resolveInboxShortcut(e.key, first);
     if (shortcut === 'accept' || shortcut === 'skip') {
       void handleInboxAction(

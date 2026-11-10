@@ -173,8 +173,9 @@ function mergeGroupPages(
   if (!incoming.length) return existing;
   if (!existing.length) return [...incoming];
 
-  const last = existing[existing.length - 1];
+  const last = existing.at(-1);
   const first = incoming[0];
+  if (!last || !first) return [...existing, ...incoming];
   const sharedOverlap =
     last.overlap_group_id != null &&
     first.overlap_group_id != null &&

@@ -209,12 +209,13 @@
   }
 
   async function removeChip(event: CustomEvent<MetadataChip>) {
-    if (busy || !single) return;
+    const [onlyFile] = fileUuids;
+    if (busy || !single || onlyFile === undefined) return;
     const chip = event.detail;
     busy = true;
     error = null;
     try {
-      const counts = tally(await bulkTagFiles([fileUuids[0]], 'remove_tag', chip.name));
+      const counts = tally(await bulkTagFiles([onlyFile], 'remove_tag', chip.name));
       await loadSelectionTags(selectionKey);
       dispatch('applied', { action: 'remove_tag', name: chip.name, ...counts });
     } catch (err: unknown) {

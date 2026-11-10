@@ -215,7 +215,7 @@ class AudioExtractionService {
           const match = message.match(/^\s+(\w+)\s*:\s*(.+)$/);
           if (match) {
             const [, key, value] = match;
-            metadataFromFFmpeg[key] = value.trim();
+            if (key !== undefined && value !== undefined) metadataFromFFmpeg[key] = value.trim();
           }
         }
 
@@ -232,7 +232,7 @@ class AudioExtractionService {
         if (message.includes('Stream #') && message.includes('Audio:')) {
           const codecMatch = message.match(/Audio:\s*(\w+)/);
           if (codecMatch) {
-            metadataFromFFmpeg.audio_codec = codecMatch[1];
+            if (codecMatch[1] !== undefined) metadataFromFFmpeg.audio_codec = codecMatch[1];
           }
         }
       };

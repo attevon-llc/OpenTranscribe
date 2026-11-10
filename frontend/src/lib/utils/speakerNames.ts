@@ -42,7 +42,8 @@ export function isPlaceholderSpeakerName(name: string | null | undefined): boole
  */
 export function placeholderSpeakerNumber(name: string | null | undefined): number | null {
   const match = (name ?? '').trim().match(PLACEHOLDER_SPEAKER_NAME_PATTERN);
-  return match ? parseInt(match[1], 10) : null;
+  const digits = match?.[1];
+  return digits !== undefined ? parseInt(digits, 10) : null;
 }
 
 /**

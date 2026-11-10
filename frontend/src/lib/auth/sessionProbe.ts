@@ -20,6 +20,8 @@ export const SESSION_PROBE_TIMEOUT_MS = 8000;
 
 /** Wait before retry N (the last entry repeats). Short: the failure is already 8 s old. */
 const RETRY_DELAYS_MS = [1000, 2000, 3000, 5000];
+// The index is clamped into range, so the lookup always hits; the longest delay is the safe miss.
+const RETRY_DELAYS_MS_FALLBACK = 5000;
 
 export const sessionProbe = writable<{ unreachable: boolean }>({ unreachable: false });
 
@@ -51,7 +53,9 @@ export async function probeSessionWithRetry<T>(attempt: () => Promise<T>): Promi
       return result;
     } catch {
       sessionProbe.set({ unreachable: true });
-      await wait(RETRY_DELAYS_MS[Math.min(n, RETRY_DELAYS_MS.length - 1)]);
+      await wait(
+        RETRY_DELAYS_MS[Math.min(n, RETRY_DELAYS_MS.length - 1)] ?? RETRY_DELAYS_MS_FALLBACK
+      );
     }
   }
 }

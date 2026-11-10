@@ -39,8 +39,9 @@
   const dispatch = createEventDispatcher();
 
   // Classification color mapping per DoD standards
+  const unclassifiedColors = { bg: '#007a33', text: '#ffffff' };
   const classificationColors: Record<string, { bg: string; text: string }> = {
-    'UNCLASSIFIED': { bg: '#007a33', text: '#ffffff' },
+    'UNCLASSIFIED': unclassifiedColors,
     'CUI': { bg: '#502b85', text: '#ffffff' },  // Purple for CUI per NARA standards
     'FOUO': { bg: '#ffc72c', text: '#000000' },
     'CONFIDENTIAL': { bg: '#0033a0', text: '#ffffff' },
@@ -64,7 +65,7 @@ By using this IS (which includes any device attached to this IS), you consent to
 
 - Notwithstanding the above, using this IS does not constitute consent to PM, LE or CI investigative searching or monitoring of the content of privileged communications, or work product, related to personal representation or services by attorneys, psychotherapists, or clergy, and their assistants. Such communications and work product are private and confidential. See User Agreement for details.`;
 
-  $: colors = classificationColors[classification] || classificationColors['UNCLASSIFIED'];
+  $: colors = classificationColors[classification] ?? unclassifiedColors;
   $: displayText = bannerText || defaultBannerText;
 
   function handleAcknowledge() {

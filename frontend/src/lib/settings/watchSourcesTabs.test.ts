@@ -14,4 +14,8 @@ describe('watchSourcesTabs', () => {
     expect(resolveWatchSourcesTab('global', watchSourcesTabs(false))).toBe('sources');
     expect(resolveWatchSourcesTab('email', watchSourcesTabs(true))).toBe('email');
   });
+
+  it('keeps the requested tab rather than returning undefined when no tab is offered', () => {
+    expect(resolveWatchSourcesTab('email', [])).toBe('email');
+  });
 });

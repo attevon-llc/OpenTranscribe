@@ -435,6 +435,7 @@
 
   function handleDurationSliderChange(e: CustomEvent<{ values: number[] }>) {
     const [min, max] = e.detail.values;
+    if (min === undefined || max === undefined) return;
     durationRange = rangeFromValues(min, max, durationBounds);
     triggerFiltersDebounced();
   }

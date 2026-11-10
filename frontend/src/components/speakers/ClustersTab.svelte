@@ -151,7 +151,7 @@
             <div slot="members">
               {#if clusterMembers[cluster.uuid]}
                 <ClusterMemberList
-                  members={clusterMembers[cluster.uuid]}
+                  members={clusterMembers[cluster.uuid] ?? []}
                   {cluster}
                   {splitMode}
                   {splitTargetUuid}

@@ -87,8 +87,9 @@
   $: where = selectionWhere(diarizationSource, pipeline, chosen);
 
   // Choosing another provider must name one; start on the first that can serve.
-  $: if (diarizationSource === 'asr_config' && !diarizationAsrConfigUuid && choices.length > 0) {
-    diarizationAsrConfigUuid = choices[0].uuid;
+  $: firstChoice = choices[0];
+  $: if (diarizationSource === 'asr_config' && !diarizationAsrConfigUuid && firstChoice) {
+    diarizationAsrConfigUuid = firstChoice.uuid;
   }
 </script>
 

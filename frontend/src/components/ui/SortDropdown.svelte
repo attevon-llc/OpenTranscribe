@@ -107,7 +107,9 @@
       <path d="M17 4v16" />
     </svg>
 
-    <span class="sort-label">{$t(currentOption.label)}</span>
+    {#if currentOption}
+      <span class="sort-label">{$t(currentOption.label)}</span>
+    {/if}
 
     <!-- Direction arrow: a real arrow (shaft + head), not a bare chevron/caret — issue #747
          §4.3. Down = descending, up = ascending, same on /search (the control is shared). -->
@@ -124,7 +126,7 @@
       class="direction-arrow"
       aria-hidden="true"
     >
-      {#if isDescending(currentOption, sortOrder)}
+      {#if currentOption && isDescending(currentOption, sortOrder)}
         <line x1="12" y1="5" x2="12" y2="19"></line>
         <polyline points={ARROW_HEAD.down}></polyline>
       {:else}
@@ -142,14 +144,15 @@
       transition:fade={{ duration: 120 }}
     >
       {#each sortOptions as option (option.value)}
+        {@const iconName = SORT_ICON_BY_VALUE[option.value]}
         <button
           type="button"
           class="dropdown-item"
           class:active={option.value === sortBy}
           on:click={() => selectSort(option)}
         >
-          {#if SORT_ICON_BY_VALUE[option.value]}
-            <MenuIcon name={SORT_ICON_BY_VALUE[option.value]} />
+          {#if iconName}
+            <MenuIcon name={iconName} />
           {/if}
           <span class="option-label">{$t(option.label)}</span>
           {#if option.value === sortBy}

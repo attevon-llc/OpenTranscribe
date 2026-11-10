@@ -89,8 +89,9 @@
       debouncedFetch.cleanup();
       abortController?.abort();
 
-      if (showSuggestions && selectedIndex >= 0 && suggestions[selectedIndex]) {
-        selectSuggestion(suggestions[selectedIndex]);
+      const picked = selectedIndex >= 0 ? suggestions[selectedIndex] : undefined;
+      if (showSuggestions && picked) {
+        selectSuggestion(picked);
       } else {
         // Execute search and clear suggestions
         showSuggestions = false;

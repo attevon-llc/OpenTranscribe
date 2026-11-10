@@ -18,3 +18,7 @@ Moved intact from `scripts/CLAUDE.md`. Fixtures, markers and `RUN_*` gates: `bac
   `backend/tests/unit/test_release_e2e_selection.py`.
 - `e2e/run-e2e-first-run.sh` — the first-run wizard terms step (#1366, marker `first_run`). It consumes the
   wizard's one-time state, so it runs FIRST on a throwaway `--fresh` stack and `run-e2e.sh` excludes the marker.
+
+## styling-ab.sh and dependency changes
+
+`styling-ab.sh` compares a BEFORE and an AFTER frontend tree. Each tree whose `package-lock.json` is byte-identical to the checkout's symlinks the checkout's `node_modules` (fast path). A tree whose lock differs (any merge that bumps or adds a package) gets its own `npm ci` from its own lockfile, logged to `<run dir>/npm-ci-<tree>.log`, and the script prints which tree got it and why. The decision lives in `styling-ab-deps.sh`; `backend/tests/unit/test_styling_ab_node_modules_provisioning.py` covers it with a stub `npm`. Do not hand-patch the script to skip the lock check.

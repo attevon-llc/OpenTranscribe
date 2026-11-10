@@ -100,7 +100,8 @@
     {/if}
   </p>
 
-  <FormField class="form-field-spaced" id="bedrock-region" label={$t('llm.bedrock.region')} labelSize="base">
+  <div class="form-stack">
+  <FormField id="bedrock-region" label={$t('llm.bedrock.region')} labelSize="base">
     <select id="bedrock-region" class="form-control" bind:value={region} {disabled} dir="ltr">
       <option value="">{$t('llm.bedrock.regionServerDefault')}</option>
       {#each regionOptions as option (option)}
@@ -109,7 +110,7 @@
     </select>
   </FormField>
 
-  <FormField class="form-field-spaced" id="bedrock-access-key-id" label={$t('llm.bedrock.accessKeyId')} labelSize="base">
+  <FormField id="bedrock-access-key-id" label={$t('llm.bedrock.accessKeyId')} labelSize="base">
     <input
       type="text"
       id="bedrock-access-key-id"
@@ -124,7 +125,7 @@
     />
   </FormField>
 
-  <FormField class="form-field-spaced" id="bedrock-secret-access-key" label={$t('llm.bedrock.secretAccessKey')} labelSize="base">
+  <FormField id="bedrock-secret-access-key" label={$t('llm.bedrock.secretAccessKey')} labelSize="base">
     <input
       type="password"
       id="bedrock-secret-access-key"
@@ -141,7 +142,7 @@
     {/if}
   </FormField>
 
-  <FormField class="form-field-spaced" id="bedrock-session-token" label={$t('llm.bedrock.sessionToken')} labelSize="base">
+  <FormField id="bedrock-session-token" label={$t('llm.bedrock.sessionToken')} labelSize="base">
     <input
       type="password"
       id="bedrock-session-token"
@@ -153,6 +154,7 @@
       dir="ltr"
     />
   </FormField>
+  </div>
 
   {#if hasSavedCredentials}
     <label class="remove-row" for="bedrock-clear-credentials">

@@ -41,8 +41,8 @@
 </script>
 
 <BaseModal isOpen={true} {title} {titleId} size="md" onClose={() => dispatch('close')}>
-  <form id="{idPrefix}-form" on:submit|preventDefault={() => dispatch('submit')} class="config-form">
-    <FormField class="form-field-spaced" id={`${idPrefix}-name`} label={$t('collectionsPanel.name')} labelSize="base" hint={$t('collectionsPanel.nameHint')}>
+  <form id="{idPrefix}-form" on:submit|preventDefault={() => dispatch('submit')} class="config-form form-stack">
+    <FormField id={`${idPrefix}-name`} label={$t('collectionsPanel.name')} labelSize="base" hint={$t('collectionsPanel.nameHint')}>
       <input
         id={`${idPrefix}-name`}
         type="text"
@@ -54,7 +54,7 @@
       />
     </FormField>
 
-    <FormField class="form-field-spaced" id={`${idPrefix}-description`} label={$t('collectionsPanel.description')} labelSize="base" hint={$t('collectionsPanel.descriptionHint')}>
+    <FormField id={`${idPrefix}-description`} label={$t('collectionsPanel.description')} labelSize="base" hint={$t('collectionsPanel.descriptionHint')}>
       <textarea
         id={`${idPrefix}-description`}
         bind:value={description}
@@ -65,7 +65,7 @@
       ></textarea>
     </FormField>
 
-    <FormField class="form-field-spaced" id={`${idPrefix}-prompt`} label={$t('collectionsPanel.defaultPrompt')} labelSize="base" hint={$t('collectionsPanel.defaultPromptHint')}>
+    <FormField id={`${idPrefix}-prompt`} label={$t('collectionsPanel.defaultPrompt')} labelSize="base" hint={$t('collectionsPanel.defaultPromptHint')}>
       <select
         id={`${idPrefix}-prompt`}
         bind:value={promptId}
@@ -81,7 +81,7 @@
     </FormField>
 
     {#if showVisibility}
-      <fieldset class="form-field form-field-spaced form-field-label-base visibility-group" disabled={busy}>
+      <fieldset class="form-field form-field-label-base visibility-group" disabled={busy}>
         <legend>{$t('collectionsPanel.visibility.label')}</legend>
         <label class="visibility-option" class:chosen={visibility === 'organization'}>
           <input

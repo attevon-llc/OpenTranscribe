@@ -467,9 +467,9 @@ let _llmConfigModalWasOpen = false;
     {/if}
   </svelte:fragment>
 
-      <form on:submit|preventDefault={saveConfiguration} class="config-form">
+      <form on:submit|preventDefault={saveConfiguration} class="config-form form-stack">
         <!-- Configuration Name -->
-        <FormField class="form-field-spaced" id="config-name" label={$t('llm.configName')} labelSize="base">
+        <FormField id="config-name" label={$t('llm.configName')} labelSize="base">
           <input
             type="text"
             id="config-name"
@@ -482,7 +482,7 @@ let _llmConfigModalWasOpen = false;
         </FormField>
 
         <!-- Provider Selection -->
-        <FormField class="form-field-spaced" id="provider" label={$t('llm.provider')} labelSize="base">
+        <FormField id="provider" label={$t('llm.provider')} labelSize="base">
           <select
             id="provider"
             bind:value={formData.provider}
@@ -517,7 +517,7 @@ let _llmConfigModalWasOpen = false;
         {#if formData.provider}
           <!-- Base URL (if supported) -->
           {#if getProviderDefaults(formData.provider)?.supports_custom_url}
-            <FormField class="form-field-spaced" id="base-url" label={$t('llm.baseUrl')} labelSize="base">
+            <FormField id="base-url" label={$t('llm.baseUrl')} labelSize="base">
               <svelte:fragment slot="label-inline">
                   {#if formData.provider === 'vllm' || formData.provider === 'ollama'}
                     <span
@@ -560,7 +560,7 @@ let _llmConfigModalWasOpen = false;
           {/if}
 
           <!-- Model Selection -->
-          <FormField class="form-field-spaced" id="model-name" label={$t('llm.modelName')} labelSize="base">
+          <FormField id="model-name" label={$t('llm.modelName')} labelSize="base">
             <svelte:fragment slot="label-after">
               {#if formData.provider === 'ollama'}
                 <button
@@ -717,7 +717,7 @@ let _llmConfigModalWasOpen = false;
 
           <!-- API Key (if required) -->
           {#if getProviderDefaults(formData.provider)?.requires_api_key || (editingConfig && editingConfig.has_api_key)}
-            <FormField class="form-field-spaced" id="api-key" label={$t('llm.apiKey')} required={!editingConfig} labelSize="base">
+            <FormField id="api-key" label={$t('llm.apiKey')} required={!editingConfig} labelSize="base">
               <svelte:fragment slot="label-after">
                 <button
                   type="button"
@@ -746,7 +746,7 @@ let _llmConfigModalWasOpen = false;
             <h4>{$t('llm.advancedSettings')}</h4>
 
             <div class="form-row">
-              <FormField class="form-field-spaced" id="max-tokens" label={$t('llm.maxTokens')} labelSize="base">
+              <FormField id="max-tokens" label={$t('llm.maxTokens')} labelSize="base">
                 <input
                   type="number"
                   id="max-tokens"
@@ -759,7 +759,7 @@ let _llmConfigModalWasOpen = false;
                 <p class="field-desc">{$t('llm.maxTokensHelp')}</p>
               </FormField>
 
-              <FormField class="form-field-spaced" id="temperature" label={$t('llm.temperature')} labelSize="base">
+              <FormField id="temperature" label={$t('llm.temperature')} labelSize="base">
                 <input
                   type="text"
                   id="temperature"

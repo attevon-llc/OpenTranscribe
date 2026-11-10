@@ -204,7 +204,8 @@
       {/if}
 
       <!-- Context Text -->
-      <FormField class="form-field-spaced" id="org-context-text" label={$t('settings.orgContext.label')} labelSize="md">
+      <div class="form-stack">
+      <FormField id="org-context-text" label={$t('settings.orgContext.label')} labelSize="md">
         <svelte:fragment slot="label-inline">
           <span class="label-hint">{$t('settings.orgContext.labelHint')}</span>
         </svelte:fragment>
@@ -220,6 +221,7 @@
           {charCount.toLocaleString()} / 10,000
         </div>
       </FormField>
+      </div>
 
       <!-- Include in Default Prompts -->
       <div class="form-field">

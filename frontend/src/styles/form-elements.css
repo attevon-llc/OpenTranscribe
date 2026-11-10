@@ -696,8 +696,10 @@ button:disabled {
   flex-direction: column;
   gap: var(--space-1-5);
 }
-:where(.form-field-spaced) {
-  margin-bottom: var(--space-4);
+:where(.form-stack) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 :where(.form-field-lg) {
   gap: var(--space-2);

@@ -186,7 +186,8 @@
       <CopyButton text={justCreatedToken} />
     </div>
   {:else}
-    <FormField class="form-field-spaced" id="scim-token-name" label={$t('settings.scimTokens.name')} labelSize="sm">
+    <div class="form-stack">
+    <FormField id="scim-token-name" label={$t('settings.scimTokens.name')} labelSize="sm">
       <input
         id="scim-token-name"
         type="text"
@@ -194,9 +195,10 @@
         placeholder={$t('settings.scimTokens.namePlaceholder')}
       />
     </FormField>
-    <FormField class="form-field-spaced" id="scim-token-expiry" label={$t('settings.scimTokens.expiresOptional')} labelSize="sm">
+    <FormField id="scim-token-expiry" label={$t('settings.scimTokens.expiresOptional')} labelSize="sm">
       <input id="scim-token-expiry" type="date" bind:value={newTokenExpiresAt} />
     </FormField>
+    </div>
   {/if}
   <svelte:fragment slot="footer">
     {#if justCreatedToken}

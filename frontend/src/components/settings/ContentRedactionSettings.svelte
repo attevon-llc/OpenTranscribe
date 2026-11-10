@@ -144,7 +144,8 @@
           {$t('settings.contentRedaction.performanceNote')}
         </p>
 
-        <FormField class="form-field-spaced" id="redaction-style" label={$t('settings.contentRedaction.style')} labelSize="sm">
+        <div class="form-stack">
+        <FormField id="redaction-style" label={$t('settings.contentRedaction.style')} labelSize="sm">
           <select id="redaction-style" class="form-select" bind:value={settings.style}>
             {#each defaults?.available_styles ?? [] as style (style)}
               <option value={style}>{labelFor($t, REDACTION_STYLE_KEYS, style)}</option>
@@ -164,6 +165,7 @@
             {/if}
           </div>
         </FormField>
+        </div>
       </div>
 
       <!-- Detectors -->
@@ -269,7 +271,8 @@
       <!-- Custom words & allowlist -->
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.wordLists')}</h3>
-        <FormField class="form-field-spaced" id="custom-words" label={$t('settings.contentRedaction.customWords')} labelSize="sm">
+        <div class="form-stack">
+        <FormField id="custom-words" label={$t('settings.contentRedaction.customWords')} labelSize="sm">
           <textarea
             id="custom-words"
             class="form-textarea"
@@ -278,7 +281,7 @@
             placeholder={$t('settings.contentRedaction.customWordsPlaceholder')}
           ></textarea>
         </FormField>
-        <FormField class="form-field-spaced" id="allowlist" label={$t('settings.contentRedaction.allowlist')} labelSize="sm">
+        <FormField id="allowlist" label={$t('settings.contentRedaction.allowlist')} labelSize="sm">
           <textarea
             id="allowlist"
             class="form-textarea"
@@ -287,6 +290,7 @@
             placeholder={$t('settings.contentRedaction.allowlistPlaceholder')}
           ></textarea>
         </FormField>
+        </div>
       </div>
 
       <!-- Privacy -->

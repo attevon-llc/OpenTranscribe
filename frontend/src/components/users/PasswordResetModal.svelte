@@ -69,7 +69,8 @@
   </p>
 
   <form id="password-reset-form" on:submit|preventDefault={executePasswordReset} class="password-reset-form">
-    <FormField class="form-field-spaced" id="reset-password" label={$t('userManagement.newPassword')} hint={$t('userManagement.minimumCharacters', { min: passwordMinLength })} let:describedby>
+    <div class="form-stack">
+    <FormField id="reset-password" label={$t('userManagement.newPassword')} hint={$t('userManagement.minimumCharacters', { min: passwordMinLength })} let:describedby>
       <svelte:fragment slot="label-after">
         <button
           type="button"
@@ -92,7 +93,7 @@
       />
     </FormField>
 
-    <FormField class="form-field-spaced" id="confirm-reset-password" label={$t('userManagement.confirmPassword')}>
+    <FormField id="confirm-reset-password" label={$t('userManagement.confirmPassword')}>
       <svelte:fragment slot="label-after">
         <button
           type="button"
@@ -114,6 +115,7 @@
         minlength={passwordMinLength}
       />
     </FormField>
+    </div>
   </form>
 
   <svelte:fragment slot="footer">

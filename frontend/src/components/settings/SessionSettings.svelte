@@ -89,7 +89,8 @@
          cookies, so a live change would desynchronise cookie and token expiry.
          Everything below is enforced against `refresh_token` rows per request
          and really is live. -->
-    <FormField class="form-field-spaced" id="jwt_access_token_expire_minutes" label={$t('settings.session.accessTokenLifetime')} labelSize="md" hint={$t('settings.session.accessTokenHelp')} let:describedby>
+    <div class="form-stack">
+    <FormField id="jwt_access_token_expire_minutes" label={$t('settings.session.accessTokenLifetime')} labelSize="md" hint={$t('settings.session.accessTokenHelp')} let:describedby>
       <svelte:fragment slot="label-inline">
         <span class="restart-badge">{$t('settings.session.restartRequired')}</span>
       </svelte:fragment>
@@ -106,7 +107,7 @@
       </div>
     </FormField>
 
-    <FormField class="form-field-spaced" id="jwt_refresh_token_expire_days" label={$t('settings.session.refreshTokenLifetime')} labelSize="md" hint={$t('settings.session.refreshTokenHelp')} let:describedby>
+    <FormField id="jwt_refresh_token_expire_days" label={$t('settings.session.refreshTokenLifetime')} labelSize="md" hint={$t('settings.session.refreshTokenHelp')} let:describedby>
       <svelte:fragment slot="label-inline">
         <span class="restart-badge">{$t('settings.session.restartRequired')}</span>
       </svelte:fragment>
@@ -122,6 +123,7 @@
         <span class="preview">({formatDays(formData.jwt_refresh_token_expire_days)})</span>
       </div>
     </FormField>
+    </div>
 
     <div class="token-info">
       <strong>{$t('settings.session.howTokensWork')}</strong>
@@ -137,7 +139,8 @@
   <div class="section">
     <h3>{$t('settings.session.sessionTimeouts')}</h3>
 
-    <FormField class="form-field-spaced" id="session_idle_timeout_minutes" label={$t('settings.session.idleTimeout')} labelSize="md" hint={$t('settings.session.idleTimeoutHelp')} let:describedby>
+    <div class="form-stack">
+    <FormField id="session_idle_timeout_minutes" label={$t('settings.session.idleTimeout')} labelSize="md" hint={$t('settings.session.idleTimeoutHelp')} let:describedby>
       <div class="input-with-preview">
         <input
           id="session_idle_timeout_minutes" aria-describedby={describedby}
@@ -151,7 +154,7 @@
       </div>
     </FormField>
 
-    <FormField class="form-field-spaced" id="session_absolute_timeout_minutes" label={$t('settings.session.absoluteTimeout')} labelSize="md" hint={$t('settings.session.absoluteTimeoutHelp')} let:describedby>
+    <FormField id="session_absolute_timeout_minutes" label={$t('settings.session.absoluteTimeout')} labelSize="md" hint={$t('settings.session.absoluteTimeoutHelp')} let:describedby>
       <div class="input-with-preview">
         <input
           id="session_absolute_timeout_minutes" aria-describedby={describedby}
@@ -164,12 +167,14 @@
         <span class="preview">({describeMinutes(formData.session_absolute_timeout_minutes)})</span>
       </div>
     </FormField>
+    </div>
   </div>
 
   <div class="section">
     <h3>{$t('settings.session.concurrentSessions')}</h3>
 
-    <FormField class="form-field-spaced" id="max_concurrent_sessions" label={$t('settings.session.maxConcurrentSessions')} labelSize="md" hint={$t('settings.session.maxConcurrentSessionsHelp')} let:describedby>
+    <div class="form-stack">
+    <FormField id="max_concurrent_sessions" label={$t('settings.session.maxConcurrentSessions')} labelSize="md" hint={$t('settings.session.maxConcurrentSessionsHelp')} let:describedby>
       <input
         id="max_concurrent_sessions" aria-describedby={describedby}
         type="number"
@@ -180,7 +185,7 @@
       />
     </FormField>
 
-    <fieldset class="form-field form-field-spaced form-field-label-md">
+    <fieldset class="form-field form-field-label-md">
       <legend>{$t('settings.session.sessionLimitPolicy')}</legend>
       <div class="radio-group">
         {#each sessionPolicies as policy (policy.value)}
@@ -200,6 +205,7 @@
         {/each}
       </div>
     </fieldset>
+    </div>
   </div>
 
   <div class="section info">

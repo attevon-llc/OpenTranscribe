@@ -31,6 +31,7 @@
   import { onMount } from 'svelte';
 
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
 
   let phase: 'loading' | 'form' | 'error' | 'done' = 'loading';
   /** Server-supplied prose, rendered verbatim. Never inspected. */
@@ -179,8 +180,7 @@
       </div>
 
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
-        <div class="form-group">
-          <label for="invite-full-name">{$t('auth.acceptInvite.fullName')}</label>
+        <FormField id="invite-full-name" label={$t('auth.acceptInvite.fullName')} size="lg">
           <input
             type="text"
             id="invite-full-name"
@@ -189,23 +189,21 @@
             autocomplete="name"
             disabled={submitting}
           />
-        </div>
+        </FormField>
 
         {#if invitation.requires_password}
-          <div class="form-group">
-            <div class="password-header">
-              <label for="invite-password">{$t('auth.acceptInvite.createPassword')}</label>
-              <button
-                type="button"
-                class="toggle-password"
-                on:click={() => (showPassword = !showPassword)}
-                tabindex="-1"
-                aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-                title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-              >
-                <EyeIcon visible={showPassword} />
-              </button>
-            </div>
+          <FormField id="invite-password" label={$t('auth.acceptInvite.createPassword')} size="lg">
+            <button
+              slot="label-after"
+              type="button"
+              class="toggle-password"
+              on:click={() => (showPassword = !showPassword)}
+              tabindex="-1"
+              aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+              title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+            >
+              <EyeIcon visible={showPassword} />
+            </button>
             <input
               type={showPassword ? 'text' : 'password'}
               id="invite-password"
@@ -214,10 +212,9 @@
               autocomplete="new-password"
               disabled={submitting}
             />
-          </div>
+          </FormField>
 
-          <div class="form-group">
-            <label for="invite-confirm-password">{$t('auth.confirmPassword')}</label>
+          <FormField id="invite-confirm-password" label={$t('auth.confirmPassword')} size="lg">
             <input
               type={showPassword ? 'text' : 'password'}
               id="invite-confirm-password"
@@ -226,7 +223,7 @@
               autocomplete="new-password"
               disabled={submitting}
             />
-          </div>
+          </FormField>
 
           <div class="password-policy">
             <strong>{$t('auth.passwordRequirements')}</strong>
@@ -311,26 +308,8 @@
     gap: var(--space-5);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
-  }
-
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
   }
 
   .toggle-password {

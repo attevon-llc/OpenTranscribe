@@ -43,6 +43,7 @@
 
   // Import logo asset for proper Vite processing
   import logoBanner from '$assets/logo-banner.png';
+  import FormField from '$components/ui/FormField.svelte';
 
   // Form data
   let email = "";
@@ -646,8 +647,7 @@
           </p>
 
           <form on:submit|preventDefault={handleForcedPasswordChange} class="auth-form">
-            <div class="form-group">
-              <label for="forced-current-password">{$t('auth.forcedChange.currentPassword')}</label>
+            <FormField id="forced-current-password" label={$t('auth.forcedChange.currentPassword')} size="lg">
               <input
                 type="password"
                 id="forced-current-password"
@@ -655,10 +655,9 @@
                 autocomplete="current-password"
                 disabled={forcedChangeLoading}
               />
-            </div>
+            </FormField>
 
-            <div class="form-group">
-              <label for="forced-new-password">{$t('auth.newPassword')}</label>
+            <FormField id="forced-new-password" label={$t('auth.newPassword')} size="lg">
               <input
                 type="password"
                 id="forced-new-password"
@@ -667,10 +666,9 @@
                 autocomplete="new-password"
                 disabled={forcedChangeLoading}
               />
-            </div>
+            </FormField>
 
-            <div class="form-group">
-              <label for="forced-confirm-password">{$t('auth.confirmPassword')}</label>
+            <FormField id="forced-confirm-password" label={$t('auth.confirmPassword')} size="lg">
               <input
                 type="password"
                 id="forced-confirm-password"
@@ -679,7 +677,7 @@
                 autocomplete="new-password"
                 disabled={forcedChangeLoading}
               />
-            </div>
+            </FormField>
 
             <div class="password-policy">
               <strong>{$t('auth.passwordRequirements')}</strong>
@@ -806,14 +804,7 @@
         </p>
 
         <form on:submit|preventDefault={handleMFASubmit} class="auth-form">
-          <div class="form-group">
-            <label for="mfaCode">
-              {#if useBackupCode}
-                {$t('auth.backupCode')}
-              {:else}
-                {$t('auth.mfaCode')}
-              {/if}
-            </label>
+          <FormField id="mfaCode" label={useBackupCode ? $t('auth.backupCode') : $t('auth.mfaCode')} size="lg">
             <input
               type="text"
               id="mfaCode"
@@ -825,7 +816,7 @@
               maxlength={useBackupCode ? 9 : 6}
               use:focusOnMount
             />
-          </div>
+          </FormField>
 
           <button
             type="submit"
@@ -869,8 +860,7 @@
         <p class="lifecycle-message">{$t('auth.verifyEmail.notVerifiedDescription')}</p>
 
         <form on:submit|preventDefault={handleResendVerification} class="auth-form">
-          <div class="form-group">
-            <label for="verify-email-address">{$t('auth.email')}</label>
+          <FormField id="verify-email-address" label={$t('auth.email')} size="lg">
             <input
               type="email"
               id="verify-email-address"
@@ -879,7 +869,7 @@
               autocomplete="email"
               disabled={resendPending}
             />
-          </div>
+          </FormField>
 
           <button type="submit" class="auth-button" disabled={resendPending}>
             {#if resendPending}
@@ -928,42 +918,52 @@
         </div>
       {/if}
 
-      <div class="form-group {!emailValid && formSubmitted ? 'has-error' : ''}">
-        <label for="email">{$t('auth.emailOrUsername')}</label>
+      <FormField
+        id="email"
+        label={$t('auth.emailOrUsername')}
+        size="lg"
+        error={!emailValid && formSubmitted ? $t('auth.validIdentifierRequired') : ''}
+        let:describedby
+        let:invalid
+      >
         <input
           type="text"
           id="email"
           bind:value={email}
           placeholder={$t('auth.emailOrUsernamePlaceholder')}
-          aria-invalid={!emailValid && formSubmitted}
+          aria-describedby={describedby}
+          aria-invalid={invalid}
           autocomplete="username"
         />
-        {#if !emailValid && formSubmitted}
-          <div class="field-error">{$t('auth.validIdentifierRequired')}</div>
-        {/if}
-      </div>
+      </FormField>
 
-      <div class="form-group {!passwordValid && formSubmitted ? 'has-error' : ''}">
-        <div class="password-header">
-          <label for="password">{$t('auth.password')}</label>
-          <button
-            type="button"
-            class="toggle-password"
-            on:click={togglePasswordVisibility}
-            tabindex="-1"
-            aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-            title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-          >
-            <EyeIcon visible={showPassword} />
-          </button>
-        </div>
+      <FormField
+        id="password"
+        label={$t('auth.password')}
+        size="lg"
+        error={!passwordValid && formSubmitted ? $t('auth.passwordRequired') : ''}
+        let:describedby
+        let:invalid
+      >
+        <button
+          slot="label-after"
+          type="button"
+          class="toggle-password"
+          on:click={togglePasswordVisibility}
+          tabindex="-1"
+          aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+          title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+        >
+          <EyeIcon visible={showPassword} />
+        </button>
         {#if showPassword}
           <input
             type="text"
             id="password"
             bind:value={password}
             placeholder={$t('auth.passwordPlaceholder')}
-            aria-invalid={!passwordValid && formSubmitted}
+            aria-describedby={describedby}
+            aria-invalid={invalid}
             autocomplete="current-password"
           />
         {:else}
@@ -972,14 +972,12 @@
             id="password"
             bind:value={password}
             placeholder={$t('auth.passwordPlaceholder')}
-            aria-invalid={!passwordValid && formSubmitted}
+            aria-describedby={describedby}
+            aria-invalid={invalid}
             autocomplete="current-password"
           />
         {/if}
-        {#if !passwordValid && formSubmitted}
-          <div class="field-error">{$t('auth.passwordRequired')}</div>
-        {/if}
-      </div>
+      </FormField>
 
       <!-- Self-service reset only exists for passwords stored here. An
            LDAP-only deployment renders the form above but no reset link — the
@@ -1143,18 +1141,7 @@
     gap: var(--space-6);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .form-group label {
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-  }
-
-  .form-group input {
+  .auth-form input {
     font-size: var(--font-size-base);
   }
 
@@ -1189,7 +1176,6 @@
     background-color: var(--border-color);
     cursor: not-allowed;
   }
-
 
   /* Shown when the deployment advertises no usable sign-in method at all. */
   .no-auth-methods {
@@ -1239,13 +1225,6 @@
     text-decoration: underline;
   }
 
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
-
   .toggle-password {
     background: none;
     border: none;
@@ -1260,12 +1239,6 @@
 
   .toggle-password:hover {
     background-color: var(--surface-hover);
-  }
-
-  .field-error {
-    color: var(--error-color);
-    font-size: 0.85rem;
-    margin-top: var(--space-1);
   }
 
   .success-message {
@@ -1451,7 +1424,7 @@
     margin-bottom: var(--space-6);
   }
 
-  .mfa-form .form-group {
+  .mfa-form :global(.form-field) {
     text-align: left;
   }
 

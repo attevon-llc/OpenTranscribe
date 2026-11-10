@@ -198,8 +198,7 @@
     font-weight: var(--font-weight-regular);
     line-height: var(--line-height-body);
     color: var(--text-color);
-    overflow-wrap: break-word;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .summary-actions {

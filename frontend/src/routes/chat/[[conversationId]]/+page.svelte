@@ -786,7 +786,7 @@
   .error-action {
     margin-left: auto;
     padding: 0.2rem 0.6rem;
-    border: 1px solid currentColor;
+    border: 1px solid currentcolor;
     border-radius: var(--radius-md);
     background: none;
     color: inherit;

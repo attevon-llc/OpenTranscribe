@@ -244,7 +244,7 @@
   }
 
   .detail-section {
-    animation: fadeIn 0.15s ease-out;
+    animation: fade-in 0.15s ease-out;
   }
 
   .detail-grid {

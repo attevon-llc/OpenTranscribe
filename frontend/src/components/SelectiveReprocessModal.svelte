@@ -722,8 +722,7 @@
   /* Body */
   .modal-body {
     padding: var(--space-4) var(--space-6) var(--space-5);
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden auto;
     flex: 1;
     min-height: 200px;
     position: relative;

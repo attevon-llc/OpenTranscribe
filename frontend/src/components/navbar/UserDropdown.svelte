@@ -555,7 +555,7 @@
   }
 
   /* High contrast mode support */
-  @media (prefers-contrast: high) {
+  @media (prefers-contrast: more) {
     .dropdown-item {
       border: 1px solid transparent;
     }

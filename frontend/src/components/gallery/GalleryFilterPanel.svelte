@@ -125,10 +125,7 @@
   .filter-overlay-backdrop {
     display: none;
     position: fixed;
-    top: var(--content-top);
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: var(--content-top) 0 0 0;
     background: rgba(0, 0, 0, 0.4);
     z-index: 999;
   }

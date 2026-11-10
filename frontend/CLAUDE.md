@@ -35,6 +35,15 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   output but never fail the command, because the script doesn't pass `--fail-on-warnings`
   (default `false`). Don't rely on this as an a11y gate; #785 tracks making a11y enforcement
   real. `npm run lint` / `lint:fix` — ESLint.
+- `npm run lint:css` — Stylelint over `src/**/*.css` and every Svelte `<style>` block
+  (`stylelint.config.mjs`: `stylelint-config-standard`, `postcss-html` as the Svelte custom syntax).
+  It runs through `scripts/guards/check_stylelint_ratchet.py`, which counts findings per
+  `path::rule` against `scripts/guards/baselines/stylelint.txt` (only `no-descending-specificity`
+  debt is in it; counts may only fall, `--tighten` after a fix). Syntax errors and needless or
+  reason-less `stylelint-disable` comments are never baselined; a disable needs `-- <reason>`.
+  Hooks: `guard-stylelint-staged` (commit stage, staged files) and `guard-stylelint` (push stage,
+  whole tree). ⚠️ Do not run `stylelint --fix` over `.svelte` files unreviewed: postcss-html
+  rewrote a templated `style="..."` attribute and escaped a `<style>` inside a CSS comment.
 - `npm run test` / `test:watch` — Vitest unit/component tests (jsdom).
   ⚠️ **Those scripts set `NODE_OPTIONS=--no-experimental-webstorage`, and it is load-bearing on
   Node >=26.** Node 26 defines a `localStorage` accessor on `globalThis` that evaluates to

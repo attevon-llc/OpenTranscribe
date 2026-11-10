@@ -811,8 +811,9 @@
     display: inline-flex;
     align-items: center;
     gap: 0.2rem;
-    font-size: var(--font-size-xs);
-    font-weight: normal;
+    font-size: 0.65rem;
+    font-weight: var(--font-weight-medium);
+    color: var(--success-color);
   }
 
   .save-speakers-button {
@@ -993,12 +994,6 @@
   .match-text {
     flex: 1;
     color: var(--text-color);
-  }
-
-  .match-confidence {
-    font-weight: var(--font-weight-medium);
-    font-size: 0.65rem;
-    color: var(--success-color);
   }
 
   .more-matches-compact {

@@ -561,7 +561,7 @@
     color: var(--text-secondary);
     line-height: 1.5;
     white-space: pre-wrap;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .shared-card-actions {

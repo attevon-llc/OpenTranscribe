@@ -370,7 +370,7 @@
   }
 
   .file-card.new-file {
-    animation: newFileGlow 0.6s ease-out;
+    animation: new-file-glow 0.6s ease-out;
   }
 
   .file-card.deleting {
@@ -393,7 +393,7 @@
     transition: opacity 0.12s ease, transform 0.12s ease;
   }
 
-  @keyframes newFileGlow {
+  @keyframes new-file-glow {
     0% {
       transform: scale(1);
       box-shadow: 0 0 15px rgba(var(--accent-rgb), 0.4);
@@ -407,10 +407,10 @@
   }
 
   :global([data-theme='dark']) .file-card.new-file {
-    animation: newFileGlowDark 0.6s ease-out;
+    animation: new-file-glow-dark 0.6s ease-out;
   }
 
-  @keyframes newFileGlowDark {
+  @keyframes new-file-glow-dark {
     0% {
       box-shadow: 0 0 15px rgba(96, 165, 250, 0.3);
       border-color: #60a5fa;
@@ -506,7 +506,7 @@
     cursor: pointer;
   }
 
-  .checkmark:after {
+  .checkmark::after {
     content: "";
     position: absolute;
     display: none;
@@ -519,7 +519,7 @@
     transform: rotate(45deg);
   }
 
-  .file-checkbox:checked ~ .checkmark:after {
+  .file-checkbox:checked ~ .checkmark::after {
     display: block;
   }
 

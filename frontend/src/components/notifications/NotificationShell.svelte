@@ -226,7 +226,7 @@
     }
   }
 
-  @media (prefers-contrast: high) {
+  @media (prefers-contrast: more) {
     .notification-item {
       border-bottom-width: 2px;
     }

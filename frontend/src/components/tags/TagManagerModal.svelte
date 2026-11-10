@@ -645,8 +645,7 @@
 
   .field-with-icon input {
     width: 100%;
-    padding-inline-start: var(--space-8);
-    padding-inline-end: var(--space-8);
+    padding-inline: var(--space-8) var(--space-8);
   }
 
   .field-icon {

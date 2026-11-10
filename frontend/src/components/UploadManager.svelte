@@ -258,7 +258,7 @@
     font-family: var(--font-family);
     user-select: none;
     transition: transform var(--duration-base) ease;
-    margin-bottom: env(safe-area-inset-bottom, 0px);
+    margin-bottom: env(safe-area-inset-bottom, 0);
   }
 
   .upload-manager.dragging {

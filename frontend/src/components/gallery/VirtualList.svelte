@@ -325,15 +325,12 @@
      Destination page shows a skeleton — no spinner needed on the source row. */
   .file-list-row.navigating {
     pointer-events: none;
+    background: rgba(var(--accent-rgb), 0.05);
   }
 
   .file-list-row.navigating .file-list-link {
     opacity: 0.72;
     transition: opacity 0.12s ease;
-  }
-
-  .file-list-row.navigating {
-    background: rgba(var(--accent-rgb), 0.05);
   }
 
   :global([data-theme='dark']) .file-list-row.navigating {
@@ -395,10 +392,10 @@
   }
 
   .file-list-row.new-file {
-    animation: listNewFileGlow 0.6s ease-out;
+    animation: list-new-file-glow 0.6s ease-out;
   }
 
-  @keyframes listNewFileGlow {
+  @keyframes list-new-file-glow {
     0% { background-color: rgba(var(--accent-rgb), 0.15); }
     100% { background-color: transparent; }
   }
@@ -449,7 +446,7 @@
     cursor: pointer;
   }
 
-  .list-cell-checkbox .checkmark:after {
+  .list-cell-checkbox .checkmark::after {
     content: "";
     position: absolute;
     display: none;
@@ -462,7 +459,7 @@
     transform: rotate(45deg);
   }
 
-  .list-cell-checkbox .file-checkbox:checked ~ .checkmark:after {
+  .list-cell-checkbox .file-checkbox:checked ~ .checkmark::after {
     display: block;
   }
 

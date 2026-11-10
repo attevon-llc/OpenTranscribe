@@ -22,7 +22,7 @@
 }
 
 /* Simple opacity fade-in (modal backdrops, panels). */
-@keyframes fadeIn {
+@keyframes fade-in {
   from {
     opacity: 0;
   }
@@ -34,7 +34,7 @@
 /* Modal slide-in: fade up + slight scale (CollectionFormModal,
    TxtExportOptionsModal, file detail page). BaseModal uses a subtler variant
    that stays local. */
-@keyframes slideIn {
+@keyframes slide-in {
   from {
     opacity: 0;
     transform: translateY(-20px) scale(0.95);
@@ -46,7 +46,7 @@
 }
 
 /* Modal slide-up from below (SettingsModal, UserManagementTable). */
-@keyframes slideUp {
+@keyframes slide-up {
   from {
     transform: translateY(20px);
     opacity: 0;

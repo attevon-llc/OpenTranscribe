@@ -143,10 +143,6 @@
     justify-content: center;
     min-height: 400px;
     text-align: center;
-    color: var(--text-secondary);
-  }
-
-  .error-state {
     color: var(--error-color);
   }
 

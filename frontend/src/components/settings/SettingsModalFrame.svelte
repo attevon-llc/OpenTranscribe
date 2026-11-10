@@ -73,16 +73,13 @@
 <style>
   .settings-modal-backdrop {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     background-color: var(--modal-backdrop);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: var(--z-modal);
-    animation: fadeIn 0.2s ease-out;
+    animation: fade-in 0.2s ease-out;
     overflow: hidden;
     overscroll-behavior: none;
   }
@@ -97,7 +94,7 @@
     border-radius: var(--radius-2xl);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     overflow: hidden;
-    animation: slideUp 0.3s ease-out;
+    animation: slide-up 0.3s ease-out;
     display: flex;
     flex-direction: column;
   }
@@ -163,8 +160,8 @@
       max-width: none;
       max-height: none;
       border-radius: 0;
-      padding-top: env(safe-area-inset-top, 0px);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-top: env(safe-area-inset-top, 0);
+      padding-bottom: env(safe-area-inset-bottom, 0);
     }
 
     .settings-modal-container {
@@ -186,9 +183,8 @@
       padding: var(--space-4);
       flex: 1 1 0;
       min-height: 0;
-      overflow-y: auto;
+      overflow: hidden auto;
       -webkit-overflow-scrolling: touch;
-      overflow-x: hidden;
     }
 
     /* Global mobile overrides for all settings panels */

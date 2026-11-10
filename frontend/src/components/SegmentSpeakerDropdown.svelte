@@ -333,8 +333,7 @@
       max-width: min(340px, calc(100vw - 24px));
       padding: var(--space-1);
       max-height: 400px;
-      overflow-y: auto;
-      overflow-x: hidden;
+      overflow: hidden auto;
       overscroll-behavior: contain;
     }
 

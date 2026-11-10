@@ -1001,7 +1001,7 @@
     padding: 0;
     margin: -1px;
     overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
   }
@@ -1181,7 +1181,7 @@
     width: 6px;
     height: 6px;
     border-radius: var(--radius-round);
-    background: currentColor;
+    background: currentcolor;
     flex-shrink: 0;
   }
 

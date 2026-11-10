@@ -300,7 +300,7 @@
   .auth-header p {
     color: var(--text-light);
     font-size: 0.9rem;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .auth-form {

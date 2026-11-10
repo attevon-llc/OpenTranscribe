@@ -162,7 +162,7 @@
   }
 
   .approvals-note {
-    margin: 0.35rem 0 0.85rem 0;
+    margin: 0.35rem 0 0.85rem;
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;

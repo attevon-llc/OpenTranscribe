@@ -57,7 +57,7 @@
   /* Same box as Navbar's `.navbar` / `.navbar-container`: height, surface, padding, max-width. */
   .check-bar {
     height: calc(60px + env(safe-area-inset-top, 0px));
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: env(safe-area-inset-top, 0);
     background: var(--navbar-bg);
     border-bottom: 1px solid var(--navbar-border);
     box-shadow: var(--navbar-shadow);

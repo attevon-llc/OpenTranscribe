@@ -455,6 +455,24 @@ repos:
         files: ^(frontend/(src/|scripts/|package\.json$|knip\.json$|madge\.webpack\.cjs$|kit\.config\.js$|vite\.config\.ts$|vitest\.config\.ts$|tsconfig[^/]*\.json$)|scripts/guards/.*)
         stages: [pre-push]
         verbose: true
+      # Stylelint over global CSS and Svelte <style> blocks (frontend/stylelint.config.mjs),
+      # ratcheted per path::rule in scripts/guards/baselines/stylelint.txt. The commit stage lints
+      # only the staged files (seconds); the push stage re-runs the whole tree and also fires on a
+      # config, baseline or dependency change, which no staged-file run would notice.
+      - id: guard-stylelint-staged
+        name: frontend CSS lint ratchet, staged files (stylelint, baselined)
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_stylelint_ratchet.py "$@"' --
+        language: system
+        files: ^frontend/src/.*\.(css|svelte)$
+        stages: [pre-commit]
+      - id: guard-stylelint
+        name: frontend CSS lint ratchet, whole tree (stylelint, baselined)
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_stylelint_ratchet.py'
+        language: system
+        pass_filenames: false
+        files: ^(frontend/(src/.*\.(css|svelte)|stylelint\.config\.mjs|package\.json)$|scripts/guards/(check_stylelint_ratchet\.py|_baseline\.py|baselines/stylelint\.txt)$)
+        stages: [pre-push]
+        verbose: true
 
   # Version consistency — VERSION, pyproject.toml, frontend/package.json,
   # frontend/package-lock.json (BOTH version fields), the Alembic single-head

@@ -55,8 +55,7 @@
   .speaker {
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    overflow-wrap: break-word;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .timestamp-link {
@@ -79,8 +78,7 @@
     font-size: var(--font-size-md);
     line-height: var(--line-height-body);
     color: var(--text-color);
-    overflow-wrap: break-word;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .snippet :global(mark) {

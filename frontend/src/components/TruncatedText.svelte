@@ -44,7 +44,7 @@
   .truncated-text p {
     margin: 0 0 var(--space-1) 0;
     white-space: pre-wrap;
-    word-wrap: break-word;
+    overflow-wrap: break-word;
     line-height: 1.5;
   }
 

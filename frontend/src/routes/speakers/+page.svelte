@@ -338,7 +338,6 @@
 
 <style>
   .speakers-page {
-    max-width: 1000px;
     margin: 0 auto;
     padding: var(--space-6) var(--space-4);
     overflow-x: hidden;

@@ -127,7 +127,7 @@
     }
   }
 
-  @media (prefers-contrast: high) {
+  @media (prefers-contrast: more) {
     .notifications-panel {
       border-width: 2px;
     }

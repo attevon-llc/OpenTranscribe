@@ -612,7 +612,7 @@
     inline-size: 100%;
     block-size: var(--slider-track-height);
     border-radius: var(--slider-track-radius);
-    background: color-mix(in srgb, currentColor 30%, transparent);
+    background: color-mix(in srgb, currentcolor 30%, transparent);
     overflow: hidden;
   }
 
@@ -632,7 +632,7 @@
 
   .mini-player :global(.mini-buffer) {
     inline-size: var(--media-slider-buffer);
-    background: color-mix(in srgb, currentColor 30%, transparent);
+    background: color-mix(in srgb, currentcolor 30%, transparent);
   }
 
   .mini-player :global(.mini-fill) {

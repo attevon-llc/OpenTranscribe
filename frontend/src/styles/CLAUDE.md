@@ -64,3 +64,13 @@ colour, fallback, shadow, radius, spacing, font-size, font-weight, z-index, dura
 per file. Counts may only fall; run with `--tighten` in the same commit that removes literals.
 Screenshot A/B for any restyle: `scripts/e2e/styling-ab.sh` against a `--fresh` stack (never the live one), and the
 `/a11y-fixtures/ui-kit` page shows every shared component in every state.
+
+## Stylelint
+
+`npm run lint:css` (see `frontend/CLAUDE.md`, Commands) lints this folder and every component `<style>`.
+Repo conventions it is configured around, each with its reason in `frontend/stylelint.config.mjs`: legacy
+`rgba(var(--x-rgb), α)` tints (the `-rgb` tokens are comma lists), `(max-width: …)` media queries, hand-written
+`-webkit-` prefixes (dev has no prefixer), six-digit hex as written, BEM `__element` / `--modifier` classes, and
+`:global(...)`. Class names a library emits (`.rangeSlider`, `.hljs-built_in`) carry a reasoned
+`stylelint-disable`. `no-descending-specificity` debt is baselined per file; fix a file with a `styling-ab.sh` A/B
+and `--tighten` the baseline in the same commit.

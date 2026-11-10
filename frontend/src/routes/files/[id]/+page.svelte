@@ -965,7 +965,7 @@
     gap: var(--space-2);
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0px;
+    margin-bottom: 0;
     min-height: 32px;
   }
 

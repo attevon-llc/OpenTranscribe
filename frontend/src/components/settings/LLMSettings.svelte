@@ -1077,7 +1077,7 @@
     }
 
     .config-name {
-      word-break: break-word;
+      overflow-wrap: anywhere;
     }
 
     .config-url {

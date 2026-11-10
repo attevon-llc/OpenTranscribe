@@ -48,7 +48,7 @@
     transparent 100%
   );
   transform: translateX(-100%);
-  animation: shimmerSlide 1.4s linear infinite;
+  animation: shimmer-slide 1.4s linear infinite;
 }
 
 [data-theme='dark'] .shimmer {
@@ -64,7 +64,7 @@
   );
 }
 
-@keyframes shimmerSlide {
+@keyframes shimmer-slide {
   100% {
     transform: translateX(100%);
   }

@@ -322,7 +322,7 @@
     color: var(--color-text-secondary);
     max-width: 28rem;
     white-space: pre-wrap;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .link {

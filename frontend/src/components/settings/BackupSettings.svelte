@@ -788,7 +788,7 @@
   .status-error {
     font-size: var(--font-size-xs);
     color: var(--error-color);
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   /* Actions */

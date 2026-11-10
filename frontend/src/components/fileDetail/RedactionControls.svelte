@@ -112,6 +112,9 @@
   /* Small, unobtrusive link-style button. Hover shifts to the primary-hover color with
      a subtle tinted background (consistent with the app) — no underline. */
   .redaction-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     background: none;
     border: none;
     padding: 0.15rem 0.35rem;
@@ -128,11 +131,6 @@
   .redaction-link-btn:hover {
     color: var(--primary-hover);
     background-color: rgba(var(--primary-color-rgb), 0.1);
-  }
-  .redaction-link-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
   }
   .redaction-link-btn:disabled {
     opacity: 0.6;

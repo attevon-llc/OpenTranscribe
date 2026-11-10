@@ -262,7 +262,7 @@
       transparent 100%
     );
     transform: translateX(-100%);
-    animation: shimmerSlide 1.4s ease-in-out infinite;
+    animation: shimmer-slide 1.4s ease-in-out infinite;
   }
 
   :global([data-theme='dark']) .shimmer::after {
@@ -274,7 +274,7 @@
     );
   }
 
-  @keyframes shimmerSlide {
+  @keyframes shimmer-slide {
     100% {
       transform: translateX(100%);
     }

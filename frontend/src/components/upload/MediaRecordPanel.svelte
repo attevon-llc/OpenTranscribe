@@ -294,7 +294,7 @@
   .status-text { font-weight: var(--font-weight-semibold); font-size: var(--font-size-md); color: var(--text-primary); }
 
   .duration-badge {
-    font-family: 'Monaco', 'Menlo', monospace;
+    font-family: Monaco, Menlo, monospace;
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);

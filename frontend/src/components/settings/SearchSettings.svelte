@@ -881,6 +881,7 @@
 
     .subsection-actions .btn {
       flex: 1;
+      min-height: 44px;
     }
 
     .form-actions {
@@ -896,9 +897,6 @@
       min-height: 44px;
     }
 
-    .subsection-actions .btn {
-      min-height: 44px;
-    }
   }
 
   .reindex-card {

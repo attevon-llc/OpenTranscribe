@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Frontend CSS linting: Stylelint (`stylelint-config-standard`, Svelte `<style>` blocks via `postcss-html`) as `npm run lint:css` and two pre-commit hooks (staged files at commit, whole tree at push), ratcheted per file so existing `no-descending-specificity` debt can only shrink.
 - Shared `ui/Banner` notice (info, success, warning, error, neutral; `role="alert"` for errors, `role="status"` otherwise; each tone has its own icon and an inline-start accent bar), and a single global `.sr-only` utility. `ui/Spinner` takes an optional `label` and is otherwise hidden from assistive tech; status badges (`ui/Badge`, sizes `sm`/`md`) and settings empty states (`ui/EmptyState`) replace their local copies, which unifies badge radius and padding.
 - Shared button variants (`.btn-sm`, `.btn-lg`, `.btn-success`, `.btn-ghost`, `.btn-link`, `.btn-danger-outline`, `.btn-icon`) and a `ui/Button` component with busy and icon-only handling.
 
 ### Fixed
 
+- High-contrast styles in the navbar, user menu and notification panels now apply: they were written for `prefers-contrast: high`, a value no browser matches, and now use `more`.
+- Removed CSS that never took effect or repeated itself, found by the new Stylelint gate: duplicate `--error/success/warning-color-rgb` tokens in `theme.css`, a speakers-page `max-width` always overridden in the same rule, ten selectors declared twice in one component (merged, keeping the values that already won), deprecated `word-break: break-word` (now `overflow-wrap: anywhere`, the same behaviour), `word-wrap` and `clip: rect()`.
 - Re-running the corpus injector (`python -m app.scripts.corpus_injection`, also with `--force`) no longer rewrites an injected recording that is under a legal hold or in quarantine; the record says `skipped_protected` and no indexing or redaction is dispatched for it.
 - The manual `batch_speaker_matching` script no longer writes match records or name suggestions for the speakers of a recording under a legal hold or in quarantine (including one held while the script runs); it logs how many it left out.
 - `python -m app.scripts.split_shared_storage_paths --apply` no longer repoints a recording under a legal hold or in quarantine: such a recording keeps the shared original key, a second protected one in the same group is left as it is, and both runs report `skipped_protected`. A hold placed while the script runs is respected too.

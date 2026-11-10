@@ -185,13 +185,13 @@
   .who .primary {
     display: block;
     font-weight: var(--font-weight-medium);
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .secondary {
     display: block;
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .reason {
     min-width: 8rem;

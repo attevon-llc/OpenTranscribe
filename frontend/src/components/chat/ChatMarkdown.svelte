@@ -335,6 +335,7 @@
     :global(:is(.hljs-title, .hljs-section, .hljs-name, .hljs-attr, .hljs-attribute)) {
     color: var(--hl-title);
   }
+  /* stylelint-disable-next-line selector-class-pattern -- highlight.js emits this class name */
   .chat-markdown :global(:is(.hljs-built_in, .hljs-selector-class, .hljs-selector-id)) {
     color: var(--hl-number);
   }
@@ -367,8 +368,7 @@
   .chat-markdown :global(.chat-math-display) {
     display: block;
     margin: 0.5em 0 0.75em;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: auto hidden;
     direction: ltr;
   }
 

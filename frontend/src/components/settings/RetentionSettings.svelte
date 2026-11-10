@@ -647,7 +647,7 @@
     content: '';
     position: absolute;
     left: 3px;
-    top: 0px;
+    top: 0;
     width: 5px;
     height: 9px;
     border: 2px solid white;

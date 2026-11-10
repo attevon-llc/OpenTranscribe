@@ -189,14 +189,14 @@
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-4);
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background: rgba(var(--error-color-rgb), 0.08);
+    border: 1px solid rgba(var(--error-color-rgb), 0.2);
     border-radius: var(--radius-lg);
     font-size: var(--font-size-md);
     color: var(--text-primary);
   }
 
-  .unsupported-msg svg { flex-shrink: 0; color: #ef4444; }
+  .unsupported-msg svg { flex-shrink: 0; color: var(--error-text); }
 
   /* Device selector */
   .device-selector {
@@ -246,15 +246,15 @@
     border: 2px solid var(--error-solid);
     background-color: var(--error-solid);
     color: var(--text-on-solid);
-    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
+    box-shadow: var(--shadow-danger);
     transition: all var(--duration-base) ease;
   }
 
   .start-button:hover {
-    background-color: #b91c1c;
-    border-color: #b91c1c;
+    background-color: var(--error-solid-hover);
+    border-color: var(--error-solid-hover);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25);
+    box-shadow: var(--shadow-danger-hover);
   }
 
   /* Active recording */
@@ -282,7 +282,7 @@
   }
 
   .recording-dot.paused {
-    background-color: #f59e0b;
+    background-color: var(--warning-color);
     animation: none;
   }
 
@@ -323,8 +323,8 @@
     transition: all 0.1s ease-out;
   }
 
-  .level-bar.active.low { background-color: #10b981; opacity: 1; }
-  .level-bar.active.medium { background-color: #f59e0b; opacity: 1; }
+  .level-bar.active.low { background-color: var(--success-color); opacity: 1; }
+  .level-bar.active.medium { background-color: var(--warning-color); opacity: 1; }
   .level-bar.active.high { background-color: var(--error-solid); opacity: 1; }
 
   .control-row { display: flex; gap: var(--space-3); justify-content: center; }
@@ -345,7 +345,7 @@
   }
 
   .ctrl-btn:hover { background: var(--button-hover); }
-  .ctrl-btn.stop:hover { background: rgba(239, 68, 68, 0.1); color: #dc2626; border-color: rgba(239, 68, 68, 0.3); }
+  .ctrl-btn.stop:hover { background: var(--error-bg); color: var(--error-text); border-color: var(--error-border); }
 
   /* Recording complete */
   .recording-complete {
@@ -360,7 +360,7 @@
   .complete-title { display: block; font-weight: var(--font-weight-semibold); font-size: var(--font-size-body); color: var(--text-primary); }
   .complete-meta { font-size: var(--font-size-sm); color: var(--text-secondary); }
 
-  .ctrl-btn.clear:hover { background: rgba(107, 114, 128, 0.1); }
+  .ctrl-btn.clear:hover { background: var(--button-hover); }
 
   /* Settings summary */
   .settings-summary {

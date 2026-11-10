@@ -273,7 +273,7 @@
     border-radius: 20px;
     padding: var(--space-2) var(--space-3);
     cursor: grab;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-lg);
     transition: all var(--duration-base) ease;
     position: relative;
     backdrop-filter: blur(8px);
@@ -281,7 +281,7 @@
 
   .upload-badge:hover {
     transform: scale(1.05);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-xl);
   }
 
   .upload-badge.has-activity {
@@ -312,9 +312,9 @@
     right: -2px;
     width: 8px;
     height: 8px;
-    background: #ef4444;
+    background: var(--error-solid);
     border-radius: var(--radius-round);
-    border: 2px solid white;
+    border: 2px solid var(--text-on-solid);
     animation: pulse 2s ease-in-out infinite;
   }
 
@@ -323,7 +323,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-xl);
     width: 350px;
     max-height: 60vh;
     overflow: hidden;
@@ -363,7 +363,7 @@
      the active count is a white pill with blue text (--primary-color on #fff = 5.17:1) and
      the other two stay plain white (5.17:1), distinguished by weight. */
   .stat-active {
-    background: #fff;
+    background: var(--text-on-solid);
     color: var(--primary-color);
     font-weight: var(--font-weight-semibold);
     padding: 0 var(--space-2);
@@ -443,23 +443,12 @@
   @keyframes pulse-activity {
     0%, 100% {
       transform: scale(1);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      box-shadow: var(--shadow-lg);
     }
     50% {
       transform: scale(1.02);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+      box-shadow: var(--shadow-xl);
     }
-  }
-
-  /* Dark mode adjustments */
-  :global([data-theme='dark']) .upload-panel {
-    background: var(--surface-color);
-    border-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .overall-progress {
-    background: var(--background-color);
-    border-color: var(--border-color);
   }
 
   /* Mobile adjustments */

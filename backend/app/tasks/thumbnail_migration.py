@@ -24,10 +24,9 @@ from typing import Any
 from typing import NotRequired
 from typing import TypedDict
 
-from minio.error import S3Error
-
 from app.core import constants
 from app.core.celery import celery_app
+from app.core.exceptions import StorageError
 from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -269,7 +268,7 @@ def _migrate_single_thumbnail(row: dict) -> tuple[str, str | None]:
         # (uq_media_file_thumbnail_path), so no other row can be pointing at it.
         try:
             delete_file(old_thumbnail_path)
-        except (S3Error, OSError) as e:
+        except StorageError as e:
             # Log but don't fail - the migration succeeded even if cleanup failed
             logger.warning(
                 f"Failed to delete old thumbnail {old_thumbnail_path}: {e}", exc_info=True

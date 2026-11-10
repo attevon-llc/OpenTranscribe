@@ -78,12 +78,10 @@ def test_failed_summary_reset_returns_false_with_traceback(caplog):
 
 
 def test_waveform_original_download_outage_returns_none_with_traceback(caplog):
-    from minio.error import S3Error
-    from urllib3.response import BaseHTTPResponse
-
+    from app.core.exceptions import StorageUnavailableError
     from app.tasks import waveform as mod
 
-    err = S3Error(MagicMock(spec=BaseHTTPResponse), "InternalError", "down", "res", "req", "host")
+    err = StorageUnavailableError("Storage unavailable while downloading a file: ConnectionError")
     with (
         patch.object(mod, "download_file", side_effect=err),
         caplog.at_level(logging.ERROR, logger=mod.logger.name),

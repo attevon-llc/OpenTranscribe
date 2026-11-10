@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoIcon from '$components/ui/InfoIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { TranscriptionSettings, TranscriptionSystemDefaults } from '$lib/api/transcriptionSettings';
@@ -38,20 +39,12 @@
   {#if transcriptionSettings}
     {#if transcriptionSettings.speaker_prompt_behavior === 'use_defaults'}
       <div class="info-note">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
-          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-        </svg>
+        <InfoIcon size={14} />
         <span>{$t('uploader.usingSystemDefaults')}{#if transcriptionSystemDefaults} {$t('uploader.speakerDefaultsRange', { min: transcriptionSystemDefaults.min_speakers, max: transcriptionSystemDefaults.max_speakers })}{/if}</span>
       </div>
     {:else if transcriptionSettings.speaker_prompt_behavior === 'use_custom'}
       <div class="info-note">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
-          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-        </svg>
+        <InfoIcon size={14} />
         <span>{$t('uploader.usingSavedSettings')} {$t('uploader.speakerDefaultsRange', { min: transcriptionSettings.min_speakers, max: transcriptionSettings.max_speakers })}</span>
       </div>
     {/if}
@@ -146,7 +139,7 @@
     border-radius: 6px;
   }
   :global([data-theme='dark']) .info-note { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.2); }
-  .info-note svg { flex-shrink: 0; color: var(--primary-on-surface); }
+  .info-note :global(svg) { flex-shrink: 0; color: var(--primary-on-surface); }
   .info-note span { flex: 1; }
 
   .settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }

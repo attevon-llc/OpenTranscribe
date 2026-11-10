@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
@@ -404,17 +405,7 @@
         disabled={saving}
         title={$t('prompts.makeActive')}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <circle cx="12" cy="1" r="1"/>
-          <circle cx="12" cy="23" r="1"/>
-          <circle cx="4.22" cy="4.22" r="1"/>
-          <circle cx="19.78" cy="19.78" r="1"/>
-          <circle cx="1" cy="12" r="1"/>
-          <circle cx="23" cy="12" r="1"/>
-          <circle cx="4.22" cy="19.78" r="1"/>
-          <circle cx="19.78" cy="4.22" r="1"/>
-        </svg>
+        <ActivateIcon strokeLinecap="round" />
         {$t('prompts.activate')}
       </button>
     {/if}

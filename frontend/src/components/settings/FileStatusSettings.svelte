@@ -109,6 +109,14 @@
   });
 </script>
 
+{#snippet fileRow(f: StatusFile)}
+  <li>
+    <a class="file-name" href={resolve('/files/[id]', { id: f.uuid })}>{f.filename}</a>
+    <span class="file-age">{formatFileAge(f.upload_time, $locale) || f.formatted_file_age}</span>
+    <Badge variant={variantFor(f.status)}>{translateFileStatus($t, f.status, f.display_status)}</Badge>
+  </li>
+{/snippet}
+
 <div class="content-section">
   <div class="section-header-row">
     <div>
@@ -148,11 +156,7 @@
       <h4 class="list-title">{$t('fileStatus.filesNeedAttention')}</h4>
       <ul class="file-list">
         {#each data.problem_files.files as f (f.uuid)}
-          <li>
-            <a class="file-name" href={resolve('/files/[id]', { id: f.uuid })}>{f.filename}</a>
-            <span class="file-age">{formatFileAge(f.upload_time, $locale) || f.formatted_file_age}</span>
-            <Badge variant={variantFor(f.status)}>{translateFileStatus($t, f.status, f.display_status)}</Badge>
-          </li>
+          {@render fileRow(f)}
         {/each}
       </ul>
     {:else}
@@ -163,11 +167,7 @@
     {#if data.recent_files.files.length}
       <ul class="file-list">
         {#each data.recent_files.files as f (f.uuid)}
-          <li>
-            <a class="file-name" href={resolve('/files/[id]', { id: f.uuid })}>{f.filename}</a>
-            <span class="file-age">{formatFileAge(f.upload_time, $locale) || f.formatted_file_age}</span>
-            <Badge variant={variantFor(f.status)}>{translateFileStatus($t, f.status, f.display_status)}</Badge>
-          </li>
+          {@render fileRow(f)}
         {/each}
       </ul>
     {:else}

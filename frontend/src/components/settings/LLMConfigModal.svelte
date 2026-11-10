@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher, onDestroy, tick } from 'svelte';
@@ -576,17 +577,7 @@ let _llmConfigModalWasOpen = false;
                   {#if loadingOllamaModels}
                     <Spinner size="small" />
                   {:else}
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="3"/>
-                      <circle cx="12" cy="1" r="1"/>
-                      <circle cx="12" cy="23" r="1"/>
-                      <circle cx="4.22" cy="4.22" r="1"/>
-                      <circle cx="19.78" cy="19.78" r="1"/>
-                      <circle cx="1" cy="12" r="1"/>
-                      <circle cx="23" cy="12" r="1"/>
-                      <circle cx="4.22" cy="19.78" r="1"/>
-                      <circle cx="19.78" cy="4.22" r="1"/>
-                    </svg>
+                    <ActivateIcon size={12} />
                   {/if}
                   {$t('llm.discoverModels')}
                 </button>
@@ -601,17 +592,7 @@ let _llmConfigModalWasOpen = false;
                   {#if loadingOpenAIModels}
                     <Spinner size="small" />
                   {:else}
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="3"/>
-                      <circle cx="12" cy="1" r="1"/>
-                      <circle cx="12" cy="23" r="1"/>
-                      <circle cx="4.22" cy="4.22" r="1"/>
-                      <circle cx="19.78" cy="19.78" r="1"/>
-                      <circle cx="1" cy="12" r="1"/>
-                      <circle cx="23" cy="12" r="1"/>
-                      <circle cx="4.22" cy="19.78" r="1"/>
-                      <circle cx="19.78" cy="4.22" r="1"/>
-                    </svg>
+                    <ActivateIcon size={12} />
                   {/if}
                   {$t('llm.discoverModels')}
                 </button>
@@ -626,17 +607,7 @@ let _llmConfigModalWasOpen = false;
                   {#if loadingAnthropicModels}
                     <Spinner size="small" />
                   {:else}
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="3"/>
-                      <circle cx="12" cy="1" r="1"/>
-                      <circle cx="12" cy="23" r="1"/>
-                      <circle cx="4.22" cy="4.22" r="1"/>
-                      <circle cx="19.78" cy="19.78" r="1"/>
-                      <circle cx="1" cy="12" r="1"/>
-                      <circle cx="23" cy="12" r="1"/>
-                      <circle cx="4.22" cy="19.78" r="1"/>
-                      <circle cx="19.78" cy="4.22" r="1"/>
-                    </svg>
+                    <ActivateIcon size={12} />
                   {/if}
                   {$t('llm.discoverModels')}
                 </button>

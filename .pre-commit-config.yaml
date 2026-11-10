@@ -326,6 +326,13 @@ repos:
         language: system
         pass_filenames: false
         files: ^(backend/|scripts/|frontend/src/|\.github/|docker-compose[^/]*\.yml$|\.pre-commit-config\.yaml$)
+      - id: guard-doc-references
+        name: docs name no repo path or module that no longer exists (allowlisted)
+        entry: python3 scripts/guards/check_doc_references.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        always_run: true
       - id: guard-api-boundary
         name: fastapi, HTTPException and ORM calls stay in the API layer (baselined)
         entry: python3 scripts/guards/check_api_boundary.py

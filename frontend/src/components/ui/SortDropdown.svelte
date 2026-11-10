@@ -193,23 +193,12 @@
   .sort-button {
     cursor: pointer;
     transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    background: var(--surface-color);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-md);
     backdrop-filter: blur(8px);
     user-select: none;
-  }
-
-  :global([data-theme='light']) .sort-button,
-  :global(:not([data-theme='dark'])) .sort-button {
-    background: rgba(255, 255, 255, 0.9);
-    border-color: rgba(0, 0, 0, 0.08);
-    color: #6b7280;
-  }
-
-  :global([data-theme='dark']) .sort-button {
-    background: rgba(30, 41, 59, 0.95);
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    color: #cbd5e1;
   }
 
   .sort-button:hover {
@@ -233,21 +222,9 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-xl);
     padding: var(--space-2);
     backdrop-filter: blur(12px);
-  }
-
-  :global([data-theme='light']) .dropdown-menu,
-  :global(:not([data-theme='dark'])) .dropdown-menu {
-    background: rgba(255, 255, 255, 0.95);
-    border-color: rgba(0, 0, 0, 0.1);
-  }
-
-  :global([data-theme='dark']) .dropdown-menu {
-    background: rgba(30, 41, 59, 0.95);
-    border-color: rgba(255, 255, 255, 0.15);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
 
   .dropdown-item {
@@ -267,29 +244,9 @@
     text-align: start;
   }
 
-  :global([data-theme='light']) .dropdown-item,
-  :global(:not([data-theme='dark'])) .dropdown-item {
-    color: #6b7280;
-  }
-
-  :global([data-theme='dark']) .dropdown-item {
-    color: #cbd5e1;
-  }
-
   .dropdown-item:hover {
-    background: var(--hover-bg);
-    color: var(--text-primary);
-  }
-
-  :global([data-theme='light']) .dropdown-item:hover,
-  :global(:not([data-theme='dark'])) .dropdown-item:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: #1f2937;
-  }
-
-  :global([data-theme='dark']) .dropdown-item:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #f9fafb;
+    background: var(--button-hover);
+    color: var(--text-color);
   }
 
   .dropdown-item.active {

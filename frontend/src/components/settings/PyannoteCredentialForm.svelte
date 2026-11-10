@@ -217,7 +217,7 @@
     margin-top: var(--space-4);
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
 
@@ -238,7 +238,7 @@
 
   .credential-badge {
     padding: var(--space-0-5) var(--space-2-5);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
     font-size: 0.75rem;
     font-weight: 500;
@@ -271,7 +271,7 @@
   .credential-warning {
     margin: 0 0 var(--space-3);
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--warning-color);
     font-size: 0.8125rem;
     color: var(--text-color);
@@ -311,7 +311,7 @@
     gap: var(--space-1-5);
     padding: var(--space-2) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--background-color);
     color: var(--text-color);
     font-size: 0.875rem;

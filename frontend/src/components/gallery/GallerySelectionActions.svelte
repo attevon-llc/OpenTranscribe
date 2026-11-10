@@ -516,7 +516,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-1-5) var(--space-3);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
@@ -644,7 +644,7 @@
     overflow-y: auto;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     min-width: 200px;
     padding: var(--space-1) 0;

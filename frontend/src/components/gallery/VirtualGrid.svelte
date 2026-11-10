@@ -361,7 +361,7 @@
     position: relative;
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     transition: transform var(--duration-base) ease, box-shadow var(--duration-base) ease, border-color var(--duration-base) ease;
     cursor: pointer;
     overflow: hidden;
@@ -483,7 +483,7 @@
     height: 18px;
     background-color: var(--background-color);
     border: 2px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     position: relative;
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -565,7 +565,7 @@
     align-items: center;
     justify-content: center;
     background: rgba(0, 0, 0, 0.5);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-on-solid);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
@@ -585,7 +585,7 @@
     font-size: 0.6875rem;
     font-weight: 500;
     padding: 1px var(--space-1-5);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     line-height: 1.4;
     font-variant-numeric: tabular-nums;
     backdrop-filter: blur(4px);
@@ -702,7 +702,7 @@
     }
 
     .file-card {
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
     }
 
     .placeholder svg {

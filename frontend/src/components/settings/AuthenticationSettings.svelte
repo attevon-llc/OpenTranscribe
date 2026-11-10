@@ -538,7 +538,7 @@
     text-align: center;
     padding: var(--space-8);
     background: var(--color-surface);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--color-border);
   }
 
@@ -571,7 +571,7 @@
   .config-method {
     background: var(--color-background);
     padding: var(--space-4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--color-border);
   }
 
@@ -586,7 +586,7 @@
     display: block;
     background: var(--color-surface);
     padding: var(--space-1) var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.75rem;
     margin-bottom: var(--space-2);
     color: var(--color-primary);
@@ -609,7 +609,7 @@
   .note {
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-4);
     margin-top: var(--space-4);
     text-align: left;

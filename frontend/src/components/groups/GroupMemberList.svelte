@@ -177,7 +177,7 @@
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-2-5) var(--space-3);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     transition: background-color var(--duration-fast);
   }
 
@@ -192,7 +192,7 @@
   .member-avatar {
     width: 36px;
     height: 36px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     display: flex;
@@ -269,7 +269,7 @@
     cursor: pointer;
     padding: var(--space-1);
     color: var(--text-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -289,7 +289,7 @@
   .btn-leave {
     padding: var(--space-1) var(--space-3);
     border: 1px solid var(--danger-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--danger-color);
     font-size: 0.75rem;

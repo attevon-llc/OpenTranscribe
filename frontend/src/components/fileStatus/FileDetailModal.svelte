@@ -197,7 +197,7 @@
 <style>
   .status-badge {
     padding: var(--space-1) var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.75rem;
     font-weight: 500;
     text-transform: uppercase;
@@ -301,7 +301,7 @@
     font-size: 0.7rem;
     font-family: inherit;
     font-weight: 500;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background-color: rgba(var(--warning-color-rgb), 0.15);
     color: var(--warning-color);
     border: 1px solid rgba(var(--warning-color-rgb), 0.3);
@@ -318,7 +318,7 @@
   .task-metadata-card {
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-4);
   }
 
@@ -347,7 +347,7 @@
     margin-top: var(--space-4);
     padding: var(--space-3);
     background: rgba(var(--error-color-rgb), 0.05);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid rgba(var(--error-color-rgb), 0.2);
   }
 
@@ -367,7 +367,7 @@
     background: var(--warning-background);
     color: var(--warning-text);
     padding: var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     margin: var(--space-4) 0;
     border: 1px solid var(--warning-border);
   }
@@ -387,7 +387,7 @@
     padding: var(--space-1) var(--space-3);
     font-size: 0.875rem;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all var(--duration-base);
     background: var(--success-color);

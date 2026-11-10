@@ -127,7 +127,7 @@
     max-width: 800px;
     max-height: 90vh;
     overflow-y: auto;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
@@ -158,7 +158,7 @@
     margin: var(--space-4) 0;
     padding: var(--space-4);
     background: #f5f5f5;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .legal-notice {
@@ -173,7 +173,7 @@
     margin: 0 0 var(--space-4);
     padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b45309;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: #fef3c7;
     color: #7c2d12;
     font-size: 0.9rem;
@@ -184,7 +184,7 @@
     margin: var(--space-4) 0 0;
     padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b91c1c;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: #fee2e2;
     color: #7f1d1d;
     font-size: 0.875rem;
@@ -203,7 +203,7 @@
     color: var(--text-on-solid);
     padding: var(--space-3) var(--space-8);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-weight: bold;
     cursor: pointer;
   }
@@ -213,7 +213,7 @@
     color: #666;
     padding: var(--space-3) var(--space-8);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
   }
 

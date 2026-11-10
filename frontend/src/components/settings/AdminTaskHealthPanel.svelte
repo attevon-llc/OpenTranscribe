@@ -364,7 +364,7 @@
   .table-container {
     overflow-x: auto;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .data-table {

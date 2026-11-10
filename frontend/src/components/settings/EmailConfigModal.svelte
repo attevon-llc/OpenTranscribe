@@ -256,7 +256,7 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: rgba(234, 179, 8, 0.15);
     color: #b45309;
   }
@@ -285,7 +285,7 @@
     margin: 0;
     padding: var(--space-2) var(--space-2-5);
     background: var(--button-hover);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
   .checkbox-row {
     display: flex;

@@ -386,7 +386,7 @@
   .settings-section {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-5);
   }
 
@@ -448,7 +448,7 @@
   .index-card {
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
   }
 
@@ -530,7 +530,7 @@
     display: flex;
     gap: var(--space-4);
     padding: var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: rgba(34, 197, 94, 0.08);
     border: 1px solid rgba(34, 197, 94, 0.3);
     margin-bottom: var(--space-4);
@@ -545,7 +545,7 @@
     flex-shrink: 0;
     width: 40px;
     height: 40px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -583,7 +583,7 @@
     margin-top: var(--space-4);
     padding: var(--space-4);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 
@@ -608,14 +608,14 @@
   .progress-bar-container {
     height: 8px;
     background: var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
     background: var(--primary-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: width var(--duration-slow) ease;
   }
 
@@ -623,7 +623,7 @@
     margin-top: var(--space-4);
     padding: var(--space-4);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 

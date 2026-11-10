@@ -110,7 +110,7 @@
 <style>
   .discovery-panel {
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--card-bg);
     padding: 0 var(--space-4);
     margin-bottom: var(--space-6);
@@ -143,7 +143,7 @@
     gap: 0.35rem;
     background: none;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.2rem 0.6rem;
     font-size: 0.75rem;
     color: var(--text-color);
@@ -187,7 +187,7 @@
     flex-shrink: 0;
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--text-muted);
   }
 

@@ -148,7 +148,7 @@
   .voiceprint-consent {
     display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
     padding: var(--space-2-5) var(--space-3); margin: var(--space-2) 0;
-    border: 1px solid var(--border-color); border-radius: 6px;
+    border: 1px solid var(--border-color); border-radius: var(--radius-md);
     background: var(--surface-color);
     font-size: 0.8125rem; color: var(--text-secondary);
   }

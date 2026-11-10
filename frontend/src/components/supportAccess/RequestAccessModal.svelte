@@ -101,7 +101,7 @@
     margin: 0;
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--error-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--error-background);
     color: var(--error-color);
     font-size: 0.8125rem;

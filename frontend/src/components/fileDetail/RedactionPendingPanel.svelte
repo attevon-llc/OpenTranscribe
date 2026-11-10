@@ -29,7 +29,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: 0.4rem 0.9rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
     font-size: 0.85rem;
@@ -38,7 +38,7 @@
   .redaction-pending-chip .chip-dot {
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--primary-color);
     animation: redaction-pulse 1.2s ease-in-out infinite;
   }

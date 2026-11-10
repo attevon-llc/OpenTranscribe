@@ -173,7 +173,7 @@
   .upload-item {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-3);
     margin-bottom: var(--space-2);
     font-size: 0.875rem;
@@ -232,7 +232,7 @@
     background: var(--accent-color);
     color: var(--text-on-solid);
     padding: 1px var(--space-1-5);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 10px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -245,7 +245,7 @@
     font-weight: 500;
     color: #b45309;
     background: rgba(245, 158, 11, 0.12);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 1px var(--space-1-5);
     white-space: nowrap;
   }
@@ -262,7 +262,7 @@
     background: none;
     border: none;
     padding: var(--space-1) var(--space-1-5);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 12px;
     line-height: 1;
@@ -296,7 +296,7 @@
     flex: 1;
     height: 4px;
     background: var(--border-color);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     overflow: hidden;
   }
 
@@ -317,7 +317,7 @@
     padding: var(--space-1-5) var(--space-2);
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: #ef4444;
     font-size: 0.75rem;
     line-height: 1.3;

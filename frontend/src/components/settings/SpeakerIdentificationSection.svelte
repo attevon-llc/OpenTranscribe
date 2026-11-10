@@ -222,7 +222,7 @@
     margin-top: var(--space-6);
     padding: var(--space-4) var(--space-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
 

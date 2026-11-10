@@ -131,7 +131,7 @@
     background-color: var(--bg-primary);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 0 var(--space-4);
     font-size: 0.9rem;
     font-weight: 500;

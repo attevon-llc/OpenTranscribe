@@ -183,7 +183,7 @@
     display: flex;
     align-items: center;
     gap: 0.15rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 0 0.2rem;
     position: relative;
   }
@@ -203,7 +203,7 @@
     top: 20%;
     bottom: 20%;
     width: 3px;
-    border-radius: 0 2px 2px 0;
+    border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
     background-color: var(--primary-color);
   }
 

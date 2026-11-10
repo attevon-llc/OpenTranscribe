@@ -65,7 +65,7 @@
   .inbox-hint {
     padding: var(--space-2) var(--space-4);
     background: var(--hover-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 13px;
     color: var(--text-secondary);
     margin-bottom: var(--space-3);
@@ -73,7 +73,7 @@
 
   .inbox-list {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
     max-width: 100%;
   }
@@ -91,7 +91,7 @@
   .pagination button {
     padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--card-background);
     color: var(--text-color);
     cursor: pointer;

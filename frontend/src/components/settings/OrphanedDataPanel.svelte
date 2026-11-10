@@ -287,7 +287,7 @@
     padding: var(--space-4);
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .orphans-head {
@@ -334,7 +334,7 @@
     padding: var(--space-3);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
@@ -381,7 +381,7 @@
   .notice {
     margin-top: var(--space-3);
     padding: var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.8rem;
     color: var(--text-color);
   }

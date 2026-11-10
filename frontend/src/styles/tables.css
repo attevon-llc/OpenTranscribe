@@ -5,7 +5,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   background-color: var(--card-background);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   margin-bottom: var(--space-4);
   box-shadow: var(--card-shadow);

@@ -201,7 +201,7 @@
     margin: var(--space-1) 0 0 0;
     padding: 0;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     max-height: 200px;
     overflow-y: auto;
     background: var(--surface-color);

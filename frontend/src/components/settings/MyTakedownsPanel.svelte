@@ -99,7 +99,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--bg-secondary);
     font-size: var(--font-size-sm);
   }
@@ -120,7 +120,7 @@
   .card {
     padding: var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--bg-color);
   }
 

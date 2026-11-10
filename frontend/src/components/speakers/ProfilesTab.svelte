@@ -151,7 +151,7 @@
   .gender-toggle-btn {
     font-size: 14px;
     padding: 3px var(--space-1-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: transparent;
     color: var(--text-secondary);
@@ -194,7 +194,7 @@
   .profile-card {
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-background);
     transition: box-shadow var(--duration-fast) ease;
     overflow: hidden;
@@ -208,7 +208,7 @@
   .profile-avatar-wrapper {
     width: 48px;
     height: 48px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     flex-shrink: 0;
     cursor: pointer;
     position: relative;
@@ -222,14 +222,14 @@
   .profile-avatar {
     width: 48px;
     height: 48px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     object-fit: cover;
   }
 
   .avatar-initials {
     width: 48px;
     height: 48px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -242,7 +242,7 @@
   .avatar-overlay {
     position: absolute;
     inset: 0;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: rgba(0, 0, 0, 0.45);
     display: flex;
     align-items: center;
@@ -255,7 +255,7 @@
   .avatar-spinner {
     width: 48px;
     height: 48px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -325,7 +325,7 @@
     height: 28px;
     min-width: 28px;
     padding: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: var(--card-background);
     color: var(--text-secondary);
@@ -364,7 +364,7 @@
     font-size: 0.65rem;
     font-weight: 600;
     padding: 1px var(--space-1-5);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--accent-light);
     color: var(--primary-on-surface);
     margin-left: var(--space-1-5);

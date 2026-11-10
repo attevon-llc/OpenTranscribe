@@ -290,7 +290,7 @@
     max-width: min(80%, 42rem);
     padding: var(--space-2-5) var(--space-4);
     border-radius: 18px;
-    border-end-end-radius: 4px;
+    border-end-end-radius: var(--radius-sm);
     background-color: rgba(var(--primary-color-rgb), 0.1);
   }
 
@@ -310,7 +310,7 @@
   .error-text {
     margin: var(--space-1) 0 0;
     padding: 0.6rem var(--space-3);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: rgba(var(--error-color-rgb), 0.08);
     border: 1px solid rgba(var(--error-color-rgb), 0.25);
     color: var(--error-color);
@@ -320,7 +320,7 @@
   .context-warning {
     margin: var(--space-2) 0 0;
     padding: 0.6rem var(--space-3);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     /* Theme-provided pair — light/dark parity is handled in theme.css. */
     background-color: var(--warning-bg);
     border: 1px solid var(--warning-border);
@@ -360,7 +360,7 @@
     padding: 0 0.4rem;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     /* Ghost icon buttons: no global button shadow or hover scale. */
     box-shadow: none;
     color: var(--text-secondary);
@@ -396,7 +396,7 @@
   .edit-btn {
     padding: var(--space-1) 0.7rem;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--card-background);
     color: var(--text-color);
     font-size: 0.78rem;

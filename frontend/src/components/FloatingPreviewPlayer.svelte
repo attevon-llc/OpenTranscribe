@@ -114,7 +114,7 @@
     max-width: calc(100vw - 2rem);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
     z-index: var(--z-dropdown);
     overflow: hidden;
@@ -209,7 +209,7 @@
     color: var(--primary-on-surface);
     text-decoration: none;
     padding: var(--space-1) var(--space-2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: background var(--duration-fast);
   }
 
@@ -225,7 +225,7 @@
     height: 32px;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
     cursor: pointer;

@@ -428,7 +428,7 @@
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.85rem;
   }
@@ -443,7 +443,7 @@
     background: none;
     border: none;
     padding: 0.15rem 0.35rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.78rem;
     font-weight: 500;
     color: var(--primary-on-surface);
@@ -519,7 +519,7 @@
   .nav-btn {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: var(--space-1);
     cursor: pointer;
     color: var(--text-secondary);

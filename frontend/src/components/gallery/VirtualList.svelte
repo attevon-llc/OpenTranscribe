@@ -285,7 +285,7 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     overflow: hidden;
     background: var(--surface-color);
   }
@@ -426,7 +426,7 @@
     height: 18px;
     background-color: var(--background-color);
     border: 2px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     position: relative;
     cursor: pointer;
     transition: all var(--duration-base) ease;

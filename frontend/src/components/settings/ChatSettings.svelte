@@ -251,7 +251,7 @@
     left: 0.1875rem;
     bottom: 0.1875rem;
     background-color: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base);
   }
 

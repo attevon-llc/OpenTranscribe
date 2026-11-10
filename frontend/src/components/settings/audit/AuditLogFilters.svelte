@@ -94,7 +94,7 @@
   .filters {
     background: var(--color-bg-secondary);
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     margin-bottom: var(--space-2);
   }
 
@@ -139,7 +139,7 @@
 
   .btn-apply {
     padding: var(--space-1) var(--space-2-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 500;
@@ -170,7 +170,7 @@
 
   .btn-clear {
     padding: var(--space-1) var(--space-2-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 500;
@@ -193,7 +193,7 @@
 
   .btn-secondary {
     padding: var(--space-1) var(--space-2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.75rem;
     height: 1.75rem;

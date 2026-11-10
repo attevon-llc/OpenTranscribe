@@ -156,7 +156,7 @@
   .file-list-container {
     margin: var(--space-6) 0;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
   }
 
@@ -221,7 +221,7 @@
     padding: var(--space-3) var(--space-4);
     background: rgba(var(--accent-rgb), 0.05);
     border: 1px solid rgba(var(--accent-rgb), 0.2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: 0.875rem;
     margin-bottom: var(--space-4);
@@ -240,7 +240,7 @@
     margin: var(--space-6) 0;
     padding: var(--space-4);
     background: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
   }
 
@@ -260,7 +260,7 @@
     font-size: 1.1rem;
     font-weight: 600;
     padding: var(--space-2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .comparison-value.video {
@@ -287,7 +287,7 @@
     padding: var(--space-3) var(--space-4);
     background: rgba(16, 185, 129, 0.1);
     border: 1px solid rgba(16, 185, 129, 0.2);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     color: #10b981;
     font-weight: 500;
     font-size: 0.875rem;
@@ -296,7 +296,7 @@
   .modal-button {
     padding: 0.6rem 1.2rem;
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;

@@ -226,7 +226,7 @@
     background: none;
     border: none;
     padding: 0.15rem 0.3rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
     font-size: 0.78rem;
     cursor: pointer;

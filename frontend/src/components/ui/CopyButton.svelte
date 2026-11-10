@@ -102,7 +102,7 @@
     padding: var(--space-1-5) var(--space-3);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
     font-size: 13px;
     font-weight: 500;

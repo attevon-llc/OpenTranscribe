@@ -325,7 +325,7 @@
     width: 8px;
     height: 8px;
     background: #ef4444;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     border: 2px solid white;
     animation: pulse 2s ease-in-out infinite;
   }
@@ -334,7 +334,7 @@
   .upload-panel {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     width: 350px;
     max-height: 60vh;
@@ -379,7 +379,7 @@
     color: var(--primary-color);
     font-weight: var(--font-weight-semibold);
     padding: 0 var(--space-2);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .stat-queued,
@@ -402,7 +402,7 @@
     border: none;
     color: var(--text-on-solid);
     padding: var(--space-1) var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.75rem;
     cursor: pointer;
     transition: background var(--duration-base) ease;

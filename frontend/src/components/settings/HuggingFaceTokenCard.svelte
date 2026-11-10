@@ -190,7 +190,7 @@
     margin-top: var(--space-6);
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
 
@@ -211,7 +211,7 @@
   .status-chip {
     margin-inline-start: auto;
     padding: var(--space-0-5) var(--space-2-5);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
     font-size: 0.75rem;
     font-weight: var(--font-weight-medium);
@@ -239,7 +239,7 @@
 
   .note.warn {
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--warning-color);
     color: var(--text-color);
   }

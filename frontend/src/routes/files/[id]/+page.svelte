@@ -917,7 +917,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-2-5) var(--space-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;

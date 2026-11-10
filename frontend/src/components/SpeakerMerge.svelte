@@ -295,7 +295,7 @@
     margin-bottom: var(--space-6);
     background: var(--background-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
   }
 
@@ -369,7 +369,7 @@
     padding: var(--space-3);
     background: var(--surface-color);
     border: 2px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -403,7 +403,7 @@
     font-size: 11px;
     font-weight: var(--font-weight-semibold);
     padding: 3px var(--space-2);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     border: 1px solid;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -433,7 +433,7 @@
   .btn-primary,
   .btn-secondary {
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
@@ -510,7 +510,7 @@
     padding: var(--space-3);
     background: var(--background-secondary);
     border: 2px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }

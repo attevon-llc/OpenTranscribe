@@ -146,7 +146,7 @@
     justify-content: center;
     width: 56px;
     height: 56px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: rgba(var(--primary-color-rgb), 0.1);
     color: var(--primary-on-surface);
   }
@@ -188,7 +188,7 @@
   .suggestion-card {
     padding: 0.85rem var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: var(--font-size-md);

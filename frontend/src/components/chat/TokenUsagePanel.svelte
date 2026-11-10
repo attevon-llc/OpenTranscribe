@@ -78,7 +78,7 @@
     padding: 0.2rem 0.4rem;
     margin-left: -0.4rem;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
     font-size: 0.74rem;
@@ -93,7 +93,7 @@
   .dot {
     width: 7px;
     height: 7px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--success-color);
   }
 
@@ -121,7 +121,7 @@
     margin-top: 0.45rem;
     padding: 0.6rem 0.7rem;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--surface-color);
   }
 

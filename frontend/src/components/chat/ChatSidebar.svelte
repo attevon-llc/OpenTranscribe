@@ -301,7 +301,7 @@
     width: 100%;
     padding: 0.55rem var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--card-background);
     color: var(--text-color);
     font-size: 0.87rem;
@@ -408,7 +408,7 @@
     display: flex;
     align-items: center;
     gap: 0.15rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 0 0.2rem;
   }
 

@@ -63,7 +63,7 @@
     padding: var(--space-3-5) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
   }
 
   .skel-row.compact {
@@ -75,7 +75,7 @@
     flex-shrink: 0;
     width: 40px;
     height: 40px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   .skel-row.compact .skel-avatar {
@@ -93,12 +93,12 @@
 
   .skel-title {
     height: 15px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skel-subtitle {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skel-actions {
@@ -110,7 +110,7 @@
   .skel-action {
     width: 32px;
     height: 32px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
 

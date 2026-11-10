@@ -57,7 +57,7 @@
     height: 28px;
     padding: 0;
     border: 1px solid var(--border-color);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--surface-color);
     box-shadow: none;
     color: var(--primary-on-surface);

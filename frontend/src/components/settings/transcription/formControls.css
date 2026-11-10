@@ -18,7 +18,7 @@
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background-color: var(--background-color);
   color: var(--text-color);
   font-size: 0.875rem;
@@ -49,7 +49,7 @@
 .tx-form .form-input {
   padding: var(--space-2) var(--space-2-5);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background-color: var(--background-color);
   color: var(--text-color);
   font-size: 0.875rem;
@@ -105,7 +105,7 @@
   width: 36px;
   height: 20px;
   background-color: var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
   transition: background-color var(--duration-base) ease;
   flex-shrink: 0;
 }
@@ -118,7 +118,7 @@
   width: 16px;
   height: 16px;
   background-color: white;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   transition: transform var(--duration-base) ease;
   box-shadow: var(--shadow-thumb);
 }
@@ -165,7 +165,7 @@
   padding: var(--space-4);
   background: var(--background-color);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .tx-form .subsection-title {
@@ -192,7 +192,7 @@
   margin-top: var(--space-1);
   padding: 0.4rem 0.6rem;
   background: var(--warning-bg);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border-left: 3px solid var(--warning-color);
 }
 
@@ -228,7 +228,7 @@
   margin: var(--space-1-5) 0 0 0;
   padding: var(--space-1) var(--space-2);
   background: var(--warning-bg);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .tx-form .field-desc.hint-italic {

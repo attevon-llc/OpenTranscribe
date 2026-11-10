@@ -231,7 +231,7 @@
   .panel-note {
     padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--background-color);
   }
 
@@ -279,7 +279,7 @@
   .current-badge {
     margin-left: var(--space-1-5);
     padding: 0.0625rem var(--space-1-5);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: 0.625rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -295,7 +295,7 @@
 
   .btn {
     padding: var(--space-2) var(--space-4);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;

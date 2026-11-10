@@ -79,7 +79,7 @@
     width: auto;
     padding: var(--space-1);
     object-fit: contain;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .check-body {
@@ -135,7 +135,7 @@
   }
 
   .logo {
-    border-radius: 16px;
+    border-radius: var(--radius-3xl);
     animation: check-pulse 1.8s ease-in-out infinite;
   }
 
@@ -187,7 +187,7 @@
     margin-inline: auto;
     padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background: var(--card-background);
     color: var(--text-color);
     box-shadow: var(--card-shadow);
@@ -201,7 +201,7 @@
   .notice button {
     padding: 0.4rem 0.9rem;
     border: 1px solid var(--primary-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: transparent;
     color: var(--primary-on-surface);
     font: inherit;

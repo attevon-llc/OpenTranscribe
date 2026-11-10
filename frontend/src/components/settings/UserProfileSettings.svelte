@@ -364,7 +364,7 @@
 
   .profile-card {
     padding: var(--space-4);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
   }
@@ -384,7 +384,7 @@
   .mfa-card {
     margin-top: var(--space-4);
     padding: var(--space-4);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
   }
@@ -437,7 +437,7 @@
     color: var(--text-secondary);
     display: flex;
     align-items: center;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background-color var(--duration-base);
   }
 
@@ -455,7 +455,7 @@
 
   .btn {
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: none;
     font-size: 0.8125rem;
     font-weight: 500;

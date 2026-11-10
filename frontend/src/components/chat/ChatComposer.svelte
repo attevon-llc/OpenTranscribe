@@ -208,7 +208,7 @@
     width: 34px;
     height: 34px;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     cursor: pointer;

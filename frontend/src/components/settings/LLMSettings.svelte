@@ -835,7 +835,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -865,7 +865,7 @@
     justify-content: space-between;
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--card-background);
     transition: all var(--duration-base) ease;
   }
@@ -917,7 +917,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-1-5) var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     font-weight: 500;
     width: fit-content;
@@ -940,7 +940,7 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -1019,7 +1019,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -1047,7 +1047,7 @@
     text-align: center;
     padding: var(--space-12) var(--space-8);
     border: 2px dashed var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-background);
   }
 
@@ -1079,7 +1079,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -1116,7 +1116,7 @@
     display: inline-flex;
     align-items: center;
     padding: 1px var(--space-1-5);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.625rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -1136,7 +1136,7 @@
     display: inline-flex;
     align-items: center;
     padding: 1px var(--space-1-5);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.625rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -1186,7 +1186,7 @@
     width: 28px;
     height: 16px;
     background: var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     transition: background var(--duration-base);
     flex-shrink: 0;
   }
@@ -1199,7 +1199,7 @@
     width: 12px;
     height: 12px;
     background: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base);
   }
 
@@ -1227,7 +1227,7 @@
     justify-content: space-between;
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--card-background);
     margin-bottom: var(--space-2);
   }
@@ -1267,7 +1267,7 @@
     color: var(--text-muted);
     padding: var(--space-2) var(--space-4);
     background: var(--surface-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     margin-bottom: var(--space-2);
     line-height: 1.4;
   }

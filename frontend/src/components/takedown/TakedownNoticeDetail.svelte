@@ -136,7 +136,7 @@
     gap: var(--space-3);
     padding: var(--space-3);
     background: var(--bg-secondary);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .basis-line,

@@ -443,7 +443,7 @@
     text-align: center;
     padding: var(--space-10) var(--space-8);
     border: 2px dashed var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-background);
   }
 
@@ -475,7 +475,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-2) 1.1rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -491,7 +491,7 @@
 
   .source-card {
     border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-lg);
     padding: var(--space-3) var(--space-4);
     background: var(--card-background);
     transition: border-color var(--duration-fast);
@@ -558,7 +558,7 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     padding: 0.1rem 0.35rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-sm);
     letter-spacing: 0.02em;
     flex-shrink: 0;
   }
@@ -570,7 +570,7 @@
     background: rgba(34, 197, 94, 0.15);
     color: #16a34a;
     padding: 0.1rem 0.35rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-sm);
     letter-spacing: 0.02em;
   }
 
@@ -586,7 +586,7 @@
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
     padding: 0.1rem 0.35rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-sm);
     letter-spacing: 0.02em;
   }
 
@@ -610,7 +610,7 @@
   .meta-badge {
     font-size: 0.65rem;
     padding: 0.15rem 0.4rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-sm);
     font-weight: 500;
     white-space: nowrap;
   }
@@ -735,7 +735,7 @@
   .btn-sm {
     padding: var(--space-1) var(--space-2);
     font-size: 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   /* Pattern B — grey ghost (inline actions like Edit, No) */
@@ -784,7 +784,7 @@
     gap: var(--space-1-5);
     padding: var(--space-2) var(--space-4);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--primary-color);
     color: var(--text-on-solid);
     font-size: 0.875rem;

@@ -181,7 +181,7 @@
     margin-bottom: var(--space-6);
     padding: var(--space-3) var(--space-4) var(--space-1);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--card-bg);
   }
 
@@ -212,7 +212,7 @@
     display: inline-block;
     padding: var(--space-0-5) var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     color: var(--text-muted);
     background: var(--surface-color);
   }

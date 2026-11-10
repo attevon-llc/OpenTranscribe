@@ -237,7 +237,7 @@
   .info-box {
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
     margin-bottom: var(--space-6);
   }
@@ -319,7 +319,7 @@
   .warning-box {
     background: var(--color-warning-bg);
     border: 1px solid var(--color-warning-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-3);
     font-size: 0.8125rem;
     margin-bottom: var(--space-4);
@@ -331,7 +331,7 @@
     gap: var(--space-2);
     background: var(--color-bg-secondary);
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 0.6rem;
     margin-bottom: var(--space-4);
   }

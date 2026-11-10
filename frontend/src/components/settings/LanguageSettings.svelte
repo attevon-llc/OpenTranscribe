@@ -89,7 +89,7 @@
   .language-preview {
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
   }
 

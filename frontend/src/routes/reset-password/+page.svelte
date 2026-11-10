@@ -155,7 +155,7 @@
 
   .auth-card {
     background-color: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 400px;
@@ -213,7 +213,7 @@
     color: var(--text-light);
     display: flex;
     align-items: center;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background-color var(--duration-base);
   }
 
@@ -225,7 +225,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: 0.6rem 1.2rem;
     font-size: 0.95rem;
     font-weight: 500;
@@ -267,7 +267,7 @@
     background-color: var(--success-color-light);
     color: var(--success-color);
     padding: var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid rgba(34, 197, 94, 0.2);
     display: flex;
     align-items: center;
@@ -279,7 +279,7 @@
     background-color: var(--error-color-light);
     color: var(--error-color);
     padding: var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid rgba(239, 68, 68, 0.2);
     font-weight: 500;
   }
@@ -299,7 +299,7 @@
     width: 1rem;
     height: 1rem;
     border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     border-top-color: #fff;
     animation: spin 1s ease-in-out infinite;
   }

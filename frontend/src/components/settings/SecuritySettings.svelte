@@ -385,7 +385,7 @@
     padding: var(--space-4);
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .notice-icon {
@@ -417,7 +417,7 @@
     padding: var(--space-4);
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .mfa-status-card.enabled {
@@ -432,7 +432,7 @@
     align-items: center;
     justify-content: center;
     background-color: var(--surface-color);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     color: var(--text-secondary);
     flex-shrink: 0;
   }
@@ -460,7 +460,7 @@
     gap: var(--space-2);
     padding: var(--space-3) var(--space-4);
     background-color: rgba(var(--primary-color-rgb), 0.1);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--primary-on-surface);
     font-size: 0.8125rem;
   }
@@ -470,7 +470,7 @@
     padding: var(--space-6);
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .setup-section h4, .disable-section h4 {
@@ -496,7 +496,7 @@
   .qr-code {
     padding: var(--space-4);
     background-color: white;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .qr-code img {
@@ -536,7 +536,7 @@
     padding: var(--space-3) var(--space-4);
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-family: monospace;
     font-size: 0.875rem;
     word-break: break-all;
@@ -601,7 +601,7 @@
     font-size: 0.6875rem;
     font-weight: 600;
     text-transform: uppercase;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .backup-warning {
@@ -621,7 +621,7 @@
     padding: var(--space-2) var(--space-3);
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-family: monospace;
     font-size: 0.875rem;
     text-align: center;

@@ -244,7 +244,7 @@
   .chat-markdown :global(code) {
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.1em 0.35em;
     font-size: 0.875em;
     font-family: var(--font-mono);
@@ -259,7 +259,7 @@
     text-align: start;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 0;
     overflow: hidden;
     margin: 0 0 0.75em;

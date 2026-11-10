@@ -102,7 +102,7 @@
     justify-content: space-between;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-3) var(--space-4);
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -131,7 +131,7 @@
     background: var(--primary-light);
     color: var(--primary-on-surface);
     padding: 3px var(--space-2);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     font-size: 11px;
     font-weight: 500;
     white-space: nowrap;
@@ -155,7 +155,7 @@
   .tags-content {
     border: 1px solid var(--border-color);
     border-top: none;
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     background: var(--surface-color);
     padding: var(--space-5);
   }

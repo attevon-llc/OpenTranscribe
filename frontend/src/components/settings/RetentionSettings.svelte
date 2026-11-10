@@ -590,7 +590,7 @@
     width: 36px;
     height: 20px;
     background-color: var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
@@ -603,7 +603,7 @@
     width: 16px;
     height: 16px;
     background-color: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base) ease;
     box-shadow: var(--shadow-thumb);
   }
@@ -648,7 +648,7 @@
   /* Confirmation block */
   .confirm-block {
     border: 1px solid var(--warning-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-3) var(--space-4);
     margin: var(--space-2) 0 var(--space-3) 0;
     background-color: var(--warning-bg);
@@ -722,7 +722,7 @@
     margin: var(--space-3) 0;
     padding: 0.6rem var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--background-secondary);
     font-size: 0.8rem;
   }
@@ -746,7 +746,7 @@
   .status-badge {
     background-color: var(--primary-color);
     color: var(--text-on-solid);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: 0 var(--space-2);
     font-size: 0.72rem;
     line-height: 1.6;
@@ -770,7 +770,7 @@
   .preview-block {
     margin-bottom: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
   }
 
@@ -862,7 +862,7 @@
     border: 1px solid var(--border-color);
     color: var(--text-color);
     padding: var(--space-1-5) var(--space-2-5);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 0.8rem;
     font-weight: 500;

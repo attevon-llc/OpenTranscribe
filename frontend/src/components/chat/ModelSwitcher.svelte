@@ -132,7 +132,7 @@
     margin-top: 0.35rem;
     padding: 0.6rem 0.7rem;
     border: 1px solid rgba(var(--warning-color-rgb), 0.5);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: rgba(var(--warning-color-rgb), 0.1);
   }
 
@@ -158,7 +158,7 @@
   .warning-btn {
     padding: var(--space-1) 0.6rem;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--card-background);
     color: var(--text-color);
     font-size: 0.76rem;

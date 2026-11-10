@@ -193,7 +193,7 @@
     margin-top: var(--space-6);
     padding: var(--space-4);
     background: var(--color-bg-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .tester-head {
@@ -277,7 +277,7 @@
     margin-top: var(--space-4);
     padding: 0.85rem;
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--color-bg);
     display: flex;
     flex-direction: column;

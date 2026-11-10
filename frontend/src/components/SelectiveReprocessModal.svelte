@@ -647,7 +647,7 @@
   .step-dot {
     width: 28px;
     height: 28px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -756,7 +756,7 @@
     color: var(--primary-on-surface);
     font-size: 0.75rem;
     padding: var(--space-1) 0.6rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     white-space: nowrap;
     transition: background-color var(--duration-fast), border-color var(--duration-fast);
@@ -802,7 +802,7 @@
     align-items: flex-start;
     gap: var(--space-3);
     padding: 0.6rem var(--space-3);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     transition: background-color var(--duration-fast) ease;
     margin-bottom: var(--space-1);
@@ -848,7 +848,7 @@
     width: 18px;
     height: 18px;
     border: 2px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -947,7 +947,7 @@
   .v4-info-card {
     margin-top: var(--space-4);
     border: 1px solid rgba(var(--accent-rgb), 0.2);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
     background: rgba(var(--accent-rgb), 0.03);
   }
@@ -992,7 +992,7 @@
     align-items: flex-start;
     gap: var(--space-2);
     padding: 0.6rem var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.78rem;
     line-height: 1.45;
     margin-top: var(--space-3);
@@ -1083,7 +1083,7 @@
     padding: 0.4rem 0.6rem;
     background-color: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: #dc2626;
     font-size: 0.75rem;
     margin-top: var(--space-2);
@@ -1092,7 +1092,7 @@
   .modal-button {
     padding: 0.55rem 1.1rem;
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;

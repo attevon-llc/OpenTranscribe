@@ -258,7 +258,7 @@
     justify-content: space-between;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-3) var(--space-4);
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -283,7 +283,7 @@
   .section-content {
     border: 1px solid var(--border-color);
     border-top: none;
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     background: var(--surface-color);
   }
 

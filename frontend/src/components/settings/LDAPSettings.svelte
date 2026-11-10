@@ -415,7 +415,7 @@
     margin-bottom: var(--space-8);
     padding: var(--space-4);
     background: var(--color-bg-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     transition: opacity var(--duration-base);
   }
 

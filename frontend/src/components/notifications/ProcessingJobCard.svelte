@@ -285,7 +285,7 @@
     font-weight: var(--font-weight-medium);
     line-height: 1.4;
     white-space: nowrap;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
     background: var(--surface-color);
@@ -329,7 +329,7 @@
     gap: var(--space-1);
     padding: var(--space-0-5) var(--space-1);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
     /* A text disclosure, not a raised button: cancel form-elements.css's shadow and hover. */
     box-shadow: none;

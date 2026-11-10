@@ -137,7 +137,7 @@
     cursor: pointer;
     color: var(--text-secondary-color);
     padding: var(--space-1-5);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -161,7 +161,7 @@
 
   .status-badge {
     padding: var(--space-1) var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.75rem;
     font-weight: 500;
     text-transform: uppercase;
@@ -240,7 +240,7 @@
 
   .tasks-table-wrapper {
     overflow-x: auto;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 
@@ -342,14 +342,14 @@
     width: 60px;
     height: 4px;
     background: var(--border-color);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     overflow: hidden;
   }
 
   .task-status-cell .progress-bar {
     height: 100%;
     background: var(--primary-color);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     transition: width var(--duration-slow) ease;
   }
 
@@ -380,7 +380,7 @@
     background: var(--error-background);
     color: var(--error-color);
     padding: var(--space-4);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     margin-bottom: var(--space-4);
     border: 1px solid var(--error-border);
   }

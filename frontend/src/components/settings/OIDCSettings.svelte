@@ -596,7 +596,7 @@
   .info-box {
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
     margin-bottom: var(--space-6);
   }
@@ -615,7 +615,7 @@
     margin-bottom: var(--space-8);
     padding: var(--space-4);
     background: var(--color-bg-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     transition: opacity var(--duration-base);
   }
 
@@ -642,7 +642,7 @@
     margin: var(--space-2) 0 0 0;
     padding: 0.6rem var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.45);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: rgba(245, 158, 11, 0.12);
     color: var(--color-text);
     font-size: 0.75rem;
@@ -658,7 +658,7 @@
 
   .claim-tag {
     padding: 0.2rem 0.6rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
     color: var(--color-text);
@@ -669,7 +669,7 @@
   .roles-claim-status {
     margin: var(--space-2) 0 0 0;
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: rgba(16, 185, 129, 0.12);
     border: 1px solid rgba(16, 185, 129, 0.4);
     color: var(--color-text);
@@ -745,7 +745,7 @@
     padding: var(--space-2) var(--space-3);
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--color-text-secondary);
     font-size: 0.75rem;
     cursor: pointer;

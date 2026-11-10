@@ -169,7 +169,7 @@
     padding: 0;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     color: var(--text-secondary);
     cursor: pointer;
     transition: all var(--duration-base) ease;

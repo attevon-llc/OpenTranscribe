@@ -448,7 +448,7 @@
     width: auto;
     height: auto;
     padding: var(--space-2) var(--space-4);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-weight: 600;
     text-decoration: none;
   }

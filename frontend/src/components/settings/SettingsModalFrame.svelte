@@ -95,7 +95,7 @@
     height: 85vh;
     max-height: 900px;
     background-color: var(--surface-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     overflow: hidden;
     animation: slideUp 0.3s ease-out;
@@ -136,7 +136,7 @@
     padding: var(--space-2);
     color: var(--text-secondary);
     transition: color var(--duration-base) ease;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;

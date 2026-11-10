@@ -271,7 +271,7 @@
   .locked {
     padding: var(--space-3) var(--space-4);
     border: 1px dashed var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
   .error-text {
     margin: 0 0 var(--space-2);

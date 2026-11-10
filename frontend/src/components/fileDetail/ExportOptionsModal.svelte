@@ -133,7 +133,7 @@
     margin-top: var(--space-4);
     padding: 0.6rem var(--space-3);
     background: rgba(var(--warning-color-rgb), 0.12);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.85rem;
     color: var(--text-color);
   }

@@ -101,7 +101,7 @@
     margin-bottom: var(--space-3);
     background: var(--color-bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .copy {
@@ -158,7 +158,7 @@
     bottom: 3px;
     background-color: var(--toggle-button);
     transition: var(--duration-slow);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   .toggle-switch input:focus-visible + .toggle-slider {

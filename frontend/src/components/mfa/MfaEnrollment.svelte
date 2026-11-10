@@ -260,7 +260,7 @@
   .enroll-lead {
     padding: var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: rgba(245, 158, 11, 0.12);
     color: var(--text-color);
   }
@@ -270,7 +270,7 @@
     padding: var(--space-4);
     /* The QR must stay dark-on-white in both themes to remain scannable. */
     background-color: #ffffff;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .qr-code img {
@@ -301,7 +301,7 @@
     display: block;
     padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--background-color);
     color: var(--text-color);
     font-family: monospace;
@@ -334,7 +334,7 @@
     margin: 0;
     padding: var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.45);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: rgba(245, 158, 11, 0.12);
     color: var(--text-color);
     font-size: 0.85rem;
@@ -349,7 +349,7 @@
   .backup-code {
     padding: var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background-color: var(--background-color);
     color: var(--text-color);
     font-family: monospace;

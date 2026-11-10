@@ -231,7 +231,7 @@
   .info-box {
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
     margin-bottom: var(--space-6);
   }
@@ -259,7 +259,7 @@
   .source-toggle {
     display: inline-flex;
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
   }
 

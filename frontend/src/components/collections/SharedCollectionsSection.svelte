@@ -60,7 +60,7 @@
   .collection-card {
     background: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
     cursor: pointer;
     transition: all var(--duration-base);
@@ -121,7 +121,7 @@
 
   .badge {
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     font-size: 12px;
     font-weight: 500;
   }
@@ -159,7 +159,7 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;

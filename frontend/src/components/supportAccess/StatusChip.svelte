@@ -19,7 +19,7 @@
     align-items: center;
     padding: var(--space-0-5) var(--space-2);
     border: 1px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 11px;
     font-weight: 600;
     line-height: 1.4;

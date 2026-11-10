@@ -200,7 +200,7 @@
     border: none;
     padding: 0.2rem 0.35rem;
     margin-left: -0.35rem;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: 0.75rem;
     cursor: pointer;
@@ -218,7 +218,7 @@
     margin: var(--space-2) 0 0;
     padding: 0.65rem var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--surface-color);
     font-size: 0.78rem;
   }
@@ -280,7 +280,7 @@
   .disambiguation-chip {
     padding: 0.18rem 0.55rem;
     border: 1px solid rgba(var(--primary-color-rgb), 0.35);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background-color: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
     font-size: 0.76rem;

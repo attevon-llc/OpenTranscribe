@@ -120,7 +120,7 @@
     gap: var(--space-1-5);
     height: 1.75rem;
     padding: 0 var(--space-2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
@@ -148,7 +148,7 @@
     list-style: none;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg);
   }
 
@@ -160,7 +160,7 @@
     padding: var(--space-1) var(--space-2);
     background: none;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     color: var(--text-color);
     font-size: 0.75rem;

@@ -349,7 +349,7 @@
     gap: 0.35rem;
     padding: var(--space-3);
     border: 1px solid var(--color-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--color-bg);
     cursor: pointer;
   }
@@ -392,7 +392,7 @@
   .policy-preview {
     background: var(--color-bg);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: var(--space-3);
     margin-bottom: var(--space-4);
     font-size: 0.875rem;
@@ -407,7 +407,7 @@
     margin: 0 0 var(--space-4) 0;
     padding: 0.6rem var(--space-3);
     border: 1px solid var(--color-info-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--color-info-bg);
     color: var(--color-text-secondary);
     font-size: 0.75rem;
@@ -497,7 +497,7 @@
     margin: 0 0 var(--space-4) 0;
     padding: 0.6rem var(--space-3);
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.8125rem;
     line-height: 1.5;
     color: var(--color-text-secondary);

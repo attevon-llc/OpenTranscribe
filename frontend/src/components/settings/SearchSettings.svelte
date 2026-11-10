@@ -739,7 +739,7 @@
   .lang-badge {
     display: inline-block;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.7rem;
     font-weight: 600;
     border: 1px solid var(--border-color);
@@ -794,7 +794,7 @@
   /* Neural search bootstrap warning banner (#625). Colours come from theme vars so
      light/dark parity is automatic, matching the .lang-badge pattern above. */
   .banner {
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-2-5) var(--space-3);
     margin-bottom: var(--space-3);
     font-size: 0.8125rem;
@@ -856,7 +856,7 @@
     padding: var(--space-2-5) var(--space-3);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.75rem;
   }
 
@@ -897,7 +897,7 @@
 
   .stats-mode {
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-weight: 600;
     font-size: 0.6875rem;
     text-transform: uppercase;

@@ -598,7 +598,7 @@
     color: var(--text-color);
     text-decoration: none;
     padding: var(--space-2) var(--space-4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
@@ -673,7 +673,7 @@
     background: none;
     border: none;
     padding: var(--space-2);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     cursor: pointer;
     color: var(--text-color);
     display: flex;
@@ -698,7 +698,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     font-weight: var(--font-weight-semibold);
   }
 
@@ -891,7 +891,7 @@
       display: flex;
       align-items: center;
       margin: 0;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       padding: var(--space-3) var(--space-4);
     }
 
@@ -931,7 +931,7 @@
 
   .recording-indicator {
     position: relative;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-2) var(--space-3);
     cursor: pointer;
     display: flex;
@@ -977,7 +977,7 @@
     left: 6px;
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     animation: recordingPulse 2s infinite ease-in-out;
   }
 
@@ -1079,7 +1079,7 @@
     transform: translateX(-50%);
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
     padding: var(--space-4);
     min-width: 200px;
@@ -1131,7 +1131,7 @@
   .status-dot {
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     flex-shrink: 0;
   }
 
@@ -1173,7 +1173,7 @@
   .control-btn {
     background: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-2);
     cursor: pointer;
     transition: all var(--duration-base) ease;

@@ -91,7 +91,7 @@
   .card {
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
     display: flex;
     flex-direction: column;
@@ -172,7 +172,7 @@
     inset-inline-start: 3px;
     bottom: 3px;
     background-color: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: inset-inline-start var(--duration-base);
   }
 

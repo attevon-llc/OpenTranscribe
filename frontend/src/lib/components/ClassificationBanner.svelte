@@ -207,7 +207,7 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .consent-modal {
     background-color: #ffffff;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     max-width: 700px;
     width: 100%;
     max-height: 90vh;
@@ -240,7 +240,7 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .classification-badge {
     padding: var(--space-1) var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.5px;
@@ -265,7 +265,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     margin: 0 0 var(--space-4);
     padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b45309;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background-color: #fef3c7;
     color: #7c2d12;
     font-size: 0.9rem;
@@ -276,7 +276,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     margin: var(--space-4) 0 0;
     padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b91c1c;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background-color: #fee2e2;
     color: #7f1d1d;
     font-size: 0.875rem;
@@ -311,7 +311,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-3) var(--space-6);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;

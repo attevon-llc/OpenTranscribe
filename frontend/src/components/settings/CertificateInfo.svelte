@@ -105,7 +105,7 @@
   .certificate-info {
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
     margin-top: var(--space-4);
   }
@@ -121,7 +121,7 @@
     background: var(--success-color);
     color: var(--text-on-solid);
     padding: var(--space-2) var(--space-4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-weight: 600;
     font-size: 0.875rem;
   }
@@ -130,7 +130,7 @@
     background: rgba(234, 179, 8, 0.15);
     color: #ca8a04;
     padding: var(--space-3) var(--space-4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     margin-bottom: var(--space-4);
     font-weight: 500;
     font-size: 0.8125rem;
@@ -189,7 +189,7 @@
     word-break: break-all;
     background: var(--surface-color);
     padding: var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.75rem;
     border: 1px solid var(--border-color);
     font-family: 'Courier New', Courier, monospace;

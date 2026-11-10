@@ -125,7 +125,7 @@
     flex-shrink: 0;
     width: 32px;
     height: 32px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -173,7 +173,7 @@
     padding: 0;
     background: none;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     /* Flat icon control: the global button rule's shadow drew a raised box around the x. */
     box-shadow: none;
     cursor: pointer;

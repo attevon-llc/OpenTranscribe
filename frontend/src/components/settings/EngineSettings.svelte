@@ -337,7 +337,7 @@
   .lite-note {
     margin: 0 0 var(--space-4);
     padding: var(--space-3) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: 1px solid rgba(var(--primary-color-rgb), 0.3);
     background: rgba(var(--primary-color-rgb), 0.08);
     color: var(--text-color);
@@ -427,7 +427,7 @@
     width: 12px;
     height: 12px;
     background: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base);
   }
 
@@ -467,7 +467,7 @@
     align-items: center;
     gap: var(--space-1-5);
     padding: var(--space-2) var(--space-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;

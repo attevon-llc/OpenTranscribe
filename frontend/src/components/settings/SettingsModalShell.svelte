@@ -70,7 +70,7 @@
   .heading-skeleton,
   .row-skeleton,
   .title-skeleton {
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: linear-gradient(
       90deg,
       var(--bg-tertiary) 25%,

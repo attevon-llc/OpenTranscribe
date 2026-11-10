@@ -287,7 +287,7 @@
   .warning-box {
     background: var(--color-warning-bg);
     border: 1px solid var(--color-warning-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
     margin-bottom: var(--space-6);
   }
@@ -306,7 +306,7 @@
     margin-bottom: var(--space-8);
     padding: var(--space-4);
     background: var(--color-bg-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     transition: opacity var(--duration-base);
   }
 
@@ -363,7 +363,7 @@
     padding: var(--space-2) var(--space-3);
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--color-text-secondary);
     font-size: 0.75rem;
     cursor: pointer;
@@ -395,7 +395,7 @@
     margin: var(--space-2) 0 var(--space-4) 0;
     padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--color-warning-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--color-warning-bg);
     color: var(--color-warning-text);
     font-size: 0.75rem;

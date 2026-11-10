@@ -951,7 +951,7 @@
   .add-user-form {
     background-color: var(--card-background);
     padding: var(--space-4);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     margin-bottom: var(--space-4);
     border: 1px solid var(--border-color);
     color: var(--text-color);
@@ -983,7 +983,7 @@
     margin-top: var(--space-1-5);
     padding: var(--space-2) var(--space-2-5);
     border: 1px solid rgba(245, 158, 11, 0.4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: rgba(245, 158, 11, 0.12);
     color: var(--text-color);
     font-size: 0.75rem;
@@ -995,7 +995,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -1027,7 +1027,7 @@
     width: 100%;
     border-collapse: collapse;
     background-color: var(--card-background);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     box-shadow: var(--card-shadow);
   }
@@ -1064,7 +1064,7 @@
     height: 32px;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -1297,7 +1297,7 @@
     display: inline-block;
     margin-left: var(--space-1-5);
     padding: 0.0625rem var(--space-1-5);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: 0.625rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -1361,7 +1361,7 @@
     margin: 0 0 var(--space-2);
     padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--background-color);
   }
 
@@ -1397,7 +1397,7 @@
     padding: var(--space-8);
     text-align: center;
     background-color: var(--card-background);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     margin-top: var(--space-4);
     color: var(--text-color);
     font-size: 0.8125rem;

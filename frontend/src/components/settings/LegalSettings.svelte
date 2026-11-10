@@ -161,7 +161,7 @@
     gap: var(--space-3);
     padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
   }
 
@@ -180,7 +180,7 @@
   .legal-badge {
     padding: var(--space-0-5) var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
   }
@@ -195,7 +195,7 @@
     padding: var(--space-2-5) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-inline-start-width: 4px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
   }
 

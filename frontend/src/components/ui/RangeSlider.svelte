@@ -85,7 +85,7 @@
     color: var(--slider-badge-text);
     background: var(--slider-badge-bg);
     padding: 0.1rem 0.45rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .range-slider__hint,

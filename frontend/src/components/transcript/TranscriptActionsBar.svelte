@@ -272,7 +272,7 @@
     padding: var(--space-2-5) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-primary);
     text-decoration: none;
     font-size: 14px;
@@ -293,7 +293,7 @@
     overflow-y: auto;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     min-width: 200px;
   }
@@ -324,11 +324,11 @@
   }
 
   .export-dropdown-content button:first-child {
-    border-radius: 6px 6px 0 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
 
   .export-dropdown-content button:last-child {
-    border-radius: 0 0 6px 6px;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
   }
 
 

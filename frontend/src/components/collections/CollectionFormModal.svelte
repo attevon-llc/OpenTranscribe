@@ -184,7 +184,7 @@
     padding: 0.6rem var(--space-3);
     margin-bottom: var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     font-weight: 400;
   }

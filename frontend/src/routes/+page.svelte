@@ -838,7 +838,7 @@
     color: var(--text-on-solid) !important;
     border: none !important;
     padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
+    border-radius: var(--radius-xl) !important;
     font-size: 0.95rem !important;
     font-weight: 500 !important;
     cursor: pointer !important;

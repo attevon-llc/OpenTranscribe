@@ -334,7 +334,7 @@
     gap: var(--space-2);
     background: rgba(var(--warning-color-rgb), 0.1);
     border: 1px solid var(--warning-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-2) var(--space-2-5);
     margin: var(--space-1-5) 0;
   }

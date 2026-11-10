@@ -257,7 +257,7 @@
     flex: none;
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--warning-color);
     /* A ring in the surface colour keeps the dot legible on the active tab's tint in
        both themes. */

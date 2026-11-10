@@ -44,7 +44,7 @@
     background-color: var(--bg-primary);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 0;
     cursor: pointer;
     transition: all var(--duration-base) ease;

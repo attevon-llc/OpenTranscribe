@@ -142,7 +142,7 @@
     gap: var(--space-3);
     padding: var(--space-2-5);
     background: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
   }
 
@@ -159,7 +159,7 @@
     font-size: 1rem;
     font-weight: 600;
     padding: var(--space-1);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .comparison-value.video { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
@@ -179,7 +179,7 @@
     gap: var(--space-2-5);
     padding: var(--space-2-5) var(--space-3);
     border: 2px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     transition: all var(--duration-fast) ease;
     background: var(--background-color);
@@ -240,7 +240,7 @@
     font-size: 0.6rem;
     font-weight: 600;
     padding: 0.0625rem var(--space-1-5);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }

@@ -93,7 +93,7 @@
     height: 18px;
     padding: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: transparent;
     color: inherit;
     cursor: pointer;

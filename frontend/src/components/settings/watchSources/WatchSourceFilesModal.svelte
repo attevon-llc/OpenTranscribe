@@ -365,7 +365,7 @@
     gap: var(--space-2);
     padding: var(--space-2) var(--space-2-5);
     margin-bottom: var(--space-2-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--button-hover);
     font-size: 0.85rem;
   }

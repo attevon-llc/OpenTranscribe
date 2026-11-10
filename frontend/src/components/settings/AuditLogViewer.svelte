@@ -148,7 +148,7 @@
     text-align: center;
     padding: var(--space-6);
     background: var(--color-surface);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--color-border);
   }
 
@@ -174,7 +174,7 @@
   .note {
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: var(--space-3);
     margin-top: var(--space-3);
     text-align: left;

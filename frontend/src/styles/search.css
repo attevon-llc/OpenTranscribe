@@ -12,7 +12,7 @@
 .transcript-search-highlight {
   background-color: rgba(250, 204, 21, 0.4);
   padding: 0.05em 0.15em;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .transcript-search-highlight.current {
@@ -84,7 +84,7 @@
   background-color: rgba(var(--primary-color-rgb), 0.12);
   color: var(--text-primary);
   padding: 0.05em 0.1em;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -110,7 +110,7 @@
 /* Settings search: flash the control the user jumped to. */
 .settings-search-flash {
   animation: search-pulse 1.6s ease-in-out;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 @keyframes search-pulse {

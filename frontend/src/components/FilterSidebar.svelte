@@ -943,7 +943,7 @@
 <style>
   .filter-sidebar {
     background-color: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-3);
     box-shadow: var(--shadow-sm);
     display: flex;
@@ -976,7 +976,7 @@
   .reset-button {
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     padding: 0.3rem 0.7rem;
     font-size: 0.75rem;
@@ -1038,7 +1038,7 @@
     height: 22px;
     padding: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--background-color);
     color: var(--text-secondary);
     cursor: pointer;
@@ -1093,7 +1093,7 @@
   .retry-button {
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
     padding: 0.3rem 0.8rem;
     font-size: 0.75rem;

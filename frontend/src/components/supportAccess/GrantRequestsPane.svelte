@@ -254,7 +254,7 @@
   .count {
     margin-inline-start: 0.4rem;
     padding: 0 0.45rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: var(--warning-bg);
     color: var(--text-color);
     font-size: 0.75rem;

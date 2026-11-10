@@ -640,7 +640,7 @@
     padding: var(--space-1) var(--space-1-5);
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     box-shadow: none;
     cursor: pointer;
     flex-shrink: 0;
@@ -656,7 +656,7 @@
   .step-dot {
     width: 24px;
     height: 24px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -775,7 +775,7 @@
     --sms-li-active-bg: var(--button-hover);
     --sms-selected-bg: rgba(var(--primary-color-rgb), 0.15);
     --sms-selected-text-color: var(--text-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     min-height: 40px;
     font-size: 0.9rem;
   }
@@ -803,7 +803,7 @@
   }
   .folder-browser {
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     max-height: 200px;
     overflow-y: auto;
     margin-top: var(--space-1-5);
@@ -862,7 +862,7 @@
     align-items: center;
     gap: var(--space-1-5);
     padding: var(--space-2) var(--space-2-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.85rem;
   }
   .test-result.success {

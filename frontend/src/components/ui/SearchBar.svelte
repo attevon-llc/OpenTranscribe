@@ -283,7 +283,7 @@
     padding: 0 var(--space-2-5);
     gap: var(--space-2);
     border-color: transparent;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: color-mix(in srgb, var(--text-color) 8%, transparent);
   }
 
@@ -296,7 +296,7 @@
   .pill .search-bar-clear {
     width: 22px;
     height: 22px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   /* We render our own clear button; the browser's would double it. */
@@ -397,7 +397,7 @@
     padding: 0;
     background: none;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
     cursor: pointer;
     transition:

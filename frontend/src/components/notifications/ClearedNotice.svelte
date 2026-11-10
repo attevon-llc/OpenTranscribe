@@ -51,7 +51,7 @@
     height: 24px;
     padding: 0;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;

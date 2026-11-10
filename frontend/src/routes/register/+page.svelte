@@ -280,7 +280,7 @@
 
   .auth-card {
     background-color: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 400px;
@@ -341,7 +341,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: 0.6rem 1.2rem;
     font-size: 0.95rem;
     font-weight: 500;
@@ -397,7 +397,7 @@
     height: 60px;
     width: auto;
     object-fit: contain;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .password-header {
@@ -415,7 +415,7 @@
     color: var(--text-light);
     display: flex;
     align-items: center;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background-color var(--duration-base);
   }
 
@@ -452,7 +452,7 @@
     transform: translateX(-50%);
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-3) var(--space-4);
     box-shadow: var(--shadow-lg);
     width: 250px;

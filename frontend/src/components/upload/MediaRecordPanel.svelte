@@ -191,7 +191,7 @@
     padding: var(--space-4);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.875rem;
     color: var(--text-primary);
   }
@@ -228,7 +228,7 @@
     gap: var(--space-3);
     padding: var(--space-6) var(--space-4);
     border: 2px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background-color: var(--surface-color);
     min-height: 150px;
     justify-content: center;
@@ -239,7 +239,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-3) var(--space-6);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.9375rem;
     font-weight: 600;
     cursor: pointer;
@@ -276,7 +276,7 @@
   .recording-dot {
     width: 10px;
     height: 10px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--error-solid);
     animation: pulse 1.5s ease-in-out infinite;
   }
@@ -300,7 +300,7 @@
     color: var(--primary-on-surface);
     background: rgba(var(--accent-rgb), 0.1);
     padding: 0.1875rem var(--space-2-5);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .visualizer { width: 100%; display: flex; justify-content: center; }
@@ -336,7 +336,7 @@
     gap: var(--space-1);
     padding: 0.4375rem var(--space-2-5);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-color);
     cursor: pointer;

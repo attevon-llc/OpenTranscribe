@@ -919,7 +919,7 @@
     padding: var(--space-1) var(--space-1-5);
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: default;
     transition: background var(--duration-fast) ease;
     flex-shrink: 0;
@@ -946,7 +946,7 @@
   .step-dot {
     width: 24px;
     height: 24px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1056,7 +1056,7 @@
     color: var(--text-secondary);
     font-size: 0.9rem;
     font-weight: 500;
-    border-radius: 6px 6px 0 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
     transition: all var(--duration-base) ease;
     position: relative;
   }
@@ -1067,7 +1067,7 @@
   .tab-button:disabled:hover { background: transparent; color: var(--text-secondary); }
 
   /* ── Messages ── */
-  .message { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border-radius: 8px; margin-bottom: var(--space-3); font-size: 0.8125rem; }
+  .message { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-lg); margin-bottom: var(--space-3); font-size: 0.8125rem; }
   .message-icon { flex-shrink: 0; }
   .message-content { flex: 1; }
 
@@ -1086,7 +1086,7 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-weight: 500;
     font-size: 0.8125rem;
@@ -1102,7 +1102,7 @@
     padding: var(--space-2-5) var(--space-3);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     color: var(--text-primary);
     font-size: 0.8125rem;
     margin-bottom: var(--space-3);
@@ -1119,7 +1119,7 @@
     margin-top: var(--space-2);
     background: rgba(220, 38, 38, 0.08);
     border: 1px solid rgba(220, 38, 38, 0.2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.75rem;
     color: #dc2626;
@@ -1131,7 +1131,7 @@
   .rec-pulse {
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--error-solid);
     animation: recPulse 1.5s ease-in-out infinite;
   }
@@ -1172,7 +1172,7 @@
     align-items: center;
     gap: var(--space-1-5);
     padding: var(--space-2) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;

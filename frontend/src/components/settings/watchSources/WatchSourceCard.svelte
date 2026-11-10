@@ -151,7 +151,7 @@
     gap: var(--space-3);
     padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
   .source-badges {
@@ -163,7 +163,7 @@
   .badge {
     font-size: 0.7rem;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-weight: 600;
   }
   .type-badge {
@@ -243,7 +243,7 @@
     left: 3px;
     bottom: 3px;
     background: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: var(--duration-base);
   }
   .enable-toggle input:checked + .slider {

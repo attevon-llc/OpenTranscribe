@@ -98,7 +98,7 @@
   .expandable-header:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
   .chevron {
     flex-shrink: 0;

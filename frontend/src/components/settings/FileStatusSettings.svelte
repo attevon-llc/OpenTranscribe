@@ -214,7 +214,7 @@
   .count-card {
     padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--background-color);
   }
 
@@ -245,7 +245,7 @@
     padding: 0;
     list-style: none;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
   }
 
@@ -301,7 +301,7 @@
 
   .error-message {
     padding: var(--space-3) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     color: var(--error-color);
     border: 1px solid var(--error-color);
   }

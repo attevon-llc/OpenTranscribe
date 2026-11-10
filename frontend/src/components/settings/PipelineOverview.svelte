@@ -197,7 +197,7 @@
   .banner {
     margin: 0;
     padding: var(--space-3) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
     font-size: 0.85rem;
     line-height: 1.45;
@@ -226,7 +226,7 @@
   .audio-node {
     align-self: flex-start;
     padding: var(--space-1) var(--space-3);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px dashed var(--border-color);
     font-size: 0.8rem;
     color: var(--text-secondary);
@@ -312,7 +312,7 @@
   .step-card {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4) var(--space-5);
     display: flex;
     flex-direction: column;
@@ -337,7 +337,7 @@
     justify-content: center;
     width: 1.5rem;
     height: 1.5rem;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
     font-size: 0.75rem;
@@ -377,7 +377,7 @@
     font-size: 0.8rem;
     color: var(--text-secondary);
     background: var(--surface-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.05rem 0.4rem;
   }
 

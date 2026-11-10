@@ -168,7 +168,7 @@
     padding: var(--space-2) var(--space-3);
     background-color: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
     font-size: 0.9rem;
     cursor: pointer;
@@ -209,7 +209,7 @@
     flex-direction: column;
     background-color: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     box-shadow: var(--dropdown-shadow);
     overflow: hidden;
   }
@@ -284,7 +284,7 @@
     background-color: var(--border-color);
     color: var(--text-secondary);
     padding: 0.1rem 0.4rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.75rem;
     font-weight: 500;
     margin-left: auto;

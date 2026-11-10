@@ -369,7 +369,7 @@
   .settings-section {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-5);
   }
 
@@ -423,7 +423,7 @@
     font-size: 0.75rem;
     color: var(--text-color);
     background: rgba(var(--warning-color-rgb), 0.12);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-2) 0.65rem;
     line-height: 1.5;
   }
@@ -433,7 +433,7 @@
     padding: 0.6rem var(--space-3);
     background: var(--background-color);
     border: 1px dashed var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
   .example-label {
     display: block;
@@ -465,7 +465,7 @@
     gap: 0.4rem;
     padding: 0.4rem 0.7rem;
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--background-color);
     color: var(--text-secondary);
     cursor: pointer;
@@ -527,7 +527,7 @@
     color: var(--text-muted);
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 0.6rem var(--space-3);
     margin: 0 0 var(--space-3) 0;
     line-height: 1.6;
@@ -565,7 +565,7 @@
     width: 36px;
     height: 20px;
     background-color: var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
@@ -577,7 +577,7 @@
     width: 16px;
     height: 16px;
     background-color: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base) ease;
     box-shadow: var(--shadow-thumb);
   }

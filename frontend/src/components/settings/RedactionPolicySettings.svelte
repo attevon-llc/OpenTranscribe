@@ -190,7 +190,7 @@
   .settings-section {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-5);
   }
   .section-title {
@@ -237,7 +237,7 @@
     width: 36px;
     height: 20px;
     background-color: var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
@@ -249,7 +249,7 @@
     width: 16px;
     height: 16px;
     background-color: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base) ease;
     box-shadow: var(--shadow-thumb);
   }

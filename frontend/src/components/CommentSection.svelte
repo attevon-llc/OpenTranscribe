@@ -392,7 +392,7 @@
     background: var(--primary-light);
     color: var(--primary-on-surface);
     padding: 3px var(--space-2);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     font-size: 11px;
     font-weight: 500;
     white-space: nowrap;
@@ -414,7 +414,7 @@
     max-height: 1200px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
   }
 

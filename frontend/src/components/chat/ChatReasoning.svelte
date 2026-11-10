@@ -80,7 +80,7 @@
     margin-bottom: var(--space-2);
     max-width: min(80%, 42rem);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background-color: var(--surface-color);
   }
 

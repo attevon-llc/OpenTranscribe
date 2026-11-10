@@ -188,7 +188,7 @@
 <style>
   .ai-suggestions {
     margin-top: var(--space-2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: var(--surface-color);
     overflow: hidden;
@@ -232,7 +232,7 @@
     background: var(--primary-light);
     color: var(--primary-on-surface);
     padding: var(--space-0-5) var(--space-1-5);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 10px;
     font-weight: 600;
   }
@@ -283,7 +283,7 @@
   /* Match comment edit button styling */
   .btn-cancel, .btn-save {
     padding: 0.4rem 0.8rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
@@ -348,7 +348,7 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-1) var(--space-1-5) var(--space-1) var(--space-1);
-    border-radius: 16px;
+    border-radius: var(--radius-3xl);
     border: 1px solid;
     transition: all var(--duration-base);
   }
@@ -368,7 +368,7 @@
     border: none;
     cursor: pointer;
     padding: var(--space-0-5);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: all var(--duration-fast);
     color: var(--text-secondary);
   }

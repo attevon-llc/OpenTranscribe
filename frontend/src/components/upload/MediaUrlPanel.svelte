@@ -273,7 +273,7 @@
     padding: var(--space-3);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.8125rem;
     color: var(--text-primary);
   }
@@ -318,7 +318,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     padding: var(--space-1-5);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     transition: all var(--duration-fast) ease;
@@ -330,7 +330,7 @@
 
   /* Protected Media Auth */
   .protected-media-auth {
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-3);
     background-color: var(--surface-color);
     border: 1px dashed var(--border-color);
@@ -362,7 +362,7 @@
   /* Download Options */
   .download-options {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
   }
 
@@ -426,7 +426,7 @@
     left: 2px;
     bottom: 2px;
     background: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base) ease;
   }
 
@@ -443,7 +443,7 @@
     gap: var(--space-1-5);
     padding: var(--space-2-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--surface-color);
   }
 

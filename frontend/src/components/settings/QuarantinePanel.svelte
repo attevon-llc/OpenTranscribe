@@ -323,7 +323,7 @@
   .toggle-btn {
     padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--bg-color);
     color: var(--text-color);
     cursor: pointer;
@@ -341,7 +341,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--bg-secondary);
     font-size: 0.8125rem;
   }
@@ -354,7 +354,7 @@
   .retry-btn {
     padding: var(--space-1) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: inherit;
     cursor: pointer;
@@ -436,7 +436,7 @@
   .badge {
     display: inline-block;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: 0.6875rem;
     font-weight: 600;
   }

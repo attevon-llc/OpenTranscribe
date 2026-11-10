@@ -113,7 +113,7 @@
     width: 45%;
     max-width: 480px;
     height: 28px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     margin-bottom: var(--space-3);
   }
 
@@ -126,7 +126,7 @@
   .skeleton-meta-chip {
     width: 72px;
     height: 18px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .skeleton-meta-chip:nth-child(2) { width: 96px; }
@@ -159,7 +159,7 @@
   .skeleton-small-label {
     width: 72px;
     height: 16px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skeleton-header-buttons {
@@ -170,14 +170,14 @@
   .skeleton-button {
     width: 96px;
     height: 36px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   /* ── Video player placeholder ── */
   .skeleton-player {
     width: 100%;
     aspect-ratio: 16 / 9;
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -204,7 +204,7 @@
 
   .skeleton-chip {
     height: 22px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .skeleton-chip:nth-child(1) { width: 68px; }
@@ -229,7 +229,7 @@
     flex-shrink: 0;
     width: 28px;
     height: 28px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   .skeleton-transcript-body {
@@ -243,13 +243,13 @@
   .skeleton-speaker-line {
     width: 110px;
     height: 14px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     margin-bottom: var(--space-0-5);
   }
 
   .skeleton-text-line {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   /* ── Shimmer effect ── */

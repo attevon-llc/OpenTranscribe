@@ -498,7 +498,7 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     font-weight: 500;
@@ -559,7 +559,7 @@
     font-size: 0.6875rem;
     font-weight: 400;
     padding: var(--space-1-5) var(--space-2-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     white-space: nowrap;
     pointer-events: none;
     opacity: 0;
@@ -588,7 +588,7 @@
   .status-card {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-4);
     text-align: center;
     box-shadow: var(--shadow-sm);
@@ -632,7 +632,7 @@
     background: var(--error-background);
     color: var(--error-color);
     padding: var(--space-4);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     margin-bottom: var(--space-4);
     border: 1px solid var(--error-border);
   }
@@ -695,7 +695,7 @@
   .skeleton-table {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4) var(--space-6);
   }
 

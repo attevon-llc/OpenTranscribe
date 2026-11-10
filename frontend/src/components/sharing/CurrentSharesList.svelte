@@ -159,7 +159,7 @@
     justify-content: space-between;
     gap: var(--space-2);
     padding: var(--space-2) 0.6rem;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: background-color var(--duration-fast) ease;
   }
 
@@ -228,7 +228,7 @@
     height: 28px;
     padding: 0;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;

@@ -85,7 +85,7 @@
   .modal-button {
     padding: 0.6rem 1.2rem;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
@@ -98,7 +98,7 @@
     color: var(--text-color);
     border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.95rem;
     font-weight: 500;
     transition: all var(--duration-base) ease;

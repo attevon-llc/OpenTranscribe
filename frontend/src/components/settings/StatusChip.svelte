@@ -16,7 +16,7 @@
     align-items: center;
     gap: var(--space-1-5);
     padding: 0.3rem var(--space-2-5);
-    border-radius: 16px;
+    border-radius: var(--radius-3xl);
     font-size: 0.75rem;
     border: 1px solid var(--border-color);
     background: var(--surface-color);
@@ -26,7 +26,7 @@
   .chip-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     flex-shrink: 0;
     background: var(--text-secondary);
   }

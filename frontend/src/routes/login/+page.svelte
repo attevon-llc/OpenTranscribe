@@ -1106,7 +1106,7 @@
 
   .auth-card {
     background-color: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 400px;
@@ -1133,7 +1133,7 @@
     margin-top: var(--space-3);
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
   }
 
@@ -1162,7 +1162,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: 0.6rem 1.2rem;
     font-size: 0.95rem;
     font-weight: 500;
@@ -1196,7 +1196,7 @@
     margin: 0;
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
     font-size: 0.9rem;
@@ -1254,7 +1254,7 @@
     color: var(--text-light);
     display: flex;
     align-items: center;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background-color var(--duration-base);
   }
 
@@ -1272,7 +1272,7 @@
     background-color: var(--success-color-light);
     color: var(--success-color);
     padding: var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid rgba(34, 197, 94, 0.2);
     display: flex;
     align-items: center;
@@ -1294,7 +1294,7 @@
     height: 60px;
     width: auto;
     object-fit: contain;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   /* Divider for external auth */
@@ -1334,7 +1334,7 @@
     width: 100%;
     padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 0.95rem;
@@ -1404,7 +1404,7 @@
     margin-top: var(--space-4);
     padding: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
     font-size: 0.85rem;
@@ -1414,7 +1414,7 @@
   .password-policy {
     padding: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
     font-size: 0.8rem;
@@ -1507,7 +1507,7 @@
   .login-success-logo {
     width: 64px;
     height: 64px;
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     animation: login-success-pulse 1.5s ease-in-out infinite;
   }
 

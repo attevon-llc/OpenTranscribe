@@ -139,7 +139,7 @@
   .modal-button {
     padding: 0.6rem 1.2rem;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;

@@ -312,7 +312,7 @@
     gap: var(--space-2);
     align-items: flex-start;
     padding: var(--space-2-5) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--error-color);
     background: rgba(220, 38, 38, 0.08);
     font-weight: var(--font-weight-medium);
@@ -371,7 +371,7 @@
   code {
     font-size: 0.8125rem;
     background: var(--surface-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0 var(--space-1);
     white-space: nowrap;
   }

@@ -64,7 +64,7 @@
     align-items: baseline;
     gap: var(--space-1) var(--space-3);
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border-inline-start: 3px solid;
     font-size: 0.8rem;
     line-height: 1.45;
@@ -94,7 +94,7 @@
     justify-content: center;
     width: 1.1rem;
     height: 1.1rem;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     color: var(--text-on-solid);
   }
 

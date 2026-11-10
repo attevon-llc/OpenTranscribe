@@ -368,7 +368,7 @@
     flex-direction: column;
     gap: var(--space-4);
     background-color: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
     box-shadow: var(--shadow-sm);
   }
@@ -387,7 +387,7 @@
     gap: var(--space-2);
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-3);
     transition: all var(--duration-base) ease;
   }
@@ -464,7 +464,7 @@
     display: flex;
     width: 100%;
     height: 24px;
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     overflow: hidden;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
     margin: var(--space-3) 0 var(--space-4) 0;
@@ -492,7 +492,7 @@
   .speaker-chip {
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-3);
     transition: all var(--duration-base) ease;
   }
@@ -513,7 +513,7 @@
   .speaker-dot-large {
     width: 16px;
     height: 16px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     flex-shrink: 0;
   }
 
@@ -565,7 +565,7 @@
   .metric-section {
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-3);
   }
 
@@ -616,7 +616,7 @@
   .speaker-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     flex-shrink: 0;
   }
 
@@ -685,7 +685,7 @@
 
     .talk-time-bar-large {
       height: 20px;
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
     }
 
     .speaker-chip {

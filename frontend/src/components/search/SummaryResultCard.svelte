@@ -113,7 +113,7 @@
   .summary-result-card {
     padding: var(--space-3-5) var(--space-4);
     margin-bottom: var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     transition: background-color var(--duration-fast);
   }
 
@@ -231,7 +231,7 @@
   .text-btn:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 
   @media (max-width: 768px) {

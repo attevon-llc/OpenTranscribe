@@ -916,7 +916,7 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-1) var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.75rem;
     cursor: pointer;
     transition: background-color var(--duration-base) ease;
@@ -945,7 +945,7 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-secondary);
     display: flex;
     align-items: center;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background-color var(--duration-base), color var(--duration-base);
   }
 
@@ -958,7 +958,7 @@ let _llmConfigModalWasOpen = false;
     margin: var(--space-6) 0;
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--card-bg);
   }
 
@@ -978,7 +978,7 @@ let _llmConfigModalWasOpen = false;
   .model-selector {
     margin-top: var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--card-bg);
     padding: var(--space-4);
   }
@@ -1002,7 +1002,7 @@ let _llmConfigModalWasOpen = false;
     border: 1px solid var(--border-color);
     background: var(--input-bg);
     margin-bottom: var(--space-1);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -1027,7 +1027,7 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-2) var(--space-4);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 0.875rem;
   }
@@ -1036,7 +1036,7 @@ let _llmConfigModalWasOpen = false;
     margin: var(--space-6) 0;
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--card-bg);
   }
 
@@ -1048,7 +1048,7 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 500;
@@ -1099,7 +1099,7 @@ let _llmConfigModalWasOpen = false;
     width: 36px;
     height: 20px;
     background: var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     transition: background-color var(--duration-base);
     flex-shrink: 0;
   }
@@ -1112,7 +1112,7 @@ let _llmConfigModalWasOpen = false;
     width: 16px;
     height: 16px;
     background: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base);
   }
 
@@ -1142,7 +1142,7 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-color);
     border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 500;
@@ -1168,7 +1168,7 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 500;
@@ -1216,7 +1216,7 @@ let _llmConfigModalWasOpen = false;
     background: #1a1a1a;
     color: var(--text-on-solid);
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 13px;
     font-weight: normal;
     max-width: 320px;

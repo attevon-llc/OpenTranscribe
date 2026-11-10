@@ -66,7 +66,7 @@
     margin-bottom: var(--space-2);
     padding: var(--space-1) var(--space-2);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     box-shadow: none;
     color: var(--primary-on-surface);

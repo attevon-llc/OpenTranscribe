@@ -166,7 +166,7 @@
     align-items: center;
     gap: 0.3rem;
     padding: 0.22rem 0.6rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     color: var(--text-secondary);
@@ -212,7 +212,7 @@
     padding: 0;
     margin: 0 -0.15rem 0 0.05rem;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: none;
     color: inherit;
     font-size: 0.9rem;
@@ -246,7 +246,7 @@
     gap: 0.3rem;
     padding: 0.22rem 0.55rem;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
     font-size: 0.76rem;

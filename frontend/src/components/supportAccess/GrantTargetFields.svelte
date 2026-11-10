@@ -201,7 +201,7 @@
     gap: var(--space-3);
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--surface-secondary);
   }
   .picked-label {

@@ -391,7 +391,7 @@
     width: 100%;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     cursor: pointer;
     user-select: none;
@@ -442,7 +442,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 0.875rem;
     transition: background-color var(--duration-base) ease;
@@ -469,7 +469,7 @@
   /* Responsive adjustments */
   @media (max-width: 768px) {
     .waveform-container {
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
     }
 
     .waveform-loading,

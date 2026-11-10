@@ -300,7 +300,7 @@
     align-items: flex-start;
     gap: var(--space-4);
     padding: var(--space-3);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--background-color);
     border: 1px solid var(--border-color);
   }
@@ -373,7 +373,7 @@
     left: 3px;
     bottom: 3px;
     background-color: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: var(--duration-base);
   }
 
@@ -407,7 +407,7 @@
     margin-bottom: var(--space-3);
     padding: var(--space-2) var(--space-3);
     background: rgba(255, 107, 107, 0.1);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .success-message {
@@ -416,7 +416,7 @@
     margin-bottom: var(--space-3);
     padding: var(--space-2) var(--space-3);
     background: rgba(81, 207, 102, 0.1);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
 

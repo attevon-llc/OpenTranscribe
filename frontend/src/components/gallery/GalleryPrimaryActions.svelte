@@ -66,7 +66,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-1-5) var(--space-3);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;

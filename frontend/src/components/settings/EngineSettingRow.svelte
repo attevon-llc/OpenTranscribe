@@ -65,7 +65,7 @@
     gap: var(--space-1-5);
     padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-bg);
   }
 
@@ -89,7 +89,7 @@
     display: inline-flex;
     align-items: center;
     padding: 0.15rem var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.675rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -121,7 +121,7 @@
     align-items: center;
     gap: var(--space-1);
     padding: 0.2rem 0.6rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.7rem;
     font-weight: 500;
     cursor: pointer;

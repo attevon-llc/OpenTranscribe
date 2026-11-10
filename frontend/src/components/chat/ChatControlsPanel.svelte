@@ -375,7 +375,7 @@
     gap: 1.1rem;
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background-color: var(--card-background);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
     /* ⚠️ Without these the panel had NO bound at all — `max-height: none`,
@@ -429,7 +429,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0 var(--space-1);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .close-btn:hover {
@@ -463,7 +463,7 @@
   .advanced summary:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .advanced > .control-group {

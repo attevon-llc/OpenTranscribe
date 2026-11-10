@@ -12,7 +12,7 @@
   .chip {
     display: inline-block;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
     white-space: nowrap;

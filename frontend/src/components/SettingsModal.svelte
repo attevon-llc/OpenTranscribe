@@ -1316,7 +1316,7 @@
     padding: 0.4375rem var(--space-3);
     margin: 0 var(--space-2);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: transparent;
     color: var(--text-color);
     text-align: left;
@@ -1375,7 +1375,7 @@
     flex-shrink: 0;
     min-width: 1.25rem;
     padding: 0 0.35rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: rgba(245, 158, 11, 0.18);
     color: #b45309;
     border: 1px solid rgba(245, 158, 11, 0.45);
@@ -1398,7 +1398,7 @@
     padding: var(--space-2);
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .mobile-nav-label {
@@ -1505,7 +1505,7 @@
 
   .btn {
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: none;
     font-size: 0.8125rem;
     font-weight: 500;

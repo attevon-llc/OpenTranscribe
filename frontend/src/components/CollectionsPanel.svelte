@@ -682,7 +682,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
@@ -753,7 +753,7 @@
     cursor: pointer;
     padding: var(--space-1);
     color: var(--text-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;

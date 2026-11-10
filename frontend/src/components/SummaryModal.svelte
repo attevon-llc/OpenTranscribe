@@ -572,7 +572,7 @@
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     font-size: 0.85rem;
@@ -607,7 +607,7 @@
     gap: 0.4rem;
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-size: 0.8rem;

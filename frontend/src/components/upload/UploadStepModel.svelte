@@ -89,7 +89,7 @@
   /* Section */
   .section {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
   }
 
@@ -152,7 +152,7 @@
     left: 2px;
     bottom: 2px;
     background: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base) ease;
   }
 

@@ -134,7 +134,7 @@
 .range-input:focus-visible {
   outline: 2px solid var(--slider-focus-ring);
   outline-offset: 4px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .range-input:disabled {

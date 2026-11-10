@@ -145,7 +145,7 @@
   .skel-card {
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -180,7 +180,7 @@
 
   .skel-title {
     height: 16px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skel-meta-row {
@@ -192,7 +192,7 @@
 
   .skel-meta {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   /* ── Profile card variant ── */
@@ -207,7 +207,7 @@
     flex-shrink: 0;
     width: 44px;
     height: 44px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   .skel-profile-text {
@@ -220,12 +220,12 @@
 
   .skel-subtitle {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skel-text-line {
     height: 11px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   /* ── Search result variant ── */
@@ -239,13 +239,13 @@
     flex-shrink: 0;
     width: 96px;
     height: 56px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .skel-chip {
     height: 16px;
     width: 52px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
 

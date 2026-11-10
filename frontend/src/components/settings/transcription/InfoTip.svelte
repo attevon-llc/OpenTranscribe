@@ -173,7 +173,7 @@
     padding: 0;
     margin: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: none;
     color: inherit;
     cursor: help;
@@ -199,7 +199,7 @@
     width: min(280px, calc(100vw - 2rem));
     box-sizing: border-box;
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     color: var(--text-color);
@@ -215,7 +215,7 @@
   .panel.inline {
     width: min(320px, calc(100vw - 2rem));
     padding: var(--space-3) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     line-height: 1.5;
   }

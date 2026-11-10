@@ -137,11 +137,11 @@
 
   /* Shape carries the outcome. Colour only reinforces it. */
   .trace-marker--dot {
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--primary-color);
   }
   .trace-marker--ring {
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     border: 1.5px solid var(--text-secondary);
   }
   .trace-marker--dash {
@@ -149,11 +149,11 @@
     background: var(--text-secondary);
   }
   .trace-marker--square {
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     background: var(--primary-color);
   }
   .trace-marker--slash {
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     border: 1.5px solid var(--text-color);
     position: relative;
   }
@@ -197,7 +197,7 @@
   .trace-badge {
     padding: 0.02rem 0.3rem;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--background-secondary);
     color: var(--text-secondary);
     font-size: 0.66rem;

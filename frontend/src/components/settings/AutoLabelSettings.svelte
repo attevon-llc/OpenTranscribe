@@ -347,7 +347,7 @@
     justify-content: space-between;
     align-items: center;
     padding: var(--space-3) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
   }
@@ -415,7 +415,7 @@
     bottom: 3px;
     background-color: var(--toggle-button);
     transition: var(--duration-slow);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   .toggle-switch input:focus-visible + .toggle-slider {
@@ -449,7 +449,7 @@
 
   .btn-save {
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: none;
     background: var(--primary-color);
     color: var(--text-on-solid);
@@ -479,7 +479,7 @@
   .retroactive-section {
     margin-top: var(--space-6);
     padding: var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
   }
@@ -487,7 +487,7 @@
   .btn-retroactive {
     margin-top: var(--space-3);
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: none;
     background: var(--primary-color);
     color: var(--text-on-solid);
@@ -548,14 +548,14 @@
   .progress-bar-container {
     height: 8px;
     background: var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
     background: var(--primary-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: width var(--duration-slow) ease;
   }
 

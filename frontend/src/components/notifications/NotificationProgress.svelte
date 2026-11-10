@@ -48,14 +48,14 @@
     flex: 1;
     height: 4px;
     background: var(--border-color);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
     background: var(--primary-color);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     transition: width var(--duration-slow) ease;
   }
 

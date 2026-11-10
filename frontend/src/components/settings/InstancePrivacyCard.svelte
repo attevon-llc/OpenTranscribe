@@ -183,7 +183,7 @@
 
   .scope {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;

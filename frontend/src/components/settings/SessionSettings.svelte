@@ -259,7 +259,7 @@
     margin-bottom: var(--space-8);
     padding: var(--space-4);
     background: var(--color-bg-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .section.info {
@@ -314,7 +314,7 @@
     margin-left: var(--space-2);
     padding: 0.1rem 0.45rem;
     border: 1px solid var(--color-warning-border);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--color-warning-bg);
     color: var(--color-warning-text);
     font-size: 0.6875rem;
@@ -327,7 +327,7 @@
   .token-info {
     background: var(--color-bg);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: var(--space-3);
     margin-top: var(--space-4);
     font-size: 0.875rem;
@@ -361,7 +361,7 @@
     gap: var(--space-3);
     padding: var(--space-3);
     border: 1px solid var(--color-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     transition: border-color var(--duration-base), background-color var(--duration-base);
   }
@@ -401,7 +401,7 @@
 
   .recommendation {
     background: var(--color-bg);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: var(--space-3);
   }
 

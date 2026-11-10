@@ -26,7 +26,7 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     font-size: 11px;
     font-weight: 500;
     background: rgba(var(--accent-rgb), 0.1);

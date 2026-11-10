@@ -148,13 +148,13 @@
     gap: var(--space-3);
     padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
   .badge {
     font-size: 0.7rem;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-weight: 600;
   }
   .type-badge {
@@ -214,7 +214,7 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: rgba(234, 179, 8, 0.15);
     color: #b45309;
   }
@@ -231,7 +231,7 @@
     padding: var(--space-0-5);
     cursor: pointer;
     color: var(--text-secondary);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
   .info-icon:hover {
     color: var(--primary-on-surface);
@@ -247,7 +247,7 @@
   .email-help {
     border: 1px solid var(--border-color);
     border-left: 3px solid var(--primary-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--button-hover);
     padding: var(--space-2-5) var(--space-3-5);
     margin-bottom: var(--space-3);

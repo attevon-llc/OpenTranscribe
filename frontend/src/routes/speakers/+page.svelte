@@ -372,7 +372,7 @@
     gap: 0.4rem;
     margin-left: var(--space-2);
     padding: var(--space-1) 0.65rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background-color: rgba(var(--primary-color-rgb), 0.1);
     color: var(--primary-on-surface);
     font-size: 0.78rem;
@@ -384,7 +384,7 @@
     height: 0.8rem;
     border: 2px solid rgba(var(--primary-color-rgb), 0.3);
     border-top-color: var(--primary-color);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     animation: rename-propagation-spin 0.7s linear infinite;
   }
 
@@ -400,7 +400,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     text-decoration: none;
     flex-shrink: 0;
@@ -452,7 +452,7 @@
   .badge {
     font-size: 11px;
     padding: 1px 7px;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: var(--hover-color);
     color: var(--text-secondary);
   }

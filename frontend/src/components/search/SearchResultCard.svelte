@@ -225,7 +225,7 @@
     padding: var(--space-3-5) var(--space-4);
     margin-bottom: var(--space-2);
     border: 1px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     transition:
       border-color var(--duration-fast),
       background-color var(--duration-fast);
@@ -270,7 +270,7 @@
     margin-inline-end: calc(-1 * var(--space-1-5));
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     /* form-elements.css gives a bare <button> a shadow and a hover scale + fill. */
     box-shadow: none;
@@ -432,7 +432,7 @@
   .text-btn:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 
   .details-btn {
@@ -446,7 +446,7 @@
   .details-btn.pin {
     padding: var(--space-0-5) var(--space-2);
     margin-inline: calc(-1 * var(--space-2));
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .details-btn.pin[aria-pressed='true'] {

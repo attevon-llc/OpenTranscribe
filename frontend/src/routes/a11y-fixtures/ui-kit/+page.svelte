@@ -244,6 +244,6 @@
   .kit-tint {
     margin: 0 0 var(--space-2);
     padding: var(--space-2) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 </style>

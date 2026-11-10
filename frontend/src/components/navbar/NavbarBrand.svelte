@@ -33,7 +33,7 @@
     font-weight: 600;
     font-size: 1.25rem;
     transition: transform var(--duration-base) ease;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-1);
     background: none;
     border: none;
@@ -48,7 +48,7 @@
     height: 36px;
     width: auto;
     object-fit: contain;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: inherit;
   }
 

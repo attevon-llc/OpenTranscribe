@@ -74,7 +74,7 @@
     margin-bottom: var(--space-3);
     padding: var(--space-3);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 

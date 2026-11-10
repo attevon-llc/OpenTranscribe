@@ -284,7 +284,7 @@
     font-weight: 600;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .collection-name svg {
@@ -303,7 +303,7 @@
     color: var(--text-primary);
     background: var(--surface-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .restricted-note :global(svg) {
@@ -324,7 +324,7 @@
     padding: var(--space-2-5) var(--space-3);
     background: rgba(var(--accent-rgb), 0.05);
     border: 1px solid rgba(var(--accent-rgb), 0.15);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   :global([data-theme='dark']) .permission-guide {
@@ -354,7 +354,7 @@
     min-width: 52px;
     text-align: center;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-weight: 600;
     font-size: 0.6875rem;
     text-transform: uppercase;
@@ -433,7 +433,7 @@
     padding: 0.4rem 0.6rem;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .pending-info {
@@ -473,7 +473,7 @@
     height: 26px;
     padding: 0;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
@@ -499,7 +499,7 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;

@@ -196,7 +196,7 @@
     gap: var(--space-2);
     padding: var(--space-3) var(--space-5);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-weight: 500;
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -261,7 +261,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.85rem;
     font-weight: 500;
     color: var(--text-muted);

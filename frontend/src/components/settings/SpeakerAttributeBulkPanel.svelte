@@ -285,7 +285,7 @@
     padding: var(--space-2-5) var(--space-3-5);
     background: rgba(var(--accent-rgb), 0.08);
     border: 1px solid rgba(var(--accent-rgb), 0.2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .all-processed {
@@ -294,13 +294,13 @@
     padding: var(--space-2-5) var(--space-3-5);
     background: rgba(81, 207, 102, 0.08);
     border: 1px solid rgba(81, 207, 102, 0.2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .progress-section {
     padding: var(--space-4);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 
@@ -325,14 +325,14 @@
   .progress-bar-container {
     height: 8px;
     background: var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
     background: var(--primary-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: width var(--duration-slow) ease;
   }
 
@@ -357,7 +357,7 @@
     padding: var(--space-3-5);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .reextract-confirm p {

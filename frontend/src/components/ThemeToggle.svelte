@@ -133,7 +133,7 @@
     left: 3px;
     width: 22px;
     height: 22px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: white;
     transition: transform var(--duration-slow) ease;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);

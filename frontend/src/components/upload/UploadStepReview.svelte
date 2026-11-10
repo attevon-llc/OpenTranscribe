@@ -156,7 +156,7 @@
 
   .review-card {
     display: flex; flex-direction: column; gap: 0;
-    border: 1px solid var(--border-color); border-radius: 8px;
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg);
     background: var(--surface-color); overflow: hidden;
   }
 
@@ -185,7 +185,7 @@
 
   .review-chip {
     display: inline-block; padding: var(--space-0-5) 0.4375rem;
-    border-radius: 999px; font-size: 0.6875rem; font-weight: 500;
+    border-radius: var(--radius-pill); font-size: 0.6875rem; font-weight: 500;
   }
 
   .review-chip.tag {

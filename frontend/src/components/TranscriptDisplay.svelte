@@ -290,7 +290,7 @@
     padding: 0;
     background: none;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
     cursor: pointer;
     flex-shrink: 0;

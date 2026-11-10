@@ -45,7 +45,7 @@
     margin-bottom: var(--space-3);
     background: var(--color-bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .title {

@@ -324,7 +324,7 @@
     .speaker-dropdown-portal .dropdown-menu {
       background: var(--surface-color);
       border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
       min-width: 200px;
       /* A long suggested name used to widen the menu past the viewport edge, where
@@ -361,7 +361,7 @@
       padding: var(--space-2) var(--space-3);
       background: none;
       border: none;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       cursor: pointer;
       transition: background-color var(--duration-fast) ease;
       color: var(--text-primary);
@@ -394,7 +394,7 @@
     .speaker-dropdown-portal .speaker-color-indicator {
       width: 12px;
       height: 12px;
-      border-radius: 50%;
+      border-radius: var(--radius-round);
       border: 1px solid;
       flex-shrink: 0;
     }
@@ -469,7 +469,7 @@
       color: var(--text-on-solid);
       background: var(--primary-color);
       border: none;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       cursor: pointer;
     }
 
@@ -591,7 +591,7 @@
     font-size: 12px;
     font-weight: var(--font-weight-semibold);
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     /* A confirmed name is shown in full: it wraps inside the pill instead of being cut to
        "UNKNOWN (NOT …" (#1149). `overflow-wrap: anywhere` also breaks an unbroken token. */
     white-space: normal;

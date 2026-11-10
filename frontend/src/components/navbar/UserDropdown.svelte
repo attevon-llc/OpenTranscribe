@@ -237,7 +237,7 @@
     border: none;
     cursor: pointer;
     padding: var(--space-1) var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-color);
     font-family: inherit;
     font-size: 1rem;
@@ -253,7 +253,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     font-weight: 600;
@@ -290,7 +290,7 @@
     width: 240px;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
     overflow-y: auto;
     padding: var(--space-2) 0;
@@ -341,7 +341,7 @@
     font-family: inherit;
     box-sizing: border-box;
     margin: var(--space-0-5) var(--space-2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     white-space: nowrap;
     position: relative;
   }
@@ -357,7 +357,7 @@
     margin: var(--space-0-5) var(--space-2) !important;
     width: calc(100% - 1rem) !important;
     font-weight: 500 !important;
-    border-radius: 6px !important;
+    border-radius: var(--radius-md) !important;
     background-color: transparent !important;
     transition: all var(--duration-base) ease !important;
   }
@@ -388,7 +388,7 @@
     font-family: inherit;
     box-sizing: border-box;
     margin: var(--space-0-5) var(--space-2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     white-space: nowrap;
   }
 

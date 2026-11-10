@@ -17,7 +17,7 @@
 <style>
   .spinner {
     display: inline-block;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     border-style: solid;
     border-color: rgba(0, 0, 0, 0.1);
     animation: spin 0.8s linear infinite;

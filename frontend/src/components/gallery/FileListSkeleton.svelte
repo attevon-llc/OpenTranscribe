@@ -77,7 +77,7 @@
      the same box: same border, radius and surface. */
   .file-list {
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     overflow: hidden;
     background: var(--surface-color);
   }
@@ -135,24 +135,24 @@
   .skel-icon {
     width: 20px;
     height: 20px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skel-check {
     width: 18px;
     height: 18px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skel-bar {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skel-pill {
     width: 72px;
     height: 20px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   /* Hidden at the same container widths as the real table's columns (file-list-grid.css),

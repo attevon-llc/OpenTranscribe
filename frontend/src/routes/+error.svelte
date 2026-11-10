@@ -50,7 +50,7 @@
     text-align: center;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
     padding: var(--space-10) var(--space-8);
     color: var(--text-color);
@@ -95,7 +95,7 @@
     justify-content: center;
     min-height: 44px;
     padding: 0.6rem var(--space-6);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;

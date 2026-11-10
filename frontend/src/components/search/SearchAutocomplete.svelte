@@ -275,7 +275,7 @@
     height: 28px;
     padding: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
@@ -291,7 +291,7 @@
   .suggestions-dropdown {
     background: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: var(--dropdown-shadow);
     overflow-y: auto;
   }
@@ -344,7 +344,7 @@
     padding: var(--space-2) var(--space-3);
     background: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: var(--dropdown-shadow);
     z-index: 100;
     display: flex;
@@ -366,6 +366,6 @@
     background: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
     padding: var(--space-0-5) var(--space-1-5);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 </style>

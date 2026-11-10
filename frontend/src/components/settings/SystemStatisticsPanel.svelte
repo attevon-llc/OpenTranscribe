@@ -435,7 +435,7 @@
     background: rgba(var(--warning-color-rgb), 0.08);
     border: 1px solid var(--warning-color);
     border-left: 4px solid var(--warning-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-3-5) 18px;
     margin-bottom: var(--space-5);
     color: var(--text-color);
@@ -498,7 +498,7 @@
 
   .btn {
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: none;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -585,7 +585,7 @@
   .stat-card {
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
   }
 
@@ -713,7 +713,7 @@
   .search-health-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--text-secondary);
   }
 
@@ -775,7 +775,7 @@
     width: 100%;
     height: 8px;
     background-color: var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
     margin-top: 0;
   }
@@ -800,7 +800,7 @@
   .table-container {
     overflow-x: auto;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .data-table {
@@ -842,7 +842,7 @@
     display: inline-flex;
     align-items: center;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.6875rem;
     font-weight: 500;
     text-transform: capitalize;
@@ -945,7 +945,7 @@
     color: var(--warning-text);
     background: rgba(var(--warning-color-rgb), 0.12);
     border: 1px solid var(--warning-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: var(--space-0-5) var(--space-2);
     cursor: help;
   }

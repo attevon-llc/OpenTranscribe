@@ -34,7 +34,7 @@
       var(--bg-tertiary) 75%
     );
     background-size: 200% 100%;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
 

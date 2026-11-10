@@ -306,7 +306,7 @@
   .btn-secondary {
     padding: var(--space-2) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--bg-color);
     color: var(--text-color);
     cursor: pointer;
@@ -323,7 +323,7 @@
     gap: var(--space-1-5);
     padding: var(--space-2) var(--space-4);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--error-solid);
     color: var(--text-on-solid);
     cursor: pointer;

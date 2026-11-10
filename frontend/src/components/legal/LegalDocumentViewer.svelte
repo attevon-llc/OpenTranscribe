@@ -136,7 +136,7 @@
     padding: var(--space-2-5) var(--space-3-5);
     border: 1px solid var(--warning-color);
     border-inline-start-width: 4px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: rgba(var(--warning-color-rgb), 0.12);
     color: var(--text-primary);
     font-size: var(--font-size-md);

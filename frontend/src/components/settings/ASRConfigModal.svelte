@@ -566,7 +566,7 @@
     padding: var(--space-2) var(--space-3);
     background: var(--card-bg);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.75rem;
     color: var(--text-muted);
@@ -585,7 +585,7 @@
     padding: 0.2rem var(--space-2);
     background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.7rem;
     font-weight: 500;
   }
@@ -598,7 +598,7 @@
     margin: var(--space-2) 0;
     background: rgba(245, 158, 11, 0.1);
     border: 1px solid rgba(245, 158, 11, 0.3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.8rem;
     color: var(--warning-color);
     line-height: 1.4;
@@ -641,7 +641,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2-5) var(--space-3-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.8125rem;
   }
 
@@ -685,7 +685,7 @@
     width: 36px;
     height: 20px;
     background: var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     transition: background-color var(--duration-base);
     flex-shrink: 0;
   }
@@ -698,7 +698,7 @@
     width: 16px;
     height: 16px;
     background: white;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: transform var(--duration-base);
   }
 
@@ -735,7 +735,7 @@
     border: none;
     color: var(--text-on-solid);
     background: var(--primary-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -758,7 +758,7 @@
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     color: var(--text-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.8125rem;
     transition: all var(--duration-fast);
@@ -781,7 +781,7 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;

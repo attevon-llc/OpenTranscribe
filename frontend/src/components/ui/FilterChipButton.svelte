@@ -62,7 +62,7 @@
     gap: 0.35rem;
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
     font-size: 0.8rem;
     font-weight: 400;

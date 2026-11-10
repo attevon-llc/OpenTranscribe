@@ -195,7 +195,7 @@
   .info-card.panel {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     padding: var(--space-4) 1.125rem;
     transition: border-color var(--duration-fast);
   }
@@ -234,7 +234,7 @@
     height: 28px;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     box-shadow: none;
     color: var(--text-secondary);
@@ -329,7 +329,7 @@
     gap: var(--space-1);
     max-width: 100%;
     padding: 0.0625rem var(--space-2);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--hover-color);
     border: 1px solid var(--border-color);
     font-size: var(--font-size-xs);
@@ -340,7 +340,7 @@
 
   .chip.tag,
   .chip.collection {
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .chip-link {
@@ -397,6 +397,6 @@
   .open-file:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 </style>

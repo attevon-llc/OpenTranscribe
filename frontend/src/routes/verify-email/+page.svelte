@@ -148,7 +148,7 @@
 
   .auth-card {
     background-color: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 420px;
@@ -204,7 +204,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: 0.6rem 1.2rem;
     font-size: 0.95rem;
     font-weight: 500;
@@ -246,7 +246,7 @@
     background-color: var(--error-color-light);
     color: var(--error-color);
     padding: var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid rgba(239, 68, 68, 0.2);
     font-weight: 500;
   }
@@ -255,7 +255,7 @@
     background-color: var(--success-color-light);
     color: var(--success-color);
     padding: var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid rgba(34, 197, 94, 0.2);
     display: flex;
     align-items: center;
@@ -267,7 +267,7 @@
     margin-top: var(--space-4);
     padding: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
     font-size: 0.85rem;

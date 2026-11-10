@@ -143,7 +143,7 @@
     margin-block: var(--space-2) var(--space-5);
     padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
   }
 
@@ -165,7 +165,7 @@
     margin: 0;
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: var(--font-size-sm);
     color: var(--text-color);
   }

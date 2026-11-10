@@ -318,7 +318,7 @@
     overflow-y: auto;
     padding: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background: var(--surface-color);
     color: var(--text-color);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
@@ -333,7 +333,7 @@
     inset: auto 0 0 0;
     width: auto;
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-    border-radius: 16px 16px 0 0;
+    border-radius: var(--radius-3xl) var(--radius-3xl) 0 0;
     animation-name: drp-sheet-in;
   }
 
@@ -400,7 +400,7 @@
   .drp-clear {
     padding: var(--space-1) var(--space-2);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--primary-on-surface);
     box-shadow: none;

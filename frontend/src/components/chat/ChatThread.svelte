@@ -135,7 +135,7 @@
     gap: 0.35rem;
     padding: 0.4rem 0.9rem;
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 0.8rem;

@@ -196,7 +196,7 @@
   .panel-note {
     padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--color-bg-secondary);
   }
 
@@ -227,7 +227,7 @@
 
   .btn-secondary {
     padding: var(--space-1) var(--space-2-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.75rem;
     height: 1.75rem;
@@ -251,7 +251,7 @@
     max-height: 420px;
     overflow-y: auto;
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     -webkit-overflow-scrolling: touch;
   }
 

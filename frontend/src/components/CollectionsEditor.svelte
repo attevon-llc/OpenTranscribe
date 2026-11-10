@@ -379,7 +379,7 @@
     background-color: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     padding: 0.35rem var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     display: flex;
     align-items: center;
@@ -423,7 +423,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: var(--space-1) var(--space-2);
     font-size: 0.8rem;
     cursor: pointer;
@@ -450,7 +450,7 @@
   .suggested-collection {
     background: none;
     border: 1px dashed var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: var(--space-1) var(--space-2);
     font-size: 0.8rem;
     cursor: pointer;

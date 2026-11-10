@@ -210,7 +210,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-1-5) var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 13px;
     min-width: 0;
   }
@@ -247,7 +247,7 @@
   .verified-badge {
     font-size: 11px;
     padding: 1px var(--space-1-5);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--success-color) 15%, transparent);
     color: var(--success-color);
   }
@@ -282,7 +282,7 @@
     width: 24px;
     height: 24px;
     padding: 0;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     border: 1px solid var(--border-color);
     background: var(--card-background);
     color: var(--text-secondary);
@@ -352,7 +352,7 @@
     font-size: 10px;
     font-weight: 600;
     padding: 1px var(--space-1-5);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     white-space: nowrap;
   }
 
@@ -376,7 +376,7 @@
     padding: var(--space-2) var(--space-3);
     background: var(--color-warning-bg);
     border: 1px solid var(--color-warning-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     margin-bottom: var(--space-2);
     font-size: 13px;
     color: var(--warning-color);
@@ -395,7 +395,7 @@
   .btn-cancel {
     padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-background);
     color: var(--text-color);
     cursor: pointer;
@@ -412,7 +412,7 @@
   .btn-confirm {
     padding: var(--space-1-5) var(--space-3-5);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--primary-color);
     color: var(--text-on-solid);
     cursor: pointer;

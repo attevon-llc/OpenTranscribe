@@ -63,7 +63,7 @@
     padding: var(--space-3) var(--space-4);
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
   }
 
   .status-chips {

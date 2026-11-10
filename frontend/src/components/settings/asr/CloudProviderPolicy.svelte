@@ -145,7 +145,7 @@
   .locked-hint {
     padding: var(--space-3) var(--space-4);
     border: 1px dashed var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
   .keys-note {
     margin-top: var(--space-2);

@@ -147,7 +147,7 @@
     margin-left: 0.4rem;
     padding: 0.05rem 0.4rem;
     border: 1px solid var(--border-color);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-2xl);
     background: var(--surface-color);
     color: var(--text-secondary);
     font-size: 0.72rem;

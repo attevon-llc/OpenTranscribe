@@ -52,7 +52,7 @@
     gap: 0.6rem;
     max-width: calc(100vw - 2rem);
     padding: 0.55rem var(--space-4);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--surface-color);
     border: 1px solid var(--warning-color);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
@@ -65,7 +65,7 @@
     flex: 0 0 auto;
     width: 9px;
     height: 9px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--warning-color);
   }
 
@@ -81,7 +81,7 @@
   .connection-retry {
     flex: 0 0 auto;
     padding: 0.3rem var(--space-3);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
     background: var(--button-hover);
     color: var(--text-color);

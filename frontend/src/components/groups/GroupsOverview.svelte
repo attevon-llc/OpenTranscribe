@@ -251,7 +251,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
@@ -299,7 +299,7 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
@@ -352,7 +352,7 @@
     cursor: pointer;
     padding: var(--space-1);
     color: var(--text-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -400,7 +400,7 @@
     padding: var(--space-3) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     transition: all var(--duration-fast);
     text-align: left;

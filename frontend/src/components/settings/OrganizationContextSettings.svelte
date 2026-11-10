@@ -434,7 +434,7 @@
     padding: var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     transition: all var(--duration-base) ease;
   }
 
@@ -504,7 +504,7 @@
     bottom: 3px;
     background-color: white;
     transition: var(--duration-slow);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   input:checked + .toggle-slider {
@@ -535,7 +535,7 @@
     padding: var(--space-3) var(--space-4);
     background: rgba(var(--primary-color-rgb), 0.08);
     border: 1px solid rgba(var(--primary-color-rgb), 0.2);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .banner-content {
@@ -555,7 +555,7 @@
     padding: var(--space-1-5) var(--space-3);
     background-color: #ef4444;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
@@ -600,7 +600,7 @@
   .shared-card {
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     margin-bottom: var(--space-3);
     transition: all var(--duration-base);
   }
@@ -637,7 +637,7 @@
     display: inline-flex;
     align-items: center;
     padding: 1px var(--space-1-5);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.625rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -655,7 +655,7 @@
     display: inline-flex;
     align-items: center;
     padding: 1px var(--space-1-5);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.625rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -678,7 +678,7 @@
 
   .btn-shared-action {
     padding: var(--space-1-5) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;

@@ -196,7 +196,7 @@
     box-sizing: border-box;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-secondary);
@@ -241,7 +241,7 @@
     min-width: 200px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
     padding: var(--space-2);
     backdrop-filter: blur(12px);
@@ -268,7 +268,7 @@
     padding: var(--space-2-5) var(--space-3);
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.875rem;
     color: var(--text-secondary);
     cursor: pointer;

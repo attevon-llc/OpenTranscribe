@@ -175,7 +175,7 @@
     height: 30px;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--primary-on-surface);
     cursor: pointer;
@@ -239,7 +239,7 @@
   .source-badge {
     font-size: 11px;
     padding: 1px var(--space-1-5);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--hover-color);
     color: var(--text-secondary);
   }
@@ -283,7 +283,7 @@
 
   .cluster-tag {
     padding: 1px var(--space-1-5);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--hover-color);
   }
 
@@ -299,7 +299,7 @@
        squeezed Skip until it broke across two lines as "Ski"/"p". */
     white-space: nowrap;
     padding: var(--space-1) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: var(--hover-color);
     color: var(--text-color);

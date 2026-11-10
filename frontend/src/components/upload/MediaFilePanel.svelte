@@ -217,7 +217,7 @@
     justify-content: center;
     gap: var(--space-3);
     border: 2px dashed var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background-color: var(--surface-color);
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -296,7 +296,7 @@
     justify-content: space-between;
     padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--surface-color);
   }
 
@@ -338,7 +338,7 @@
     padding: 0;
     border: none;
     background: transparent;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     color: var(--text-secondary);
     transition: all var(--duration-fast) ease;

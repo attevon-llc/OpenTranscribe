@@ -126,7 +126,7 @@
     height: 36px;
     padding: 0 var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--surface-color);
     color: var(--text-color);
     font-size: 0.875rem;

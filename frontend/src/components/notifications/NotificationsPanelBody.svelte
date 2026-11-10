@@ -172,7 +172,7 @@
     padding: var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--border-color);
     background: var(--surface-color);
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   }
 
   .header-left {
@@ -194,7 +194,7 @@
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     padding: var(--space-0-5) var(--space-1-5);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     min-width: 16px;
     height: 16px;
     display: flex;
@@ -215,7 +215,7 @@
     width: 32px;
     height: 32px;
     padding: var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition:
       background-color var(--duration-base) ease,

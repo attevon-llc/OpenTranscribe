@@ -192,7 +192,7 @@
   .modal-container {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     width: 90%;
     max-height: 90vh;
@@ -251,7 +251,7 @@
     color: var(--text-secondary);
     padding: var(--space-2);
     margin-inline-start: var(--space-4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -307,7 +307,7 @@
     gap: var(--space-2);
     min-height: 2.375rem;
     padding: var(--space-2) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.875rem;
     font-weight: 500;
   }

@@ -156,7 +156,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-2) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     font-size: 0.875rem;
     font-weight: 500;

@@ -220,7 +220,7 @@
   }
 
   .aside-inner.just-pinned {
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     animation: pinned-pulse 0.6s ease-out;
   }
 
@@ -267,7 +267,7 @@
   .text-btn:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 
   .summary-results-section {
@@ -282,7 +282,7 @@
 
   .summary-unavailable-notice {
     padding: var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--warning-bg);
     border: 1px solid var(--warning-border);
     margin-bottom: var(--space-3);
@@ -335,7 +335,7 @@
     margin-bottom: var(--space-3);
     background: var(--color-warning-bg);
     color: var(--color-warning-text);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: var(--font-size-sm);
   }
 

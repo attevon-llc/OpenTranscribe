@@ -204,7 +204,7 @@
     margin: 0;
     padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--warning-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--warning-bg);
     color: var(--text-color);
     font-size: 0.8rem;

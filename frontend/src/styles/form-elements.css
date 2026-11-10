@@ -276,7 +276,7 @@ table {
   border-collapse: collapse;
   background-color: var(--card-background);
   color: var(--text-color);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   box-shadow: var(--card-shadow);
 }
@@ -308,7 +308,7 @@ button {
   background-color: var(--surface-color);
   color: var(--text-color);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
   padding: 0.6rem 1.2rem;
   font-family: inherit;
   cursor: pointer;
@@ -394,7 +394,7 @@ button:disabled {
 .dialog {
   background-color: var(--card-background);
   color: var(--text-color);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xl);
   border: 1px solid var(--border-color);
 }
@@ -423,7 +423,7 @@ button:disabled {
   align-items: center;
   gap: var(--space-1-5);
   padding: var(--space-2) var(--space-4);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
@@ -516,7 +516,7 @@ button:disabled {
 /* Base sizing shared by all modal footer buttons */
 .modal-button {
   padding: 0.6rem 1.2rem;
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;

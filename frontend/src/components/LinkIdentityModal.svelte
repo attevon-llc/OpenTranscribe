@@ -189,7 +189,7 @@
     margin: 0;
     padding: 0.6rem var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.45);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: rgba(245, 158, 11, 0.12);
     color: var(--color-text);
     font-size: 0.75rem;

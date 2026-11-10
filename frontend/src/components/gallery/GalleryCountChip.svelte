@@ -38,7 +38,7 @@
     box-sizing: border-box;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-secondary);

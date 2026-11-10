@@ -233,7 +233,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     padding: var(--space-0-5) var(--space-1-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.625rem;
     color: var(--text-secondary);
@@ -264,7 +264,7 @@
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     position: relative;
   }
 
@@ -297,7 +297,7 @@
     white-space: pre-wrap;
     word-break: break-word;
     background: var(--color-bg-secondary);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   @media (max-width: 768px) {

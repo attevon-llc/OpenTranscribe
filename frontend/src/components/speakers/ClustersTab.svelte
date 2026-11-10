@@ -251,7 +251,7 @@
     cursor: pointer;
     color: var(--text-secondary);
     padding: var(--space-1);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     transition: color var(--duration-fast), background var(--duration-fast);
   }
 
@@ -274,7 +274,7 @@
 
   .btn-recluster {
     padding: var(--space-2) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: none;
     background: var(--primary-color);
     color: var(--text-on-solid);
@@ -307,7 +307,7 @@
     color: var(--text-on-tint);
     background: var(--hover-color);
     padding: 1px 7px;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     white-space: nowrap;
     align-self: center;
   }
@@ -367,7 +367,7 @@
     cursor: pointer;
     width: 100%;
     text-align: left;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background var(--duration-fast) ease;
     box-shadow: none;
   }
@@ -429,7 +429,7 @@
   .pagination button {
     padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--card-background);
     color: var(--text-color);
     cursor: pointer;
@@ -456,7 +456,7 @@
     padding: var(--space-2) var(--space-4);
     background: color-mix(in srgb, var(--primary-color) 10%, transparent);
     border: 1px solid var(--primary-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     margin-bottom: var(--space-3);
     font-size: 14px;
     color: var(--primary-on-surface);
@@ -472,7 +472,7 @@
   .btn-cancel-merge {
     padding: var(--space-1) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--card-background);
     color: var(--text-color);
     cursor: pointer;
@@ -489,7 +489,7 @@
   .merge-source-highlight {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   @media (max-width: 768px) {

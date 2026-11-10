@@ -752,7 +752,7 @@
   .lite-note {
     margin: 0 0 var(--space-4);
     padding: var(--space-3) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: 1px solid rgba(var(--primary-color-rgb), 0.3);
     background: rgba(var(--primary-color-rgb), 0.08);
     color: var(--text-color);
@@ -778,7 +778,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2-5) var(--space-4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     margin-bottom: var(--space-5);
     font-size: 0.8125rem;
     background: var(--primary-bg);
@@ -818,7 +818,7 @@
     margin-left: auto;
     padding: var(--space-1) var(--space-3);
     font-size: 0.75rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border-color);
     background: var(--surface-color);
     color: var(--text-color);
@@ -854,7 +854,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-2) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -877,7 +877,7 @@
     justify-content: space-between;
     padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-bg);
     transition: all var(--duration-fast) ease;
     gap: var(--space-4);
@@ -908,7 +908,7 @@
     display: inline-flex;
     align-items: center;
     padding: 0.15rem var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.7rem;
     font-weight: 500;
   }
@@ -1031,7 +1031,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-2) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -1044,7 +1044,7 @@
     text-align: center;
     padding: var(--space-10) var(--space-8);
     border: 2px dashed var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-bg);
   }
 
@@ -1076,7 +1076,7 @@
     color: var(--text-on-solid);
     border: none;
     padding: var(--space-2) 1.1rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -1100,7 +1100,7 @@
 
   .share-badge {
     display: inline-flex; align-items: center;
-    padding: 1px var(--space-1-5); border-radius: 10px;
+    padding: 1px var(--space-1-5); border-radius: var(--radius-xl);
     font-size: 0.625rem; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.5px;
     background: rgba(var(--primary-color-rgb), 0.12); color: var(--primary-on-surface);
@@ -1133,13 +1133,13 @@
 
   .toggle-switch {
     position: relative; width: 28px; height: 16px;
-    background: var(--border-color); border-radius: 8px;
+    background: var(--border-color); border-radius: var(--radius-lg);
     transition: background var(--duration-base); flex-shrink: 0;
   }
   .toggle-switch::after {
     content: ''; position: absolute; top: 2px; left: 2px;
     width: 12px; height: 12px; background: white;
-    border-radius: 50%; transition: transform var(--duration-base);
+    border-radius: var(--radius-round); transition: transform var(--duration-base);
   }
   .toggle-input:checked + .toggle-switch { background: var(--primary-color); }
   .toggle-input:checked + .toggle-switch::after { transform: translateX(12px); }
@@ -1149,7 +1149,7 @@
   .local-model-section {
     padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-bg);
     margin-bottom: var(--space-5);
   }
@@ -1197,7 +1197,7 @@
     display: inline-flex;
     align-items: center;
     padding: 0.15rem var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.7rem;
     font-weight: 500;
     white-space: nowrap;
@@ -1239,7 +1239,7 @@
     display: inline-flex;
     align-items: center;
     padding: 0.15rem var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.675rem;
     font-weight: 600;
     text-transform: uppercase;

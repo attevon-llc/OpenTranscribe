@@ -208,7 +208,7 @@
 <style>
   .cluster-card {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-background);
     overflow: hidden;
     transition: box-shadow var(--duration-fast) ease;
@@ -266,7 +266,7 @@
     font-size: 10px;
     font-weight: 600;
     padding: 1px var(--space-1-5);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     color: var(--primary-on-surface);
     white-space: nowrap;
@@ -295,7 +295,7 @@
     font-size: 11px;
     font-weight: 600;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: currentColor;
     background: color-mix(in srgb, currentColor 12%, transparent);
     white-space: nowrap;
@@ -305,7 +305,7 @@
     font-size: 11px;
     font-weight: 600;
     padding: 3px var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
@@ -333,7 +333,7 @@
   .promoted-badge {
     font-size: 11px;
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: color-mix(in srgb, var(--success-color) 15%, transparent);
     color: var(--success-color);
     white-space: nowrap;
@@ -359,7 +359,7 @@
 
   .action-btn {
     padding: var(--space-1) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: transparent;
     color: var(--text-secondary);
@@ -472,7 +472,7 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 11px;
     font-weight: 600;
     background: color-mix(in srgb, var(--warning-color) 12%, transparent);
@@ -518,7 +518,7 @@
   .skeleton-avatar {
     width: 32px;
     height: 32px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--border-color);
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
@@ -532,7 +532,7 @@
 
   .skeleton-line {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--border-color);
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
@@ -544,7 +544,7 @@
   .cluster-avatar {
     width: 24px;
     height: 24px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     object-fit: cover;
     flex-shrink: 0;
   }

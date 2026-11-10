@@ -221,7 +221,7 @@
   .trace-beta {
     padding: 0.05rem 0.35rem;
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     color: var(--text-secondary);
     font-size: 0.6rem;
     font-weight: 600;
@@ -233,7 +233,7 @@
 
   .trace-live {
     padding: 0.05rem 0.35rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background-color: rgba(var(--primary-color-rgb), 0.14);
     color: var(--primary-on-surface);
     font-size: 0.64rem;

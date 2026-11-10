@@ -241,7 +241,7 @@
   .erasure-card {
     margin-top: var(--space-4);
     padding: var(--space-4);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     display: flex;
@@ -329,7 +329,7 @@
     background: var(--error-color);
     color: var(--text-on-solid);
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: var(--space-2) var(--space-3-5);
     cursor: pointer;
   }
@@ -343,7 +343,7 @@
     margin: 0;
     padding: var(--space-2) var(--space-3);
     font-size: 0.8125rem;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: #fef3c7;
     color: #78350f;
     border: 1px solid #f59e0b;

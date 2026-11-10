@@ -248,7 +248,7 @@
     flex-direction: column;
     gap: var(--space-0-5);
     padding: var(--space-2) var(--space-2-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     border: 1px solid transparent;
   }

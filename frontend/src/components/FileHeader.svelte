@@ -323,7 +323,7 @@
   .status-message {
     margin: var(--space-4) 0;
     padding: var(--space-3) var(--space-4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border-inline-start: 4px solid;
   }
 
@@ -370,7 +370,7 @@
     padding: var(--space-5);
     background: var(--info-light);
     border: 1px solid var(--info-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
   }
 
   .processing-header {
@@ -414,7 +414,7 @@
     color: var(--primary-on-surface);
     background: rgba(var(--primary-color-rgb), 0.1);
     padding: var(--space-1) var(--space-2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     flex-shrink: 0;
   }
 
@@ -422,7 +422,7 @@
     width: 100%;
     height: 8px;
     background: var(--surface-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
     border: 1px solid var(--border-color);
   }
@@ -430,7 +430,7 @@
   .progress-bar-inner {
     height: 100%;
     background: linear-gradient(90deg, var(--primary-color), rgba(var(--primary-color-rgb), 0.8));
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: width var(--duration-slow) ease;
     animation: progress-shimmer 1.5s infinite;
   }
@@ -479,7 +479,7 @@
   .stage-dot {
     width: 16px;
     height: 16px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--border-color);
     border: 2px solid var(--surface-color);
     position: relative;
@@ -577,7 +577,7 @@
   .expand-link:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 
 
@@ -599,7 +599,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     padding: var(--space-2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
@@ -623,7 +623,7 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     font-size: 12px;
     font-weight: 500;
     background: rgba(var(--accent-rgb), 0.1);
@@ -672,7 +672,7 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-3);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     cursor: pointer;
     transition: all var(--duration-base) ease;

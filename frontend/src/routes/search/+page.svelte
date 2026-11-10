@@ -868,7 +868,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     text-decoration: none;
     flex-shrink: 0;
@@ -913,7 +913,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -955,7 +955,7 @@
   .mode-toggle {
     display: flex;
     background: var(--hover-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-0-5);
     gap: 0;
   }
@@ -964,7 +964,7 @@
     padding: var(--space-1-5) var(--space-3);
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: 0.75rem;
     font-weight: 500;
@@ -1180,7 +1180,7 @@
   .neural-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: currentColor;
     flex-shrink: 0;
   }

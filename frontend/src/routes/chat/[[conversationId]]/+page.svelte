@@ -713,7 +713,7 @@
     width: 32px;
     height: 32px;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     /* form-elements.css's bare `button` rule sets a drop-shadow that survives
        unless cleared here — without this, light mode shows an empty shadowed
        box instead of a plain icon button (the shadow all but disappears
@@ -777,7 +777,7 @@
     margin: var(--space-3) auto 0;
     padding: 0.6rem 0.85rem;
     border: 1px solid rgba(var(--error-color-rgb), 0.35);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: rgba(var(--error-color-rgb), 0.08);
     color: var(--error-color);
     font-size: 0.85rem;
@@ -787,7 +787,7 @@
     margin-left: auto;
     padding: 0.2rem 0.6rem;
     border: 1px solid currentColor;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: inherit;
     font-size: 0.78rem;
@@ -819,7 +819,7 @@
     right: 0.28rem;
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--primary-color);
   }
 

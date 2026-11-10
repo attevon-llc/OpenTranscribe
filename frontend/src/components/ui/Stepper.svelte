@@ -99,7 +99,7 @@
     width: 24px;
     height: 24px;
     border: 2px solid var(--border-color);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--surface-color);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);

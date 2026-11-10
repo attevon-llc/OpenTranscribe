@@ -624,7 +624,7 @@
 <style>
   .terms-document {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
     overflow: hidden;
   }
@@ -694,7 +694,7 @@
     padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-inline-start-width: 4px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
     color: var(--text-primary);
   }
@@ -746,7 +746,7 @@
     text-align: start;
     padding: var(--space-3-5) var(--space-4);
     border: 2px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
     box-shadow: none;
     color: var(--text-primary);
@@ -794,7 +794,7 @@
   .wizard-skip-link {
     padding: var(--space-2) var(--space-1);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     box-shadow: none;
     color: var(--text-secondary);
@@ -832,7 +832,7 @@
   .terms-footer .terms-accept:focus-within {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .terms-step-compact {

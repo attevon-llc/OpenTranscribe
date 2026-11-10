@@ -332,7 +332,7 @@
     font-size: 0.8125rem;
     font-weight: 500;
     padding: var(--space-1-5) var(--space-2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: background-color var(--duration-fast);
   }
 
@@ -346,7 +346,7 @@
     gap: var(--space-1-5);
     padding: var(--space-1-5) var(--space-3);
     border: 1px solid var(--danger-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--danger-color);
     font-size: 0.75rem;
@@ -378,7 +378,7 @@
     cursor: pointer;
     padding: var(--space-1) var(--space-2);
     margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: background-color var(--duration-fast);
   }
 
@@ -411,7 +411,7 @@
     cursor: pointer;
     padding: var(--space-1) var(--space-2);
     margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: background-color var(--duration-fast);
   }
 
@@ -460,7 +460,7 @@
   .btn-inline-save,
   .btn-inline-cancel {
     padding: var(--space-1) var(--space-3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;

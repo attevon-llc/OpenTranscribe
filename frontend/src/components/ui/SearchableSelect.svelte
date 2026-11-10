@@ -197,7 +197,7 @@
     overflow-y: auto;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   }
   .searchable-list {
@@ -207,7 +207,7 @@
   }
   .searchable-option {
     padding: var(--space-2) var(--space-2-5);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
     font-size: 14px;
     cursor: pointer;
@@ -229,7 +229,7 @@
     height: 16px;
     border: 2px solid var(--border-color);
     border-top-color: var(--primary-color);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     animation: searchable-spin 0.7s linear infinite;
   }
   @keyframes searchable-spin {

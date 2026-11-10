@@ -309,7 +309,7 @@
   .warning-box {
     background: var(--color-warning-bg);
     border: 1px solid var(--color-warning-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: var(--space-4);
     margin-bottom: var(--space-6);
   }
@@ -328,7 +328,7 @@
     margin-bottom: var(--space-8);
     padding: var(--space-4);
     background: var(--color-bg-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     transition: opacity var(--duration-base);
   }
 
@@ -356,7 +356,7 @@
     gap: var(--space-3);
     padding: var(--space-3);
     border: 1px solid var(--color-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     transition: border-color var(--duration-base), background-color var(--duration-base);
   }
@@ -438,7 +438,7 @@
     margin: var(--space-2) 0 0 var(--space-6);
     padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--color-warning-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--color-warning-bg);
     color: var(--color-warning-text);
     font-size: 0.75rem;

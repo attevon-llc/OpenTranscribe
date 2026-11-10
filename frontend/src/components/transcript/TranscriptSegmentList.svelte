@@ -549,7 +549,7 @@
     color: var(--text-on-solid);
     border: 1px solid #6b7280;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-weight: 500;
     transition: all var(--duration-base) ease;
@@ -572,7 +572,7 @@
   .transcript-display-container {
     position: relative;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
 
@@ -622,7 +622,7 @@
     text-align: left;
     cursor: pointer;
     transition: all var(--duration-base) ease;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     margin: var(--space-0-5) var(--space-1);
     min-width: 0; /* Allow grid to shrink */
     max-width: 100%;
@@ -656,7 +656,7 @@
     font-size: 12px;
     font-weight: var(--font-weight-semibold);
     padding: var(--space-0-5) var(--space-2);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     white-space: nowrap;
     min-width: fit-content;
     max-width: 150px;
@@ -774,7 +774,7 @@
   .segment-edit-actions .save-button,
   .segment-edit-actions .cancel-button {
     padding: 0.4rem 0.8rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
@@ -842,7 +842,7 @@
     padding-left: var(--space-3);
     border-left: 3px solid var(--primary-color);
     background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.05) 0%, transparent 100%);
-    border-radius: 0 8px 8px 0;
+    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   }
 
   .overlap-indicator {
@@ -851,7 +851,7 @@
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
     background: rgba(var(--accent-rgb), 0.1);
-    border-radius: 0 6px 0 0;
+    border-radius: 0 var(--radius-md) 0 0;
     font-size: 12px;
     color: var(--primary-on-surface);
     font-weight: 600;

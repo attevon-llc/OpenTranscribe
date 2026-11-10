@@ -216,7 +216,7 @@ def _decode_token(
         logger.warning(f"Invalid OIDC token (JoseError): {e}")
         return None
 
-    claims_options: dict[str, Any] = {"exp": {"essential": True}}
+    claims_options: dict[str, Any] = {"exp": {"essential": True}, "sub": {"essential": True}}
     if cfg.verify_audience:
         audience = cfg.audience or cfg.client_id
         claims_options["aud"] = {"essential": True, "value": audience}

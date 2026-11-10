@@ -11,9 +11,10 @@
  *      in a source file;
  *   2. it matches a template literal such as `chat.trace.stage.${stage}` or the
  *      `'prefix.' + x` form, treating the static parts as a pattern;
- *   3. it sits under a namespace the settings search indexes wholesale
- *      (SECTION_NAMESPACES in lib/search/settingsSearchIndex.ts, parsed from source);
- *   4. it starts with a prefix listed in scripts/i18n-dynamic-prefixes.json (prefix -> reason).
+ *   3. it starts with a prefix listed in scripts/i18n-dynamic-prefixes.json (prefix -> reason).
+ *
+ * The settings search indexes whole namespaces of en.json, so an unreferenced key there would be
+ * a search hit for text no page renders; this check is what keeps those namespaces honest.
  *
  * Usage: node scripts/check-i18n-unused.mjs [--selftest]   (run from frontend/)
  */
@@ -52,16 +53,6 @@ export function dynamicPatterns(text) {
   return patterns;
 }
 
-function searchNamespaces(text) {
-  const start = text.indexOf('const SECTION_NAMESPACES');
-  if (start === -1) throw new Error('SECTION_NAMESPACES not found in settingsSearchIndex.ts');
-  const block = text.slice(start, text.indexOf('\n};', start));
-  return [...block.matchAll(/'([A-Za-z][A-Za-z.]*)'/g)]
-    .map((m) => m[1])
-    .filter((s) => s.includes('.') || /^(billing|usage|team|groups|prompts|llm|autoLabel)$/.test(s))
-    .map((ns) => `${ns}.`);
-}
-
 /** The keys of `en` that nothing references. */
 export function findUnusedKeys(en, text, extraPrefixes) {
   const patterns = dynamicPatterns(text);
@@ -96,15 +87,13 @@ const text = sourceFiles(srcDir)
   .map((f) => readFileSync(f, 'utf8'))
   .join('\n');
 const allow = JSON.parse(readFileSync(join(here, 'i18n-dynamic-prefixes.json'), 'utf8'));
-const prefixes = [
-  ...searchNamespaces(readFileSync(join(srcDir, 'lib/search/settingsSearchIndex.ts'), 'utf8')),
-  ...Object.keys(allow),
-];
+const prefixes = [...Object.keys(allow)];
 
 const unused = findUnusedKeys(en, text, prefixes);
 if (unused.length) {
   console.error(`i18n unused keys: ${unused.length} key(s) in en.json are referenced nowhere:`);
-  for (const k of unused.slice(0, 40)) console.error(`  ${k}`);
+  for (const k of unused.slice(0, process.env.I18N_ALL ? unused.length : 40))
+    console.error(`  ${k}`);
   if (unused.length > 40) console.error(`  … and ${unused.length - 40} more`);
   console.error(
     '\nDelete them from all 12 locales, or - if a runtime-built key reaches them - add the\n' +

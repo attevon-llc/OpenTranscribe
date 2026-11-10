@@ -1,1 +1,5 @@
-{}
+{
+  "settings.speakerIdentification.pyannoteKey.": "lib/settings/pyannoteCredential.ts builds the key from KEY_PREFIX plus a suffix looked up in BADGE_SUFFIX / the test-code map",
+  "settings.engineSettings.hfToken.": "lib/settings/hfToken.ts builds the key from P plus a suffix looked up in its status and test-code maps",
+  "settings.speakerIdentification.source.": "lib/settings/speakerSources.ts builds label and description keys from PREFIX plus a suffix per diarization source"
+}

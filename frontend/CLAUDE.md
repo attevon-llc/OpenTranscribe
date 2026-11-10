@@ -304,7 +304,8 @@ caveat: `src/components/ui/CLAUDE.md`.
 
   - **`npm run check:i18n` also fails on a key in `en.json` that nothing in `src/` references**
     (`scripts/check-i18n-unused.mjs`). It understands full-key literals, template-literal families
-    (`chat.trace.stage.${stage}`) and the settings-search namespaces; anything else built at runtime
+    (`chat.trace.stage.${stage}`); settings-search namespaces get no exemption, so a key there that no
+    component renders fails too (it would be a search hit for text no page shows). Anything else built at runtime
     needs a prefix and a reason in `scripts/i18n-dynamic-prefixes.json`. Delete a dead key from all
     12 locales rather than allowlisting it. Test files do not count as a reference.
   - **Untranslated copy is caught by vitest, not `check:i18n`.** `lib/i18n/untranslated.test.ts`

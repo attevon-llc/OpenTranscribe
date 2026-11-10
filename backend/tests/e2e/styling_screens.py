@@ -54,6 +54,11 @@ class Screen:
     #: Wait for this selector after navigation (and before the steps) so a half-rendered
     #: page is never photographed.
     ready: str | None = None
+    #: Per-screen viewport (width, height); ``None`` keeps the context default.
+    viewport: tuple[int, int] | None = None
+    #: localStorage seeds applied before the app loads and removed again afterwards, because
+    #: the browser context is shared by every later screen of the same variant.
+    storage: tuple[tuple[str, str], ...] = ()
     notes: str = field(default="", compare=False)
 
 
@@ -223,6 +228,84 @@ _APP = (
     Screen("status-badges", "/a11y-fixtures/status-badges", ready=".status-badge"),
 )
 
+# --- BEGIN block: navbar + gallery states (styling row 3.2) ---------------------------------
+# Unreachable deterministically, so NOT captured: the Navbar recording indicator and popup
+# (need a live MediaRecorder / microphone grant; recordingStore has no seed hook) and the
+# VirtualGrid new-file glow (a 0.6s animation fired by a websocket upload event, and the tool
+# runs with reduced motion, which switches the animation off).
+_S32_MOBILE = (390, 844)
+_S32_LIST = (("gallery-view-mode", "list"),)
+
+_NAVBAR_GALLERY = (
+    Screen(
+        "gallery-sort-open",
+        "/",
+        steps=("click:.sort-dropdown .sort-button", "wait:.sort-dropdown .dropdown-menu"),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".gallery-action-buttons",
+        notes="SortDropdown menu open: solid surface, border and shadow",
+    ),
+    Screen(
+        "gallery-list",
+        "/",
+        storage=_S32_LIST,
+        steps=("wait:.file-list-row",),
+        masks=_GALLERY_MASKS,
+        ready=".gallery-action-buttons",
+        notes="list view (VirtualList), no hover",
+    ),
+    Screen(
+        "gallery-list-hover",
+        "/",
+        storage=_S32_LIST,
+        steps=("wait:.file-list-row", "hover:.file-list-row"),
+        masks=_GALLERY_MASKS,
+        ready=".gallery-action-buttons",
+        notes="list view with the first row hovered",
+    ),
+    Screen(
+        "gallery-selected",
+        "/",
+        steps=(
+            "wait:.file-card, .file-list-row",
+            "click:.select-btn",
+            "click:.file-card >> nth=0",
+            "click:.file-card >> nth=1",
+            "wait:.file-card.selected",
+        ),
+        masks=_GALLERY_MASKS,
+        ready=".gallery-action-buttons",
+        notes="grid view, two files selected (selected border)",
+    ),
+    Screen(
+        "gallery-list-selected",
+        "/",
+        storage=_S32_LIST,
+        steps=(
+            "wait:.file-list-row",
+            "click:.select-btn",
+            "click:.file-list-row >> nth=0",
+            "click:.file-list-row >> nth=1",
+            "wait:.file-list-row.selected",
+        ),
+        masks=_GALLERY_MASKS,
+        ready=".gallery-action-buttons",
+        notes="list view, two rows selected",
+    ),
+    Screen(
+        "gallery-mobile-nav",
+        "/",
+        viewport=_S32_MOBILE,
+        steps=("click:.mobile-toggle button", "wait:.mobile-overlay"),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".mobile-toggle button",
+        notes="390x844 with the nav menu open: shows the --modal-backdrop overlay",
+    ),
+)
+# --- END block: navbar + gallery states (styling row 3.2) -----------------------------------
+
 #: ``settings:<id>`` ids are the ``SettingsSection`` ids in ``components/SettingsModal.svelte``;
 #: ``tab:<id>`` ids are the real ``Tabs`` ids read from the section components
 #: (``lib/settings/*Tabs.ts``, ``AuthenticationSettings.svelte``). Password policy lives
@@ -284,7 +367,7 @@ _SETTINGS = (
     *(_settings("speaker-identification", f"tab:{t}") for t in ("spk-attributes", "spk-engine")),
 )
 
-SCREENS: tuple[Screen, ...] = (*_LOGGED_OUT, *_APP, *_SETTINGS)
+SCREENS: tuple[Screen, ...] = (*_LOGGED_OUT, *_APP, *_NAVBAR_GALLERY, *_SETTINGS)
 
 #: Screens the lane cards use as "control" (must pass the zero rule in intended mode).
 DEFAULT_CONTROLS = ("gallery", "file-detail", "login", "settings-profile")
@@ -311,6 +394,8 @@ def validate(screens: tuple[Screen, ...] = SCREENS) -> list[str]:
             kind, sep, arg = step.partition(":")
             if kind not in STEP_KINDS or not sep or not arg:
                 problems.append(f"{s.id}: malformed step {step!r}")
+        if s.viewport is not None and not all(n > 0 for n in s.viewport):
+            problems.append(f"{s.id}: viewport {s.viewport!r} must be positive")
         if s.skip_reason is not None and not s.skip_reason.strip():
             problems.append(f"{s.id}: empty skip_reason")
     return problems

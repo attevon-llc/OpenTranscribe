@@ -434,6 +434,15 @@ def capture(
     ctx = session.context(variant, screen.auth)
     page = ctx.new_page()
     try:
+        if screen.viewport:
+            page.set_viewport_size({"width": screen.viewport[0], "height": screen.viewport[1]})
+        if screen.storage:
+            page.add_init_script(
+                "".join(
+                    f"window.localStorage.setItem({json.dumps(k)}, {json.dumps(v)});"
+                    for k, v in screen.storage
+                )
+            )
         page.goto(session.base + path)
         if screen.ready:
             page.wait_for_selector(screen.ready, timeout=30000, state="attached")
@@ -463,6 +472,12 @@ def capture(
         has_btn = bool(page.evaluate("() => !!document.querySelector('.btn')"))
         return {"png": png, "snapshot": snapshot, "has_btn": has_btn}
     finally:
+        if screen.storage:
+            # The context is shared with later screens: leave no seeded key behind.
+            page.evaluate(
+                "keys => keys.forEach(k => window.localStorage.removeItem(k))",
+                [k for k, _ in screen.storage],
+            )
         page.close()
 
 

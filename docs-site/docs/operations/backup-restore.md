@@ -76,6 +76,9 @@ This creates **two** files:
 | `./backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql` | the PostgreSQL dump |
 | `./backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.voiceprints.ndjson` | every speaker/voiceprint document from OpenSearch, its index mapping, and a content digest |
 
+Both files are created readable by their owner only (mode `600`), because a dump holds user
+data and encrypted credentials.
+
 The second file is not optional and not a convenience: PostgreSQL holds no embedding
 vectors, so the dump on its own contains none of the deployment's biometric data. If the
 export fails (OpenSearch down, for example) the whole `backup` command fails rather than

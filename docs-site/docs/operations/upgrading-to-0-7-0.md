@@ -573,3 +573,40 @@ as it already did for the account's own held files.
 **What to do:** a script that changes a held file must have an administrator release the hold
 first. Handle `409` with `FILE_UNDER_LEGAL_HOLD` as "this file is preserved", not as a transient
 error to retry.
+
+## Outages now answer with an error, not an empty result
+
+**Check this if...** a script or monitor reads status codes from the API.
+
+0.7.0 stops reading a dependency outage as "nothing there". Each case below used to succeed or
+come back empty; it now fails visibly and can be retried.
+
+| Situation | Answer |
+|---|---|
+| The database has no free connection, a statement runs too long, or a request exceeds its deadline | `503` with `Retry-After` and `{"code": "server_busy"}`; at sign-in too, never `401` |
+| A stored secret cannot be decrypted (`ENCRYPTION_KEY` was changed or is wrong, or the stored value is damaged) | `409` with code `stored_value_unreadable`. Re-enter the credential in its settings page. Nothing connects without credentials or overwrites the stored value |
+| Revealing redacted content (transcript view, subtitles, transcript and document export) when its `transcript.view_unredacted` audit record cannot be written | `503`; the content is not shown |
+| `POST /api/files/complete` when the uploaded file's header cannot be read for the content check | `503` with `Retry-After`; the upload row is kept, so retry the call. The file is not accepted unchecked |
+| `GET /api/admin/timing/{task_id}` while Redis is down | `503` (was `404` "no timing data") |
+| ASR local-model restart while the task broker is unreachable | `503` `worker_broker_unavailable` (was `409`) |
+| `POST /embedding-migration/start` when the migration lock cannot be read | `503`; an unreadable lock counts as held, so a second migration never starts |
+
+Two response bodies gained fields: the three migration `stop` endpoints add
+`"warnings": ["batch_task_revocation_failed"]` to a `stopped` answer when in-flight batch tasks
+could not be revoked, and the embedding-migration status adds `stalled_check_failed: true` when
+the stalled check could not read the database or OpenSearch. The web app retries a read answered
+`503` with `Retry-After` once and shows "The server is busy" for writes; it never signs the user
+out for a `503`.
+
+`GET /api/admin/engine-settings/metrics` now answers `{"metrics_collected": false, "workers": {}}`
+with an explanation instead of an unexplained `{}`; live worker metrics are the Prometheus
+endpoints (see [Monitoring](./monitoring.md)).
+
+## `opentr.sh` is stricter
+
+Development and operator scripting only. `./opentr.sh` now exits with the status of the command
+it ran (it used to end in `exit 0`, so `healthcheck-all` always looked healthy). An unknown flag
+to `start` or `reset` is an error rather than being ignored (a mistyped `--fresh` used to run
+against the live stack), `rebuild-frontend` and `rebuild-backend` refuse options they do not
+implement, and a declined `reset`, `remove` or `purge` confirmation exits `1`. `--dry-run` writes
+nothing, including with `--with-pki`, and does not build or pull images.

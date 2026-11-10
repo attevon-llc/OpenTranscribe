@@ -100,7 +100,7 @@ Rules of thumb:
 - A smaller pool per process is right: the measured bottleneck was CPU, with 60 connections held
   while Postgres ran one to five statements at a time.
 - A request holds its connection from authentication until it ends. Concurrency above the pool
-  waits `DB_POOL_TIMEOUT_SECONDS` and then answers an error.
+  waits `DB_POOL_TIMEOUT_SECONDS` and then answers `503` with `Retry-After`.
 
 ## 4. Workers, replicas and memory
 

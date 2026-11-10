@@ -62,7 +62,6 @@ flowchart TB
   - `app/core/enums.py` — centralized FileStatus enum (single source of truth)
   - `app/core/exceptions.py` — custom exception hierarchy (`OpenTranscribeError` base)
   - `app/core/redis.py` — shared Redis singleton via `get_redis()` (process-wide, lazily created)
-  - `app/services/interfaces.py` — Protocol interfaces for Storage, Search, Cache, Notification
   - `app/services/notification_service.py` — unified `send_task_notification()` wrapper
   - `app/utils/transcript_builders.py` — shared transcript formatting functions
   - `app/services/progress_tracker.py` — EWMA-based ETA for all long-running tasks
@@ -256,7 +255,7 @@ The codebase underwent a major modularization refactor to address concrete maint
 
 ### Protocol-Based Interfaces
 
-The `app/services/interfaces.py` module defines Python `Protocol` classes for Storage, Search, Cache, and Notification services. This dependency inversion pattern allows tasks and services to depend on abstract interfaces rather than concrete implementations, enabling easier testing and future provider swaps (e.g., switching from MinIO to AWS S3).
+Where a service needs a seam for testing, it depends on a small Python `Protocol` defined beside its consumer (for example `SearchClient` in `app/services/chat/aggregation_queries.py`) rather than on a concrete client. There is no central interfaces module.
 
 ### 8-Queue Celery Architecture
 

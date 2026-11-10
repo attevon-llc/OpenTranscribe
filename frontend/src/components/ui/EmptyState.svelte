@@ -7,6 +7,13 @@
   export let title: string = '';
   export let description: string = '';
   export let padding: string = '48px 24px';
+  /**
+   * Title size. `body` (15px) is the default; a settings panel whose empty state used a
+   * larger heading passes `lg` (17px) or `xl` (20px) so its title never shrinks.
+   */
+  export let titleSize: 'body' | 'lg' | 'xl' = 'body';
+  /** A dashed card outline, for an empty list inside a settings panel. */
+  export let bordered: boolean = false;
 </script>
 
 <!--
@@ -14,14 +21,14 @@
   Anything passed in the default slot is an action row and gets the shared action gap
   (`--empty-state-action-gap`), so callers never add their own margin to a button here.
 -->
-<div class="empty-state" style="padding: {padding}">
+<div class="empty-state" class:bordered style="padding: {padding}">
   {#if $$slots.icon}
     <div class="empty-icon"><slot name="icon" /></div>
   {:else if icon}
     <div class="empty-icon"><MenuIcon name={icon} size="xl" /></div>
   {/if}
   {#if title}
-    <h3 class="empty-title">{title}</h3>
+    <h3 class="empty-title empty-title-{titleSize}">{title}</h3>
   {/if}
   {#if description}
     <p class="empty-description">{description}</p>
@@ -40,6 +47,12 @@
     text-align: center;
   }
 
+  .empty-state.bordered {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--card-background);
+  }
+
   .empty-icon {
     font-size: 2.5rem;
     line-height: 1;
@@ -54,6 +67,14 @@
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-height-tight);
     color: var(--text-color);
+  }
+
+  .empty-title-lg {
+    font-size: var(--font-size-lg);
+  }
+
+  .empty-title-xl {
+    font-size: var(--font-size-xl);
   }
 
   .empty-description {

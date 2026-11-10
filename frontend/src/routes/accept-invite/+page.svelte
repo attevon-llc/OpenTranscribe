@@ -32,6 +32,7 @@
 
   import logoBanner from '$assets/logo-banner.png';
   import FormField from '$components/ui/FormField.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   let phase: 'loading' | 'form' | 'error' | 'done' = 'loading';
   /** Server-supplied prose, rendered verbatim. Never inspected. */
@@ -137,7 +138,7 @@
       <div class="auth-header">
         <h1>{$t('auth.acceptInvite.title')}</h1>
       </div>
-      <div class="error-message" role="alert">{errorMessage}</div>
+      <Banner tone="error" size="base">{errorMessage}</Banner>
       <div class="auth-links">
         <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
@@ -389,15 +390,6 @@
 
   .auth-link:hover {
     text-decoration: underline;
-  }
-
-  .error-message {
-    background-color: var(--error-color-light);
-    color: var(--error-color);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    font-weight: var(--font-weight-medium);
   }
 
   .success-message {

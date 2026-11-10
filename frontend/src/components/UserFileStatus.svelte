@@ -18,6 +18,7 @@
   import TaskFilterPanel from '$components/fileStatus/TaskFilterPanel.svelte';
   import TasksGrid from '$components/fileStatus/TasksGrid.svelte';
   import FileDetailModal from '$components/fileStatus/FileDetailModal.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   // Flower exposes task arguments (file/user IDs) and worker topology, so the
   // entry is admin-only. Cosmetic only — nginx auth_request is the real gate.
@@ -381,9 +382,9 @@
   </div>
 
   {#if error}
-    <div class="error-message">
+    <Banner tone="error">
       {error}
-    </div>
+    </Banner>
   {/if}
 
   {#if loading && !fileStatus}
@@ -628,20 +629,6 @@
     color: var(--text-on-tint);
     font-size: 0.8rem;
     font-weight: var(--font-weight-medium);
-  }
-
-  .error-message {
-    background: var(--error-background);
-    color: var(--error-color);
-    padding: var(--space-4);
-    border-radius: var(--radius-sm);
-    margin-bottom: var(--space-4);
-    border: 1px solid var(--error-border);
-  }
-
-  :global([data-theme='dark']) .error-message {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.3);
   }
 
   @media (max-width: 768px) {

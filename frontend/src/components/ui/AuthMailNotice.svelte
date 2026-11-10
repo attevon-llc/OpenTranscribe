@@ -33,6 +33,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
+  import Banner from '$components/ui/Banner.svelte';
   import { AuthConfigApi, type AuthMailDesignation, type AuthMailReadiness } from '$lib/api/authConfig';
 
   /** Where the notice is rendered -- selects the copy. */
@@ -75,14 +76,13 @@
 </script>
 
 {#if show}
-  <div
-    class="auth-mail-notice"
-    class:escalated
-    role="alert"
-    data-testid="auth-mail-notice"
-    data-context={context}
+  <Banner
+    tone={escalated ? 'error' : 'warning'}
+    live="assertive"
+    class={escalated ? 'escalated' : ''}
+    testid="auth-mail-notice"
+    title={$t('authMailNotice.heading')}
   >
-    <strong class="notice-heading">{$t('authMailNotice.heading')}</strong>
     <p class="notice-body">
       {$t(bodyKey, { name: readiness?.config_name ?? '' })}
     </p>
@@ -97,39 +97,15 @@
     <a class="notice-link" href={DOCS_URL} target="_blank" rel="noopener noreferrer">
       {$t('authMailNotice.docsLink')}
     </a>
-  </div>
+  </Banner>
 {/if}
 
 <style>
-  /* Warning tokens, escalated to the error tokens when sign-in itself is blocked.
-     Both are theme tokens, so light and dark need no second rule set. */
-  .auth-mail-notice {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    margin-block: var(--space-1) var(--space-2);
-    padding: var(--space-2) var(--space-2-5);
-    border: 1px solid var(--warning-border);
-    border-inline-start-width: 4px;
-    border-radius: var(--radius-md);
-    background: var(--warning-bg);
-    color: var(--text-color);
-    font-size: 0.8rem;
-    line-height: 1.45;
-    text-align: start;
-  }
-  .auth-mail-notice.escalated {
-    border-color: var(--error-border);
-    background: var(--error-background);
-  }
-  .notice-heading {
-    font-size: 0.85rem;
-  }
   .notice-body {
     margin: 0;
   }
   .notice-link {
-    align-self: flex-start;
+    display: inline-block;
     color: var(--primary-on-surface);
     text-decoration: underline;
     text-underline-offset: 2px;

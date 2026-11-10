@@ -5,6 +5,7 @@
   import ProgressBar from '$components/ui/ProgressBar.svelte';
   import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import Banner from '$components/ui/Banner.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import PrivacySwitchCard from '$components/privacy/PrivacySwitchCard.svelte';
   import { t } from '$stores/locale';
@@ -23,6 +24,7 @@
   // `a11y-fixtures/status-badges`.
   const noop = () => {};
   const buttonVariants = ['btn-primary', 'btn-secondary', 'btn-danger', 'btn-warning'] as const;
+  const bannerTones = ['info', 'success', 'warning', 'error', 'neutral'] as const;
   const badgeVariants = ['default', 'success', 'warning', 'error', 'info'] as const;
   const tintFamilies = [
     { name: 'error', bg: 'var(--danger-bg)', text: 'var(--color-error-text)' },
@@ -185,11 +187,26 @@
         <Badge {variant}>{$t('common.status')}</Badge>
       {/each}
     </div>
+    <div class="kit-row">
+      {#each badgeVariants as variant (variant)}
+        <Badge {variant} size="md">{$t('common.status')}</Badge>
+      {/each}
+    </div>
   </section>
 
   <section data-kit-section="banners" aria-labelledby="kit-banners">
     <h2 id="kit-banners">{$t('common.moreInformation')}</h2>
-    <!-- No shared banner exists yet (lane 2.6 adds ui/Banner and fills this section). -->
+    {#each bannerTones as tone (tone)}
+      <Banner {tone} live="off">{$t('common.moreInformation')}</Banner>
+      <Banner {tone} live="off" title={$t('common.status')}>{$t('common.moreInformation')}</Banner>
+      <Banner {tone} live="off" title={$t('common.status')} dismissible>
+        {$t('common.moreInformation')}
+        <svelte:fragment slot="actions">
+          <button type="button" class="btn btn-secondary btn-sm" on:click={noop}>{$t('common.cancel')}</button>
+          <button type="button" class="btn btn-primary btn-sm" on:click={noop}>{$t('common.save')}</button>
+        </svelte:fragment>
+      </Banner>
+    {/each}
   </section>
 
   <section data-kit-section="status-text" aria-labelledby="kit-status-text">

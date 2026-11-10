@@ -50,7 +50,7 @@
 
 <div class="picker-tab">
   {#if loading}
-    <div class="loading"><Spinner size="small" /></div>
+    <div class="loading"><Spinner label={$t('common.loading')} size="small" /></div>
   {:else}
     <input
       class="tag-filter"

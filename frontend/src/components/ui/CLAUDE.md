@@ -5,7 +5,7 @@
 Small, reusable, theme-aware, accessible building blocks. Prefer these over hand-rolling
 the same pattern in a feature component. Import via `$components/ui/...`. Every primitive
 supports light/dark via CSS custom properties and most ship with a colocated `*.test.ts`
-(the pure-markup ones — `Spinner`, `SkeletonLoader`, `ListRowSkeleton`,
+(the pure-markup ones — `SkeletonLoader`, `ListRowSkeleton`,
 `CardGridSkeleton`, `MetadataChips`, `TagInput`, `FilterPanelToggle` — have none).
 
 ## Catalog
@@ -70,7 +70,8 @@ primitive in the same spirit as this folder.
   "working".
 - `Tabs.svelte`'s `attention` item field draws a warning dot whose text is its accessible name
   and tooltip; use it for "this panel needs doing" without opening it.
-- `Badge.svelte` — semantic status pill (`default|success|warning|error|info`).
+- `Banner.svelte` — the one inline notice box: `tone` info|success|warning|error|neutral, `title`, `dismissible` (+ `dismissLabel`, `on:dismiss`), `actions` slot, `spaced`, `testid`. Tint `--{tone}-bg`, 3px inline-start accent bar, tone icon (`MenuIcon`) so the tone is never colour alone (WCAG 1.4.1). Live region: `live="auto"` (default) = `role="alert"` for error, `role="status"` otherwise; `live="off"` for a notice already on the page at load. `size` md (14px) or `body` (15px, auth pages). `AuthMailNotice` renders a Banner. Page-chrome bars (`SupportAccessBanner`, `ConnectionStatusBanner`, `DemoBanner`) keep their own fixed layout; `settings/StatusChip` (label + value pair) and `supportAccess/StatusChip` (contrast-calibrated for tinted bars) stay separate from Badge. Don't write a local `.banner` or `.error-message`.
+- `Badge.svelte` — semantic status pill (`default|success|warning|error|info`), `size` `sm` (11px) or `md` (12px), `class` forwarded to the root. The state is always the slotted text, never colour alone (WCAG 1.4.1). Map a task/file status to a variant with `badgeVariantForStatus` (`lib/fileStatus/statusVariant.ts`); never write a local `.status-badge`.
 - `Toggle.svelte` — the one 44x24 on/off switch (native checkbox with role=switch; Space and Enter; controlled via `onchange(next)`; `busy` keeps focus, `disabled` does not).
 - `Chip.svelte` — compact removable/selectable pill (tags, filters).
 - `MetadataChips.svelte` — renders a `Chip` row from a metadata object/list.
@@ -117,11 +118,16 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
 - `EmptyState.svelte` — icon -> title -> description -> actions, spaced by the
   `--empty-state-*` tokens. The default slot IS the action row (`.empty-actions`, flex, wraps);
   callers put buttons there with no margin of their own (issue #1243 item 16: a caller-spaced
-  "Open Review" sat 0px under its description).
+  "Open Review" sat 0px under its description). `titleSize` (`body|lg|xl`) keeps a settings
+  panel's larger heading from shrinking; `bordered` is the dashed card outline for an empty list.
+  `chat/ChatEmptyState` stays separate on purpose (a chat greeting with suggestion chips).
 - `ProgressBar.svelte` — WAI-ARIA `role=progressbar` track (`percent` 0-100 or `null` = indeterminate, which omits `aria-valuenow`; `label` visible, `ariaLabel` when no visible label; `tone` primary|success|warning|error). Tested in `ProgressBar.test.ts`. Usage meters are not progress: do not use it for them.
 - `LiveProgressCard.svelte` — card for a running background job: optional spinner title, `done / total` (or `countLabel`) + percent in an `aria-live=polite` region, `ProgressBar` named by the required `barLabel` (a name like "Search indexing progress", never a status string), message + `formatEta` row, default slot, optional `danger-outline` stop `Button` (`onStop`, busy when `state="stopping"`). Used by SearchSettings, EmbeddingMigrationSettings, AutoLabelSettings, SpeakerAttributeBulkPanel. Tested in `LiveProgressCard.test.ts`.
-- `Spinner.svelte`, `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`,
-  `CardGridSkeleton.svelte`, `TagInput.svelte`.
+- `Spinner.svelte` — the one spinner (`size` small/inline/medium/large, `color`, `currentColor` for a
+  spinner on a solid button). Pass a translated `label` when no text sits beside it: it then
+  renders as `role="status"`; without a label it is `aria-hidden` (the adjacent text is the name).
+  Never write a local `.spinner` or `@keyframes spin` (the global one is in `styles/animations.css`).
+- `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`, `CardGridSkeleton.svelte`, `TagInput.svelte`.
 
 ## Conventions / patterns
 

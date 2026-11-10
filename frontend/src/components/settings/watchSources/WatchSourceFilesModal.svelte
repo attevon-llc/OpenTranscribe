@@ -307,7 +307,7 @@
     {/if}
 
     {#if loading}
-      <div class="files-loading"><Spinner /></div>
+      <div class="files-loading"><Spinner label={$t('common.loading')} /></div>
     {:else if files.length === 0}
       <EmptyState
         title={$t('settings.watchSources.files.emptyTitle')}

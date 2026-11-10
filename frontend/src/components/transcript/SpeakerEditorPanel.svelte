@@ -14,6 +14,7 @@
   import FileVoiceprintConsent from '$components/privacy/FileVoiceprintConsent.svelte';
   import { user } from '$stores/auth';
   import { t } from '$stores/locale';
+  import Spinner from '$components/ui/Spinner.svelte';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { RENAME_PROPAGATION_TIMEOUT_MS } from '$lib/api/speakerClusters';
   import { isPlaceholderSpeakerName } from '$lib/utils/speakerNames';
@@ -519,9 +520,7 @@
         title={speakerNamesChanged ? $t('transcript.saveSpeakerNamesTitle') : $t('transcript.noChangesToSave')}
       >
         {#if savingSpeakers}
-          <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12a9 9 0 11-6.219-8.56"/>
-          </svg>
+          <Spinner size="inline" color="currentColor" />
           {$t('common.saving')}
         {:else}
           {$t('transcript.saveSpeakerNames')}
@@ -851,10 +850,6 @@
     background: #94a3b8;
     transform: none;
     box-shadow: none;
-  }
-
-  .save-speakers-button .spinner {
-    margin-right: var(--space-2);
   }
 
   .propagation-pending {
@@ -1302,24 +1297,6 @@
     background: var(--warning-color);
   }
 
-  .spinner {
-    animation: spin 1s linear infinite;
-  }
-
-  /* Second .spinner rule (later in the original stylesheet → wins for
-     conflicting `animation`/size props). Preserved verbatim so the
-     save-speakers-button spinner renders identically. */
-  .spinner {
-    animation: rotate 2s linear infinite;
-    width: 20px;
-    height: 20px;
-  }
-
-  @keyframes rotate {
-    100% {
-      transform: rotate(360deg);
-    }
-  }
 
   @media (max-width: 768px) {
     .speaker-item {

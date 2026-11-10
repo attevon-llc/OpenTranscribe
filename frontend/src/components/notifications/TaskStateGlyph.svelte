@@ -54,12 +54,6 @@
     color: var(--text-secondary);
   }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .state-running {
       animation: none;

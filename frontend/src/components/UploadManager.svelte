@@ -14,6 +14,7 @@
   import { t } from '$stores/locale';
   import UploadProgress from './UploadProgress.svelte';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import EmptyState from './ui/EmptyState.svelte';
 
   // Component state
@@ -149,12 +150,7 @@
           <div class="upload-icon">
             {#if $hasActiveUploads}
               <!-- Proper spinner when uploading -->
-              <svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="15.708" stroke-dashoffset="15.708">
-                  <animate attributeName="stroke-dasharray" dur="1s" values="0 31.416;15.708 15.708;0 31.416" repeatCount="indefinite"/>
-                  <animate attributeName="stroke-dashoffset" dur="1s" values="0;-15.708;-31.416" repeatCount="indefinite"/>
-                </circle>
-              </svg>
+              <Spinner size="inline" color="currentColor" />
             {:else}
               <!-- Static upload icon when not uploading -->
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

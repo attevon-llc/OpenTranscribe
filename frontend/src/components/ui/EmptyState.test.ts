@@ -40,3 +40,23 @@ describe('EmptyState action row', () => {
     expect(rule).toMatch(/margin-top:\s*var\(--empty-state-action-gap\)/);
   });
 });
+
+describe('EmptyState size and outline', () => {
+  it.each(['body', 'lg', 'xl'] as const)('renders the %s title size', (titleSize) => {
+    render(EmptyState, { props: { title: 'Nothing here', titleSize } });
+    const heading = screen.getByRole('heading', { name: 'Nothing here' });
+    expect(heading.classList.contains(`empty-title-${titleSize}`)).toBe(true);
+  });
+
+  it('draws the dashed card outline only when bordered', () => {
+    const plain = render(EmptyState, { props: { title: 'a' } });
+    expect(plain.container.querySelector('.empty-state')?.classList.contains('bordered')).toBe(
+      false
+    );
+    plain.unmount();
+    const outlined = render(EmptyState, { props: { title: 'b', bordered: true } });
+    expect(outlined.container.querySelector('.empty-state')?.classList.contains('bordered')).toBe(
+      true
+    );
+  });
+});

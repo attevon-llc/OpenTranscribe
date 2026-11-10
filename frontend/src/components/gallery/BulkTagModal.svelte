@@ -240,7 +240,7 @@
     />
 
     {#if selectionLoading}
-      <div class="selection-loading"><Spinner size="small" /></div>
+      <div class="selection-loading"><Spinner label={$t('common.loading')} size="small" /></div>
     {:else if chips.length > 0}
       <div class="current-tags">
         <span class="current-label">

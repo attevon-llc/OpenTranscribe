@@ -25,6 +25,7 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   interface StatusFile {
     uuid: string;
@@ -139,9 +140,9 @@
   </div>
 
   {#if loading && !data}
-    <div class="loading-state"><Spinner size="large" /></div>
+    <div class="loading-state"><Spinner label={$t('common.loading')} size="large" /></div>
   {:else if error}
-    <div class="error-message" role="alert">{error}</div>
+    <Banner tone="error">{error}</Banner>
   {:else if data}
     <div class="counts">
       {#each COUNTS as c (c.key)}
@@ -299,10 +300,4 @@
     color: var(--text-secondary);
   }
 
-  .error-message {
-    padding: var(--space-3) var(--space-4);
-    border-radius: var(--radius-lg);
-    color: var(--error-color);
-    border: 1px solid var(--error-color);
-  }
 </style>

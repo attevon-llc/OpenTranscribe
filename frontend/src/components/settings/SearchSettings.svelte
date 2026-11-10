@@ -14,6 +14,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
   import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
+  import Banner from '$components/ui/Banner.svelte';
 
   const confirmDialog = createConfirmDialog();
   const {
@@ -438,9 +439,7 @@
   {/if}
 
   {#if statusUnknown}
-    <div class="banner banner-neutral" role="status">
-      <div class="banner-body">{$t('settings.search.statusUnavailable')}</div>
-    </div>
+    <Banner tone="neutral">{$t('settings.search.statusUnavailable')}</Banner>
   {/if}
 
   <!-- Live reindex progress -->
@@ -495,9 +494,8 @@
 
   <!-- Neural search bootstrap self-heal warning (issue #625) -->
   {#if bootstrapStatus?.state === 'degraded'}
-    <div class="banner banner-warning">
-      <div class="banner-title">{$t('settings.search.bootstrapDegradedTitle')}</div>
-      <div class="banner-body">
+    <Banner tone="warning" title={$t('settings.search.bootstrapDegradedTitle')}>
+      <div>
         {$t('settings.search.bootstrapDegradedBody', { count: bootstrapStatus.attempts })}
       </div>
       {#if bootstrapStatus.last_error}
@@ -515,29 +513,26 @@
           {$t('settings.search.bootstrapTextOnlyFiles', { count: bootstrapStatus.text_only_chunk_files ?? 0 })}
         </div>
       {/if}
-    </div>
+    </Banner>
   {/if}
 
   <!-- Re-embed degraded (text-only) files (issue #626, the #625 follow-up). Shown
        independently of the bootstrap banner above — a degraded window can leave text-only
        files behind even after the neural pipeline has since recovered. -->
   {#if degradedPreview && degradedPreview.total_files > 0}
-    <div class="banner banner-warning reembed-banner">
-      <div class="reembed-banner-text">
-        <div class="banner-title">{$t('settings.search.reembedButton')}</div>
-        <div class="banner-body">
-          {$t('settings.search.reembedButtonCount', { count: degradedPreview.total_files })}
-        </div>
-      </div>
-      <button
-        class="btn btn-secondary btn-sm reembed-btn"
-        on:click={openReembedModal}
-        disabled={isReembedding || isCheckingDegraded || isReindexing}
-      >
-        {#if isReembedding}<Spinner size="small" />{/if}
-        {$t('settings.search.reembedButton')}
-      </button>
-    </div>
+    <Banner tone="warning" title={$t('settings.search.reembedButton')}>
+      {$t('settings.search.reembedButtonCount', { count: degradedPreview.total_files })}
+      <svelte:fragment slot="actions">
+        <button
+          class="btn btn-secondary btn-sm reembed-btn"
+          on:click={openReembedModal}
+          disabled={isReembedding || isCheckingDegraded || isReindexing}
+        >
+          {#if isReembedding}<Spinner size="small" />{/if}
+          {$t('settings.search.reembedButton')}
+        </button>
+      </svelte:fragment>
+    </Banner>
   {/if}
 
   <!-- Embedding Model Selection -->
@@ -791,36 +786,6 @@
 
   /* Neural search bootstrap warning banner (#625). Colours come from theme vars so
      light/dark parity is automatic, matching the .lang-badge pattern above. */
-  .banner {
-    border-radius: var(--radius-md);
-    padding: var(--space-2-5) var(--space-3);
-    margin-bottom: var(--space-3);
-    font-size: var(--font-size-sm);
-    line-height: 1.4;
-  }
-
-  .banner-warning {
-    border: 1px solid var(--warning-color);
-    background-color: var(--warning-bg);
-    color: var(--text-color);
-  }
-
-  .banner-neutral {
-    border: 1px solid var(--border-color);
-    background-color: var(--surface-color);
-    color: var(--text-secondary);
-  }
-
-  .banner-title {
-    font-weight: var(--font-weight-semibold);
-    margin-bottom: var(--space-1);
-    color: var(--warning-color);
-  }
-
-  .banner-body {
-    margin-bottom: var(--space-0-5);
-  }
-
   .banner-detail {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
@@ -829,18 +794,6 @@
 
   /* Re-embed degraded files banner (#626) — same .banner-warning shell as the bootstrap
      banner above, laid out as text + action button. */
-  .reembed-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-  }
-
-  .reembed-banner-text {
-    flex: 1;
-    min-width: 0;
-  }
-
   .reembed-btn {
     display: inline-flex;
     align-items: center;
@@ -912,11 +865,6 @@
   }
 
   @media (max-width: 768px) {
-    .reembed-banner {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
     .reembed-btn {
       justify-content: center;
     }

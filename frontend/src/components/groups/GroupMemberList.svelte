@@ -10,6 +10,7 @@
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { createConfirmDialog } from '$lib/confirmDialog';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   export let members: GroupMember[] = [];
   export let groupUuid: string;
@@ -91,7 +92,7 @@
 
 <div class="member-list">
   {#if members.length === 0}
-    <p class="empty-state">{$t('groups.noMembers')}</p>
+    <EmptyState padding="var(--space-6) 0" description={$t('groups.noMembers')} />
   {:else}
     {#each members as member (member.uuid)}
       <div class="member-row" class:is-self={member.user_uuid === currentUserUuid}>
@@ -169,14 +170,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-  }
-
-  .empty-state {
-    text-align: center;
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    padding: var(--space-6) 0;
-    margin: 0;
   }
 
   .member-row {

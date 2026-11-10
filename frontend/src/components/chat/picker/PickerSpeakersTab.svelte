@@ -102,7 +102,7 @@
         aria-label={$t('chat.picker.searchSpeakers')}
       />
       {#if searching}
-        <Spinner size="small" />
+        <Spinner label={$t('common.loading')} size="small" />
       {/if}
     </div>
 

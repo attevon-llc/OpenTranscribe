@@ -17,6 +17,7 @@
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import Badge from '$components/ui/Badge.svelte';
 
   // ---- Types ---------------------------------------------------------------
 
@@ -373,7 +374,7 @@
         <span class="status-label">{$t('settings.retention.lastRunSection')}:</span>
         <span class="status-value">{formatDateTime(lastRun, $t('settings.retention.lastRunNever'), $locale)}</span>
         {#if lastRun && lastRunDeleted !== null}
-          <span class="status-badge">{$t('settings.retention.lastRunLabel', { datetime: formatDateTime(lastRun, $t('settings.retention.lastRunNever'), $locale), count: lastRunDeleted })}</span>
+          <Badge variant="info" size="md" class="status-badge">{$t('settings.retention.lastRunLabel', { datetime: formatDateTime(lastRun, $t('settings.retention.lastRunNever'), $locale), count: lastRunDeleted })}</Badge>
         {/if}
       </div>
       <div class="status-item">
@@ -692,15 +693,6 @@
 
   .status-value {
     color: var(--text-color);
-  }
-
-  .status-badge {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border-radius: var(--radius-xl);
-    padding: 0 var(--space-2);
-    font-size: 0.72rem;
-    line-height: 1.6;
   }
 
   /* Actions */

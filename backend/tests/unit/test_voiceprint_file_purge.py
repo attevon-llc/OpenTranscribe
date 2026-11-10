@@ -165,3 +165,30 @@ def test_a_file_purge_leaves_other_files_speakers_alone(
 
     sb = db_session.query(Speaker).filter_by(id=world["sb"].id).one()
     assert sb.suggestion_source == "voice_match"  # another file's voice suggestion survives
+
+
+@pytest.mark.parametrize("protection", ["legal_hold", "quarantine"])
+def test_a_direct_file_pass_leaves_a_protected_files_voiceprints(
+    db_session, normal_user, world, speaker_os_seams, monkeypatch, protection
+):
+    """``run_purge_pass`` is a documented direct call and the task's guard reads only once, at
+    start: a file held or quarantined by the time the pass runs must keep its voiceprints."""
+    index = _index_with(FakeOpenSearch(), normal_user, world)
+    _wire(monkeypatch, speaker_os_seams, index)
+    if protection == "legal_hold":
+        world["file_a"].legal_hold = True
+    else:
+        world["file_a"].is_quarantined = True
+    world["sa"].suggested_name = "Pat"
+    world["sa"].suggestion_source = "voice_match"
+    db_session.commit()
+
+    result = _run(db_session, purge.PurgeScope(kind="files", file_ids=(world["file_a"].id,)))
+
+    survivors = index.ids()
+    assert str(world["sa"].uuid) in survivors
+    assert str(world["only_a"].uuid) in survivors
+    assert result.counts()["opensearch"]["speaker_docs_deleted"] == 0
+    sa = db_session.query(Speaker).filter_by(id=world["sa"].id).one()
+    assert sa.suggestion_source == "voice_match"
+    assert str(world["profile"].uuid) not in speaker_os_seams["erased_profiles"]

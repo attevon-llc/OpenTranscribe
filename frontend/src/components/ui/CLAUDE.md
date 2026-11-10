@@ -69,6 +69,7 @@ primitive in the same spirit as this folder.
 - `Tabs.svelte`'s `attention` item field draws a warning dot whose text is its accessible name
   and tooltip; use it for "this panel needs doing" without opening it.
 - `Badge.svelte` — semantic status pill (`default|success|warning|error|info`).
+- `Toggle.svelte` — the one 44x24 on/off switch (native checkbox with role=switch; Space and Enter; controlled via `onchange(next)`; `busy` keeps focus, `disabled` does not).
 - `Chip.svelte` — compact removable/selectable pill (tags, filters).
 - `MetadataChips.svelte` — renders a `Chip` row from a metadata object/list.
 - `CopyButton.svelte` — click-to-copy control with a transient "copied" state.

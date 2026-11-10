@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '$styles/auth.css';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import { resolve } from '$app/paths';
   import { pageStore } from '$stores/pageStore';
@@ -145,47 +146,7 @@
 
 <style>
   .auth-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
     min-height: 100vh;
-    padding: var(--space-4);
-    background-color: var(--background-color);
-  }
-
-  .auth-card {
-    background-color: var(--surface-color);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    width: 100%;
-    max-width: 400px;
-    padding: var(--space-8);
-  }
-
-  .auth-header {
-    text-align: center;
-    margin-bottom: var(--space-8);
-  }
-
-  .auth-header h1 {
-    font-size: var(--font-size-2xl);
-    color: var(--text-color);
-    margin-bottom: var(--space-2);
-  }
-
-  .auth-header p {
-    color: var(--text-light);
-    font-size: 0.9rem;
-  }
-
-  .auth-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-  }
-
-  .auth-form input {
-    font-size: var(--font-size-base);
   }
 
   .toggle-password {
@@ -204,67 +165,4 @@
     background-color: var(--surface-hover);
   }
 
-  .auth-button {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-xl);
-    padding: 0.6rem 1.2rem;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-  }
-
-  .auth-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: translateY(-1px);
-  }
-
-  .auth-button:disabled {
-    background-color: var(--border-color);
-    cursor: not-allowed;
-  }
-
-  .auth-links {
-    margin-top: var(--space-6);
-    text-align: center;
-    color: var(--text-light);
-  }
-
-  .auth-link {
-    color: var(--primary-on-surface);
-    text-decoration: none;
-  }
-
-  .auth-link:hover {
-    text-decoration: underline;
-  }
-
-  .success-message {
-    background-color: var(--success-color-light);
-    color: var(--success-color);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(34, 197, 94, 0.2);
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .auth-logo {
-    text-align: center;
-    margin-bottom: var(--space-6);
-  }
-
-  .logo-image {
-    max-width: 200px;
-    height: auto;
-  }
 </style>

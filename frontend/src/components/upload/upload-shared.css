@@ -1,4 +1,4 @@
-/* Shared CSS for upload step components (Tags, Collections). The pickers themselves are
+/* Shared CSS for upload step components (Tags, Collections, Model, Speakers). The pickers themselves are
    SearchableMultiSelect, which carries its own scoped styles. */
 
 /* ── Step containers ── */
@@ -185,4 +185,26 @@
 .create-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* ── Labelled field with a small hint under the label (Model, Speakers) ── */
+.stacked-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.stacked-field label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.stacked-field-hint {
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--text-secondary);
 }

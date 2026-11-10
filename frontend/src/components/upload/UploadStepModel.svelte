@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './upload-shared.css';
   import Toggle from '$components/ui/Toggle.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
@@ -37,10 +38,10 @@
   <p class="step-hint">{$t('uploader.modelHint')}</p>
 
   {#if modelChoiceEnabled}
-  <div class="field">
+  <div class="stacked-field">
     <label for="whisper-model-select">
       {$t('uploader.whisperModel')}
-      <span class="hint">{$t('uploader.whisperModelHint')}</span>
+      <span class="stacked-field-hint">{$t('uploader.whisperModelHint')}</span>
     </label>
     <PerFileModelSelect
       id="whisper-model-select"
@@ -62,7 +63,7 @@
     <div class="toggle-row">
       <label class="toggle-text" for="generate-summary-toggle">
         <span class="toggle-label">{$t('upload.generateSummary')}</span>
-        <span class="hint">{$t('upload.generateSummaryHint')}</span>
+        <span class="stacked-field-hint">{$t('upload.generateSummaryHint')}</span>
       </label>
       <Toggle
         id="generate-summary-toggle"
@@ -75,11 +76,7 @@
 
 <style>
   .step-model { display: flex; flex-direction: column; gap: var(--space-4); }
-  .step-hint { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 0; line-height: 1.5; }
 
-  .field { display: flex; flex-direction: column; gap: var(--space-1-5); }
-  .field label { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); display: flex; flex-direction: column; gap: var(--space-0-5); }
-  .hint { font-size: var(--font-size-2xs); font-weight: var(--font-weight-regular); color: var(--text-secondary); }
 
   .model-managed { margin: 0; font-size: var(--font-size-sm); color: var(--text-secondary); }
   .model-note { margin: 0; font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.3; }

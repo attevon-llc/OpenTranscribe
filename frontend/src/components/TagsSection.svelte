@@ -37,11 +37,11 @@
 
 <div class="tags-dropdown-section">
   <button
-    class="tags-header"
+    class="section-toggle"
     on:click={toggleTags}
     on:keydown={e => e.key === 'Enter' && toggleTags()}
     title={$t('tags.toggleEditorHint')} aria-expanded={isTagsExpanded}>
-    <h4 class="section-heading">{$t('tags.title')}</h4>
+    <h4 class="section-toggle-heading">{$t('tags.title')}</h4>
     <div class="tags-preview">
       {#if file?.tags && file.tags.length > 0}
         {#each file.tags.slice(0, 3) as tag (tag.uuid)}
@@ -93,31 +93,6 @@
 <style>
   .tags-dropdown-section {
     margin-bottom: 0;
-  }
-
-  .tags-header {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: var(--space-3) var(--space-4);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .tags-header:hover {
-    background: var(--surface-hover);
-    border-color: var(--border-hover);
-  }
-
-  .section-heading {
-    margin: 0;
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
   }
 
   .tags-preview {

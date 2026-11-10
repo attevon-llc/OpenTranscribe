@@ -86,39 +86,7 @@
 <style>
   /* Left Sidebar - Sticky Filters */
   .filter-sidebar {
-    flex-shrink: 0;
-    background-color: var(--surface-color);
-    border-right: 1px solid var(--border-color);
-    height: 100%;
-    display: flex;
-    flex-direction: column;
     transition: all var(--duration-slow) ease;
-  }
-
-  /* Expanded state */
-  .filter-sidebar.show {
-    width: 320px;
-  }
-
-  /* Collapsed state */
-  .filter-sidebar:not(.show) {
-    width: 50px; /* Just enough for the toggle button */
-  }
-
-  .filter-toggle-container {
-    padding: var(--space-2) var(--space-2) 0;
-    margin-bottom: var(--space-2);
-    flex-shrink: 0;
-  }
-
-  .filter-sidebar.show .filter-toggle-container {
-    padding: var(--space-2) var(--space-4) 0;
-  }
-
-  .filter-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 var(--space-4);
   }
 
   /* Mobile filter overlay backdrop - hidden on desktop */

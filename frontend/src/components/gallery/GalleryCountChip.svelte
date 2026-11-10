@@ -23,25 +23,13 @@
 </script>
 
 {#if !loading || filesLoaded > 0}
-  <div class="count-chip" in:scale={{ duration: 200 }} out:fade={{ duration: 150 }}>
+  <div class="pill-chip count-chip" in:scale={{ duration: 200 }} out:fade={{ duration: 150 }}>
     <span>{displayText}</span>
   </div>
 {/if}
 
 <style>
   .count-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    padding: var(--space-1-5) var(--space-3);
-    height: 30px;
-    box-sizing: border-box;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-xl);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-secondary);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     backdrop-filter: blur(8px);
     transition: all var(--duration-base) ease;

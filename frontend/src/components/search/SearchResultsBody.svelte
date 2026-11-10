@@ -245,31 +245,6 @@
     margin: calc(-1 * var(--space-1)) 0 var(--space-1);
   }
 
-  .text-btn {
-    padding: var(--space-0-5) 0;
-    background: none;
-    border: none;
-    /* form-elements.css styles every bare <button> with a drop shadow and a hover
-       scale + fill; a text link-button wants none of them. */
-    box-shadow: none;
-    color: var(--primary-on-surface);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-  }
-
-  .text-btn:hover {
-    text-decoration: underline;
-    background: none;
-    box-shadow: none;
-    transform: none;
-  }
-
-  .text-btn:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-    border-radius: var(--radius-xs);
-  }
-
   .summary-results-section {
     margin-bottom: var(--space-6);
   }

@@ -10,6 +10,7 @@
   import GroupMemberList from './GroupMemberList.svelte';
   import GroupMemberSearch from './GroupMemberSearch.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
 
   export let group: GroupDetail;
 
@@ -26,7 +27,14 @@
   let editDescription = group.description || '';
   let isSaving = false;
   let isDeleting = false;
-  let showDeleteConfirm = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   // Keep edit fields in sync when the group prop changes externally
   $: if (!editingName) editName = group.name;
@@ -103,11 +111,15 @@
   }
 
   function requestDelete() {
-    showDeleteConfirm = true;
+    confirmDialog.request(
+      $t('groups.deleteGroup'),
+      $t('groups.confirmDelete'),
+      executeDelete,
+      { confirmText: $t('groups.deleteGroup'), variant: 'danger' }
+    );
   }
 
   async function executeDelete() {
-    showDeleteConfirm = false;
     isDeleting = true;
     try {
       await GroupsApi.deleteGroup(group.uuid);
@@ -295,15 +307,14 @@
   </div>
 
   <ConfirmationModal
-    bind:isOpen={showDeleteConfirm}
-    title={$t('groups.deleteGroup')}
-    message={$t('groups.confirmDelete')}
-    confirmText={isDeleting ? $t('groups.deleting') : $t('groups.deleteGroup')}
-    cancelText={$t('modal.cancel')}
-    variant="danger"
-    on:confirm={executeDelete}
-    on:cancel={() => showDeleteConfirm = false}
-    on:close={() => showDeleteConfirm = false}
+    bind:isOpen={$confirmOpen}
+    title={$confirmTitle}
+    message={$confirmMessage}
+    confirmText={$confirmLabel}
+    variant={$confirmVariant}
+    on:confirm={confirmDialog.confirm}
+    on:cancel={confirmDialog.cancel}
+    on:close={confirmDialog.cancel}
   />
 </div>
 

@@ -3,6 +3,7 @@
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
   import DemoAttribution from '$components/demo/DemoAttribution.svelte';
   import HeldFileBanner from '$components/legal-hold/HeldFileBanner.svelte';
@@ -30,9 +31,19 @@
   let editedTitle = '';
   let isSaving = false;
 
-  // Modal state
-  let showLengthErrorModal = false;
-  let showSaveErrorModal = false;
+  // Error notices share one dialog; there is nothing to run on confirm.
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
+
+  function notify(title: string, message: string) {
+    confirmDialog.request(title, message, () => {}, { confirmText: $t('common.confirm') });
+  }
 
   // Helper function to determine if text should be truncated
   function shouldTruncate(text: string): boolean {
@@ -71,7 +82,7 @@
     }
 
     if (trimmedTitle.length > 255) {
-      showLengthErrorModal = true;
+      notify($t('fileDetail.displayNameTooLong'), $t('fileDetail.displayNameTooLongMessage'));
       return;
     }
 
@@ -98,7 +109,7 @@
       console.error('Error updating display name:', error);
       // A hold placed since the page loaded: say so (translated) instead of a generic failure.
       if (reportHoldRefusal(error)) cancelEditingTitle();
-      else showSaveErrorModal = true;
+      else notify($t('fileDetail.saveFailed'), $t('fileDetail.saveFailedMessage'));
     } finally {
       isSaving = false;
     }
@@ -284,25 +295,14 @@
 
 <!-- Modal dialogs -->
 <ConfirmationModal
-  bind:isOpen={showLengthErrorModal}
-  title={$t('fileDetail.displayNameTooLong')}
-  message={$t('fileDetail.displayNameTooLongMessage')}
-  confirmText={$t('common.confirm')}
-  cancelText=""
-  variant="primary"
-  on:confirm={() => showLengthErrorModal = false}
-  on:close={() => showLengthErrorModal = false}
-/>
-
-<ConfirmationModal
-  bind:isOpen={showSaveErrorModal}
-  title={$t('fileDetail.saveFailed')}
-  message={$t('fileDetail.saveFailedMessage')}
-  confirmText={$t('common.confirm')}
-  cancelText=""
-  variant="primary"
-  on:confirm={() => showSaveErrorModal = false}
-  on:close={() => showSaveErrorModal = false}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

@@ -23,6 +23,7 @@
   import Badge from '$components/ui/Badge.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import { clampTagNameInput, normalizeTagName } from '$lib/utils/tagName';
   import type { TagImpact, TaggedFile } from '$lib/types/tag';
   import { tagOriginKey, type TagListEntry } from './TagList.svelte';
@@ -72,11 +73,41 @@
 
   $: if (!editing) draft = tag.name;
 
-  // The modal closes itself on confirm and cancel, so its open flag is owned
-  // here and re-derived from each new preview; a one-way prop would stay true
-  // and never reopen after a Cancel.
-  let deleteOpen: boolean;
-  $: deleteOpen = deletePreview !== null;
+  // The parent owns the delete flow: a new preview opens the dialog, clearing it closes it.
+  // `openDelete` reads `tag` and `busy` itself, so only a new preview re-requests.
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    cancelText: confirmCancelLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
+
+  function openDelete(preview: TagImpact) {
+    confirmDialog.request(
+      $t('tags.manager.impact.title'),
+      $t('tags.manager.impact.deleteMessage', {
+        name: tag.name,
+        accessible: preview.accessible_file_count,
+        total: preview.total_file_count,
+      }),
+      handleConfirmDelete,
+      {
+        confirmText: $t('tags.manager.action.delete'),
+        cancelText: $t('tags.manager.action.cancel'),
+        variant: 'danger',
+        onCancel: () => dispatch('cancelDelete'),
+      }
+    );
+  }
+
+  $: if (deletePreview) {
+    openDelete(deletePreview);
+  } else {
+    confirmDialog.isOpen.set(false);
+  }
 
   function followTag(uuid: string) {
     if (trackedUuid !== null && uuid !== trackedUuid) resetEditor();
@@ -328,23 +359,15 @@
 </div>
 
 <ConfirmationModal
-  bind:isOpen={deleteOpen}
-  title={$t('tags.manager.impact.title')}
-  message={deletePreview
-    ? $t('tags.manager.impact.deleteMessage', {
-        name: tag.name,
-        accessible: deletePreview.accessible_file_count,
-        total: deletePreview.total_file_count,
-      })
-    : ''}
-  confirmText={busy === 'delete'
-    ? $t('tags.manager.action.deleting')
-    : $t('tags.manager.action.delete')}
-  cancelText={$t('tags.manager.action.cancel')}
-  variant="danger"
-  on:confirm={handleConfirmDelete}
-  on:cancel={() => dispatch('cancelDelete')}
-  on:close={() => dispatch('cancelDelete')}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  cancelText={$confirmCancelLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

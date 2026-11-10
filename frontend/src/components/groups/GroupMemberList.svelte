@@ -9,6 +9,7 @@
   import { formatDate, getInitials } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
 
   export let members: GroupMember[] = [];
   export let groupUuid: string;
@@ -25,12 +26,14 @@
 
   let changingRoleFor: string | null = null;
   let removingMember: string | null = null;
-  let showRemoveConfirm = false;
-  let pendingRemoveMember: GroupMember | null = null;
-
-  $: pendingIsLeavingSelf = pendingRemoveMember?.user_uuid === currentUserUuid;
-  $: removeConfirmMessage = pendingIsLeavingSelf ? $t('groups.confirmLeave') : $t('groups.confirmRemoveMember');
-  $: removeConfirmTitle = pendingIsLeavingSelf ? $t('groups.leaveGroup') : $t('groups.removeMember');
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+    variant: confirmVariant,
+  } = confirmDialog;
 
   async function handleRoleChange(member: GroupMember, newRole: 'admin' | 'member') {
     if (newRole === member.role) return;
@@ -49,16 +52,20 @@
   }
 
   function requestRemoveMember(member: GroupMember) {
-    pendingRemoveMember = member;
-    showRemoveConfirm = true;
+    const leavingSelf = member.user_uuid === currentUserUuid;
+    confirmDialog.request(
+      leavingSelf ? $t('groups.leaveGroup') : $t('groups.removeMember'),
+      leavingSelf ? $t('groups.confirmLeave') : $t('groups.confirmRemoveMember'),
+      () => executeRemoveMember(member),
+      {
+        confirmText: leavingSelf ? $t('groups.leaveGroup') : $t('groups.removeMember'),
+        variant: 'danger',
+      }
+    );
   }
 
-  async function executeRemoveMember() {
-    if (!pendingRemoveMember) return;
-    const member = pendingRemoveMember;
+  async function executeRemoveMember(member: GroupMember) {
     const isLeavingSelf = member.user_uuid === currentUserUuid;
-    showRemoveConfirm = false;
-    pendingRemoveMember = null;
 
     removingMember = member.user_uuid;
 
@@ -147,15 +154,14 @@
 </div>
 
 <ConfirmationModal
-  bind:isOpen={showRemoveConfirm}
-  title={removeConfirmTitle}
-  message={removeConfirmMessage}
-  confirmText={pendingIsLeavingSelf ? $t('groups.leaveGroup') : $t('groups.removeMember')}
-  cancelText={$t('modal.cancel')}
-  variant="danger"
-  on:confirm={executeRemoveMember}
-  on:cancel={() => { showRemoveConfirm = false; pendingRemoveMember = null; }}
-  on:close={() => { showRemoveConfirm = false; pendingRemoveMember = null; }}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
+  variant={$confirmVariant}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

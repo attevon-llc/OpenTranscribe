@@ -1,7 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import axiosInstance from '$lib/axios';
-  import ConfirmationModal from './ConfirmationModal.svelte';
   import BulkAudioExtractionModal from './BulkAudioExtractionModal.svelte';
 
   import { recordingStore, recordingManager, hasActiveRecording } from '$stores/recording';
@@ -123,8 +122,6 @@
   let bulkRegularFiles: File[] = [];
 
   // ── Recording ──
-  let showRecordingWarningModal = false;
-  let pendingNavigationAction: (() => void) | null = null;
   let maxRecordingDuration = 7200;
   let recordingQuality = 'high';
   let autoStopEnabled = true;
@@ -445,17 +442,6 @@
   }
 
   const handleBulkExtractionCancel = closeBulkModal;
-
-  // ── Recording Warning ──
-  function handleRecordingWarningConfirm() {
-    recordingManager.clearRecording();
-    if (pendingNavigationAction) { pendingNavigationAction(); pendingNavigationAction = null; }
-    showRecordingWarningModal = false;
-  }
-  function handleRecordingWarningCancel() {
-    pendingNavigationAction = null;
-    showRecordingWarningModal = false;
-  }
 
   // ── Upload Actions ──
 
@@ -867,17 +853,6 @@
 </div>
 
 <!-- Modals -->
-<ConfirmationModal
-  bind:isOpen={showRecordingWarningModal}
-  title={$t('uploader.recordingInProgressTitle')}
-  message={$t('uploader.recordingWarningMessage')}
-  confirmText={$t('uploader.discardRecording')}
-  cancelText={$t('uploader.keepRecording')}
-  variant="warning"
-  on:confirm={handleRecordingWarningConfirm}
-  on:cancel={handleRecordingWarningCancel}
-/>
-
 <BulkAudioExtractionModal
   bind:isOpen={showBulkAudioExtractionModal}
   videoFiles={bulkVideosToExtract}

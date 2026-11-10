@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 vi.mock('$stores/locale', async () =>
   (await import('$testMocks/localeMocks')).keyWithOptionsLocale()
@@ -410,7 +411,7 @@ describe('TagDetailPanel previews', () => {
     ).toBeInTheDocument();
   });
 
-  it('wires the confirmation buttons to confirmDelete and cancelDelete', async () => {
+  it('wires Cancel to cancelDelete and nothing else', async () => {
     const confirmDelete = vi.fn();
     const cancelDelete = vi.fn();
     render(TagDetailPanel, {
@@ -425,15 +426,29 @@ describe('TagDetailPanel previews', () => {
     await fireEvent.click(cancel);
     expect(cancelDelete).toHaveBeenCalledTimes(1);
     expect(confirmDelete).not.toHaveBeenCalled();
-
-    await fireEvent.click(confirm);
-    expect(confirmDelete).toHaveBeenCalledTimes(1);
   });
 
-  it('labels the confirm button while the delete runs', () => {
-    render(TagDetailPanel, { props: { tag: tagWith(), deletePreview: impact, busy: 'delete' } });
-    expect(document.querySelector('[data-testid="confirm-dialog-confirm"]')).toHaveTextContent(
-      'tags.manager.action.deleting'
+  it('wires Delete to confirmDelete and does not report a cancel', async () => {
+    const confirmDelete = vi.fn();
+    const cancelDelete = vi.fn();
+    render(TagDetailPanel, {
+      props: { tag: tagWith(), deletePreview: impact },
+      events: { confirmDelete, cancelDelete },
+    });
+    await fireEvent.click(
+      document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement
     );
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(cancelDelete).not.toHaveBeenCalled();
+  });
+
+  it('closes the dialog when the parent clears the preview', async () => {
+    const { rerender } = render(TagDetailPanel, {
+      props: { tag: tagWith(), deletePreview: impact },
+    });
+    expect(document.querySelector('[data-testid="confirm-dialog-confirm"]')).not.toBeNull();
+    await rerender({ deletePreview: null });
+    await tick();
+    expect(document.querySelector('[data-testid="confirm-dialog-confirm"]')).toBeNull();
   });
 });

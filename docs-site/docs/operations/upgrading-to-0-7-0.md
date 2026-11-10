@@ -636,7 +636,7 @@ The second access-token issuer was removed. Call
 `app.auth.direct_auth.create_access_token(data, expires_delta)` and put your own claims in
 `data` beside `sub`. The issuer always sets `exp`, `iat`, `jti` and `type` itself and ignores
 your values for them, and tokens no longer carry an `alg_version` claim. Code that read the
-client address from `app.auth.dependencies._get_client_info` should call
+client address from `app.api.endpoints.auth.lifecycle_gates._get_client_info` should call
 `app.utils.client_ip.resolve_client_ip(request)` instead.
 
 After updating the imports, run `python -c "import <your_extension>"` in the new backend image

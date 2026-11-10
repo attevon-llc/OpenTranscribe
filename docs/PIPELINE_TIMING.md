@@ -5,7 +5,6 @@ End-to-end wall-clock instrumentation for the OpenTranscribe transcription pipel
 See also:
 - `docs/BENCHMARK_GUIDE.md` — operational guide for running the scripts
 - `docs/BENCHMARK_RESULTS.md` — headline numbers from production hardware
-- `docs/performance-whitepaper/` — academic write-up of the end-to-end pipeline
 
 ## Why this exists
 

@@ -240,11 +240,11 @@ _NAVBAR_GALLERY = (
     Screen(
         "gallery-sort-open",
         "/",
-        steps=("click:.sort-dropdown .sort-button", "wait:.sort-dropdown .dropdown-menu"),
+        steps=("click:.sort-dropdown .sort-button", "wait:body > .dropdown-menu"),
         masks=_GALLERY_MASKS,
         full_page=False,
         ready=".gallery-action-buttons",
-        notes="SortDropdown menu open: solid surface, border and shadow",
+        notes="SortDropdown menu open: solid surface, border and shadow (portaled to body)",
     ),
     Screen(
         "gallery-list",

@@ -32,18 +32,10 @@ vi.mock('$components/navbar/UserDropdown.svelte', async () => ({
 }));
 
 import Navbar from './Navbar.svelte';
-import { supportGate } from '$testMocks/navbarMocks';
-import { capabilities } from '$stores/capabilities';
+import { resetNavbarState, supportGate } from '$testMocks/navbarMocks';
 
 beforeEach(() => {
-  capabilities.set({
-    edition: 'community',
-    loaded: true,
-    capabilities: {},
-    audience: {},
-    maxUploadBytes: undefined,
-  });
-  supportGate.set({ active: false, readOnly: false });
+  resetNavbarState('community');
 });
 
 describe('Navbar entries under a support session', () => {

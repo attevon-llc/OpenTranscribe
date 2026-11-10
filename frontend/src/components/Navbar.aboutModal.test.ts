@@ -29,18 +29,10 @@ vi.mock('$components/navbar/UserDropdown.svelte', async () => ({
 }));
 
 import Navbar from './Navbar.svelte';
-import { supportGate } from '$testMocks/navbarMocks';
-import { capabilities } from '$stores/capabilities';
+import { resetNavbarState } from '$testMocks/navbarMocks';
 
 beforeEach(() => {
-  capabilities.set({
-    edition: 'cloud',
-    loaded: true,
-    capabilities: {},
-    audience: {},
-    maxUploadBytes: undefined,
-  });
-  supportGate.set({ active: false, readOnly: false });
+  resetNavbarState('cloud');
 });
 
 describe('Navbar logo opens the About modal (cloud edition build)', () => {

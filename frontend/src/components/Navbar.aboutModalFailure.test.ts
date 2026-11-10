@@ -32,19 +32,11 @@ vi.mock('$components/navbar/UserDropdown.svelte', async () => ({
 }));
 
 import Navbar from './Navbar.svelte';
-import { supportGate } from '$testMocks/navbarMocks';
+import { resetNavbarState } from '$testMocks/navbarMocks';
 import { toastStore } from '$stores/toast';
-import { capabilities } from '$stores/capabilities';
 
 beforeEach(() => {
-  capabilities.set({
-    edition: 'cloud',
-    loaded: true,
-    capabilities: {},
-    audience: {},
-    maxUploadBytes: undefined,
-  });
-  supportGate.set({ active: false, readOnly: false });
+  resetNavbarState('cloud');
 });
 
 describe('Navbar About chunk failure', () => {

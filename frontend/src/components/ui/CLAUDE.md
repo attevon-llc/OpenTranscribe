@@ -118,6 +118,7 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
   callers put buttons there with no margin of their own (issue #1243 item 16: a caller-spaced
   "Open Review" sat 0px under its description).
 - `ProgressBar.svelte` — WAI-ARIA `role=progressbar` track (`percent` 0-100 or `null` = indeterminate, which omits `aria-valuenow`; `label` visible, `ariaLabel` when no visible label; `tone` primary|success|warning|error). Tested in `ProgressBar.test.ts`. Usage meters are not progress: do not use it for them.
+- `LiveProgressCard.svelte` — card for a running background job: optional spinner title, `done / total` (or `countLabel`) + percent in an `aria-live=polite` region, `ProgressBar` named by the required `barLabel` (a name like "Search indexing progress", never a status string), message + `formatEta` row, default slot, optional `danger-outline` stop `Button` (`onStop`, busy when `state="stopping"`). Used by SearchSettings, EmbeddingMigrationSettings, AutoLabelSettings, SpeakerAttributeBulkPanel. Tested in `LiveProgressCard.test.ts`.
 - `Spinner.svelte`, `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`,
   `CardGridSkeleton.svelte`, `TagInput.svelte`.
 

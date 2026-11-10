@@ -1,13 +1,11 @@
 <script lang="ts">
-  import { formatEta } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
-  import Spinner from '$components/ui/Spinner.svelte';
-  import ProgressBar from '$components/ui/ProgressBar.svelte';
+  import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
 
   // Bulk processing state
   let pendingFiles = 0;
@@ -172,48 +170,23 @@
       <SettingsSkeleton variant="form" count={2} label={$t('common.loading')} />
     {:else if migrationInProgress}
       <div class="progress-section">
-        {#if migrationProcessedFiles === 0}
-          <div class="queued-message">
-            {migrationProgressMessage || $t('settings.speakerAttributes.queued')}
-          </div>
-          <ProgressBar percent={null} ariaLabel={$t('settings.speakerAttributes.queued')} />
-        {:else}
-          <div class="progress-header">
-            <span class="progress-text">
-              {$t('settings.speakerAttributes.migrationProgress', {
-                processed: migrationProcessedFiles,
-                total: migrationTotalFiles,
-              })}
-            </span>
-            <span class="progress-percent">
-              <bdi dir="ltr">{Math.round((migrationProcessedFiles / Math.max(migrationTotalFiles, 1)) * 100)}%</bdi>
-              {#if formatEta(etaSeconds)}
-                ({formatEta(etaSeconds)} {$t('common.remaining')})
-              {/if}
-            </span>
-          </div>
-          <div class="progress-bar-container">
-            <div
-              class="progress-bar-fill"
-              style="width: {(migrationProcessedFiles / Math.max(migrationTotalFiles, 1)) * 100}%"
-            ></div>
-          </div>
-        {/if}
-        {#if migrationFailedFiles.length > 0}
-          <div class="failed-info">
-            {$t('settings.embeddingMigration.failedFiles', { count: migrationFailedFiles.length })}
-          </div>
-        {/if}
-        <button
-          class="btn btn-danger btn-stop"
-          on:click={stopMigration}
-          disabled={stoppingMigration}
+        <LiveProgressCard
+          state={stoppingMigration ? 'stopping' : migrationProcessedFiles === 0 ? 'starting' : 'running'}
+          countLabel={migrationProcessedFiles === 0 ? '' : $t('settings.speakerAttributes.migrationProgress', { processed: migrationProcessedFiles, total: migrationTotalFiles })}
+          percent={migrationProcessedFiles === 0 ? null : (migrationProcessedFiles / Math.max(migrationTotalFiles, 1)) * 100}
+          etaSeconds={etaSeconds}
+          remainingLabel={$t('common.remaining')}
+          message={migrationProcessedFiles === 0 ? migrationProgressMessage || $t('settings.speakerAttributes.queued') : ''}
+          barLabel={$t('settings.speakerAttributes.progressBar')}
+          stopLabel={$t('settings.speakerAttributes.stopMigration')}
+          onStop={stopMigration}
         >
-          {#if stoppingMigration}
-            <Spinner size="small" color="white" />
+          {#if migrationFailedFiles.length > 0}
+            <div class="failed-info">
+              {$t('settings.embeddingMigration.failedFiles', { count: migrationFailedFiles.length })}
+            </div>
           {/if}
-          {$t('settings.speakerAttributes.stopMigration')}
-        </button>
+        </LiveProgressCard>
       </div>
     {:else if pendingFiles > 0}
       <div class="pending-info">
@@ -252,8 +225,6 @@
   {/if}
 
 <style>
-
-
 
   .bulk-section {
     margin-top: var(--space-4);
@@ -298,59 +269,13 @@
   }
 
   .progress-section {
-    padding: var(--space-4);
-    background: var(--background-color);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-  }
-
-  .progress-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
-
-  .progress-text {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-  }
-
-  .progress-percent {
-    font-size: 0.8rem;
-    font-weight: var(--font-weight-semibold);
-    color: var(--primary-on-surface);
-  }
-
-  .progress-bar-container {
-    height: 8px;
-    background: var(--border-color);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .progress-bar-fill {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: var(--radius-sm);
-    transition: width var(--duration-slow) ease;
-  }
-
-  .queued-message {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin-bottom: var(--space-2);
-    font-style: italic;
+    margin-top: var(--space-3);
   }
 
   .failed-info {
     font-size: var(--font-size-xs);
     color: var(--error-color);
     margin-top: var(--space-2);
-  }
-
-  .btn-stop {
-    margin-top: var(--space-3);
   }
 
   .reextract-confirm {

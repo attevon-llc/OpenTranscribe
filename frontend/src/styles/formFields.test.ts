@@ -242,3 +242,20 @@ describe('form-field label size cascade', () => {
     expect(at(':where(.form-field-lg > legend) {')).toBeGreaterThan(base);
   });
 });
+
+describe('form-elements.css contrast roles', () => {
+  const block = (selector: string): string => {
+    const start = css.indexOf(selector);
+    expect(start, `${selector} present`).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf('}', start));
+  };
+
+  it('draws a field boundary at 3:1 (SC 1.4.11)', () => {
+    expect(css).toMatch(/--field-border:\s*var\(--control-border\);/);
+  });
+
+  it('outlines keyboard focus with the theme-aware ring colour, not the fill blue', () => {
+    expect(block('button:focus-visible {')).toContain('outline: 2px solid var(--focus-ring-color)');
+    expect(block('):where(:focus) {')).toContain('border-color: var(--focus-ring-color)');
+  });
+});

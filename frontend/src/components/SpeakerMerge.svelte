@@ -107,6 +107,7 @@
 
     outcomes.forEach((outcome, i) => {
       const sourceSpeaker = sourceSpeakers[i];
+      if (!sourceSpeaker) return;
       if (outcome.status === 'fulfilled') {
         successfulMerges.push(sourceSpeaker);
       } else {
@@ -127,7 +128,7 @@
     } else if (successfulMerges.length === 0) {
       // All merges failed
       const failedNames = failedMerges.map(f => f.speaker.display_name || f.speaker.name).join(', ');
-      toastStore.error($t('speaker.mergeFailedAll', { names: failedNames, error: failedMerges[0].error }));
+      toastStore.error($t('speaker.mergeFailedAll', { names: failedNames, error: failedMerges[0]?.error ?? $t('common.unknownError') }));
     } else {
       // Partial success - some merged, some failed
       const successNames = successfulMerges.map(s => s.display_name || s.name).join(', ');

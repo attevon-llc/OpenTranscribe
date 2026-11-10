@@ -230,7 +230,9 @@
   function seekToCurrentMatch() {
     if (totalMatches === 0 || currentMatch < 1) return;
     const match = searchMatches[currentMatch - 1];
+    if (!match) return;
     const segment = transcriptSegments[match.segmentIndex];
+    if (!segment) return;
     dispatch('navigateToMatch', { match, segment, segmentIndex: match.segmentIndex, autoSeek: true });
   }
 

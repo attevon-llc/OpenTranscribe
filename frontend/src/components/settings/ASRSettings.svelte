@@ -320,9 +320,10 @@
     const prevSharedAt = config.shared_at;
 
     // Optimistic update — flip toggle immediately for responsive UI
-    if (idx !== -1) {
+    const flipped = idx !== -1 ? configurations[idx] : undefined;
+    if (flipped) {
       configurations[idx] = {
-        ...configurations[idx],
+        ...flipped,
         is_shared: newShared,
         shared_at: newShared ? new Date().toISOString() : undefined
       };
@@ -338,9 +339,10 @@
       );
     } catch (err: unknown) {
       // Rollback on failure
-      if (idx !== -1) {
+      const optimistic = idx !== -1 ? configurations[idx] : undefined;
+      if (optimistic) {
         configurations[idx] = {
-          ...configurations[idx],
+          ...optimistic,
           is_shared: !newShared,
           shared_at: prevSharedAt
         };

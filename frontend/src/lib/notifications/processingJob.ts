@@ -230,12 +230,13 @@ function isOutstanding(state: TaskState): boolean {
  */
 function transcriptionStages(tx: Notification, txState: TaskState): JobSubtask[] {
   const log: StepMark[] = (tx.stepLog ?? []).filter((m) => stageIndexOf(m.stage) >= 0);
-  const current = log.length ? stageIndexOf(log[log.length - 1].stage) : 0;
+  const lastMark = log.at(-1);
+  const current = lastMark ? stageIndexOf(lastMark.stage) : 0;
 
   const spent = new Map<number, number>();
   log.forEach((mark, k) => {
     // Only the first mark of a contiguous block opens it; later ones are inside it.
-    if (k > 0 && log[k - 1].stage === mark.stage) return;
+    if (k > 0 && log[k - 1]?.stage === mark.stage) return;
     const next = log.slice(k + 1).find((m) => m.stage !== mark.stage);
     const d = seconds(mark.at, next ? next.at : tx.finishedAt);
     if (d === null) return;
@@ -369,9 +370,11 @@ function buildMainTier(imp: Notification | undefined, tx: Notification | undefin
     t.subtasks = transcriptionStages(tx, t.state);
     tasks.push(t);
     const diarize = t.subtasks[DIARIZE_INDEX];
-    tasks.push(
-      makeTask('diarization', diarize.state, { durationSeconds: diarize.durationSeconds })
-    );
+    if (diarize) {
+      tasks.push(
+        makeTask('diarization', diarize.state, { durationSeconds: diarize.durationSeconds })
+      );
+    }
     state = t.state === 'done' && state === 'failed' ? 'failed' : t.state;
   } else if (imp && state !== 'failed') {
     tasks.push(makeTask('transcription', 'pending'));

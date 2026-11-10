@@ -144,7 +144,8 @@ function unitsOf(list: Notification[]): Unit[] {
     }
   }
   return order.map((members) => {
-    const inJob = jobKeyOf(members[0]) !== null;
+    const [first] = members;
+    const inJob = first !== undefined && jobKeyOf(first) !== null;
     return {
       members,
       prunable: members.every((n) => unitMemberClearable(n, inJob)),

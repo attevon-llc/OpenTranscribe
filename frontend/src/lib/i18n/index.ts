@@ -29,7 +29,8 @@ for (const [path, pack] of Object.entries(editionPacks)) {
 
 /** Collapse a BCP-47 tag ("en-US") to a supported base code, or the default. */
 function normalizeLanguage(lng?: string | null): string {
-  const base = (lng || '').split('-')[0].toLowerCase();
+  const [subtag = ''] = (lng || '').split('-');
+  const base = subtag.toLowerCase();
   return isValidLanguageCode(base) ? base : DEFAULT_LANGUAGE;
 }
 

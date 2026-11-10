@@ -35,7 +35,8 @@ export function selectionAfterClick(
   const start = Math.min(anchorIdx, targetIdx);
   const end = Math.max(anchorIdx, targetIdx);
   for (let i = start; i <= end; i++) {
-    next.add(fileIds[i]);
+    const id = fileIds[i];
+    if (id !== undefined) next.add(id);
   }
   return next;
 }

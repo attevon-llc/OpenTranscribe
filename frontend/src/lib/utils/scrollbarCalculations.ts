@@ -64,5 +64,5 @@ export function findNearestSegment(
       previous = segment;
     }
   }
-  return previous ?? transcriptSegments[0];
+  return previous ?? transcriptSegments[0] ?? null;
 }

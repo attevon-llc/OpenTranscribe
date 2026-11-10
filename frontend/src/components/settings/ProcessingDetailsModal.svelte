@@ -2,7 +2,7 @@
   import type { SystemStats } from '$lib/settings/adminLoaders';
   import { formatDateTime, formatElapsed } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
-  import { QUEUE_NAME_KEYS } from '$lib/i18n/keyMaps';
+  import { QUEUE_NAME_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { t, locale } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
 
@@ -140,10 +140,13 @@
             {/if}
             <div class="detail-grid">
               {#each ['gpu', 'download', 'nlp', 'embedding', 'cpu'] as queueName (queueName)}
+                {@const description = queueDescriptions[queueName]}
                 <div class="detail-row">
                   <span class="detail-label">
-                    {$t(QUEUE_NAME_KEYS[queueName])}
-                    <span class="detail-sublabel">{$t(queueDescriptions[queueName])}</span>
+                    {labelFor($t, QUEUE_NAME_KEYS, queueName)}
+                    {#if description}
+                      <span class="detail-sublabel">{$t(description)}</span>
+                    {/if}
                   </span>
                   <span class="detail-value" class:highlight={(stats.queues?.[queueName] ?? 0) > 0}>
                     {stats.queues?.[queueName] || 0}

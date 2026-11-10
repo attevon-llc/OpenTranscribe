@@ -21,6 +21,7 @@
         const m = segment.match(/^([a-zA-Z0-9_]+)(?:\[(\d+)\])?$/);
         if (!m) return segment;
         const [, key, idx] = m;
+        if (key === undefined) return segment;
         const label = key
           .replace(/_/g, ' ')
           .replace(/\b\w/g, (c) => c.toUpperCase());

@@ -16,5 +16,5 @@ export function resolveWatchSourcesTab(
   requested: WatchSourcesTabId,
   tabs: WatchSourcesTabId[]
 ): WatchSourcesTabId {
-  return tabs.includes(requested) ? requested : tabs[0];
+  return tabs.includes(requested) ? requested : tabs[0] ?? requested;
 }

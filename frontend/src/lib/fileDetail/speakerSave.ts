@@ -69,8 +69,8 @@ export function createSpeakerSaveFlow(ctx: SpeakerSaveContext) {
 
   // Show next confirmation in the queue
   function showNextConfirmation() {
-    if (currentConfirmationIndex < speakerConfirmationQueue.length) {
-      const speaker = speakerConfirmationQueue[currentConfirmationIndex];
+    const speaker = speakerConfirmationQueue[currentConfirmationIndex];
+    if (speaker) {
       pendingSpeakerUpdate = {
         speakerId: speaker.uuid,
         newName: speaker.display_name ?? speaker.name,

@@ -56,7 +56,8 @@ export const TITLE_KEYS: Readonly<Record<string, string>> = {
 
 /** The localised title for a notification `type`. */
 export function notificationTitle(type: string, translate: Translate): string {
-  const key = Object.hasOwn(TITLE_KEYS, type) ? TITLE_KEYS[type] : 'notifications.notification';
+  const known = Object.hasOwn(TITLE_KEYS, type) ? TITLE_KEYS[type] : undefined;
+  const key = known ?? 'notifications.notification';
   return translate(key);
 }
 

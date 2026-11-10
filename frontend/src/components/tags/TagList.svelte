@@ -159,9 +159,10 @@
       Home: 0,
       End: last,
     };
-    if (event.key in targets) {
+    const target = targets[event.key];
+    if (target !== undefined) {
       event.preventDefault();
-      void moveFocus(index, targets[event.key], event.shiftKey);
+      void moveFocus(index, target, event.shiftKey);
     } else if (event.key === ' ' || event.key === 'Enter') {
       event.preventDefault();
       focusIndex = index;

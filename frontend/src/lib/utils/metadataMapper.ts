@@ -51,7 +51,7 @@ function parseFrameRate(frameRateStr: string | undefined): number | undefined {
   try {
     if (frameRateStr.includes('/')) {
       const [num, den] = frameRateStr.split('/').map(Number);
-      if (den === 0) return undefined;
+      if (num === undefined || den === undefined || den === 0) return undefined;
       return num / den;
     }
     return parseFloat(frameRateStr);

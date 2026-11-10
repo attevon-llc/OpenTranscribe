@@ -31,7 +31,7 @@ const has = (map: object, value: string) => Object.prototype.hasOwnProperty.call
 
 /** The mapped key for `value`, or `fallbackKey` when the value is unknown/absent. */
 export function keyFor(map: KeyMap, value: string | null | undefined, fallbackKey: string): string {
-  return typeof value === 'string' && has(map, value) ? map[value] : fallbackKey;
+  return (typeof value === 'string' && has(map, value) ? map[value] : undefined) ?? fallbackKey;
 }
 
 /**
@@ -44,7 +44,8 @@ export function labelFor(
   value: string | null | undefined,
   options?: Record<string, unknown>
 ): string {
-  if (typeof value === 'string' && has(map, value)) return t(map[value], options);
+  const key = typeof value === 'string' && has(map, value) ? map[value] : undefined;
+  if (key !== undefined) return t(key, options);
   return value ?? '';
 }
 

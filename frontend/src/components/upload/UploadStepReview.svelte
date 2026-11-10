@@ -64,6 +64,7 @@
   $: modelLabel = (() => {
     const options = perFileOptions(facts, adminDefaultModel);
     const chosen = options.find((option) => option.value === selectedWhisperModel) ?? options[0];
+    if (!chosen) return '';
     return optionWithFlags(optionName(chosen, $t), chosen.capability, $t);
   })();
 </script>

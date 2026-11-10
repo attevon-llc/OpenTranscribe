@@ -16,8 +16,9 @@
     }
   }
 
-  // Get current language info
-  $: currentLanguage = SUPPORTED_LANGUAGES.find((l) => l.code === $locale);
+  // Current language info; an unsupported locale previews the default (first) language.
+  $: currentLanguage =
+    SUPPORTED_LANGUAGES.find((l) => l.code === $locale) ?? SUPPORTED_LANGUAGES[0];
 </script>
 
 <div class="language-settings">
@@ -42,8 +43,7 @@
     <div class="preview-item">
       <span class="preview-label">{$t("settings.language.selectLabel")}:</span>
       <span class="preview-value">
-        {currentLanguage?.nativeName || SUPPORTED_LANGUAGES[0].nativeName} ({currentLanguage?.name ||
-          SUPPORTED_LANGUAGES[0].name})
+        {currentLanguage?.nativeName} ({currentLanguage?.name})
       </span>
     </div>
   </div>

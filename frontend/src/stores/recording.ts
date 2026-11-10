@@ -352,7 +352,7 @@ class RecordingManager {
       // Calculate RMS level
       let rmsSum = 0;
       for (let i = 0; i < timeData.length; i++) {
-        const normalized = (timeData[i] - 128) / 128;
+        const normalized = ((timeData[i] ?? 128) - 128) / 128;
         rmsSum += normalized * normalized;
       }
       const rmsLevel = Math.sqrt(rmsSum / timeData.length) * 100;
@@ -361,7 +361,7 @@ class RecordingManager {
       let freqSum = 0;
       const voiceRange = Math.min(Math.floor(bufferLength / 4), bufferLength);
       for (let i = 0; i < voiceRange; i++) {
-        freqSum += frequencyData[i];
+        freqSum += frequencyData[i] ?? 0;
       }
       const freqLevel = (freqSum / voiceRange) * (100 / 255);
 

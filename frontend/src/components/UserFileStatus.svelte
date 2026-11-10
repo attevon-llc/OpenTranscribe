@@ -312,9 +312,8 @@
   // Setup WebSocket updates for real-time file status changes
   function setupWebSocketUpdates() {
     unsubscribeWebSocket = websocketStore.subscribe(($ws) => {
-      if ($ws.notifications.length > 0) {
-        const latestNotification = $ws.notifications[0];
-
+      const latestNotification = $ws.notifications[0];
+      if (latestNotification) {
         // Only process if this is a new notification we haven't handled
         if (latestNotification.id !== lastProcessedNotificationId) {
           lastProcessedNotificationId = latestNotification.id;

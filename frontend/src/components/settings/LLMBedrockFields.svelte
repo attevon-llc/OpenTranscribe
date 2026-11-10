@@ -65,7 +65,7 @@
     isAdmin && usingServer && serverStatus
       ? serverStatus.found
         ? $t('llm.bedrock.statusServerFound', {
-            source: $t(SOURCE_KEYS[serverStatus.source ?? 'other'] ?? SOURCE_KEYS.other)
+            source: $t(SOURCE_KEYS[serverStatus.source ?? 'other'] ?? 'llm.bedrock.source.other')
           })
         : $t('llm.bedrock.statusServerMissing')
       : '';

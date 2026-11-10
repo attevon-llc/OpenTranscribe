@@ -86,8 +86,8 @@
       const tasks = list.format(more > 0 ? [...names, `+${more}`] : names);
       return translate('notifications.job.waitingOn', { tasks });
     }
-    if (j.state === 'attention' && j.failures.length === 1) {
-      const [only] = j.failures;
+    const [only] = j.failures;
+    if (j.state === 'attention' && j.failures.length === 1 && only) {
       const failed = translate('notifications.job.failedTask', {
         task: taskName(only.task, translate),
       });

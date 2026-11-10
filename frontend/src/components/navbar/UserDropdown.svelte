@@ -133,7 +133,7 @@
     <div class="user-avatar">
       <!-- First letter of full name as avatar -->
       {#if user && user.full_name}
-        {user.full_name[0].toUpperCase()}
+        {user.full_name.charAt(0).toUpperCase()}
       {:else}
         U
       {/if}

@@ -291,9 +291,10 @@
 
     const failed: string[] = [];
     results.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        console.error(`Failed to save ${targets[index].category} config:`, result.reason);
-        failed.push(targets[index].category);
+      const target = targets[index];
+      if (result.status === 'rejected' && target) {
+        console.error(`Failed to save ${target.category} config:`, result.reason);
+        failed.push(target.category);
       }
     });
 

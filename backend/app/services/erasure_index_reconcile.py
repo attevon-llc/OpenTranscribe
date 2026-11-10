@@ -17,6 +17,9 @@ Postgres check in ``tasks/erasure_reconciliation`` cannot see it. This module as
 * **Time-bounded for org members**: only documents created at or before the erasure are deleted. A
   document with no creation field cannot be bounded, is left, and is reported in
   ``needs_review`` by store key.
+* **Handed-over content is not a restore**: documents of rows an organization handed to the
+  member after the erasure carry the member's id and an older creation time; they are excluded by
+  id (``erasure_org_member_rerun.acquired_after``, read from Postgres when the page is selected).
 * **Ambiguity is not deleted**: if a live user row carries the id (any uuid), the documents might
   belong to a legitimate account that was issued the id, so the subject is skipped and counted.
 """
@@ -36,6 +39,8 @@ from app.models.erasure import ErasureLedgerEntry
 from app.models.organization import Organization
 from app.models.user import User
 from app.services import erasure_ledger_service as ledger
+from app.services.erasure_org_member_rerun import AcquiredAfter
+from app.services.erasure_org_member_rerun import acquired_after
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +66,8 @@ class IndexSubject:
     user_id: int | None
     organization_id: int | None
     completed_at: datetime | None
+    #: Org members only: what the member was handed after ``completed_at``, never selected.
+    handed_over: AcquiredAfter = field(default_factory=AcquiredAfter)
 
 
 @dataclass
@@ -106,6 +113,10 @@ def _bounded(
         return None
     bound = subject.completed_at.astimezone(UTC).isoformat()
     return [*clauses, {"range": {created_field: {"lte": bound}}}]
+
+
+def _kept(subject: IndexSubject, key: str) -> list[dict[str, Any]]:
+    return subject.handed_over.must_not(key) if subject.subject_type == "org_member" else []
 
 
 def _client() -> Any:
@@ -166,14 +177,22 @@ def _check_index(
         if clauses is None:
             result.unverified += 1
             continue
+        kept = _kept(subject, key)
         bounded = _bounded(clauses, subject, created_field, props)
         if bounded is not None:
-            selections[str(subject.entry_id)] = {"bool": {"filter": bounded}}
+            selections[str(subject.entry_id)] = {
+                "bool": {"filter": bounded, **({"must_not": kept} if kept else {})}
+            }
         if subject.subject_type == "org_member":
             untimed[f"nc{subject.entry_id}"] = (
-                {"bool": {"filter": clauses, "must_not": [{"exists": {"field": created_field}}]}}
+                {
+                    "bool": {
+                        "filter": clauses,
+                        "must_not": [{"exists": {"field": created_field}}, *kept],
+                    }
+                }
                 if created_field in props
-                else {"bool": {"filter": clauses}}
+                else {"bool": {"filter": clauses, **({"must_not": kept} if kept else {})}}
             )
     filters = {**selections, **untimed}
     if not filters:
@@ -226,6 +245,16 @@ def select_subjects(
         if _row_alive(db, entry):
             ambiguous.append(int(entry.id))
             continue
+        handed_over = AcquiredAfter()
+        if (
+            entry.subject_type == "org_member"
+            and entry.subject_user_id is not None
+            and entry.subject_organization_id is not None
+            and entry.completed_at is not None
+        ):
+            handed_over = acquired_after(
+                db, entry.subject_user_id, entry.subject_organization_id, entry.completed_at
+            )
         subjects.append(
             IndexSubject(
                 int(entry.id),
@@ -233,6 +262,7 @@ def select_subjects(
                 entry.subject_user_id,
                 entry.subject_organization_id,
                 entry.completed_at,
+                handed_over,
             )
         )
     return subjects, ambiguous

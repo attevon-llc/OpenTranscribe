@@ -234,3 +234,71 @@ def test_the_status_endpoint_exposes_the_abort_reason(
 
     assert body["status"] == "failed"
     assert body["reason"] == "files_protected"
+
+
+@pytest.mark.parametrize("owed", [[], ["0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"]])
+def test_a_second_pass_that_finds_every_file_held_keeps_pass_one_counts_and_settles(
+    db_session, normal_user, monkeypatch, owed
+):
+    """Pass 1 removed data; a hold then landed on every file before pass 2. The status record
+    must still report pass 1's removal, and the pending row is settled as a final pass would:
+    dropped when it owes nothing, kept with exactly the owed centroid ids otherwise."""
+    from app.models.privacy_purge_pending import PrivacyPurgePending
+
+    mf = make_file(db_session, normal_user)
+    mf.legal_hold = True
+    task_id = f"purge-pass2-held-{mf.id}"
+    db_session.add(
+        PrivacyPurgePending(
+            task_id=task_id,
+            scope={"kind": "files", "file_ids": [mf.id]},
+            cluster_uuids=list(owed),
+        )
+    )
+    db_session.commit()
+    pass_one = {"postgres": {"speaker_identities_reverted": 3}, "opensearch": {}}
+    store: dict[str, str] = {
+        f"privacy_purge:{task_id}": json.dumps({"user_id": None, "counts": pass_one})
+    }
+
+    @contextmanager
+    def scope():
+        yield db_session
+
+    class _KeepOpen:
+        def __getattr__(self, name):
+            return getattr(db_session, name)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(purge, "targets_still_enabled", lambda *a, **k: [])
+    monkeypatch.setattr("app.tasks.privacy_purge_task.session_scope", scope)
+    monkeypatch.setattr("app.tasks.privacy_purge_task.SessionLocal", _KeepOpen)
+    monkeypatch.setattr(
+        "app.core.redis.get_request_redis",
+        lambda: SimpleNamespace(
+            set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
+        ),
+    )
+
+    privacy_purge_task.apply(
+        kwargs={
+            "scope": {"kind": "files", "file_ids": [mf.id]},
+            "targets": ["voiceprints"],
+            "actor_user_id": None,
+            "phase": 2,
+            "purge_reason": "opt_out",
+        },
+        task_id=task_id,
+    )
+
+    record = json.loads(store[f"privacy_purge:{task_id}"])
+    assert record["reason"] == "files_protected"
+    assert record["counts"] == pass_one
+    db_session.expire_all()
+    row = db_session.get(PrivacyPurgePending, task_id)
+    if owed:
+        assert row is not None and list(row.cluster_uuids) == owed
+    else:
+        assert row is None

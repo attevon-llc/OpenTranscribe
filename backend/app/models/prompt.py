@@ -23,13 +23,14 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.ownership import OwnerSinceMixin
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.user import User
 
 
-class SummaryPrompt(Base):
+class SummaryPrompt(OwnerSinceMixin, Base):
     """
     Model for storing AI summarization prompts
 

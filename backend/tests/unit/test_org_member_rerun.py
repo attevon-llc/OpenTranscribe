@@ -163,3 +163,98 @@ def test_an_unresurrected_entry_has_no_bound(world):
     _, entry = world
     assert isinstance(entry, ErasureLedgerEntry)
     assert cutoff_of(entry) is None
+
+
+def _hand_over_to_the_erased_member(db, member, org):
+    """A colleague's org recording and speaker profile, made BEFORE the member's erasure, handed
+    to the member after it (the colleague left)."""
+    from app.models.media import MediaFile
+    from app.models.organization import OrganizationMembership
+    from app.models.speaker import SpeakerProfile
+    from app.services import org_content_transfer
+    from tests.user_owned_rows import make_user
+
+    colleague = make_user(db, "leaver")
+    db.add_all(
+        [
+            OrganizationMembership(organization_id=org.id, user_id=member.id, role="org:admin"),
+            OrganizationMembership(organization_id=org.id, user_id=colleague.id, role="org:member"),
+        ]
+    )
+    before = ERASED_AT - timedelta(days=30)
+    recording = MediaFile(
+        uuid=uuid_pkg.uuid4(),
+        filename="handed-over.wav",
+        storage_path=f"rerun/{uuid_pkg.uuid4().hex}.wav",
+        content_type="audio/wav",
+        file_size=1,
+        user_id=colleague.id,
+        organization_id=org.id,
+        upload_time=before,
+    )
+    profile = SpeakerProfile(
+        uuid=uuid_pkg.uuid4(),
+        name="Handed Over",
+        user_id=colleague.id,
+        organization_id=org.id,
+        created_at=before,
+    )
+    db.add_all([recording, profile])
+    db.commit()
+    result = org_content_transfer.transfer_org_content(
+        db, organization_id=org.id, from_user_id=colleague.id, to_user_id=member.id
+    )
+    assert result.counts["files"] == 1 and result.counts["speaker_profiles"] == 1
+    return int(recording.id), int(profile.id)
+
+
+def test_content_handed_to_an_erased_member_is_not_a_resurrection(
+    db_session, normal_user, world, monkeypatch
+):
+    """A handover is not a restore (v471). The handed-over rows keep their creation time, which
+    predates the erasure; judged by it, the re-run "re-erased" a colleague's recordings."""
+    from app.models.media import MediaFile
+    from app.models.speaker import SpeakerProfile
+
+    monkeypatch.setattr("app.core.celery.celery_app.send_task", lambda *a, **k: None)
+    org, entry = world
+    file_id, profile_id = _hand_over_to_the_erased_member(db_session, normal_user, org)
+
+    assert rerun_state(db_session, entry).old_rows == 0
+
+    summary = gdpr_erasure_service.erase_org_member_data(
+        db_session, normal_user.id, org.id, ledger_entry=entry, created_before=ERASED_AT
+    )
+
+    assert summary["media_files_deleted"] == 0
+    assert summary["speaker_profiles_deleted"] == 0
+    db_session.expire_all()
+    assert db_session.get(MediaFile, file_id) is not None
+    assert db_session.get(SpeakerProfile, profile_id) is not None
+
+
+def test_the_time_bounded_voiceprint_erasure_keeps_handed_over_documents(
+    db_session, normal_user, world, monkeypatch
+):
+    from app.services.erasure_org_member_rerun import acquired_after
+
+    monkeypatch.setattr("app.core.celery.celery_app.send_task", lambda *a, **k: None)
+    calls: list[dict] = []
+
+    def record(**kw) -> int:
+        calls.append(kw)
+        return 0
+
+    monkeypatch.setattr(gdpr_erasure_service, "_erase_speaker_voiceprints", record)
+    org, entry = world
+    file_id, profile_id = _hand_over_to_the_erased_member(db_session, normal_user, org)
+
+    handed = acquired_after(db_session, normal_user.id, org.id, ERASED_AT)
+    gdpr_erasure_service.erase_org_member_data(
+        db_session, normal_user.id, org.id, ledger_entry=entry, created_before=ERASED_AT
+    )
+
+    assert handed.file_ids == (file_id,) and handed.profile_ids == (profile_id,)
+    [call] = calls
+    assert {"terms": {"media_file_id": [file_id]}} in call["keep"]
+    assert {"terms": {"profile_id": [profile_id]}} in call["keep"]

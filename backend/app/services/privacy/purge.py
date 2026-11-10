@@ -221,23 +221,28 @@ class PurgeScope:
         A ``files`` scope selects its own ``MediaFile`` rows and NOTHING of any other table: a
         file purge never deletes or resets a profile (or a stamped cluster) directly.
 
-        The other scopes are protection-aware, in this one place (issue: scope purges ignored
-        holds): a ``MediaFile`` under a legal hold (platform or organization) or in quarantine is
-        NOT in scope, which removes its speakers from :meth:`speaker_filters` and so from every
-        count, deletion and residual measure. A ``SpeakerProfile`` that still has such a file's
-        speaker linked to it is not in scope either: it keeps that voiceprint, so it is neither
-        reset nor reported as purged (its embedding is recomputed from what it has left).
+        Every scope is protection-aware, in this one place (issue: scope purges ignored holds):
+        a ``MediaFile`` under a legal hold (platform or organization) or in quarantine is NOT in
+        scope, which removes its speakers from :meth:`speaker_filters` and so from every count,
+        deletion and residual measure. For a ``files`` scope too: ``guard_files_scope`` answers
+        the requester early, but only at task start, and ``run_purge_pass`` is also called
+        directly; carrying the predicate in every statement means a hold placed after that read,
+        or a caller that never asked, still cannot have its file's voiceprints deleted. A
+        ``SpeakerProfile`` that still has a protected file's speaker linked to it is not in a
+        tenant scope either: it keeps that voiceprint, so it is neither reset nor reported as
+        purged (its embedding is recomputed from what it has left).
         """
         filters = self.tenant_filters(model)
-        if self.kind == "files":
-            return filters
         from app.models.media import MediaFile
-        from app.models.speaker import SpeakerProfile
-        from app.services.privacy.purge_file_guard import profile_keeps_protected_voice
         from app.services.privacy.purge_file_guard import unprotected_file_pred
 
         if model is MediaFile:
             return [*filters, unprotected_file_pred()]
+        if self.kind == "files":
+            return filters
+        from app.models.speaker import SpeakerProfile
+        from app.services.privacy.purge_file_guard import profile_keeps_protected_voice
+
         if model is SpeakerProfile:
             return [*filters, ~profile_keeps_protected_voice()]
         return filters
@@ -253,8 +258,6 @@ class PurgeScope:
         from app.models.media import MediaFile
         from app.models.speaker import Speaker
 
-        if self.kind == "files":
-            return [or_(*(Speaker.media_file_id.in_(c) for c in _id_chunks(self.file_ids)))]
         file_ids = select(MediaFile.id).where(*self.sql_filters(MediaFile))
         return [Speaker.media_file_id.in_(file_ids)]
 

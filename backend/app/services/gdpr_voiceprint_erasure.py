@@ -23,6 +23,7 @@ def _erase_speaker_voiceprints(
     organization_id: int | None = None,
     personal_only: bool = False,
     created_before: datetime | None = None,
+    keep: list[dict[str, Any]] | None = None,
     errors: list[dict[str, Any]] | None = None,
 ) -> int:
     """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
@@ -46,6 +47,9 @@ def _erase_speaker_voiceprints(
         created_before: Only documents whose ``created_at`` is at or before this instant (the
             automatic org-member re-run after a restore). A document with no ``created_at`` does
             not match and is left in place.
+        keep: ``must_not`` clauses naming documents to leave in place whatever the scope says
+            (the org-member re-run keeps what the member was handed after the erasure:
+            ``erasure_org_member_rerun.AcquiredAfter.must_not``).
         personal_only: Also require that the doc carries no organization, i.e. only
             personal-workspace docs (the privacy purge's "personal" scope). Without a
             ``user_id`` this is every user's personal docs. Contradicts
@@ -71,8 +75,11 @@ def _erase_speaker_voiceprints(
     if created_before is not None:
         terms.append({"range": {"created_at": {"lte": created_before.isoformat()}}})
     body: dict[str, Any] = {"query": {"bool": {"filter": terms}}}
+    must_not: list[dict[str, Any]] = list(keep or [])
     if personal_only:
-        body["query"]["bool"]["must_not"] = [{"exists": {"field": "organization_id"}}]
+        must_not.append({"exists": {"field": "organization_id"}})
+    if must_not:
+        body["query"]["bool"]["must_not"] = must_not
 
     label = (
         "org " + str(organization_id)

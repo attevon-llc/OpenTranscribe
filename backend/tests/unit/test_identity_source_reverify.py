@@ -401,3 +401,35 @@ def test_the_command_refuses_include_evidenced_without_apply():
     with pytest.raises(SystemExit) as exit_info:
         command.main(["--include-evidenced"])
     assert exit_info.value.code == 2
+
+
+@pytest.mark.parametrize("protection", ["legal_hold", "quarantine"])
+def test_apply_skips_the_speakers_of_a_held_or_quarantined_file_and_counts_them(
+    db_session, normal_user, events, queued, protection
+):
+    """Every background write skips a frozen file (``hold_guard``); this operator CLI included."""
+    from app.models.media import MediaFile
+
+    frozen = _auto_accept(db_session, normal_user, _profile(db_session, normal_user, "Alice"))
+    free = _auto_accept(db_session, normal_user, _profile(db_session, normal_user, "Dana"))
+    _stamp(db_session, frozen)
+    _stamp(db_session, free)
+    media = db_session.get(MediaFile, frozen.media_file_id)
+    setattr(media, "legal_hold" if protection == "legal_hold" else "is_quarantined", True)
+    db_session.flush()
+
+    report = reverify_identity_sources(
+        db_session,
+        scope=_mine(normal_user),
+        apply=True,
+        include_evidenced=True,
+        reindex=_queue(queued),
+    )
+
+    assert report.cleared_uuids == [str(free.uuid)]
+    assert report.skipped_protected == 1
+    assert _row(db_session, frozen)[:2] == ("voiceprint", BACKFILL)
+    assert _reverify_history(db_session, frozen) == []
+    assert [f[0] for f in queued] == [free.media_file_id]
+    [event] = events
+    assert event["details"]["counts"]["skipped_protected"] == 1

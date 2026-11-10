@@ -37,6 +37,7 @@ class DataSafetyFacts:
     has_organization_owner: bool
     has_media_file_audio_streams: bool
     has_requested_source_language: bool
+    has_owner_since: bool
 
 
 def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
@@ -81,6 +82,12 @@ def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
             "SELECT EXISTS(SELECT 1 FROM pg_constraint "
             "WHERE conname = 'ck_media_file_requested_source_language')"
         ),
+        # v471: when a transferred row's current owner got it. Keyed on the column the
+        # revision adds last.
+        has_owner_since=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'user_group' AND column_name = 'owner_since')"
+        ),
     )
 
 
@@ -112,7 +119,12 @@ def matches_v470(f: SchemaFacts) -> bool:
     return matches_v469(f) and f.data_safety.has_requested_source_language
 
 
+def matches_v471(f: SchemaFacts) -> bool:
+    return matches_v470(f) and f.data_safety.has_owner_since
+
+
 ARMS: tuple[Arm, ...] = (
+    (matches_v471, "v471_add_owner_since"),
     (matches_v470, "v470_add_requested_source_language"),
     (matches_v469, "v469_add_media_file_audio_streams"),
     (matches_v468, "v468_add_organization_owner"),

@@ -82,9 +82,11 @@ organization administrator hands it over, the organization-stamped rows the pers
 re-owned by an administrator first, so deleting the account no longer destroys them. Personal
 content (no organization) is not touched and goes with the account.
 
-What moves (trashed files included): files, speakers, speaker profiles, speaker collections and
-clusters, collections, tags, summary prompts, custom vocabulary, watch sources and the groups the
-person owns. What does not: chats, personal settings and comments (they stay with their author).
+What moves (trashed files included): files, speaker profiles, speaker collections and clusters,
+collections, tags, summary prompts, custom vocabulary, watch sources and the groups the person
+owns. The rows that belong to a moved file go with it: its speakers (so the transcript keeps its
+speaker names and the voiceprints are kept), its topic suggestions and its processing records.
+What does not: chats, personal settings and comments (they stay with their author).
 Shares and collection or tag memberships refer to rows by id, so they survive unchanged, and the
 search index is re-pointed at the new owner, so search and chat keep finding the content.
 
@@ -104,6 +106,10 @@ search index is re-pointed at the new owner, so search and chat keep finding the
   (up to 8 times, 15 minutes at most between tries) on OpenSearch errors and survives a lost
   worker, and a re-run changes nothing already moved.
 - **Audit.** The organization's audit log shows `org.content.transfer` with the counts, never a title.
+- **Hand-over time.** Each moved row records when it changed hands (`owner_since`). If the
+  receiving administrator's own organization data was erased earlier, the daily erasure
+  reconciliation counts handed-over rows from the hand-over, so they are not taken for a
+  restore of the erased data and are not re-erased.
 
 ## The receipt
 

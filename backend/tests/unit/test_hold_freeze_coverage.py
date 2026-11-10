@@ -430,11 +430,11 @@ ROUTE_DESTROY_GUARDED: dict[str, tuple[str, str]] = {
     _r("files/trash.py::purge_file"): (_r("files/trash.py::purge_file"), _DESTROY),
     _r("files/trash.py::empty_trash"): ("services/trash_purge.py::_due", _DESTROY),
     _r("erasure_receipts.py::admin_erase_file"): (
-        "services/file_cleanup_service.py::purge_media_file",
+        "services/file_cleanup_service.py::_lock_and_recheck",
         _DESTROY + " (single-recording erasure is deferred while held, Art. 17(3)(e))",
     ),
     _r("erasure_receipts.py::org_erase_file"): (
-        "services/file_cleanup_service.py::purge_media_file",
+        "services/file_cleanup_service.py::_lock_and_recheck",
         _DESTROY + " (single-recording erasure is deferred while held, Art. 17(3)(e))",
     ),
     _r("admin_maintenance.py::admin_erase_user"): (
@@ -1160,6 +1160,29 @@ def test_every_celery_task_is_classified_and_guarded():
     index = _app_index()
     assert len(index.tasks) > 100, f"the task scan found only {len(index.tasks)} tasks"
     problems = classify(index.tasks, index, guarded=TASK_FREEZE_GUARDED, exempt=TASK_EXEMPT)
+    assert not problems, "\n".join(problems)
+
+
+#: Operator CLIs under ``app/scripts`` that write file content. They are not decorated, so no
+#: scanner can find them: each is pinned here by hand, as a chain to the guard like a route's.
+CLI_FREEZE_GUARDED: dict[str, tuple[str, ...]] = {
+    # Clearing a v449 stamp can change what a held file's label shows.
+    "scripts/reverify_identity_sources.py::main": (
+        "services/privacy/identity_reverify.py::reverify_identity_sources",
+        "services/privacy/identity_reverify.py::_clear",
+        "services/privacy/identity_reverify.py::_on_unprotected_file",
+        "services/privacy/purge_file_guard.py::unprotected_file_pred",
+    ),
+}
+
+
+def test_each_pinned_operator_cli_still_reaches_a_hold_guard():
+    index = _app_index()
+    problems = [
+        problem
+        for key, chain in CLI_FREEZE_GUARDED.items()
+        for problem in chain_problems(index, key, chain)
+    ]
     assert not problems, "\n".join(problems)
 
 

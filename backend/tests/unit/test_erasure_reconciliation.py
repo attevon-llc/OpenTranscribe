@@ -503,3 +503,44 @@ def test_the_sweep_is_a_no_op_on_an_empty_ledger(db_session, sweep):
     assert result["open_retried"] == 0
     assert result["resurrections_reerased"] == 0
     assert result["failures"] == 0
+
+
+def test_content_handed_to_an_erased_member_survives_the_sweep(db_session, sweep, monkeypatch):
+    """A colleague's recording handed to an already-erased member is not a restore (v471): no
+    resurrection is recorded and nothing is re-erased."""
+    from datetime import UTC
+    from datetime import datetime
+
+    from app.models.organization import OrganizationMembership
+    from app.services import org_content_transfer
+
+    monkeypatch.setattr("app.core.celery.celery_app.send_task", lambda *a, **k: None)
+    org = _mk_org(db_session)
+    member = _mk_user(db_session, "erased")
+    leaver = _mk_user(db_session, "leaver")
+    db_session.add_all(
+        [
+            OrganizationMembership(organization_id=org.id, user_id=member.id, role="org:admin"),
+            OrganizationMembership(organization_id=org.id, user_id=leaver.id, role="org:member"),
+        ]
+    )
+    db_session.commit()
+    entry = _completed_org_member_entry(db_session, member, org)
+    recording = _mk_file(db_session, user=leaver, org_id=int(org.id))
+    recording_id = int(recording.id)
+    # The recording predates the erasure; the hand-over (the wall clock) comes after it.
+    recording.upload_time = datetime.now(UTC) - timedelta(days=2)
+    entry.completed_at = datetime.now(UTC) - timedelta(days=1)
+    db_session.commit()
+    org_content_transfer.transfer_org_content(
+        db_session, organization_id=int(org.id), from_user_id=int(leaver.id)
+    )
+
+    result = sweep()
+
+    assert result["org_member_rerun"] == 0
+    assert db_session.query(MediaFile).filter(MediaFile.id == recording_id).one().user_id == int(
+        member.id
+    )
+    db_session.refresh(entry)
+    assert entry.resurrections_detected == 0

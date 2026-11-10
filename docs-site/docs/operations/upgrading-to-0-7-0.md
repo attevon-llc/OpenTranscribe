@@ -421,6 +421,7 @@ It prints a JSON report. In `counts`:
 | `shape_left_unmarked_with_evidence` | Of those, the ones that would pass the evidence test today. Also reported only: marking on less than proof is how a person's name gets purged |
 | `summaries_to_review` | Recordings with a stored summary and a speaker name a voiceprint wrote. Their file ids are listed in `summary_file_uuids`; see below |
 | `cleared` | Names returned to unknown by this run (0 for a dry run) |
+| `skipped_protected` | Names on a recording under a legal hold or in quarantine. They are never changed (a hold freezes the recording as it stands); a dry run counts the ones an apply would skip |
 
 `recorded` repeats what the upgrade itself recorded in `privacy.identity_source_backfill`, which
 the command never changes.

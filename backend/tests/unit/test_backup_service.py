@@ -122,10 +122,29 @@ def _utc(y, mo, d, h, mi):
     return datetime(y, mo, d, h, mi, tzinfo=UTC)
 
 
-def test_first_run_only_fires_on_matching_minute():
-    # last_run_at=None → only the current minute is checked.
+def test_first_run_fires_on_exact_cron_minute_and_shortly_after():
     assert backup_cron.is_due("0 3 * * *", None, _utc(2026, 6, 7, 3, 0)) is True
-    assert backup_cron.is_due("0 3 * * *", None, _utc(2026, 6, 7, 3, 1)) is False
+    # The beat does not tick on the cron minute; the next tick must still catch it.
+    assert backup_cron.is_due("0 3 * * *", None, _utc(2026, 6, 7, 3, 1)) is True
+
+
+def test_never_run_default_schedules_become_due_on_off_minute_ticks():
+    # Shipped defaults: mirror 30 3 (beat ticks 2-59/5), directory sync 0 4 (ticks 7,22,37,52).
+    assert backup_cron.is_due("30 3 * * *", None, _utc(2026, 6, 7, 3, 32)) is True
+    assert backup_cron.is_due("0 4 * * *", None, _utc(2026, 6, 7, 4, 7)) is True
+
+
+def test_never_run_not_due_before_or_long_after_cron_minute():
+    assert backup_cron.is_due("30 3 * * *", None, _utc(2026, 6, 7, 3, 27)) is False
+    # Enabling at 10:00 must not fire the stale 03:00 occurrence.
+    assert backup_cron.is_due("0 3 * * *", None, _utc(2026, 6, 7, 10, 0)) is False
+
+
+def test_never_run_does_not_double_fire_once_stamped():
+    # The task stamps last_run_at at dispatch; the following ticks must not re-fire.
+    stamp = _utc(2026, 6, 7, 3, 32).isoformat()
+    assert backup_cron.is_due("30 3 * * *", stamp, _utc(2026, 6, 7, 3, 37)) is False
+    assert backup_cron.is_due("30 3 * * *", stamp, _utc(2026, 6, 7, 3, 42)) is False
 
 
 def test_due_when_matching_minute_in_gap():

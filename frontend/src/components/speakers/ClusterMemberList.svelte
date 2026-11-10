@@ -420,15 +420,15 @@
     box-shadow: none;
   }
 
+  .btn-confirm:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .btn-confirm:hover:not(:disabled) {
     opacity: 0.9;
     transform: none;
     box-shadow: none;
-  }
-
-  .btn-confirm:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   @media (max-width: 768px) {

@@ -225,6 +225,17 @@
   }
   /* Neutralize the global `button:hover/:focus { transform: scale; box-shadow }`
      so tabs never lift, round, or shadow on hover/focus. */
+  .tab:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+    border-radius: 0;
+  }
+
+  .tab:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .tab:hover:not(:disabled),
   .tab:focus:not(:disabled) {
     color: var(--text-color);
@@ -241,15 +252,6 @@
   }
   .tab.active:hover:not(:disabled) {
     background: var(--button-hover);
-  }
-  .tab:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: -2px;
-    border-radius: 0;
-  }
-  .tab:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .tab-attention {
     flex: none;

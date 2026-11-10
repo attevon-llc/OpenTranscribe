@@ -295,6 +295,15 @@
     gap: var(--space-2);
   }
 
+  .action-link {
+    border: none;
+    background: none;
+    color: var(--primary-on-surface);
+    cursor: pointer;
+    padding: 0;
+    font-size: var(--font-size-sm);
+  }
+
   .hold-help .action-link {
     font-size: inherit;
     margin-inline-start: var(--space-1);
@@ -458,15 +467,6 @@
     display: flex;
     gap: var(--space-3);
     white-space: nowrap;
-  }
-
-  .action-link {
-    border: none;
-    background: none;
-    color: var(--primary-on-surface);
-    cursor: pointer;
-    padding: 0;
-    font-size: var(--font-size-sm);
   }
 
   .action-link:disabled {

@@ -590,10 +590,6 @@
     background-color: var(--surface-hover);
   }
 
-  .legend-info-wrapper:hover .legend-tooltip {
-    display: block;
-  }
-
   .legend-tooltip {
     display: none;
     position: absolute;
@@ -608,6 +604,10 @@
     padding: var(--space-3);
     min-width: 200px;
     margin-top: var(--space-1);
+  }
+
+  .legend-info-wrapper:hover .legend-tooltip {
+    display: block;
   }
 
   .legend-item {

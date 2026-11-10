@@ -137,6 +137,10 @@
     border-block-end: 1px solid var(--border-color);
   }
 
+  td {
+    color: var(--text-color);
+  }
+
   tbody tr:last-child td {
     border-block-end: none;
   }
@@ -147,10 +151,6 @@
     color: var(--text-secondary);
     background: var(--background-color);
     white-space: nowrap;
-  }
-
-  td {
-    color: var(--text-color);
   }
 
   .col-file {

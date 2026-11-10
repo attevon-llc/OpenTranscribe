@@ -284,13 +284,13 @@
     font-size: var(--font-size-sm);
   }
 
-  .saved-list li[data-qualifies='false'] .saved-name {
-    color: var(--text-secondary);
-  }
-
   .saved-name {
     font-weight: var(--font-weight-medium);
     color: var(--text-primary);
+  }
+
+  .saved-list li[data-qualifies='false'] .saved-name {
+    color: var(--text-secondary);
   }
 
   .saved-meta {

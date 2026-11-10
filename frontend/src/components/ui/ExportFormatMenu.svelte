@@ -128,13 +128,13 @@
     cursor: pointer;
   }
 
-  .export-item:hover:not(:disabled),
-  .export-item:focus-visible {
-    background: var(--hover-color);
-  }
-
   .export-item:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .export-item:focus-visible,
+  .export-item:hover:not(:disabled) {
+    background: var(--hover-color);
   }
 </style>

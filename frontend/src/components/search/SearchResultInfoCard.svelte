@@ -223,7 +223,7 @@
   }
 
   .pinned-label :global(.menu-icon) {
-    fill: currentColor;
+    fill: currentcolor;
   }
 
   .unpin-btn {
@@ -363,7 +363,7 @@
   }
 
   .chip-link:hover :global(.menu-icon) {
-    color: currentColor;
+    color: currentcolor;
   }
 
   .chip-link:focus-visible {

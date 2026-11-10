@@ -108,7 +108,7 @@
     width: 100%;
   }
   .hint {
-    margin: 0.35rem 0 0 0;
+    margin: 0.35rem 0 0;
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }

@@ -116,7 +116,7 @@
   let passwordMinLength = 12;
 
   onMount(() => {
-    (async () => {
+    void (async () => {
       try {
         const { data } = await axiosInstance.get('/auth/password-policy');
         if (typeof data?.min_length === 'number' && data.min_length > 0) {
@@ -946,7 +946,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-1-5);
   }
 
   .add-user-form {
@@ -1048,12 +1048,6 @@
 
   .users-table tr:hover {
     background-color: var(--table-row-hover);
-  }
-
-  .table-actions {
-    display: flex;
-    gap: var(--space-1-5);
-    align-items: center;
   }
 
   /* Base icon button styles */

@@ -121,7 +121,7 @@
   }
 
   $: if (show) {
-    loadLocalEndpoints();
+    void loadLocalEndpoints();
   }
 
   $: showDiscovery = showsDiscovery(formData.provider, loadingLocalEndpoints, localEndpoints);
@@ -167,7 +167,7 @@
       // Reset tracking when modal closes
       lastEditingConfigId = null;
     } else if (config && config.uuid !== lastEditingConfigId) {
-      populateForm(config);
+      void populateForm(config);
       lastEditingConfigId = config.uuid;
     } else if (!config && lastEditingConfigId !== null) {
       resetForm();

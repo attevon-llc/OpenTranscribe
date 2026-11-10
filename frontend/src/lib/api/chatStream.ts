@@ -139,7 +139,7 @@ async function readStream(
     }, INACTIVITY_TIMEOUT_MS);
   };
 
-  const onAbort = () => reader.cancel().catch(() => undefined);
+  const onAbort = () => void reader.cancel().catch(() => undefined);
   signal.addEventListener('abort', onAbort);
 
   try {

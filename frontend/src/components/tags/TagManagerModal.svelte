@@ -107,7 +107,7 @@
         )?.suggested_survivor_uuid ?? null)
       : null;
 
-  $: loadFiles(single?.uuid ?? null);
+  $: void loadFiles(single?.uuid ?? null);
 
   const EMPTY_COPY: Record<TagFilterId, { title: string; description: string }> = {
     all: { title: 'tags.manager.empty.allTitle', description: 'tags.manager.empty.allDescription' },
@@ -645,8 +645,7 @@
 
   .field-with-icon input {
     width: 100%;
-    padding-inline-start: var(--space-8);
-    padding-inline-end: var(--space-8);
+    padding-inline: var(--space-8) var(--space-8);
   }
 
   .field-icon {

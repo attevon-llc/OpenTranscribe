@@ -47,8 +47,8 @@
   $: settingsModalStore.setDirty('chat-admin', hasChanges);
 
   onMount(() => {
-    llmStatusStore.initialize();
-    (async () => {
+    void llmStatusStore.initialize();
+    void (async () => {
       try {
         const loaded = await getChatAdminSettings();
         settings = { ...loaded };

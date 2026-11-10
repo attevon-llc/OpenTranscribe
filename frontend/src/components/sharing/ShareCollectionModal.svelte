@@ -129,7 +129,7 @@
   }
 
   onMount(() => {
-    loadShares();
+    void loadShares();
   });
 </script>
 

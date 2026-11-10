@@ -153,7 +153,7 @@
   }
 
   $: if (player && captionsShownOriginal !== null && showOriginal !== captionsShownOriginal) {
-    updateSubtitles();
+    void updateSubtitles();
   }
 
   function initializePlayer() {
@@ -170,7 +170,7 @@
           duration = mediaDuration(media);
           dispatch('loadedmetadata', { duration });
           if (file?.status === 'completed') {
-            updateSubtitles();
+            void updateSubtitles();
           }
         },
       });
@@ -236,7 +236,7 @@
   // Seamless presigned-URL refresh: reload the new credential but resume exactly
   // where we left off. Changing the <source> src alone does not reload the element.
   $: if (player && mediaElement && videoUrl && videoUrl !== activeSrc) {
-    hotSwapVideoSource(videoUrl);
+    void hotSwapVideoSource(videoUrl);
   }
 
   async function hotSwapVideoSource(newUrl: string) {

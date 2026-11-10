@@ -713,7 +713,7 @@
             <span class="toggle-desc">{$t('settings.llm.autoSummaryDesc')}</span>
           </div>
           <div class="toggle-label">
-            <Toggle id="auto-summary-toggle" labelledby="auto-summary-title" checked={autoSummaryEnabled} onchange={(v) => { autoSummaryEnabled = v; saveAutoSummary(); }} disabled={autoSummaryLoading || (!systemSummaryEnabled && !isAdmin)} />
+            <Toggle id="auto-summary-toggle" labelledby="auto-summary-title" checked={autoSummaryEnabled} onchange={(v) => { autoSummaryEnabled = v; void saveAutoSummary(); }} disabled={autoSummaryLoading || (!systemSummaryEnabled && !isAdmin)} />
           </div>
         </div>
 
@@ -739,7 +739,7 @@
               <span class="toggle-desc">{$t('settings.llm.systemSummaryDesc')}</span>
             </div>
             <div class="toggle-label">
-              <Toggle id="system-summary-toggle" labelledby="system-summary-title" checked={systemSummaryEnabled} onchange={(v) => { systemSummaryEnabled = v; saveSystemSummary(); }} disabled={systemSummaryLoading} />
+              <Toggle id="system-summary-toggle" labelledby="system-summary-title" checked={systemSummaryEnabled} onchange={(v) => { systemSummaryEnabled = v; void saveSystemSummary(); }} disabled={systemSummaryLoading} />
             </div>
           </div>
 
@@ -1027,7 +1027,7 @@
     }
 
     .config-name {
-      word-break: break-word;
+      overflow-wrap: anywhere;
     }
 
     .config-url {

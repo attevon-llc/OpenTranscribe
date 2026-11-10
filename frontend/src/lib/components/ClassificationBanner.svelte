@@ -191,10 +191,7 @@ By using this IS (which includes any device attached to this IS), you consent to
   /* Consent Overlay */
   .consent-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     background-color: rgba(0, 0, 0, 0.85);
     display: flex;
     align-items: center;

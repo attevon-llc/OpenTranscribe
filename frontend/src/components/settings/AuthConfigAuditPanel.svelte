@@ -87,7 +87,7 @@
 
   function handleCategoryChange() {
     entries = [];
-    loadEntries();
+    void loadEntries();
   }
 
   function changeTypeLabel(changeType: string): string {
@@ -226,9 +226,8 @@
   }
 
   .table-scroll {
-    overflow-x: auto;
+    overflow: auto;
     max-height: 420px;
-    overflow-y: auto;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     -webkit-overflow-scrolling: touch;

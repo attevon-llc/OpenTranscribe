@@ -5,6 +5,7 @@
  * Add `slider-dual` to the wrapper element. Imported by FilterSidebar (the only consumer), not
  * by the root layout, so it stays out of the static bundle budget.
  */
+/* stylelint-disable selector-class-pattern -- .rangeSlider/.rangeNub/.rangeHandle/.rangeBar are svelte-range-slider-pips' own class names */
 .slider-dual {
   /* The library redefines `--slider-accent` on `.rangeSlider` (its indigo), so descendants
      must read this copy, resolved here before that happens. */
@@ -48,12 +49,9 @@
   background-color: var(--dual-accent);
   box-shadow: var(--slider-thumb-shadow);
   transition: box-shadow var(--duration-fast) ease;
-}
-
-/* The library turns a range-mode nub into a rotated teardrop with selectors of
-   specificity (0,5,0) that load after this sheet; !important is the only way to keep
-   the oval, and these two declarations are all it is used for. */
-.slider-dual .rangeSlider .rangeNub {
+  /* The library turns a range-mode nub into a rotated teardrop with selectors of
+     specificity (0,5,0) that load after this sheet; !important is the only way to keep
+     the oval, and these two declarations are all it is used for. */
   border-radius: calc(var(--slider-thumb-size) / 2) !important;
   transform: none !important;
 }

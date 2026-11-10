@@ -137,7 +137,7 @@
         following = false;
         return;
       }
-      timer = setTimeout(tick, pollMs);
+      timer = setTimeout(() => void tick(), pollMs);
     };
     void tick();
   }

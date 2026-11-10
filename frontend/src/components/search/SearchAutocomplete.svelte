@@ -129,7 +129,7 @@
 
     // If it's a file suggestion, navigate directly to the file
     if (suggestion.type === 'title' && suggestion.file_uuid) {
-      goto(resolve('/files/[id]', { id: suggestion.file_uuid }));
+      void goto(resolve('/files/[id]', { id: suggestion.file_uuid }));
       return;
     }
 

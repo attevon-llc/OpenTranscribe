@@ -17,7 +17,7 @@
   function copy() {
     if (!text) return;
 
-    copyToClipboard(
+    void copyToClipboard(
       text,
       () => {
         isCopied = true;

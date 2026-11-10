@@ -45,7 +45,7 @@
     if (!canSend) return;
     dispatch('send', value.trim());
     value = '';
-    autoGrow();
+    void autoGrow();
   }
 
   function handleKeydown(event: KeyboardEvent): void {
@@ -67,7 +67,7 @@
     textarea?.focus();
   }
 
-  $: if (value !== undefined) autoGrow();
+  $: if (value !== undefined) void autoGrow();
 </script>
 
 <div class="composer" class:disabled>

@@ -74,7 +74,7 @@
       if (notifications.find((n) => n.id === id && !n.read)) websocketStore.markAsRead(id);
     }
     showNotificationsPanel.set(false);
-    goto(resolve('/files/[id]', { id: fileId }));
+    void goto(resolve('/files/[id]', { id: fileId }));
   }
 
   function dismiss(event: CustomEvent<{ ids: string[] }>) {

@@ -80,12 +80,12 @@
   }
 
   onMount(() => {
-    load();
+    void load();
   });
 
   function toggleView() {
     showLegalHoldsOnly = !showLegalHoldsOnly;
-    load(0);
+    void load(0);
   }
 
   /**
@@ -393,10 +393,6 @@
     gap: var(--space-1);
   }
 
-  .badge {
-    white-space: nowrap;
-  }
-
   .reason-cell {
     max-width: 260px;
     overflow: hidden;
@@ -415,6 +411,7 @@
   }
 
   .badge {
+    white-space: nowrap;
     display: inline-block;
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-pill);

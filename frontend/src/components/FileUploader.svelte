@@ -178,7 +178,7 @@
     });
     void loadAdminDefaultModel().then((v) => { adminDefaultModel = v; });
 
-    (async () => {
+    void (async () => {
       try {
         const [collectionsRes, tags] = await Promise.all([
           axiosInstance.get('/collections'),
@@ -464,7 +464,7 @@
   function handleSubmit() {
     if (!passesQuotaPreflight()) return;
     if (activeTab === 'file') uploadFile();
-    else if (activeTab === 'url') processMediaUrl();
+    else if (activeTab === 'url') void processMediaUrl();
     else if (activeTab === 'record') uploadRecordedAudio();
   }
 
@@ -1107,10 +1107,10 @@
     height: 8px;
     border-radius: var(--radius-round);
     background: var(--error-solid);
-    animation: recPulse 1.5s ease-in-out infinite;
+    animation: rec-pulse 1.5s ease-in-out infinite;
   }
 
-  @keyframes recPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
   /* ── Footer Navigation ── */
   .step-footer {

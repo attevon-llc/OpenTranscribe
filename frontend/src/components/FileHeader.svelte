@@ -118,7 +118,7 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
       event.preventDefault();
-      saveTitle();
+      void saveTitle();
     } else if (event.key === 'Escape') {
       event.preventDefault();
       cancelEditingTitle();
@@ -321,7 +321,7 @@
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     line-height: 1.2;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .status-message {

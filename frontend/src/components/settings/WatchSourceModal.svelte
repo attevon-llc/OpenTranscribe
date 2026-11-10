@@ -80,7 +80,7 @@
   let form: WatchSourceForm = blankForm();
 
   onMount(() => {
-    (async () => {
+    void (async () => {
       try {
         const [colRes, libraryTags] = await Promise.all([axiosInstance.get('/collections'), listTags()]);
         availableCollections = colRes.data ?? [];

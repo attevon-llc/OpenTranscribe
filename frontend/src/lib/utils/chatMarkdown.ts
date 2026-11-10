@@ -196,7 +196,7 @@ export function mathPending(markdown: string | null | undefined): boolean {
   if (!markdown || isMathLoaded()) return false;
   let found = false;
   try {
-    chatMarked.walkTokens(chatMarked.lexer(markdown), (token: Token) => {
+    void chatMarked.walkTokens(chatMarked.lexer(markdown), (token: Token) => {
       if (token.type === 'chatMath') found = true;
     });
   } catch {

@@ -87,15 +87,12 @@
   --text-secondary: #64748b;
   --border-color: #e5e7eb;
   --error-color: #ef4444;
-  --error-color-rgb: 239, 68, 68;
   /* A solid fill that carries WHITE text (count badges). Distinct from `--error-color`, the
      status fill/icon colour, which is too light for white text (3.76:1 light, 2.76:1 dark).
      #dc2626 is 4.83:1 with white; one value in both themes, like `--primary-color`. */
   --error-solid: #dc2626;
   --success-color: #10b981;
-  --success-color-rgb: 16, 185, 129;
   --warning-color: #f59e0b;
-  --warning-color-rgb: 245, 158, 11;
   --info-color: #3b82f6;
   --card-background: #ffffff;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -469,12 +466,9 @@
   --text-secondary: #cbd5e1;
   --border-color: #334155;
   --error-color: #f87171;
-  --error-color-rgb: 248, 113, 113;
   --error-solid: #dc2626; /* See the note on :root */
   --success-color: #34d399;
-  --success-color-rgb: 52, 211, 153;
   --warning-color: #fbbf24;
-  --warning-color-rgb: 251, 191, 36;
   --info-color: #60a5fa;
   --card-background: #1e293b;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -710,17 +704,14 @@ a:hover {
 .theme-toggle-slider {
   position: absolute;
   cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background-color: var(--toggle-bg);
   transition: 0.4s;
   border-radius: 34px;
   overflow: visible; /* Ensure icons are visible */
 }
 
-.theme-toggle-slider:before {
+.theme-toggle-slider::before {
   position: absolute;
   content: '';
   height: 20px;
@@ -737,7 +728,7 @@ input:checked + .theme-toggle-slider {
   background-color: var(--primary-color);
 }
 
-input:checked + .theme-toggle-slider:before {
+input:checked + .theme-toggle-slider::before {
   transform: translateX(26px);
 }
 
@@ -750,8 +741,8 @@ input:checked + .theme-toggle-slider:before {
   height: 16px;
   transition: opacity 0.3s ease;
   z-index: 1; /* Place icons below the slider button */
-  fill: currentColor;
-  stroke: currentColor;
+  fill: currentcolor;
+  stroke: currentcolor;
   stroke-width: 2px;
 }
 

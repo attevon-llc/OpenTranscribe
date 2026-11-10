@@ -56,11 +56,11 @@
   function handleRenameKey(event: KeyboardEvent): void {
     if (event.key === 'Enter') {
       event.preventDefault();
-      commitRename();
+      void commitRename();
     } else if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      endRename();
+      void endRename();
     }
   }
 </script>

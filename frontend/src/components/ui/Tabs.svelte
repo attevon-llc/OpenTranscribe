@@ -163,8 +163,7 @@
     display: flex;
     gap: var(--space-1);
     box-shadow: inset 0 -1px 0 var(--border-color);
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: auto hidden;
     scrollbar-width: thin;
   }
   .tabs.wrap {
@@ -174,8 +173,7 @@
   @media (max-width: 640px) {
     .tabs.wrap {
       flex-wrap: nowrap;
-      overflow-x: auto;
-      overflow-y: hidden;
+      overflow: auto hidden;
     }
   }
   /* Sticky offsets are measured from the scroll container's content box, so its padding (published

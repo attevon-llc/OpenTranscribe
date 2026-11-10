@@ -84,7 +84,7 @@
 
     if (data.status === 'completed') {
       toastStore.success($t('settings.dataIntegrity.checkComplete'));
-      loadStatus();
+      void loadStatus();
     } else if (data.status === 'error') {
       toastStore.error($t('settings.dataIntegrity.checkFailed'));
     }
@@ -172,7 +172,7 @@
   }
 
   onMount(() => {
-    loadStatus();
+    void loadStatus();
     window.addEventListener('data-integrity-progress', handleProgress as EventListener);
     window.addEventListener('data-integrity-complete', handleComplete as EventListener);
   });

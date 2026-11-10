@@ -44,7 +44,7 @@
 
   function placed(event: CustomEvent<{ fileUuids: string[] }>) {
     if (placer) dispatch('placed', { uuids: event.detail.fileUuids, authority: placer });
-    refreshHeldCount(true);
+    void refreshHeldCount(true);
   }
 </script>
 

@@ -40,7 +40,7 @@
   $: settingsModalStore.setDirty('content-redaction', hasChanges);
 
   onMount(() => {
-    (async () => {
+    void (async () => {
       try {
         const [s, d] = await Promise.all([getRedactionSettings(), getRedactionDefaults()]);
         settings = s;
@@ -365,6 +365,9 @@
   }
 
   .perf-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
     margin: var(--space-2) 0 0 0;
     font-size: var(--font-size-xs);
     color: var(--text-color);
@@ -451,11 +454,6 @@
     display: inline-flex;
     align-items: center;
     color: var(--warning-color);
-  }
-  .perf-note {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.4rem;
   }
   .perf-icon,
   .lang-icon {

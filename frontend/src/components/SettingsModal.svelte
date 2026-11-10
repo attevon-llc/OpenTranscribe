@@ -158,6 +158,8 @@
     supportRequestCount = await countSupportRequests(tenancyMulti, supportOrgTab);
   }
 
+  const onSupportAccessChange = () => void loadSupportRequestCount();
+
   // Admin Stats section
   let stats = initialSystemStats($t);
   let showProcessingDetails = false;
@@ -297,7 +299,7 @@
       .catch(() => (hasTakedowns = false));
 
     // Load recording settings
-    loadRecordingSettings();
+    void loadRecordingSettings();
 
     // Section data and the admin badge count are NOT loaded here: this component mounts already
     // open (the layout imports it on demand), so the "just opened" block below runs on init and
@@ -307,14 +309,14 @@
     document.addEventListener('keydown', handleKeyDown);
     window.addEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.addEventListener('reindex-complete', handleReindexCompleteStats);
-    window.addEventListener(SUPPORT_ACCESS_EVENT, loadSupportRequestCount);
+    window.addEventListener(SUPPORT_ACCESS_EVENT, onSupportAccessChange);
   });
 
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.removeEventListener('reindex-complete', handleReindexCompleteStats);
-    window.removeEventListener(SUPPORT_ACCESS_EVENT, loadSupportRequestCount);
+    window.removeEventListener(SUPPORT_ACCESS_EVENT, onSupportAccessChange);
     cancelWarmup?.();
     if (previousOpenState) unlockScroll();
   });
@@ -369,11 +371,11 @@
       // Load data for the active section when modal opens.
       // The file-status tabs self-load on their panel's mount.
       if (activeSection === 'system-statistics') {
-        loadStats();
+        void loadStats();
       } else if (activeSection === 'admin-users' && isAdmin) {
-        loadAdminUsers();
+        void loadAdminUsers();
       }
-      if (isAdmin) loadPendingApprovalCount();
+      if (isAdmin) void loadPendingApprovalCount();
       void loadSupportRequestCount();
 
       previousOpenState = true;
@@ -419,7 +421,7 @@
     // the modal closes and re-initializes from authStore on its next mount.
 
     // Reset recording settings
-    loadRecordingSettings();
+    void loadRecordingSettings();
 
     // Clear all dirty states
     settingsModalStore.clearAllDirty();
@@ -440,9 +442,9 @@
     // Load data for specific sections on navigation.
     // GPU stats refresh via WebSocket broadcast (every 5 min) — no polling needed.
     if (sectionId === 'system-statistics') {
-      loadStats();
+      void loadStats();
     } else if (sectionId === 'admin-users') {
-      loadAdminUsers();
+      void loadAdminUsers();
     }
     // The Recovery tab of file-status self-loads on its panel's mount.
   }
@@ -556,7 +558,7 @@
         gpuRetryScheduled = true;
         setTimeout(() => {
           gpuRetryScheduled = false;
-          loadStats();
+          void loadStats();
         }, 5000);
       }
     } catch (err: unknown) {
@@ -576,7 +578,7 @@
   function handleReindexCompleteStats() {
     // Refresh system stats after reindex completes (e.g., new embedding model)
     if (statsInitialLoaded) {
-      loadStats();
+      void loadStats();
     }
   }
 

@@ -103,7 +103,7 @@
     }
   }
 
-  $: if (selectedMediaIds) loadCurrentCollections();
+  $: if (selectedMediaIds) void loadCurrentCollections();
 
   async function removeFromCollection(chip: { uuid: string; name: string }) {
     if (!isSingleFile) return;
@@ -213,8 +213,8 @@
 
   // Handle share completion - refresh collections
   function handleShared() {
-    fetchCollections();
-    fetchSharedCollections();
+    void fetchCollections();
+    void fetchSharedCollections();
   }
 
   // Create new collection
@@ -395,13 +395,13 @@
       selectedCollectionId = collection.uuid;
       onCollectionSelect(collection.uuid);
     } else if (viewMode === 'add' && selectedMediaIds.length > 0) {
-      addMediaToCollection(collection.uuid);
+      void addMediaToCollection(collection.uuid);
     }
   }
 
   function handleShareWsEvent() {
-    fetchCollections();
-    fetchSharedCollections();
+    void fetchCollections();
+    void fetchSharedCollections();
   }
 
   // A collection this person could see was restricted: drop the row at once (the event
@@ -412,7 +412,7 @@
       collections = collections.filter(col => col.uuid !== uuid);
       if (selectedCollectionId === uuid) selectedCollectionId = null;
     }
-    fetchCollections();
+    void fetchCollections();
     toastStore.info($t('collectionsPanel.visibility.accessChanged'));
   }
 
@@ -421,10 +421,10 @@
     window.addEventListener('share-revoked', handleShareWsEvent);
     window.addEventListener('share-updated', handleShareWsEvent);
     window.addEventListener('collection-access-changed', handleAccessChanged);
-    fetchCollections();
-    fetchPrompts();
-    fetchSharedCollections();
-    if (onHeldSelect) refreshHeldCount();
+    void fetchCollections();
+    void fetchPrompts();
+    void fetchSharedCollections();
+    if (onHeldSelect) void refreshHeldCount();
   });
 
   onDestroy(() => {

@@ -54,7 +54,7 @@
   let passwordPolicy: PasswordPolicy = FALLBACK_PASSWORD_POLICY;
   $: passwordRequirements = buildPasswordRequirements(passwordPolicy);
   onMount(() => {
-    loadPasswordPolicy().then((p) => (passwordPolicy = p));
+    void loadPasswordPolicy().then((p) => (passwordPolicy = p));
   });
 
   onMount(() => {
@@ -300,7 +300,7 @@
   .auth-header p {
     color: var(--text-light);
     font-size: 0.9rem;
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .auth-form {

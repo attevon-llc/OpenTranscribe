@@ -531,22 +531,22 @@
   // Push-based cache invalidation listener
   function handleCacheInvalidation(event: Event) {
     const scope = (event as CustomEvent).detail?.scope;
-    if (scope === 'tags' || scope === 'all') fetchTags();
+    if (scope === 'tags' || scope === 'all') void fetchTags();
     // Re-fetch under whatever the user is currently typing, not the unfiltered
     // default — otherwise a push-invalidation while searching would silently
     // discard the in-progress search and repopulate the full list underneath it.
-    if (scope === 'speakers' || scope === 'all') fetchSpeakers(speakerSearchQuery);
-    if (scope === 'metadata' || scope === 'files' || scope === 'all') fetchMediaMetadata();
+    if (scope === 'speakers' || scope === 'all') void fetchSpeakers(speakerSearchQuery);
+    if (scope === 'metadata' || scope === 'files' || scope === 'all') void fetchMediaMetadata();
     // Owner visibility changes with the files a caller can see (a new upload)
     // and with collection sharing — both scopes can add or remove an owner.
-    if (scope === 'files' || scope === 'collections' || scope === 'all') fetchOwners();
+    if (scope === 'files' || scope === 'collections' || scope === 'all') void fetchOwners();
   }
 
   onMount(() => {
-    fetchTags();
-    fetchOwners();
-    fetchSpeakers();
-    fetchMediaMetadata();
+    void fetchTags();
+    void fetchOwners();
+    void fetchSpeakers();
+    void fetchMediaMetadata();
 
     // Listen for push-based cache invalidation from WebSocket
     window.addEventListener('cache-invalidated', handleCacheInvalidation);

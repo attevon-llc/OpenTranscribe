@@ -77,7 +77,7 @@
     // Refresh whichever tab is showing summaries/profiles derived from the
     // renamed speaker, so the page doesn't keep displaying stale data next to
     // a toast that just said it changed.
-    if (activeTab === 'profiles') loadProfiles(true);
+    if (activeTab === 'profiles') refreshProfiles(true);
   }
 
   onMount(async () => {
@@ -102,12 +102,22 @@
     activeTab = tab;
     clustersSection.resetModes();
     speakerPreviewData = null;
-    if (tab === 'clusters') clustersSection.load();
-    if (tab === 'profiles') loadProfiles();
-    if (tab === 'inbox') loadInbox();
+    if (tab === 'clusters') clustersSection.refresh();
+    if (tab === 'profiles') refreshProfiles();
+    if (tab === 'inbox') refreshInbox();
   }
 
   // --- Data loading ---
+
+  // Fire-and-forget reloads. The loaders have already toasted a failure (unless silent); they
+  // rethrow only for onMount's Promise.allSettled, which counts the sections that failed.
+  function refreshProfiles(silent = false): void {
+    loadProfiles(silent).catch(() => undefined);
+  }
+
+  function refreshInbox(): void {
+    loadInbox().catch(() => undefined);
+  }
 
   async function loadProfiles(silent = false) {
     loadingProfiles = true;
@@ -221,11 +231,11 @@
     const first = inboxItems[0];
     const shortcut = resolveInboxShortcut(e.key, first);
     if (shortcut === 'accept' || shortcut === 'skip') {
-      handleInboxAction(
+      void handleInboxAction(
         new CustomEvent('action', { detail: { type: shortcut, speaker_uuid: first.speaker_uuid } })
       );
     } else if (shortcut === 'preview') {
-      openSpeakerPreview(first.speaker_uuid);
+      void openSpeakerPreview(first.speaker_uuid);
     }
   }
 </script>
@@ -319,8 +329,8 @@
       on:action={handleInboxAction}
       on:preview={(e) => openSpeakerPreview(e.detail.speaker_uuid)}
       on:prefetch={(e) => previewCache.prefetch(e.detail.speaker_uuid)}
-      on:prevPage={() => { inboxPage--; loadInbox(); }}
-      on:nextPage={() => { inboxPage++; loadInbox(); }}
+      on:prevPage={() => { inboxPage--; refreshInbox(); }}
+      on:nextPage={() => { inboxPage++; refreshInbox(); }}
     />
   {/if}
 </div>
@@ -338,7 +348,6 @@
 
 <style>
   .speakers-page {
-    max-width: 1000px;
     margin: 0 auto;
     padding: var(--space-6) var(--space-4);
     overflow-x: hidden;

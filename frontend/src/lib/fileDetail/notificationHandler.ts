@@ -67,7 +67,7 @@ function statusOf(n: Notification): string | undefined {
 // enrichment still follow, and speaker labels attach in place via `speaker_updated` below.
 function onTranscriptReady(ctx: Ctx): void {
   if (ctx.getFile()?.uuid) {
-    ctx.fetchTranscriptData();
+    void ctx.fetchTranscriptData();
   }
 }
 
@@ -126,7 +126,7 @@ function onTranscriptionComplete(ctx: Ctx): void {
     setSummarySpinners(ctx);
     ctx.setFile({ ...file }); // Trigger reactivity
   }
-  setTimeout(() => refreshAfterTranscription(ctx), 1000);
+  setTimeout(() => void refreshAfterTranscription(ctx), 1000);
 }
 
 function onTranscription(n: Notification, ctx: Ctx): void {
@@ -139,7 +139,7 @@ function onTranscription(n: Notification, ctx: Ctx): void {
   } else if (status === 'error' || status === 'failed') {
     // Error state - refresh immediately
     ctx.setCurrentProcessingStep(''); // Clear processing step
-    ctx.fetchFileDetails();
+    void ctx.fetchFileDetails();
   }
 }
 
@@ -235,7 +235,7 @@ function onRedaction(n: Notification, ctx: Ctx): void {
   if (status === 'done') {
     // Detection finished — load the now-available (masked) transcript.
     ctx.setRedactionPending(false);
-    ctx.fetchFileDetails();
+    void ctx.fetchFileDetails();
     const skipped = n.data?.skipped_detectors || [];
     if (skipped.length) {
       ctx.toastInfo(
@@ -244,7 +244,7 @@ function onRedaction(n: Notification, ctx: Ctx): void {
     }
   } else if (status === 'failed') {
     ctx.setRedactionPending(false);
-    ctx.fetchFileDetails();
+    void ctx.fetchFileDetails();
   } else {
     ctx.setRedactionPending(true);
   }
@@ -253,7 +253,7 @@ function onRedaction(n: Notification, ctx: Ctx): void {
 // Cache invalidation (e.g. auto-label applied tags/collections).
 function onCacheInvalidate(n: Notification, ctx: Ctx): void {
   if (n.data?.scope !== 'files' || n.data?.file_id !== ctx.getFileId()) return;
-  ctx.fetchFileDetails();
+  void ctx.fetchFileDetails();
   Promise.resolve(ctx.loadAISuggestions()).catch((err) => {
     console.error('Error reloading AI suggestions after cache invalidate:', err);
   });

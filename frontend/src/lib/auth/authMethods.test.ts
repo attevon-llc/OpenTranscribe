@@ -42,10 +42,10 @@ describe('sharedFreshRequest', () => {
     expect(shared.get()).toBe(first);
     await expect(first).resolves.toBe('a');
     vi.advanceTimersByTime(999);
-    shared.get();
+    await shared.get();
     expect(load).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(1);
-    shared.get();
+    await shared.get();
     expect(load).toHaveBeenCalledTimes(2);
   });
 

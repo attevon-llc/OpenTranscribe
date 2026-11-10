@@ -57,7 +57,7 @@
   }
 
   onMount(() => {
-    fetchPrompts();
+    void fetchPrompts();
   });
 </script>
 

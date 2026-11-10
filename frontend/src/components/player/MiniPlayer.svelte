@@ -88,7 +88,7 @@
 
   // A new presigned URL after the player is up: reload it, resume where we were.
   $: if (handle && mediaElement && mediaUrl && mediaUrl !== activeSrc) {
-    hotSwapSource(mediaUrl);
+    void hotSwapSource(mediaUrl);
   }
 
   function initPlayer() {
@@ -105,7 +105,7 @@
 
     // The first seek is issued at once, not gated on `canplay` (#649): assigning
     // `currentTime` before metadata is kept by the browser as the start position.
-    applySeek(startTime, { play: autoplay });
+    void applySeek(startTime, { play: autoplay });
 
     // Persistent handlers, so a later hot swap's seek still clears the spinner (#649).
     cleanups.push(
@@ -206,7 +206,7 @@
   }
 
   export function seek(time: number) {
-    applySeek(time, { play: false });
+    void applySeek(time, { play: false });
   }
 
   export function getPlayer(): PlayerHandle | null {
@@ -612,7 +612,7 @@
     inline-size: 100%;
     block-size: var(--slider-track-height);
     border-radius: var(--slider-track-radius);
-    background: color-mix(in srgb, currentColor 30%, transparent);
+    background: color-mix(in srgb, currentcolor 30%, transparent);
     overflow: hidden;
   }
 
@@ -632,7 +632,7 @@
 
   .mini-player :global(.mini-buffer) {
     inline-size: var(--media-slider-buffer);
-    background: color-mix(in srgb, currentColor 30%, transparent);
+    background: color-mix(in srgb, currentcolor 30%, transparent);
   }
 
   .mini-player :global(.mini-fill) {

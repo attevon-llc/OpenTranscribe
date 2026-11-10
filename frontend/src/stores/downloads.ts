@@ -92,6 +92,12 @@ function createDownloadStore() {
               this.removeDownload(fileId);
             }, 60000); // Keep error for 1 minute
             break;
+
+          case 'preparing':
+          case 'processing':
+          case 'downloading':
+            // In-progress phases: the progress bar carries them, there is nothing to announce.
+            break;
         }
 
         return downloads;

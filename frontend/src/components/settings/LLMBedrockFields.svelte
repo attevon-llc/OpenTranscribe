@@ -36,7 +36,7 @@
 
   onMount(() => {
     if (!isAdmin) return;
-    (async () => {
+    void (async () => {
       try {
         serverStatus = await LLMSettingsApi.getBedrockServerCredentials();
       } catch {

@@ -80,8 +80,7 @@
     content: '';
     position: absolute;
     top: 11px;
-    inset-inline-start: calc(-50% + 16px);
-    inset-inline-end: calc(50% + 16px);
+    inset-inline: calc(-50% + 16px) calc(50% + 16px);
     height: 2px;
     border-radius: 1px;
     background-color: var(--border-color);
@@ -156,7 +155,7 @@
       width: 1px;
       height: 1px;
       overflow: hidden;
-      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
       white-space: nowrap;
     }
 

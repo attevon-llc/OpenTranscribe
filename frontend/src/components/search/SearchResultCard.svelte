@@ -459,7 +459,7 @@
   }
 
   .details-btn.pin[aria-pressed='true'] :global(.menu-icon) {
-    fill: currentColor;
+    fill: currentcolor;
   }
 
   :global([data-theme='dark']) .details-btn.pin[aria-pressed='true'] {

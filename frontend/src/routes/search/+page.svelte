@@ -216,7 +216,7 @@
       // Store has matching results even if params string differs (e.g. back navigation)
       searchInput = restoredQuery;
     } else if (restore === 'search') {
-      performSearch(restoredQuery, urlPage);
+      void performSearch(restoredQuery, urlPage);
     }
 
     // The search results are restored from the store (above), but the preview
@@ -267,7 +267,7 @@
     // Update URL without navigation
     const params = buildPageUrlParams(query, pageNum, $searchStore);
 
-    goto(resolve(`/search?${params.toString()}`), { replace: true, reset: false });
+    void goto(resolve(`/search?${params.toString()}`), { replace: true, reset: false });
 
     try {
       const res = await axiosInstance.get('/search', {
@@ -299,7 +299,7 @@
   }
 
   function handleSearch() {
-    performSearch(searchInput, 1);
+    void performSearch(searchInput, 1);
   }
 
   function handleClearSearch() {
@@ -310,11 +310,11 @@
     url.searchParams.delete('q');
     url.searchParams.delete('page');
     const remaining = url.searchParams.toString();
-    goto(resolve(remaining ? `/search?${remaining}` : '/search'), { replace: true });
+    void goto(resolve(remaining ? `/search?${remaining}` : '/search'), { replace: true });
   }
 
   function handlePageChange(event: CustomEvent<number>) {
-    performSearch($searchStore.query, event.detail);
+    void performSearch($searchStore.query, event.detail);
     // Scroll to top of results
     const scrollable = document.querySelector('.scrollable-content');
     if (scrollable) {
@@ -326,14 +326,14 @@
     const { sortBy, sortOrder } = event.detail;
     searchStore.setSort(sortBy, sortOrder);
     if ($searchStore.query) {
-      performSearch($searchStore.query, 1);
+      void performSearch($searchStore.query, 1);
     }
   }
 
   function handleSearchModeChange(mode: string) {
     searchStore.setSearchMode(mode);
     if ($searchStore.query) {
-      performSearch($searchStore.query, 1);
+      void performSearch($searchStore.query, 1);
     }
   }
 
@@ -341,7 +341,7 @@
     searchStore.toggleSource(source);
     // Zero-sources (J-760-8): don't search, just show the deliberate empty state.
     if ($searchStore.query && $searchStore.selectedSources.length > 0) {
-      performSearch($searchStore.query, 1);
+      void performSearch($searchStore.query, 1);
     }
   }
 
@@ -363,7 +363,7 @@
 
     // Re-run search with new filters
     if ($searchStore.query) {
-      performSearch($searchStore.query, 1);
+      void performSearch($searchStore.query, 1);
     }
   }
 
@@ -373,14 +373,14 @@
   function handleFilterByTag(event: CustomEvent<string>) {
     filterSelectedTags = [event.detail];
     searchStore.setTags([event.detail]);
-    if ($searchStore.query) performSearch($searchStore.query, 1);
+    if ($searchStore.query) void performSearch($searchStore.query, 1);
   }
 
   function handleFilterByCollection(event: CustomEvent<string>) {
     filterSelectedCollectionId = event.detail;
     if (showFilters) return;
     searchStore.setCollectionId(event.detail);
-    if ($searchStore.query) performSearch($searchStore.query, 1);
+    if ($searchStore.query) void performSearch($searchStore.query, 1);
   }
 
   function handleFilterReset() {
@@ -395,13 +395,13 @@
     filterSelectedStatuses = [];
 
     if ($searchStore.query) {
-      performSearch($searchStore.query, 1);
+      void performSearch($searchStore.query, 1);
     }
   }
 
   function handleSuggestionSelect(event: CustomEvent<string>) {
     searchInput = event.detail;
-    performSearch(event.detail, 1);
+    void performSearch(event.detail, 1);
   }
 
   // Sticky preview player
@@ -1001,7 +1001,7 @@
     padding: 0;
     margin: -1px;
     overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
   }
@@ -1181,7 +1181,7 @@
     width: 6px;
     height: 6px;
     border-radius: var(--radius-round);
-    background: currentColor;
+    background: currentcolor;
     flex-shrink: 0;
   }
 

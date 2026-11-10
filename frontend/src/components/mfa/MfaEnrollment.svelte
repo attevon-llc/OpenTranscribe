@@ -115,7 +115,7 @@
   }
 
   function copyCodes() {
-    copyToClipboard(backupCodes.join('\n'), () => toastStore.success($t('auth.mfaEnroll.codesCopied')));
+    void copyToClipboard(backupCodes.join('\n'), () => toastStore.success($t('auth.mfaEnroll.codesCopied')));
   }
 
   function downloadCodes() {

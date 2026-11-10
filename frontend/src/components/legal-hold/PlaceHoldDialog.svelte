@@ -52,7 +52,7 @@
   // reordered by Svelte so that the reset never fires.
   $: onOpenChange(isOpen);
   function onOpenChange(open: boolean) {
-    if (open && !lastOpen) reset();
+    if (open && !lastOpen) void reset();
     lastOpen = open;
   }
 

@@ -33,7 +33,7 @@
     : $memberGroups;
 
   function handleGroupWsEvent() {
-    loadGroups();
+    void loadGroups();
   }
 
   onMount(async () => {
@@ -76,7 +76,7 @@
     selectedGroup = null;
     groupsStore.setSelectedGroup(null);
     // Refresh list in case of changes
-    loadGroups();
+    void loadGroups();
   }
 
   function handleGroupCreated(event: CustomEvent<Group>) {
@@ -92,13 +92,13 @@
 
   function handleGroupUpdated() {
     // Refresh group list to reflect name/description changes
-    loadGroups();
+    void loadGroups();
   }
 
   function handleLeft() {
     selectedGroup = null;
     groupsStore.setSelectedGroup(null);
-    loadGroups();
+    void loadGroups();
   }
 
 </script>

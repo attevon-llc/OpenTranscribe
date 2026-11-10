@@ -45,7 +45,7 @@
   }
 
   onMount(() => {
-    loadPage();
+    void loadPage();
   });
 
   const confirmDialog = createConfirmDialog();

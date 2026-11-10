@@ -301,8 +301,8 @@
     font-weight: var(--font-weight-semibold);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
-    background: currentColor;
-    background: color-mix(in srgb, currentColor 12%, transparent);
+    background: currentcolor;
+    background: color-mix(in srgb, currentcolor 12%, transparent);
     white-space: nowrap;
   }
 

@@ -35,6 +35,25 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   output but never fail the command, because the script doesn't pass `--fail-on-warnings`
   (default `false`). Don't rely on this as an a11y gate; #785 tracks making a11y enforcement
   real. `npm run lint` / `lint:fix` — ESLint.
+- `npm run lint:types` — type-aware ESLint (`eslint.typed.config.js` = `eslint.config.js` +
+  typescript-eslint `projectService`): `no-floating-promises`, `no-misused-promises`,
+  `await-thenable`, `require-await` (off in tests and `src/test-mocks`, where `async () => value`
+  is how a mock returns a promise) and `switch-exhaustiveness-check` (a `default:` counts as
+  exhaustive). All errors, no baseline. A separate config because the TypeScript program costs
+  minutes (about 4 min vs 45 s for `npm run lint`, under load); it runs as the `eslint-typed`
+  push-stage hook, which CI's push leg runs too. Fix a finding by awaiting, by `.catch(...)`, or
+  with `void promise` **only when the callee already handles its own errors** (a try/catch that
+  does not rethrow): `void` does not handle anything, it records the decision. For a callback
+  slot typed `() => void`, pass `() => void asyncFn()` rather than the async function.
+- `npm run lint:css` — Stylelint over `src/**/*.css` and every Svelte `<style>` block
+  (`stylelint.config.mjs`: `stylelint-config-standard`, `postcss-html` as the Svelte custom syntax).
+  It runs through `scripts/guards/check_stylelint_ratchet.py`, which counts findings per
+  `path::rule` against `scripts/guards/baselines/stylelint.txt` (only `no-descending-specificity`
+  debt is in it; counts may only fall, `--tighten` after a fix). Syntax errors and needless or
+  reason-less `stylelint-disable` comments are never baselined; a disable needs `-- <reason>`.
+  Hooks: `guard-stylelint-staged` (commit stage, staged files) and `guard-stylelint` (push stage,
+  whole tree). ⚠️ Do not run `stylelint --fix` over `.svelte` files unreviewed: postcss-html
+  rewrote a templated `style="..."` attribute and escaped a `<style>` inside a CSS comment.
 - `npm run test` / `test:watch` — Vitest unit/component tests (jsdom).
   ⚠️ **Those scripts set `NODE_OPTIONS=--no-experimental-webstorage`, and it is load-bearing on
   Node >=26.** Node 26 defines a `localStorage` accessor on `globalThis` that evaluates to
@@ -49,6 +68,13 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   `backend/tests/unit/test_node_version_consistency.py`, gated on `.nvmrc` so it lapses if we ever
   drop below 26. If you run bare `npx vitest` on Node 26 you will hit this.
 - `npm run test:audit` — finds tests that pass whether the code works or not (below).
+- `npm run test:coverage` — the suite with v8 coverage. `coverage.thresholds` in
+  `vitest.config.ts` is **enforced, not report-only**: a run below any of the four floors exits
+  non-zero, in CI and in `scripts/frontend-check.sh` (the commit-stage hook runs
+  `test:coverage`). The floors are a **ratchet** set about 1 point under the measured value, like
+  the backend's `fail_under`: raise them (and `FLOOR_TABLE` in
+  `backend/tests/unit/test_frontend_coverage_gate.py`) when coverage rises, never lower them to
+  make a run pass.
 - **Before committing**: lint + svelte-check + build + test must be green (pre-commit enforces
   it via `scripts/frontend-check.sh`: the commit stage runs it with `--check-only`, i.e. everything
   except `vite build`, and the build runs at the push stage).

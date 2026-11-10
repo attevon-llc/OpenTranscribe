@@ -109,11 +109,9 @@ function createLLMStatusStore() {
       if (monitoringTimer) clearInterval(monitoringTimer);
       removeAttentionListeners();
 
-      monitoringTimer = setInterval(async () => {
-        const currentState = get({ subscribe });
-        if (!currentState.checking) {
-          await store.refreshStatus();
-        }
+      // refreshStatus catches its own failure and marks the provider unavailable.
+      monitoringTimer = setInterval(() => {
+        if (!get({ subscribe }).checking) void store.refreshStatus();
       }, POLL_INTERVAL_MS);
       addAttentionListeners();
     },

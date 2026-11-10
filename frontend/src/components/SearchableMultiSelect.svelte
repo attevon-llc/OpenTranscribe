@@ -270,7 +270,7 @@
     text-align: left;
     overflow: visible;
     white-space: normal;
-    word-wrap: break-word;
+    overflow-wrap: break-word;
   }
 
 

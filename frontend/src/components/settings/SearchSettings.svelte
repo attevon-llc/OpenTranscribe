@@ -128,11 +128,11 @@
     isReindexing = false;
     lastReindexStats = event.detail?.stats || null;
     // Reload status to get updated counts
-    loadStatus();
+    void loadStatus();
     // A reindex (including one dispatched by the degraded re-embed) drives the degraded
     // count back down — reload it rather than assuming it hit zero, since a re-embed run
     // can be truncated and leave a remainder.
-    loadDegradedPreview();
+    void loadDegradedPreview();
     toastStore.success($t('search.reindexComplete'));
   }
 
@@ -140,7 +140,7 @@
     reindexProgress = null;
     isReindexing = false;
     isStopping = false;
-    loadStatus();
+    void loadStatus();
     toastStore.success($t('search.reindexStopped'));
   }
 
@@ -881,6 +881,7 @@
 
     .subsection-actions .btn {
       flex: 1;
+      min-height: 44px;
     }
 
     .form-actions {
@@ -896,9 +897,6 @@
       min-height: 44px;
     }
 
-    .subsection-actions .btn {
-      min-height: 44px;
-    }
   }
 
   .reindex-card {

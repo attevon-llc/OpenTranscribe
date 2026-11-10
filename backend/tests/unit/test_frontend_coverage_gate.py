@@ -6,7 +6,8 @@ below measured coverage. Three things are pinned here:
 
   * all four metrics have a threshold;
   * each is >= the value in FLOOR_TABLE below (raise the table with the config, never lower it);
-  * the frontend CI job runs the suite with coverage.
+  * the frontend CI job and the local frontend gate (scripts/frontend-check.sh, the commit-stage
+    hook) both run the suite with coverage.
 """
 
 from __future__ import annotations
@@ -19,15 +20,16 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[3]
 VITEST_CONFIG = REPO / "frontend" / "vitest.config.ts"
+FRONTEND_CHECK = REPO / "scripts" / "frontend-check.sh"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "pre-commit.yml"
 FRONTEND_JOB = "frontend-tests"
 
 # Ratchet table: the lowest floor each metric may ever have. Raise together with the config.
 FLOOR_TABLE: dict[str, float] = {
-    "lines": 64.2,
-    "statements": 62.7,
-    "functions": 62.7,
-    "branches": 57.3,
+    "lines": 74.1,
+    "statements": 72.8,
+    "functions": 71.5,
+    "branches": 67.7,
 }
 
 
@@ -69,8 +71,21 @@ def test_ci_frontend_job_runs_coverage() -> None:
 
 
 def test_ci_syncs_sveltekit_before_coverage() -> None:
-    # `test:coverage` has no pretest hook, so without `svelte-kit sync` vitest cannot resolve
-    # .svelte-kit/tsconfig.json and dies at startup.
+    # Without `svelte-kit sync` vitest cannot resolve the generated tsconfig and dies at startup.
+    # package.json's `pretest:coverage` does it too; CI keeps the explicit step.
     commands = frontend_run_commands(CI_WORKFLOW.read_text())
     joined = "\n".join(commands)
     assert re.search(r"svelte-kit sync[\s\S]*npm run test:coverage", joined)
+
+
+def test_local_frontend_gate_runs_coverage() -> None:
+    """The commit-stage gate must evaluate the floors, or a drop is first seen in CI."""
+    live = "\n".join(
+        line
+        for line in FRONTEND_CHECK.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    assert re.search(r'run_step\s+"[^"]*"\s+"[^"]*"\s+npm run test:coverage\b', live), (
+        "scripts/frontend-check.sh must run `npm run test:coverage` (not plain `npm run test`), "
+        "or the coverage floors are never checked before a push"
+    )

@@ -68,7 +68,7 @@
   }
 
   onMount(() => {
-    fetchCollections();
+    void fetchCollections();
   });
 </script>
 

@@ -6,7 +6,7 @@
   export let status: 'open' | 'counter_notice' | 'upheld' | 'released' | 'resolved';
 </script>
 
-<span class="chip chip-{status}">{$t(TAKEDOWN_STATUS_KEYS[status])}</span>
+<span class="chip chip-{status.replaceAll('_', '-')}">{$t(TAKEDOWN_STATUS_KEYS[status])}</span>
 
 <style>
   .chip {
@@ -24,7 +24,7 @@
     color: var(--color-warning-text);
   }
 
-  .chip-counter_notice {
+  .chip-counter-notice {
     background: rgba(var(--primary-color-rgb), 0.14);
     color: var(--color-info-text);
   }

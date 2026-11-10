@@ -125,7 +125,7 @@
     if (conversationId && conversationId !== lastLoadedId) {
       lastLoadedId = conversationId;
       if (!chatStore.consumeSelfCreated(conversationId)) {
-        chatStore.openConversation(conversationId);
+        void chatStore.openConversation(conversationId);
       }
     } else if (!conversationId && lastLoadedId !== null) {
       lastLoadedId = null;
@@ -135,8 +135,8 @@
   $: syncConversation(data.conversationId);
 
   onMount(() => {
-    chatStore.loadConversations(true);
-    loadProjects();
+    void chatStore.loadConversations(true);
+    void loadProjects();
     // Read BEFORE enabling persistence, or mounting writes the default back
     // over whatever the user chose last time.
     traceOpen = readTraceOpen();
@@ -159,7 +159,7 @@
     const initial = handoff ?? deepLinked;
     if (initial?.length && !data.conversationId) {
       chatStore.setScope({ ...emptyScope(), file_uuids: initial });
-      chatStore.refreshEstimate();
+      void chatStore.refreshEstimate();
     }
 
     if (!data.conversationId) {
@@ -185,7 +185,7 @@
 
     if (mod && event.shiftKey && event.key.toLowerCase() === 'o') {
       event.preventDefault();
-      handleNewChat();
+      void handleNewChat();
       return;
     }
 
@@ -391,8 +391,8 @@
       project={editingProject}
       on:saved={loadProjects}
       on:deleted={() => {
-        loadProjects();
-        chatStore.loadConversations();
+        void loadProjects();
+        void chatStore.loadConversations();
       }}
       on:close={() => (projectModalOpen = false)}
     />
@@ -786,7 +786,7 @@
   .error-action {
     margin-left: auto;
     padding: 0.2rem 0.6rem;
-    border: 1px solid currentColor;
+    border: 1px solid currentcolor;
     border-radius: var(--radius-md);
     background: none;
     color: inherit;

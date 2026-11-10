@@ -78,7 +78,7 @@
   $: sourceIsExact = sourceRef.kind === 'release' || (sourceRef.kind === 'commit' && sourceRef.exact);
 
   function ensureVersion(open: boolean) {
-    if (open && !serverVersion) fetchVersion();
+    if (open && !serverVersion) void fetchVersion();
   }
 
   $: ensureVersion(showModal);

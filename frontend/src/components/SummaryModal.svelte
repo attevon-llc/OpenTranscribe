@@ -67,7 +67,7 @@
   let pendingKeyPathScroll = false;
 
   $: if (isOpen && fileId) {
-    loadSummary();
+    void loadSummary();
   }
 
   $: if (searchQuery && summary) {
@@ -166,7 +166,7 @@
 
       // Poll for completion (simplified - you might want to use WebSockets)
       setTimeout(() => {
-        loadSummary();
+        void loadSummary();
       }, 5000);
 
       dispatch('generateSummary', { fileId });
@@ -188,7 +188,7 @@
 
       // Poll for completion
       setTimeout(() => {
-        loadSummary();
+        void loadSummary();
       }, 5000);
 
       dispatch('generateSummary', { fileId });

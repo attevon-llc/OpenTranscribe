@@ -272,7 +272,7 @@
     line-height: 1.5;
     color: var(--color-text);
     white-space: pre-wrap;
-    word-break: break-word;
+    overflow-wrap: anywhere;
     background: var(--color-bg-secondary);
     border-radius: var(--radius-md);
   }

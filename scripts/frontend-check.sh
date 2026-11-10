@@ -262,7 +262,11 @@ run_all_checks() {
     # code that can silently stop matching, and a detector that matches nothing reports zero
     # findings — indistinguishable from a clean suite. Its 27 cases have already caught two
     # dead detectors. Same order CI uses.
-    run_step "vitest" "Tests +[0-9]+ failed|Test Files +[0-9]+ failed" npm run test
+    #
+    # `test:coverage`, not `test`: the coverage floors in vitest.config.ts are ratchets, and a
+    # floor only this script and CI evaluate is the one a commit can see fail. vitest exits
+    # non-zero when a threshold is missed, and that line names the metric.
+    run_step "vitest (with coverage floors)" "Tests +[0-9]+ failed|Test Files +[0-9]+ failed|Coverage for [a-z]+ .* does not meet" npm run test:coverage
     run_step "frontend test-auditor self-test" "" npm run test:audit:selftest
     run_step "frontend test-quality audit" "" npm run test:audit
 

@@ -20,6 +20,8 @@ export default tseslint.config(
       'build/',
       '.svelte-kit/',
       'dist/',
+      // `npm run test:coverage` output (the lcov HTML report ships its own scripts).
+      'coverage/',
       'node_modules/',
       'static/',
       'scripts/',

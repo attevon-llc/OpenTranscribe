@@ -13,7 +13,13 @@ export function createDebouncedHandler(
   return {
     trigger() {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(callback, delay);
+      // A callback that rejects has nowhere to report to from a timer; log it rather than
+      // leaving an unhandled rejection.
+      timer = setTimeout(() => {
+        Promise.resolve(callback()).catch((err: unknown) =>
+          console.error('Debounced callback failed:', err)
+        );
+      }, delay);
     },
     cleanup() {
       if (timer) {

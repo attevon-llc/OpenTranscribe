@@ -203,28 +203,30 @@ export function createUrlRefresher(
 ): { stop: () => void } {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
+  const refresh = async () => {
+    try {
+      // Clear cache to force refresh
+      clearMediaUrlCache(fileId);
+      const newUrl = await getMediaStreamUrl(fileId, 'video');
+      onRefresh(newUrl);
+
+      // Get the new expiration from cache
+      const cached = getCachedUrlInfo(fileId, 'video');
+      if (cached) {
+        const newExpiresIn = Math.floor((cached.expiresAt - Date.now()) / 1000);
+        scheduleRefresh(newExpiresIn);
+      }
+    } catch (error) {
+      console.error('Failed to refresh video URL:', error);
+    }
+  };
+
   const scheduleRefresh = (expiresInSeconds: number) => {
     // Refresh 30 seconds before expiration
     const refreshInMs = (expiresInSeconds - 30) * 1000;
 
     if (refreshInMs > 0) {
-      timeoutId = setTimeout(async () => {
-        try {
-          // Clear cache to force refresh
-          clearMediaUrlCache(fileId);
-          const newUrl = await getMediaStreamUrl(fileId, 'video');
-          onRefresh(newUrl);
-
-          // Get the new expiration from cache
-          const cached = getCachedUrlInfo(fileId, 'video');
-          if (cached) {
-            const newExpiresIn = Math.floor((cached.expiresAt - Date.now()) / 1000);
-            scheduleRefresh(newExpiresIn);
-          }
-        } catch (error) {
-          console.error('Failed to refresh video URL:', error);
-        }
-      }, refreshInMs);
+      timeoutId = setTimeout(() => void refresh(), refreshInMs);
     }
   };
 

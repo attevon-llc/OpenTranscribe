@@ -79,7 +79,7 @@ class UploadService {
     this.processingQueue.push(...queueIds);
     // Start processing any restored uploads
     if (this.processingQueue.length > 0) {
-      setTimeout(() => this.processQueue(), 1000);
+      setTimeout(() => void this.processQueue(), 1000);
     }
   }
 
@@ -139,7 +139,7 @@ class UploadService {
     this.emit('added', id, upload);
 
     // Start processing if we have capacity
-    this.processQueue();
+    void this.processQueue();
 
     return id;
   }
@@ -211,7 +211,7 @@ class UploadService {
     this.emit('added', id, upload);
 
     // Start processing if we have capacity
-    this.processQueue();
+    void this.processQueue();
 
     return id;
   }
@@ -243,7 +243,7 @@ class UploadService {
     } finally {
       this.activeUploads.delete(nextUploadId);
       // Continue processing queue
-      setTimeout(() => this.processQueue(), QUEUE_PROCESS_DELAY_MS);
+      setTimeout(() => void this.processQueue(), QUEUE_PROCESS_DELAY_MS);
     }
   }
 
@@ -560,7 +560,7 @@ class UploadService {
 
     this.processingQueue.push(uploadId);
     this.emit('retry', uploadId);
-    this.processQueue();
+    void this.processQueue();
     persistUploads(this.uploads);
   }
 
@@ -594,7 +594,7 @@ class UploadService {
     persistUploads(this.uploads);
 
     // Continue processing queue
-    this.processQueue();
+    void this.processQueue();
   }
 
   removeUpload(uploadId: string) {

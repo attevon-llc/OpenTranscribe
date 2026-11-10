@@ -73,7 +73,7 @@ function createWebSocketStore() {
       return s;
     });
     // Recover active task progress from backend (survives page refresh/modal close)
-    recoverActiveProgress(notifications);
+    void recoverActiveProgress(notifications);
   };
 
   // Connect to WebSocket server (cookies are sent automatically)

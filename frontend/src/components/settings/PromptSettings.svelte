@@ -836,12 +836,7 @@
     max-width: 800px;
   }
 
-  .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-4);
-  }
+
 
   .prompt-actions {
     display: flex;
@@ -1032,7 +1027,7 @@
 
   .form-control.textarea {
     resize: vertical;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: Monaco, Menlo, 'Ubuntu Mono', monospace;
     font-size: 0.8rem;
     line-height: 1.5;
   }
@@ -1109,12 +1104,12 @@
   }
 
   .prompt-text-display {
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: Monaco, Menlo, 'Ubuntu Mono', monospace;
     font-size: var(--font-size-sm);
     line-height: 1.6;
     color: var(--text-color);
     white-space: pre-wrap;
-    word-wrap: break-word;
+    overflow-wrap: break-word;
     background-color: var(--surface-color);
     padding: var(--space-4);
     border-radius: var(--radius-md);

@@ -176,7 +176,7 @@
 
   .review-value {
     flex: 1; font-size: var(--font-size-sm); color: var(--text-primary);
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .review-value em { color: var(--text-tertiary); font-style: italic; }

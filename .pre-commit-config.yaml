@@ -463,6 +463,47 @@ repos:
         files: ^((backend/app|backend/tests|scripts)/.*\.py|frontend/src/|scripts/guards/.*|frontend/package\.json$)
         stages: [pre-push]
         verbose: true
+      # knip (dead files/exports/dependencies) and madge (import cycles) over frontend/src, the
+      # same `check_knip.py` CI used to run as a separate frontend-tests step. Push stage: knip
+      # loads the vite/vitest configs and takes tens of seconds, like the eslint ratchet.
+      - id: guard-knip
+        name: frontend dead code and import cycles ratchet (knip, madge; baselined)
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_knip.py'
+        language: system
+        pass_filenames: false
+        files: ^(frontend/(src/|scripts/|package\.json$|knip\.json$|madge\.webpack\.cjs$|kit\.config\.js$|vite\.config\.ts$|vitest\.config\.ts$|tsconfig[^/]*\.json$)|scripts/guards/.*)
+        stages: [pre-push]
+        verbose: true
+      # Type-aware ESLint (frontend/eslint.typed.config.js: unhandled promises, async callbacks
+      # where a void one is expected, non-exhaustive switches). Building the TypeScript program
+      # takes minutes, so it is push stage; `npm run lint` at commit stage stays untyped.
+      # `svelte-kit sync` writes the tsconfig the program extends (node_modules/$app).
+      - id: eslint-typed
+        name: frontend type-aware lint (typescript-eslint projectService)
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && cd frontend && npx --no-install svelte-kit sync >/dev/null 2>&1 && npm run --silent lint:types'
+        language: system
+        pass_filenames: false
+        files: ^frontend/(src/.*\.(ts|js|svelte)|eslint(\.typed)?\.config\.js|tsconfig[^/]*\.json|package\.json)$
+        stages: [pre-push]
+        verbose: true
+      # Stylelint over global CSS and Svelte <style> blocks (frontend/stylelint.config.mjs),
+      # ratcheted per path::rule in scripts/guards/baselines/stylelint.txt. The commit stage lints
+      # only the staged files (seconds); the push stage re-runs the whole tree and also fires on a
+      # config, baseline or dependency change, which no staged-file run would notice.
+      - id: guard-stylelint-staged
+        name: frontend CSS lint ratchet, staged files (stylelint, baselined)
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_stylelint_ratchet.py "$@"' --
+        language: system
+        files: ^frontend/src/.*\.(css|svelte)$
+        stages: [pre-commit]
+      - id: guard-stylelint
+        name: frontend CSS lint ratchet, whole tree (stylelint, baselined)
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_stylelint_ratchet.py'
+        language: system
+        pass_filenames: false
+        files: ^(frontend/(src/.*\.(css|svelte)|stylelint\.config\.mjs|package\.json)$|scripts/guards/(check_stylelint_ratchet\.py|_baseline\.py|baselines/stylelint\.txt)$)
+        stages: [pre-push]
+        verbose: true
 
   # Version consistency — VERSION, pyproject.toml, frontend/package.json,
   # frontend/package-lock.json (BOTH version fields), the Alembic single-head

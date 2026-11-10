@@ -230,7 +230,7 @@
     font-size: 0.9rem;
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .model-name-value {

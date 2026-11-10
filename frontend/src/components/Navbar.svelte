@@ -94,8 +94,8 @@
    * Handle user logout
    */
   function handleLogout() {
-    logout();
-    goto(resolve('/login'));
+    void logout();
+    void goto(resolve('/login'));
   }
 
   /**
@@ -177,7 +177,7 @@
    */
   function handleOpenRecordingModal(event: MouseEvent) {
     event.stopPropagation();
-    goto(resolve('/'));
+    void goto(resolve('/'));
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('openAddMediaModal', {
         detail: { activeTab: 'record' }
@@ -563,7 +563,7 @@
     left: 0;
     right: 0;
     height: calc(60px + env(safe-area-inset-top, 0px));
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: env(safe-area-inset-top, 0);
     background-color: var(--navbar-bg);
     border-bottom: 1px solid var(--navbar-border);
     box-shadow: var(--navbar-shadow);
@@ -646,7 +646,7 @@
   }
 
   /* High contrast mode support */
-  @media (prefers-contrast: high) {
+  @media (prefers-contrast: more) {
     .nav-link:hover {
       border: 1px solid var(--primary-color);
     }
@@ -970,7 +970,7 @@
   /* Pulse colors for different recording states */
   .recording-pulse.recording-live {
     background: var(--error-solid);
-    animation: recordingPulseLive 1.5s infinite ease-in-out;
+    animation: recording-pulse-live 1.5s infinite ease-in-out;
   }
 
   .recording-pulse.recording-standby {
@@ -982,7 +982,7 @@
   .mic-icon {
     flex-shrink: 0;
     z-index: var(--z-base);
-    color: currentColor; /* Use the current button color */
+    color: currentcolor; /* Use the current button color */
   }
 
   .recording-time {
@@ -994,11 +994,11 @@
     min-width: 60px; /* Reserve space for HH:MM:SS */
     text-align: center;
     display: inline-block;
-    color: currentColor; /* Use the current button color */
+    color: currentcolor; /* Use the current button color */
   }
 
   /* Professional recording studio pulse animations */
-  @keyframes recordingPulseLive {
+  @keyframes recording-pulse-live {
     0%, 100% {
       opacity: 1;
       transform: scale(1);
@@ -1046,7 +1046,7 @@
   }
 
   /* High contrast mode support */
-  @media (prefers-contrast: high) {
+  @media (prefers-contrast: more) {
     .recording-indicator {
       border-width: 2px;
       background: rgba(239, 68, 68, 0.2);
@@ -1070,7 +1070,7 @@
     padding: var(--space-4);
     min-width: 200px;
     z-index: 1001;
-    animation: slideIn 0.2s ease-out;
+    animation: slide-in 0.2s ease-out;
   }
 
   /* Speech bubble triangle */

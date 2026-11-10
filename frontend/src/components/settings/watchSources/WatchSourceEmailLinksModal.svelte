@@ -48,7 +48,7 @@
     } else if (current && loadedFor !== current.uuid) {
       loadedFor = current.uuid;
       pickedUuid = '';
-      load();
+      void load();
     }
   }
   $: syncSource(show, source);

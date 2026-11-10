@@ -553,8 +553,7 @@
 
   .transcript-display {
     max-height: 600px;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden auto;
     position: relative;
   }
 
@@ -655,9 +654,7 @@
     line-height: 1.4;
     position: relative;
     padding-left: var(--space-3);
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    word-break: break-word;
+    overflow-wrap: anywhere;
     min-width: 0; /* Allow text to shrink in grid layout */
   }
 
@@ -752,10 +749,10 @@
   }
 
   :global(.highlight-flash) {
-    animation: highlightFlash 2s ease-out;
+    animation: highlight-flash 2s ease-out;
   }
 
-  @keyframes highlightFlash {
+  @keyframes highlight-flash {
     0% { background-color: rgba(var(--accent-rgb), 0.3); }
     100% { background-color: transparent; }
   }

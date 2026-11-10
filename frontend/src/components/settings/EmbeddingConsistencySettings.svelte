@@ -78,10 +78,10 @@
 
     if (data.status === 'completed') {
       toastStore.success($t('settings.embeddingConsistency.repairComplete'));
-      Promise.allSettled([loadStatus(), loadCounts()]);
+      void Promise.allSettled([loadStatus(), loadCounts()]);
     } else if (data.status === 'stopped') {
       toastStore.info($t('settings.embeddingConsistency.repairStopped'));
-      Promise.allSettled([loadStatus(), loadCounts()]);
+      void Promise.allSettled([loadStatus(), loadCounts()]);
     } else if (data.status === 'error') {
       toastStore.error($t('settings.embeddingConsistency.repairFailed'));
     }
@@ -154,7 +154,7 @@
       await axiosInstance.post('/admin/embedding-consistency/stop');
       running = false;
       toastStore.info($t('settings.embeddingConsistency.repairStopped'));
-      loadStatus();
+      void loadStatus();
     } catch (err) {
       console.error('Failed to stop repair:', err);
       toastStore.error($t('settings.embeddingConsistency.stopFailed'));
@@ -165,7 +165,7 @@
     window.addEventListener('embedding-consistency-progress', handleProgress as EventListener);
     window.addEventListener('embedding-consistency-complete', handleComplete as EventListener);
     window.addEventListener('consistency-status-loaded', handleBundledStatus as EventListener);
-    loadStatus();
+    void loadStatus();
   });
 
   onDestroy(() => {

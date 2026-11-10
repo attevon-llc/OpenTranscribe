@@ -12,7 +12,9 @@
   // /speakers is verified without it (issue #1327).
   let FloatingPreviewPlayer: typeof import('$components/FloatingPreviewPlayer.svelte').default | null = null;
   if (browser) {
-    import('$components/FloatingPreviewPlayer.svelte').then(m => { FloatingPreviewPlayer = m.default; });
+    import('$components/FloatingPreviewPlayer.svelte')
+      .then(m => { FloatingPreviewPlayer = m.default; })
+      .catch((err: unknown) => console.error('Speaker preview player failed to load:', err));
   }
 </script>
 

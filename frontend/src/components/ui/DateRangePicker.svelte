@@ -330,7 +330,7 @@
   }
 
   .drp-layer.sheet {
-    inset: auto 0 0 0;
+    inset: auto 0 0;
     width: auto;
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
     border-radius: var(--radius-3xl) var(--radius-3xl) 0 0;

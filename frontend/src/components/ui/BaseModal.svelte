@@ -201,7 +201,7 @@
     max-height: 90vh;
     display: flex;
     flex-direction: column;
-    animation: slideIn 0.2s ease-out;
+    animation: slide-in 0.2s ease-out;
   }
 
   .modal-container.fullscreen {
@@ -319,7 +319,7 @@
     background-color: rgba(0, 0, 0, 0.65);
   }
 
-  @keyframes slideIn {
+  @keyframes slide-in {
     from {
       opacity: 0;
       transform: translateY(-10px) scale(0.98);

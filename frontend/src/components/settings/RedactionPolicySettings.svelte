@@ -23,7 +23,7 @@
   $: settingsModalStore.setDirty('redaction-policy', !!hasChanges);
 
   onMount(() => {
-    (async () => {
+    void (async () => {
       try {
         const p = await getRedactionPolicy();
         policy = p;

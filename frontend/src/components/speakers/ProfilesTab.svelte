@@ -287,8 +287,7 @@
     margin-top: var(--space-1);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    word-break: break-word;
-    overflow-wrap: break-word;
+    overflow-wrap: anywhere;
   }
 
   .profile-meta {

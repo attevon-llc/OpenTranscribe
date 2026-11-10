@@ -39,7 +39,7 @@
 
   function scheduleSearch() {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(runSearch, debounceMs);
+    timer = setTimeout(() => void runSearch(), debounceMs);
   }
 
   onDestroy(() => {

@@ -155,7 +155,7 @@
     closeSpeakerEditor: () => (isEditingSpeakers = false),
     isDiarizationDisabled: () => diarizationDisabled,
     refreshCaptionTrack,
-    refreshAnalytics: () => handleAnalyticsRefreshNeeded(),
+    refreshAnalytics: () => void handleAnalyticsRefreshNeeded(),
     applyReloadedFile: (data) => {
       ({ file, collections } = splitFileDetail(data));
       processTranscriptData();
@@ -304,7 +304,7 @@
 
       // Set up video URL only if file might have media available
       if (detail.status !== 'error' && detail.status !== 'cancelled') {
-        setupVideoUrl(targetFileId, fromPrefetch);
+        void setupVideoUrl(targetFileId, fromPrefetch);
       }
 
       processTranscriptData();
@@ -362,7 +362,7 @@
   const loadMoreSegments = segmentPager.loadMore;
 
   function handleLoadUpTo(event: CustomEvent<{ targetIndex: number; segmentUuid: string }>) {
-    segmentPager.loadUpTo(event.detail.targetIndex, event.detail.segmentUuid);
+    void segmentPager.loadUpTo(event.detail.targetIndex, event.detail.segmentUuid);
   }
 
   async function loadAISuggestions(): Promise<void> {
@@ -377,7 +377,7 @@
   /** Reload the speakers for freshly loaded transcript data. */
   function processTranscriptData() {
     if (!file || !Array.isArray(file.transcript_segments)) return;
-    loadSpeakers();
+    void loadSpeakers();
   }
 
   // Presigned media URL, refreshed before it expires during long playback.
@@ -422,7 +422,7 @@
   }
 
   function handleSpeakerUpdate(event: CustomEvent<{ speakerId: string; newName: string }>) {
-    speakers.requestSpeakerRename(event.detail.speakerId, event.detail.newName);
+    void speakers.requestSpeakerRename(event.detail.speakerId, event.detail.newName);
   }
 
   /** Re-fetch the player's caption track (server-built) after a committed change. */
@@ -445,7 +445,7 @@
     },
     setSaving: (saving) => (savingTranscript = saving),
     refreshCaptionTrack,
-    refreshAnalytics: () => handleAnalyticsRefreshNeeded(),
+    refreshAnalytics: () => void handleAnalyticsRefreshNeeded(),
   });
 
   function handleExportTranscript(event: CustomEvent<{ format: string }>) {
@@ -485,7 +485,7 @@
   }
 
   function handleVideoRetry() {
-    fetchFileDetails();
+    void fetchFileDetails();
   }
 
   // Handle reprocess event from the SelectiveReprocessModal (header button). The modal has
@@ -772,7 +772,7 @@
           on:speakerDeleted={handleSpeakerDeleted}
           on:analyticsRefreshNeeded={() => {
             // Fired after a committed segment-speaker change: the cues' names moved too.
-            handleAnalyticsRefreshNeeded();
+            void handleAnalyticsRefreshNeeded();
             refreshCaptionTrack('segment speaker change');
           }}
           on:loadMore={loadMoreSegments}
@@ -965,7 +965,7 @@
     gap: var(--space-2);
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0px;
+    margin-bottom: 0;
     min-height: 32px;
   }
 

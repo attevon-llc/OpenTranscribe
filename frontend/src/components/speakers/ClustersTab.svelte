@@ -512,7 +512,7 @@
 
     .merge-banner span {
       white-space: normal;
-      word-break: break-word;
+      overflow-wrap: anywhere;
     }
 
     .section-heading-btn {

@@ -23,18 +23,18 @@
   let passwordPolicy: PasswordPolicy = FALLBACK_PASSWORD_POLICY;
   $: passwordRequirements = buildPasswordRequirements(passwordPolicy);
   onMount(() => {
-    loadPasswordPolicy().then((p) => (passwordPolicy = p));
+    void loadPasswordPolicy().then((p) => (passwordPolicy = p));
   });
 
   onMount(() => {
-    (async () => {
+    void (async () => {
       const methods = await getAuthMethods();
       registrationAllowed = methods.allow_registration;
       checkingRegistration = false;
 
       if (!registrationAllowed) {
         toastStore.error($t('auth.registrationDisabled'));
-        goto(resolve('/login'), { replace: true });
+        void goto(resolve('/login'), { replace: true });
       }
     })();
   });
@@ -99,7 +99,7 @@
         const loginResult = await login(email, password);
         if (loginResult.success) {
           toastStore.success($t('auth.registrationSuccess'));
-          goto(resolve("/"));
+          void goto(resolve("/"));
         } else {
           toastStore.error($t('auth.registrationSuccessLoginFailed'));
         }

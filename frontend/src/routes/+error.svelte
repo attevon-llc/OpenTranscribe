@@ -77,7 +77,7 @@
     font-size: var(--font-size-base);
     line-height: 1.5;
     color: var(--text-secondary);
-    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   .error-actions {

@@ -117,12 +117,12 @@ describe('both skeletons sweep left to right, not just pulse', () => {
     expect(sheet).toMatch(/transform:\s*translateX\(-100%\)/);
     // ...and the keyframes carry it off the right. A pure opacity pulse would
     // satisfy neither.
-    expect(sheet).toMatch(/@keyframes\s+shimmerSlide[\s\S]*?translateX\(100%\)/);
+    expect(sheet).toMatch(/@keyframes\s+shimmer-slide[\s\S]*?translateX\(100%\)/);
     // `linear`, specifically. The travel runs edge-to-edge OFF the element at
     // both ends, so an eased curve idles with the highlight out of frame and
     // crosses the visible part at peak speed — which is why this looked static
     // on screen while a frame diff still showed the pixels changing.
-    expect(sheet).toMatch(/animation:\s*shimmerSlide\s+[\d.]+s\s+linear\s+infinite/);
+    expect(sheet).toMatch(/animation:\s*shimmer-slide\s+[\d.]+s\s+linear\s+infinite/);
     // The highlight is a moving gradient, not a flat fill.
     expect(sheet).toMatch(/linear-gradient\(\s*90deg/);
   });
@@ -141,8 +141,8 @@ describe('both skeletons sweep left to right, not just pulse', () => {
     expect(grid).toMatch(/import '\.\/skeleton-shimmer\.css'/);
     expect(list).toMatch(/import '\$components\/ui\/skeleton-shimmer\.css'/);
     // ...and neither redefines it locally.
-    expect(grid).not.toMatch(/@keyframes\s+shimmerSlide/);
-    expect(list).not.toMatch(/@keyframes\s+shimmerSlide/);
+    expect(grid).not.toMatch(/@keyframes\s+shimmer-slide/);
+    expect(list).not.toMatch(/@keyframes\s+shimmer-slide/);
   });
 
   it('the highlight is light enough to actually see against the base', () => {
@@ -159,6 +159,6 @@ describe('both skeletons sweep left to right, not just pulse', () => {
     // would have had if it only faded in and out.
     const pulseOnly = `.shimmer { animation: pulse 1.4s infinite; }
       @keyframes pulse { 50% { opacity: 1; } }`;
-    expect(pulseOnly).not.toMatch(/@keyframes\s+shimmerSlide[\s\S]*?translateX\(100%\)/);
+    expect(pulseOnly).not.toMatch(/@keyframes\s+shimmer-slide[\s\S]*?translateX\(100%\)/);
   });
 });

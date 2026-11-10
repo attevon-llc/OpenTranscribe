@@ -62,7 +62,7 @@
   $: dispatch('commentsChanged', { count: comments.length });
 
   onMount(() => {
-    fetchComments();
+    void fetchComments();
   });
 
   /** @param {any} error */
@@ -242,7 +242,7 @@
    * Delete a comment
    * @param {string} commentId - The UUID of the comment to delete
    */
-  async function deleteComment(commentId) {
+  function deleteComment(commentId) {
     confirmDialog.request(
       $t('comments.deleteTitle'),
       $t('comments.deleteConfirmMessage'),

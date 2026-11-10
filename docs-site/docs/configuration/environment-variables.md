@@ -945,8 +945,8 @@ Database initialization is handled entirely by Alembic migrations on backend sta
 ### API connection pool and threadpool
 
 ```bash
-DB_POOL_SIZE=20          # API process SQLAlchemy pool
-DB_MAX_OVERFLOW=40       # extra connections above the pool under load
+DB_POOL_SIZE=15          # per API process (UVICORN_WORKERS=2, so 30 connections in all)
+DB_MAX_OVERFLOW=15       # extra connections above the pool under load
 API_THREADPOOL_SIZE=0    # 0 = derived, see below
 DB_POOL_TIMEOUT_SECONDS=5        # wait for a connection before answering 503 (SQLAlchemy: 30)
 DB_STATEMENT_TIMEOUT_MS=30000    # Postgres statement_timeout, API process only (0 = off)
@@ -976,7 +976,7 @@ connections are open, so no more requests than that can be in flight and the sta
 happen: overload is refused instead. uvicorn counts every open connection, WebSockets and SSE
 streams included, so the limit is sized for the sockets one process should hold (512) rather than
 just under `C + T`, and the default thread count follows it:
-`max(40, C, UVICORN_LIMIT_CONCURRENCY - C + 1)`, 453 with the defaults. Threads are created only
+`max(40, C, UVICORN_LIMIT_CONCURRENCY - C + 1)`, 483 with the defaults (`C` is 30). Threads are created only
 when there is work for them. To hold more open connections, raise `UVICORN_LIMIT_CONCURRENCY`
 (threads follow) or run more API processes; for more concurrent database work, raise the pool
 (and `PG_MAX_CONNECTIONS`, which must stay above the sum of every service's pool). Setting

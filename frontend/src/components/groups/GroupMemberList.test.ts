@@ -139,7 +139,9 @@ describe('GroupMemberList — mutating actions call the API with correct args', 
     });
 
     await fireEvent.click(container.querySelector('.btn-remove') as HTMLElement);
-    const confirmBtn = container.querySelector('.modal-delete-button') as HTMLElement;
+    const confirmBtn = container.querySelector(
+      '[data-testid="confirm-dialog-confirm"]'
+    ) as HTMLElement;
     await fireEvent.click(confirmBtn);
 
     await waitFor(() =>
@@ -165,7 +167,9 @@ describe('GroupMemberList — mutating actions call the API with correct args', 
     });
 
     await fireEvent.click(container.querySelector('.btn-leave') as HTMLElement);
-    const confirmBtn = container.querySelector('.modal-delete-button') as HTMLElement;
+    const confirmBtn = container.querySelector(
+      '[data-testid="confirm-dialog-confirm"]'
+    ) as HTMLElement;
     await fireEvent.click(confirmBtn);
 
     await waitFor(() =>

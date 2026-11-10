@@ -456,7 +456,7 @@ describe('selection', () => {
     await waitFor(() => expect(api.getTagImpact).toHaveBeenCalled());
     await fireEvent.click(screen.getByRole('tab', { name: /tags\.manager\.filter\.unused/ }));
     await waitFor(() => expect(document.querySelector('.select-prompt')).not.toBeNull());
-    expect(document.querySelector('.modal-delete-button')).toBeNull();
+    expect(document.querySelector('[data-testid="confirm-dialog-confirm"]')).toBeNull();
   });
 
   it('selects every member from a collision header and preselects the suggested survivor', async () => {
@@ -640,7 +640,9 @@ describe('delete, merge, promote', () => {
 
     await fireEvent.click(
       await waitFor(() => {
-        const confirm = document.querySelector('.modal-delete-button') as HTMLElement;
+        const confirm = document.querySelector(
+          '[data-testid="confirm-dialog-confirm"]'
+        ) as HTMLElement;
         expect(confirm).not.toBeNull();
         return confirm;
       })
@@ -655,15 +657,25 @@ describe('delete, merge, promote', () => {
     await loaded();
     await fireEvent.click(rows()[0]);
     await fireEvent.click(btn('tags.manager.action.delete')!);
-    await waitFor(() => expect(document.querySelector('.modal-cancel-button')).not.toBeNull());
-    await fireEvent.click(document.querySelector('.modal-cancel-button') as HTMLElement);
-    await waitFor(() => expect(document.querySelector('.modal-cancel-button')).toBeNull());
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="confirm-dialog-cancel"]')).not.toBeNull()
+    );
+    await fireEvent.click(
+      document.querySelector('[data-testid="confirm-dialog-cancel"]') as HTMLElement
+    );
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="confirm-dialog-cancel"]')).toBeNull()
+    );
     expect(api.deleteTags).not.toHaveBeenCalled();
 
     await fireEvent.click(btn('tags.manager.action.delete')!);
     await waitFor(() => expect(api.getTagImpact).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(document.querySelector('.modal-delete-button')).not.toBeNull());
-    await fireEvent.click(document.querySelector('.modal-delete-button') as HTMLElement);
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="confirm-dialog-confirm"]')).not.toBeNull()
+    );
+    await fireEvent.click(
+      document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement
+    );
     await waitFor(() => expect(api.deleteTags).toHaveBeenCalledWith([A]));
   });
 
@@ -673,8 +685,10 @@ describe('delete, merge, promote', () => {
     await loaded();
     await fireEvent.click(rows()[0]);
     await fireEvent.click(btn('tags.manager.action.delete')!);
-    await waitFor(() => expect(document.querySelector('.modal-delete-button')).not.toBeNull());
-    const confirm = document.querySelector('.modal-delete-button') as HTMLElement;
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="confirm-dialog-confirm"]')).not.toBeNull()
+    );
+    const confirm = document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement;
     await fireEvent.click(confirm);
     await fireEvent.click(confirm);
     await waitFor(() => expect(api.deleteTags).toHaveBeenCalledTimes(1));
@@ -688,8 +702,12 @@ describe('delete, merge, promote', () => {
     await loaded();
     await fireEvent.click(rows()[0]);
     await fireEvent.click(btn('tags.manager.action.delete')!);
-    await waitFor(() => expect(document.querySelector('.modal-delete-button')).not.toBeNull());
-    await fireEvent.click(document.querySelector('.modal-delete-button') as HTMLElement);
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="confirm-dialog-confirm"]')).not.toBeNull()
+    );
+    await fireEvent.click(
+      document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement
+    );
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('nope'));
     expect(screen.getByRole('heading', { level: 2, name: 'Zebra' })).toBeInTheDocument();
     expect(api.listTags).toHaveBeenCalledTimes(1);
@@ -725,26 +743,34 @@ describe('bulk delete, merge, promote', () => {
   it('previews a bulk delete over every selected tag and deletes them all', async () => {
     await previewBulkDelete();
     expect(api.deleteTags).not.toHaveBeenCalled();
-    await fireEvent.click(document.querySelector('.modal-delete-button') as HTMLElement);
+    await fireEvent.click(
+      document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement
+    );
     await waitFor(() => expect(api.deleteTags).toHaveBeenCalledWith([A, C]));
   });
 
   it('cancels a bulk delete preview without deleting anything', async () => {
     await previewBulkDelete();
-    await fireEvent.click(document.querySelector('.modal-cancel-button') as HTMLElement);
+    await fireEvent.click(
+      document.querySelector('[data-testid="confirm-dialog-cancel"]') as HTMLElement
+    );
     await waitFor(() => expect(screen.queryByText(bulkMessage)).toBeNull());
     expect(api.deleteTags).not.toHaveBeenCalled();
   });
 
   it('reopens the bulk delete dialog after Cancel and still deletes on confirm', async () => {
     await previewBulkDelete();
-    await fireEvent.click(document.querySelector('.modal-cancel-button') as HTMLElement);
+    await fireEvent.click(
+      document.querySelector('[data-testid="confirm-dialog-cancel"]') as HTMLElement
+    );
     await waitFor(() => expect(screen.queryByText(bulkMessage)).toBeNull());
 
     await fireEvent.click(btn('tags.manager.action.delete')!);
     await waitFor(() => expect(api.getTagImpact).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(bulkMessage)).toBeInTheDocument();
-    await fireEvent.click(document.querySelector('.modal-delete-button') as HTMLElement);
+    await fireEvent.click(
+      document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement
+    );
     await waitFor(() => expect(api.deleteTags).toHaveBeenCalledWith([A, C]));
   });
 
@@ -752,7 +778,7 @@ describe('bulk delete, merge, promote', () => {
     const pending = deferred<typeof mutationResult>();
     api.deleteTags.mockReturnValueOnce(pending.promise);
     await previewBulkDelete();
-    const confirm = document.querySelector('.modal-delete-button') as HTMLElement;
+    const confirm = document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement;
     await fireEvent.click(confirm);
     await fireEvent.click(confirm);
     await waitFor(() => expect(api.deleteTags).toHaveBeenCalledTimes(1));

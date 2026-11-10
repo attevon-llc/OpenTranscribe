@@ -31,10 +31,10 @@
   ] as const;
 
   let confirmOpen = false;
-  let confirmClass = 'modal-delete-button';
+  let confirmVariant: 'primary' | 'danger' | 'warning' = 'danger';
 
-  function openConfirm(cls: string) {
-    confirmClass = cls;
+  function openConfirm(variant: 'primary' | 'danger' | 'warning') {
+    confirmVariant = variant;
     confirmOpen = true;
   }
 </script>
@@ -186,7 +186,7 @@
         type="button"
         class="btn btn-danger"
         data-kit-trigger="confirm-danger"
-        on:click={() => openConfirm('modal-delete-button')}
+        on:click={() => openConfirm('danger')}
       >
         {$t('common.delete')}
       </button>
@@ -194,7 +194,7 @@
         type="button"
         class="btn btn-warning"
         data-kit-trigger="confirm-warning"
-        on:click={() => openConfirm('modal-warning-button')}
+        on:click={() => openConfirm('warning')}
       >
         {$t('common.apply')}
       </button>
@@ -202,7 +202,7 @@
         type="button"
         class="btn btn-primary"
         data-kit-trigger="confirm-primary"
-        on:click={() => openConfirm('confirm-button')}
+        on:click={() => openConfirm('primary')}
       >
         {$t('common.confirm')}
       </button>
@@ -212,7 +212,7 @@
 
 <ConfirmationModal
   bind:isOpen={confirmOpen}
-  confirmButtonClass={confirmClass}
+  variant={confirmVariant}
   on:confirm={noop}
   on:cancel={noop}
 />

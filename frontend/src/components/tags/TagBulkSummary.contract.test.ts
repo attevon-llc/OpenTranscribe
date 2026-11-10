@@ -235,8 +235,10 @@ describe('TagBulkSummary delete preview', () => {
   // naming every selected tag and both counts, instead of an inline panel with a list.
   const message =
     'tags.manager.impact.deleteMessage {"name":"alpha, Bravo, charlie","accessible":4,"total":42}';
-  const modalConfirm = () => document.querySelector('.modal-delete-button') as HTMLButtonElement;
-  const modalCancel = () => document.querySelector('.modal-cancel-button') as HTMLButtonElement;
+  const modalConfirm = () =>
+    document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLButtonElement;
+  const modalCancel = () =>
+    document.querySelector('[data-testid="confirm-dialog-cancel"]') as HTMLButtonElement;
 
   it('shows the counts and emits confirmDelete and cancelDelete', async () => {
     const confirmDelete = vi.fn();
@@ -246,7 +248,7 @@ describe('TagBulkSummary delete preview', () => {
       events: { confirmDelete, cancelDelete },
     });
 
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'tags.manager.impact.title' })).toBeInTheDocument();
     expect(screen.getByText(message)).toBeInTheDocument();
     expect(screen.queryByText(/bulk\.mergeInto/)).toBeNull();
@@ -273,7 +275,7 @@ describe('TagBulkSummary delete preview', () => {
 
   it('shows no dialog without a preview', () => {
     render(TagBulkSummary, { props: { tags } });
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('swaps the confirm label to deleting while deleting', () => {

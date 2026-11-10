@@ -138,7 +138,7 @@ export function createInvitationsController(confirmDialog: ConfirmDialog): Invit
         tr('userManagement.confirmSuperAdminTitle'),
         tr('userManagement.confirmSuperAdminInvite', { name: current.full_name || current.email }),
         () => executeSend(onSent),
-        tr('userManagement.confirmSuperAdminButton')
+        { confirmText: tr('userManagement.confirmSuperAdminButton') }
       );
       return;
     }
@@ -165,7 +165,7 @@ export function createInvitationsController(confirmDialog: ConfirmDialog): Invit
       tr('userManagement.revokeInvitation'),
       tr('userManagement.revokeInvitationConfirm', { email: invitation.email }),
       () => executeRevoke(invitation),
-      tr('userManagement.revokeInvitation')
+      { confirmText: tr('userManagement.revokeInvitation') }
     );
   }
 

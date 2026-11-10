@@ -90,7 +90,7 @@
       $t('trash.deleteForeverTitle'),
       $t('trash.deleteForeverMessage', { name: nameOf(file) }),
       () => purge(file),
-      $t('trash.deleteForever')
+      { confirmText: $t('trash.deleteForever') }
     );
   }
 
@@ -112,7 +112,7 @@
       $t('trash.emptyConfirmTitle'),
       $t('trash.emptyConfirmMessage'),
       doEmpty,
-      $t('trash.emptyTrash')
+      { confirmText: $t('trash.emptyTrash') }
     );
   }
 
@@ -213,8 +213,7 @@
   message={$message}
   confirmText={$confirmText}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={confirmDialog.confirm}
   on:cancel={confirmDialog.cancel}
   on:close={confirmDialog.cancel}

@@ -300,7 +300,7 @@
     message={$t('groups.confirmDelete')}
     confirmText={isDeleting ? $t('groups.deleting') : $t('groups.deleteGroup')}
     cancelText={$t('modal.cancel')}
-    confirmButtonClass="modal-delete-button"
+    variant="danger"
     on:confirm={executeDelete}
     on:cancel={() => showDeleteConfirm = false}
     on:close={() => showDeleteConfirm = false}

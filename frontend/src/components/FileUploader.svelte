@@ -873,8 +873,7 @@
   message={$t('uploader.recordingWarningMessage')}
   confirmText={$t('uploader.discardRecording')}
   cancelText={$t('uploader.keepRecording')}
-  confirmButtonClass="modal-warning-button"
-  cancelButtonClass="modal-primary-button"
+  variant="warning"
   on:confirm={handleRecordingWarningConfirm}
   on:cancel={handleRecordingWarningCancel}
 />

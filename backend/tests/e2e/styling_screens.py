@@ -192,7 +192,7 @@ _APP = (
             "click:.select-btn",
             "click:.file-card, .file-list-row",
             "click:.delete-btn",
-            "wait:[role=dialog]",
+            "wait:[role=dialog], [role=alertdialog]",
         ),
         masks=_GALLERY_MASKS,
         full_page=False,
@@ -212,7 +212,10 @@ _APP = (
     Screen(
         "ui-kit-confirm",
         "/a11y-fixtures/ui-kit",
-        steps=("click:[data-kit-trigger='confirm-danger']", "wait:[role=dialog]"),
+        steps=(
+            "click:[data-kit-trigger='confirm-danger']",
+            "wait:[role=dialog], [role=alertdialog]",
+        ),
         full_page=False,
         ready='[data-kit-section="buttons"]',
         notes="the open confirm dialog; never confirmed",

@@ -777,8 +777,7 @@
   message={configToDelete ? $t('settings.llmProvider.deleteConfigConfirmMessage', { name: configToDelete.name }) : ''}
   confirmText={$t('common.delete')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={deleteConfiguration}
   on:cancel={() => { configToDelete = null; showDeleteConfigModal = false; }}
   on:close={() => { configToDelete = null; showDeleteConfigModal = false; }}
@@ -790,8 +789,7 @@
   message={$t('settings.llmProvider.deleteAllConfirmMessage')}
   confirmText={$t('settings.llmProvider.deleteAll')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={deleteAllSettings}
   on:cancel={() => showDeleteAllModal = false}
   on:close={() => showDeleteAllModal = false}

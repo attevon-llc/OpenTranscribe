@@ -380,7 +380,7 @@
           refetch: fetchFiles,
           clearSelection,
         }),
-      $t('gallery.trashConfirmButton')
+      { confirmText: $t('gallery.trashConfirmButton') }
     );
   }
 
@@ -742,8 +742,7 @@
   message={$confirmMessage}
   confirmText={$confirmButtonText || $t('gallery.confirmButton')}
   cancelText={$t('gallery.cancelButton')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={confirmDialog.confirm}
   on:cancel={confirmDialog.cancel}
   on:close={confirmDialog.cancel}

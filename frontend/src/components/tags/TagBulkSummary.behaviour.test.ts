@@ -29,8 +29,10 @@ const writable = [tag(P, 'notes', 3), tag(Q, 'Notes', 8), tag(R, 'note', 1)];
 const preview: TagImpact = { tags: [], accessible_file_count: 6, total_file_count: 30 };
 
 const button = (name: string) => screen.queryByRole('button', { name });
-const confirmButton = () => document.querySelector('.modal-delete-button') as HTMLElement | null;
-const cancelButton = () => document.querySelector('.modal-cancel-button') as HTMLElement | null;
+const confirmButton = () =>
+  document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement | null;
+const cancelButton = () =>
+  document.querySelector('[data-testid="confirm-dialog-cancel"]') as HTMLElement | null;
 const checked = () => (screen.getAllByRole('radio') as HTMLInputElement[]).find((r) => r.checked);
 
 describe('the whole selection decides which actions exist', () => {

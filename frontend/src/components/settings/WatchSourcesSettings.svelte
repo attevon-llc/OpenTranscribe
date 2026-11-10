@@ -423,8 +423,7 @@
     : ''}
   confirmText={$t('common.delete')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={doDelete}
   on:cancel={() => {
     showDeleteModal = false;
@@ -447,8 +446,7 @@
     : ''}
   confirmText={$t('common.delete')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={doDeleteEmailConfig}
   on:cancel={() => (configToDelete = null)}
   on:close={() => (configToDelete = null)}

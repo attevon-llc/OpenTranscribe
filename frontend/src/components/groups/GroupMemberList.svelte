@@ -151,7 +151,7 @@
   message={removeConfirmMessage}
   confirmText={pendingIsLeavingSelf ? $t('groups.leaveGroup') : $t('groups.removeMember')}
   cancelText={$t('modal.cancel')}
-  confirmButtonClass="modal-delete-button"
+  variant="danger"
   on:confirm={executeRemoveMember}
   on:cancel={() => { showRemoveConfirm = false; pendingRemoveMember = null; }}
   on:close={() => { showRemoveConfirm = false; pendingRemoveMember = null; }}

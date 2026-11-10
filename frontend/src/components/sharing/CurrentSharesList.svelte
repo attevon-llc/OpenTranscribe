@@ -133,7 +133,7 @@
   message={pendingRevokeShare ? $t('sharing.revokeConfirm', { name: pendingRevokeShare.target_name }) : ''}
   confirmText={$t('sharing.revokeAccess')}
   cancelText={$t('modal.cancel')}
-  confirmButtonClass="modal-delete-button"
+  variant="danger"
   on:confirm={executeRevoke}
   on:cancel={() => { showRevokeConfirm = false; pendingRevokeShare = null; }}
   on:close={() => { showRevokeConfirm = false; pendingRevokeShare = null; }}

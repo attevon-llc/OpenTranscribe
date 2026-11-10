@@ -194,8 +194,7 @@
   message={$t('settings.sessions.signOutConfirmMessage')}
   confirmText={$t('settings.sessions.signOutEverywhere')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={signOutEverywhere}
 />
 

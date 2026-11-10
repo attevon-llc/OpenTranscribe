@@ -187,7 +187,7 @@
         $t('userManagement.confirmSuperAdminTitle'),
         $t('userManagement.confirmSuperAdminCreate', { name: newUsername || newEmail }),
         () => executeCreateUser(),
-        $t('userManagement.confirmSuperAdminButton')
+        { confirmText: $t('userManagement.confirmSuperAdminButton') }
       );
       return;
     }
@@ -892,8 +892,7 @@
   message={$confirmMessage}
   confirmText={$confirmLabel || $t('common.delete')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={confirmDialog.confirm}
   on:cancel={confirmDialog.cancel}
   on:close={confirmDialog.cancel}

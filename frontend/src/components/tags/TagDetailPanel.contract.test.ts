@@ -417,8 +417,8 @@ describe('TagDetailPanel previews', () => {
       props: { tag: tagWith(), deletePreview: impact },
       events: { confirmDelete, cancelDelete },
     });
-    const confirm = document.querySelector('.modal-delete-button') as HTMLElement;
-    const cancel = document.querySelector('.modal-cancel-button') as HTMLElement;
+    const confirm = document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement;
+    const cancel = document.querySelector('[data-testid="confirm-dialog-cancel"]') as HTMLElement;
     expect(confirm).toHaveTextContent('tags.manager.action.delete');
     expect(cancel).toHaveTextContent('tags.manager.action.cancel');
 
@@ -432,7 +432,7 @@ describe('TagDetailPanel previews', () => {
 
   it('labels the confirm button while the delete runs', () => {
     render(TagDetailPanel, { props: { tag: tagWith(), deletePreview: impact, busy: 'delete' } });
-    expect(document.querySelector('.modal-delete-button')).toHaveTextContent(
+    expect(document.querySelector('[data-testid="confirm-dialog-confirm"]')).toHaveTextContent(
       'tags.manager.action.deleting'
     );
   });

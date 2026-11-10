@@ -259,7 +259,7 @@
   title={$t('settings.dataIntegrity.orphans.confirmTitle')}
   message={confirmMessage}
   confirmText={$t('settings.dataIntegrity.orphans.confirmAction')}
-  confirmButtonClass="confirm-button delete-confirm"
+  variant="danger"
   on:confirm={() => run(false)}
 />
 
@@ -268,7 +268,7 @@
   title={$t('settings.dataIntegrity.orphans.overrideTitle')}
   message={overrideMessage}
   confirmText={$t('settings.dataIntegrity.orphans.overrideConfirm')}
-  confirmButtonClass="confirm-button delete-confirm"
+  variant="danger"
   on:confirm={() => (showFinal = true)}
 />
 
@@ -277,7 +277,7 @@
   title={$t('settings.dataIntegrity.orphans.finalTitle')}
   message={$t('settings.dataIntegrity.orphans.finalMessage')}
   confirmText={$t('settings.dataIntegrity.orphans.finalConfirm')}
-  confirmButtonClass="confirm-button delete-confirm"
+  variant="danger"
   on:confirm={() => run(true)}
 />
 

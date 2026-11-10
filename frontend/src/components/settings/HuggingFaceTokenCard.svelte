@@ -178,8 +178,7 @@
     message={$t('settings.engineSettings.hfToken.removeConfirm')}
     confirmText={$t('settings.engineSettings.hfToken.remove')}
     cancelText={$t('common.cancel')}
-    confirmButtonClass="modal-delete-button"
-    cancelButtonClass="modal-cancel-button"
+    variant="danger"
     on:confirm={remove}
   />
 {/if}

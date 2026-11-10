@@ -285,7 +285,7 @@
   message={$t('fileDetail.displayNameTooLongMessage')}
   confirmText={$t('common.confirm')}
   cancelText=""
-  confirmButtonClass="confirm-button"
+  variant="primary"
   on:confirm={() => showLengthErrorModal = false}
   on:close={() => showLengthErrorModal = false}
 />
@@ -296,7 +296,7 @@
   message={$t('fileDetail.saveFailedMessage')}
   confirmText={$t('common.confirm')}
   cancelText=""
-  confirmButtonClass="confirm-button"
+  variant="primary"
   on:confirm={() => showSaveErrorModal = false}
   on:close={() => showSaveErrorModal = false}
 />

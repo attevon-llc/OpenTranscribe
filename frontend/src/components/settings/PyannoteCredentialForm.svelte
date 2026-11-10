@@ -206,8 +206,7 @@
     message={$t('settings.speakerIdentification.pyannoteKey.deleteConfirm')}
     confirmText={$t('settings.speakerIdentification.pyannoteKey.delete')}
     cancelText={$t('common.cancel')}
-    confirmButtonClass="modal-delete-button"
-    cancelButtonClass="modal-cancel-button"
+    variant="danger"
     on:confirm={remove}
   />
 {/if}

@@ -15,6 +15,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import numpy as np
 import pytest
@@ -214,3 +215,73 @@ def test_select_screens_globs_and_rejects_unknown() -> None:
 def test_split_step_keeps_colons_inside_selectors() -> None:
     assert ab.split_step("click:a:hover") == ("click", "a:hover")
     assert ab.split_step("settings:profile") == ("settings", "profile")
+
+
+# --- patch step -------------------------------------------------------------------------
+
+
+class _FakeRoute:
+    def __init__(self, method: str, body: object) -> None:
+        self.request = type("R", (), {"method": method})()
+        self._body = body
+        self.fulfilled: object = None
+        self.continued = False
+
+    def fetch(self) -> object:
+        return type("Resp", (), {"json": lambda _self: self._body})()
+
+    def fulfill(self, response: object, json: object) -> None:
+        self.fulfilled = json
+
+    def continue_(self) -> None:
+        self.continued = True
+
+
+class _FakePage:
+    def __init__(self) -> None:
+        self.routes: list[tuple[Any, Any]] = []
+
+    def route(self, pattern: object, handler: object) -> None:
+        self.routes.append((pattern, handler))
+
+
+def test_patch_step_merges_into_object_and_list_answers_and_skips_non_get() -> None:
+    page = _FakePage()
+    ab.run_step(page, 'patch:/api/files/[a-z]+$|{"my_permission": "editor"}')
+    pattern: Any
+    handler: Any
+    pattern, handler = page.routes[0]
+    assert pattern.search("/api/files/abc")
+    assert not pattern.search("/api/files/abc/x")
+    obj = _FakeRoute("GET", {"a": 1})
+    handler(obj)
+    assert obj.fulfilled == {"a": 1, "my_permission": "editor"}
+    lst = _FakeRoute("GET", [{"a": 1}, 5])
+    handler(lst)
+    assert lst.fulfilled == [{"a": 1, "my_permission": "editor"}, 5]
+    post = _FakeRoute("POST", {"a": 1})
+    handler(post)
+    assert post.continued and post.fulfilled is None
+
+
+def test_patch_and_reload_are_valid_manifest_steps() -> None:
+    assert screens.validate() == []
+    assert {"patch", "reload"} <= screens.STEP_KINDS
+
+
+def test_addclass_step_splits_selector_from_class_and_evaluates_on_the_first_match() -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    class _Loc:
+        def __init__(self, sel: str) -> None:
+            self.sel = sel
+            self.first = self
+
+        def evaluate(self, js: str, arg: str) -> None:
+            calls.append((self.sel, js, arg))
+
+    page = type("P", (), {"locator": lambda _s, sel: _Loc(sel)})()
+    ab.run_step(page, "addclass:.a .b|active-segment")
+    assert calls[0][0] == ".a .b"
+    assert calls[0][2] == "active-segment"
+    assert "classList.add" in calls[0][1]

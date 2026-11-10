@@ -1009,14 +1009,14 @@
   /* Transcript segment highlighting styles */
   :global(.transcript-segment .segment-content) {
     border: 1px solid transparent;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0);
+    box-shadow: none;
     transition: all var(--duration-base) ease;
   }
 
   :global(.transcript-segment.active-segment .segment-content) {
     background-color: rgba(var(--accent-rgb), 0.12);
     border-color: rgba(var(--accent-rgb), 0.3);
-    box-shadow: 0 1px 3px rgba(var(--accent-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   :global(.transcript-segment.active-segment .segment-content:hover) {

@@ -693,7 +693,7 @@
     top: 2px;
     width: 2px;
     height: 20px;
-    background: rgba(107, 114, 128, 0.3);
+    background: var(--border-hover);
     border-radius: 1px;
   }
 
@@ -719,8 +719,7 @@
   }
 
   .edit-button:hover {
-    color: #1d4ed8;
-    text-decoration-color: #1d4ed8;
+    text-decoration-color: currentcolor;
   }
 
   .segment-edit-container {

@@ -753,9 +753,9 @@
     flex-shrink: 0;
     cursor: default;
     white-space: nowrap;
-    background: rgba(128, 128, 128, 0.1);
+    background: var(--surface-hover);
     color: var(--text-secondary);
-    border: 1px solid rgba(128, 128, 128, 0.25);
+    border: 1px solid var(--border-color);
   }
 
   .gender-svg {
@@ -764,15 +764,9 @@
     flex-shrink: 0;
   }
 
-  :global([data-theme='dark']) .gender-badge {
-    background: rgba(255, 255, 255, 0.07);
-    color: var(--text-secondary);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-
   .speaker-profile-badge {
-    background: #f59e0b;
-    color: var(--text-on-solid);
+    background: var(--warning-solid);
+    color: var(--text-on-warning);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     padding: var(--space-1) var(--space-2);
@@ -781,7 +775,7 @@
     align-items: center;
     gap: var(--space-1-5);
     white-space: nowrap;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
     flex-shrink: 0; /* Don't shrink the badge */
     text-decoration: none;
     cursor: pointer;
@@ -789,7 +783,7 @@
   }
 
   .speaker-profile-badge:hover {
-    background: #d97706;
+    background: var(--warning-solid-hover);
     transform: scale(1.03);
   }
 
@@ -841,14 +835,15 @@
   }
 
   .save-speakers-button:disabled {
-    background: #94a3b8;
+    background: var(--disabled-background);
+    color: var(--disabled-color);
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
   }
 
   .save-speakers-button:disabled:hover {
-    background: #94a3b8;
+    background: var(--disabled-background);
     transform: none;
     box-shadow: none;
   }
@@ -885,7 +880,7 @@
   .unsaved-indicator {
     display: inline-flex;
     align-items: center;
-    color: #f59e0b; /* Amber/yellow warning color */
+    color: var(--warning-text);
     margin-inline-start: var(--space-2);
     animation: pulse 2s infinite;
   }
@@ -1197,7 +1192,7 @@
 
   .suggestion-chip:hover {
     transform: scale(1.02);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
   }
 
   .suggestion-chip.llm-chip {
@@ -1209,27 +1204,28 @@
   }
 
 
-  /* Profile chip — consistent #f59e0b amber */
+  /* Profile chip: the amber warning fill, labelled with the dark on-warning text */
   .suggestion-chip.profile-chip.high-confidence,
   .suggestion-chip.profile-chip.medium-confidence,
   .suggestion-chip.profile-chip.low-confidence {
-    background: #f59e0b;
+    background: var(--warning-solid);
+    color: var(--text-on-warning);
   }
 
   .suggestion-chip.profile-chip.high-confidence:hover,
   .suggestion-chip.profile-chip.medium-confidence:hover,
   .suggestion-chip.profile-chip.low-confidence:hover {
-    background: #d97706;
+    background: var(--warning-solid-hover);
   }
 
   .chip-label.profile-label {
-    color: #f59e0b;
+    color: var(--warning-text);
     font-weight: var(--font-weight-semibold);
   }
 
   .chip-confidence {
     font-size: 0.65rem;
-    background: rgba(255, 255, 255, 0.25);
+    background: color-mix(in srgb, var(--text-on-solid) 25%, transparent);
     padding: 0.1rem 0.3rem;
     border-radius: var(--radius-lg);
     font-weight: var(--font-weight-semibold);
@@ -1245,13 +1241,13 @@
   }
 
   .metadata-chip {
-    background: rgba(100, 149, 237, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--text-color);
-    border: 1px solid rgba(100, 149, 237, 0.3);
+    border: 1px solid rgba(var(--accent-rgb), 0.3);
   }
 
   .metadata-chip:hover {
-    background: rgba(100, 149, 237, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
   }
 
   .metadata-label {

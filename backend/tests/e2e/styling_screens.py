@@ -6,7 +6,9 @@ browser. Screen ids are STABLE: the lane cards in
 
 Steps vocabulary (see ``styling_ab.run_step``): ``click:<css>``, ``hover:<css>``,
 ``focus:<css>``, ``wait:<css>``, ``press:<key>``, ``settings:<section-id>``, ``tab:<id>``
-(``#tab-<id>``, the id ``ui/Tabs`` renders) and ``scroll:<css>``.
+(``#tab-<id>``, the id ``ui/Tabs`` renders), ``scroll:<css>``, ``patch:<url regex>|<json fields>``
+(merge fields into the real GET answer, see ``styling_ab._patch_route``) and ``reload:page`` and
+``addclass:<css>|<class>`` (put a class the app sets from live playback on an element, so its rule renders).
 
 Paths may contain ``{file_uuid}``, resolved at run time to the newest completed file.
 """
@@ -21,7 +23,21 @@ LOCALES = ("en", "ar")
 #: ``<locale>-<theme>``. All four always run: captures are cheap.
 VARIANTS = tuple(f"{loc}-{theme}" for loc in LOCALES for theme in THEMES)
 
-STEP_KINDS = frozenset({"click", "hover", "focus", "wait", "press", "settings", "tab", "scroll"})
+STEP_KINDS = frozenset(
+    {
+        "click",
+        "hover",
+        "focus",
+        "wait",
+        "press",
+        "settings",
+        "tab",
+        "scroll",
+        "patch",
+        "reload",
+        "addclass",
+    }
+)
 
 #: Masked on every screen: the navbar bell renders an unread-count pill that exists in one
 #: notification state and not the other (same reasoning as test_visual_regression.py).
@@ -367,7 +383,82 @@ _SETTINGS = (
     *(_settings("speaker-identification", f"tab:{t}") for t in ("spk-attributes", "spk-engine")),
 )
 
-SCREENS: tuple[Screen, ...] = (*_LOGGED_OUT, *_APP, *_NAVBAR_GALLERY, *_SETTINGS)
+# --- S34 transcript states (lane s34: rendering of changes the base screens never reached) ------
+_FILE_DETAIL_STATES = (
+    # Patched-data states: a state the seeded data lacks is added by patching the real answer
+    # (``patch`` + ``reload``).
+    Screen(
+        "file-detail-shared",
+        "/files/{file_uuid}",
+        steps=(
+            r'patch:/api/files/[0-9a-f-]{36}(\?.*)?$|{"my_permission": "editor"}',
+            "reload:page",
+            "wait:.shared-chip",
+        ),
+        ready=".transcript-segment",
+        notes="the file header's shared-with-me chip; the seeded file is owned by the capture user",
+    ),
+    Screen(
+        "file-detail-speaker-chips",
+        "/files/{file_uuid}",
+        steps=(
+            r'patch:/api/speakers\?.*file_uuid=|{"show_profile_badge": true, "show_suggestions_section": true, '
+            r'"metadata_hints": [{"name": "Alex Rivera", "role": "host", "confidence": 0.8, "source": "title"}], '
+            r'"profile_suggestions": [{"name": "Jordan Lee", "confidence": 0.9, "confidence_percentage": "90%", '
+            r'"reason": "voice match"}]}',
+            "reload:page",
+            "click:.edit-speakers-button",
+            "wait:.speaker-editor-container",
+            "click:.suggestions-toggle",
+            "wait:.profile-chip",
+        ),
+        ready=".transcript-segment",
+        notes="profile badge, metadata chip and profile chip on every speaker",
+    ),
+    Screen(
+        "file-detail-export-open",
+        "/files/{file_uuid}",
+        steps=("click:.export-transcript-button", "wait:.export-dropdown.open"),
+        ready=".transcript-segment",
+        notes="TranscriptActionsBar export dropdown (--shadow-lg)",
+    ),
+    Screen(
+        "file-detail-active-segment",
+        "/files/{file_uuid}",
+        steps=("addclass:.transcript-segment|active-segment",),
+        ready=".transcript-segment",
+        notes="playback marks the playing segment with this class; the ?t= deep link cleared it again "
+        "before capture (timing), so the class is added to render the rule",
+    ),
+    Screen(
+        "file-detail-edit-hover",
+        "/files/{file_uuid}",
+        steps=("hover:.transcript-segment .edit-button",),
+        ready=".transcript-segment",
+        notes="segment Edit button hover (underline appears, colour kept)",
+    ),
+    Screen(
+        "search-floating-preview",
+        "/search?q=the",
+        steps=(
+            "click:.matches-toggle",
+            "click:.occurrence-row .preview-btn",
+            "wait:.sticky-preview",
+        ),
+        ready=".search-page, main",
+        masks=(".result-summary", ".preview-time", ".preview-player-container"),
+        full_page=False,
+        notes="FloatingPreviewPlayer shadow",
+    ),
+)
+
+SCREENS: tuple[Screen, ...] = (
+    *_LOGGED_OUT,
+    *_APP,
+    *_NAVBAR_GALLERY,
+    *_SETTINGS,
+    *_FILE_DETAIL_STATES,
+)
 
 #: Screens the lane cards use as "control" (must pass the zero rule in intended mode).
 DEFAULT_CONTROLS = ("gallery", "file-detail", "login", "settings-profile")

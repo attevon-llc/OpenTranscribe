@@ -13,6 +13,7 @@
   } from '$stores/uploads';
   import { t } from '$stores/locale';
   import UploadProgress from './UploadProgress.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
   import EmptyState from './ui/EmptyState.svelte';
 
   // Component state
@@ -227,16 +228,7 @@
         <!-- Overall Progress (if active uploads) -->
         {#if $hasActiveUploads}
           <div class="overall-progress">
-            <div class="progress-info">
-              <span class="progress-label">{$t('upload.overallProgress')}</span>
-              <span class="progress-percent" dir="ltr">{$totalProgress}%</span>
-            </div>
-            <div class="progress-bar">
-              <div
-                class="progress-fill"
-                style="width: {$totalProgress}%"
-              ></div>
-            </div>
+            <ProgressBar label={$t('upload.overallProgress')} percent={$totalProgress} />
           </div>
         {/if}
 
@@ -420,37 +412,6 @@
     background: var(--background-color);
   }
 
-  .progress-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-1-5);
-  }
-
-  .progress-label {
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
-  }
-
-  .progress-percent {
-    font-size: var(--font-size-md);
-    color: var(--text-secondary);
-  }
-
-  .progress-bar {
-    height: 6px;
-    background: var(--border-color);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--primary-on-surface);
-    transition: width var(--duration-slow) ease;
-  }
-
   /* Upload List */
   .upload-list {
     max-height: 40vh;
@@ -503,18 +464,6 @@
   :global([data-theme='dark']) .overall-progress {
     background: var(--background-color);
     border-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .progress-label {
-    color: var(--text-primary);
-  }
-
-  :global([data-theme='dark']) .progress-percent {
-    color: var(--text-secondary);
-  }
-
-  :global([data-theme='dark']) .progress-bar {
-    background: var(--border-color);
   }
 
   /* Mobile adjustments */

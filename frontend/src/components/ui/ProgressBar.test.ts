@@ -68,4 +68,12 @@ describe('ProgressBar', () => {
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it('keeps the label row at --font-size-md (0.875rem), the largest size any caller used before', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const src = fs.readFileSync(path.resolve(__dirname, 'ProgressBar.svelte'), 'utf8');
+    const rule = src.match(/\.progress-label\s*\{[^}]*\}/)![0];
+    expect(rule).toMatch(/font-size:\s*var\(--font-size-md\)/);
+  });
 });

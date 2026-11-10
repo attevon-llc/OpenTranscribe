@@ -28,6 +28,12 @@
 
   const dispatch = createEventDispatcher<{ refresh: void; openDetails: string }>();
 
+  // Backend sends usage as strings like "42.5%"; unparsable or missing reads as 0.
+  function meterValue(raw: unknown): number {
+    const value = parseFloat(String(raw));
+    return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+  }
+
   let currentGpuIndex = 0;
   $: activeGpu = stats.system?.gpus?.[currentGpuIndex] ?? stats.system?.gpus?.[0];
   $: gpuCount = stats.system?.gpus?.length ?? 1;
@@ -311,8 +317,15 @@
         <div class="stat-section">
           <h4>{$t('settings.statistics.cpuUsage')}</h4>
           <div class="stat-value">{stats.system?.cpu?.total_percent || '0%'}</div>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: {parseFloat(stats.system?.cpu?.total_percent) || 0}%"></div>
+          <div
+            class="meter"
+            role="meter"
+            aria-label={$t('settings.statistics.cpuUsage')}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={meterValue(stats.system?.cpu?.total_percent)}
+          >
+            <div class="meter-fill" style="width: {meterValue(stats.system?.cpu?.total_percent)}%"></div>
           </div>
         </div>
 
@@ -322,8 +335,15 @@
           <div class="stat-detail-compact">
             <bdi dir="ltr">{stats.system?.memory?.used || $t('common.unknown')} / {stats.system?.memory?.total || $t('common.unknown')}</bdi>
           </div>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: {parseFloat(stats.system?.memory?.percent) || 0}%"></div>
+          <div
+            class="meter"
+            role="meter"
+            aria-label={$t('settings.statistics.memoryUsage')}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={meterValue(stats.system?.memory?.percent)}
+          >
+            <div class="meter-fill" style="width: {meterValue(stats.system?.memory?.percent)}%"></div>
           </div>
         </div>
       </div>
@@ -338,8 +358,15 @@
             <span>{$t('settings.statistics.free')}: <bdi dir="ltr">{stats.system?.disk?.free || $t('common.unknown')}</bdi></span>
           </div>
         </div>
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {parseFloat(stats.system?.disk?.percent) || 0}%"></div>
+        <div
+          class="meter"
+          role="meter"
+          aria-label={$t('settings.statistics.diskUsage')}
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={meterValue(stats.system?.disk?.percent)}
+        >
+          <div class="meter-fill" style="width: {meterValue(stats.system?.disk?.percent)}%"></div>
         </div>
       </div>
 
@@ -371,8 +398,15 @@
               {/if}
             </div>
           </div>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: {parseFloat(activeGpu.memory_percent) || 0}%"></div>
+          <div
+            class="meter"
+            role="meter"
+            aria-label={$t('settings.statistics.gpuVram')}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={meterValue(activeGpu.memory_percent)}
+          >
+            <div class="meter-fill" style="width: {meterValue(activeGpu.memory_percent)}%"></div>
           </div>
         {:else if activeGpu?.loading}
           <div class="stat-card-content">
@@ -771,18 +805,18 @@
     white-space: nowrap;
   }
 
-  .progress-bar {
+  .meter {
     width: 100%;
-    height: 8px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-sm);
+    height: 6px;
+    background-color: var(--color-bg-tertiary);
+    border-radius: var(--radius-pill);
     overflow: hidden;
-    margin-top: 0;
   }
 
-  .progress-fill {
+  .meter-fill {
     height: 100%;
     background-color: var(--primary-color);
+    border-radius: var(--radius-pill);
     transition: width var(--duration-slow) ease;
   }
 

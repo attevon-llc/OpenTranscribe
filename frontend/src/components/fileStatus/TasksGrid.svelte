@@ -1,5 +1,6 @@
 <script lang="ts">
   import InfoIcon from '$components/ui/InfoIcon.svelte';
+  import ProgressBar from '$components/ui/ProgressBar.svelte';
   import type { UserTask } from '$lib/types/fileStatus';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
@@ -98,7 +99,10 @@
                        progress field produced `style="width: NaN%"`. -->
                   {@const progressPercent = taskProgressPercent(task.progress)}
                   <div class="progress-bar-container">
-                    <div class="progress-bar" style="width: {progressPercent}%"></div>
+                    <ProgressBar
+                      percent={progressPercent}
+                      ariaLabel={task.media_file?.filename || $t('fileStatus.inProgress')}
+                    />
                   </div>
                   <span class="task-progress-text" dir="ltr">{progressPercent}%</span>
                 {/if}
@@ -340,17 +344,6 @@
 
   .task-status-cell .progress-bar-container {
     width: 60px;
-    height: 4px;
-    background: var(--border-color);
-    border-radius: var(--radius-xs);
-    overflow: hidden;
-  }
-
-  .task-status-cell .progress-bar {
-    height: 100%;
-    background: var(--primary-color);
-    border-radius: var(--radius-xs);
-    transition: width var(--duration-slow) ease;
   }
 
   .task-progress-text {

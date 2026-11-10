@@ -43,7 +43,7 @@ function renderGrid(tasks: UserTask[]) {
 }
 
 function barWidth(container: HTMLElement): string | undefined {
-  const bar = container.querySelector<HTMLElement>('.progress-bar');
+  const bar = container.querySelector<HTMLElement>('.progress-bar-container .progress-fill');
   return bar?.style.width;
 }
 
@@ -112,5 +112,14 @@ describe('TasksGrid — progress rendering', () => {
     const { container } = renderGrid([task({ task_type: 'redaction' })]);
 
     expect(container.textContent).toContain('Summarization');
+  });
+});
+
+describe('TasksGrid — progress bar accessibility', () => {
+  it('names the progressbar after the task file and exposes its value', () => {
+    const { container } = renderGrid([task({ progress: 0.42 })]);
+    const bar = container.querySelector('[role="progressbar"]');
+    expect(bar?.getAttribute('aria-label')).toBe('interview.mp4');
+    expect(bar?.getAttribute('aria-valuenow')).toBe('42');
   });
 });

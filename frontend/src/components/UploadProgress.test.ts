@@ -144,6 +144,24 @@ describe('UploadProgress — status icons are SVG, named, and never a glyph', ()
     expect(track?.querySelector('.progress-text')?.textContent).toBe('0%');
   });
 
+  it('names the progressbar after the file and tones its fill by status', () => {
+    const tones: [string, string][] = [
+      ['uploading', 'tone-primary'],
+      ['processing', 'tone-primary'],
+      ['queued', 'tone-warning'],
+    ];
+    for (const [status, tone] of tones) {
+      const { container, unmount } = render(UploadProgress, {
+        props: { upload: uploadItem({ status: status as never, progress: 40 }) },
+      });
+      const bar = container.querySelector('[role="progressbar"]');
+      expect(bar?.getAttribute('aria-label'), status).toBe(uploadItem().name);
+      expect(bar?.getAttribute('aria-valuenow'), status).toBe('40');
+      expect(bar?.querySelector('.progress-fill')?.classList.contains(tone), status).toBe(true);
+      unmount();
+    }
+  });
+
   it('draws the action buttons and the dedup badge with SVG and names the buttons', () => {
     const { container } = render(UploadProgress, {
       props: { upload: uploadItem({ status: 'failed', dedupSkipped: true }) },

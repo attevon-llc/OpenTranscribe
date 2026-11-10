@@ -59,7 +59,7 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--space-1);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
@@ -71,14 +71,16 @@
   .progress-track {
     height: 6px;
     background: var(--color-bg-tertiary);
-    border-radius: 3px;
+    border-radius: var(--radius-pill);
     overflow: hidden;
   }
 
   .progress-fill {
     height: 100%;
-    background-color: var(--primary-color);
-    border-radius: 3px;
+    /* --primary-color (#2563eb) is 2.0:1 on the dark track (#334155); WCAG 1.4.11 needs 3:1.
+       --primary-on-surface is the blue that clears it in both themes. */
+    background-color: var(--primary-on-surface);
+    border-radius: var(--radius-pill);
     transition: width var(--duration-slow) ease;
   }
 

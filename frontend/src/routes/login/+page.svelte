@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusOnMount } from '$lib/actions/focusOnMount';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import { resolve } from '$app/paths';
   import { goto, preloadCode } from '$app/navigation';
@@ -813,7 +814,6 @@
                 {$t('auth.mfaCode')}
               {/if}
             </label>
-            <!-- svelte-ignore a11y_autofocus -->
             <input
               type="text"
               id="mfaCode"
@@ -823,7 +823,7 @@
               inputmode={useBackupCode ? 'text' : 'numeric'}
               pattern={useBackupCode ? '[A-Za-z0-9]{4}-[A-Za-z0-9]{4}' : '[0-9]{6}'}
               maxlength={useBackupCode ? 9 : 6}
-              autofocus
+              use:focusOnMount
             />
           </div>
 

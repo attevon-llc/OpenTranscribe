@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusOnMount } from '$lib/actions/focusOnMount';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
@@ -17,14 +18,13 @@
   onClose={() => dispatch('close')}
 >
   <p class="promote-description">{$t('speakers.promote.description')}</p>
-  <!-- svelte-ignore a11y-autofocus -->
   <input
     class="promote-modal-input"
     bind:value={name}
     placeholder={$t('speakers.promote.namePlaceholder')}
     aria-label={$t('speakers.promote.title')}
     on:keydown={(e) => { if (e.key === 'Enter') dispatch('confirm'); }}
-    autofocus
+    use:focusOnMount
   />
   <svelte:fragment slot="footer">
     <button type="button" class="btn btn-secondary" on:click={() => dispatch('close')}>{$t('modal.cancel')}</button>

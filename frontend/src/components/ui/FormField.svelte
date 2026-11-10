@@ -14,7 +14,8 @@
     </FormField>
 
   `required` only draws the asterisk (aria-hidden); the caller also sets `required` on the control
-  so the state is announced natively. The `label-after` slot puts controls beside the label, such
+  so the state is announced natively. The `after-hint` slot holds a second hint line or a
+  conditional warning below the hint; it gets an id and is part of `describedby`. The `label-after` slot puts controls beside the label, such
   as a show-password button.
 -->
 <script lang="ts">
@@ -24,14 +25,18 @@
   export let error = '';
   export let required = false;
   export let size: 'md' | 'lg' = 'md';
+  // Extra class on the wrapper, e.g. a fixed-width or flex rule from the parent form.
+  let className = '';
+  export { className as class };
 
   $: hintId = hint ? `${id}-hint` : '';
   $: errorId = error ? `${id}-error` : '';
-  $: describedby = [hintId, errorId].filter(Boolean).join(' ') || undefined;
+  $: extraId = $$slots['after-hint'] ? `${id}-extra` : '';
+  $: describedby = [hintId, extraId, errorId].filter(Boolean).join(' ') || undefined;
   $: invalid = error !== '';
 </script>
 
-<div class="form-field" class:form-field-lg={size === 'lg'}>
+<div class="form-field {className}" class:form-field-lg={size === 'lg'}>
   {#if $$slots['label-after']}
     <div class="form-field-header">
       <label for={id} class="form-field-label">{label}{#if required}<span aria-hidden="true"> *</span>{/if}</label>
@@ -43,6 +48,9 @@
   <slot {describedby} {invalid} />
   {#if hint}
     <p id={hintId} class="form-field-hint">{hint}</p>
+  {/if}
+  {#if extraId}
+    <div id={extraId} class="form-field-extra"><slot name="after-hint" /></div>
   {/if}
   {#if error}
     <p id={errorId} class="form-field-error" role="alert">{error}</p>

@@ -313,36 +313,38 @@
       />
     </FormField>
 
-    <div class="form-group">
-      <label for="saml_allowed_groups">{$t('settings.saml.allowedGroups')}</label>
+    <FormField size="lg" id="saml_allowed_groups" label={$t('settings.saml.allowedGroups')} hint={$t('settings.saml.allowedGroupsHelp')} let:describedby>
       <input dir="ltr"
         id="saml_allowed_groups"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_allowed_groups}
         on:input={handleChange}
         placeholder="opentranscribe-users;CN=Staff,OU=Groups,DC=example,DC=com"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.allowedGroupsHelp')}</span>
-      <span class="help-text">{$t('settings.saml.groupsSemicolonHelp')}</span>
-      {#if allowListOpen}
-        <p class="admission-warning" role="status">{$t('settings.saml.allowedGroupsEmptyWarning')}</p>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.saml.groupsSemicolonHelp')}</p>
+        {#if allowListOpen}
+          <p class="admission-warning" role="status">{$t('settings.saml.allowedGroupsEmptyWarning')}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
 
-    <div class="form-group">
-      <label for="saml_blocked_groups">{$t('settings.saml.blockedGroups')}</label>
+    <FormField size="lg" id="saml_blocked_groups" label={$t('settings.saml.blockedGroups')} hint={$t('settings.saml.blockedGroupsHelp')} let:describedby>
       <input dir="ltr"
         id="saml_blocked_groups"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.saml_blocked_groups}
         on:input={handleChange}
         placeholder="contractors;CN=Vendors,OU=Groups,DC=example,DC=com"
         disabled={!formData.saml_enabled}
       />
-      <span class="help-text">{$t('settings.saml.blockedGroupsHelp')}</span>
-      <span class="help-text">{$t('settings.saml.groupsSemicolonHelp')}</span>
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.saml.groupsSemicolonHelp')}</p>
+      </svelte:fragment>
+    </FormField>
   </div>
 
   <div class="actions">
@@ -419,13 +421,11 @@
     color: var(--color-text-secondary);
   }
 
-  .form-group,
   .section :global(.form-field) {
     flex: 1;
     margin-bottom: var(--space-4);
   }
 
-  .form-group input[type="text"],
   .section :global(.form-field input[type="text"]),
   .section :global(.form-field input[type="password"]),
   .section :global(.form-field textarea) {
@@ -439,7 +439,6 @@
     font-size: var(--font-size-xs);
   }
 
-  .form-group input:disabled,
   .section :global(.form-field input:disabled),
   .section :global(.form-field textarea:disabled) {
     cursor: not-allowed;

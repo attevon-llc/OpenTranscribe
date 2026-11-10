@@ -111,16 +111,16 @@
         />
       </FormField>
 
-      <div class="form-group small">
-        <label for="ldap_port">{$t('settings.ldap.port')}</label>
+      <FormField size="lg" class="field-small" id="ldap_port" label={$t('settings.ldap.port')} let:describedby>
         <input
           id="ldap_port"
+          aria-describedby={describedby}
           type="number"
           bind:value={formData.ldap_port}
           on:input={handleChange}
           disabled={!formData.ldap_enabled}
         />
-      </div>
+      </FormField>
     </div>
 
     <div class="form-row checkboxes">
@@ -417,24 +417,22 @@
     gap: var(--space-8);
   }
 
-  .form-group,
+  .section :global(.form-field.field-small) {
+    flex: 0 0 100px;
+  }
+
   .section :global(.form-field) {
     flex: 1;
     margin-bottom: var(--space-4);
   }
 
-  .form-group.small {
-    flex: 0 0 100px;
-  }
 
   .section :global(.form-field input[type="text"]),
   .section :global(.form-field input[type="password"]),
-  .form-group input[type="number"],
   .section :global(.form-field input[type="number"]) {
     width: 100%;
   }
 
-  .form-group input:disabled,
   .section :global(.form-field input:disabled) {
     cursor: not-allowed;
   }
@@ -497,7 +495,7 @@
       gap: var(--space-3);
     }
 
-    .form-group.small {
+    .section :global(.form-field.field-small) {
       flex: 1;
     }
 

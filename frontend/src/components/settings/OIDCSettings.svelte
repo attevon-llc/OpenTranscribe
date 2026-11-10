@@ -208,10 +208,10 @@
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.serverConfiguration')}</h3>
 
-    <div class="form-group">
-      <label for="oidc_provider_preset">{$t('settings.oidc.providerPreset')}</label>
+    <FormField size="lg" id="oidc_provider_preset" label={$t('settings.oidc.providerPreset')} hint={$t('settings.oidc.providerPresetHelp')} let:describedby>
       <select
         id="oidc_provider_preset"
+        aria-describedby={describedby}
         value={selectedPresetId}
         on:change={applyPreset}
         disabled={!formData.oidc_enabled}
@@ -221,11 +221,12 @@
           <option value={preset.id}>{$t(preset.labelKey)}</option>
         {/each}
       </select>
-      <span class="help-text">{$t('settings.oidc.providerPresetHelp')}</span>
-      {#if selectedPreset?.noteKey}
-        <p class="admission-warning" role="status">{$t(selectedPreset.noteKey)}</p>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        {#if selectedPreset?.noteKey}
+          <p class="admission-warning" role="status">{$t(selectedPreset.noteKey)}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
 
     <FormField size="lg" id="oidc_server_url" label={$t('settings.oidc.serverUrlPublic')} hint={$t('settings.oidc.serverUrlPublicHelp')} let:describedby>
       <input dir="ltr"
@@ -260,21 +261,22 @@
       />
     </FormField>
 
-    <div class="form-group" class:superseded={discoveryActive}>
-      <label for="oidc_realm">{$t('settings.oidc.realm')}</label>
+    <FormField size="lg" class={discoveryActive ? 'superseded' : ''} id="oidc_realm" label={$t('settings.oidc.realm')} hint={$t('settings.oidc.realmHelp')} let:describedby>
       <input dir="ltr"
         id="oidc_realm"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_realm}
         on:input={handleChange}
         placeholder="master"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.realmHelp')}</span>
-      {#if discoveryActive}
-        <span class="help-text superseded-note">{$t('settings.oidc.realmSupersededHelp')}</span>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        {#if discoveryActive}
+          <p class="form-field-hint superseded-note">{$t('settings.oidc.realmSupersededHelp')}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
 
     <FormField size="lg" id="oidc_timeout" label={$t('settings.oidc.requestTimeout')}>
       <input
@@ -330,11 +332,11 @@
       </FormField>
     </div>
 
-    <div class="form-group">
-      <label for="oidc_callback_url">{$t('settings.oidc.callbackUrl')}</label>
+    <FormField size="lg" id="oidc_callback_url" label={$t('settings.oidc.callbackUrl')} hint={$t('settings.oidc.callbackUrlHelp')} let:describedby>
       <div class="input-with-button">
         <input dir="ltr"
           id="oidc_callback_url"
+        aria-describedby={describedby}
           type="text"
           bind:value={formData.oidc_callback_url}
           on:input={handleChange}
@@ -350,13 +352,14 @@
           {$t('settings.oidc.autoDetect')}
         </button>
       </div>
-      <span class="help-text">{$t('settings.oidc.callbackUrlHelp')}</span>
-      {#if callbackUrlIsApiRoute}
-        <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlApiWarning')}</p>
-      {:else if callbackUrlUnexpectedPath}
-        <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlPathWarning')}</p>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        {#if callbackUrlIsApiRoute}
+          <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlApiWarning')}</p>
+        {:else if callbackUrlUnexpectedPath}
+          <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlPathWarning')}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
@@ -394,17 +397,17 @@
     </label>
 
     {#if formData.oidc_verify_audience}
-      <div class="form-group indented">
-        <label for="oidc_audience">{$t('settings.oidc.expectedAudience')}</label>
+      <FormField size="lg" class="indented" id="oidc_audience" label={$t('settings.oidc.expectedAudience')} let:describedby>
         <input dir="ltr"
           id="oidc_audience"
+          aria-describedby={describedby}
           type="text"
           bind:value={formData.oidc_audience}
           on:input={handleChange}
           placeholder={$t('settings.oidc.expectedAudiencePlaceholder')}
           disabled={!formData.oidc_enabled}
         />
-      </div>
+      </FormField>
     {/if}
   </div>
 
@@ -422,55 +425,58 @@
       />
     </FormField>
 
-    <div class="form-group">
-      <label for="oidc_roles_claim">{$t('settings.oidc.rolesClaim')}</label>
+    <FormField size="lg" id="oidc_roles_claim" label={$t('settings.oidc.rolesClaim')} hint={$t('settings.oidc.rolesClaimHelp')} let:describedby>
       <input dir="ltr"
         id="oidc_roles_claim"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_roles_claim}
         on:input={handleChange}
         placeholder="realm_access.roles"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.rolesClaimHelp')}</span>
-      <span class="help-text">{$t('settings.oidc.rolesClaimWarning')}</span>
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.oidc.rolesClaimWarning')}</p>
+      </svelte:fragment>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.admissionControl')}</h3>
     <p class="section-intro">{$t('settings.oidc.admissionControlHelp')}</p>
 
-    <div class="form-group">
-      <label for="oidc_allowed_groups">{$t('settings.oidc.allowedGroups')}</label>
+    <FormField size="lg" id="oidc_allowed_groups" label={$t('settings.oidc.allowedGroups')} hint={$t('settings.oidc.allowedGroupsHelp')} let:describedby>
       <input dir="ltr"
         id="oidc_allowed_groups"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_allowed_groups}
         on:input={handleChange}
         placeholder="opentranscribe-users;CN=Staff,OU=Groups,DC=example,DC=com"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.allowedGroupsHelp')}</span>
-      <span class="help-text">{$t('settings.oidc.groupsSemicolonHelp')}</span>
-      {#if allowListOpen}
-        <p class="admission-warning" role="status">{$t('settings.oidc.allowedGroupsEmptyWarning')}</p>
-      {/if}
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.oidc.groupsSemicolonHelp')}</p>
+        {#if allowListOpen}
+          <p class="admission-warning" role="status">{$t('settings.oidc.allowedGroupsEmptyWarning')}</p>
+        {/if}
+      </svelte:fragment>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_blocked_groups">{$t('settings.oidc.blockedGroups')}</label>
+    <FormField size="lg" id="oidc_blocked_groups" label={$t('settings.oidc.blockedGroups')} hint={$t('settings.oidc.blockedGroupsHelp')} let:describedby>
       <input dir="ltr"
         id="oidc_blocked_groups"
+        aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_blocked_groups}
         on:input={handleChange}
         placeholder="contractors;CN=Vendors,OU=Groups,DC=example,DC=com"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.blockedGroupsHelp')}</span>
-      <span class="help-text">{$t('settings.oidc.groupsSemicolonHelp')}</span>
-    </div>
+      <svelte:fragment slot="after-hint">
+        <p class="form-field-hint">{$t('settings.oidc.groupsSemicolonHelp')}</p>
+      </svelte:fragment>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
@@ -670,13 +676,7 @@
     margin-bottom: var(--space-4);
   }
 
-  .form-group,
-  .section :global(.form-field) {
-    flex: 1;
-    margin-bottom: var(--space-4);
-  }
-
-  .form-group.indented {
+  .section :global(.form-field.indented) {
     margin-left: var(--space-6);
   }
 
@@ -684,27 +684,34 @@
    * A discovery URL makes the realm irrelevant. Fade it rather than disable it —
    * an admin may be mid-edit, and a disabled field also loses its value on save.
    */
-  .form-group.superseded label,
-  .form-group.superseded input {
+  .section :global(.form-field.superseded label),
+  .section :global(.form-field.superseded input) {
     opacity: 0.55;
   }
+
+  .section :global(.form-field) {
+    flex: 1;
+    margin-bottom: var(--space-4);
+  }
+
+
+  /*
+   * A discovery URL makes the realm irrelevant. Fade it rather than disable it —
+   * an admin may be mid-edit, and a disabled field also loses its value on save.
+   */
 
   .superseded-note {
     color: var(--color-warning-text);
   }
 
-  .form-group input[type="text"],
   .section :global(.form-field input[type="text"]),
   .section :global(.form-field input[type="password"]),
   .section :global(.form-field input[type="number"]),
-  .form-group select,
   .section :global(.form-field select) {
     width: 100%;
   }
 
-  .form-group input:disabled,
   .section :global(.form-field input:disabled),
-  .form-group select:disabled,
   .section :global(.form-field select:disabled) {
     cursor: not-allowed;
   }

@@ -23,9 +23,8 @@ from app.services import speaker_attribute_service as sas
 from app.services.audio_segment_utils import center_window
 from app.tasks import speaker_attribute_task as sat
 from app.utils.host_slots import host_slot
-from tests.unit.test_speaker_attribute_task_tracking import _make_file_with_speech
-from tests.unit.test_speaker_attribute_task_tracking import _task_row_for
-from tests.unit.test_speaker_attribute_task_tracking import tracking_env  # noqa: F401 - pytest fixture shared from its defining module
+from tests.fixtures.speaker_attribute_tracking import make_file_with_speech
+from tests.fixtures.speaker_attribute_tracking import task_row_for
 
 SR = 16000
 
@@ -141,10 +140,10 @@ def test_a_sigkilled_holder_does_not_leak_its_slot(slot_name, tmp_path):
 
 def _long_turn_file(db_session, user):
     """One speaker with a single 5-minute uninterrupted turn."""
-    return _make_file_with_speech(db_session, user, speakers=1, seg_seconds=150.0)
+    return make_file_with_speech(db_session, user, speakers=1, seg_seconds=150.0)
 
 
-def test_task_fetches_only_capped_windows(db_session, normal_user, tracking_env, monkeypatch):  # noqa: F811 - the pytest fixture imported above, injected by name
+def test_task_fetches_only_capped_windows(db_session, normal_user, tracking_env, monkeypatch):
     media_file, _ = _long_turn_file(db_session, normal_user)
     seen: list[float] = []
 
@@ -163,12 +162,12 @@ def test_task_fetches_only_capped_windows(db_session, normal_user, tracking_env,
 def test_task_requeues_itself_when_every_slot_is_taken(
     db_session,
     normal_user,
-    tracking_env,  # noqa: F811 - the pytest fixture imported above, injected by name
+    tracking_env,
     monkeypatch,
     slot_name,
 ):
     """A busy host defers the detection; it must not run past the bound, nor be lost."""
-    media_file, _ = _make_file_with_speech(db_session, normal_user)
+    media_file, _ = make_file_with_speech(db_session, normal_user)
     monkeypatch.setattr(sat, "_INFERENCE_SLOT_NAME", slot_name)
     monkeypatch.setenv("SPEAKER_ATTRIBUTE_MAX_CONCURRENCY", "1")
     attempts = {"n": 0}
@@ -190,18 +189,18 @@ def test_task_requeues_itself_when_every_slot_is_taken(
 
     assert attempts["n"] == 2, "the task did not retry after finding no free slot"
     assert result["status"] == "success", result
-    task = _task_row_for(db_session, media_file.id)
+    task = task_row_for(db_session, media_file.id)
     assert task is not None and task.status == "completed"
 
 
 def test_task_gives_up_cleanly_when_slots_never_free(
     db_session,
     normal_user,
-    tracking_env,  # noqa: F811 - the pytest fixture imported above, injected by name
+    tracking_env,
     monkeypatch,
     slot_name,
 ):
-    media_file, _ = _make_file_with_speech(db_session, normal_user)
+    media_file, _ = make_file_with_speech(db_session, normal_user)
     monkeypatch.setattr(sat, "_INFERENCE_SLOT_NAME", slot_name)
     monkeypatch.setenv("SPEAKER_ATTRIBUTE_MAX_CONCURRENCY", "1")
     monkeypatch.setattr(sat.detect_speaker_attributes_task, "max_retries", 2)
@@ -213,7 +212,7 @@ def test_task_gives_up_cleanly_when_slots_never_free(
         ).get()
 
     assert result == {"status": "error", "reason": "no_inference_slot"}
-    task = _task_row_for(db_session, media_file.id)
+    task = task_row_for(db_session, media_file.id)
     assert task is not None and task.status == "failed"
 
 
@@ -221,12 +220,12 @@ def test_task_gives_up_cleanly_when_slots_never_free(
 def test_cpu_worker_releases_the_model_after_detection(
     db_session,
     normal_user,
-    tracking_env,  # noqa: F811 - the pytest fixture imported above, injected by name
+    tracking_env,
     monkeypatch,
     gpu_worker,
     expect_release,
 ):
-    media_file, _ = _make_file_with_speech(db_session, normal_user)
+    media_file, _ = make_file_with_speech(db_session, normal_user)
     if gpu_worker:
         monkeypatch.setenv("PRELOAD_GPU_MODELS", "true")
     else:

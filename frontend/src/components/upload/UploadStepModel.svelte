@@ -60,14 +60,14 @@
   <div class="section">
     <h4 class="section-title">{$t('upload.aiSummary')}</h4>
     <div class="toggle-row">
-      <span class="toggle-text">
-        <span class="toggle-label" id="generate-summary-label">{$t('upload.generateSummary')}</span>
+      <label class="toggle-text" for="generate-summary-toggle">
+        <span class="toggle-label">{$t('upload.generateSummary')}</span>
         <span class="hint">{$t('upload.generateSummaryHint')}</span>
-      </span>
+      </label>
       <Toggle
+        id="generate-summary-toggle"
         checked={generateSummary}
         onchange={toggleGenerateSummary}
-        labelledby="generate-summary-label"
       />
     </div>
   </div>

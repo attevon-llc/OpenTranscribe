@@ -110,12 +110,14 @@
     {/if}
   </div>
   <div class="source-actions">
-    <Toggle
-      checked={source.is_enabled}
-      onchange={() => dispatch('toggle', source)}
-      disabled={saving}
-      label={$t('settings.watchSources.fields.enabled')}
-    />
+    <span title={$t('settings.watchSources.fields.enabled')}>
+      <Toggle
+        checked={source.is_enabled}
+        onchange={() => dispatch('toggle', source)}
+        disabled={saving}
+        label={$t('settings.watchSources.fields.enabled')}
+      />
+    </span>
     <button class="btn btn-secondary btn-sm" on:click={() => dispatch('test', source)} disabled={testing}>
       {#if testing}<Spinner size="small" />{:else}{$t('settings.watchSources.test')}{/if}
     </button>

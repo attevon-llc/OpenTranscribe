@@ -68,6 +68,14 @@ describe('UploadStepModel — AI summary toggle polarity (#751 item 3)', () => {
     expect(checkbox.checked).toBe(true);
   });
 
+  it('clicking the label text flips the switch', async () => {
+    const { container, getByText } = render(UploadStepModel, { props: { skipSummary: false } });
+    const sw = summaryCheckbox(container);
+    expect(sw.checked).toBe(true);
+    await fireEvent.click(getByText('upload.generateSummary'));
+    expect(sw.checked).toBe(false);
+  });
+
   it('the toggle label uses the positive copy key, not the retired negative one', () => {
     const { container } = render(UploadStepModel, { props: { skipSummary: false } });
     expect(container.textContent).toContain('upload.generateSummary');

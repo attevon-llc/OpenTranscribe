@@ -15,15 +15,11 @@ vi.mock('$lib/edition', () => ({
 }));
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
+vi.mock('$lib/axios', async () =>
+  (await import('$testMocks/settingsModalMocks')).settingsAxiosMock(mockAxios)
+);
 
-vi.mock('$stores/auth', async () => {
-  const { writable } = await import('svelte/store');
-  return {
-    user: writable<{ role: string; org_role?: string } | null>(null),
-    readAccountLifecycle: () => null,
-  };
-});
+vi.mock('$stores/auth', async () => (await import('$testMocks/settingsModalMocks')).authUserMock());
 vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('$stores/locale', () => ({
   t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
@@ -44,15 +40,15 @@ vi.mock('$lib/api/orgAdmin', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/orgAdmin')>();
   return { ...actual, OrgAdminApi: { ...actual.OrgAdminApi, getPolicy: policyApi.getPolicy } };
 });
-vi.mock('$lib/api/userApprovals', () => ({
-  UserApprovalsApi: { list: vi.fn().mockResolvedValue([]) },
-  isAlreadyDecided: () => false,
-}));
+vi.mock('$lib/api/userApprovals', async () =>
+  (await import('$testMocks/settingsModalMocks')).userApprovalsMock()
+);
 
 import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
+import { RECORDING_SETTINGS } from '$testMocks/settingsModalMocks';
 import { resetAppStores } from '$testMocks/app-state.svelte';
 import { sectionLoaders } from '$lib/settings/sectionLoaders';
 
@@ -83,11 +79,7 @@ beforeEach(() => {
   settingsModalStore.reset();
   edition.cloud = true;
   mockAxios.get.mockResolvedValue({ data: {} });
-  mockUserSettingsApi.getRecordingSettings.mockResolvedValue({
-    max_recording_duration: 120,
-    recording_quality: 'high',
-    auto_stop_enabled: true,
-  });
+  mockUserSettingsApi.getRecordingSettings.mockResolvedValue(RECORDING_SETTINGS);
   policyApi.getPolicy.mockRejectedValue({ response: { status: 404 } });
 });
 

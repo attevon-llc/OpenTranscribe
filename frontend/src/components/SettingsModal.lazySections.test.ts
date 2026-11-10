@@ -8,12 +8,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
+vi.mock('$lib/axios', async () =>
+  (await import('$testMocks/settingsModalMocks')).settingsAxiosMock(mockAxios)
+);
 
-vi.mock('$stores/auth', async () => {
-  const { writable } = await import('svelte/store');
-  return { user: writable<{ role: string } | null>(null), readAccountLifecycle: () => null };
-});
+vi.mock('$stores/auth', async () => (await import('$testMocks/settingsModalMocks')).authUserMock());
 vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$stores/locale', async () =>
   (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
@@ -28,10 +27,9 @@ vi.mock('$lib/api/userSettings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/userSettings')>();
   return { ...actual, UserSettingsApi: mockUserSettingsApi };
 });
-vi.mock('$lib/api/userApprovals', () => ({
-  UserApprovalsApi: { list: vi.fn().mockResolvedValue([]) },
-  isAlreadyDecided: () => false,
-}));
+vi.mock('$lib/api/userApprovals', async () =>
+  (await import('$testMocks/settingsModalMocks')).userApprovalsMock()
+);
 
 // Hold the Download panel's chunk open so the "loading" window is observable, and let the test
 // decide whether it lands or fails. Everything else keeps its real loader.
@@ -48,26 +46,13 @@ import SettingsModal from './SettingsModal.svelte';
 import Probe from './settings/LazySectionProbe.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore } from '$stores/settingsModalStore';
-import { capabilities } from '$stores/capabilities';
-import { resetAppStores } from '$testMocks/app-state.svelte';
+import { RECORDING_SETTINGS } from '$testMocks/settingsModalMocks';
+import { resetSettingsModalState } from '$testMocks/settingsModalState';
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  resetAppStores();
-  settingsModalStore.reset();
-  capabilities.set({
-    edition: 'community',
-    loaded: true,
-    capabilities: {},
-    audience: {},
-    maxUploadBytes: undefined,
-  });
+  resetSettingsModalState();
   mockAxios.get.mockResolvedValue({ data: {} });
-  mockUserSettingsApi.getRecordingSettings.mockResolvedValue({
-    max_recording_duration: 120,
-    recording_quality: 'high',
-    auto_stop_enabled: true,
-  });
+  mockUserSettingsApi.getRecordingSettings.mockResolvedValue(RECORDING_SETTINGS);
   (mockUser as unknown as { set: (v: { role: string }) => void }).set({ role: 'user' });
 });
 

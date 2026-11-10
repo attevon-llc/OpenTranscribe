@@ -10,12 +10,11 @@ import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
+vi.mock('$lib/axios', async () =>
+  (await import('$testMocks/settingsModalMocks')).settingsAxiosMock(mockAxios)
+);
 
-vi.mock('$stores/auth', async () => {
-  const { writable } = await import('svelte/store');
-  return { user: writable<{ role: string } | null>(null), readAccountLifecycle: () => null };
-});
+vi.mock('$stores/auth', async () => (await import('$testMocks/settingsModalMocks')).authUserMock());
 vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$stores/locale', async () =>
   (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
@@ -32,15 +31,15 @@ vi.mock('$lib/api/userSettings', async (importOriginal) => {
 });
 const supportApi = vi.hoisted(() => ({ listRequests: vi.fn() }));
 vi.mock('$lib/api/supportAccess', () => ({ SupportAccessApi: supportApi }));
-vi.mock('$lib/api/userApprovals', () => ({
-  UserApprovalsApi: { list: vi.fn().mockResolvedValue([]) },
-  isAlreadyDecided: () => false,
-}));
+vi.mock('$lib/api/userApprovals', async () =>
+  (await import('$testMocks/settingsModalMocks')).userApprovalsMock()
+);
 
 import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
+import { RECORDING_SETTINGS } from '$testMocks/settingsModalMocks';
 import { resetAppStores } from '$testMocks/app-state.svelte';
 import { sectionLoaders } from '$lib/settings/sectionLoaders';
 
@@ -72,11 +71,7 @@ beforeEach(() => {
   settingsModalStore.reset();
   mockAxios.get.mockResolvedValue({ data: {} });
   supportApi.listRequests.mockResolvedValue({ items: [], total: 0, server_time: 'x' });
-  mockUserSettingsApi.getRecordingSettings.mockResolvedValue({
-    max_recording_duration: 120,
-    recording_quality: 'high',
-    auto_stop_enabled: true,
-  });
+  mockUserSettingsApi.getRecordingSettings.mockResolvedValue(RECORDING_SETTINGS);
 });
 
 async function open() {

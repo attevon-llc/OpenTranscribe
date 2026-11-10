@@ -387,6 +387,52 @@
   }
 </script>
 
+{#snippet activateControl(prompt: SummaryPrompt)}
+    {#if selectedPromptId === prompt.uuid}
+      <div class="config-status currently-active">
+        <div class="status-indicator">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20,6 9,17 4,12"/>
+          </svg>
+        </div>
+        <span class="status-text">{$t('prompts.currentlyActive')}</span>
+      </div>
+    {:else}
+      <button
+        class="activate-button"
+        on:click={() => setActivePrompt(prompt.uuid)}
+        disabled={saving}
+        title={$t('prompts.makeActive')}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <circle cx="12" cy="1" r="1"/>
+          <circle cx="12" cy="23" r="1"/>
+          <circle cx="4.22" cy="4.22" r="1"/>
+          <circle cx="19.78" cy="19.78" r="1"/>
+          <circle cx="1" cy="12" r="1"/>
+          <circle cx="23" cy="12" r="1"/>
+          <circle cx="4.22" cy="19.78" r="1"/>
+          <circle cx="19.78" cy="4.22" r="1"/>
+        </svg>
+        {$t('prompts.activate')}
+      </button>
+    {/if}
+{/snippet}
+
+{#snippet viewButton(prompt: SummaryPrompt)}
+    <button
+      class="view-button"
+      on:click={() => viewPrompt(prompt)}
+      title={$t('prompts.viewPrompt')}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+    </button>
+{/snippet}
+
 <div class="prompt-settings">
   {#if loading}
     <SettingsSkeleton variant="form" count={3} label={$t('prompts.loading')} />
@@ -437,47 +483,9 @@
                 {/if}
               </div>
               <div class="prompt-actions">
-                {#if selectedPromptId === prompt.uuid}
-                  <div class="config-status currently-active">
-                    <div class="status-indicator">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20,6 9,17 4,12"/>
-                      </svg>
-                    </div>
-                    <span class="status-text">{$t('prompts.currentlyActive')}</span>
-                  </div>
-                {:else}
-                  <button
-                    class="activate-button"
-                    on:click={() => setActivePrompt(prompt.uuid)}
-                    disabled={saving}
-                    title={$t('prompts.makeActive')}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="3"/>
-                      <circle cx="12" cy="1" r="1"/>
-                      <circle cx="12" cy="23" r="1"/>
-                      <circle cx="4.22" cy="4.22" r="1"/>
-                      <circle cx="19.78" cy="19.78" r="1"/>
-                      <circle cx="1" cy="12" r="1"/>
-                      <circle cx="23" cy="12" r="1"/>
-                      <circle cx="4.22" cy="19.78" r="1"/>
-                      <circle cx="19.78" cy="4.22" r="1"/>
-                    </svg>
-                    {$t('prompts.activate')}
-                  </button>
-                {/if}
+                {@render activateControl(prompt)}
 
-                <button
-                  class="view-button"
-                  on:click={() => viewPrompt(prompt)}
-                  title={$t('prompts.viewPrompt')}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                </button>
+                {@render viewButton(prompt)}
               </div>
             </div>
           {/each}
@@ -547,47 +555,9 @@
                 </div>
               </div>
               <div class="prompt-actions">
-                {#if selectedPromptId === prompt.uuid}
-                  <div class="config-status currently-active">
-                    <div class="status-indicator">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20,6 9,17 4,12"/>
-                      </svg>
-                    </div>
-                    <span class="status-text">{$t('prompts.currentlyActive')}</span>
-                  </div>
-                {:else}
-                  <button
-                    class="activate-button"
-                    on:click={() => setActivePrompt(prompt.uuid)}
-                    disabled={saving}
-                    title={$t('prompts.makeActive')}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="3"/>
-                      <circle cx="12" cy="1" r="1"/>
-                      <circle cx="12" cy="23" r="1"/>
-                      <circle cx="4.22" cy="4.22" r="1"/>
-                      <circle cx="19.78" cy="19.78" r="1"/>
-                      <circle cx="1" cy="12" r="1"/>
-                      <circle cx="23" cy="12" r="1"/>
-                      <circle cx="4.22" cy="19.78" r="1"/>
-                      <circle cx="19.78" cy="4.22" r="1"/>
-                    </svg>
-                    {$t('prompts.activate')}
-                  </button>
-                {/if}
+                {@render activateControl(prompt)}
 
-                <button
-                  class="view-button"
-                  on:click={() => viewPrompt(prompt)}
-                  title={$t('prompts.viewPrompt')}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                </button>
+                {@render viewButton(prompt)}
                 <button
                   class="edit-button"
                   on:click={() => openEditForm(prompt)}
@@ -684,36 +654,7 @@
                 {/if}
               </div>
               <div class="prompt-actions">
-                {#if selectedPromptId === prompt.uuid}
-                  <div class="config-status currently-active">
-                    <div class="status-indicator">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20,6 9,17 4,12"/>
-                      </svg>
-                    </div>
-                    <span class="status-text">{$t('prompts.currentlyActive')}</span>
-                  </div>
-                {:else}
-                  <button
-                    class="activate-button"
-                    on:click={() => setActivePrompt(prompt.uuid)}
-                    disabled={saving}
-                    title={$t('prompts.makeActive')}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="3"/>
-                      <circle cx="12" cy="1" r="1"/>
-                      <circle cx="12" cy="23" r="1"/>
-                      <circle cx="4.22" cy="4.22" r="1"/>
-                      <circle cx="19.78" cy="19.78" r="1"/>
-                      <circle cx="1" cy="12" r="1"/>
-                      <circle cx="23" cy="12" r="1"/>
-                      <circle cx="4.22" cy="19.78" r="1"/>
-                      <circle cx="19.78" cy="4.22" r="1"/>
-                    </svg>
-                    {$t('prompts.activate')}
-                  </button>
-                {/if}
+                {@render activateControl(prompt)}
 
                 <button
                   class="clone-button"
@@ -728,16 +669,7 @@
                   {$t('prompts.clone')}
                 </button>
 
-                <button
-                  class="view-button"
-                  on:click={() => viewPrompt(prompt)}
-                  title={$t('prompts.viewPrompt')}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                </button>
+                {@render viewButton(prompt)}
               </div>
             </div>
           {/each}

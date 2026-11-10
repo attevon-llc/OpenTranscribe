@@ -7,57 +7,46 @@
 
   const dispatch = createEventDispatcher();
 
-  let formData: LDAPConfig = {
-    ldap_enabled: config.ldap_enabled ?? false,
-    ldap_server: config.ldap_server ?? '',
-    ldap_port: config.ldap_port ?? 389,
-    ldap_use_ssl: config.ldap_use_ssl ?? false,
-    ldap_use_tls: config.ldap_use_tls ?? true,
-    ldap_ca_cert_file: config.ldap_ca_cert_file ?? '',
-    ldap_tls_server_name: config.ldap_tls_server_name ?? '',
-    ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? null,
-    ldap_bind_dn: config.ldap_bind_dn ?? '',
-    ldap_bind_password: config.ldap_bind_password ?? '',
-    ldap_search_base: config.ldap_search_base ?? '',
-    ldap_username_attr: config.ldap_username_attr ?? 'sAMAccountName',
-    ldap_email_attr: config.ldap_email_attr ?? 'mail',
-    ldap_name_attr: config.ldap_name_attr ?? 'displayName',
-    ldap_user_search_filter: config.ldap_user_search_filter ?? '({username_attr}={username})',
-    ldap_timeout: config.ldap_timeout ?? 10,
-    ldap_admin_users: config.ldap_admin_users ?? '',
-    ldap_admin_groups: config.ldap_admin_groups ?? '',
-    ldap_user_groups: config.ldap_user_groups ?? '',
-    ldap_recursive_groups: config.ldap_recursive_groups ?? true,
-    ldap_group_attr: config.ldap_group_attr ?? 'memberOf'
+  const LDAP_DEFAULTS: LDAPConfig = {
+    ldap_enabled: false,
+    ldap_server: '',
+    ldap_port: 389,
+    ldap_use_ssl: false,
+    ldap_use_tls: true,
+    ldap_ca_cert_file: '',
+    ldap_tls_server_name: '',
+    ldap_tls_skip_verify: null,
+    ldap_bind_dn: '',
+    ldap_bind_password: '',
+    ldap_search_base: '',
+    ldap_username_attr: 'sAMAccountName',
+    ldap_email_attr: 'mail',
+    ldap_name_attr: 'displayName',
+    ldap_user_search_filter: '({username_attr}={username})',
+    ldap_timeout: 10,
+    ldap_admin_users: '',
+    ldap_admin_groups: '',
+    ldap_user_groups: '',
+    ldap_recursive_groups: true,
+    ldap_group_attr: 'memberOf'
   };
+
+  // A null or missing field falls back to its default; unknown keys are dropped.
+  function withDefaults(config: Partial<LDAPConfig>): LDAPConfig {
+    const merged: LDAPConfig = { ...LDAP_DEFAULTS };
+    for (const key of Object.keys(LDAP_DEFAULTS) as (keyof LDAPConfig)[]) {
+      Object.assign(merged, { [key]: config[key] ?? LDAP_DEFAULTS[key] });
+    }
+    return merged;
+  }
+
+  let formData: LDAPConfig = withDefaults(config);
 
   let testing = false;
   let saving = false;
 
   $: if (config) {
-    formData = {
-      ldap_enabled: config.ldap_enabled ?? false,
-      ldap_server: config.ldap_server ?? '',
-      ldap_port: config.ldap_port ?? 389,
-      ldap_use_ssl: config.ldap_use_ssl ?? false,
-      ldap_use_tls: config.ldap_use_tls ?? true,
-      ldap_ca_cert_file: config.ldap_ca_cert_file ?? '',
-      ldap_tls_server_name: config.ldap_tls_server_name ?? '',
-      ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? null,
-      ldap_bind_dn: config.ldap_bind_dn ?? '',
-      ldap_bind_password: config.ldap_bind_password ?? '',
-      ldap_search_base: config.ldap_search_base ?? '',
-      ldap_username_attr: config.ldap_username_attr ?? 'sAMAccountName',
-      ldap_email_attr: config.ldap_email_attr ?? 'mail',
-      ldap_name_attr: config.ldap_name_attr ?? 'displayName',
-      ldap_user_search_filter: config.ldap_user_search_filter ?? '({username_attr}={username})',
-      ldap_timeout: config.ldap_timeout ?? 10,
-      ldap_admin_users: config.ldap_admin_users ?? '',
-      ldap_admin_groups: config.ldap_admin_groups ?? '',
-      ldap_user_groups: config.ldap_user_groups ?? '',
-      ldap_recursive_groups: config.ldap_recursive_groups ?? true,
-      ldap_group_attr: config.ldap_group_attr ?? 'memberOf'
-    };
+    formData = withDefaults(config);
   }
 
   function handleChange() {

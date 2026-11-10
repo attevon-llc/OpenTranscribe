@@ -2,20 +2,19 @@
   import { resolve } from '$app/paths';
   import './file-list-grid.css';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { galleryStore } from '$stores/gallery';
   import { locale, t } from '$stores/locale';
-  import { formatDate } from '$lib/utils/formatting';
+  import {
+    activateFileRow,
+    handleCheckboxChange,
+    handleCheckboxLabelClick,
+    prefetchOnMouseDown,
+    uploadDate,
+  } from '$lib/gallery/fileRowActions';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import FileStatusIndicator from './FileStatusIndicator.svelte';
   import HiddenBadge from './HiddenBadge.svelte';
   import HoldBadge from '$components/ui/HoldBadge.svelte';
   import type { MediaFile } from '$lib/types/media';
-
-  /** The server's `formatted_upload_date` is English-only; format the date in the app language. */
-  function uploadDate(file: MediaFile, lang: string): string {
-    return file.upload_time ? formatDate(file.upload_time, lang) : (file.formatted_upload_date ?? '');
-  }
 
   export let items: MediaFile[] = [];
   export let scrollContainer: HTMLElement | null = null;
@@ -132,39 +131,7 @@
   let navigatingTo: string | null = null;
 
   function handleRowClick(file: MediaFile, e: MouseEvent) {
-    if (isSelecting) {
-      e.preventDefault();
-      if (e.shiftKey || e.ctrlKey || e.metaKey) {
-        galleryStore.handleMultiSelect(file.uuid, e.shiftKey);
-      } else {
-        galleryStore.toggleFileSelection(file.uuid);
-      }
-    } else if (e.ctrlKey || e.metaKey || e.shiftKey) {
-      e.preventDefault();
-      galleryStore.handleMultiSelect(file.uuid, e.shiftKey);
-    } else {
-      e.preventDefault();
-      if (navigatingTo) return;
-      navigatingTo = file.uuid;
-      goto(resolve('/files/[id]', { id: file.uuid }));
-    }
-  }
-
-  function handleRowMouseDown(file: MediaFile) {
-    if (!isSelecting) prefetchFileDetails(file.uuid, file.status);
-  }
-
-  function handleCheckboxChange(fileId: string, e: Event) {
-    e.stopPropagation();
-    e.preventDefault();
-    galleryStore.toggleFileSelection(fileId);
-  }
-
-  function handleCheckboxLabelClick(fileId: string, e: MouseEvent) {
-    if (e.shiftKey || e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      galleryStore.handleMultiSelect(fileId, e.shiftKey);
-    }
+    navigatingTo = activateFileRow(file, e, isSelecting, navigatingTo);
   }
 
   function handleErrorClick(file: MediaFile) {
@@ -229,7 +196,7 @@
           href={isSelecting ? '#' : resolve('/files/[id]', { id: file.uuid })}
           class="file-list-link"
           on:click={(e) => handleRowClick(file, e)}
-          on:mousedown={() => handleRowMouseDown(file)}
+          on:mousedown={() => prefetchOnMouseDown(file, isSelecting)}
           on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid, file.status)}
           on:mouseleave={cancelPrefetch}
         >

@@ -528,12 +528,20 @@ def measure(
 
     A difference caused by a real style change shows on every attempt, while a timing flake
     (a transient overlay, a late repaint) does not, so only a screen that fails all
-    ``MAX_ATTEMPTS`` attempts is reported as FAIL. Negative controls are never retried.
+    ``MAX_ATTEMPTS`` attempts is reported as FAIL (a capture that errors is retried the same way). Negative controls are never retried.
     """
     retries = MAX_ATTEMPTS if args.mode == "zero" and not args.negative_control else 1
     for attempt in range(1, retries + 1):
-        a = capture(side_a, screen, variant, file_uuid)
-        b = capture(side_b, screen, variant, file_uuid)
+        try:
+            a = capture(side_a, screen, variant, file_uuid)
+            b = capture(side_b, screen, variant, file_uuid)
+        except ScreenUnavailableError:
+            raise
+        except Exception:
+            # A page that never became ready under load is the same flake as a diff.
+            if attempt == retries:
+                raise
+            continue
         arr_a, arr_b = _png_to_array(a["png"]), _png_to_array(b["png"])
         fraction = diff_fraction(arr_b, arr_a)
         changes = diff_snapshots(a["snapshot"], b["snapshot"])

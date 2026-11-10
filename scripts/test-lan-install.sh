@@ -79,6 +79,11 @@ is_local_host() {
 parse_args() {
   while [ $# -gt 0 ]; do
     case "$1" in
+      --host | --ca | --https-port | --http-port | --plain-app-port)
+        [ $# -ge 2 ] || { echo "$1 needs a value" >&2; return 2; }
+        ;;
+    esac
+    case "$1" in
       --host) HOST="${2:-}"; shift 2 ;;
       --ca) CA="${2:-}"; shift 2 ;;
       --https-port) HTTPS_PORT="${2:-}"; shift 2 ;;

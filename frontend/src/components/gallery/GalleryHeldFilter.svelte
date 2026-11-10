@@ -17,11 +17,11 @@
   // A hold placed or released elsewhere arrives as a files/metadata cache push.
   function onCacheInvalidated(event: Event) {
     const scope = (event as CustomEvent<{ scope?: string }>).detail?.scope;
-    if (scope === 'metadata' || scope === 'files' || scope === 'all') refreshHeldCount();
+    if (scope === 'metadata' || scope === 'files' || scope === 'all') void refreshHeldCount();
   }
 
   onMount(() => {
-    refreshHeldCount();
+    void refreshHeldCount();
     window.addEventListener('cache-invalidated', onCacheInvalidated);
   });
   onDestroy(() => {

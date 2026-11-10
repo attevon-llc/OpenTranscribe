@@ -67,7 +67,7 @@
     setTimeout(() => saving = false, 500);
   }
 
-  async function handleTest() {
+  function handleTest() {
     testing = true;
     dispatch('test', formData);
     setTimeout(() => testing = false, 2000);

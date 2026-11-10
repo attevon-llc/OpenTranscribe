@@ -35,6 +35,16 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   output but never fail the command, because the script doesn't pass `--fail-on-warnings`
   (default `false`). Don't rely on this as an a11y gate; #785 tracks making a11y enforcement
   real. `npm run lint` / `lint:fix` — ESLint.
+- `npm run lint:types` — type-aware ESLint (`eslint.typed.config.js` = `eslint.config.js` +
+  typescript-eslint `projectService`): `no-floating-promises`, `no-misused-promises`,
+  `await-thenable`, `require-await` (off in tests and `src/test-mocks`, where `async () => value`
+  is how a mock returns a promise) and `switch-exhaustiveness-check` (a `default:` counts as
+  exhaustive). All errors, no baseline. A separate config because the TypeScript program costs
+  minutes (about 4 min vs 45 s for `npm run lint`, under load); it runs as the `eslint-typed`
+  push-stage hook, which CI's push leg runs too. Fix a finding by awaiting, by `.catch(...)`, or
+  with `void promise` **only when the callee already handles its own errors** (a try/catch that
+  does not rethrow): `void` does not handle anything, it records the decision. For a callback
+  slot typed `() => void`, pass `() => void asyncFn()` rather than the async function.
 - `npm run lint:css` — Stylelint over `src/**/*.css` and every Svelte `<style>` block
   (`stylelint.config.mjs`: `stylelint-config-standard`, `postcss-html` as the Svelte custom syntax).
   It runs through `scripts/guards/check_stylelint_ratchet.py`, which counts findings per

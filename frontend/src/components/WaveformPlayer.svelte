@@ -339,7 +339,7 @@
     if (canvas && container) {
       handleResize();
     }
-    loadWaveformData();
+    void loadWaveformData();
   });
 </script>
 

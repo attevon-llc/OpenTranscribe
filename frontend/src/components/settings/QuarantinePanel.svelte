@@ -80,12 +80,12 @@
   }
 
   onMount(() => {
-    load();
+    void load();
   });
 
   function toggleView() {
     showLegalHoldsOnly = !showLegalHoldsOnly;
-    load(0);
+    void load(0);
   }
 
   /**

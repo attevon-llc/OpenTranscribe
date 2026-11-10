@@ -94,9 +94,7 @@
   // ---- Lifecycle -----------------------------------------------------------
 
   onMount(() => {
-    (async () => {
-      await loadSettings();
-    })();
+    void loadSettings();
   });
 
   onDestroy(() => {

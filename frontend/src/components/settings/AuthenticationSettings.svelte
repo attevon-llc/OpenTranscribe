@@ -176,13 +176,15 @@
 
   onMount(async () => {
     // Not awaited: the dot is a hint and must not delay the panel it decorates.
-    AuthConfigApi.getAuthMailReadiness().then((r) => (mailReadiness = r));
+    AuthConfigApi.getAuthMailReadiness()
+      .then((r) => (mailReadiness = r))
+      .catch(() => (mailReadiness = null));
     await loadConfigs();
   });
 
   // Fetched lazily: most visits to this panel never open the mail tab.
   function loadEmailConfigsOnFirstVisit(tab: string) {
-    if (tab === 'mail' && !emailConfigsLoaded) loadEmailConfigs();
+    if (tab === 'mail' && !emailConfigsLoaded) void loadEmailConfigs();
   }
   $: loadEmailConfigsOnFirstVisit(activeTab);
 

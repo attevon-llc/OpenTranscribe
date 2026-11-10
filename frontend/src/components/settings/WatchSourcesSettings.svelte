@@ -120,6 +120,18 @@
     statsMap = Object.fromEntries(entries.filter(([, v]) => v)) as Record<string, WatchSourceStats>;
   }
 
+  /** A reload outside loadAll (scope switch, a scan event): it has no catch of its own, and a
+   *  failure must not leave the previous scope's list showing under the new scope's label. */
+  async function reloadSources() {
+    try {
+      await loadSources();
+    } catch (err) {
+      sources = [];
+      statsMap = {};
+      toastStore.error(getErrorMessage(err, $t('settings.watchSources.loadFailed')));
+    }
+  }
+
   async function loadAll() {
     loading = true;
     try {
@@ -141,8 +153,8 @@
   }
 
   onMount(() => {
-    loadAll();
-    const onScan = () => loadSources();
+    void loadAll();
+    const onScan = () => void reloadSources();
     window.addEventListener('watch-source-scan', onScan);
     return () => window.removeEventListener('watch-source-scan', onScan);
   });
@@ -301,7 +313,7 @@
           class:btn-secondary={scope !== 'own'}
           on:click={() => {
             scope = 'own';
-            loadSources();
+            void reloadSources();
           }}
         >
           {$t('settings.watchSources.myScope')}
@@ -312,7 +324,7 @@
           class:btn-secondary={scope !== 'all'}
           on:click={() => {
             scope = 'all';
-            loadSources();
+            void reloadSources();
           }}
         >
           {$t('settings.watchSources.allScope')}

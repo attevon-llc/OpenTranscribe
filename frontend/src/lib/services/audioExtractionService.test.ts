@@ -335,7 +335,7 @@ describe('cleanup', () => {
     await service.extractMetadata(videoFile());
     expect(vi.mocked(FFmpeg)).toHaveBeenCalledTimes(1);
 
-    await service.cleanup();
+    service.cleanup();
 
     fake.execImpl = () => 0;
     const metadata = await service.extractMetadata(videoFile('reload.mp4', 512));

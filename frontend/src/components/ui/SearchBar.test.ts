@@ -38,14 +38,14 @@ describe('SearchBar', () => {
     expect(screen.getByRole('button', { name: /previous match/i })).toBeDisabled();
   });
 
-  it('styles the counter as no-results and shows a loading status', () => {
+  it('styles the counter as no-results and shows a loading status', async () => {
     const { rerender } = render(SearchBar, {
       props: { counterText: 'No matches', noResults: true, value: 'zzz' },
     });
     const counter = screen.getByText('No matches');
     expect(counter).toHaveClass('no-results');
 
-    rerender({ loading: true, statusText: 'searching entire transcript…', value: 'zzz' });
+    await rerender({ loading: true, statusText: 'searching entire transcript…', value: 'zzz' });
     expect(screen.getByText('searching entire transcript…')).toBeInTheDocument();
   });
 

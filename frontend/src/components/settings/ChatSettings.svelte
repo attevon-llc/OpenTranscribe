@@ -36,7 +36,7 @@
   $: settingsModalStore.setDirty('chat', hasChanges);
 
   onMount(() => {
-    (async () => {
+    void (async () => {
       try {
         const loaded = await getChatUserSettings();
         settings = { ...loaded };

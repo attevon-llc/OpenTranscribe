@@ -66,13 +66,15 @@
   /** Debounced so dragging through a checkbox list doesn't spam the estimator. */
   function scheduleEstimate(): void {
     clearTimeout(estimateTimer);
-    estimateTimer = setTimeout(async () => {
-      try {
-        estimate = await estimateContext(draft, llmConfigUuid);
-      } catch {
-        estimate = null;
-      }
-    }, 350);
+    estimateTimer = setTimeout(() => void refreshEstimate(), 350);
+  }
+
+  async function refreshEstimate(): Promise<void> {
+    try {
+      estimate = await estimateContext(draft, llmConfigUuid);
+    } catch {
+      estimate = null;
+    }
   }
 
   function updateFiles(next: string[]): void {

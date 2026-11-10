@@ -39,7 +39,7 @@
   }
 
   onMount(() => {
-    (async () => {
+    void (async () => {
       await loadDocs();
       if (isAdmin) {
         try {

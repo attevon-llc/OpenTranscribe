@@ -82,10 +82,10 @@
   }
 
   onMount(() => {
-    load(true);
+    void load(true);
     observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) load();
+        if (entries[0]?.isIntersecting) void load();
       },
       { rootMargin: '160px' }
     );

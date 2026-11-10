@@ -178,7 +178,7 @@
     });
     void loadAdminDefaultModel().then((v) => { adminDefaultModel = v; });
 
-    (async () => {
+    void (async () => {
       try {
         const [collectionsRes, tags] = await Promise.all([
           axiosInstance.get('/collections'),
@@ -464,7 +464,7 @@
   function handleSubmit() {
     if (!passesQuotaPreflight()) return;
     if (activeTab === 'file') uploadFile();
-    else if (activeTab === 'url') processMediaUrl();
+    else if (activeTab === 'url') void processMediaUrl();
     else if (activeTab === 'record') uploadRecordedAudio();
   }
 

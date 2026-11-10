@@ -16,7 +16,7 @@ import type { MediaFile } from '$lib/types/media';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-interface BulkActionSpec {
+export interface BulkActionSpec {
   /** `action` sent to the server. */
   action: string;
   /** Statuses a file must have to be eligible. */

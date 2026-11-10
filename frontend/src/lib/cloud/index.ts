@@ -45,18 +45,18 @@ import { readable, type Readable } from 'svelte/store';
 // --- External-auth surface (managed edition: hosted IdP; community: unused) --
 
 /** Load the managed edition's auth SDK. Community stub: resolves `null`. */
-export async function loadExternalAuth(): Promise<unknown | null> {
-  return null;
+export function loadExternalAuth(): Promise<unknown | null> {
+  return Promise.resolve(null);
 }
 
 /** True if a managed-edition auth session is active. Community stub: `false`. */
-export async function hasExternalSession(): Promise<boolean> {
-  return false;
+export function hasExternalSession(): Promise<boolean> {
+  return Promise.resolve(false);
 }
 
 /** Mint a short-lived bearer token for API/WS auth. Community stub: `null`. */
-export async function getSessionToken(): Promise<string | null> {
-  return null;
+export function getSessionToken(): Promise<string | null> {
+  return Promise.resolve(null);
 }
 
 /** Sign out of the managed-edition session. Community stub: no-op. */
@@ -68,8 +68,8 @@ export async function externalSignOut(): Promise<void> {}
  * for the absolute timeout and falls back to first-seen when this returns null.
  * Optional in an overlay: core resolves it at runtime. Community stub: `null`.
  */
-export async function getExternalSessionAuthTime(): Promise<number | null> {
-  return null;
+export function getExternalSessionAuthTime(): Promise<number | null> {
+  return Promise.resolve(null);
 }
 
 /**
@@ -78,21 +78,21 @@ export async function getExternalSessionAuthTime(): Promise<number | null> {
  * `false` to let core sign out via {@link externalSignOut} instead. Optional in an
  * overlay: core resolves it at runtime. Community stub: `false`.
  */
-export async function externalReauthenticate(_reason: 'absolute' | 'idle'): Promise<boolean> {
-  return false;
+export function externalReauthenticate(_reason: 'absolute' | 'idle'): Promise<boolean> {
+  return Promise.resolve(false);
 }
 
 /** Subscribe to auth-state changes. Community stub: no-op unsubscriber. */
-export async function onAuthChange(_cb: (payload: unknown) => void): Promise<() => void> {
-  return () => {};
+export function onAuthChange(_cb: (payload: unknown) => void): Promise<() => void> {
+  return Promise.resolve(() => {});
 }
 
 /** Mount the hosted sign-in component. Community stub: no-op cleanup. */
-export async function mountSignIn(
+export function mountSignIn(
   _node: HTMLElement,
   _props: Record<string, unknown> = {}
 ): Promise<() => void> {
-  return () => {};
+  return Promise.resolve(() => {});
 }
 
 /** Open the hosted account/security portal. Community stub: no-op. */

@@ -153,11 +153,14 @@
     return [...new Set(names.filter((candidate) => candidate.trim() !== ''))];
   }
 
-  async function suggest(query: string): Promise<string[]> {
+  /** Async because TagInput's `suggest` contract is (it also serves server-side lookups). */
+  function suggest(query: string): Promise<string[]> {
     const wanted = normalizeTagName(query);
-    return pool
-      .filter((candidate) => !wanted || normalizeTagName(candidate).includes(wanted))
-      .slice(0, MAX_SUGGESTIONS);
+    return Promise.resolve(
+      pool
+        .filter((candidate) => !wanted || normalizeTagName(candidate).includes(wanted))
+        .slice(0, MAX_SUGGESTIONS)
+    );
   }
 
   function tally(results: BulkTagActionResult[]): Counts {

@@ -171,7 +171,7 @@
 
   onMount(() => {
     void llmStatusStore.initialize();
-    loadSettings();
+    void loadSettings();
     window.addEventListener('auto-label-status', handleAutoLabelStatus as EventListener);
   });
 

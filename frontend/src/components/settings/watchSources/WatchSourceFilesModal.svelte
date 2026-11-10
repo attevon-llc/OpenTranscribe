@@ -63,7 +63,7 @@
   let dirty = false;
   const debouncedSearch = createDebouncedHandler(() => {
     page = 1;
-    load();
+    void load();
   }, 300);
   let loadedFor: string | null = null;
 
@@ -81,7 +81,7 @@
       query = '';
       selectedUuids = new Set();
       dirty = false;
-      load();
+      void load();
     }
   }
   $: syncSource(show, source);
@@ -116,7 +116,7 @@
    */
   function onScanEvent(event: Event) {
     const detail = (event as CustomEvent<{ source_uuid?: string }>).detail;
-    if (show && source && detail?.source_uuid === source.uuid) load();
+    if (show && source && detail?.source_uuid === source.uuid) void load();
   }
 
   if (typeof window !== 'undefined') {
@@ -131,7 +131,7 @@
 
   function onFilterChange() {
     page = 1;
-    load();
+    void load();
   }
 
   function onSearchInput() {
@@ -141,7 +141,7 @@
   function onPageChange(event: CustomEvent<number>) {
     page = event.detail;
     selectedUuids = new Set();
-    load();
+    void load();
   }
 
   function markBusy(uuids: string[], busy: boolean) {

@@ -115,21 +115,23 @@
     pollTimer = null;
   }
 
-  async function pollUntilDone() {
+  function pollUntilDone() {
     stopPolling();
-    pollTimer = setInterval(async () => {
-      try {
-        const status = await getStorageSweepStatus();
-        if (!status.running) {
-          stopPolling();
-          removing = false;
-          await scan(true);
-          toastStore.success($t('settings.dataIntegrity.orphans.completed'));
-        }
-      } catch (err) {
-        console.error('Failed to read the storage sweep status:', err);
+    pollTimer = setInterval(() => void checkSweepDone(), POLL_MS);
+  }
+
+  async function checkSweepDone(): Promise<void> {
+    try {
+      const status = await getStorageSweepStatus();
+      if (!status.running) {
+        stopPolling();
+        removing = false;
+        await scan(true);
+        toastStore.success($t('settings.dataIntegrity.orphans.completed'));
       }
-    }, POLL_MS);
+    } catch (err) {
+      console.error('Failed to read the storage sweep status:', err);
+    }
   }
 
   async function run(force: boolean) {
@@ -146,7 +148,7 @@
       } else {
         toastStore.success($t('settings.dataIntegrity.orphans.started'));
       }
-      await pollUntilDone();
+      pollUntilDone();
     } catch (err) {
       console.error('Failed to start the orphaned-data removal:', err);
       toastStore.error($t('settings.dataIntegrity.orphans.startFailed'));
@@ -158,11 +160,11 @@
     // The search sweep reports over the WebSocket; the storage sweep also polls (above).
     const detail = (event as CustomEvent).detail;
     if (detail?.scope === 'storage') return;
-    scan(true);
+    void scan(true);
   }
 
   onMount(() => {
-    scan();
+    void scan();
     window.addEventListener('data-integrity-complete', handleComplete);
   });
 

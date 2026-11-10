@@ -94,8 +94,8 @@
    * Handle user logout
    */
   function handleLogout() {
-    logout();
-    goto(resolve('/login'));
+    void logout();
+    void goto(resolve('/login'));
   }
 
   /**
@@ -177,7 +177,7 @@
    */
   function handleOpenRecordingModal(event: MouseEvent) {
     event.stopPropagation();
-    goto(resolve('/'));
+    void goto(resolve('/'));
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('openAddMediaModal', {
         detail: { activeTab: 'record' }

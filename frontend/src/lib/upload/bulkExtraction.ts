@@ -24,11 +24,16 @@ async function loadAudioExtractionService() {
   return audioExtractionService;
 }
 
-/** Extract audio from one video in the background and queue the result. */
+/**
+ * Extract audio from one video in the background and queue the result. Never rejects: a
+ * failure is toasted and reported as `false`. `announceSuccess` is off for a bulk run, which
+ * announced the whole batch up front.
+ */
 export async function extractAndQueue(
   videoFile: File,
   transcriptionParams: UploadTranscriptionParams,
-  organize: OrganizeParams = {}
+  organize: OrganizeParams = {},
+  announceSuccess = true
 ): Promise<boolean> {
   try {
     const extractionService = await loadAudioExtractionService();
@@ -42,9 +47,11 @@ export async function extractAndQueue(
       organize.collectionIds,
       organize.tagNames
     );
-    toastStore.success(
-      get(t)('uploader.audioExtractedSuccess', { ratio: ea.metadata.compressionRatio })
-    );
+    if (announceSuccess) {
+      toastStore.success(
+        get(t)('uploader.audioExtractedSuccess', { ratio: ea.metadata.compressionRatio })
+      );
+    }
     return true;
   } catch {
     toastStore.error(get(t)('uploader.failedToExtractAudio', { filename: videoFile.name }));
@@ -59,20 +66,7 @@ export function startBulkExtraction(
   organize: OrganizeParams = {}
 ) {
   toastStore.info(get(t)('uploader.extractingAudioFrom', { count: videoFiles.length }));
-  videoFiles.forEach(async (videoFile) => {
-    try {
-      const ea = await (await loadAudioExtractionService()).extractAudio(videoFile);
-      uploadsStore.addExtractedAudio(
-        ea.blob,
-        ea.filename,
-        ea.metadata,
-        ea.metadata.compressionRatio,
-        transcriptionParams,
-        organize.collectionIds,
-        organize.tagNames
-      );
-    } catch {
-      toastStore.error(get(t)('uploader.failedToExtractAudio', { filename: videoFile.name }));
-    }
-  });
+  for (const videoFile of videoFiles) {
+    void extractAndQueue(videoFile, transcriptionParams, organize, false);
+  }
 }

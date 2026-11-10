@@ -40,7 +40,7 @@
   $: settingsModalStore.setDirty('content-redaction', hasChanges);
 
   onMount(() => {
-    (async () => {
+    void (async () => {
       try {
         const [s, d] = await Promise.all([getRedactionSettings(), getRedactionDefaults()]);
         settings = s;

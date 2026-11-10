@@ -107,7 +107,7 @@
         )?.suggested_survivor_uuid ?? null)
       : null;
 
-  $: loadFiles(single?.uuid ?? null);
+  $: void loadFiles(single?.uuid ?? null);
 
   const EMPTY_COPY: Record<TagFilterId, { title: string; description: string }> = {
     all: { title: 'tags.manager.empty.allTitle', description: 'tags.manager.empty.allDescription' },

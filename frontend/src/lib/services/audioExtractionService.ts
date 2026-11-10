@@ -334,7 +334,7 @@ class AudioExtractionService {
     // Add to queue and return a promise
     return new Promise<ExtractedAudio>((resolve, reject) => {
       this.extractionQueue.push({ file, config, resolve, reject });
-      this.processQueue();
+      void this.processQueue();
     });
   }
 
@@ -631,7 +631,7 @@ class AudioExtractionService {
   /**
    * Cleanup FFmpeg instance
    */
-  public async cleanup(): Promise<void> {
+  public cleanup(): void {
     if (this.ffmpeg) {
       // FFmpeg.wasm doesn't have explicit cleanup, but we can reset state
       this.ffmpeg = null;

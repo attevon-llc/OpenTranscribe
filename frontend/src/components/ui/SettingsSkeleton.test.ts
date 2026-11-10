@@ -28,10 +28,10 @@ describe('SettingsSkeleton', () => {
     expect(dash.container.querySelectorAll('.sk-card')).toHaveLength(2);
   });
 
-  it('is a named status region only when given a label', () => {
+  it('is a named status region only when given a label', async () => {
     const { rerender } = render(SettingsSkeleton, { props: { variant: 'form' } });
     expect(screen.queryByRole('status')).toBeNull();
-    rerender({ label: 'Loading configuration' });
+    await rerender({ label: 'Loading configuration' });
     expect(screen.getByRole('status', { name: 'Loading configuration' })).toHaveAttribute(
       'aria-busy',
       'true'

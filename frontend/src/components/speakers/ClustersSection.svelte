@@ -85,7 +85,7 @@
 
   const debouncedClusterSearch = createDebouncedHandler(() => {
     clusterPage = 1;
-    load();
+    refresh();
   }, 300);
 
   // --- WebSocket event handlers ---
@@ -102,12 +102,12 @@
     if (reclusterTimeout) clearTimeout(reclusterTimeout);
     reclustering = false;
     clusteringProgress = null;
-    load();
+    refresh();
     toastStore.success($t('speakers.reclusterComplete'));
   }
 
   function handleClusteringFileComplete() {
-    if (active) load();
+    if (active) refresh();
   }
 
   onMount(() => {
@@ -136,6 +136,12 @@
   }
 
   // --- Page-facing API ---
+
+  /** A fire-and-forget reload. `load` has already shown its toast on failure; it rethrows only
+   *  for the page's first load, a Promise.allSettled that counts the sections that failed. */
+  export function refresh(): void {
+    load().catch(() => undefined);
+  }
 
   export async function load(silent = false) {
     loadingClusters = true;
@@ -208,7 +214,7 @@
     }
   }
 
-  async function handleClusterDelete(e: CustomEvent<{ uuid: string }>) {
+  function handleClusterDelete(e: CustomEvent<{ uuid: string }>) {
     deleteTargetUuid = e.detail.uuid;
     showDeleteModal = true;
   }
@@ -226,7 +232,7 @@
     deleteTargetUuid = '';
   }
 
-  async function handleClusterPromote(e: CustomEvent<{ uuid: string }>) {
+  function handleClusterPromote(e: CustomEvent<{ uuid: string }>) {
     promoteTargetUuid = e.detail.uuid;
     const targetCluster = clusters.find(c => c.uuid === promoteTargetUuid);
     promoteNameInput = targetCluster?.label || targetCluster?.suggested_name || '';
@@ -424,8 +430,8 @@
     on:recluster={handleRecluster}
     on:toggleSection={(e) => toggleSection(e.detail)}
     on:cancelMerge={cancelMerge}
-    on:prevPage={() => { clusterPage--; load(); }}
-    on:nextPage={() => { clusterPage++; load(); }}
+    on:prevPage={() => { clusterPage--; refresh(); }}
+    on:nextPage={() => { clusterPage++; refresh(); }}
     on:expand={handleClusterExpand}
     on:update={handleClusterUpdate}
     on:promote={handleClusterPromote}

@@ -114,7 +114,7 @@
     verifyCode = '';
     backupCodes = [];
     showManualEntry = false;
-    loadMFAStatus();
+    void loadMFAStatus();
   }
 
   async function disableMFA() {
@@ -155,7 +155,7 @@
 
   function copyBackupCodes() {
     const codesText = backupCodes.join('\n');
-    copyToClipboard(codesText, () => toastStore.success($t('settings.security.codesCopied')));
+    void copyToClipboard(codesText, () => toastStore.success($t('settings.security.codesCopied')));
   }
 
   function downloadBackupCodes() {

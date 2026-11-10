@@ -234,7 +234,7 @@
     selectedAudioTrack = target?.audio_stream_index ?? target?.audio_streams?.[0]?.index ?? null;
     void loadSpeakerPrefill();
     // Ensure LLM status is loaded (may not be ready if user navigated quickly)
-    llmStatusStore.initialize();
+    void llmStatusStore.initialize();
     ASRSettingsApi.getStatus().then((status) => {
       isCloudASR = status.is_cloud_provider ?? false;
       activeASRProvider = status.active_provider ?? 'local';

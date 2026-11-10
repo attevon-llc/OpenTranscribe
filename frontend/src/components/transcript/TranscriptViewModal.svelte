@@ -91,7 +91,7 @@
     if (open && uuid && fetchedForUuid !== uuid) {
       fetchedForUuid = uuid;
       currentOccurrenceIdx = 0;
-      initSearchFetch();
+      void initSearchFetch();
     } else if (!open && fetchedForUuid !== null) {
       fetchedForUuid = null;
       searchSegments = [];
@@ -182,7 +182,7 @@
     if (mode === 'file') {
       dispatch('loadMore');
     } else {
-      loadMoreSearchSegments();
+      void loadMoreSearchSegments();
     }
   }
 
@@ -190,7 +190,7 @@
     if (mode === 'file') {
       dispatch('toggleRedaction');
     } else {
-      toggleSearchOriginal();
+      void toggleSearchOriginal();
     }
   }
 
@@ -253,13 +253,13 @@
   function goToNextOccurrence() {
     if (!totalOccurrences) return;
     currentOccurrenceIdx = (currentOccurrenceIdx + 1) % totalOccurrences;
-    scrollToOccurrence(currentOccurrenceIdx);
+    void scrollToOccurrence(currentOccurrenceIdx);
   }
 
   function goToPrevOccurrence() {
     if (!totalOccurrences) return;
     currentOccurrenceIdx = (currentOccurrenceIdx - 1 + totalOccurrences) % totalOccurrences;
-    scrollToOccurrence(currentOccurrenceIdx);
+    void scrollToOccurrence(currentOccurrenceIdx);
   }
 </script>
 

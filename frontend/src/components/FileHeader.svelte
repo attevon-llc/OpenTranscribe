@@ -118,7 +118,7 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
       event.preventDefault();
-      saveTitle();
+      void saveTitle();
     } else if (event.key === 'Escape') {
       event.preventDefault();
       cancelEditingTitle();

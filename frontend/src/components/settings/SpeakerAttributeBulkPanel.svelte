@@ -57,7 +57,7 @@
     migrationTotalFiles = data.total_files || 0;
     migrationFailedFiles = data.failed_files || [];
 
-    loadMigrationStatus(true);
+    void loadMigrationStatus(true);
 
     if (data.status === 'stopped') {
       toastStore.info($t('settings.speakerAttributes.migrationStopped'));
@@ -77,7 +77,7 @@
   $: migrationAvailable = isCapabilityEnabled($capabilities, 'speaker_attributes.migration');
 
   onMount(() => {
-    if (migrationAvailable) loadMigrationStatus();
+    if (migrationAvailable) void loadMigrationStatus();
 
     // WebSocket events provide real-time progress — no polling needed
     window.addEventListener('attribute-migration-progress', handleMigrationProgress as EventListener);

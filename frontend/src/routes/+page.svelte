@@ -60,7 +60,7 @@
   let bulkReprocessFiles: MediaFile[] = [];
   let bulkReprocessing = false;
 
-  import { BULK_ACTIONS, BulkExporter, eligibleFiles, runBulkAction } from '$lib/gallery/bulkActions';
+  import { BULK_ACTIONS, BulkExporter, eligibleFiles, runBulkAction, type BulkActionSpec } from '$lib/gallery/bulkActions';
   import { fetchFilesPage, pageMeta } from '$lib/gallery/filesPage';
   import {
     applyNotificationBatch,
@@ -91,7 +91,9 @@
   const fileMap = new SvelteMap<string, MediaFile>();
   let pendingNewFiles = new SvelteSet<string>();
   let pendingDeletions = new SvelteSet<string>();
-  const refresher = createThrottledRefresher(() => fetchFiles());
+  /** fetchFiles catches its own failure and shows it in the gallery's error state. */
+  const refetchFiles = () => void fetchFiles();
+  const refresher = createThrottledRefresher(refetchFiles);
   const throttledRefresh = refresher.refresh;
 
   // Scroll container ref for virtual scrolling
@@ -308,7 +310,7 @@
     if (ownership !== undefined) ownershipFilter = ownership;
     if (owners !== undefined) selectedOwners = owners;
 
-    fetchFiles();
+    void fetchFiles();
   }
 
   // Handle the toolbar's filename/title search (issue #747 — moved out of the
@@ -316,14 +318,14 @@
   // `SearchBar` primitive GalleryHeader renders, not duplicated here.
   function handleToolbarSearch(event: CustomEvent<{ value: string }>) {
     searchQuery = event.detail.value;
-    fetchFiles();
+    void fetchFiles();
   }
 
   // Handle sort change
   function handleSortChange(event: CustomEvent<{ sortBy: string; sortOrder: 'asc' | 'desc' }>) {
     sortBy = event.detail.sortBy;
     sortOrder = event.detail.sortOrder;
-    fetchFiles();
+    void fetchFiles();
   }
 
   // Clear selection
@@ -364,7 +366,7 @@
     galleryStore.resetFilters();
 
     // Skip animation when resetting filters to avoid highlighting previously filtered items
-    fetchFiles();
+    void fetchFiles();
   }
 
   // Delete moves the selection to the trash (#1101); the confirmation says for how long.
@@ -377,7 +379,7 @@
         trashSelection(selectedFiles, {
           t: $t,
           removeFiles: removeFilesSmooth,
-          refetch: fetchFiles,
+          refetch: refetchFiles,
           clearSelection,
         }),
       { confirmText: $t('gallery.trashConfirmButton') }
@@ -448,12 +450,10 @@
   }
 
   const selectedUuids = () => $galleryState.selectedFiles;
-  const bulkSummarize = () => runBulkAction(BULK_ACTIONS.summarize, files, selectedUuids(), $t);
-  const bulkRedact = () => runBulkAction(BULK_ACTIONS.redact, files, selectedUuids(), $t);
-  const bulkRetryFailed = () => runBulkAction(BULK_ACTIONS.retry, files, selectedUuids(), $t);
-  const bulkSpeakerId = () => runBulkAction(BULK_ACTIONS.speakerId, files, selectedUuids(), $t);
-  const bulkCancelProcessing = () => runBulkAction(BULK_ACTIONS.cancel, files, selectedUuids(), $t);
-  const bulkExport = (format: string) => bulkExporter.run(format, files, selectedUuids(), $t);
+  /** A toolbar trigger for one bulk action; runBulkAction toasts its own outcome and errors. */
+  const bulkAction = (spec: BulkActionSpec) => () =>
+    void runBulkAction(spec, files, selectedUuids(), $t);
+  const bulkExport = (format: string) => void bulkExporter.run(format, files, selectedUuids(), $t);
 
   // File upload completed handler
   function handleUploadComplete(event: CustomEvent) {
@@ -511,7 +511,7 @@
     const stopUploadRequests = listenForUploadRequests(() => (showUploadModal = true));
     const stopTrashEvents = listenForTrashEvents(
       (id) => fileMap.has(id) && removeFileSmooth(id),
-      fetchFiles
+      refetchFiles
     );
 
     // On back navigation, restore files from store instead of re-fetching
@@ -525,11 +525,11 @@
 
       restoreScrollTop(() => scrollableContentEl, savedScrollTop);
     } else {
-      fetchFiles();
+      void fetchFiles();
     }
 
     intersectionObserver = createInfiniteScrollObserver(() => {
-      if ($hasMoreFiles && !$isLoadingMore) loadMoreFiles();
+      if ($hasMoreFiles && !$isLoadingMore) void loadMoreFiles();
     });
 
     return () => {
@@ -582,20 +582,20 @@
       },
       removeTags: () => openBulkTagModal('remove_tag'),
       quarantine: openQuarantineModal,
-      hiddenChanged: fetchFiles,
+      hiddenChanged: refetchFiles,
       // The computed "Legal hold" collection replaces a selected real one (the store cleared its copy).
       heldChanged: (held) => {
         if (held) selectedCollectionId = null;
-        fetchFiles();
+        void fetchFiles();
       },
-      deleteSelected: deleteSelectedFiles,
+      deleteSelected: () => void deleteSelectedFiles(),
       reprocess: bulkReprocess,
-      summarize: bulkSummarize,
-      redact: bulkRedact,
-      retryFailed: bulkRetryFailed,
+      summarize: bulkAction(BULK_ACTIONS.summarize),
+      redact: bulkAction(BULK_ACTIONS.redact),
+      retryFailed: bulkAction(BULK_ACTIONS.retry),
       exportSelected: bulkExport,
-      speakerId: bulkSpeakerId,
-      cancelProcessing: bulkCancelProcessing,
+      speakerId: bulkAction(BULK_ACTIONS.speakerId),
+      cancelProcessing: bulkAction(BULK_ACTIONS.cancel),
     })
   );
 </script>
@@ -728,7 +728,7 @@
             }
             // Refresh files if we're filtering by collection
             if (selectedCollectionId !== null) {
-              fetchFiles();
+              void fetchFiles();
             }
           }}
       />

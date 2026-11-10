@@ -17,11 +17,11 @@ describe('FilterChipButton', () => {
     expect(btn).toHaveClass('selected');
   });
 
-  it('renders a trailing count badge only when count is a real number', () => {
+  it('renders a trailing count badge only when count is a real number', async () => {
     const { container, rerender } = render(FilterChipButton, { props: { count: null } });
     expect(container.querySelector('.filter-chip-count')).toBeNull();
 
-    rerender({ count: 7 });
+    await rerender({ count: 7 });
     expect(container.querySelector('.filter-chip-count')?.textContent).toBe('7');
   });
 

@@ -20,14 +20,15 @@ let initialized = false;
  * Safe to call once on app startup. Idempotent and best-effort: any failure is logged and
  * swallowed so monitoring can never break the app it's meant to observe.
  */
-export async function initMonitoring(): Promise<void> {
+export function initMonitoring(): void {
   const dsn = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn || initialized) return;
   initialized = true;
 
   try {
-    // To enable: `npm i @sentry/svelte`, then uncomment the lazy import below. The dynamic
-    // import keeps Sentry out of the main chunk — it is only fetched when a DSN is set.
+    // To enable: `npm i @sentry/svelte`, make this function `async` (returning Promise<void>)
+    // and uncomment the lazy import below. The dynamic import keeps Sentry out of the main
+    // chunk — it is only fetched when a DSN is set.
     //
     //   const Sentry = await import('@sentry/svelte');
     //   Sentry.init({

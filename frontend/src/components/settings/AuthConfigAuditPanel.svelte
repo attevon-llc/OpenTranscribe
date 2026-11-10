@@ -87,7 +87,7 @@
 
   function handleCategoryChange() {
     entries = [];
-    loadEntries();
+    void loadEntries();
   }
 
   function changeTypeLabel(changeType: string): string {

@@ -44,13 +44,13 @@ describe('RangeSlider', () => {
     expect(container.querySelector('.range-slider__badge')?.textContent).toBe('1500 ms');
   });
 
-  it('lets a formatter and an explicit valueText take over the badge', () => {
+  it('lets a formatter and an explicit valueText take over the badge', async () => {
     const { container, rerender } = render(RangeSlider, {
       props: { ...base, value: 0.75, format: (v: number) => `${Math.round(v * 100)}%` },
     });
     const badge = () => container.querySelector('.range-slider__badge')?.textContent;
     expect(badge()).toBe('75%');
-    rerender({ valueText: 'inherit' });
+    await rerender({ valueText: 'inherit' });
     expect(badge()).toBe('inherit');
   });
 
@@ -104,11 +104,11 @@ describe('RangeSlider', () => {
     }
   });
 
-  it('shows hint and the system-default line only when given', () => {
+  it('shows hint and the system-default line only when given', async () => {
     const { container, rerender } = render(RangeSlider, { props: base });
     expect(container.querySelector('.range-slider__hint')).toBeNull();
     expect(container.querySelector('.range-slider__default')).toBeNull();
-    rerender({ hint: 'Higher = stricter', defaultValue: 0.3 });
+    await rerender({ hint: 'Higher = stricter', defaultValue: 0.3 });
     expect(container.querySelector('.range-slider__hint')?.textContent).toBe('Higher = stricter');
     expect(container.querySelector('.range-slider__default')?.textContent?.trim()).toBe(
       'ui.rangeSlider.systemDefault|0.30'
@@ -139,21 +139,21 @@ describe('RangeSlider', () => {
     // maximum, so the component publishes the position and the stylesheet paints to it.
     const fill = () => input().style.getPropertyValue('--range-fill');
 
-    it('is the full track at the maximum, empty at the minimum', () => {
+    it('is the full track at the maximum, empty at the minimum', async () => {
       const { rerender } = render(RangeSlider, { props: { ...base, value: 1 } });
       expect(fill()).toBe('1');
-      rerender({ value: 0 });
+      await rerender({ value: 0 });
       expect(fill()).toBe('0');
     });
 
-    it('is proportional for a non-zero minimum and clamps out-of-range values', () => {
+    it('is proportional for a non-zero minimum and clamps out-of-range values', async () => {
       const { rerender } = render(RangeSlider, {
         props: { ...base, min: 100, max: 5000, step: 100, value: 2550 },
       });
       expect(Number(fill())).toBeCloseTo(0.5);
-      rerender({ value: 9000 });
+      await rerender({ value: 9000 });
       expect(fill()).toBe('1');
-      rerender({ value: 0 });
+      await rerender({ value: 0 });
       expect(fill()).toBe('0');
     });
 

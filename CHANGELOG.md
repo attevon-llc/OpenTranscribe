@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Type-aware frontend linting (`npm run lint:types`, push-stage `eslint-typed` hook): typescript-eslint's `no-floating-promises`, `no-misused-promises`, `await-thenable`, `require-await` and `switch-exhaustiveness-check`, all errors with no baseline. knip and madge now also run as the push-stage `guard-knip` hook.
 - The frontend coverage floors are enforced in the local commit gate as well as CI, and were raised to the measured coverage (lines 74.1, statements 72.8, functions 71.5, branches 67.7).
 - Frontend CSS linting: Stylelint (`stylelint-config-standard`, Svelte `<style>` blocks via `postcss-html`) as `npm run lint:css` and two pre-commit hooks (staged files at commit, whole tree at push), ratcheted per file so existing `no-descending-specificity` debt can only shrink.
 - Shared `ui/Banner` notice (info, success, warning, error, neutral; `role="alert"` for errors, `role="status"` otherwise; each tone has its own icon and an inline-start accent bar), and a single global `.sr-only` utility. `ui/Spinner` takes an optional `label` and is otherwise hidden from assistive tech; status badges (`ui/Badge`, sizes `sm`/`md`) and settings empty states (`ui/EmptyState`) replace their local copies, which unifies badge radius and padding.
@@ -16,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Switching the watch-source list between "Mine" and "All" (or a scan finishing) when the list failed to load left the previous scope's sources showing with no error; it now clears the list and shows the load error.
+- Failed background loads no longer raise unhandled promise rejections: the speaker clusters, profiles and inbox reloads, the auth mail readiness hint, the lazy speaker preview player and math renderer, the chat code-block copy button, and closing the recording audio context.
 - High-contrast styles in the navbar, user menu and notification panels now apply: they were written for `prefers-contrast: high`, a value no browser matches, and now use `more`.
 - Removed CSS that never took effect or repeated itself, found by the new Stylelint gate: duplicate `--error/success/warning-color-rgb` tokens in `theme.css`, a speakers-page `max-width` always overridden in the same rule, ten selectors declared twice in one component (merged, keeping the values that already won), deprecated `word-break: break-word` (now `overflow-wrap: anywhere`, the same behaviour), `word-wrap` and `clip: rect()`.
 - Re-running the corpus injector (`python -m app.scripts.corpus_injection`, also with `--force`) no longer rewrites an injected recording that is under a legal hold or in quarantine; the record says `skipped_protected` and no indexing or redaction is dispatched for it.

@@ -73,7 +73,7 @@ class RecordingManager {
   };
 
   private constructor() {
-    this.initializeRecordingSupport();
+    void this.initializeRecordingSupport();
   }
 
   public static getInstance(): RecordingManager {
@@ -319,7 +319,8 @@ class RecordingManager {
     }
 
     if (this.audioContext) {
-      this.audioContext.close();
+      // close() rejects on a context that is already closed; teardown has nothing to recover.
+      this.audioContext.close().catch(() => undefined);
       this.audioContext = null;
     }
 

@@ -66,7 +66,7 @@
   /** Show the "signing in" screen, then navigate home. */
   function redirectHome() {
     loginSuccess = true;
-    setTimeout(() => goto(resolve('/'), { replace: true }), SIGNED_IN_REDIRECT_DELAY_MS);
+    setTimeout(() => void goto(resolve('/'), { replace: true }), SIGNED_IN_REDIRECT_DELAY_MS);
   }
 
   // MFA state. `mfaToken` is a short-lived half-token: memory only, never
@@ -162,14 +162,14 @@
   let passwordPolicy: PasswordPolicy = FALLBACK_PASSWORD_POLICY;
   $: passwordRequirements = buildPasswordRequirements(passwordPolicy);
   onMount(() => {
-    loadPasswordPolicy().then((p) => (passwordPolicy = p));
+    void loadPasswordPolicy().then((p) => (passwordPolicy = p));
   });
 
   onMount(() => {
     let handleVisibilityChange: (() => void) | undefined;
     let handlePageShow: (() => void) | undefined;
 
-    (async () => {
+    void (async () => {
       // Reset loading states on mount (handles browser back button)
       oidcLoading = false;
       pkiLoading = false;
@@ -451,7 +451,7 @@
     // Navigate immediately rather than through the usual "signing in"
     // flourish: the hold has already dropped, so the shell would render its
     // redirect placeholder over this page for the whole delay.
-    goto(resolve('/'), { replace: true });
+    void goto(resolve('/'), { replace: true });
   }
 
   /** Abandon the forced change: end the session and return to the sign-in form. */

@@ -54,7 +54,7 @@
   let passwordPolicy: PasswordPolicy = FALLBACK_PASSWORD_POLICY;
   $: passwordRequirements = buildPasswordRequirements(passwordPolicy);
   onMount(() => {
-    loadPasswordPolicy().then((p) => (passwordPolicy = p));
+    void loadPasswordPolicy().then((p) => (passwordPolicy = p));
   });
 
   onMount(() => {

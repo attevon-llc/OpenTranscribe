@@ -52,7 +52,7 @@
   }
 
   onMount(loadServerPolicy);
-  $: if (refreshKey) loadServerPolicy();
+  $: if (refreshKey) void loadServerPolicy();
 
   // An earlier install may hold `nist` / `stig`; show (and save) the tier it maps to.
   $: tier = normalizeTier(data.password_policy_profile) as PasswordTier;

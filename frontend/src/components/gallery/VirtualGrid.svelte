@@ -53,7 +53,7 @@
     if (items && scrollContainer) {
       // Defer to after DOM update — reading getBoundingClientRect() synchronously
       // returns stale geometry because Svelte hasn't patched the DOM yet
-      tick().then(() => {
+      void tick().then(() => {
         updateColumns();
         measureOffset();
         recalculate();

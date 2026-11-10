@@ -70,7 +70,7 @@
     // Same convention as the chat composer: Enter sends, Shift+Enter is a new line, and an
     // IME composition's Enter (choosing a CJK candidate) is never a send.
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-      onSubmit(event);
+      void onSubmit(event);
     }
   }
 </script>

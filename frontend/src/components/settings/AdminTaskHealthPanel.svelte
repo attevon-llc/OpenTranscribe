@@ -51,7 +51,7 @@
   let taskHealthLoading = false;
 
   onMount(() => {
-    loadTaskHealth();
+    void loadTaskHealth();
   });
 
   async function loadTaskHealth() {
@@ -73,11 +73,12 @@
     await loadTaskHealth();
   }
 
-  function showConfirmation(title: string, message: string, callback: () => void) {
-    dispatch('requestConfirm', { title, message, callback });
+  /** `action` runs after the user confirms; each one catches its own error and toasts it. */
+  function showConfirmation(title: string, message: string, action: () => Promise<void>) {
+    dispatch('requestConfirm', { title, message, callback: () => void action() });
   }
 
-  async function recoverStuckTasks() {
+  function recoverStuckTasks() {
     showConfirmation(
       $t('settings.taskHealth.recoverStuck'),
       $t('settings.taskHealth.confirmRecoverStuck'),
@@ -95,7 +96,7 @@
     );
   }
 
-  async function fixInconsistentFiles() {
+  function fixInconsistentFiles() {
     showConfirmation(
       $t('settings.taskHealth.fixInconsistent'),
       $t('settings.taskHealth.confirmFixInconsistent'),
@@ -113,7 +114,7 @@
     );
   }
 
-  async function startupRecovery() {
+  function startupRecovery() {
     showConfirmation(
       $t('settings.taskHealth.startupRecovery'),
       $t('settings.taskHealth.confirmStartupRecovery'),
@@ -131,7 +132,7 @@
     );
   }
 
-  async function recoverAllUserFiles() {
+  function recoverAllUserFiles() {
     showConfirmation(
       $t('settings.taskHealth.recoverAllUsers'),
       $t('settings.taskHealth.confirmRecoverAllUsers'),

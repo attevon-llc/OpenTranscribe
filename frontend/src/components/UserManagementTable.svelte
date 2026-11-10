@@ -116,7 +116,7 @@
   let passwordMinLength = 12;
 
   onMount(() => {
-    (async () => {
+    void (async () => {
       try {
         const { data } = await axiosInstance.get('/auth/password-policy');
         if (typeof data?.min_length === 'number' && data.min_length > 0) {

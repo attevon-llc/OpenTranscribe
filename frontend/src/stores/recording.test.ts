@@ -72,7 +72,8 @@ describe('recording store — dynamic toast import', () => {
     const rejections = await withUnhandledRejectionTracking(() => {
       let toastStore: string | null = null;
       try {
-        rejectingImporter().then((module) => {
+        // Left unhandled on purpose: the unhandled rejection is what this control measures.
+        void rejectingImporter().then((module) => {
           toastStore = module.toastStore;
         });
       } catch {

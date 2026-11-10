@@ -78,12 +78,12 @@
   function handleCacheInvalidation(event: Event) {
     const scope = (event as CustomEvent).detail?.scope;
     if (scope === 'files' || scope === 'all') {
-      fetchFileStatus(true);
+      void fetchFileStatus(true);
     }
   }
 
   onMount(() => {
-    fetchFileStatus();
+    void fetchFileStatus();
     setupWebSocketUpdates();
     refreshPoller.start();
 
@@ -92,7 +92,7 @@
 
     // Always load tasks on mount
     if (tasks.length === 0) {
-      fetchTasks();
+      void fetchTasks();
     }
   });
 
@@ -104,7 +104,7 @@
   function refetchOnFilterChange(filterKey: string) {
     if (!filtersReady || filterKey === fetchedFilterKey) return;
     taskPage = 1;
-    fetchTasks(true);
+    void fetchTasks(true);
   }
 
   $: refetchOnFilterChange(tasksFilterKey);
@@ -257,7 +257,7 @@
       if (typeof retryAfterSeconds === 'number') {
         toastStore.warning(errorMsg, undefined, {
           retryAfterSeconds,
-          action: { label: $t('fileStatus.retry'), onClick: () => retryFile(fileId) },
+          action: { label: $t('fileStatus.retry'), onClick: () => void retryFile(fileId) },
         });
       } else {
         showMessage(errorMsg, 'error');
@@ -277,7 +277,7 @@
 
       // Refresh status after a delay
       setTimeout(() => {
-        fetchFileStatus(true); // Silent refresh
+        void fetchFileStatus(true); // Silent refresh
       }, 2000);
 
     } catch (err: unknown) {
@@ -323,11 +323,11 @@
           if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
 
             // Refresh file status when we get updates
-            fetchFileStatus(true); // Silent refresh
+            void fetchFileStatus(true); // Silent refresh
 
             // Also refresh tasks if tasks section is open
             if (showTasksSection) {
-              fetchTasks(true); // Silent refresh
+              void fetchTasks(true); // Silent refresh
             }
           }
         }
@@ -454,7 +454,7 @@
       {taskPage}
       {taskTotalPages}
       on:viewDetails={(e) => fetchDetailedStatus(e.detail)}
-      on:pageChange={(e) => { taskPage = e.detail; fetchTasks(true); }}
+      on:pageChange={(e) => { taskPage = e.detail; void fetchTasks(true); }}
     />
   </div>
 

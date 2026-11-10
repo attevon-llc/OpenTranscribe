@@ -90,7 +90,7 @@
     // For other formats: use the existing comments-only confirmation flow
     if (!hasComments) {
       pendingExportFormat = format;
-      processExportWithComments(false);
+      void processExportWithComments(false);
       return;
     }
 
@@ -203,11 +203,11 @@
 
   // Confirmation modal handlers
   function handleExportConfirm() {
-    processExportWithComments(true);
+    void processExportWithComments(true);
   }
 
   function handleExportCancel() {
-    processExportWithComments(false);
+    void processExportWithComments(false);
   }
 
   function handleExportModalClose() {

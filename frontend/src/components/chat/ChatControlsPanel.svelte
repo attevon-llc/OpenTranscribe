@@ -86,7 +86,7 @@
   }
 
   $: if (isOpen && reasoningLoadedFor !== llmConfigUuid) {
-    loadReasoningCapability(llmConfigUuid);
+    void loadReasoningCapability(llmConfigUuid);
   }
 
   /**
@@ -110,7 +110,7 @@
   }
 
   $: if (isOpen && budgetLoadedFor !== llmConfigUuid) {
-    loadAnswerBudget(llmConfigUuid);
+    void loadAnswerBudget(llmConfigUuid);
   }
 
   $: maxTokensOverride = settings.max_tokens ?? null;

@@ -28,12 +28,12 @@ describe('LiveProgressCard', () => {
     expect(container.textContent).toContain('queued');
   });
 
-  it('shows the ETA with its label only when there is one', () => {
+  it('shows the ETA with its label only when there is one', async () => {
     const { container, rerender } = render(LiveProgressCard, {
       props: { barLabel: 'X', percent: 10, etaSeconds: 125, remainingLabel: 'remaining' },
     });
     expect(container.querySelector('.lpc-eta')?.textContent).toBe('2m 5s remaining');
-    rerender({ barLabel: 'X', percent: 10, etaSeconds: null, remainingLabel: 'remaining' });
+    await rerender({ barLabel: 'X', percent: 10, etaSeconds: null, remainingLabel: 'remaining' });
     expect(container.querySelector('.lpc-eta')).toBeNull();
   });
 

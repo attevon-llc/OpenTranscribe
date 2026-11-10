@@ -143,15 +143,15 @@
   }
 
   function handleMemberAdded() {
-    refreshGroup();
+    void refreshGroup();
   }
 
   function handleMemberRemoved() {
-    refreshGroup();
+    void refreshGroup();
   }
 
   function handleRoleChanged() {
-    refreshGroup();
+    void refreshGroup();
   }
 
   function handleLeft() {
@@ -160,7 +160,7 @@
 
   function handleNameKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
-      saveName();
+      void saveName();
     } else if (event.key === 'Escape') {
       cancelEditName();
     }

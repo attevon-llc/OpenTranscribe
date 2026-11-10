@@ -89,7 +89,7 @@
     failedFiles = completedFailedFiles;
 
     // Reload full status to get updated mode
-    loadMigrationStatus().then(() => {
+    void loadMigrationStatus().then(() => {
       if (completedFailedFiles.length > 0) {
         failedFiles = completedFailedFiles;
       }
@@ -292,7 +292,7 @@
 
     if (data.status === 'success') {
       toastStore.success($t('settings.embeddingMigration.migrationFinalized'));
-      loadMigrationStatus();
+      void loadMigrationStatus();
     } else {
       toastStore.error(data.message || $t('settings.embeddingMigration.migrationFinalizeFailed'));
     }
@@ -303,7 +303,7 @@
       loading = false;
       return;
     }
-    Promise.allSettled([loadMigrationStatus(), loadMigrationProgress()]);
+    void Promise.allSettled([loadMigrationStatus(), loadMigrationProgress()]);
 
     // Listen for WebSocket events
     window.addEventListener('migration-progress', handleMigrationProgress as EventListener);

@@ -155,7 +155,7 @@
     returnedUnchanged = false;
     defaultsApplied = false;
     appliedDefaults = [];
-    refreshStatus().then(() => {
+    void refreshStatus().then(() => {
       step = includeTerms && !termsAccepted ? 0 : 1;
     });
     visible = true;
@@ -170,7 +170,7 @@
       termsAccepted = Boolean(data.legal_acknowledged);
       if (data.legal_required && !data.legal_acknowledged) {
         includeTerms = true;
-        loadTermsDocument();
+        void loadTermsDocument();
       } else if (!data.legal_required) {
         includeTerms = false;
       }
@@ -243,7 +243,7 @@
     if (!profileWasOpen) return;
     awaitingProfile = false;
     profileWasOpen = false;
-    resumeAfterProfile();
+    void resumeAfterProfile();
   }
 
   async function resumeAfterProfile() {
@@ -267,7 +267,7 @@
 
   // Explicit Skip: records completion without applying anything further.
   function skip() {
-    markComplete();
+    void markComplete();
   }
 
   // The dialog's own close control only hides it; completion is never implied.

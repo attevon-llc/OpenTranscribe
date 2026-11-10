@@ -62,7 +62,7 @@
       fullName = $authStore.user.full_name || '';
       email = $authStore.user.email || '';
     }
-    loadPasswordPolicy().then((policy) => (passwordPolicy = policy));
+    void loadPasswordPolicy().then((policy) => (passwordPolicy = policy));
   });
 
   // Reactive user data update when authStore changes

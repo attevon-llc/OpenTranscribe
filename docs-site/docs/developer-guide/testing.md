@@ -692,6 +692,23 @@ a stale entry fails, and `--tighten` never edits an allowlist.
   against `baselines/scripts_mypy.txt`.
 - The mypy plugin `pydantic.mypy` is enabled in the root config.
 
+## Frontend static checks
+
+Run in `frontend/`. Each one fails the gate; none of them is report-only.
+
+| Command | What it checks | Where it runs |
+|---|---|---|
+| `npm run lint` | ESLint, untyped (`eslint.config.js`) | commit stage (`frontend-check`), CI |
+| `npm run lint:types` | type-aware typescript-eslint: unhandled promises, async callbacks in void slots, non-exhaustive switches (`eslint.typed.config.js`) | push stage (`eslint-typed`), CI |
+| `npm run lint:css` | Stylelint over `src/**/*.css` and Svelte `<style>` blocks, ratcheted per file (`scripts/guards/baselines/stylelint.txt`) | commit stage on staged files, push stage whole tree, CI |
+| `npm run check` | svelte-check (types) | commit stage, CI |
+| `npm run test:coverage` | vitest plus the coverage floors in `vitest.config.ts` | commit stage, CI |
+| `python3 scripts/guards/check_knip.py` | knip (dead files, exports, dependencies) and madge (import cycles), ratcheted | push stage (`guard-knip`), CI |
+
+The typed lint is split from `npm run lint` because building the TypeScript program takes
+minutes; editors and the commit stage keep the fast config. The coverage floors only go up:
+raise them when coverage rises, with `FLOOR_TABLE` in `backend/tests/unit/test_frontend_coverage_gate.py`.
+
 ## Debugging Tips
 
 1. **Use `--headed` flag** to watch browser tests

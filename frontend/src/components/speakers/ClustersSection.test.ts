@@ -63,6 +63,25 @@ describe('ClustersSection', () => {
     expect(toast.error).toHaveBeenCalledWith('speakers.error.loadClusters');
   });
 
+  it('refresh (tab switch, pagination) toasts a failed load and settles without rejecting', async () => {
+    api.listClusters.mockRejectedValue(new Error('boom'));
+    const { component } = render(ClustersSection, { props: { active: true } });
+    const refresh = (component as unknown as { refresh: () => void }).refresh;
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      refresh();
+      await vi.waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('speakers.error.loadClusters')
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    expect(unhandled).toEqual([]);
+  });
+
   it('reports no active mode when idle', () => {
     const { component } = render(ClustersSection, { props: { active: false } });
     expect((component as unknown as { cancelActiveMode: () => boolean }).cancelActiveMode()).toBe(

@@ -71,7 +71,7 @@ describe('RetrievalQualityNotice', () => {
     expect(link.getAttribute('href')).toBe(SPEAKERS_ISSUE_URL);
   });
 
-  it('dismisses the speakers surface independently of chat/search', () => {
+  it('dismisses the speakers surface independently of chat/search', async () => {
     localStorage.setItem('opentr:retrievalQualityNotice:chat', 'dismissed');
     localStorage.setItem('opentr:retrievalQualityNotice:search', 'dismissed');
 
@@ -80,7 +80,7 @@ describe('RetrievalQualityNotice', () => {
       speakers.container.querySelector('[data-testid="retrieval-quality-notice"]')
     ).not.toBeNull();
 
-    fireEvent.click(speakers.getByTestId('retrieval-quality-dismiss'));
+    await fireEvent.click(speakers.getByTestId('retrieval-quality-dismiss'));
     expect(speakers.queryByTestId('retrieval-quality-notice')).toBeNull();
     expect(localStorage.getItem('opentr:retrievalQualityNotice:speakers')).toBe('dismissed');
     // Dismissing speakers must not touch the other two surfaces' keys.
@@ -88,12 +88,12 @@ describe('RetrievalQualityNotice', () => {
     expect(localStorage.getItem('opentr:retrievalQualityNotice:search')).toBe('dismissed');
   });
 
-  it('hides itself when dismissed and remembers that', () => {
+  it('hides itself when dismissed and remembers that', async () => {
     const { getByTestId, queryByTestId } = render(RetrievalQualityNotice, {
       props: { surface: 'search' },
     });
 
-    fireEvent.click(getByTestId('retrieval-quality-dismiss'));
+    await fireEvent.click(getByTestId('retrieval-quality-dismiss'));
 
     expect(queryByTestId('retrieval-quality-notice')).toBeNull();
     expect(localStorage.getItem('opentr:retrievalQualityNotice:search')).toBe('dismissed');

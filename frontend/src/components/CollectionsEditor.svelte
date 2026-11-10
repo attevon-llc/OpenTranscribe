@@ -217,7 +217,7 @@
   function handleInputKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter' && newCollectionInput.trim()) {
       event.preventDefault();
-      createAndAddCollection();
+      void createAndAddCollection();
     }
   }
 
@@ -278,7 +278,7 @@
   }
 
   onMount(() => {
-    fetchAllCollections();
+    void fetchAllCollections();
   });
 </script>
 

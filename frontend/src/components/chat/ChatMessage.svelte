@@ -64,11 +64,11 @@
   function handleEditKey(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      submitEdit();
+      void submitEdit();
     } else if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      endEdit();
+      void endEdit();
     }
   }
 

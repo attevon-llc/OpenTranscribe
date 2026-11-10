@@ -33,13 +33,16 @@
     html = renderChatMarkdown(content);
     lastRenderAt = Date.now();
     frame = undefined;
-    tick().then(attachCodeChrome);
+    void tick().then(attachCodeChrome);
     // Math shows its TeX source until KaTeX (lazy) arrives; render once more when it does,
     // since a finished message gets no further content change to trigger it.
     if (mathPending(content)) {
-      loadChatMath().then(() => {
-        if (!destroyed && frame === undefined) render();
-      });
+      // A failed KaTeX chunk leaves the TeX source showing, which is still readable.
+      loadChatMath()
+        .then(() => {
+          if (!destroyed && frame === undefined) render();
+        })
+        .catch((err: unknown) => console.error('Math renderer failed to load:', err));
     }
   }
 
@@ -102,21 +105,28 @@
       button.className = 'code-copy';
       button.textContent = copyLabel;
       button.setAttribute('aria-label', copyLabel);
-      button.addEventListener('click', async () => {
-        const text = code?.textContent ?? '';
-        if (!text.trim()) return;
-        const { copyToClipboard } = await import('$lib/utils/clipboard');
-        const result = await copyToClipboard(text);
-        button.textContent = result.success ? copiedLabel : copyLabel;
-        button.setAttribute('aria-label', result.success ? copiedLabel : copyLabel);
-        setTimeout(() => {
-          button.textContent = copyLabel;
-          button.setAttribute('aria-label', copyLabel);
-        }, 1500);
-      });
+      button.addEventListener('click', () => void copyCodeBlock(button, code?.textContent ?? ''));
       header.appendChild(button);
       pre.insertBefore(header, pre.firstChild);
     }
+  }
+
+  async function copyCodeBlock(button: HTMLButtonElement, text: string): Promise<void> {
+    if (!text.trim()) return;
+    let copied = false;
+    try {
+      const { copyToClipboard } = await import('$lib/utils/clipboard');
+      copied = (await copyToClipboard(text)).success;
+    } catch (err) {
+      // The clipboard helper is a lazy chunk; a failed load is a failed copy, not a crash.
+      console.error('Copy failed:', err);
+    }
+    button.textContent = copied ? copiedLabel : copyLabel;
+    button.setAttribute('aria-label', copied ? copiedLabel : copyLabel);
+    setTimeout(() => {
+      button.textContent = copyLabel;
+      button.setAttribute('aria-label', copyLabel);
+    }, 1500);
   }
 
   onDestroy(() => {

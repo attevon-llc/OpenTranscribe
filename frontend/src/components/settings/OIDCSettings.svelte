@@ -133,7 +133,7 @@
     setTimeout(() => saving = false, 500);
   }
 
-  async function handleTest() {
+  function handleTest() {
     testing = true;
     dispatch('test', buildPayload());
     setTimeout(() => testing = false, 2000);

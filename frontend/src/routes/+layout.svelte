@@ -185,7 +185,7 @@
   // initialize() itself deduplicates concurrent/repeat calls, so this is safe to also fire
   // alongside the onMount call on a fresh page load.
   $: if ($isAuthenticated) {
-    llmStatusStore.initialize();
+    void llmStatusStore.initialize();
   }
 
   // A support-access session lives in this tab's sessionStorage (issue #1122). Re-validate it
@@ -241,7 +241,7 @@
     installAccountLifecycleInterceptor();
 
     // Optional, env-gated error reporting — no-op unless VITE_SENTRY_DSN is set.
-    void initMonitoring();
+    initMonitoring();
 
     // The app ships no service worker — shed any left over from an older build
     // (and the caches it created) so nobody is pinned to a stale bundle.
@@ -251,7 +251,7 @@
     document.documentElement.setAttribute('data-theme', get(theme));
 
     // Async initialization — use IIFE so we can still return a sync cleanup
-    (async () => {
+    void (async () => {
       // Initialize network connectivity monitoring
       networkStore.initialize();
 
@@ -290,8 +290,8 @@
           publicPaths: PUBLIC_PATHS,
           localCredentialPaths: LOCAL_CREDENTIAL_PATHS
         });
-        if (redirectTo === '/login') goto(resolve('/login'), { replace: true });
-        else if (redirectTo === '/') goto(resolve('/'), { replace: true });
+        if (redirectTo === '/login') void goto(resolve('/login'), { replace: true });
+        else if (redirectTo === '/') void goto(resolve('/'), { replace: true });
 
         // Initialize LLM status store after authentication is ready
         if (isAuth) {
@@ -305,7 +305,7 @@
         console.error('Layout: onMount - Error during initAuth or subsequent logic:', error);
         const currentPath = page.url.pathname;
         if (currentPath !== "/login" && currentPath !== "/register") {
-          goto(resolve('/login'), { replace: true });
+          void goto(resolve('/login'), { replace: true });
         }
       }
     })();
@@ -327,7 +327,7 @@
   // mid-session). Bounce to /login, which owns both remedy screens. `goto` keeps
   // this an SPA navigation — a full reload would drop the in-memory reason.
   $: if ($authReady && lifecycleHold && page.url.pathname !== '/login') {
-    goto(resolve('/login'), { replace: true });
+    void goto(resolve('/login'), { replace: true });
   }
 
 </script>

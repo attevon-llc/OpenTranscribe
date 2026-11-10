@@ -80,7 +80,7 @@
   function handleSummaryDeepLink() {
     if (summaryViewHandled || !opensSummaryView(window.location.search)) return;
     summaryViewHandled = true;
-    show();
+    void show();
   }
 </script>
 

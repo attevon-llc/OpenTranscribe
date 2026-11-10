@@ -55,7 +55,7 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
       event.preventDefault();
-      confirmCreate();
+      void confirmCreate();
     }
   }
 </script>

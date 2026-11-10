@@ -35,7 +35,7 @@ export function activateFileRow(
     return navigatingTo;
   }
   if (navigatingTo) return navigatingTo;
-  goto(resolve('/files/[id]', { id: file.uuid }));
+  void goto(resolve('/files/[id]', { id: file.uuid }));
   return file.uuid;
 }
 

@@ -102,7 +102,7 @@
               on:change={(e) => handlePermissionChange(share, e)}
             />
             <button
-              class="btn btn-icon btn-sm revoke-btn"
+              class="btn btn-icon btn-sm btn-icon-danger revoke-btn"
               on:click={() => requestRevoke(share)}
               disabled={revokingShareId === share.uuid}
               title={$t('sharing.revokeAccess')}

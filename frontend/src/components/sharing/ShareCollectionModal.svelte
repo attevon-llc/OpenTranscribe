@@ -200,7 +200,7 @@
                       on:change={(e) => handlePendingPermissionChange(index, e)}
                     />
                     <button
-                      class="btn btn-icon btn-sm remove-btn"
+                      class="btn btn-icon btn-sm btn-icon-danger remove-btn"
                       on:click={() => removePendingTarget(index)}
                       title={$t('sharing.remove')}
                       aria-label={$t('sharing.remove')}

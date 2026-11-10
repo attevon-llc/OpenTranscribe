@@ -581,6 +581,14 @@ button:disabled {
   background-color: var(--button-hover);
 }
 
+/* Destructive icon button (remove / revoke): neutral at rest, danger signal on
+   hover and keyboard focus. --error-text is the AA-checked text red in both themes. */
+.btn-icon.btn-icon-danger:hover:not(:disabled),
+.btn-icon.btn-icon-danger:focus-visible {
+  background-color: var(--error-bg);
+  color: var(--error-text);
+}
+
 /* ─── Modal Action Buttons ──────────────────────────────────────────── */
 /* Base sizing shared by all modal footer buttons */
 .btn-lg,

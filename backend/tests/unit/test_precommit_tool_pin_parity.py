@@ -105,3 +105,8 @@ def test_checkers_detect_a_mismatch() -> None:
     assert _hook_dependencies(stale, "h") != ["ruff==0.16.7"]
     with pytest.raises(AssertionError):
         _hook_dependencies(stale, "missing")
+
+
+def test_deptry_hook_uses_the_exact_dev_pin() -> None:
+    config, req = _load()
+    assert _hook_dependencies(config, "guard-deptry") == [f"deptry=={_dev_pin(req, 'deptry')}"]

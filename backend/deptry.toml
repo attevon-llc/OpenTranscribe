@@ -1,0 +1,148 @@
+# deptry config for the backend (https://deptry.com/usage/). Kept in its own file because
+# pyproject.toml's [project] table declares no dependencies, which would make deptry ignore
+# the requirements files (https://deptry.com/supported-dependency-managers/).
+# Run: scripts/guards/check_deptry.py   (push-stage pre-commit hook `guard-deptry`).
+[tool.deptry]
+known_first_party = ["app", "alembic", "tests"]
+requirements_files = ["requirements.txt", "requirements-nodeps.txt"]
+requirements_files_dev = ["requirements-dev.txt", "requirements-test.txt"]
+extend_exclude = ["venv", "tests"]
+
+[tool.deptry.package_module_name_map]
+# deptry maps package -> module through installed metadata and falls back to the package
+# name when the package is not installed (the pre-commit hook env installs only deptry), so
+# every package whose import name differs is listed here. pyannote.audio is a git URL that
+# deptry's requirements parser skips; its `pyannote` namespace is claimed by pyannote-core.
+python-multipart = "multipart"
+opensearch-py = "opensearchpy"
+python-docx = "docx"
+smbprotocol = ["smbclient", "smbprotocol"]
+pyannote-core = "pyannote"
+python3-saml = "onelogin"
+fpdf2 = "fpdf"
+speechmatics-batch = "speechmatics"
+ffmpeg-python = "ffmpeg"
+python-dotenv = "dotenv"
+deepgram-sdk = "deepgram"
+azure-cognitiveservices-speech = "azure"
+google-cloud-speech = "google"
+python-json-logger = "pythonjsonlogger"
+fonttools = "fontTools"
+pyexiftool = "exiftool"
+"pyannote.audio" = "pyannote"
+
+[tool.deptry.per_rule_ignores]
+# DEP002 (declared, never imported). requirements.txt doubles as a lock: it deliberately
+# pins transitive dependencies so the venv and the image cannot resolve different patch
+# releases (issue #492, enforced by the dependency-parity gate). Those pins are never
+# imported by us, so they are listed below. Everything else listed is a direct dependency
+# that is loaded at runtime by name, as an extra, or from a CLI/script.
+DEP002 = [
+  "google-api-core",  # via google-cloud-speech; its `google` namespace is claimed by google-cloud-speech
+  "google-auth",  # via google-api-core
+  "googleapis-common-protos",  # via google-api-core
+  "protobuf",  # via google-api-core, opensearch-protobufs
+  "pyannote.audio",  # git-pinned fork loaded by the diarization engine; lazy imports under `pyannote`
+  "pyannote-metrics",  # via pyannote.audio
+  "pyannote-pipeline",  # via pyannote.audio
+  "whisperx",  # installed --no-deps from requirements-nodeps.txt; imported lazily via model_download / worker engine
+  "gliner",  # installed --no-deps (requirements-nodeps.txt); imported in scripts/model_download/redaction.py and by presidio at runtime
+  "python-multipart",  # FastAPI form/upload parsing imports it at request time (module name `multipart`)
+  "uharfbuzz",  # optional text-shaping backend loaded by fpdf2 for transcript PDFs
+  "bcrypt",  # passlib bcrypt backend, selected by scheme name at runtime; pinned <5 (see requirements.txt)
+  "email-validator",  # pydantic EmailStr backend, imported by pydantic itself
+  "flower",  # Celery monitoring UI started as `celery flower` by the compose flower service
+  "onnxruntime-gpu",  # ONNX provider for pyannote/diarization, loaded by name; scripts/ import onnxruntime
+  "onnxruntime",  # CPU fallback of onnxruntime-gpu on non-linux/non-x86_64 hosts
+  "onnxscript",  # ONNX export tooling invoked from app/transcription/native_provision.py
+  "onnxslim",  # ONNX export tooling invoked from app/transcription/native_provision.py
+  "onnxconverter-common",  # ONNX export tooling invoked from app/transcription/native_provision.py
+  "en_core_web_sm",  # spaCy model package loaded by name via spacy.load / Presidio NlpEngineProvider
+  "grpcio-status",  # google-api-core[grpc] extra (google-cloud-speech ASR provider)
+  "brotli",  # yt-dlp[default] extra (content-encoding decode)
+  "pycryptodomex",  # yt-dlp[default] extra (HLS AES decryption)
+  "httptools",  # uvicorn[standard] extra, picked by uvicorn at startup
+  "uvloop",  # uvicorn[standard] extra, picked by uvicorn at startup
+  "watchfiles",  # uvicorn[standard] extra, used by --reload in dev
+  # transitive version pins (issue #492); `Required-by` shown
+  "websockets",  # via rb=[assemblyai, deepgram-sdk
+  "amqp",  # via rb=[kombu
+  "torchcodec",  # via rb=[pyannote-audio, whisperx
+  "ctranslate2",  # via rb=[faster-whisper, whisperx
+  "av",  # via rb=[faster-whisper
+  "tokenizers",  # via rb=[faster-whisper, sentence-transformers, transformers
+  "tqdm",  # via rb=[bert-score, faster-whisper, gliner, huggingface_hub, lightning, nltk, optuna, pyannote-pipeline, pytorch-lightning, pytorch-metric-learning, sentence-transformers, spacy, transformers
+  "filelock",  # via rb=[huggingface_hub, pyannote-pipeline, python-discovery, tldextract, torch, virtualenv
+  "fsspec",  # via rb=[huggingface_hub, lightning, pytorch-lightning, torch
+  "multidict",  # via rb=[aiohttp, yarl
+  "pandas",  # via rb=[bert-score, pyannote-core, pyannote-database, pyannote-metrics, whisperx
+  "onnx",  # via rb=[onnx-ir, onnxconverter-common, onnxscript, onnxslim
+  "omegaconf",  # via rb=[whisperx
+  "sentencepiece",  # via rb=[detoxify, gliner
+  "preshed",  # via rb=[presidio_analyzer, spacy, thinc
+  "cuda-pathfinder",  # via rb=[cuda-bindings
+  "cloudpathlib",  # via rb=[weasel
+  "cython",  # via rb=[meeteval
+  "lxml",  # via rb=[python-docx, python3-saml, xmlsec
+  "typer",  # via rb=[huggingface_hub, spacy, transformers, weasel
+  "httpcore2",  # via rb=[httpx2
+  "httpx2",  # via rb=[openai
+  "spacy",  # via rb=[presidio_analyzer
+  "proto-plus",  # via rb=[google-api-core, google-cloud-speech
+  "mmh3",  # via rb=[imohash
+  "pyspnego",  # via rb=[smbprotocol
+  "idna",  # via rb=[anyio, email-validator, httpx, httpx2, requests, tldextract, yarl
+  "argon2-cffi-bindings",  # via rb=[argon2-cffi
+  "narwhals",  # via rb=[scikit-learn
+  "click",  # via rb=[black, celery, click-didyoumean, click-plugins, click-repl, deptry, huggingface_hub, import-linter, mutmut, nltk, presidio_analyzer, spacy, typer, uvicorn, weasel
+  "grpcio",  # via rb=[google-cloud-speech, grpcio-status, opensearch-protobufs, opentelemetry-exporter-otlp-proto-grpc
+  "kiwisolver",  # via rb=[matplotlib
+  "phonenumbers",  # via rb=[presidio_analyzer
+  "regex",  # via rb=[nltk, presidio_analyzer, transformers
+  "wcwidth",  # via rb=[prettytable, prompt_toolkit
+  "wrapt",  # via rb=[Deprecated, smart_open
+  "joblib",  # via rb=[nltk, scikit-learn
+  "cloudpickle",  # via rb=[joblib
+  "billiard",  # via rb=[celery
+  "blis",  # via rb=[thinc
+  "charset-normalizer",  # via rb=[requests
+  "click-repl",  # via rb=[celery
+  "confection",  # via rb=[spacy, thinc, weasel
+  "cuda-bindings",  # via rb=[torch
+  "cymem",  # via rb=[preshed, spacy, thinc
+  "deprecated",  # via rb=[limits
+  "dnspython",  # via rb=[email-validator
+  "hf-xet",  # via rb=[huggingface_hub
+  "jiter",  # via rb=[openai
+  "mako",  # via rb=[alembic
+  "markupsafe",  # via rb=[Jinja2, Mako
+  "murmurhash",  # via rb=[preshed, spacy, thinc
+  "networkx",  # via rb=[torch
+  "onnx-ir",  # via rb=[onnxscript
+  "opentelemetry-api",  # via rb=[google-api-core, opentelemetry-exporter-http-transport, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http, opentelemetry-sdk, opentelemetry-semantic-conventions, pyannote-audio
+  "opentelemetry-sdk",  # via rb=[opentelemetry-exporter-otlp-common, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http, pyannote-audio
+  "opentelemetry-proto",  # via rb=[opentelemetry-exporter-otlp-proto-common, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http
+  "opentelemetry-semantic-conventions",  # via rb=[opentelemetry-sdk
+  "opentelemetry-exporter-otlp",  # via rb=[pyannote-audio
+  "opentelemetry-exporter-otlp-common",  # via rb=[opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http
+  "opentelemetry-exporter-http-transport",  # via rb=[opentelemetry-exporter-otlp-proto-http
+  "opentelemetry-exporter-otlp-proto-common",  # via rb=[opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http
+  "opentelemetry-exporter-otlp-proto-grpc",  # via rb=[opentelemetry-exporter-otlp
+  "opentelemetry-exporter-otlp-proto-http",  # via rb=[opentelemetry-exporter-otlp
+  "pyasn1",  # via rb=[ldap3, pyasn1_modules
+  "pycparser",  # via rb=[cffi
+  "pycryptodome",  # via rb=[minio
+  "pyjwt",  # via rb=[msal
+  "pyparsing",  # via rb=[matplotlib
+  "pytz",  # via rb=[flower
+  "s3transfer",  # via rb=[boto3
+  "smart-open",  # via rb=[weasel
+  "srsly",  # via rb=[spacy, thinc, weasel
+  "thinc",  # via rb=[spacy
+  "tldextract",  # via rb=[presidio_analyzer
+  "tornado",  # via rb=[flower
+  "truststore",  # via rb=[httpcore2, httpx2
+  "tzdata",  # via rb=[kombu
+  "tzlocal",  # via rb=[celery
+  "weasel",  # via rb=[spacy
+]

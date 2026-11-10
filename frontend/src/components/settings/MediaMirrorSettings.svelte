@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -254,11 +255,10 @@
 
     <!-- Enable toggle -->
     <div class="field-row">
-      <label class="toggle-label">
-        <input type="checkbox" class="toggle-input" bind:checked={enabled} />
-        <span class="toggle-switch"></span>
-        <span class="toggle-text">{$t('settings.backup.mirror.enableLabel')}</span>
-      </label>
+      <div class="toggle-label">
+        <Toggle id="mediamirrorsettings-toggle-1" checked={enabled} onchange={(v) => (enabled = v)} />
+        <label class="toggle-text" for="mediamirrorsettings-toggle-1">{$t('settings.backup.mirror.enableLabel')}</label>
+      </div>
     </div>
 
     <!-- Schedule + throttle -->
@@ -550,44 +550,6 @@
     gap: var(--space-2);
     cursor: pointer;
     user-select: none;
-  }
-
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-    box-shadow: var(--shadow-thumb);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
   }
 
   .toggle-text {

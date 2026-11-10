@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import { onMount } from 'svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import {
@@ -230,14 +231,7 @@
                 {$t('settings.orgContext.includeDefaultDesc')}
               </span>
             </label>
-            <label class="toggle-switch">
-              <input
-                id="include-default"
-                type="checkbox"
-                bind:checked={includeInDefaultPrompts}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <Toggle id="include-default" checked={includeInDefaultPrompts} onchange={(v) => (includeInDefaultPrompts = v)} />
           </div>
         </div>
       </div>
@@ -252,14 +246,7 @@
                 {$t('settings.orgContext.includeCustomDesc')}
               </span>
             </label>
-            <label class="toggle-switch">
-              <input
-                id="include-custom"
-                type="checkbox"
-                bind:checked={includeInCustomPrompts}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <Toggle id="include-custom" checked={includeInCustomPrompts} onchange={(v) => (includeInCustomPrompts = v)} />
           </div>
         </div>
       </div>
@@ -274,16 +261,7 @@
                 {$t('settings.orgContext.shareDescription')}
               </span>
             </label>
-            <label class="toggle-switch">
-              <input
-                id="share-context"
-                type="checkbox"
-                checked={isShared}
-                on:change={handleShareToggle}
-                disabled={!contextText.trim()}
-              />
-              <span class="toggle-slider"></span>
-            </label>
+            <Toggle id="share-context" checked={isShared} onchange={handleShareToggle} disabled={!contextText.trim()} />
           </div>
         </div>
       </div>
@@ -466,53 +444,6 @@
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.4;
-  }
-
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 48px;
-    height: 24px;
-    flex-shrink: 0;
-    cursor: pointer;
-  }
-
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--border-color);
-    transition: var(--duration-slow);
-    border-radius: 24px;
-  }
-
-  .toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: var(--duration-slow);
-    border-radius: var(--radius-round);
-  }
-
-  input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  input:checked + .toggle-slider:before {
-    transform: translateX(24px);
   }
 
   .form-actions {
@@ -723,11 +654,6 @@
   .btn-shared-action:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  /* Dark mode */
-  :global([data-theme='dark']) .toggle-slider:before {
-    background-color: #e5e7eb;
   }
 
   /* Responsive */

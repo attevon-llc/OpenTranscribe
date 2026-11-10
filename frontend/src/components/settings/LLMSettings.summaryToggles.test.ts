@@ -92,7 +92,7 @@ beforeEach(() => {
 });
 
 const switches = (c: HTMLElement) => [
-  ...c.querySelectorAll<HTMLInputElement>('.summary-toggle-row .toggle-input'),
+  ...c.querySelectorAll<HTMLInputElement>('.summary-toggle-row [role="switch"]'),
 ];
 
 describe('auto-summary switches', () => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
@@ -148,14 +149,7 @@
             {$t('settings.speakerAttributes.llmIndependentNote')}
           </p>
         </div>
-        <label class="toggle">
-          <input
-            type="checkbox"
-            id="detection-enabled"
-            bind:checked={settings.detection_enabled}
-          />
-          <span class="toggle-slider"></span>
-        </label>
+        <Toggle id="detection-enabled" checked={settings.detection_enabled} onchange={(v) => (settings.detection_enabled = v)} />
       </div>
 
       {#if settings.detection_enabled}
@@ -176,25 +170,22 @@
               </p>
             {/if}
           </div>
-          <label class="toggle">
-            {#if genderLocked}
-              <input
-                type="checkbox"
-                id="gender-detection"
-                checked={false}
-                disabled
-                aria-describedby="gender-notice gender-locked"
-              />
-            {:else}
-              <input
-                type="checkbox"
-                id="gender-detection"
-                aria-describedby="gender-notice"
-                bind:checked={settings.gender_detection_enabled}
-              />
-            {/if}
-            <span class="toggle-slider"></span>
-          </label>
+          {#if genderLocked}
+            <Toggle
+              id="gender-detection"
+              checked={false}
+              disabled
+              describedby="gender-notice gender-locked"
+              onchange={() => {}}
+            />
+          {:else}
+            <Toggle
+              id="gender-detection"
+              describedby="gender-notice"
+              checked={settings.gender_detection_enabled}
+              onchange={(v) => (settings.gender_detection_enabled = v)}
+            />
+          {/if}
         </div>
 
         <div class="setting-row sub-setting">
@@ -206,14 +197,7 @@
               {$t('settings.speakerAttributes.showOnCardsDesc')}
             </p>
           </div>
-          <label class="toggle">
-            <input
-              type="checkbox"
-              id="show-on-cards"
-              bind:checked={settings.show_attributes_on_cards}
-            />
-            <span class="toggle-slider"></span>
-          </label>
+          <Toggle id="show-on-cards" checked={settings.show_attributes_on_cards} onchange={(v) => (settings.show_attributes_on_cards = v)} />
         </div>
       {/if}
     </div>
@@ -233,15 +217,12 @@
             </p>
           {/if}
         </div>
-        <label class="toggle">
-          <input
-            type="checkbox"
-            id="auto-llm-speaker-identification"
-            bind:checked={settings.auto_llm_speaker_identification}
-            disabled={noProvider}
-          />
-          <span class="toggle-slider"></span>
-        </label>
+        <Toggle
+          id="auto-llm-speaker-identification"
+          checked={settings.auto_llm_speaker_identification}
+          onchange={(v) => (settings.auto_llm_speaker_identification = v)}
+          disabled={noProvider}
+        />
       </div>
     </div>
 
@@ -339,55 +320,6 @@
   .locked-note {
     color: var(--text-color);
     font-weight: var(--font-weight-medium);
-  }
-
-  .toggle {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-    flex-shrink: 0;
-    margin-top: 0.1rem;
-  }
-
-  .toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    inset: 0;
-    background-color: var(--border-color);
-    border-radius: 24px;
-    transition: var(--duration-base);
-  }
-
-  .toggle-slider::before {
-    content: '';
-    position: absolute;
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: var(--duration-base);
-  }
-
-  .toggle input:checked + .toggle-slider {
-    background-color: var(--primary-color);
-  }
-
-  .toggle input:checked + .toggle-slider::before {
-    transform: translateX(20px);
-  }
-
-  .toggle input:disabled + .toggle-slider {
-    cursor: not-allowed;
-    opacity: 0.5;
   }
 
   .button-group {

@@ -29,7 +29,7 @@ vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).k
 import UploadStepModel from './UploadStepModel.svelte';
 
 function summaryCheckbox(container: HTMLElement) {
-  return container.querySelector('.toggle-switch input[type="checkbox"]') as HTMLInputElement;
+  return container.querySelector('[role="switch"]') as HTMLInputElement;
 }
 
 describe('UploadStepModel — AI summary toggle polarity (#751 item 3)', () => {

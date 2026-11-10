@@ -34,6 +34,7 @@ axe-playwright-python==0.1.8  # Bundled axe-core a11y scans (no CDN fetch at run
 # Git Hooks & Pre-commit
 pre-commit==4.7.0
 nodeenv==1.12.0  # pre-commit's Node bootstrap; 1.10.0 crashes parsing Node's '27.0.0-alpha' release-index entry (int('0-alpha')), 1.12.0 skips pre-releases
+identify==2.6.19  # pre-commit dependency imported directly by tests; mirrored in the mypy hook (py.typed)
 
 # Type Stubs for Better Type Checking
 #

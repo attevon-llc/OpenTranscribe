@@ -2,54 +2,25 @@
 
 from __future__ import annotations
 
-import importlib.util
-import json
-import sys
 from pathlib import Path
 
 import pytest
 
-_REPO = Path(__file__).resolve().parents[3]
-_SCRIPT = _REPO / "scripts" / "guards" / "check_nuia_ratchet.py"
+from tests.unit._svelte_check_guard_harness import diagnostic
+from tests.unit._svelte_check_guard_harness import load_guard
+from tests.unit._svelte_check_guard_harness import output
+from tests.unit._svelte_check_guard_harness import run_guard
+
 REASON = "test files are converted to checked index access in a later pass"
-
-
-def _load():
-    spec = importlib.util.spec_from_file_location("_guard_nuia_ratchet_under_test", _SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-guard = _load()
+guard = load_guard("check_nuia_ratchet")
 
 
 def diag(filename: str, kind: str = "ERROR", ts: int = 1) -> str:
-    body = json.dumps(
-        {
-            "type": kind,
-            "filename": filename,
-            "message": "Object is possibly 'undefined'.",
-            "code": 2532,
-        }
-    )
-    return f"{ts} {body}"
-
-
-def output(*lines: str) -> str:
-    return "\n".join(
-        ['1 START "/x"', *lines, "9 COMPLETED 5 FILES 1 ERRORS 0 WARNINGS 1 FILES_WITH_PROBLEMS"]
-    )
+    return diagnostic(filename, 2532, kind, ts)
 
 
 def run(tmp_path: Path, text: str, baseline: str, *extra: str) -> int:
-    out = tmp_path / "out.txt"
-    out.write_text(text, encoding="utf-8")
-    base = tmp_path / "baseline.txt"
-    base.write_text(baseline, encoding="utf-8")
-    return int(guard.main(["--svelte-check-output", str(out), "--baseline", str(base), *extra]))
+    return run_guard(guard, tmp_path, text, baseline, *extra)
 
 
 def test_parse_counts_errors_per_file_and_ignores_warnings() -> None:
@@ -63,7 +34,7 @@ def test_parse_counts_errors_per_file_and_ignores_warnings() -> None:
 
 
 def test_parse_fails_closed_without_completed_line() -> None:
-    with pytest.raises(guard.bl.ScanError):
+    with pytest.raises(guard.sc.bl.ScanError):
         guard.parse(diag("src/a.ts"))
 
 

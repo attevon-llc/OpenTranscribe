@@ -4,6 +4,7 @@
  * checks a relation by id, because a visible label that is not bound to its control passes any
  * snapshot and still fails a screen reader.
  */
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import FormFieldHost from './FormFieldTestHost.svelte';
@@ -59,5 +60,13 @@ describe('FormField', () => {
     const header = document.querySelector('.form-field-header');
     expect(header?.querySelector('label')?.getAttribute('for')).toBe('f');
     expect(header?.querySelector('button')?.textContent).toBe('toggle');
+  });
+
+  it('gives the error paragraph the form-field-error class, which the stylesheet sizes at the md token', () => {
+    render(FormFieldHost, { id: 'f', label: 'Host', error: 'Required' });
+    expect(screen.getByRole('alert').classList.contains('form-field-error')).toBe(true);
+    const css = readFileSync('src/styles/form-elements.css', 'utf8');
+    const rule = css.slice(css.indexOf(':where(.form-field-error)'));
+    expect(rule.slice(0, rule.indexOf('}'))).toContain('var(--font-size-md)');
   });
 });

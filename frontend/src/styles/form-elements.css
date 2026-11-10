@@ -706,7 +706,7 @@ button:disabled {
 }
 :where(.form-field-error) {
   margin: 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-md);
   color: var(--error-text);
 }
 /* Label with controls beside it (a show-password toggle). The margin keeps the 8px the auth

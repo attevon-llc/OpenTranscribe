@@ -399,6 +399,9 @@ def run_step(page: Any, step: str) -> None:
         elif kind == "patch":
             pattern, _, body = arg.rpartition("|")
             _patch_route(page, pattern, json.loads(body))
+        elif kind == "addclass":
+            selector, _, cls = arg.rpartition("|")
+            page.locator(selector).first.evaluate("(el, c) => el.classList.add(c)", cls)
         elif kind == "reload":  # arg ignored: the manifest validator wants kind:arg
             page.reload(wait_until="networkidle")
         else:

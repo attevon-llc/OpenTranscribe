@@ -255,3 +255,21 @@ def test_patch_step_merges_into_object_and_list_answers_and_skips_non_get() -> N
 def test_patch_and_reload_are_valid_manifest_steps() -> None:
     assert screens.validate() == []
     assert {"patch", "reload"} <= screens.STEP_KINDS
+
+
+def test_addclass_step_splits_selector_from_class_and_evaluates_on_the_first_match() -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    class _Loc:
+        def __init__(self, sel: str) -> None:
+            self.sel = sel
+            self.first = self
+
+        def evaluate(self, js: str, arg: str) -> None:
+            calls.append((self.sel, js, arg))
+
+    page = type("P", (), {"locator": lambda _s, sel: _Loc(sel)})()
+    ab.run_step(page, "addclass:.a .b|active-segment")
+    assert calls[0][0] == ".a .b"
+    assert calls[0][2] == "active-segment"
+    assert "classList.add" in calls[0][1]

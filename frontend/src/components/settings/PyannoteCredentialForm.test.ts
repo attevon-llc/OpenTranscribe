@@ -216,7 +216,7 @@ describe('PyannoteCredentialForm actions', () => {
     expect(api.deletePyannoteCredential).not.toHaveBeenCalled();
 
     const confirm = await waitFor(() => {
-      const el = document.querySelector('.modal-delete-button');
+      const el = document.querySelector('[data-testid="confirm-dialog-confirm"]');
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });

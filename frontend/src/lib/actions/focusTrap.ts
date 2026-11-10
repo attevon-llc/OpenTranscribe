@@ -42,7 +42,7 @@ function getFocusable(node: HTMLElement): HTMLElement[] {
  * Svelte action: traps keyboard focus within `node` while `enabled`.
  *
  * - On enable, remembers the previously-focused element and moves focus to the first
- *   focusable element inside `node` (or `node` itself if none qualify).
+ *   focusable element inside `node` (or the one marked `data-autofocus`, or `node` itself if none qualify).
  * - While enabled, Tab / Shift+Tab cycle within the focusable set instead of escaping.
  * - On disable/destroy, restores focus to the element that was focused before enabling.
  *
@@ -85,7 +85,10 @@ export function focusTrap(node: HTMLElement, options: FocusTrapOptions = {}) {
   function activate() {
     previouslyFocused = (document.activeElement as HTMLElement) ?? null;
     const focusable = getFocusable(node);
-    const target = focusable[0] ?? node;
+    // `data-autofocus` lets a dialog pick its initial focus (WAI-ARIA alertdialog: the least
+    // destructive action) instead of the first tabbable element.
+    const target =
+      focusable.find((el) => el.hasAttribute('data-autofocus')) ?? focusable[0] ?? node;
     // Ensure the container itself can receive focus as a last resort.
     if (target === node && !node.hasAttribute('tabindex')) {
       node.setAttribute('tabindex', '-1');

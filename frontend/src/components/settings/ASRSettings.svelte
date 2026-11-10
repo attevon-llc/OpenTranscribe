@@ -729,8 +729,7 @@
   message={configToDelete ? $t('settings.asrProvider.deleteConfirmMessage', { name: configToDelete.name }) : ''}
   confirmText="Delete"
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={deleteConfiguration}
   on:cancel={() => { configToDelete = null; showDeleteModal = false; }}
   on:close={() => { configToDelete = null; showDeleteModal = false; }}
@@ -742,8 +741,7 @@
   message={$t('settings.asrProvider.deleteAllConfirmMessage')}
   confirmText={$t('settings.asrProvider.deleteAll')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={deleteAllConfigurations}
   on:cancel={() => showDeleteAllModal = false}
   on:close={() => showDeleteAllModal = false}

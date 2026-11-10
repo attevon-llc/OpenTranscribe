@@ -286,7 +286,7 @@ class TestCollectionMutations:
         # Same collision-window reasoning as the tag suite's delete test: the
         # ConfirmationModal's own confirm button is the stable target once it has
         # actually mounted, not a same-named trigger button racing it.
-        confirm = collections_page.locator(".modal-delete-button")
+        confirm = collections_page.locator('[data-testid="confirm-dialog-confirm"]')
         expect(confirm).to_be_visible(timeout=10_000)
         confirm.click()
         expect(_card(collections_page, name)).to_have_count(0, timeout=10000)

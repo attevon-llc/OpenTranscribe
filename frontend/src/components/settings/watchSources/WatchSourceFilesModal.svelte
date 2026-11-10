@@ -321,8 +321,7 @@
     : ''}
   confirmText={$t('common.delete')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={doDeleteOne}
   on:cancel={() => (fileToDelete = null)}
   on:close={() => (fileToDelete = null)}
@@ -336,8 +335,7 @@
   })}
   confirmText={$t('common.delete')}
   cancelText={$t('common.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={doDeleteSelected}
   on:cancel={() => (confirmBulkDelete = false)}
   on:close={() => (confirmBulkDelete = false)}

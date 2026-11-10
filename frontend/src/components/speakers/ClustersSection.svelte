@@ -452,7 +452,7 @@
   title={$t('speakers.delete.title')}
   message={$t('speakers.delete.message')}
   confirmText={$t('modal.delete')}
-  confirmButtonClass="confirm-button delete-confirm"
+  variant="danger"
   on:confirm={confirmDelete}
   on:cancel={() => { showDeleteModal = false; }}
   on:close={() => { showDeleteModal = false; }}

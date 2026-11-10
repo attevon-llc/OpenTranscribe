@@ -60,7 +60,7 @@ def _delete_through_the_list(page: Page, text: str) -> None:
     with page.expect_response(
         lambda r: r.request.method == "DELETE" and "/comments/" in r.url
     ) as deleted:
-        page.locator("button.modal-delete-button").click()
+        page.locator('[data-testid="confirm-dialog-confirm"]').click()
     assert deleted.value.status == 204, deleted.value.text()[:300]
     expect(page.locator(".comment-item", has_text=text)).to_have_count(0, timeout=10000)
 

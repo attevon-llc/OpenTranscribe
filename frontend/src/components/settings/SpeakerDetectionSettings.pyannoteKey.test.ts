@@ -200,7 +200,7 @@ describe('pyannote.ai key form in Speaker Detection', () => {
     await fireEvent.click(remove);
     await fireEvent.click(
       await waitFor(() => {
-        const el = document.querySelector('.modal-delete-button');
+        const el = document.querySelector('[data-testid="confirm-dialog-confirm"]');
         expect(el).not.toBeNull();
         return el as HTMLElement;
       })

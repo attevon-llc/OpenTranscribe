@@ -2,7 +2,6 @@ colour::frontend/src/components/AISuggestionsDropdown.svelte	6	styling layer: pr
 colour::frontend/src/components/BulkAudioExtractionModal.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/CollectionsEditor.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/CollectionsSection.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/components/ConfirmationModal.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/ErasureRequestBanner.svelte	6	v0.6.1 merge: release component literal; burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/FileDetailSkeleton.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/FileHeader.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -171,7 +170,7 @@ font-size::frontend/src/components/CollectionsEditor.svelte	7	styling layer: pre
 font-size::frontend/src/components/CollectionsFilter.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/CollectionsPanel.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/CommentSection.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/ConfirmationModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/ConfirmationModal.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/FileHeader.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/FileUploader.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/FilterSidebar.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -494,7 +493,6 @@ radius::frontend/src/routes/search/+page.svelte	1	styling layer: pre-migration l
 radius::frontend/src/styles/search.css	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 shadow::frontend/src/components/AISuggestionsDropdown.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 shadow::frontend/src/components/BulkAudioExtractionModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-shadow::frontend/src/components/ConfirmationModal.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 shadow::frontend/src/components/FloatingPreviewPlayer.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 shadow::frontend/src/components/IdleTimeoutDialog.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 shadow::frontend/src/components/LoginBanner.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -580,7 +578,6 @@ spacing::frontend/src/components/CollectionsEditor.svelte	2	styling layer: pre-m
 spacing::frontend/src/components/CollectionsPanel.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/CollectionsSection.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/CommentSection.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-spacing::frontend/src/components/ConfirmationModal.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/FileDetailSkeleton.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/FileHeader.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/FilterSidebar.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

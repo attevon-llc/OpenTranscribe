@@ -336,7 +336,7 @@
       $t('collectionsPanel.deleteCollectionTitle'),
       $t('collectionsPanel.deleteConfirmMessage', { name: collection.name }),
       () => deleteCollection(collection),
-      $t('collectionsPanel.deleteCollectionButton')
+      { confirmText: $t('collectionsPanel.deleteCollectionButton') }
     );
   }
 
@@ -626,8 +626,7 @@
   message={$confirmMessage}
   confirmText={$confirmLabel}
   cancelText={$t('collectionsPanel.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={confirmDialog.confirm}
   on:cancel={confirmDialog.cancel}
   on:close={confirmDialog.cancel}

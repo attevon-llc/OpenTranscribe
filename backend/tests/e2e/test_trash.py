@@ -64,11 +64,11 @@ def test_delete_moves_to_trash_and_restore_brings_it_back(
         card.locator(".file-selector").click()
         page.locator(".delete-btn").click()
 
-        dialog = page.locator("[role=dialog]")
+        dialog = page.locator("[role=alertdialog]")
         expect(dialog).to_be_visible(timeout=5000)
         # The confirmation states the server's trash window, not "cannot be undone".
         expect(dialog).to_contain_text(re.compile(r"Recoverable for \d+ days?"))
-        dialog.locator(".modal-delete-button").click()
+        dialog.locator('[data-testid="confirm-dialog-confirm"]').click()
 
         expect(card).to_have_count(0, timeout=15000)
         assert _status(backend_url, admin_token, file_uuid) == 404, "a trashed file must 404"

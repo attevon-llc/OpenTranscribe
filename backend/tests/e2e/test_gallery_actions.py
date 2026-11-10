@@ -939,12 +939,12 @@ class TestBulkActions:
 
         delete_btn.click()
 
-        # ConfirmationModal (routes/+page.svelte) renders a BaseModal `role=dialog`
-        # whose confirm button carries the `confirmButtonClass` passed for the
-        # delete flow: `.modal-delete-button`.
-        dialog = self.page.locator("[role=dialog]")
+        # ConfirmationModal (routes/+page.svelte) renders a BaseModal `role=alertdialog` (danger variant)
+        # whose confirm button is
+        # `[data-testid="confirm-dialog-confirm"]`.
+        dialog = self.page.locator("[role=alertdialog]")
         expect(dialog).to_be_visible(timeout=5000)
-        dialog.locator(".modal-delete-button").click()
+        dialog.locator('[data-testid="confirm-dialog-confirm"]').click()
 
         expect(card1).to_have_count(0, timeout=15000)
         expect(card2).to_have_count(0, timeout=15000)

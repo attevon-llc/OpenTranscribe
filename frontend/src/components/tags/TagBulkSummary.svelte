@@ -231,8 +231,7 @@
     ? $t('tags.manager.action.deleting')
     : $t('tags.manager.action.delete')}
   cancelText={$t('tags.manager.action.cancel')}
-  confirmButtonClass="modal-delete-button"
-  cancelButtonClass="modal-cancel-button"
+  variant="danger"
   on:confirm={handleConfirmDelete}
   on:cancel={() => dispatch('cancelDelete')}
   on:close={() => dispatch('cancelDelete')}

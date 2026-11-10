@@ -833,8 +833,7 @@
     message={promptToDelete ? $t('prompts.deleteConfirmMessage', { name: promptToDelete.name }) : ''}
     confirmText={$t('prompts.delete')}
     cancelText={$t('prompts.cancel')}
-    confirmButtonClass="modal-delete-button"
-    cancelButtonClass="modal-cancel-button"
+    variant="danger"
     on:confirm={deletePrompt}
     on:cancel={() => { promptToDelete = null; showDeleteModal = false; }}
     on:close={() => { promptToDelete = null; showDeleteModal = false; }}
@@ -847,8 +846,7 @@
     message={$t('prompts.unsavedChangesMessage')}
     confirmText={$t('prompts.discardChanges')}
     cancelText={$t('prompts.keepEditing')}
-    confirmButtonClass="modal-warning-button"
-    cancelButtonClass="modal-primary-button"
+    variant="warning"
     on:confirm={handleUnsavedChangesConfirm}
     on:cancel={handleUnsavedChangesCancel}
     on:close={handleUnsavedChangesCancel}

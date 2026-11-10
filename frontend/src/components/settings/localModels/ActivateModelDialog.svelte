@@ -18,7 +18,7 @@
   title={$t('settings.localModels.activateDialog.title')}
   message={$t('settings.localModels.activateDialog.message', { model })}
   confirmText={$t('settings.localModels.activateDialog.confirm')}
-  confirmButtonClass="confirm-button"
+  variant="primary"
   on:confirm={() => dispatch('confirm')}
   on:cancel={() => dispatch('cancel')}
   on:close={() => dispatch('cancel')}

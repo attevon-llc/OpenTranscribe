@@ -28,8 +28,10 @@ const field = () =>
   screen.getByLabelText('tags.manager.detail.renameLabel') as HTMLInputElement | null;
 const maybeField = () => screen.queryByLabelText('tags.manager.detail.renameLabel');
 const renameButton = () => screen.getByRole('button', { name: 'tags.manager.detail.rename' });
-const confirmButton = () => document.querySelector('.modal-delete-button') as HTMLElement | null;
-const cancelButton = () => document.querySelector('.modal-cancel-button') as HTMLElement | null;
+const confirmButton = () =>
+  document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement | null;
+const cancelButton = () =>
+  document.querySelector('[data-testid="confirm-dialog-cancel"]') as HTMLElement | null;
 
 async function openEditor(props: Record<string, unknown> = {}, events = {}) {
   const view = render(TagDetailPanel, { props: { tag: roadmap, ...props }, events });

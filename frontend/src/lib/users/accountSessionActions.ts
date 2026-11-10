@@ -66,7 +66,7 @@ export function createAccountSessionActions(ctx: AccountActionContext): AccountS
           tr('userManagement.lockFailed'),
           true
         ),
-      tr('userManagement.lockAccount')
+      { confirmText: tr('userManagement.lockAccount') }
     );
   }
 
@@ -95,7 +95,7 @@ export function createAccountSessionActions(ctx: AccountActionContext): AccountS
           tr('userManagement.unlockFailed'),
           (result) => Boolean(result?.was_disabled)
         ),
-      tr('userManagement.unlockAccount')
+      { confirmText: tr('userManagement.unlockAccount') }
     );
   }
 
@@ -115,7 +115,7 @@ export function createAccountSessionActions(ctx: AccountActionContext): AccountS
             }),
           tr('userManagement.forceLogoutFailed')
         ),
-      tr('userManagement.forceLogout')
+      { confirmText: tr('userManagement.forceLogout') }
     );
   }
 
@@ -131,7 +131,7 @@ export function createAccountSessionActions(ctx: AccountActionContext): AccountS
           (_result, name) => tr('userManagement.resetMfaSuccess', { name }),
           tr('userManagement.resetMfaFailed')
         ),
-      tr('userManagement.resetMfa')
+      { confirmText: tr('userManagement.resetMfa') }
     );
   }
 

@@ -123,7 +123,9 @@ describe('CurrentSharesList — mutating actions call the API with correct args'
     const revokeBtn = container.querySelector('.revoke-btn') as HTMLElement;
     await fireEvent.click(revokeBtn);
 
-    const confirmBtn = container.querySelector('.modal-delete-button') as HTMLElement;
+    const confirmBtn = container.querySelector(
+      '[data-testid="confirm-dialog-confirm"]'
+    ) as HTMLElement;
     await fireEvent.click(confirmBtn);
 
     await waitFor(() =>

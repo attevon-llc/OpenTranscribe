@@ -1244,8 +1244,7 @@
   message={$t('settings.unsavedChangesMessage')}
   confirmText={$t('settings.closeWithoutSaving')}
   cancelText={$t('settings.keepEditing')}
-  confirmButtonClass="btn-danger"
-  cancelButtonClass="btn-secondary"
+  variant="danger"
   on:confirm={forceClose}
   on:cancel={() => showCloseConfirmation = false}
   on:close={() => showCloseConfirmation = false}
@@ -1258,8 +1257,7 @@
   message={$confirmMessage}
   confirmText={$t('settings.confirm')}
   cancelText={$t('settings.cancel')}
-  confirmButtonClass="btn-primary"
-  cancelButtonClass="btn-secondary"
+  variant="primary"
   on:confirm={confirmDialog.confirm}
   on:cancel={confirmDialog.cancel}
   on:close={confirmDialog.cancel}

@@ -160,7 +160,7 @@
   title={$t('speakers.profiles.deleteTitle')}
   message={$t('speakers.profiles.deleteMessage')}
   confirmText={$t('modal.delete')}
-  confirmButtonClass="confirm-button delete-confirm"
+  variant="danger"
   on:confirm={handleDeleteProfile}
   on:cancel={() => { showDeleteProfileModal = false; }}
   on:close={() => { showDeleteProfileModal = false; }}
@@ -171,7 +171,7 @@
   title={$t('speakers.avatar.removeTitle')}
   message={$t('speakers.avatar.removeMessage')}
   confirmText={$t('speakers.avatar.removeConfirm')}
-  confirmButtonClass="confirm-button delete-confirm"
+  variant="danger"
   on:confirm={handleRemoveAvatar}
   on:cancel={() => { removeAvatarUuid = ''; }}
   on:close={() => { removeAvatarUuid = ''; }}

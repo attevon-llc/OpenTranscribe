@@ -334,8 +334,12 @@ describe('mutation failures', () => {
     await mounted();
     await fireEvent.click(listRows()[1]);
     await fireEvent.click(button('tags.manager.action.delete')!);
-    await waitFor(() => expect(document.querySelector('.modal-delete-button')).not.toBeNull());
-    await fireEvent.click(document.querySelector('.modal-delete-button') as HTMLElement);
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="confirm-dialog-confirm"]')).not.toBeNull()
+    );
+    await fireEvent.click(
+      document.querySelector('[data-testid="confirm-dialog-confirm"]') as HTMLElement
+    );
 
     await waitFor(() =>
       expect(notify.error).toHaveBeenCalledWith('tags.manager.toast.actionFailed')

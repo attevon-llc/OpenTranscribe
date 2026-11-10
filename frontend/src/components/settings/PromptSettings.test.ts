@@ -158,7 +158,7 @@ describe('sharing', () => {
   it('flips the toggle optimistically and keeps it on success', async () => {
     serve([SYS_UNIVERSAL, MINE], 'sys-uni');
     const { container } = await mount();
-    const box = container.querySelector('.toggle-input') as HTMLInputElement;
+    const box = container.querySelector('[role="switch"]') as HTMLInputElement;
     await fireEvent.click(box);
     await waitFor(() => expect(api.sharePrompt).toHaveBeenCalledWith('mine', true));
     await waitFor(() => expect(container.querySelector('.share-badge')).not.toBeNull());
@@ -169,7 +169,7 @@ describe('sharing', () => {
     serve([SYS_UNIVERSAL, MINE], 'sys-uni');
     api.sharePrompt.mockRejectedValue(new Error('no'));
     const { container } = await mount();
-    await fireEvent.click(container.querySelector('.toggle-input') as HTMLElement);
+    await fireEvent.click(container.querySelector('[role="switch"]') as HTMLElement);
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(container.querySelector('.share-badge')).toBeNull();
   });

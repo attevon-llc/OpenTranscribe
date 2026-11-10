@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
@@ -807,11 +808,10 @@ let _llmConfigModalWasOpen = false;
 
         <!-- Share with all users -->
         <div class="share-toggle-row">
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text">{$t('settings.llmProvider.shareGlobally')}</span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="llmconfigmodal-toggle-1" checked={formData.is_shared} onchange={(v) => (formData.is_shared = v)} disabled={saving} />
+            <label class="toggle-text" for="llmconfigmodal-toggle-1">{$t('settings.llmProvider.shareGlobally')}</label>
+          </div>
         </div>
 
         <!-- Form Actions -->
@@ -1088,40 +1088,6 @@ let _llmConfigModalWasOpen = false;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-regular);
     user-select: none;
-  }
-
-  .toggle-input {
-    display: none;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base);
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
   }
 
   .toggle-text {

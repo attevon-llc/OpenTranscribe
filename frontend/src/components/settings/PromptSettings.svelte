@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
@@ -537,12 +538,10 @@
                   </div>
                 {/if}
                 <div class="share-toggle-row">
-                  <label class="toggle-label">
-                    <input type="checkbox" class="toggle-input" checked={prompt.is_shared}
-                      on:change={() => handleShareToggle(prompt)} disabled={saving} />
-                    <span class="toggle-switch"></span>
-                    <span class="toggle-text">{$t('prompts.shareGlobally')}</span>
-                  </label>
+                  <div class="toggle-label">
+                    <Toggle id="share-prompt-{prompt.uuid}" checked={!!prompt.is_shared} onchange={() => handleShareToggle(prompt)} disabled={saving} />
+                    <label class="toggle-text" for="share-prompt-{prompt.uuid}">{$t('prompts.shareGlobally')}</label>
+                  </div>
                 </div>
               </div>
               <div class="prompt-actions">
@@ -729,11 +728,10 @@
 
       <!-- Share with all users -->
       <div class="share-toggle-row">
-        <label class="toggle-label">
-          <input type="checkbox" class="toggle-input" bind:checked={formData.is_shared} disabled={saving} />
-          <span class="toggle-switch"></span>
-          <span class="toggle-text">{$t('prompts.shareGlobally')}</span>
-        </label>
+        <div class="toggle-label">
+          <Toggle id="promptsettings-toggle-1" checked={formData.is_shared} onchange={(v) => (formData.is_shared = v)} disabled={saving} />
+          <label class="toggle-text" for="promptsettings-toggle-1">{$t('prompts.shareGlobally')}</label>
+        </div>
       </div>
 
       <div class="form-group">
@@ -1461,43 +1459,6 @@
     gap: var(--space-2);
     cursor: pointer;
     font-weight: var(--font-weight-regular);
-  }
-
-  .toggle-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: var(--border-color);
-    border-radius: var(--radius-xl);
-    transition: background-color var(--duration-base) ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base) ease;
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background-color: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(16px);
   }
 
   .toggle-text {

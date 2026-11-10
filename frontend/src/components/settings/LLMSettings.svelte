@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
@@ -480,12 +481,10 @@
                   <div class="config-url">{config.base_url}</div>
                 {/if}
                 <div class="share-toggle-row">
-                  <label class="toggle-label">
-                    <input type="checkbox" class="toggle-input" checked={config.is_shared}
-                      on:change={() => handleShareToggle(config)} disabled={saving} />
-                    <span class="toggle-switch"></span>
-                    <span class="toggle-text">{$t('settings.llmProvider.shareGlobally')}</span>
-                  </label>
+                  <div class="toggle-label">
+                    <Toggle id="share-config-{config.uuid}" checked={!!config.is_shared} onchange={() => handleShareToggle(config)} disabled={saving} />
+                    <label class="toggle-text" for="share-config-{config.uuid}">{$t('settings.llmProvider.shareGlobally')}</label>
+                  </div>
                 </div>
               </div>
 
@@ -705,16 +704,12 @@
 
         <div class="summary-toggle-row">
           <div class="toggle-info">
-            <span class="toggle-title">{$t('settings.llm.autoSummary')}</span>
+            <span class="toggle-title" id="auto-summary-title">{$t('settings.llm.autoSummary')}</span>
             <span class="toggle-desc">{$t('settings.llm.autoSummaryDesc')}</span>
           </div>
-          <label class="toggle-label">
-            <input type="checkbox" class="toggle-input"
-              bind:checked={autoSummaryEnabled}
-              on:change={saveAutoSummary}
-              disabled={autoSummaryLoading || (!systemSummaryEnabled && !isAdmin)} />
-            <span class="toggle-switch"></span>
-          </label>
+          <div class="toggle-label">
+            <Toggle id="auto-summary-toggle" labelledby="auto-summary-title" checked={autoSummaryEnabled} onchange={(v) => { autoSummaryEnabled = v; saveAutoSummary(); }} disabled={autoSummaryLoading || (!systemSummaryEnabled && !isAdmin)} />
+          </div>
         </div>
 
         {#if !autoSummaryEnabled}
@@ -732,19 +727,15 @@
         {#if isAdmin}
           <div class="summary-toggle-row admin-toggle">
             <div class="toggle-info">
-              <span class="toggle-title">
+              <span class="toggle-title" id="system-summary-title">
                 {$t('settings.llm.systemSummary')}
                 <span class="admin-badge">{$t('settings.sharing.adminBadge')}</span>
               </span>
               <span class="toggle-desc">{$t('settings.llm.systemSummaryDesc')}</span>
             </div>
-            <label class="toggle-label">
-              <input type="checkbox" class="toggle-input"
-                bind:checked={systemSummaryEnabled}
-                on:change={saveSystemSummary}
-                disabled={systemSummaryLoading} />
-              <span class="toggle-switch"></span>
-            </label>
+            <div class="toggle-label">
+              <Toggle id="system-summary-toggle" labelledby="system-summary-title" checked={systemSummaryEnabled} onchange={(v) => { systemSummaryEnabled = v; saveSystemSummary(); }} disabled={systemSummaryLoading} />
+            </div>
           </div>
 
           {#if !systemSummaryEnabled}
@@ -1175,40 +1166,6 @@
     cursor: pointer;
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-  }
-
-  .toggle-input {
-    display: none;
-  }
-
-  .toggle-switch {
-    position: relative;
-    width: 28px;
-    height: 16px;
-    background: var(--border-color);
-    border-radius: var(--radius-lg);
-    transition: background var(--duration-base);
-    flex-shrink: 0;
-  }
-
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: var(--radius-round);
-    transition: transform var(--duration-base);
-  }
-
-  .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color);
-  }
-
-  .toggle-input:checked + .toggle-switch::after {
-    transform: translateX(12px);
   }
 
   .toggle-text {

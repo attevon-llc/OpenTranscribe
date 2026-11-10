@@ -29,7 +29,7 @@ vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).k
 import UploadStepModel from './UploadStepModel.svelte';
 
 function summaryCheckbox(container: HTMLElement) {
-  return container.querySelector('.toggle-switch input[type="checkbox"]') as HTMLInputElement;
+  return container.querySelector('[role="switch"]') as HTMLInputElement;
 }
 
 describe('UploadStepModel — AI summary toggle polarity (#751 item 3)', () => {
@@ -66,6 +66,14 @@ describe('UploadStepModel — AI summary toggle polarity (#751 item 3)', () => {
     await fireEvent.change(checkbox);
 
     expect(checkbox.checked).toBe(true);
+  });
+
+  it('clicking the label text flips the switch', async () => {
+    const { container, getByText } = render(UploadStepModel, { props: { skipSummary: false } });
+    const sw = summaryCheckbox(container);
+    expect(sw.checked).toBe(true);
+    await fireEvent.click(getByText('upload.generateSummary'));
+    expect(sw.checked).toBe(false);
   });
 
   it('the toggle label uses the positive copy key, not the retired negative one', () => {

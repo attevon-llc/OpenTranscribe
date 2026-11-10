@@ -93,7 +93,7 @@
       <span class="input-suffix">{$t('settings.retention.daysUnit')}</span>
       <button
         type="button"
-        class="btn btn-primary btn-small"
+        class="btn btn-primary btn-sm"
         disabled={!dirty || !valid || saving}
         on:click={save}
       >

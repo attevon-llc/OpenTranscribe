@@ -126,36 +126,6 @@ _APP = (
         steps=("scroll:.comments-wrapper",),
         ready=".transcript-segment",
     ),
-    # Patched-data states (lane s34): a state the seeded data lacks is added by patching the real
-    # answer (``patch`` + ``reload``); the plain UI states are in ``_FILE_DETAIL_STATES``.
-    Screen(
-        "file-detail-shared",
-        "/files/{file_uuid}",
-        steps=(
-            r'patch:/api/files/[0-9a-f-]{36}(\?.*)?$|{"my_permission": "editor"}',
-            "reload:page",
-            "wait:.shared-chip",
-        ),
-        ready=".transcript-segment",
-        notes="the file header's shared-with-me chip; the seeded file is owned by the capture user",
-    ),
-    Screen(
-        "file-detail-speaker-chips",
-        "/files/{file_uuid}",
-        steps=(
-            r'patch:/api/speakers\?.*file_uuid=|{"show_profile_badge": true, "show_suggestions_section": true, '
-            r'"metadata_hints": [{"name": "Alex Rivera", "role": "host", "confidence": 0.8, "source": "title"}], '
-            r'"profile_suggestions": [{"name": "Jordan Lee", "confidence": 0.9, "confidence_percentage": "90%", '
-            r'"reason": "voice match"}]}',
-            "reload:page",
-            "click:.edit-speakers-button",
-            "wait:.speaker-editor-container",
-            "click:.suggestions-toggle",
-            "wait:.profile-chip",
-        ),
-        ready=".transcript-segment",
-        notes="profile badge, metadata chip and profile chip on every speaker",
-    ),
     Screen(
         "search",
         "/search?q=the",
@@ -319,6 +289,36 @@ _SETTINGS = (
 
 # --- S34 transcript states (lane s34: rendering of changes the base screens never reached) ------
 _FILE_DETAIL_STATES = (
+    # Patched-data states: a state the seeded data lacks is added by patching the real answer
+    # (``patch`` + ``reload``).
+    Screen(
+        "file-detail-shared",
+        "/files/{file_uuid}",
+        steps=(
+            r'patch:/api/files/[0-9a-f-]{36}(\?.*)?$|{"my_permission": "editor"}',
+            "reload:page",
+            "wait:.shared-chip",
+        ),
+        ready=".transcript-segment",
+        notes="the file header's shared-with-me chip; the seeded file is owned by the capture user",
+    ),
+    Screen(
+        "file-detail-speaker-chips",
+        "/files/{file_uuid}",
+        steps=(
+            r'patch:/api/speakers\?.*file_uuid=|{"show_profile_badge": true, "show_suggestions_section": true, '
+            r'"metadata_hints": [{"name": "Alex Rivera", "role": "host", "confidence": 0.8, "source": "title"}], '
+            r'"profile_suggestions": [{"name": "Jordan Lee", "confidence": 0.9, "confidence_percentage": "90%", '
+            r'"reason": "voice match"}]}',
+            "reload:page",
+            "click:.edit-speakers-button",
+            "wait:.speaker-editor-container",
+            "click:.suggestions-toggle",
+            "wait:.profile-chip",
+        ),
+        ready=".transcript-segment",
+        notes="profile badge, metadata chip and profile chip on every speaker",
+    ),
     Screen(
         "file-detail-export-open",
         "/files/{file_uuid}",

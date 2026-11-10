@@ -169,7 +169,7 @@
           {$t('gallery.quarantine.filesLabel', { count: displayNames.length })}
         </p>
         <ul>
-          {#each previewNames as name (name)}
+          {#each previewNames as name, i (i)}
             <li>{name}</li>
           {/each}
           {#if extraCount > 0}

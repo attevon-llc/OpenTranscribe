@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed pages that failed to render when a list held a repeated value: pasting the same group claim twice into Settings > Group mappings > Test, selecting two files with the same title for a legal hold, the AI suggesting the same tag twice, uploading two identical videos for audio extraction, and tags that share a name in the chat picker.
+- Fixed extracting audio from a single video dropping the voiceprint consent, collections and tags chosen in the upload wizard; extracted audio now carries them, as other uploads do.
+- Fixed the task list showing unfiltered results when a filter was changed while the first load was still running.
+
 - Docs: the watch-sources guide now documents `WATCH_ALLOW_PRIVATE_ENDPOINTS` (default on; set it to false to refuse private or LAN S3/SMB targets) instead of calling `WATCH_HOST_PATH` the only watch variable, and the legal-holds guide no longer refers to a design note that does not exist.
 - Docs: the Features, Installation and Getting Started pages were checked against the code. Corrected: the transcription page no longer claims noise reduction or volume normalization (audio is only converted to 16 kHz mono WAV), the speaker diarization page no longer attributes the 273x figure to clustering or says embeddings moved from 192 to 256 dimensions (they were 512), the privacy controls page now describes the organization redaction floor screen, the speaker identity history and the file-scoped voiceprint purge as shipped, AI Chat names reranking as on by default, and the first-transcription speed estimate matches the measured 40x realtime.
 - Operations docs: the audit-integrity, backup and restore, upgrading and production-deployment pages now match the code (the one-shot `migrate` service holds the owner credentials and applies the role grants, the OpenSearch snapshot is on by default and is the scheduled copy of the non-rebuildable speaker indices, the migration table runs to v470, the backend health check is `/health/ready`, and `opentranscribe.sh` warns rather than refusing when NGINX certificates are missing).

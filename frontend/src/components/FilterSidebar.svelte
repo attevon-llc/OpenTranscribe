@@ -655,7 +655,7 @@
         </p>
       {:else}
         <div class="speakers-list">
-          {#each namedSpeakers.slice(0, 4) as speaker (speakerLabel(speaker))}
+          {#each namedSpeakers.slice(0, 4) as speaker, i (i)}
             <FilterChipButton
               class="speaker-button"
               selected={selectedSpeakers.includes(speakerLabel(speaker))}

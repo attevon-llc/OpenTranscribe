@@ -524,7 +524,7 @@
 
       {#if discoveredClaims}
         <div class="claim-tags">
-          {#each discoveredClaims as claim (claim)}
+          {#each discoveredClaims as claim, i (i)}
             <span class="claim-tag">{claim}</span>
           {/each}
         </div>

@@ -145,10 +145,10 @@
       <div class="result-row">
         <span class="result-label">{$t('settings.groupMappings.test.matched')}</span>
         {#if result.matched_claims.length}
-          <!-- Unkeyed on purpose: a pasted list may legitimately repeat a value,
-               and keying by the claim string crashes the block on the duplicate. -->
+          <!-- Keyed by position: a pasted list may legitimately repeat a value, and a
+               claim-string key throws each_key_duplicate. The chips are never reordered. -->
           <span class="chips">
-            {#each result.matched_claims as claim (claim)}
+            {#each result.matched_claims as claim, i (i)}
               <Badge variant="info">{claim}</Badge>
             {/each}
           </span>
@@ -161,7 +161,7 @@
         <span class="result-label">{$t('settings.groupMappings.test.unmatched')}</span>
         {#if result.unmatched_claims.length}
           <span class="chips">
-            {#each result.unmatched_claims as claim (claim)}
+            {#each result.unmatched_claims as claim, i (i)}
               <Badge variant="default">{claim}</Badge>
             {/each}
           </span>

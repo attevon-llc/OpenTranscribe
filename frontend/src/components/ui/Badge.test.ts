@@ -51,3 +51,19 @@ describe('Badge', () => {
     expect(badge(container).getAttribute('title')).toBe('Retrying after a transient failure');
   });
 });
+
+describe('Badge size and extra class', () => {
+  it('defaults to the dense sm size and accepts md', () => {
+    const a = render(Badge);
+    expect(badge(a.container).classList.contains('size-sm')).toBe(true);
+    a.unmount();
+    const b = render(Badge, { props: { size: 'md' } });
+    expect(badge(b.container).classList.contains('size-md')).toBe(true);
+    expect(badge(b.container).classList.contains('size-sm')).toBe(false);
+  });
+
+  it('puts a caller class on the root so existing selectors keep matching', () => {
+    const { container } = render(Badge, { props: { class: 'status-badge' } });
+    expect(badge(container).classList.contains('status-badge')).toBe(true);
+  });
+});

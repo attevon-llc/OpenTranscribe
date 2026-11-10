@@ -19,6 +19,8 @@
   import { t, locale } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
   import InfoTip from '$components/settings/transcription/InfoTip.svelte';
+  import Badge from '$components/ui/Badge.svelte';
+  import { badgeVariantForStatus } from '$lib/fileStatus/statusVariant';
 
   export let stats: SystemStats;
   export let statsLoading = false;
@@ -445,7 +447,7 @@
                   <td>{task.id.substring(0, 8)}...</td>
                   <td>{task.type}</td>
                   <td>
-                    <span class="status-badge status-{task.status}">{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</span>
+                    <Badge variant={badgeVariantForStatus(task.status)} size="md" class="status-badge">{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</Badge>
                   </td>
                   <td>{formatDateTime(task.created_at, '', $locale)}</td>
                   <td>{formatElapsed(task.elapsed)}</td>
@@ -872,64 +874,6 @@
     background-color: var(--background-color);
   }
 
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-xl);
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-medium);
-    text-transform: capitalize;
-  }
-
-  .status-completed,
-  .status-success {
-    background-color: #d1fae5;
-    color: #065f46;
-  }
-
-  .status-running,
-  .status-processing,
-  .status-in_progress {
-    background-color: #dbeafe;
-    color: #1e40af;
-  }
-
-  .status-pending {
-    background-color: #fef3c7;
-    color: #92400e;
-  }
-
-  .status-failed,
-  .status-error {
-    background-color: #fee2e2;
-    color: #991b1b;
-  }
-
-  :global([data-theme='dark']) .status-completed,
-  :global([data-theme='dark']) .status-success {
-    background-color: #064e3b;
-    color: #6ee7b7;
-  }
-
-  :global([data-theme='dark']) .status-running,
-  :global([data-theme='dark']) .status-processing,
-  :global([data-theme='dark']) .status-in_progress {
-    background-color: #1e3a8a;
-    color: #93c5fd;
-  }
-
-  :global([data-theme='dark']) .status-pending {
-    background-color: #78350f;
-    color: #fde68a;
-  }
-
-  :global([data-theme='dark']) .status-failed,
-  :global([data-theme='dark']) .status-error {
-    background-color: #7f1d1d;
-    color: #fca5a5;
-  }
-
   .empty-state {
     text-align: center;
     padding: var(--space-4);
@@ -1019,13 +963,6 @@
 
     .model-value {
       word-break: break-all;
-    }
-
-    .status-badge {
-      padding: 0.1rem 0.35rem;
-      font-size: var(--font-size-xs);
-      min-width: 24px;
-      text-align: center;
     }
 
     .data-table th,

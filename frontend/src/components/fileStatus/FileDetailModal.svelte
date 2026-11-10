@@ -11,6 +11,8 @@
   import ProcessingProvenance from '$components/ProcessingProvenance.svelte';
   import type { DetailedFileStatus } from '$lib/types/fileStatus';
   import BaseModal from '$components/ui/BaseModal.svelte';
+  import Badge from '$components/ui/Badge.svelte';
+  import { badgeVariantForStatus } from '$lib/fileStatus/statusVariant';
 
   export let detailedStatus: DetailedFileStatus | null;
   export let selectedFile: string | null;
@@ -40,9 +42,9 @@
             </div>
             <div class="metadata-item">
               <span class="metadata-label">{$t('common.status')}:</span>
-              <span class="status-badge {detailedStatus.file.status_badge_class || 'status-unknown'}">
+              <Badge variant={badgeVariantForStatus(detailedStatus.file.status_badge_class)} size="md" class="status-badge">
                 {translateFileStatus($t, detailedStatus.file.status, detailedStatus.file.display_status)}
-              </span>
+              </Badge>
             </div>
             <div class="metadata-item">
               <span class="metadata-label">{$t('fileStatus.fileSize')}:</span>
@@ -135,7 +137,7 @@
                 <div class="task-metadata-card">
                   <div class="task-card-header">
                     <span class="task-type-label">{task.task_type}</span>
-                    <span class="status-badge {task.status_badge_class || 'status-unknown'}">{translateFileStatus($t, task.status, task.status)}</span>
+                    <Badge variant={badgeVariantForStatus(task.status_badge_class)} size="md" class="status-badge">{translateFileStatus($t, task.status, task.status)}</Badge>
                   </div>
                   <div class="task-metadata-items">
                     <div class="metadata-item">
@@ -195,59 +197,6 @@
 {/if}
 
 <style>
-  .status-badge {
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    text-transform: uppercase;
-  }
-
-  .status-completed {
-    background: rgba(16, 185, 129, 0.1);
-    color: #10b981;
-  }
-
-  .status-processing {
-    background: rgba(var(--accent-rgb), 0.1);
-    color: var(--primary-on-surface);
-  }
-
-  .status-pending {
-    background: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
-  }
-
-  .status-error {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-  }
-
-  .status-unknown {
-    background: rgba(156, 163, 175, 0.1);
-    color: #6b7280;
-  }
-
-  :global([data-theme='dark']) .status-completed {
-    background: rgba(16, 185, 129, 0.2);
-    color: #34d399;
-  }
-
-  :global([data-theme='dark']) .status-processing {
-    background: rgba(var(--accent-rgb), 0.2);
-    color: #60a5fa;
-  }
-
-  :global([data-theme='dark']) .status-pending {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
-  }
-
-  :global([data-theme='dark']) .status-error {
-    background: rgba(239, 68, 68, 0.2);
-    color: #f87171;
-  }
-
   .file-details h4 {
     margin: 0 0 var(--space-4) 0;
     color: var(--text-color);

@@ -8,6 +8,7 @@
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import Badge from '$components/ui/Badge.svelte';
   import {
     getBackupSettings,
     updateBackupSettings,
@@ -495,9 +496,9 @@
         <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.lastRunNever'), $locale)}</span>
         {#if lastResult}
           {#if lastResult.ok}
-            <span class="status-badge ok">{$t('settings.backup.lastRunOk', { size: formatFileSize(lastResult.size_bytes ?? 0), seconds: lastResult.duration_s ?? 0 })}</span>
+            <Badge variant="success" size="md" class="status-badge">{$t('settings.backup.lastRunOk', { size: formatFileSize(lastResult.size_bytes ?? 0), seconds: lastResult.duration_s ?? 0 })}</Badge>
           {:else}
-            <span class="status-badge bad" title={lastResult.error ?? ''}>{$t('settings.backup.lastRunFailed')}</span>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.error || null}>{$t('settings.backup.lastRunFailed')}</Badge>
           {/if}
         {/if}
       </div>
@@ -508,11 +509,11 @@
         <div class="status-item">
           <span class="status-label">{$t('settings.backup.opensearchSnapshotSection')}:</span>
           {#if lastResult.opensearch.status === 'ok'}
-            <span class="status-badge ok">{lastResult.opensearch.snapshot}</span>
+            <Badge variant="success" size="md" class="status-badge">{lastResult.opensearch.snapshot}</Badge>
           {:else if lastResult.opensearch.status === 'skipped'}
             <span class="status-value">{$t('settings.backup.opensearchSkipped')}</span>
           {:else}
-            <span class="status-badge bad" title={lastResult.opensearch.error ?? ''}>{$t('settings.backup.opensearchSnapshotFailed')}</span>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.opensearch.error || null}>{$t('settings.backup.opensearchSnapshotFailed')}</Badge>
           {/if}
         </div>
         {#if lastResult.opensearch.status !== 'ok' && lastResult.opensearch.status !== 'skipped' && lastResult.opensearch.error}
@@ -522,7 +523,7 @@
       {#if lastResult?.prune_error}
         <div class="status-item">
           <span class="status-label">{$t('settings.backup.pruneSection')}:</span>
-          <span class="status-badge bad" title={lastResult.prune_error}>{$t('settings.backup.pruneFailed')}</span>
+          <Badge variant="error" size="md" class="status-badge" title={lastResult.prune_error || null}>{$t('settings.backup.pruneFailed')}</Badge>
         </div>
         <div class="status-error">{lastResult.prune_error}</div>
       {/if}
@@ -530,11 +531,11 @@
         <div class="status-item">
           <span class="status-label">{$t('settings.backup.recoverySection')}:</span>
           {#if lastResult.recovery.status === 'keys_included'}
-            <span class="status-badge ok">{$t('settings.backup.recoveryKeysIncluded')}</span>
+            <Badge variant="success" size="md" class="status-badge">{$t('settings.backup.recoveryKeysIncluded')}</Badge>
           {:else if lastResult.recovery.status === 'readme_written'}
             <span class="status-value">{$t('settings.backup.recoveryReadmeWritten')}</span>
           {:else}
-            <span class="status-badge bad" title={lastResult.recovery.error ?? ''}>{$t('settings.backup.recoveryFailed')}</span>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.recovery.error || null}>{$t('settings.backup.recoveryFailed')}</Badge>
           {/if}
         </div>
         {#if lastResult.recovery.status === 'readme_written'}
@@ -795,22 +796,6 @@
 
   .status-value {
     color: var(--text-color);
-  }
-
-  .status-badge {
-    border-radius: var(--radius-xl);
-    padding: 0 var(--space-2);
-    font-size: 0.72rem;
-    line-height: 1.6;
-    color: var(--text-on-solid);
-  }
-
-  .status-badge.ok {
-    background-color: var(--success-color);
-  }
-
-  .status-badge.bad {
-    background-color: var(--error-color);
   }
 
   .status-error {

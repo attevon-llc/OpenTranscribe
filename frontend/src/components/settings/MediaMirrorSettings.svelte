@@ -6,6 +6,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
+  import Badge from '$components/ui/Badge.svelte';
   import {
     getMediaMirrorSettings,
     updateMediaMirrorSettings,
@@ -376,19 +377,19 @@
         <span class="status-label">{$t('settings.backup.mirror.lastRunSection')}:</span>
         <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.mirror.lastRunNever'), $locale)}</span>
         {#if running}
-          <span class="status-badge running">{$t('settings.backup.mirror.runningBadge')}</span>
+          <Badge variant="info" size="md" class="status-badge">{$t('settings.backup.mirror.runningBadge')}</Badge>
         {/if}
         {#if lastResult}
           {#if lastResult.ok}
-            <span class="status-badge ok">
+            <Badge variant="success" size="md" class="status-badge">
               {$t('settings.backup.mirror.lastRunOk', {
                 copied: lastResult.objects_copied ?? 0,
                 skipped: lastResult.objects_skipped ?? 0,
                 bytes: formatFileSize(lastResult.bytes_copied ?? 0),
               })}
-            </span>
+            </Badge>
           {:else}
-            <span class="status-badge bad" title={lastResult.error ?? ''}>{$t('settings.backup.mirror.lastRunFailed')}</span>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.error || null}>{$t('settings.backup.mirror.lastRunFailed')}</Badge>
           {/if}
         {/if}
       </div>
@@ -397,9 +398,9 @@
       {/if}
       {#if lastResult?.ok && (lastResult.objects_failed ?? 0) > 0}
         <div class="status-item">
-          <span class="status-badge bad">
+          <Badge variant="error" size="md" class="status-badge">
             {$t('settings.backup.mirror.failedObjects', { count: lastResult.objects_failed ?? 0 })}
-          </span>
+          </Badge>
         </div>
         {#each lastResult.errors ?? [] as errLine, i (i)}
           <div class="status-error">{errLine}</div>
@@ -593,26 +594,6 @@
 
   .status-value {
     color: var(--text-color);
-  }
-
-  .status-badge {
-    border-radius: var(--radius-xl);
-    padding: 0 var(--space-2);
-    font-size: 0.72rem;
-    line-height: 1.6;
-    color: var(--text-on-solid);
-  }
-
-  .status-badge.ok {
-    background-color: var(--success-color);
-  }
-
-  .status-badge.bad {
-    background-color: var(--error-color);
-  }
-
-  .status-badge.running {
-    background-color: var(--primary-color);
   }
 
   .status-error {

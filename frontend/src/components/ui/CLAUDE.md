@@ -70,7 +70,7 @@ primitive in the same spirit as this folder.
   "working".
 - `Tabs.svelte`'s `attention` item field draws a warning dot whose text is its accessible name
   and tooltip; use it for "this panel needs doing" without opening it.
-- `Badge.svelte` — semantic status pill (`default|success|warning|error|info`).
+- `Badge.svelte` — semantic status pill (`default|success|warning|error|info`), `size` `sm` (11px) or `md` (12px), `class` forwarded to the root. The state is always the slotted text, never colour alone (WCAG 1.4.1). Map a task/file status to a variant with `badgeVariantForStatus` (`lib/fileStatus/statusVariant.ts`); never write a local `.status-badge`.
 - `Toggle.svelte` — the one 44x24 on/off switch (native checkbox with role=switch; Space and Enter; controlled via `onchange(next)`; `busy` keeps focus, `disabled` does not).
 - `Chip.svelte` — compact removable/selectable pill (tags, filters).
 - `MetadataChips.svelte` — renders a `Chip` row from a metadata object/list.

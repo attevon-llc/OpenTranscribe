@@ -21,7 +21,7 @@ colour::frontend/src/components/Toast.svelte	4	styling layer: pre-migration lite
 colour::frontend/src/components/UploadManager.svelte	10	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/UploadProgress.svelte	14	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/UserFileStatus.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/components/UserManagementTable.svelte	52	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+colour::frontend/src/components/UserManagementTable.svelte	36	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/chat/ChatControlsPanel.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/chat/ChatMarkdown.svelte	16	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/chat/ChatThread.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -29,8 +29,8 @@ colour::frontend/src/components/chat/ChatTracePanel.svelte	1	styling layer: pre-
 colour::frontend/src/components/collections/CollectionsList.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/collections/SharedCollectionsSection.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/fileDetail/FileActionButtons.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/components/fileStatus/FileDetailModal.svelte	18	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/components/fileStatus/TasksGrid.svelte	14	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+colour::frontend/src/components/fileStatus/FileDetailModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+colour::frontend/src/components/fileStatus/TasksGrid.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/gallery/FileStatusIndicator.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/gallery/GalleryCountChip.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/gallery/GalleryFilterPanel.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -84,7 +84,7 @@ colour::frontend/src/components/settings/SettingsModalShell.svelte	3	styling lay
 colour::frontend/src/components/settings/SpeakerAttributeBulkPanel.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/settings/SpeakerAttributeSettings.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/settings/StatusChip.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/components/settings/SystemStatisticsPanel.svelte	22	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+colour::frontend/src/components/settings/SystemStatisticsPanel.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/settings/WatchSourceModal.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/settings/audit/AuditLogTable.svelte	10	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/settings/transcription/InfoTip.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -187,7 +187,7 @@ font-size::frontend/src/components/TranscriptSearch.svelte	1	styling layer: pre-
 font-size::frontend/src/components/TruncatedText.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/UploadProgress.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/UserFileStatus.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/UserManagementTable.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/UserManagementTable.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/chat/ChatComposer.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/chat/ChatContextBar.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/chat/ChatControlsPanel.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -236,7 +236,7 @@ font-size::frontend/src/components/settings/ActiveSessionsPanel.svelte	2	styling
 font-size::frontend/src/components/settings/AuthConfigAuditPanel.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/AuthMailDesignation.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/AutoLabelSettings.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/settings/BackupSettings.svelte	12	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/settings/BackupSettings.svelte	11	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/CacheSettings.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/CertificateInfo.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/ChatAdminSettings.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -246,7 +246,7 @@ font-size::frontend/src/components/settings/ContentRedactionSettings.svelte	4	st
 font-size::frontend/src/components/settings/CustomVocabularySettings.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/DataIntegritySettings.svelte	11	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/DataManagementSection.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/settings/DirectorySyncSettings.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/settings/DirectorySyncSettings.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/EmailConfigModal.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/EmbeddingConsistencySettings.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/EmbeddingMigrationSettings.svelte	10	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -257,7 +257,7 @@ font-size::frontend/src/components/settings/GroupsSettings.svelte	1	styling laye
 font-size::frontend/src/components/settings/IssueRow.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/LLMConfigModal.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/LLMSettings.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/settings/MediaMirrorSettings.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/settings/MediaMirrorSettings.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/MediaSourcesSettings.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/OrganizationContextSettings.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/OrphanedDataPanel.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -265,7 +265,7 @@ font-size::frontend/src/components/settings/PipelineOverview.svelte	6	styling la
 font-size::frontend/src/components/settings/PromptSettings.svelte	13	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/PyannoteCredentialForm.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/RedactionPolicySettings.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/settings/RetentionSettings.svelte	12	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/settings/RetentionSettings.svelte	11	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/RetrySettings.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/SearchSettings.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/SettingsModalFrame.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -351,7 +351,7 @@ physical::frontend/src/components/ToastContainer.svelte	2	styling layer: pre-mig
 physical::frontend/src/components/TopicsList.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/UploadManager.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/UserFileStatus.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-physical::frontend/src/components/UserManagementTable.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+physical::frontend/src/components/UserManagementTable.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/WaveformPlayer.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/chat/ChatControlsPanel.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/chat/ChatMessageMeta.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -580,7 +580,7 @@ spacing::frontend/src/components/SummaryModal.svelte	3	styling layer: pre-migrat
 spacing::frontend/src/components/TagsSection.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/TranscriptSearch.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/UserFileStatus.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-spacing::frontend/src/components/UserManagementTable.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+spacing::frontend/src/components/UserManagementTable.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/chat/ChatComposer.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/chat/ChatContextBar.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/chat/ChatControlsPanel.svelte	11	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -669,7 +669,7 @@ spacing::frontend/src/components/settings/SettingsModalFrame.svelte	1	styling la
 spacing::frontend/src/components/settings/SpeakerAttributeBulkPanel.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/StatusChip.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/SupportAccessStaffPanel.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-spacing::frontend/src/components/settings/SystemStatisticsPanel.svelte	10	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+spacing::frontend/src/components/settings/SystemStatisticsPanel.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/UserProfileSettings.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/asr/CloudProviderPolicy.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/asr/CloudProviderPolicyRow.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

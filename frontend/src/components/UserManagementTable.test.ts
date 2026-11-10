@@ -707,7 +707,7 @@ describe('pending invitations', () => {
 
     expect(await findByText('invitee@x.com')).toBeInTheDocument();
     const badge = container.querySelector('.invitations-section .status-badge');
-    expect(badge?.className).toContain('status-expired');
+    expect(badge?.classList.contains('badge-warning')).toBe(true);
     expect(badge?.textContent?.trim()).toBe('userManagement.invitationStatusExpired');
     const cells = Array.from(container.querySelectorAll('.invitations-section td')).map(
       (td) => td.textContent?.trim()

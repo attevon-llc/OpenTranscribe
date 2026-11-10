@@ -6,6 +6,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
+  import Badge from '$components/ui/Badge.svelte';
   import {
     getDirectorySyncSettings,
     updateDirectorySyncSettings,
@@ -212,16 +213,16 @@
         <span class="status-value">{formatDateTime(lastRunAt, $t('settings.directorySync.lastRunNever'), $locale)}</span>
         {#if lastResult}
           {#if lastResult.status === 'ok'}
-            <span class="status-badge ok">
+            <Badge variant="success" size="md" class="status-badge">
               {$t('settings.directorySync.lastRunOk', {
                 disabled: lastResult.dry_run ? (lastResult.would_disable ?? 0) : (lastResult.disabled ?? 0),
                 reconciled: lastResult.reconciled ?? 0,
               })}
-            </span>
+            </Badge>
           {:else}
-            <span class="status-badge bad" title={lastResult.error ?? ''}>
+            <Badge variant="error" size="md" class="status-badge" title={lastResult.error || null}>
               {$t('settings.directorySync.lastRunFailed')}
-            </span>
+            </Badge>
           {/if}
         {/if}
       </div>
@@ -230,7 +231,7 @@
       {/if}
       {#if lastResult?.capped}
         <div class="status-item">
-          <span class="status-badge bad">{$t('settings.directorySync.cappedWarning')}</span>
+          <Badge variant="error" size="md" class="status-badge">{$t('settings.directorySync.cappedWarning')}</Badge>
         </div>
       {/if}
       <div class="status-item">
@@ -418,22 +419,6 @@
 
   .status-value {
     color: var(--text-color);
-  }
-
-  .status-badge {
-    border-radius: var(--radius-xl);
-    padding: 0 var(--space-2);
-    font-size: 0.72rem;
-    line-height: 1.6;
-    color: var(--text-on-solid);
-  }
-
-  .status-badge.ok {
-    background-color: var(--success-color);
-  }
-
-  .status-badge.bad {
-    background-color: var(--error-color);
   }
 
   .status-error {

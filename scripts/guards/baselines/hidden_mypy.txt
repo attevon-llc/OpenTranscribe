@@ -1,1 +1,0 @@
-backend/scripts/benchmark_migration.py::assignment	1	errors hidden by type: ignore comments existing when the ratchet landed; each is real typing debt fixed lane by lane, and the ignore count ratchet in baselines/type_ignore.txt shrinks with it

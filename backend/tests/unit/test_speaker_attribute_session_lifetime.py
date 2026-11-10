@@ -17,7 +17,6 @@ single-scope version of the task.
 """
 
 import contextlib
-import uuid as uuid_mod
 
 import pytest
 
@@ -25,6 +24,7 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.tasks import speaker_attribute_task as sat
+from tests.fixtures.speaker_attribute_tracking import add_file_with_speakers
 
 
 class _ScopeTracker:
@@ -54,48 +54,6 @@ class _ScopeTracker:
 
     def observe(self, label: str) -> None:
         self.depth_during_slow_phase.append((label, self.depth))
-
-
-def _make_file_with_speech(db_session, user, *, speakers: int = 2, seg_seconds: float = 4.0):
-    """A media file with speakers and long-enough segments to produce work items."""
-    media_file = MediaFile(
-        uuid=str(uuid_mod.uuid4()),
-        user_id=user.id,
-        filename="attrs.mp4",
-        storage_path="test/attrs.mp4",
-        content_type="video/mp4",
-        file_size=1000,
-    )
-    db_session.add(media_file)
-    db_session.flush()
-
-    created = []
-    start = 0.0
-    for i in range(speakers):
-        speaker = Speaker(
-            uuid=str(uuid_mod.uuid4()),
-            media_file_id=media_file.id,
-            user_id=user.id,
-            name=f"SPEAKER_0{i}",
-        )
-        db_session.add(speaker)
-        db_session.flush()
-        created.append(speaker)
-
-        for _ in range(2):
-            db_session.add(
-                TranscriptSegment(
-                    uuid=str(uuid_mod.uuid4()),
-                    media_file_id=media_file.id,
-                    speaker_id=speaker.id,
-                    start_time=start,
-                    end_time=start + seg_seconds,
-                    text="hello there",
-                )
-            )
-            start += seg_seconds
-    db_session.flush()
-    return media_file, created
 
 
 @pytest.fixture
@@ -139,7 +97,9 @@ def test_no_db_scope_open_during_model_load_and_inference(
     db_session, normal_user, tracked, monkeypatch
 ):
     """The leak regression: the slow phase must run with zero scopes open."""
-    media_file, speakers = _make_file_with_speech(db_session, normal_user)
+    media_file, speakers = add_file_with_speakers(
+        db_session, normal_user, speakers=2, seg_seconds=4.0
+    )
 
     # The task builds `work_items` from an UNORDERED `db.query(Speaker.id)`, so which
     # speaker lands at index 0 is whatever Postgres returns first — not necessarily
@@ -193,7 +153,7 @@ def test_no_db_scope_open_during_model_load_and_inference(
 
 def test_scope_is_released_when_inference_fails(db_session, normal_user, tracked, monkeypatch):
     """A failure in the slow phase must not leave a scope open either."""
-    media_file, _ = _make_file_with_speech(db_session, normal_user)
+    media_file, _ = add_file_with_speakers(db_session, normal_user, speakers=2, seg_seconds=4.0)
 
     def boom(audio_source, work_items, service, audio_stream_index=None):
         tracked.observe("gender_inference")
@@ -214,7 +174,9 @@ def test_read_phase_returns_plain_data(db_session, normal_user, tracked):
     Returning ORM objects would push lazy loads — and therefore a new
     transaction — into the slow phase, reintroducing the leak by the back door.
     """
-    media_file, speakers = _make_file_with_speech(db_session, normal_user, speakers=1)
+    media_file, speakers = add_file_with_speakers(
+        db_session, normal_user, speakers=1, seg_seconds=4.0
+    )
 
     inputs = sat._load_detection_inputs(str(media_file.uuid))
 

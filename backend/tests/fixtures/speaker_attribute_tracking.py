@@ -33,12 +33,21 @@ def real_scope(db_session):
         raise
 
 
-def make_file_with_speech(db_session, user, *, speakers: int = 1, seg_seconds: float = 4.0):
+def add_file_with_speakers(
+    db_session,
+    user,
+    *,
+    speakers: int,
+    seg_seconds: float,
+    filename: str = "attrs.mp4",
+    storage_path: str = "test/attrs.mp4",
+):
+    """Flush a media file with ``speakers`` speakers, two ``seg_seconds`` segments each."""
     media_file = MediaFile(
         uuid=str(uuid_mod.uuid4()),
         user_id=user.id,
-        filename="attrs.mp4",
-        storage_path="test/attrs.mp4",
+        filename=filename,
+        storage_path=storage_path,
         content_type="video/mp4",
         file_size=1000,
     )
@@ -71,6 +80,13 @@ def make_file_with_speech(db_session, user, *, speakers: int = 1, seg_seconds: f
             )
             start += seg_seconds
     db_session.flush()
+    return media_file, created
+
+
+def make_file_with_speech(db_session, user, *, speakers: int = 1, seg_seconds: float = 4.0):
+    media_file, created = add_file_with_speakers(
+        db_session, user, speakers=speakers, seg_seconds=seg_seconds
+    )
     db_session.commit()
     return media_file, created
 

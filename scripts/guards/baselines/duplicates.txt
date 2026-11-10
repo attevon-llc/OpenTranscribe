@@ -90,7 +90,6 @@ backend/tests/test_mediacms_provider.py	4	pre-existing duplicated blocks of 100+
 backend/tests/test_org_admin_gdpr.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/test_speaker_tenant_gating.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/test_tenant_isolation.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/unit/_session_lifetime_trackers.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_audio_segment_utils.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_backup_tasks.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_chat_aggregation_speaker_facet_content_scope.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -152,8 +151,6 @@ backend/tests/unit/test_session_cap_sweep.py	1	pre-existing duplicated blocks of
 backend/tests/unit/test_session_ceiling.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_similarity_service_cosine_range.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_speaker_attribute_migration_task.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/unit/test_speaker_attribute_session_lifetime.py	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/unit/test_speaker_attribute_task_tracking.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_speaker_attribute_toggles.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_speaker_identity_provenance_writes.py	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_speaker_identity_rules_moves.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -185,8 +182,6 @@ backend/tests/unit/test_v463_migration_consistency.py	1	pre-existing duplicated 
 backend/tests/unit/test_v465_migration_consistency.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_v467_migration_consistency.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_v468_migration_consistency.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/unit/test_v469_migration_consistency.py	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/unit/test_v470_migration_consistency.py	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_voiceprint_file_purge.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_watch_import_dispatch_failure.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_waveform_generator.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

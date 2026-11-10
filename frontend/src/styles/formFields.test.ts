@@ -224,3 +224,27 @@ describe('components do not re-paint the fields they render', () => {
     expect(Object.keys(ALLOWED).filter((k) => !live.has(k))).toEqual([]);
   });
 });
+
+describe('form-field label size cascade', () => {
+  // The label rules are all :where() (specificity 0), so source order is the only tie-breaker.
+  // A large field's label was 14px in the source but rendered 13px when the base rule came last.
+  const at = (needle: string) => css.indexOf(needle);
+
+  it('lets size="lg" and labelSize="md" override the base label size', () => {
+    const base = at(':where(.form-field-label) {');
+    expect(base).toBeGreaterThan(-1);
+    for (const sel of [
+      ':where(.form-field-lg .form-field-label) {',
+      ':where(.form-field-label-md .form-field-label) {',
+      ':where(.form-field-label-base .form-field-label) {',
+    ]) {
+      expect(at(sel), sel).toBeGreaterThan(base);
+    }
+  });
+
+  it('lets size="lg" override the base legend size', () => {
+    const base = at(':where(.form-field > legend) {');
+    expect(base).toBeGreaterThan(-1);
+    expect(at(':where(.form-field-lg > legend) {')).toBeGreaterThan(base);
+  });
+});

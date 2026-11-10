@@ -173,8 +173,5 @@ async def drain_available(queue: asyncio.Queue[WireEvent] | None) -> list[dict[s
     await asyncio.sleep(0)
     payloads: list[dict[str, Any]] = []
     while not queue.empty():
-        try:
-            payloads.append(trace_payload(queue.get_nowait()))
-        except asyncio.QueueEmpty:  # pragma: no cover — guarded by `empty()`
-            break
+        payloads.append(trace_payload(queue.get_nowait()))
     return payloads

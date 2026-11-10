@@ -25,13 +25,13 @@ The installer sets up the **full** image by default (local transcription and spe
 
 ### Required Software
 
-**Docker Engine** (v20.10+)
+**Docker Engine** (v24.0+)
 ```bash
 # Check Docker version
 docker --version
 
 # Expected output
-Docker version 20.10.x or higher
+Docker version 24.0.x or higher
 ```
 
 **Docker Compose** (v2.0+)

@@ -20,7 +20,7 @@ For small-scale testing or low-volume transcription work with the full image run
 - **RAM**: 8GB minimum
 - **Storage**: 20GB free space (10GB for Docker images, 10GB for models and data)
 - **Operating System**: Linux, macOS, or Windows with WSL2
-- **Docker**: Docker Engine 20.10+ and Docker Compose 2.0+
+- **Docker**: Docker Engine 24.0+ with the Docker Compose v2 plugin (`docker compose`)
 
 **Performance**:
 - Transcription speed: ~0.5-1x realtime (slower than playback)

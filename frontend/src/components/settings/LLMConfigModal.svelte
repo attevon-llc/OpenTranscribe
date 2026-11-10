@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
@@ -466,10 +467,9 @@ let _llmConfigModalWasOpen = false;
     {/if}
   </svelte:fragment>
 
-      <form on:submit|preventDefault={saveConfiguration} class="config-form">
+      <form on:submit|preventDefault={saveConfiguration} class="config-form form-stack">
         <!-- Configuration Name -->
-        <div class="form-group">
-          <label for="config-name">{$t('llm.configName')}</label>
+        <FormField id="config-name" label={$t('llm.configName')} labelSize="base">
           <input
             type="text"
             id="config-name"
@@ -479,11 +479,10 @@ let _llmConfigModalWasOpen = false;
             placeholder={$t('llm.configNamePlaceholder')}
             required
           />
-        </div>
+        </FormField>
 
         <!-- Provider Selection -->
-        <div class="form-group">
-          <label for="provider">{$t('llm.provider')}</label>
+        <FormField id="provider" label={$t('llm.provider')} labelSize="base">
           <select
             id="provider"
             bind:value={formData.provider}
@@ -496,7 +495,7 @@ let _llmConfigModalWasOpen = false;
               <option value={provider.provider}>{llmProviderDisplayName(provider.provider, $t)}</option>
             {/each}
           </select>
-        </div>
+        </FormField>
 
         <!-- Local endpoint discovery (issue #644). Deliberately OUTSIDE the provider block
              below: "Use this" SETS the provider, so a user who has not picked one yet is
@@ -518,10 +517,8 @@ let _llmConfigModalWasOpen = false;
         {#if formData.provider}
           <!-- Base URL (if supported) -->
           {#if getProviderDefaults(formData.provider)?.supports_custom_url}
-            <div class="form-group">
-              <label for="base-url">
-                <span class="label-with-tooltip">
-                  {$t('llm.baseUrl')}
+            <FormField id="base-url" label={$t('llm.baseUrl')} labelSize="base">
+              <svelte:fragment slot="label-inline">
                   {#if formData.provider === 'vllm' || formData.provider === 'ollama'}
                     <span
                       class="info-tooltip"
@@ -549,8 +546,7 @@ let _llmConfigModalWasOpen = false;
                       </svg>
                     </span>
                   {/if}
-                </span>
-              </label>
+              </svelte:fragment>
               <input dir="ltr"
                 type="url"
                 id="base-url"
@@ -560,13 +556,12 @@ let _llmConfigModalWasOpen = false;
                 placeholder={getProviderDefaults(formData.provider)?.default_base_url || 'https://api.example.com/v1'}
                 required
               />
-            </div>
+            </FormField>
           {/if}
 
           <!-- Model Selection -->
-          <div class="form-group">
-            <div class="form-label-row">
-              <label for="model-name">{$t('llm.modelName')}</label>
+          <FormField id="model-name" label={$t('llm.modelName')} labelSize="base">
+            <svelte:fragment slot="label-after">
               {#if formData.provider === 'ollama'}
                 <button
                   type="button"
@@ -613,7 +608,7 @@ let _llmConfigModalWasOpen = false;
                   {$t('llm.discoverModels')}
                 </button>
               {/if}
-            </div>
+            </svelte:fragment>
             <input
               type="text"
               id="model-name"
@@ -703,7 +698,7 @@ let _llmConfigModalWasOpen = false;
               </div>
             {/if}
 
-          </div>
+          </FormField>
 
           {#if formData.provider === 'bedrock'}
             <LLMBedrockFields
@@ -722,11 +717,8 @@ let _llmConfigModalWasOpen = false;
 
           <!-- API Key (if required) -->
           {#if getProviderDefaults(formData.provider)?.requires_api_key || (editingConfig && editingConfig.has_api_key)}
-            <div class="form-group">
-              <div class="api-key-header">
-                <label for="api-key">
-                  {$t('llm.apiKey')} {#if !editingConfig}*{/if}
-                </label>
+            <FormField id="api-key" label={$t('llm.apiKey')} required={!editingConfig} labelSize="base">
+              <svelte:fragment slot="label-after">
                 <button
                   type="button"
                   class="toggle-password"
@@ -736,7 +728,7 @@ let _llmConfigModalWasOpen = false;
                 >
                   <EyeIcon visible={showApiKey} />
                 </button>
-              </div>
+              </svelte:fragment>
               <input dir="ltr"
                 type={showApiKey ? 'text' : 'password'}
                 id="api-key"
@@ -746,7 +738,7 @@ let _llmConfigModalWasOpen = false;
                 placeholder={$t('llm.apiKeyPlaceholder')}
                 required={!editingConfig}
               />
-            </div>
+            </FormField>
           {/if}
 
           <!-- Advanced Settings -->
@@ -754,8 +746,7 @@ let _llmConfigModalWasOpen = false;
             <h4>{$t('llm.advancedSettings')}</h4>
 
             <div class="form-row">
-              <div class="form-group">
-                <label for="max-tokens">{$t('llm.maxTokens')}</label>
+              <FormField id="max-tokens" label={$t('llm.maxTokens')} labelSize="base">
                 <input
                   type="number"
                   id="max-tokens"
@@ -766,10 +757,9 @@ let _llmConfigModalWasOpen = false;
                   max="2000000"
                 />
                 <p class="field-desc">{$t('llm.maxTokensHelp')}</p>
-              </div>
+              </FormField>
 
-              <div class="form-group">
-                <label for="temperature">{$t('llm.temperature')}</label>
+              <FormField id="temperature" label={$t('llm.temperature')} labelSize="base">
                 <input
                   type="text"
                   id="temperature"
@@ -778,7 +768,7 @@ let _llmConfigModalWasOpen = false;
                   class="form-control"
                   placeholder="0.3"
                 />
-              </div>
+              </FormField>
 
             </div>
           </div>
@@ -879,39 +869,14 @@ let _llmConfigModalWasOpen = false;
     padding: var(--space-6);
   }
 
-  .form-group {
-    margin-bottom: var(--space-6);
-  }
 
-  .form-group label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-2);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
 
   .form-control {
     width: 100%;
   }
 
-  .form-label-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-2);
-  }
 
-  .form-label-row label {
-    margin-bottom: 0;
-  }
 
-  .api-key-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
 
   .toggle-password {
     background: none;
@@ -1096,11 +1061,6 @@ let _llmConfigModalWasOpen = false;
     margin-bottom: var(--space-2);
   }
 
-  .label-with-tooltip {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
 
   @media (max-width: 768px) {
     .form-actions {

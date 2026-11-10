@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import Toggle from '$components/ui/Toggle.svelte';
   import ActivateIcon from '$components/ui/ActivateIcon.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
@@ -681,8 +682,7 @@
       {/if}
     </svelte:fragment>
     <form id="prompt-form" on:submit|preventDefault={savePrompt} class="prompt-form">
-      <div class="form-group">
-        <label for="name">{$t('prompts.promptName')}</label>
+      <FormField id="name" label={$t('prompts.promptName')}>
         <input
           type="text"
           id="name"
@@ -692,10 +692,9 @@
           placeholder={$t('prompts.promptNamePlaceholder')}
           required
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="content_type">{$t('prompts.contentType')}</label>
+      <FormField id="content_type" label={$t('prompts.contentType')}>
         <select
           id="content_type"
           bind:value={formData.content_type}
@@ -706,10 +705,9 @@
             <option value={type.value}>{type.label}</option>
           {/each}
         </select>
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="description">{$t('prompts.descriptionLabel')}</label>
+      <FormField id="description" label={$t('prompts.descriptionLabel')}>
         <input
           type="text"
           id="description"
@@ -718,13 +716,11 @@
           class="form-control"
           placeholder={$t('prompts.descriptionPlaceholder')}
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="tags">{$t('prompts.tags')}</label>
-        <TagInput id="tags" bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
-        <small class="form-text">{$t('prompts.tagsHelp')}</small>
-      </div>
+      <FormField id="tags" label={$t('prompts.tags')} hint={$t('prompts.tagsHelp')} let:describedby>
+        <TagInput id="tags" {describedby} bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
+      </FormField>
 
       <!-- Share with all users -->
       <div class="share-toggle-row">
@@ -734,15 +730,15 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <div class="textarea-header">
-          <label for="prompt_text">{$t('prompts.promptText')}</label>
+      <FormField id="prompt_text" label={$t('prompts.promptText')} labelSize="sm" hint={$t('prompts.promptTextHelp')} let:describedby>
+        <svelte:fragment slot="label-after">
           {#if formData.prompt_text.trim()}
             <PromptCopyButton text={formData.prompt_text} />
           {/if}
-        </div>
+        </svelte:fragment>
         <textarea
           id="prompt_text"
+          aria-describedby={describedby}
           bind:value={formData.prompt_text}
           disabled={saving}
           class="form-control textarea"
@@ -750,9 +746,6 @@
           placeholder={$t('prompts.promptTextPlaceholder')}
           required
         ></textarea>
-        <small class="form-text">
-          {$t('prompts.promptTextHelp')}
-        </small>
         <div class="llm-hint">
           <strong>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tip-icon">
@@ -769,7 +762,7 @@
             {$t('prompts.llmTip')}
           </strong> {$t('prompts.llmTipText')}
         </div>
-      </div>
+      </FormField>
     </form>
     <svelte:fragment slot="footer">
       <button type="button" class="btn btn-secondary btn-lg"
@@ -1095,12 +1088,6 @@
     line-height: 1.5;
   }
 
-  .textarea-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-2);
-  }
 
   .prompt-text-header {
     display: flex;
@@ -1116,11 +1103,6 @@
     gap: var(--space-5);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
 
   label {
     font-weight: var(--font-weight-medium);
@@ -1145,10 +1127,6 @@
     cursor: not-allowed;
   }
 
-  .form-text {
-    font-size: 0.8rem;
-    color: var(--text-light);
-  }
 
   @media (max-width: 768px) {
     .section-header {

@@ -91,7 +91,7 @@
           </div>
         </div>
         {#if policy.force_toxicity}
-          <div class="form-group" style="margin-top: 0.5rem;">
+          <div class="form-field">
             <RangeSlider
               id="force-tox"
               label={$t('settings.redactionPolicy.forceToxicityThreshold')}
@@ -196,9 +196,6 @@
     color: var(--text-muted);
     margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
-  }
-  .form-group {
-    margin: 0;
   }
   .setting-row {
     display: flex;

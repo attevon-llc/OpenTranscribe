@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import type { Group } from '$lib/types/groups';
   import { GroupsApi } from '$lib/api/groups';
@@ -55,8 +56,7 @@
 <BaseModal {isOpen} title={$t('groups.createGroup')} size="sm" zIndex={1300} onClose={handleClose}>
   <form id="group-create-form" on:submit|preventDefault={handleSubmit}>
     <div class="modal-body">
-      <div class="form-group">
-        <label for="group-name">{$t('groups.groupName')}</label>
+      <FormField id="group-name" label={$t('groups.groupName')}>
         <input
           type="text"
           id="group-name"
@@ -66,19 +66,17 @@
           placeholder={$t('groups.groupNamePlaceholder')}
           required
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="group-description">{$t('groups.description')}</label>
+      <FormField id="group-description" label={$t('groups.description')} hint={$t('groups.descriptionHint')} let:describedby>
         <textarea
-          id="group-description"
+          id="group-description" aria-describedby={describedby}
           class="form-control form-textarea"
           bind:value={description}
           rows="3"
           placeholder={$t('groups.descriptionPlaceholder')}
         ></textarea>
-        <span class="form-hint">{$t('groups.descriptionHint')}</span>
-      </div>
+      </FormField>
     </div>
   </form>
 
@@ -109,17 +107,7 @@
     gap: var(--space-4);
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
-  }
 
   .form-control {
     padding: var(--space-2) var(--space-2-5);
@@ -136,13 +124,6 @@
     min-height: 60px;
   }
 
-  .form-hint {
-    display: block;
-    margin-top: 0.35rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    font-style: italic;
-  }
 
   @media (max-width: 768px) {
     .btn-lg {

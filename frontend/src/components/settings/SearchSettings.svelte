@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { formatDateTime } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
@@ -549,8 +550,7 @@
     </div>
   </div>
 
-  <div class="form-group">
-    <label for="embedding-model-select">{$t('settings.search.modelLabel')}</label>
+  <FormField class="embedding-model-field" id="embedding-model-select" label={$t('settings.search.modelLabel')}>
     <select
       id="embedding-model-select"
       class="form-control"
@@ -603,7 +603,7 @@
         </div>
       {/if}
     {/if}
-  </div>
+  </FormField>
 
   {#if modelChanged}
     <div class="form-actions">
@@ -708,17 +708,10 @@
     white-space: nowrap;
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-    margin-bottom: var(--space-3);
-  }
 
-  .form-group label {
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-    font-size: var(--font-size-sm);
+
+  :global(.form-field.embedding-model-field) {
+    margin-bottom: var(--space-3);
   }
 
   .form-control {

@@ -88,4 +88,25 @@ describe('FormField', () => {
     expect(document.getElementById('f-extra')).toBeNull();
     expect(screen.getByLabelText('Host').getAttribute('aria-describedby')).toBe('f-hint');
   });
+
+  it('keeps the 13px label by default and the 14px label for labelSize md', () => {
+    const { container } = render(FormFieldHost, { id: 'f', label: 'Host', labelSize: 'md' });
+    expect(container.querySelector('.form-field')?.classList.contains('form-field-label-md')).toBe(
+      true
+    );
+    const css = readFileSync('src/styles/form-elements.css', 'utf8');
+    const rule = css.slice(css.indexOf(':where(.form-field-label-md .form-field-label)'));
+    expect(rule.slice(0, rule.indexOf('}'))).toContain('var(--font-size-md)');
+    // the md rule must come after the base label rule or it loses on source order
+    expect(css.indexOf(':where(.form-field-label-md')).toBeGreaterThan(
+      css.indexOf(':where(.form-field-label)')
+    );
+  });
+
+  it('has no label-md class by default', () => {
+    const { container } = render(FormFieldHost, { id: 'f', label: 'Host' });
+    expect(container.querySelector('.form-field')?.classList.contains('form-field-label-md')).toBe(
+      false
+    );
+  });
 });

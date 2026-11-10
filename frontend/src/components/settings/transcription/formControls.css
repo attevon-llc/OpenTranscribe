@@ -1,17 +1,9 @@
-.tx-form .form-group {
+.tx-form .form-field {
   margin-bottom: var(--space-4);
 }
 
-.tx-form .form-group.compact {
+.tx-form .form-field.compact {
   margin-bottom: 0;
-}
-
-.tx-form .form-label {
-  display: block;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-color);
-  margin-bottom: var(--space-1-5);
 }
 
 .tx-form .form-select {

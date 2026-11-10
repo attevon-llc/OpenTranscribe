@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -281,8 +282,7 @@
   </svelte:fragment>
 
   <div class="ws-form">
-    <div class="form-group">
-      <label for="ws-name">{$t('settings.watchSources.fields.name')}</label>
+    <FormField id="ws-name" label={$t('settings.watchSources.fields.name')} labelSize="md">
       <input
         id="ws-name"
         type="text"
@@ -290,7 +290,7 @@
         bind:value={form.name}
         placeholder={$t('settings.watchSources.fields.namePlaceholder')}
       />
-    </div>
+    </FormField>
 
     <!-- Stepper indicator -->
     <div class="step-indicator" role="navigation" aria-label={$t('settings.watchSources.title')}>
@@ -323,8 +323,7 @@
     <!-- Step: Connection -->
     {#if currentStep?.id === 'connection'}
       <div class="step-panel">
-        <div class="form-group">
-          <label for="ws-type">{$t('settings.watchSources.fields.sourceType')}</label>
+        <FormField id="ws-type" label={$t('settings.watchSources.fields.sourceType')} labelSize="md">
           <select id="ws-type" class="form-select" bind:value={form.source_type} disabled={!!editingSource}>
             {#if capabilities.local_enabled}
               <option value="local">{$t('settings.watchSources.types.local')}</option>
@@ -335,11 +334,10 @@
           {#if editingSource}
             <p class="field-hint">{$t('settings.watchSources.typeLocked')}</p>
           {/if}
-        </div>
+        </FormField>
 
         {#if form.source_type === 'local'}
-          <div class="form-group">
-            <label for="ws-localpath">{$t('settings.watchSources.fields.localPath')}</label>
+          <FormField id="ws-localpath" label={$t('settings.watchSources.fields.localPath')} labelSize="md">
             <div class="path-row">
               <input dir="ltr" id="ws-localpath" type="text" class="form-input" bind:value={form.local_path} placeholder={$t('settings.watchSources.fields.localPathPlaceholder')} />
               <button type="button" class="btn btn-secondary" on:click={() => openBrowser(form.local_path)}>{$t('settings.watchSources.browse')}</button>
@@ -368,7 +366,7 @@
                 {/if}
               </div>
             {/if}
-          </div>
+          </FormField>
           <label class="checkbox-row">
             <input type="checkbox" bind:checked={form.delete_after_import} />
             <span>{$t('settings.watchSources.fields.deleteAfterImport')}</span>
@@ -377,72 +375,59 @@
             <p class="warning-text">{$t('settings.watchSources.deleteWarning')}</p>
           {/if}
         {:else if form.source_type === 's3'}
-          <div class="form-group">
-            <label for="ws-s3ep">{$t('settings.watchSources.fields.s3Endpoint')}</label>
+          <FormField id="ws-s3ep" label={$t('settings.watchSources.fields.s3Endpoint')} labelSize="md">
             <input dir="ltr" id="ws-s3ep" type="text" class="form-input" bind:value={form.s3_endpoint_url} placeholder="https://s3.amazonaws.com (blank = AWS)" />
-          </div>
+          </FormField>
           <div class="form-row">
-            <div class="form-group">
-              <label for="ws-s3b">{$t('settings.watchSources.fields.s3Bucket')}</label>
+            <FormField id="ws-s3b" label={$t('settings.watchSources.fields.s3Bucket')} labelSize="md">
               <input dir="ltr" id="ws-s3b" type="text" class="form-input" bind:value={form.s3_bucket_name} />
-            </div>
-            <div class="form-group">
-              <label for="ws-s3p">{$t('settings.watchSources.fields.s3Prefix')}</label>
+            </FormField>
+            <FormField id="ws-s3p" label={$t('settings.watchSources.fields.s3Prefix')} labelSize="md">
               <input dir="ltr" id="ws-s3p" type="text" class="form-input" bind:value={form.s3_prefix} />
-            </div>
+            </FormField>
           </div>
           <div class="form-row">
-            <div class="form-group">
-              <label for="ws-s3r">{$t('settings.watchSources.fields.s3Region')}</label>
+            <FormField id="ws-s3r" label={$t('settings.watchSources.fields.s3Region')} labelSize="md">
               <input dir="ltr" id="ws-s3r" type="text" class="form-input" bind:value={form.s3_region} />
-            </div>
-            <div class="form-group">
-              <label for="ws-s3ak">{$t('settings.watchSources.fields.s3AccessKey')}</label>
+            </FormField>
+            <FormField id="ws-s3ak" label={$t('settings.watchSources.fields.s3AccessKey')} labelSize="md">
               <input dir="ltr" id="ws-s3ak" type="text" class="form-input" bind:value={form.s3_access_key_id} />
-            </div>
+            </FormField>
           </div>
-          <div class="form-group">
-            <label for="ws-s3sk">{$t('settings.watchSources.fields.s3SecretKey')}</label>
+          <FormField id="ws-s3sk" label={$t('settings.watchSources.fields.s3SecretKey')} labelSize="md">
             <input dir="ltr" id="ws-s3sk" type="password" class="form-input" bind:value={form.s3_secret_key} placeholder={editingSource?.has_s3_secret_key ? $t('settings.watchSources.secretStored') : ''} />
-          </div>
+          </FormField>
           <label class="checkbox-row">
             <input type="checkbox" bind:checked={form.s3_use_ssl} />
             <span>{$t('settings.watchSources.fields.useSsl')}</span>
           </label>
         {:else if form.source_type === 'smb'}
           <div class="form-row">
-            <div class="form-group">
-              <label for="ws-smbs">{$t('settings.watchSources.fields.smbServer')}</label>
+            <FormField id="ws-smbs" label={$t('settings.watchSources.fields.smbServer')} labelSize="md">
               <input dir="ltr" id="ws-smbs" type="text" class="form-input" bind:value={form.smb_server} />
-            </div>
-            <div class="form-group">
-              <label for="ws-smbsh">{$t('settings.watchSources.fields.smbShare')}</label>
+            </FormField>
+            <FormField id="ws-smbsh" label={$t('settings.watchSources.fields.smbShare')} labelSize="md">
               <input dir="ltr" id="ws-smbsh" type="text" class="form-input" bind:value={form.smb_share} />
-            </div>
+            </FormField>
           </div>
-          <div class="form-group">
-            <label for="ws-smbp">{$t('settings.watchSources.fields.smbPath')}</label>
+          <FormField id="ws-smbp" label={$t('settings.watchSources.fields.smbPath')} labelSize="md">
             <input dir="ltr" id="ws-smbp" type="text" class="form-input" bind:value={form.smb_path} />
-          </div>
+          </FormField>
           <div class="form-row">
-            <div class="form-group">
-              <label for="ws-smbu">{$t('settings.watchSources.fields.smbUsername')}</label>
+            <FormField id="ws-smbu" label={$t('settings.watchSources.fields.smbUsername')} labelSize="md">
               <input dir="ltr" id="ws-smbu" type="text" class="form-input" bind:value={form.smb_username} />
-            </div>
-            <div class="form-group">
-              <label for="ws-smbpw">{$t('settings.watchSources.fields.smbPassword')}</label>
+            </FormField>
+            <FormField id="ws-smbpw" label={$t('settings.watchSources.fields.smbPassword')} labelSize="md">
               <input dir="ltr" id="ws-smbpw" type="password" class="form-input" bind:value={form.smb_password} placeholder={editingSource?.has_smb_password ? $t('settings.watchSources.secretStored') : ''} />
-            </div>
+            </FormField>
           </div>
           <div class="form-row">
-            <div class="form-group">
-              <label for="ws-smbd">{$t('settings.watchSources.fields.smbDomain')}</label>
+            <FormField id="ws-smbd" label={$t('settings.watchSources.fields.smbDomain')} labelSize="md">
               <input dir="ltr" id="ws-smbd" type="text" class="form-input" bind:value={form.smb_domain} />
-            </div>
-            <div class="form-group">
-              <label for="ws-smbport">{$t('settings.watchSources.fields.smbPort')}</label>
+            </FormField>
+            <FormField id="ws-smbport" label={$t('settings.watchSources.fields.smbPort')} labelSize="md">
               <input id="ws-smbport" type="number" class="form-input" bind:value={form.smb_port} />
-            </div>
+            </FormField>
           </div>
         {/if}
       </div>
@@ -452,30 +437,23 @@
     {#if currentStep?.id === 'processing'}
       <div class="step-panel">
         <div class="form-row">
-          <div class="form-group">
-            <label for="ws-interval">{$t('settings.watchSources.fields.pollingInterval')}</label>
+          <FormField id="ws-interval" label={$t('settings.watchSources.fields.pollingInterval')} labelSize="md">
             <input id="ws-interval" type="number" min="1" max="1440" class="form-input" bind:value={form.polling_interval_minutes} />
-          </div>
-          <div class="form-group">
-            <label for="ws-age">{$t('settings.watchSources.fields.skipOlderThan')}</label>
-            <input id="ws-age" type="number" min="0" class="form-input" bind:value={form.skip_files_older_than_days} />
-            <p class="field-hint">{$t('settings.watchSources.skipOlderHelp')}</p>
-          </div>
+          </FormField>
+          <FormField id="ws-age" label={$t('settings.watchSources.fields.skipOlderThan')} labelSize="md" hint={$t('settings.watchSources.skipOlderHelp')} let:describedby>
+            <input id="ws-age" aria-describedby={describedby} type="number" min="0" class="form-input" bind:value={form.skip_files_older_than_days} />
+          </FormField>
         </div>
-        <div class="form-group">
-          <label for="ws-ext">{$t('settings.watchSources.fields.fileExtensions')}</label>
-          <input dir="ltr" id="ws-ext" type="text" class="form-input" bind:value={form.file_extensions} placeholder=".mp4,.mp3,.wav" />
-          <p class="field-hint">{$t('settings.watchSources.extensionsHelp')}</p>
-        </div>
+        <FormField id="ws-ext" label={$t('settings.watchSources.fields.fileExtensions')} labelSize="md" hint={$t('settings.watchSources.extensionsHelp')} let:describedby>
+          <input dir="ltr" id="ws-ext" aria-describedby={describedby} type="text" class="form-input" bind:value={form.file_extensions} placeholder=".mp4,.mp3,.wav" />
+        </FormField>
         <div class="form-row">
-          <div class="form-group">
-            <label for="ws-min">{$t('settings.watchSources.fields.minSpeakers')}</label>
+          <FormField id="ws-min" label={$t('settings.watchSources.fields.minSpeakers')} labelSize="md">
             <input id="ws-min" type="number" min="1" class="form-input" bind:value={form.min_speakers} placeholder={$t('settings.watchSources.fields.speakersPlaceholder')} />
-          </div>
-          <div class="form-group">
-            <label for="ws-max">{$t('settings.watchSources.fields.maxSpeakers')}</label>
+          </FormField>
+          <FormField id="ws-max" label={$t('settings.watchSources.fields.maxSpeakers')} labelSize="md">
             <input id="ws-max" type="number" min="1" class="form-input" bind:value={form.max_speakers} placeholder={$t('settings.watchSources.fields.speakersPlaceholder')} />
-          </div>
+          </FormField>
         </div>
         <p class="field-hint">{$t('settings.watchSources.speakersHelp')}</p>
         <label class="checkbox-row">
@@ -504,28 +482,23 @@
           <span>{$t('settings.watchSources.fields.multipartEnabled')}</span>
         </label>
         {#if form.multipart_enabled}
-          <div class="form-group">
-            <label for="ws-regex">{$t('settings.watchSources.fields.multipartRegex')}</label>
-            <input dir="ltr" id="ws-regex" type="text" class="form-input" bind:value={form.multipart_regex} />
-            <p class="field-hint">{$t('settings.watchSources.regexHelp')}</p>
-          </div>
-          <div class="form-group">
-            <label for="ws-regextest">{$t('settings.watchSources.regexTester')}</label>
+          <FormField id="ws-regex" label={$t('settings.watchSources.fields.multipartRegex')} labelSize="md" hint={$t('settings.watchSources.regexHelp')} let:describedby>
+            <input dir="ltr" id="ws-regex" aria-describedby={describedby} type="text" class="form-input" bind:value={form.multipart_regex} />
+          </FormField>
+          <FormField id="ws-regextest" label={$t('settings.watchSources.regexTester')} labelSize="md">
             <div class="path-row">
               <input dir="ltr" id="ws-regextest" type="text" class="form-input" bind:value={regexSample} placeholder="meeting_P001.mp4" />
               <button type="button" class="btn btn-secondary" on:click={runRegexTest}>{$t('settings.watchSources.testRegex')}</button>
             </div>
             {#if regexResult}<p class="field-hint">{regexResult}</p>{/if}
-          </div>
+          </FormField>
           <div class="form-row">
-            <div class="form-group">
-              <label for="ws-mpw">{$t('settings.watchSources.fields.multipartWindow')}</label>
+            <FormField id="ws-mpw" label={$t('settings.watchSources.fields.multipartWindow')} labelSize="md">
               <input id="ws-mpw" type="number" min="1" class="form-input" bind:value={form.multipart_time_window_hours} />
-            </div>
-            <div class="form-group">
-              <label for="ws-mpws">{$t('settings.watchSources.fields.multipartWaitScans')}</label>
+            </FormField>
+            <FormField id="ws-mpws" label={$t('settings.watchSources.fields.multipartWaitScans')} labelSize="md">
               <input id="ws-mpws" type="number" min="1" class="form-input" bind:value={form.multipart_wait_scans} />
-            </div>
+            </FormField>
           </div>
           {#if form.source_type !== 'local'}
             <label class="checkbox-row">
@@ -541,8 +514,7 @@
     {#if currentStep?.id === 'organize'}
       <div class="step-panel">
         <p class="step-hint">{$t('settings.watchSources.organizeHelp')}</p>
-        <div class="form-group">
-          <label for="ws-tags">{$t('settings.watchSources.fields.tags')}</label>
+        <FormField id="ws-tags" label={$t('settings.watchSources.fields.tags')} labelSize="md">
           <div class="ms-wrap">
             <MultiSelect
               --sms-options-bg="var(--surface-color)"
@@ -553,9 +525,8 @@
               placeholder={$t('settings.watchSources.tagsPlaceholder')}
             />
           </div>
-        </div>
-        <div class="form-group">
-          <label for="ws-cols">{$t('settings.watchSources.collectionsLabel')}</label>
+        </FormField>
+        <FormField id="ws-cols" label={$t('settings.watchSources.collectionsLabel')} labelSize="md">
           <div class="ms-wrap">
             <MultiSelect
               --sms-options-bg="var(--surface-color)"
@@ -566,7 +537,7 @@
               placeholder={$t('settings.watchSources.collectionsPlaceholder')}
             />
           </div>
-        </div>
+        </FormField>
         <label class="checkbox-row enabled-row">
           <input type="checkbox" bind:checked={form.is_enabled} />
           <span>{$t('settings.watchSources.fields.enabled')}</span>
@@ -709,19 +680,12 @@
     gap: var(--space-3);
     min-height: 180px;
   }
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
+  .form-row > :global(.form-field) {
     flex: 1;
   }
   .form-row {
     display: flex;
     gap: var(--space-3);
-  }
-  .form-group label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
   }
   /* .form-input / .form-select inherit the app's global input/select styling. */
   .checkbox-row {

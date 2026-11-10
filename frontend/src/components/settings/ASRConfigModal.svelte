@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import Toggle from '$components/ui/Toggle.svelte';
   import { createEventDispatcher } from 'svelte';
@@ -281,8 +282,7 @@
     {/if}
   </svelte:fragment>
         <!-- Name -->
-        <div class="form-group">
-          <label for="asr-name">{$t('settings.asrProvider.fields.name')}</label>
+        <FormField id="asr-name" label={$t('settings.asrProvider.fields.name')}>
           <input
             id="asr-name"
             type="text"
@@ -290,11 +290,10 @@
             placeholder="e.g., Deepgram Production"
             class="form-input"
           />
-        </div>
+        </FormField>
 
         <!-- Provider -->
-        <div class="form-group">
-          <label for="asr-provider">{$t('settings.asrProvider.fields.provider')}</label>
+        <FormField id="asr-provider" label={$t('settings.asrProvider.fields.provider')}>
           <select
             id="asr-provider"
             bind:value={formData.provider}
@@ -319,7 +318,7 @@
           {#if editingConfig}
             <p class="field-hint">{$t('settings.asrProvider.providerLockedOnEdit')}</p>
           {/if}
-        </div>
+        </FormField>
 
         {#if selectedProvider}
           <!-- Provider capabilities -->
@@ -346,8 +345,7 @@
           {/if}
 
           <!-- Model -->
-          <div class="form-group">
-            <label for="asr-model">{$t('settings.asrProvider.fields.model')}</label>
+          <FormField id="asr-model" label={$t('settings.asrProvider.fields.model')}>
             {#if availableModels.length > 0}
               <select id="asr-model" bind:value={formData.model_name} on:change={onModelChange} class="form-select">
                 <option value="">{$t('settings.asrProvider.selectModel')}</option>
@@ -392,12 +390,11 @@
             {#if estimatedCostPerHour}
               <p class="cost-hint">{$t('settings.asrProvider.estimatedCost')}: <strong>{estimatedCostPerHour}</strong></p>
             {/if}
-          </div>
+          </FormField>
 
           <!-- Access Key ID (AWS) -->
           {#if selectedProvider.requires_access_key_id}
-            <div class="form-group">
-              <label for="asr-access-key-id">{$t('settings.asrProvider.fields.accessKeyId')}</label>
+            <FormField id="asr-access-key-id" label={$t('settings.asrProvider.fields.accessKeyId')}>
               <input dir="ltr"
                 id="asr-access-key-id"
                 type="text"
@@ -406,13 +403,12 @@
                 class="form-input"
                 autocomplete="off"
               />
-            </div>
+            </FormField>
           {/if}
 
           <!-- API Key / Secret Access Key -->
           {#if selectedProvider.requires_api_key}
-            <div class="form-group">
-              <label for="asr-apikey">{selectedProvider.requires_access_key_id ? $t('settings.asrProvider.fields.secretAccessKey') : $t('settings.asrProvider.fields.apiKey')}</label>
+            <FormField id="asr-apikey" label={selectedProvider.requires_access_key_id ? $t('settings.asrProvider.fields.secretAccessKey') : $t('settings.asrProvider.fields.apiKey')}>
               <div class="input-with-toggle">
                 <input dir="ltr"
                   id="asr-apikey"
@@ -426,26 +422,24 @@
                   {showApiKey ? 'Hide' : 'Show'}
                 </button>
               </div>
-            </div>
+            </FormField>
           {/if}
 
           <!-- Region (Azure / AWS) -->
           {#if needsRegion}
-            <div class="form-group">
-              <label for="asr-region">{$t('settings.asrProvider.fields.region')}</label>
+            <FormField id="asr-region" label={$t('settings.asrProvider.fields.region')}>
               <select id="asr-region" bind:value={formData.region} class="form-select">
                 <option value="">{$t('settings.asrProvider.selectRegion')}</option>
                 {#each regionOptions as r (r)}
                   <option value={r}>{r}</option>
                 {/each}
               </select>
-            </div>
+            </FormField>
           {/if}
 
           <!-- Base URL -->
           {#if selectedProvider.supports_base_url}
-            <div class="form-group">
-              <label for="asr-baseurl">{$t('settings.asrProvider.fields.baseUrl')}</label>
+            <FormField id="asr-baseurl" label={$t('settings.asrProvider.fields.baseUrl')}>
               <input dir="ltr"
                 id="asr-baseurl"
                 type="url"
@@ -453,7 +447,7 @@
                 placeholder="https://..."
                 class="form-input"
               />
-            </div>
+            </FormField>
           {/if}
         {/if}
 
@@ -534,17 +528,7 @@
     flex-shrink: 0;
   }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1-5);
-  }
 
-  .form-group label {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
 
   .form-input, .form-select {
     padding: var(--space-2) var(--space-3);
@@ -714,8 +698,8 @@
       justify-content: center;
     }
 
-    .form-group input,
-    .form-group select {
+    :global(.form-field) input,
+    :global(.form-field) select {
       min-height: 44px;
       font-size: var(--font-size-base);
     }

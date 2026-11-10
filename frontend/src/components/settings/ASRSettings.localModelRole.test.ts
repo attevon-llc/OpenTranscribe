@@ -28,6 +28,11 @@ vi.mock('$lib/api/asrSettings', () => ({
   },
 }));
 
+vi.mock('$lib/api/asrProviderPolicy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/api/asrProviderPolicy')>()),
+  getProviderPolicy: vi.fn().mockResolvedValue({ providers: [], users_may_add_own_keys: true }),
+}));
+
 vi.mock('$lib/api/localModels', async () =>
   (await import('$testMocks/asrMocks')).localModelsApiMock()
 );

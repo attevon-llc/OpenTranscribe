@@ -62,3 +62,11 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
 if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function scrollIntoView() {};
 }
+
+// Any request that reaches the real XHR/fetch layer fails the test that made it.
+// See test-network-guard.ts.
+import { afterEach } from 'vitest';
+import { assertNoNetworkAttempts, installNetworkGuard } from './test-network-guard';
+
+installNetworkGuard();
+afterEach(assertNoNetworkAttempts);

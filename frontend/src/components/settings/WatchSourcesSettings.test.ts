@@ -1,8 +1,13 @@
 /**
- * Watch Sources can be opened on a chosen tab (#1210), and each tab owns a real tabpanel.
+ * WatchSourcesSettings shell behaviour.
+ *
+ * - It can be opened on a chosen tab (#1210), and each tab owns a real tabpanel.
+ * - A scope switch (Mine / All) reloads the source list outside loadAll's try/catch. A failed
+ *   reload used to leave the previous scope's sources on screen under the new scope's button,
+ *   with no error and an unhandled rejection; it now clears the list and shows the load error.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const api = vi.hoisted(() => ({
   getCapabilities: vi.fn(),
@@ -18,7 +23,11 @@ const api = vi.hoisted(() => ({
   getGlobalSettings: vi.fn(),
   updateGlobalSettings: vi.fn(),
 }));
-vi.mock('$lib/api/watchSourcesApi', () => api);
+// The real module for the pure label helpers the source card uses; the endpoints are spies.
+vi.mock('$lib/api/watchSourcesApi', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ...api,
+}));
 
 vi.mock('$stores/auth', async () => {
   const { writable } = await import('svelte/store');
@@ -44,6 +53,7 @@ vi.mock('$components/ConfirmationModal.svelte', async () => ({
 }));
 
 import WatchSourcesSettings from './WatchSourcesSettings.svelte';
+import { toastStore } from '$stores/toast';
 import { user } from '$stores/auth';
 
 const setRole = (role: string) => (user as unknown as { set: (v: unknown) => void }).set({ role });
@@ -61,6 +71,31 @@ beforeEach(() => {
   api.getGlobalSettings.mockResolvedValue({
     enabled: true,
     file_stability_seconds: 5,
+  });
+});
+
+const MINE = {
+  uuid: 'src-mine',
+  name: 'My drop folder',
+  source_type: 'local',
+  enabled: true,
+  config: { path: '/watch/mine' },
+};
+
+describe('WatchSourcesSettings scope reload', () => {
+  it('clears the old list and reports the error when the new scope fails to load', async () => {
+    setRole('admin');
+    api.getWatchSources.mockResolvedValueOnce([MINE]);
+    api.getWatchSourceStats.mockResolvedValue(null);
+    render(WatchSourcesSettings);
+    expect(await screen.findByText('My drop folder')).toBeInTheDocument(); // control: list shown
+
+    api.getWatchSources.mockRejectedValueOnce(new Error('503'));
+    await fireEvent.click(screen.getByRole('button', { name: 'settings.watchSources.allScope' }));
+
+    await waitFor(() => expect(toastStore.error).toHaveBeenCalledTimes(1));
+    expect(api.getWatchSources).toHaveBeenLastCalledWith('all');
+    expect(screen.queryByText('My drop folder')).not.toBeInTheDocument();
   });
 });
 

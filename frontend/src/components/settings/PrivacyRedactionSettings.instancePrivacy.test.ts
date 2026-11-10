@@ -23,6 +23,15 @@ vi.mock('$components/settings/RedactionPolicySettings.svelte', async () => ({
   default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 
+vi.mock('$lib/api/telemetry', () => ({
+  getTelemetryStatus: vi.fn().mockRejectedValue(new Error('not under test')),
+  setTelemetryEnabled: vi.fn(),
+}));
+vi.mock('$lib/api/selfErasure', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/api/selfErasure')>()),
+  getSelfErasureSettings: vi.fn().mockRejectedValue(new Error('not under test')),
+}));
+
 import PrivacyRedactionSettings from './PrivacyRedactionSettings.svelte';
 
 beforeEach(() => {

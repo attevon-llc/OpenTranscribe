@@ -42,6 +42,11 @@ vi.mock('$lib/api/backupApi', async (orig) => ({
   ...backup,
 }));
 
+vi.mock('$lib/api/mediaMirrorApi', async (orig) => ({
+  ...(await orig<typeof import('$lib/api/mediaMirrorApi')>()),
+  getMediaMirrorSettings: vi.fn().mockRejectedValue(new Error('not under test')),
+}));
+
 import DirectorySyncSettings from './DirectorySyncSettings.svelte';
 import ContentRedactionSettings from './ContentRedactionSettings.svelte';
 import BackupSettings from './BackupSettings.svelte';

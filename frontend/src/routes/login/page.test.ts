@@ -78,6 +78,9 @@ vi.mock('$stores/toast', () => ({ toastStore: mockToast }));
 vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 vi.mock('$lib/api/invitations', () => ({ resendEmailVerification: vi.fn() }));
+vi.mock('$lib/passwordPolicy', async () =>
+  (await import('$testMocks/passwordPolicyMocks')).passwordPolicyMock()
+);
 
 function noopComponent() {
   return () => {};

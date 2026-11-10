@@ -76,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Frontend unit tests can no longer reach the network: `src/test-network-guard.ts` (installed from `src/test-setup.ts`) makes any unmocked XHR or `fetch` throw at the call site naming the method and URL, and fails the test in `afterEach` even if the component swallows the error. Eleven test files that were silently making real requests now mock the API module they use. This also removes the `EnvironmentTeardownError: Closing rpc` aborts that an unmocked request caused under host load.
+
 - Storage and LLM client failures are now typed: `MinIOService` and the storage helpers raise `StorageError` (the store refused) or `StorageUnavailableError` (no answer), and `LLMService` raises `LLMUnavailableError` (unreachable, timed out) or `LLMResponseError` (non-200, bad JSON, empty content), all chained with `raise ... from`. Callers that caught a bare `Exception` for these now catch the typed error, so a programming error in those paths is no longer swallowed. Error messages no longer include the provider response body or object names.
 
 - Transcription error handling (`backend/app/transcription/**` and `backend/app/tasks/transcription/**`): every one of the remaining 93 handlers now narrows to what its try body can raise (Redis, SQLAlchemy, broker, OpenSearch, MinIO, subprocess, torch/CUDA `RuntimeError`) or is a marked boundary that calls `logger.exception`; each absorbed outage logs a traceback, and a programming error in those bodies is no longer swallowed. The waveform generator's outer catch-all was removed (the Celery task already logs and retries). Model-load error types live in `app/transcription/errors.py`.

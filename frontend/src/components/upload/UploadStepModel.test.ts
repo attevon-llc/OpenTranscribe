@@ -26,6 +26,15 @@ import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
+// The picker reads the ASR catalog and status for its capability flags; a failed read is the
+// documented "options without flags" path, so these tests state it rather than reach the network.
+vi.mock('$lib/api/asrSettings', () => ({
+  ASRSettingsApi: {
+    getProviders: vi.fn().mockRejectedValue(new Error('catalog not under test')),
+    getStatus: vi.fn().mockRejectedValue(new Error('status not under test')),
+  },
+}));
+
 import UploadStepModel from './UploadStepModel.svelte';
 
 function summaryCheckbox(container: HTMLElement) {

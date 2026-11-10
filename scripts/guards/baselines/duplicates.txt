@@ -191,8 +191,8 @@ frontend/src/components/CollectionsPanel.svelte	1	pre-existing duplicated blocks
 frontend/src/components/FileUploader.sources.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/FileUploader.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/FilterSidebar.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/Navbar.aboutModal.test.ts	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/Navbar.aboutModalFailure.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/Navbar.aboutModal.test.ts	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/Navbar.aboutModalFailure.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/Navbar.mobileNotifications.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/Navbar.notificationsMount.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/Navbar.supportAccess.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -269,7 +269,7 @@ frontend/src/components/settings/MyTakedownsPanel.test.ts	2	pre-existing duplica
 frontend/src/components/settings/OIDCSettings.svelte	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/OrganizationContextSettings.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/PKISettings.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/settings/PromptSettings.svelte	6	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/settings/PromptSettings.svelte	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/ProxySettings.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/PyannoteCredentialForm.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/QuarantinePanel.cells.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

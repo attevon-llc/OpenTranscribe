@@ -13,6 +13,19 @@ vi.mock('../../stores/toast', () => ({
 
 vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
+vi.mock('$lib/api/llmSettings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/api/llmSettings')>();
+  return {
+    ...actual,
+    LLMSettingsApi: {
+      ...actual.LLMSettingsApi,
+      getLocalEndpoints: vi
+        .fn()
+        .mockResolvedValue({ endpoints: [], private_endpoints_allowed: false }),
+    },
+  };
+});
+
 import LLMConfigModal from './LLMConfigModal.svelte';
 
 const providers: ProviderDefaults[] = (['ollama', 'openai', 'anthropic'] as const).map(

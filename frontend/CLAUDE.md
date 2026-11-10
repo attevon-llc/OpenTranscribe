@@ -110,6 +110,18 @@ client-only SPA, several modules under test branch on `typeof window === 'undefi
 (`$lib/utils/url`, `$lib/axios`), and a test running the SSR branch of code that has no SSR
 in production passes while proving nothing. Correctness over 1.3 s.
 
+## Unit tests may not touch the network
+
+`src/test-setup.ts` installs `src/test-network-guard.ts`: any XHR (axios) or `fetch` that reaches
+the real network layer throws immediately with `Unmocked network request in a unit test: GET /api/...`
+and is also recorded, so an `afterEach` fails the test even when the component catches the error.
+An unmocked request used to fail as an async "Network Error" that, under host load, logged after the
+file tore down and aborted the whole run (`EnvironmentTeardownError: Closing rpc`). Fix a hit by
+mocking the module that issues the call (`vi.mock('$lib/api/...')` or a `$testMocks/*` helper), never
+by weakening the guard. This is Vitest's "Mocking requests" contract (unhandled requests are errors)
+without adding MSW, because this suite stubs at module level. `src/test-network-guard.test.ts` is
+the permanent control.
+
 ## Path aliases (never use `../../`)
 
 `$lib` → `src/lib` · `$components` → `src/components` · `$stores` → `src/stores` · `$styles` → `src/styles` · `$assets` → `src/assets` · `$testMocks` → `src/test-mocks`.

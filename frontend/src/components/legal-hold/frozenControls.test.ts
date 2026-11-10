@@ -14,6 +14,10 @@ vi.mock('$stores/locale', async () => {
   return { ...mocks.englishLocale(), locale: readable('en') };
 });
 
+vi.mock('$lib/axios', () => ({
+  default: { get: vi.fn().mockResolvedValue({ data: { prompts: [] } }) },
+}));
+
 import FrozenContextTestHost from './FrozenContextTestHost.svelte';
 import FileActionButtons from '$components/fileDetail/FileActionButtons.svelte';
 import RedactionControls from '$components/fileDetail/RedactionControls.svelte';

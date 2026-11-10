@@ -22,6 +22,9 @@ vi.mock('$stores/settingsModalStore', () => ({ settingsModalStore: { open: vi.fn
 vi.mock('$lib/prefetch', () => ({
   prefetchSpeakersData: vi.fn(),
 }));
+vi.mock('$lib/api/version', () => ({
+  getServerVersion: vi.fn().mockResolvedValue({ version: '', git_sha: '' }),
+}));
 vi.mock('$lib/edition', () => ({ isCloudEdition: true }));
 vi.mock('$lib/cloud', async () => (await import('$testMocks/navbarMocks')).cloudMock());
 vi.mock('$components/navbar/UserDropdown.svelte', async () => ({

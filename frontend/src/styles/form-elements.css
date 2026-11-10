@@ -712,7 +712,8 @@ button:disabled {
 }
 :where(.form-field-hint) {
   margin: 0;
-  font-size: var(--font-size-xs);
+  /* sm, not xs: converted hints were up to 0.8rem and must not shrink. */
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 :where(.form-field-extra) {

@@ -722,10 +722,10 @@
         <p class="section-description">{$t('settings.recording.description')}</p>
 
         <form on:submit|preventDefault={saveRecordingSettings} class="settings-form">
-          <FormField id="maxRecordingDuration" label={$t('settings.recording.maxDuration')}>
+          <FormField id="maxRecordingDuration" label={$t('settings.recording.maxDuration')} hint={$t('settings.recording.durationRange')} let:describedby>
             <input
               type="number"
-              id="maxRecordingDuration"
+              id="maxRecordingDuration" aria-describedby={describedby}
               class="form-control"
               bind:value={maxRecordingDuration}
               on:input={handleRecordingSettingsChange}
@@ -733,12 +733,11 @@
               max="480"
               required
             />
-            <small class="form-text">{$t('settings.recording.durationRange')}</small>
           </FormField>
 
-          <FormField id="recordingQuality" label={$t('settings.recording.quality')}>
+          <FormField id="recordingQuality" label={$t('settings.recording.quality')} hint={$t('settings.recording.qualityHelp')} let:describedby>
             <select
-              id="recordingQuality"
+              id="recordingQuality" aria-describedby={describedby}
               class="form-control"
               bind:value={recordingQuality}
               on:change={handleRecordingSettingsChange}
@@ -747,7 +746,6 @@
               <option value="high">{$t('settings.recording.qualityHigh')}</option>
               <option value="maximum">{$t('settings.recording.qualityMaximum')}</option>
             </select>
-            <small class="form-text">{$t('settings.recording.qualityHelp')}</small>
           </FormField>
 
           <div class="form-group">

@@ -34,15 +34,14 @@
         bind:value={settings.file_stability_seconds}
       />
     </FormField>
-    <FormField id="gs-max-per-scan" label={$t('settings.watchSources.global.maxImportsPerScan')} labelSize="md">
+    <FormField id="gs-max-per-scan" label={$t('settings.watchSources.global.maxImportsPerScan')} labelSize="md" hint={$t('settings.watchSources.global.maxImportsPerScanHelp')} let:describedby>
       <input
-        id="gs-max-per-scan"
+        id="gs-max-per-scan" aria-describedby={describedby}
         type="number"
         min="1"
         class="form-input"
         bind:value={settings.max_imports_per_scan}
       />
-      <small class="form-hint">{$t('settings.watchSources.global.maxImportsPerScanHelp')}</small>
     </FormField>
   </div>
   <label class="checkbox-row">
@@ -51,24 +50,22 @@
   </label>
   {#if settings.fs_events_enabled}
     <div class="form-row">
-      <FormField id="gs-fs-mode" label={$t('settings.watchSources.global.fsEventsMode')} labelSize="md">
-        <select id="gs-fs-mode" class="form-input" bind:value={settings.fs_events_mode}>
+      <FormField id="gs-fs-mode" label={$t('settings.watchSources.global.fsEventsMode')} labelSize="md" hint={$t('settings.watchSources.global.fsEventsModeHelp')} let:describedby>
+        <select id="gs-fs-mode" aria-describedby={describedby} class="form-input" bind:value={settings.fs_events_mode}>
           <option value="auto">{$t('settings.watchSources.global.fsEventsModeAuto')}</option>
           <option value="native">{$t('settings.watchSources.global.fsEventsModeNative')}</option>
           <option value="polling">{$t('settings.watchSources.global.fsEventsModePolling')}</option>
           <option value="off">{$t('settings.watchSources.global.fsEventsModeOff')}</option>
         </select>
-        <small class="form-hint">{$t('settings.watchSources.global.fsEventsModeHelp')}</small>
       </FormField>
-      <FormField id="gs-fs-poll" label={$t('settings.watchSources.global.fsEventsPollSeconds')} labelSize="md">
+      <FormField id="gs-fs-poll" label={$t('settings.watchSources.global.fsEventsPollSeconds')} labelSize="md" hint={$t('settings.watchSources.global.fsEventsPollSecondsHelp')} let:describedby>
         <input
-          id="gs-fs-poll"
+          id="gs-fs-poll" aria-describedby={describedby}
           type="number"
           min="1"
           class="form-input"
           bind:value={settings.fs_events_poll_seconds}
         />
-        <small class="form-hint">{$t('settings.watchSources.global.fsEventsPollSecondsHelp')}</small>
       </FormField>
     </div>
   {/if}
@@ -102,13 +99,6 @@
   .form-row {
     display: flex;
     gap: var(--space-3);
-  }
-  .form-hint {
-    display: block;
-    margin-top: 0.35rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    font-style: italic;
   }
   /* .form-input inherits the global input styling (form-elements.css). */
   .checkbox-row {

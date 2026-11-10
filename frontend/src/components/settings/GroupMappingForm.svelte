@@ -121,24 +121,22 @@
         </span>
       </FormField>
 
-      <FormField id="mapping-group" label={$t('settings.groupMappings.targetGroup')}>
-        <select id="mapping-group" class="form-control" bind:value={groupUuid}>
+      <FormField id="mapping-group" label={$t('settings.groupMappings.targetGroup')} hint={$t('settings.groupMappings.targetGroupHelp')} let:describedby>
+        <select id="mapping-group" aria-describedby={describedby} class="form-control" bind:value={groupUuid}>
           <option value="">{$t('settings.groupMappings.noGroup')}</option>
           {#each groups as group (group.uuid)}
             <option value={group.uuid}>{group.name}</option>
           {/each}
         </select>
-        <span class="form-hint">{$t('settings.groupMappings.targetGroupHelp')}</span>
       </FormField>
 
-      <FormField id="mapping-role" label={$t('settings.groupMappings.grantsRole')}>
-        <select id="mapping-role" class="form-control" bind:value={grantsRole}>
+      <FormField id="mapping-role" label={$t('settings.groupMappings.grantsRole')} hint={$t('settings.groupMappings.grantsRoleHelp')} let:describedby>
+        <select id="mapping-role" aria-describedby={describedby} class="form-control" bind:value={grantsRole}>
           <option value="">{$t('settings.groupMappings.noRole')}</option>
           {#each GRANTABLE_ROLES as role (role)}
             <option value={role}>{$t(GROUP_MAPPING_ROLE_KEYS[role])}</option>
           {/each}
         </select>
-        <span class="form-hint">{$t('settings.groupMappings.grantsRoleHelp')}</span>
       </FormField>
 
       <FormField id="mapping-description" label={$t('settings.groupMappings.descriptionLabel')}>

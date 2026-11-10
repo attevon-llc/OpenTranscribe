@@ -718,9 +718,8 @@
         />
       </FormField>
 
-      <FormField id="tags" label={$t('prompts.tags')}>
-        <TagInput id="tags" bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
-        <small class="form-text">{$t('prompts.tagsHelp')}</small>
+      <FormField id="tags" label={$t('prompts.tags')} hint={$t('prompts.tagsHelp')} let:describedby>
+        <TagInput id="tags" {describedby} bind:tags={formData.tags} placeholder={$t('prompts.tagsPlaceholder')} disabled={saving} />
       </FormField>
 
       <!-- Share with all users -->

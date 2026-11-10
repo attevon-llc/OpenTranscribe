@@ -440,14 +440,12 @@
           <FormField id="ws-interval" label={$t('settings.watchSources.fields.pollingInterval')} labelSize="md">
             <input id="ws-interval" type="number" min="1" max="1440" class="form-input" bind:value={form.polling_interval_minutes} />
           </FormField>
-          <FormField id="ws-age" label={$t('settings.watchSources.fields.skipOlderThan')} labelSize="md">
-            <input id="ws-age" type="number" min="0" class="form-input" bind:value={form.skip_files_older_than_days} />
-            <p class="field-hint">{$t('settings.watchSources.skipOlderHelp')}</p>
+          <FormField id="ws-age" label={$t('settings.watchSources.fields.skipOlderThan')} labelSize="md" hint={$t('settings.watchSources.skipOlderHelp')} let:describedby>
+            <input id="ws-age" aria-describedby={describedby} type="number" min="0" class="form-input" bind:value={form.skip_files_older_than_days} />
           </FormField>
         </div>
-        <FormField id="ws-ext" label={$t('settings.watchSources.fields.fileExtensions')} labelSize="md">
-          <input dir="ltr" id="ws-ext" type="text" class="form-input" bind:value={form.file_extensions} placeholder=".mp4,.mp3,.wav" />
-          <p class="field-hint">{$t('settings.watchSources.extensionsHelp')}</p>
+        <FormField id="ws-ext" label={$t('settings.watchSources.fields.fileExtensions')} labelSize="md" hint={$t('settings.watchSources.extensionsHelp')} let:describedby>
+          <input dir="ltr" id="ws-ext" aria-describedby={describedby} type="text" class="form-input" bind:value={form.file_extensions} placeholder=".mp4,.mp3,.wav" />
         </FormField>
         <div class="form-row">
           <FormField id="ws-min" label={$t('settings.watchSources.fields.minSpeakers')} labelSize="md">
@@ -484,9 +482,8 @@
           <span>{$t('settings.watchSources.fields.multipartEnabled')}</span>
         </label>
         {#if form.multipart_enabled}
-          <FormField id="ws-regex" label={$t('settings.watchSources.fields.multipartRegex')} labelSize="md">
-            <input dir="ltr" id="ws-regex" type="text" class="form-input" bind:value={form.multipart_regex} />
-            <p class="field-hint">{$t('settings.watchSources.regexHelp')}</p>
+          <FormField id="ws-regex" label={$t('settings.watchSources.fields.multipartRegex')} labelSize="md" hint={$t('settings.watchSources.regexHelp')} let:describedby>
+            <input dir="ltr" id="ws-regex" aria-describedby={describedby} type="text" class="form-input" bind:value={form.multipart_regex} />
           </FormField>
           <FormField id="ws-regextest" label={$t('settings.watchSources.regexTester')} labelSize="md">
             <div class="path-row">

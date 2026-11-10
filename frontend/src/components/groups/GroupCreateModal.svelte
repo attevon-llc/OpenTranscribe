@@ -68,15 +68,14 @@
         />
       </FormField>
 
-      <FormField id="group-description" label={$t('groups.description')}>
+      <FormField id="group-description" label={$t('groups.description')} hint={$t('groups.descriptionHint')} let:describedby>
         <textarea
-          id="group-description"
+          id="group-description" aria-describedby={describedby}
           class="form-control form-textarea"
           bind:value={description}
           rows="3"
           placeholder={$t('groups.descriptionPlaceholder')}
         ></textarea>
-        <span class="form-hint">{$t('groups.descriptionHint')}</span>
       </FormField>
     </div>
   </form>
@@ -125,13 +124,6 @@
     min-height: 60px;
   }
 
-  .form-hint {
-    display: block;
-    margin-top: 0.35rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    font-style: italic;
-  }
 
   @media (max-width: 768px) {
     .btn-lg {

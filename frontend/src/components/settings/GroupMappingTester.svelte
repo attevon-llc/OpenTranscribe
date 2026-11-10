@@ -87,9 +87,9 @@
   {/if}
 
   {#if mode === 'claims'}
-    <FormField class="tester-field" id="mapping-test-claims" label={$t('settings.groupMappings.test.claimsLabel')}>
+    <FormField class="tester-field" id="mapping-test-claims" label={$t('settings.groupMappings.test.claimsLabel')} hint={$t('settings.groupMappings.test.claimsHelp')} let:describedby>
       <textarea dir="ltr"
-        id="mapping-test-claims"
+        id="mapping-test-claims" aria-describedby={describedby}
         class="form-control form-textarea"
         bind:value={claimsText}
         rows="3"
@@ -97,19 +97,17 @@
           ? $t('settings.groupMappings.claimValuePlaceholderLdap')
           : $t('settings.groupMappings.claimValuePlaceholderOidc')}
       ></textarea>
-      <span class="help-text">{$t('settings.groupMappings.test.claimsHelp')}</span>
     </FormField>
   {:else}
-    <FormField class="tester-field" id="mapping-test-username" label={$t('settings.groupMappings.test.usernameLabel')}>
+    <FormField class="tester-field" id="mapping-test-username" label={$t('settings.groupMappings.test.usernameLabel')} hint={$t('settings.groupMappings.test.usernameHelp')} let:describedby>
       <input
-        id="mapping-test-username"
+        id="mapping-test-username" aria-describedby={describedby}
         type="text"
         class="form-control"
         bind:value={username}
         maxlength="255"
         placeholder={$t('settings.groupMappings.test.usernamePlaceholder')}
       />
-      <span class="help-text">{$t('settings.groupMappings.test.usernameHelp')}</span>
     </FormField>
   {/if}
 

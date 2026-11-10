@@ -173,15 +173,14 @@
     <div class="profile-card">
       <h4 class="card-title">{$t('settings.profile.accountInfo')}</h4>
       <form on:submit|preventDefault={updateProfile} class="settings-form">
-        <FormField id="email" label={$t('auth.email')}>
+        <FormField id="email" label={$t('auth.email')} hint={$t('settings.profile.emailCannotChange')} let:describedby>
           <input dir="ltr"
             type="email"
-            id="email"
+            id="email" aria-describedby={describedby}
             class="form-control"
             value={email}
             disabled
           />
-          <small class="form-text">{$t('settings.profile.emailCannotChange')}</small>
         </FormField>
 
         <FormField id="fullName" label={$t('settings.profile.fullName')}>

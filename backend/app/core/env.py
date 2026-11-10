@@ -57,9 +57,18 @@ def env_is_set(name: str) -> bool:
 
 
 def env_int(
-    name: str, default: int, *, minimum: int | None = None, maximum: int | None = None
+    name: str,
+    default: int,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+    clamp: bool = False,
 ) -> int:
-    """Integer value; empty, malformed or out-of-range warns and yields ``default``."""
+    """Integer value; empty or malformed warns and yields ``default``.
+
+    An out-of-range value also yields ``default``, unless ``clamp`` is set: then it is pulled
+    to the nearest bound (the knobs that always documented "values below N mean N").
+    """
     raw = _raw(name)
     if raw is None:
         return default
@@ -69,6 +78,13 @@ def env_int(
         logger.warning("Invalid integer %s=%r; using default %d", name, raw, default)
         return default
     if (minimum is not None and value < minimum) or (maximum is not None and value > maximum):
+        if clamp:
+            bounded = max(minimum, value) if minimum is not None else value
+            bounded = min(maximum, bounded) if maximum is not None else bounded
+            logger.warning(
+                "%s=%d is outside [%s, %s]; using %d", name, value, minimum, maximum, bounded
+            )
+            return bounded
         logger.warning(
             "%s=%d is outside [%s, %s]; using default %d", name, value, minimum, maximum, default
         )

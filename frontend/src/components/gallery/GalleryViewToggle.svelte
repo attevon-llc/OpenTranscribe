@@ -138,9 +138,23 @@
     color: #cbd5e1;
   }
 
+  .toggle-btn:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .toggle-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
   .toggle-btn:hover:not(.active) {
     background: var(--hover-bg);
     color: var(--text-primary);
+  }
+
+  .toggle-btn:focus:not(:focus-visible) {
+    outline: none;
   }
 
   :global([data-theme='light']) .toggle-btn:hover:not(.active),
@@ -157,20 +171,6 @@
   .toggle-btn.active {
     background: var(--primary-color);
     color: var(--text-on-solid);
-  }
-
-  .toggle-btn:focus {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .toggle-btn:focus:not(:focus-visible) {
-    outline: none;
-  }
-
-  .toggle-btn:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
   }
 
   .toggle-btn svg {

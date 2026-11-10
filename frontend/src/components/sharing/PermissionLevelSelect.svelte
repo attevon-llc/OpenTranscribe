@@ -43,12 +43,12 @@
     min-width: 90px;
   }
 
-  .permission-select:hover:not(:disabled) {
-    border-color: var(--primary-color);
-  }
-
   .permission-select:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .permission-select:hover:not(:disabled) {
+    border-color: var(--primary-color);
   }
 </style>

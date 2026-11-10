@@ -26,10 +26,6 @@
 </div>
 
 <style>
-  .cleared-notice:empty {
-    display: none;
-  }
-
   .cleared-notice {
     display: flex;
     align-items: center;
@@ -40,6 +36,10 @@
     background: var(--background-color);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
+  }
+
+  .cleared-notice:empty {
+    display: none;
   }
 
   button {

@@ -134,6 +134,11 @@
     transition: all var(--duration-fast);
   }
 
+  .page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   .page-btn:hover:not(:disabled):not(.active) {
     background: var(--hover-color);
     border-color: var(--primary-color);
@@ -143,11 +148,6 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     border-color: var(--primary-color);
-  }
-
-  .page-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 
   .ellipsis {

@@ -570,13 +570,13 @@
     font-family: inherit;
   }
 
-  .dropdown-item:hover:not(:disabled) {
-    background-color: var(--hover-color);
-  }
-
   .dropdown-item:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .dropdown-item:hover:not(:disabled) {
+    background-color: var(--hover-color);
   }
 
   .dropdown-item svg {

@@ -101,14 +101,14 @@
     background: var(--warning-color);
   }
 
-  /* An error keeps its colour even while unread: it is the thing to notice. */
-  .unread.status-error .notification-indicator {
-    background: var(--error-color);
-  }
-
   .processing .notification-indicator {
     background: var(--primary-color);
     animation: pulse 1.5s infinite;
+  }
+
+  /* An error keeps its colour even while unread: it is the thing to notice. */
+  .unread.status-error .notification-indicator {
+    background: var(--error-color);
   }
 
   @keyframes pulse {

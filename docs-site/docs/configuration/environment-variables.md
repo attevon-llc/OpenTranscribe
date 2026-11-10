@@ -46,12 +46,13 @@ with no restart); a token saved there takes precedence over this variable.
 
 ```bash
 # Whisper beam_size: lower = faster but slightly less accurate (default: 5)
-# Set to 1 for greedy decoding (~25-40% faster, ~1-2% lower WER for English)
+# Set to 1 for greedy decoding, the fastest and least accurate setting
 WHISPER_BEAM_SIZE=5
 
 # Whisper compute_type: quantization for faster inference
-# Default: auto-detected (float16 on CUDA). Options: float16, int8_float16, int8, float32
-# int8_float16 gives ~15-25% speedup with negligible quality loss
+# Default: auto-detected from the GPU: int8_float16 on compute capability 7.5+ (Turing and
+# newer), float16 on 7.0 (Volta), float32 below that, int8 on CPU.
+# Options: float16, int8_float16, int8, float32. Detection: Performance Tuning.
 WHISPER_COMPUTE_TYPE=float16
 ```
 
@@ -59,7 +60,7 @@ WHISPER_COMPUTE_TYPE=float16
 
 | Use Case | Model | Notes |
 |----------|-------|-------|
-| English (primary) | `large-v3-turbo` | 6x faster, excellent English accuracy |
+| English (primary) | `large-v3-turbo` | Much faster than `large-v3`, excellent English accuracy |
 | Multilingual | `large-v3` | Best accuracy for 100+ languages |
 | Translation to English | `large-v3` | Turbo cannot translate |
 | Speed-critical | `large-v3-turbo` | Recommended for most use cases |
@@ -67,15 +68,13 @@ WHISPER_COMPUTE_TYPE=float16
 
 ### Whisper Model VRAM Requirements
 
-| Model | Batch Size 1 | Batch Size 8 | Batch Size 16 |
-|-------|-------------|-------------|--------------|
-| `tiny` | ~1GB | ~2GB | ~3GB |
-| `base` | ~1GB | ~2GB | ~3GB |
-| `small` | ~2GB | ~4GB | ~6GB |
-| `medium` | ~5GB | ~10GB | ~15GB |
-| `large-v3-turbo` | ~6GB | ~10GB | ~15GB |
-| `large-v3` | ~10GB | ~20GB | ~30GB |
-| `large-v2` | ~10GB | ~20GB | ~30GB |
+Peak device VRAM measured on an RTX A6000 by batch size (`docs/whisper-vram-profile/`, int8_float16, models plus the production baseline loaded). `large-v3` and `large-v2` have not been profiled separately and are sized with the `large-v3-turbo` figures here; `tiny` and `base` have not been profiled. The auto batch size is derived from these peaks, see [Performance Tuning](../operations/performance-tuning.md#batch-size-tuning).
+
+| Model | Batch 2 | Batch 4 | Batch 8 | Batch 16 |
+|-------|---------|---------|---------|----------|
+| `small` | 2.9 GB | 3.2 GB | 3.8 GB | 4.9 GB |
+| `medium` | 3.8 GB | 4.2 GB | 5.0 GB | 6.9 GB |
+| `large-v3-turbo` | 3.9 GB | 4.3 GB | 5.3 GB | 7.1 GB |
 
 ## Speaker Diarization & Voiceprint Embeddings
 
@@ -574,10 +573,11 @@ With `WORKER_METRICS_PORT` set, the decision is exported as `gpu_worker_concurre
 ## Multi-GPU Scaling
 
 ```bash
-GPU_SCALE_ENABLED=false
+GPU_SCALE_ENABLED=false       # does NOT enable scaling: only `./opentr.sh start ... --gpu-scale` does (see Multi-GPU Scaling)
 GPU_SCALE_DEVICE_ID=2
-GPU_SCALE_WORKERS=4
+GPU_SCALE_WORKERS=4           # unset follows DIAR_NATIVE_MAX_INFLIGHT (default 2); raise both together
 GPU_SCALE_DEFAULT_WORKER=1   # 1 keeps the default single-GPU worker running next to the scaled ones (.env.example ships 1; compose default when unset: 0)
+GPU_SCALE_POOL=threads        # celery --pool for the scaled worker
 GPU_SCALE_MAX_TASKS=500       # Restart scaled worker after N tasks (memory safety)
 ```
 
@@ -1222,7 +1222,7 @@ ACCOUNT_LOCKOUT_PROGRESSIVE=true
 ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES=1440
 
 # Multi-Factor Authentication
-MFA_ENABLED=true
+MFA_ENABLED=false                     # default: off
 MFA_ISSUER_NAME=OpenTranscribe
 MFA_BACKUP_CODE_COUNT=10
 

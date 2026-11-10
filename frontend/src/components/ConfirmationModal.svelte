@@ -20,9 +20,11 @@
 
   const dispatch = createEventDispatcher();
 
+  // Close before dispatching: a confirm handler may open the next dialog on the same bound
+  // store (a two-step confirmation), and closing afterwards would shut that one too.
   function handleConfirm() {
-    dispatch('confirm');
     isOpen = false;
+    dispatch('confirm');
   }
 
   function handleCancel() {

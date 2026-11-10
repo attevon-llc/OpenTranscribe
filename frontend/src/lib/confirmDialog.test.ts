@@ -9,17 +9,19 @@ describe('createConfirmDialog', () => {
     expect(get(d.title)).toBe('');
     expect(get(d.message)).toBe('');
     expect(get(d.confirmText)).toBe('');
+    expect(get(d.cancelText)).toBe('');
     expect(get(d.variant)).toBe('primary');
   });
 
   it('request opens the dialog with its text and does not run anything yet', () => {
     const d = createConfirmDialog();
     const cb = vi.fn();
-    d.request('Title', 'Message', cb, { confirmText: 'Do it' });
+    d.request('Title', 'Message', cb, { confirmText: 'Do it', cancelText: 'Keep' });
     expect(get(d.isOpen)).toBe(true);
     expect(get(d.title)).toBe('Title');
     expect(get(d.message)).toBe('Message');
     expect(get(d.confirmText)).toBe('Do it');
+    expect(get(d.cancelText)).toBe('Keep');
     expect(get(d.variant)).toBe('primary');
     expect(cb).not.toHaveBeenCalled();
   });
@@ -61,10 +63,11 @@ describe('createConfirmDialog', () => {
     const d = createConfirmDialog();
     const first = vi.fn();
     const second = vi.fn();
-    d.request('a', 'a', first, { confirmText: 'First', variant: 'danger' });
+    d.request('a', 'a', first, { confirmText: 'First', cancelText: 'Back', variant: 'danger' });
     expect(get(d.variant)).toBe('danger');
     d.request('b', 'b', second);
     expect(get(d.confirmText)).toBe('');
+    expect(get(d.cancelText)).toBe('');
     expect(get(d.variant)).toBe('primary');
     d.confirm();
     expect(first).not.toHaveBeenCalled();

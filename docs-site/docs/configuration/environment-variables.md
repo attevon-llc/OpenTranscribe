@@ -1213,6 +1213,7 @@ PASSWORD_REQUIRE_DIGIT=true
 PASSWORD_REQUIRE_SPECIAL=true
 PASSWORD_HISTORY_COUNT=24
 PASSWORD_MAX_AGE_DAYS=60
+PASSWORD_MIN_AGE_HOURS=24             # hours before a password may be changed again (0 = off); hardened/custom only
 
 # Account Lockout (NIST AC-7)
 ACCOUNT_LOCKOUT_ENABLED=true

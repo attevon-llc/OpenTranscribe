@@ -5,6 +5,7 @@
 
   import logoBanner from '$assets/logo-banner.png';
   import FormField from '$components/ui/FormField.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
 
   let email = '';
   let loading = false;
@@ -73,7 +74,7 @@
 
         <button type="submit" class="auth-button" disabled={loading}>
           {#if loading}
-            <span class="spinner"></span> {$t('auth.sending')}
+            <Spinner size="inline" color="white" /> {$t('auth.sending')}
           {:else}
             {$t('auth.sendResetLink')}
           {/if}
@@ -203,19 +204,5 @@
   .logo-image {
     max-width: 200px;
     height: auto;
-  }
-
-  .spinner {
-    display: inline-block;
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: var(--radius-round);
-    border-top-color: #fff;
-    animation: spin 1s ease-in-out infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 </style>

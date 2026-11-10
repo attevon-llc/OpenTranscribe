@@ -2,6 +2,7 @@
   import type { MediaFileDetail } from '$lib/types/media';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import Spinner from '$components/ui/Spinner.svelte';
   import { supportSessionGate } from '$stores/supportSession';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
@@ -190,9 +191,7 @@
         title={isDownloading ? $t('transcript.processing') : $t('transcript.download')}
       >
         {#if isDownloading}
-          <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12a9 9 0 11-6.219-8.56"/>
-          </svg>
+          <Spinner size="inline" color="currentColor" />
           {currentDownload?.status === 'preparing' ? $t('transcript.preparing') : $t('transcript.processing')}
         {:else}
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -354,10 +353,6 @@
     background: var(--warning-color);
     color: var(--text-on-solid);
     border-color: var(--warning-color);
-  }
-
-  .spinner {
-    animation: spin 1s linear infinite;
   }
 
   @media (max-width: 768px) {

@@ -5,7 +5,7 @@
 Small, reusable, theme-aware, accessible building blocks. Prefer these over hand-rolling
 the same pattern in a feature component. Import via `$components/ui/...`. Every primitive
 supports light/dark via CSS custom properties and most ship with a colocated `*.test.ts`
-(the pure-markup ones — `Spinner`, `SkeletonLoader`, `ListRowSkeleton`,
+(the pure-markup ones — `SkeletonLoader`, `ListRowSkeleton`,
 `CardGridSkeleton`, `MetadataChips`, `TagInput`, `FilterPanelToggle` — have none).
 
 ## Catalog
@@ -120,8 +120,11 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
   "Open Review" sat 0px under its description).
 - `ProgressBar.svelte` — WAI-ARIA `role=progressbar` track (`percent` 0-100 or `null` = indeterminate, which omits `aria-valuenow`; `label` visible, `ariaLabel` when no visible label; `tone` primary|success|warning|error). Tested in `ProgressBar.test.ts`. Usage meters are not progress: do not use it for them.
 - `LiveProgressCard.svelte` — card for a running background job: optional spinner title, `done / total` (or `countLabel`) + percent in an `aria-live=polite` region, `ProgressBar` named by the required `barLabel` (a name like "Search indexing progress", never a status string), message + `formatEta` row, default slot, optional `danger-outline` stop `Button` (`onStop`, busy when `state="stopping"`). Used by SearchSettings, EmbeddingMigrationSettings, AutoLabelSettings, SpeakerAttributeBulkPanel. Tested in `LiveProgressCard.test.ts`.
-- `Spinner.svelte`, `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`,
-  `CardGridSkeleton.svelte`, `TagInput.svelte`.
+- `Spinner.svelte` — the one spinner (`size` small/inline/medium/large, `color`, `currentColor` for a
+  spinner on a solid button). Pass a translated `label` when no text sits beside it: it then
+  renders as `role="status"`; without a label it is `aria-hidden` (the adjacent text is the name).
+  Never write a local `.spinner` or `@keyframes spin` (the global one is in `styles/animations.css`).
+- `SkeletonLoader.svelte`, `ListRowSkeleton.svelte`, `CardGridSkeleton.svelte`, `TagInput.svelte`.
 
 ## Conventions / patterns
 

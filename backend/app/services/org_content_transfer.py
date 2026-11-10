@@ -10,6 +10,13 @@ Scope (plan ``docs/design/1091_data_safety_cluster_plan.md`` §6.2, OD-5): files
 included), speakers, speaker profiles/collections/clusters, collections, tags, summary prompts,
 custom vocabulary, watch sources and group ownership. Not chats, personal settings or comments.
 
+**Rows that hang off a file follow the file, selected by the file ids that moved** (``_FILE_TABLES``:
+speakers, topic suggestions and task records). They are never selected by their own
+``organization_id``: the pipeline creates every ``Speaker`` with that column NULL
+(``tasks/transcription/speaker_processor``), so a tenant-stamp select matched none of them, and
+account deletion then deleted the handed-over files' speakers by ``user_id``, detached their
+segments and erased their voiceprints. Selecting by file also leaves a held file's rows with it.
+
 Held files are NOT re-owned: a legal hold freezes the file as it stands, so it is skipped and
 named in the result (``skipped_held``) and the audit event. A quarantined file moves like any
 other; its quarantine state is untouched.
@@ -23,6 +30,7 @@ by ``user_id``, which is why the restamp matters.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
@@ -40,6 +48,7 @@ from app.models.collection import Collection
 from app.models.custom_vocabulary import CustomVocabulary
 from app.models.group import UserGroup
 from app.models.media import MediaFile
+from app.models.media import Task
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
@@ -48,6 +57,7 @@ from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerCollection
 from app.models.speaker import SpeakerProfile
 from app.models.tag import Tag
+from app.models.topic import TopicSuggestion
 from app.models.user import User
 from app.models.watch_source import WatchSource
 from app.services import audit_outbox
@@ -58,9 +68,16 @@ logger = logging.getLogger(__name__)
 
 _TERMS_CHUNK = 5000
 
+#: (result key, model, file column). Re-owned when their file moved, whatever their own
+#: ``organization_id`` says (module docstring). Comments are absent on purpose (OD-5).
+_FILE_TABLES: tuple[tuple[str, Any, str], ...] = (
+    ("speakers", Speaker, "media_file_id"),
+    ("topic_suggestions", TopicSuggestion, "media_file_id"),
+    ("tasks", Task, "media_file_id"),
+)
+
 #: (result key, model, owner column). Every one is also filtered by ``organization_id``.
 _TABLES: tuple[tuple[str, Any, str], ...] = (
-    ("speakers", Speaker, "user_id"),
     ("speaker_profiles", SpeakerProfile, "user_id"),
     ("speaker_collections", SpeakerCollection, "user_id"),
     ("speaker_clusters", SpeakerCluster, "user_id"),
@@ -169,7 +186,9 @@ def _validate_target(db: Session, organization_id: int, from_user_id: int, to_us
         )
 
 
-def _move(db: Session, model: Any, column: str, ids: list[int], to_user_id: int) -> tuple[int, int]:
+def _move(
+    db: Session, model: Any, column: str, ids: Sequence[int | str], to_user_id: int
+) -> tuple[int, int]:
     """Re-own ``ids``; returns (moved, skipped_conflict).
 
     One bulk UPDATE in a savepoint. A unique name index (a profile, collection, vocabulary term
@@ -208,6 +227,26 @@ def _reown(model: Any, column: str, where: Any, to_user_id: int) -> Any:
         .values({column: to_user_id})
         .execution_options(synchronize_session=False)
     )
+
+
+def _move_file_rows(db: Session, result: TransferResult) -> None:
+    """Re-own the departing member's rows on the files that moved (``_FILE_TABLES``)."""
+    for key, model, file_column in _FILE_TABLES:
+        ids: list[int | str] = []  # task ids are Celery ids (str)
+        for chunk in _chunks(result.file_ids):
+            ids.extend(
+                row[0]
+                for row in db.execute(
+                    select(model.id).where(
+                        getattr(model, file_column).in_(chunk),
+                        model.user_id == result.from_user_id,
+                    )
+                )
+            )
+        moved, skipped = _move(db, model, "user_id", ids, result.to_user_id)
+        result.counts[key] = moved
+        if skipped:
+            result.skipped_conflict[key] = skipped
 
 
 def transfer_org_content(
@@ -263,6 +302,7 @@ def transfer_org_content(
     )
     moved, _ = _move(db, MediaFile, "user_id", result.file_ids, to_user_id)
     result.counts["files"] = moved
+    _move_file_rows(db, result)
 
     for key, model, column in _TABLES:
         ids = [

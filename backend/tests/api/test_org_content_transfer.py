@@ -293,3 +293,100 @@ def test_deleting_the_last_admins_account_is_refused_while_content_remains(
     assert refused.value.detail["code"] == "no_transfer_target"
     assert "Add another administrator first" in refused.value.detail["message"]
     assert _owner_of(gov.db, MediaFile, f.id) == gov.alice.id
+
+
+def _pipeline_speaker(db, file: MediaFile, label: str = "SPEAKER_00"):
+    """A speaker as ``speaker_processor`` creates it: ``organization_id`` left NULL, with one
+    diarized segment pointing at it."""
+    import uuid as uuid_pkg
+
+    from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
+
+    speaker = Speaker(
+        name=label,
+        uuid=uuid_pkg.uuid4(),
+        user_id=file.user_id,
+        media_file_id=file.id,
+        verified=False,
+    )
+    db.add(speaker)
+    db.flush()
+    segment = TranscriptSegment(
+        media_file_id=file.id, speaker_id=speaker.id, start_time=0.0, end_time=1.0, text="hi"
+    )
+    db.add(segment)
+    db.commit()
+    assert speaker.organization_id is None
+    return speaker, segment
+
+
+def test_deleting_an_account_keeps_the_handed_over_files_speakers_and_voiceprints(
+    gov, search, monkeypatch
+):
+    from app.models.media import Task
+    from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
+    from app.models.topic import TopicSuggestion
+
+    _world(gov)
+    db = gov.db
+    org_file = gov.file(gov.alice)
+    speaker, segment = _pipeline_speaker(db, org_file)
+    topic = TopicSuggestion(media_file_id=org_file.id, user_id=gov.alice.id, suggested_tags=[])
+    task = Task(
+        id=f"task-transfer-{org_file.uuid}",
+        user_id=gov.alice.id,
+        media_file_id=org_file.id,
+        task_type="transcription",
+        status="completed",
+    )
+    db.add_all([topic, task])
+    db.commit()
+    ids = (org_file.id, speaker.id, segment.id, topic.id, task.id)
+    speaker_uuid = str(speaker.uuid)
+    plans: list = []
+
+    def record_plan(plan) -> list:
+        plans.append(plan)
+        return []
+
+    monkeypatch.setattr("app.services.account_purge.purge_account_external_copies", record_plan)
+    monkeypatch.setattr(
+        user_deletion_service.token_service, "stamp_user_revocation_epoch", lambda uuid: None
+    )
+
+    user_deletion_service.delete_user_account(db, gov.alice)
+
+    db.expire_all()
+    file_id, speaker_id, segment_id, topic_id, task_id = ids
+    assert db.get(MediaFile, file_id).user_id == gov.admin.id
+    kept = db.get(Speaker, speaker_id)
+    assert kept is not None and kept.user_id == gov.admin.id
+    assert db.get(TranscriptSegment, segment_id).speaker_id == speaker_id
+    assert db.get(TopicSuggestion, topic_id).user_id == gov.admin.id
+    assert db.get(Task, task_id).user_id == gov.admin.id
+    # The voiceprint document is erased only through the plan; the handed-over speaker is not
+    # in it, and the restamp re-points the file's speaker documents at the admin.
+    assert len(plans) == 1
+    assert speaker_uuid not in plans[0].speaker_uuids
+    assert file_id not in [f["file_id"] for f in plans[0].files]
+    restamped = [m["kwargs"] for m in search if m["name"] == oct_.RESTAMP_TASK]
+    assert restamped and file_id in restamped[0]["file_ids"]
+
+
+def test_a_held_files_speakers_stay_with_their_owner_even_when_tenant_stamped(gov, search):
+    from app.models.speaker import Speaker
+
+    _world(gov)
+    held = gov.file(gov.alice, legal_hold=True)
+    speaker, _segment = _pipeline_speaker(gov.db, held)
+    speaker.organization_id = gov.org.id  # a stamp must not pull it off its frozen file
+    gov.db.commit()
+
+    result = oct_.transfer_org_content(
+        gov.db, organization_id=gov.org.id, from_user_id=gov.alice.id, actor=gov.admin
+    )
+
+    assert result.counts["speakers"] == 0
+    assert _owner_of(gov.db, Speaker, speaker.id) == gov.alice.id

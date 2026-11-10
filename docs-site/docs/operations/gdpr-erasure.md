@@ -82,9 +82,11 @@ organization administrator hands it over, the organization-stamped rows the pers
 re-owned by an administrator first, so deleting the account no longer destroys them. Personal
 content (no organization) is not touched and goes with the account.
 
-What moves (trashed files included): files, speakers, speaker profiles, speaker collections and
-clusters, collections, tags, summary prompts, custom vocabulary, watch sources and the groups the
-person owns. What does not: chats, personal settings and comments (they stay with their author).
+What moves (trashed files included): files, speaker profiles, speaker collections and clusters,
+collections, tags, summary prompts, custom vocabulary, watch sources and the groups the person
+owns. The rows that belong to a moved file go with it: its speakers (so the transcript keeps its
+speaker names and the voiceprints are kept), its topic suggestions and its processing records.
+What does not: chats, personal settings and comments (they stay with their author).
 Shares and collection or tag memberships refer to rows by id, so they survive unchanged, and the
 search index is re-pointed at the new owner, so search and chat keep finding the content.
 

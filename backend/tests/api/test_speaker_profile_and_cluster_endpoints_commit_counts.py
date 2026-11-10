@@ -2,36 +2,13 @@
 
 from __future__ import annotations
 
-import uuid
-
 import pytest
 
-from app.models.media import MediaFile
-from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerProfile
 from tests.commit_counter import endpoint_commits
 
 pytestmark = pytest.mark.usefixtures("speaker_os_seams")
-
-
-def _file_with_speaker(db_session, owner) -> tuple[MediaFile, Speaker]:
-    mf = MediaFile(
-        user_id=owner.id,
-        filename="c.wav",
-        storage_path=f"test/{uuid.uuid4().hex}.wav",
-        file_size=1024,
-        content_type="audio/wav",
-        status="completed",
-    )
-    db_session.add(mf)
-    db_session.commit()
-    db_session.refresh(mf)
-    spk = Speaker(user_id=owner.id, media_file_id=mf.id, name="SPEAKER_00", display_name="Ann")
-    db_session.add(spk)
-    db_session.commit()
-    db_session.refresh(spk)
-    return mf, spk
 
 
 def test_profile_create_update_delete_commit_counts(

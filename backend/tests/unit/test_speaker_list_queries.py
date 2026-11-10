@@ -7,61 +7,19 @@ import uuid
 from sqlalchemy import func
 from sqlalchemy import true
 
-from app.models.media import MediaFile
-from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.services import speaker_list_queries as lists
-
-
-def _file(db, owner, **kw) -> MediaFile:
-    mf = MediaFile(
-        user_id=owner.id,
-        filename=f"{uuid.uuid4().hex[:6]}.wav",
-        storage_path=f"test/{uuid.uuid4().hex}.wav",
-        file_size=1,
-        content_type="audio/wav",
-        status=kw.pop("status", "completed"),
-        **kw,
-    )
-    db.add(mf)
-    db.flush()
-    return mf
-
-
-def _speaker(db, owner, mf, **kw) -> Speaker:
-    spk = Speaker(
-        user_id=owner.id,
-        media_file_id=mf.id,
-        name=kw.pop("name", f"S_{uuid.uuid4().hex[:6]}"),
-        **kw,
-    )
-    db.add(spk)
-    db.flush()
-    return spk
-
-
-def _segments(db, mf, speaker, starts_and_lengths):
-    rows = [
-        TranscriptSegment(
-            media_file_id=mf.id,
-            speaker_id=speaker.id,
-            start_time=start,
-            end_time=start + length,
-            text="t",
-        )
-        for start, length in starts_and_lengths
-    ]
-    db.add_all(rows)
-    db.flush()
-    return rows
+from tests.fixtures.speaker_query_rows import file_row
+from tests.fixtures.speaker_query_rows import segment_rows
+from tests.fixtures.speaker_query_rows import speaker_row
 
 
 def test_list_speakers_page_orders_by_speaker_number_and_pages(db_session, normal_user):
-    mf = _file(db_session, normal_user)
+    mf = file_row(db_session, normal_user)
     for n in (10, 2, 1):
-        _speaker(db_session, normal_user, mf, name=f"SPEAKER_{n:02d}")
-    _speaker(db_session, normal_user, mf, name="Zed")
+        speaker_row(db_session, normal_user, mf, name=f"SPEAKER_{n:02d}")
+    speaker_row(db_session, normal_user, mf, name="Zed")
     mine = [Speaker.user_id == normal_user.id]
     page = lists.list_speakers_page(
         db_session, mine, verified_only=False, file_id=None, skip=0, page_size=3
@@ -76,9 +34,9 @@ def test_list_speakers_page_orders_by_speaker_number_and_pages(db_session, norma
 def test_list_speakers_page_for_one_file_ignores_paging_and_honours_verified(
     db_session, normal_user
 ):
-    mf = _file(db_session, normal_user)
-    verified = _speaker(db_session, normal_user, mf, verified=True)
-    _speaker(db_session, normal_user, mf, verified=False)
+    mf = file_row(db_session, normal_user)
+    verified = speaker_row(db_session, normal_user, mf, verified=True)
+    speaker_row(db_session, normal_user, mf, verified=False)
     everything = lists.list_speakers_page(
         db_session, [], verified_only=False, file_id=mf.id, skip=5, page_size=1
     )
@@ -104,10 +62,10 @@ def test_profile_id_for_uuid_applies_owner_and_tenant_limits(db_session, normal_
 
 
 def test_segment_helpers_count_and_rank_per_speaker(db_session, normal_user):
-    mf = _file(db_session, normal_user)
-    a, b = _speaker(db_session, normal_user, mf), _speaker(db_session, normal_user, mf)
-    _segments(db_session, mf, a, [(float(i), 1.0) for i in range(6)])
-    _segments(db_session, mf, b, [(100.0, 1.0)])
+    mf = file_row(db_session, normal_user)
+    a, b = speaker_row(db_session, normal_user, mf), speaker_row(db_session, normal_user, mf)
+    segment_rows(db_session, mf, a, [(float(i), 1.0) for i in range(6)])
+    segment_rows(db_session, mf, b, [(100.0, 1.0)])
     assert lists.segment_counts_by_speaker(db_session, [a.id, b.id]) == {a.id: 6, b.id: 1}
     assert lists.segment_counts_by_speaker(db_session, []) == {}
     stamps = lists.first_segment_timestamps_by_speaker(db_session, [a.id, b.id], mf.id)
@@ -119,9 +77,9 @@ def test_segment_helpers_count_and_rank_per_speaker(db_session, normal_user):
 def test_speakers_named_excludes_the_given_speaker_and_other_owners(
     db_session, normal_user, admin_user
 ):
-    mf = _file(db_session, normal_user)
-    me, twin = (_speaker(db_session, normal_user, mf, display_name="Dana") for _ in range(2))
-    _speaker(db_session, admin_user, _file(db_session, admin_user), display_name="Dana")
+    mf = file_row(db_session, normal_user)
+    me, twin = (speaker_row(db_session, normal_user, mf, display_name="Dana") for _ in range(2))
+    speaker_row(db_session, admin_user, file_row(db_session, admin_user), display_name="Dana")
     found = lists.speakers_named(
         db_session,
         "Dana",
@@ -146,10 +104,10 @@ def test_speakers_linked_to_profile_drops_quarantined_unless_exempt(db_session, 
     prof = SpeakerProfile(user_id=normal_user.id, name=f"P{uuid.uuid4().hex[:6]}")
     db_session.add(prof)
     db_session.flush()
-    ok_file = _file(db_session, normal_user)
-    quarantined = _file(db_session, normal_user, is_quarantined=True)
-    keep = _speaker(db_session, normal_user, ok_file, profile_id=prof.id)
-    hidden = _speaker(db_session, normal_user, quarantined, profile_id=prof.id)
+    ok_file = file_row(db_session, normal_user)
+    quarantined = file_row(db_session, normal_user, is_quarantined=True)
+    keep = speaker_row(db_session, normal_user, ok_file, profile_id=prof.id)
+    hidden = speaker_row(db_session, normal_user, quarantined, profile_id=prof.id)
 
     def linked(include_quarantined):
         return lists.speakers_linked_to_profile(
@@ -167,10 +125,10 @@ def test_speakers_linked_to_profile_drops_quarantined_unless_exempt(db_session, 
 
 
 def test_speaker_picker_groups_label_by_name_and_count_files(db_session, normal_user):
-    a_file, b_file = _file(db_session, normal_user), _file(db_session, normal_user)
-    _speaker(db_session, normal_user, a_file, display_name="Robin")
-    _speaker(db_session, normal_user, b_file, display_name="Robin")
-    _speaker(db_session, normal_user, a_file, display_name="Sam")
+    a_file, b_file = file_row(db_session, normal_user), file_row(db_session, normal_user)
+    speaker_row(db_session, normal_user, a_file, display_name="Robin")
+    speaker_row(db_session, normal_user, b_file, display_name="Robin")
+    speaker_row(db_session, normal_user, a_file, display_name="Sam")
     found = lists.speaker_picker_groups(
         db_session,
         [Speaker.user_id == normal_user.id],

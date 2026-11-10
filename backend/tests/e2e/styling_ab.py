@@ -400,7 +400,7 @@ def run_step(page: Any, step: str) -> None:
             pattern, _, body = arg.rpartition("|")
             _patch_route(page, pattern, json.loads(body))
         elif kind == "reload":  # arg ignored: the manifest validator wants kind:arg
-            page.reload()
+            page.reload(wait_until="networkidle")
         else:
             raise StepError(f"unknown step kind in {step!r}")
     except (StepError, ScreenUnavailableError):

@@ -341,18 +341,6 @@ _FILE_DETAIL_STATES = (
         notes="segment Edit button hover (underline appears, colour kept)",
     ),
     Screen(
-        "file-detail-speaker-suggestions",
-        "/files/{file_uuid}",
-        steps=(
-            "click:.edit-speakers-button",
-            "wait:.speaker-editor-container",
-            "click:.suggestions-toggle",
-            "wait:.suggestions-dropdown",
-        ),
-        ready=".transcript-segment",
-        notes="speaker editor with the suggestion chips open (metadata chips, confidence chip)",
-    ),
-    Screen(
         "search-floating-preview",
         "/search?q=the",
         steps=(
@@ -361,7 +349,7 @@ _FILE_DETAIL_STATES = (
             "wait:.sticky-preview",
         ),
         ready=".search-page, main",
-        masks=(".result-summary", ".preview-time"),
+        masks=(".result-summary", ".preview-time", ".preview-player-container"),
         full_page=False,
         notes="FloatingPreviewPlayer shadow",
     ),

@@ -104,7 +104,7 @@ _GALLERY_MASKS = (".count-chip", ".meta-line")
 _UPLOAD_OPEN = ("click:.upload-btn", "wait:.tab-button")
 _UPLOAD_FILE = (*_UPLOAD_OPEN, "file:.drop-zone input[type=file]", "wait:.file-name")
 #: Submit with the review-with-defaults shortcut; the mocked route decides what the queue shows.
-_UPLOAD_SUBMIT = ("click:.nav-review-defaults", "click:.nav-submit")
+_UPLOAD_SUBMIT = ("click:.nav-next", "click:.nav-review-defaults", "click:.nav-submit")
 _UPLOAD_PREPARE = "route:**/api/files/prepare|"
 
 _APP = (
@@ -141,6 +141,8 @@ _APP = (
             *_UPLOAD_FILE,
             "click:.nav-next",
             "wait:.selected-chips .chip",
+            # The wizard auto-focuses a different control per run; pin the focus ring here.
+            "focus:.create-input",
         ),
         masks=_GALLERY_MASKS,
         full_page=False,

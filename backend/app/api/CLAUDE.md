@@ -45,11 +45,11 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   `endpoints/chat/export_redaction.py`. `tests/unit/test_export_plane_resolves_a_policy.py`
   walks the live route table so the next export route cannot be missed the way this one was.
 - `endpoints/files/` — the oversized files router split into a package (`upload`, `crud`,
-  `filtering`, `listing`, `single_file`, `media_delivery`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
+  `listing`, `single_file`, `media_delivery`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
   `management.py` exports a second router (same `/files` prefix) that includes `bulk_actions`; verbs in `bulk_action_handlers` and `bulk_rework_actions`.
   No ORM call lives in these modules (the `orm_call_in_api` guard): row lookups and writes are in
   `services/file_route_queries.py` and `services/upload_prepare_queries.py`, the gallery filters in
-  `services/file_list_filters.py` (`files/filtering.py` only re-exports them under the stable import path).
+  `services/file_list_filters.py`, which `listing` imports directly.
   The helpers never commit; each route keeps its own commit. Comments use `services/comment_queries.py`,
   speaker-segment lookups `services/transcript_segment_queries.py`, tag lookups `tag_scope.visible_tag_id` / `tag_sharing.get_tag`.
 
@@ -250,7 +250,7 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 - **Privacy policy (#1280), lists and filters.** A page of files (`GET /files`, `GET /collections/{uuid}/media`)
   builds ONE `PrivacyView` and hands it to `FormattingService.format_media_file(..., privacy=)`: the speaker
   chips ask the voiceprint policy per file scope, not per speaker. A `speaker` filter matches the name the page
-  shows: `files/filtering.hidden_speaker_name_clause` (SQL twin of `hide_machine_identities`) makes a display
+  shows: `services/file_list_filters.hidden_speaker_name_clause` (SQL twin of `hide_machine_identities`) makes a display
   name a voiceprint made unmatchable while its file's voiceprints are off (the diarizer name always matches), and
   the list loads the label columns up front (`LIST_SPEAKER_COLUMNS`). `GET /speaker-profiles/profiles` counts only
   the links `machine_identity_clauses` does not hide. A response that embeds a speaker redacts before computing

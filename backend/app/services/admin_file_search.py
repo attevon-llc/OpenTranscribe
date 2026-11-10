@@ -10,7 +10,7 @@ This is that reach, and nothing wider: the organization scope is exactly the pre
 every row.
 
 The text match is the gallery's own (:func:`title_or_filename_matches`, which
-``api/endpoints/files/filtering.apply_search_filter`` also uses), the tenant gate is
+``services/file_list_filters.apply_search_filter`` also uses), the tenant gate is
 ``permission_service.org_scope_pred``, the hold badge is ``content_hold_queries`` and the trash
 and takedown state is ``file_availability``: no predicate here is a second copy of one elsewhere.
 """

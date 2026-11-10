@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { OIDCConfig, AuthMethodTestResponse } from '$lib/api/authConfig';
@@ -226,44 +227,38 @@
       {/if}
     </div>
 
-    <div class="form-group">
-      <label for="oidc_server_url">{$t('settings.oidc.serverUrlPublic')}</label>
+    <FormField size="lg" id="oidc_server_url" label={$t('settings.oidc.serverUrlPublic')} hint={$t('settings.oidc.serverUrlPublicHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_server_url"
+        id="oidc_server_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_server_url}
         on:input={handleChange}
         placeholder="https://idp.example.com"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.serverUrlPublicHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_internal_url">{$t('settings.oidc.serverUrlInternal')}</label>
+    <FormField size="lg" id="oidc_internal_url" label={$t('settings.oidc.serverUrlInternal')} hint={$t('settings.oidc.serverUrlInternalHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_internal_url"
+        id="oidc_internal_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_internal_url}
         on:input={handleChange}
         placeholder="http://idp:8080"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.serverUrlInternalHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_discovery_url">{$t('settings.oidc.discoveryUrl')}</label>
+    <FormField size="lg" id="oidc_discovery_url" label={$t('settings.oidc.discoveryUrl')} hint={$t('settings.oidc.discoveryUrlHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_discovery_url"
+        id="oidc_discovery_url" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_discovery_url}
         on:input={handleChange}
         placeholder="https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.discoveryUrlHelp')}</span>
-    </div>
+    </FormField>
 
     <div class="form-group" class:superseded={discoveryActive}>
       <label for="oidc_realm">{$t('settings.oidc.realm')}</label>
@@ -281,8 +276,7 @@
       {/if}
     </div>
 
-    <div class="form-group">
-      <label for="oidc_timeout">{$t('settings.oidc.requestTimeout')}</label>
+    <FormField size="lg" id="oidc_timeout" label={$t('settings.oidc.requestTimeout')}>
       <input
         id="oidc_timeout"
         type="number"
@@ -292,15 +286,14 @@
         max="120"
         disabled={!formData.oidc_enabled}
       />
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.clientConfiguration')}</h3>
 
     <div class="form-row">
-      <div class="form-group">
-        <label for="oidc_client_id">{$t('settings.oidc.clientId')}</label>
+      <FormField size="lg" id="oidc_client_id" label={$t('settings.oidc.clientId')}>
         <input dir="ltr"
           id="oidc_client_id"
           type="text"
@@ -309,13 +302,13 @@
           placeholder="opentranscribe"
           disabled={!formData.oidc_enabled}
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="oidc_client_secret">{$t('settings.oidc.clientSecret')}</label>
+      <FormField size="lg" id="oidc_client_secret" label={$t('settings.oidc.clientSecret')} hint={clientSecretIsSet ? $t('settings.oidc.clientSecretSetHelp') : $t('settings.oidc.clientSecretHelp')} let:describedby>
         <div class="input-with-toggle">
           <input dir="ltr"
             id="oidc_client_secret"
+            aria-describedby={describedby}
             type={showSecret ? 'text' : 'password'}
             bind:value={clientSecretInput}
             on:input={handleChange}
@@ -334,12 +327,7 @@
             {showSecret ? $t('common.hide') : $t('common.show')}
           </button>
         </div>
-        <span class="help-text">
-          {clientSecretIsSet
-            ? $t('settings.oidc.clientSecretSetHelp')
-            : $t('settings.oidc.clientSecretHelp')}
-        </span>
-      </div>
+      </FormField>
     </div>
 
     <div class="form-group">
@@ -423,18 +411,16 @@
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.roleMapping')}</h3>
 
-    <div class="form-group">
-      <label for="oidc_admin_role">{$t('settings.oidc.adminRoleName')}</label>
+    <FormField size="lg" id="oidc_admin_role" label={$t('settings.oidc.adminRoleName')} hint={$t('settings.oidc.adminRoleHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_admin_role"
+        id="oidc_admin_role" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_admin_role}
         on:input={handleChange}
         placeholder="admin"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.adminRoleHelp')}</span>
-    </div>
+    </FormField>
 
     <div class="form-group">
       <label for="oidc_roles_claim">{$t('settings.oidc.rolesClaim')}</label>
@@ -490,31 +476,27 @@
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.advancedOptions')}</h3>
 
-    <div class="form-group">
-      <label for="oidc_scopes">{$t('settings.oidc.scopes')}</label>
+    <FormField size="lg" id="oidc_scopes" label={$t('settings.oidc.scopes')} hint={$t('settings.oidc.scopesHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_scopes"
+        id="oidc_scopes" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_scopes}
         on:input={handleChange}
         placeholder="openid email profile"
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.scopesHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="oidc_issuer">{$t('settings.oidc.issuer')}</label>
+    <FormField size="lg" id="oidc_issuer" label={$t('settings.oidc.issuer')} hint={$t('settings.oidc.issuerHelp')} let:describedby>
       <input dir="ltr"
-        id="oidc_issuer"
+        id="oidc_issuer" aria-describedby={describedby}
         type="text"
         bind:value={formData.oidc_issuer}
         on:input={handleChange}
         placeholder={$t('settings.oidc.issuerPlaceholder')}
         disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.oidc.issuerHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   {#if testResult?.success}
@@ -688,7 +670,8 @@
     margin-bottom: var(--space-4);
   }
 
-  .form-group {
+  .form-group,
+  .section :global(.form-field) {
     flex: 1;
     margin-bottom: var(--space-4);
   }
@@ -710,23 +693,19 @@
     color: var(--color-warning-text);
   }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
-
   .form-group input[type="text"],
-  .form-group input[type="password"],
-  .form-group input[type="number"],
-  .form-group select {
+  .section :global(.form-field input[type="text"]),
+  .section :global(.form-field input[type="password"]),
+  .section :global(.form-field input[type="number"]),
+  .form-group select,
+  .section :global(.form-field select) {
     width: 100%;
   }
 
   .form-group input:disabled,
-  .form-group select:disabled {
+  .section :global(.form-field input:disabled),
+  .form-group select:disabled,
+  .section :global(.form-field select:disabled) {
     cursor: not-allowed;
   }
 

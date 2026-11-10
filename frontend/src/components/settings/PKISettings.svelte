@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { PKIConfig } from '$lib/api/authConfig';
@@ -108,18 +109,16 @@
   <div class="section" class:disabled={!formData.pki_enabled}>
     <h3>{$t('settings.pki.certificateAuthority')}</h3>
 
-    <div class="form-group">
-      <label for="pki_ca_cert_path">{$t('settings.pki.caCertPath')}</label>
+    <FormField size="lg" id="pki_ca_cert_path" label={$t('settings.pki.caCertPath')} hint={$t('settings.pki.caCertPathHelp')} let:describedby>
       <input dir="ltr"
-        id="pki_ca_cert_path"
+        id="pki_ca_cert_path" aria-describedby={describedby}
         type="text"
         bind:value={formData.pki_ca_cert_path}
         on:input={handleChange}
         placeholder="/etc/ssl/certs/ca-certificates.crt"
         disabled={!formData.pki_enabled}
       />
-      <span class="help-text">{$t('settings.pki.caCertPathHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   {#if formData.pki_mode === 'header'}
@@ -127,45 +126,39 @@
       <h3>{$t('settings.pki.headerConfiguration')}</h3>
 
       <div class="form-row">
-        <div class="form-group">
-          <label for="pki_cert_header">{$t('settings.pki.certHeader')}</label>
+        <FormField size="lg" id="pki_cert_header" label={$t('settings.pki.certHeader')} hint={$t('settings.pki.certHeaderHelp')} let:describedby>
           <input dir="ltr"
-            id="pki_cert_header"
+            id="pki_cert_header" aria-describedby={describedby}
             type="text"
             bind:value={formData.pki_cert_header}
             on:input={handleChange}
             placeholder="X-SSL-Client-Cert"
             disabled={!formData.pki_enabled}
           />
-          <span class="help-text">{$t('settings.pki.certHeaderHelp')}</span>
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <label for="pki_cert_dn_header">{$t('settings.pki.dnHeader')}</label>
+        <FormField size="lg" id="pki_cert_dn_header" label={$t('settings.pki.dnHeader')} hint={$t('settings.pki.dnHeaderHelp')} let:describedby>
           <input dir="ltr"
-            id="pki_cert_dn_header"
+            id="pki_cert_dn_header" aria-describedby={describedby}
             type="text"
             bind:value={formData.pki_cert_dn_header}
             on:input={handleChange}
             placeholder="X-SSL-Client-DN"
             disabled={!formData.pki_enabled}
           />
-          <span class="help-text">{$t('settings.pki.dnHeaderHelp')}</span>
-        </div>
+        </FormField>
       </div>
 
-      <div class="form-group">
-        <label for="pki_trusted_proxies">{$t('settings.pki.trustedProxies')}</label>
+      <FormField size="lg" id="pki_trusted_proxies" label={$t('settings.pki.trustedProxies')} hint={$t('settings.pki.trustedProxiesHelp')} let:describedby>
         <input dir="ltr"
-          id="pki_trusted_proxies"
+          id="pki_trusted_proxies" aria-describedby={describedby}
           type="text"
           bind:value={formData.pki_trusted_proxies}
           on:input={handleChange}
           placeholder="e.g. 203.0.113.5/32 (your proxy's IP) or its docker subnet — never a whole private range"
           disabled={!formData.pki_enabled}
         />
-        <span class="help-text">{$t('settings.pki.trustedProxiesHelp')}</span>
-      </div>
+      </FormField>
     </div>
   {/if}
 
@@ -185,8 +178,7 @@
     {#if formData.pki_verify_revocation}
       <div class="revocation-options">
         <div class="form-row">
-          <div class="form-group">
-            <label for="pki_ocsp_timeout_seconds">{$t('settings.pki.ocspTimeout')}</label>
+          <FormField size="lg" id="pki_ocsp_timeout_seconds" label={$t('settings.pki.ocspTimeout')}>
             <input
               id="pki_ocsp_timeout_seconds"
               type="number"
@@ -196,10 +188,9 @@
               max="60"
               disabled={!formData.pki_enabled}
             />
-          </div>
+          </FormField>
 
-          <div class="form-group">
-            <label for="pki_crl_cache_seconds">{$t('settings.pki.crlCacheDuration')}</label>
+          <FormField size="lg" id="pki_crl_cache_seconds" label={$t('settings.pki.crlCacheDuration')}>
             <input
               id="pki_crl_cache_seconds"
               type="number"
@@ -209,7 +200,7 @@
               max="86400"
               disabled={!formData.pki_enabled}
             />
-          </div>
+          </FormField>
         </div>
 
         <label class="checkbox-label">
@@ -229,18 +220,16 @@
   <div class="section" class:disabled={!formData.pki_enabled}>
     <h3>{$t('settings.pki.authorization')}</h3>
 
-    <div class="form-group">
-      <label for="pki_admin_dns">{$t('settings.pki.adminDns')}</label>
+    <FormField size="lg" id="pki_admin_dns" label={$t('settings.pki.adminDns')} hint={$t('settings.pki.adminDnsHelp')} let:describedby>
       <textarea dir="ltr"
-        id="pki_admin_dns"
+        id="pki_admin_dns" aria-describedby={describedby}
         bind:value={formData.pki_admin_dns}
         on:input={handleChange}
         placeholder="CN=Admin User,OU=Admins,O=Example Corp,C=US"
         rows="3"
         disabled={!formData.pki_enabled}
       ></textarea>
-      <span class="help-text">{$t('settings.pki.adminDnsHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.pki_enabled}>
@@ -393,32 +382,24 @@
     margin-bottom: var(--space-4);
   }
 
-  .form-group {
+  .section :global(.form-field) {
     flex: 1;
     margin-bottom: var(--space-4);
   }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
-
-  .form-group input[type="text"],
-  .form-group input[type="number"],
-  .form-group textarea {
+  .section :global(.form-field input[type="text"]),
+  .section :global(.form-field input[type="number"]),
+  .section :global(.form-field textarea) {
     width: 100%;
   }
 
-  .form-group textarea {
+  .section :global(.form-field textarea) {
     resize: vertical;
     min-height: 80px;
   }
 
-  .form-group input:disabled,
-  .form-group textarea:disabled {
+  .section :global(.form-field input:disabled),
+  .section :global(.form-field textarea:disabled) {
     cursor: not-allowed;
   }
 

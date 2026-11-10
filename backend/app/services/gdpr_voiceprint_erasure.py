@@ -239,9 +239,17 @@ def existing_speaker_doc_ids(
         found: set[str] = set()
         for start in range(0, len(ids), _DOC_ID_BATCH):
             batch = ids[start : start + _DOC_ID_BATCH]
+            # One id can be a hit in every listed index (v3 and v4 both hold it mid-migration),
+            # and ``size`` caps the hits, not the distinct ids: room for every copy, so no id in
+            # the batch is crowded out. 1,000 ids x 4 indices stays under the default
+            # ``index.max_result_window`` of 10,000 (OpenSearch "Paginate results" docs).
             resp = opensearch_client.search(
                 index=target,
-                body={"size": len(batch), "_source": False, "query": {"ids": {"values": batch}}},
+                body={
+                    "size": len(batch) * len(indices),
+                    "_source": False,
+                    "query": {"ids": {"values": batch}},
+                },
             )
             found.update(str(hit["_id"]) for hit in resp.get("hits", {}).get("hits", []))
         return found

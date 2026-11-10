@@ -26944,7 +26944,7 @@
     },
     "/api/admin/audit-logs/export": {
       "get": {
-        "description": "Export audit logs for compliance reporting. Super admin only (all tenants).\n\nReads through ``query_audit_logs`` and renders with ``auth/audit_export``: the same two\npieces the organization admin's export uses, so the columns and the CSV neutralisation\nare one implementation. Capped at ``AUDIT_EXPORT_MAX_ROWS`` newest events;\n``X-Export-Truncated`` says when that cut something off. The export is itself audited.",
+        "description": "Export audit logs for compliance reporting. Super admin only (all tenants).\n\nReads through ``query_audit_logs`` and renders with ``api/audit_export``: the same two\npieces the organization admin's export uses, so the columns and the CSV neutralisation\nare one implementation. Capped at ``AUDIT_EXPORT_MAX_ROWS`` newest events;\n``X-Export-Truncated`` says when that cut something off. The export is itself audited.",
         "operationId": "export_audit_logs_api_admin_audit_logs_export_get",
         "parameters": [
           {

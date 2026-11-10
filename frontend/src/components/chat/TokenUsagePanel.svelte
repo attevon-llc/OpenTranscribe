@@ -41,7 +41,7 @@
     {#if expanded}
       <div class="token-detail">
         {#if contextWindow > 0}
-          <ProgressBar percent={pct} />
+          <ProgressBar percent={pct} ariaLabel={$t('chat.tokens.title')} />
           <p class="token-line">
             {$t('chat.tokens.used', {
               used: usage.total_tokens.toLocaleString(),

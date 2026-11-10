@@ -27,7 +27,6 @@
   // Use speakerList prop (gets updated immediately) or fallback to transcript store
   $: activeSpeakers = speakerList?.length > 0 ? speakerList : (transcriptStore?.speakers || []);
 
-
   // Create a unique key based on active speaker list and analytics data to force re-rendering when speakers change
   $: speakerKey = activeSpeakers.map(s => `${s.uuid}-${s.display_name || s.name}`).join('-');
 
@@ -50,9 +49,9 @@
 
 <div class="analytics-dropdown-section">
   <button
-    class="analytics-header"
+    class="section-toggle"
     title={$t('analytics.toggleTooltip')} on:click={toggleAnalytics} on:keydown={e => e.key === 'Enter' && toggleAnalytics()} aria-expanded={isAnalyticsExpanded}>
-    <h4 class="section-heading">{$t('analytics.title')}</h4>
+    <h4 class="section-toggle-heading">{$t('analytics.title')}</h4>
     <div class="analytics-preview">
       {#if analyticsData}
         <span class="analytics-chip">
@@ -101,31 +100,6 @@
 <style>
   .analytics-dropdown-section {
     margin-bottom: 0;
-  }
-
-  .analytics-header {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: var(--space-3) var(--space-4);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .analytics-header:hover {
-    background: var(--surface-hover);
-    border-color: var(--border-hover);
-  }
-
-  .section-heading {
-    margin: 0;
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
   }
 
   .analytics-preview {

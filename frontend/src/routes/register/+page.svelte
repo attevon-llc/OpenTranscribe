@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '$styles/auth.css';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
@@ -262,55 +263,10 @@
 </div>
 
 <style>
-  .auth-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    min-height: 100dvh;
-    padding: var(--space-4);
-    background-color: var(--background-color);
-  }
-
-  .auth-card {
-    background-color: var(--surface-color);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    width: 100%;
-    max-width: 400px;
-    padding: var(--space-8);
-  }
-
   .registration-check {
     display: flex;
     justify-content: center;
     padding: var(--space-8) 0;
-  }
-
-  .auth-header {
-    text-align: center;
-    margin-bottom: var(--space-8);
-  }
-
-  .auth-header h1 {
-    font-size: var(--font-size-2xl);
-    color: var(--text-color);
-    margin-bottom: var(--space-2);
-  }
-
-  .auth-header p {
-    color: var(--text-light);
-    font-size: 0.9rem;
-  }
-
-  .auth-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-  }
-
-  .auth-form input {
-    font-size: var(--font-size-base);
   }
 
   .form-error {
@@ -320,36 +276,12 @@
     color: var(--error-text);
   }
 
-  .auth-button {
-    background-color: var(--primary-color);
-    color: var(--text-on-solid);
-    border: none;
-    border-radius: var(--radius-xl);
-    padding: 0.6rem 1.2rem;
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    box-shadow: var(--shadow-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-  }
-
   .auth-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    transform: translateY(-1px);
     box-shadow: var(--shadow-primary-hover);
   }
 
   .auth-button:active:not(:disabled) {
     transform: translateY(0);
-  }
-
-  .auth-button:disabled {
-    background-color: var(--border-color);
-    cursor: not-allowed;
   }
 
   .auth-footer {
@@ -362,18 +294,7 @@
   }
 
   .auth-link {
-    color: var(--primary-on-surface);
-    text-decoration: none;
     font-weight: var(--font-weight-medium);
-  }
-
-  .auth-link:hover {
-    text-decoration: underline;
-  }
-
-  .auth-logo {
-    text-align: center;
-    margin-bottom: var(--space-6);
   }
 
   .auth-logo .logo-banner {

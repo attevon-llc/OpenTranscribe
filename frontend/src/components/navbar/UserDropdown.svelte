@@ -323,26 +323,13 @@
   }
 
 
+  /* Layout and typography come from `.dropdown-menu :global(.dropdown-item)` below, shared
+     with entries contributed by child components; only the forced parts live here. */
   .dropdown-item {
     display: flex !important;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-4);
     color: var(--text-color) !important;
     text-decoration: none !important;
     transition: all var(--duration-base) ease;
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-    border: none;
-    width: calc(100% - 1rem);
-    text-align: start;
-    background-color: transparent;
-    cursor: pointer;
-    font-family: inherit;
-    box-sizing: border-box;
-    margin: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-md);
-    white-space: nowrap;
     position: relative;
   }
 

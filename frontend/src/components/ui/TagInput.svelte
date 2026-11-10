@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './tag-pill.css';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
 
@@ -117,14 +118,6 @@
   }
 
   .tag-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-2xl);
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-medium);
-    background: rgba(var(--accent-rgb), 0.12);
-    color: var(--primary-on-surface);
     gap: var(--space-1);
     white-space: nowrap;
   }

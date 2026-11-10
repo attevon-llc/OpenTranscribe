@@ -5,10 +5,25 @@
  * a profile match fell into the generic branch by accident and the profile-specific
  * branches were unreachable. Both voiceprint sources must render identically.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { render } from '@testing-library/svelte';
+
+// The panel's privacy notice reads the effective policy on mount. Unmocked, that is a real
+// request whose failure logs after teardown under load and aborts the run with
+// "Closing rpc while onUserConsoleLog was pending".
+const api = vi.hoisted(() => ({
+  getEffective: vi.fn(() =>
+    Promise.resolve({
+      organization_uuid: null,
+      voiceprint_matching: { enabled: true, locked_by: null },
+      gender_inference: { enabled: true, locked_by: null },
+    })
+  ),
+}));
+vi.mock('$lib/api/privacy', () => ({ PrivacyApi: api }));
+
 import SpeakerEditorPanel from './SpeakerEditorPanel.svelte';
 
 function chipFor(source: string) {

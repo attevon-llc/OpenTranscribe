@@ -1,0 +1,111 @@
+/* Shared by the unauthenticated pages (login, register, forgot/reset password, accept invite,
+   verify email). A page restates only the declarations that differ from this base. */
+
+.auth-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-4);
+  background-color: var(--background-color);
+}
+
+.auth-card {
+  background-color: var(--surface-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hover);
+  width: 100%;
+  max-width: 400px;
+  padding: var(--space-8);
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: var(--space-8);
+}
+
+.auth-header h1 {
+  font-size: var(--font-size-2xl);
+  color: var(--text-color);
+  margin-bottom: var(--space-2);
+}
+
+.auth-header p {
+  color: var(--text-light);
+  font-size: var(--font-size-body);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.auth-form input {
+  font-size: var(--font-size-base);
+}
+
+.auth-button {
+  background-color: var(--primary-color);
+  color: var(--text-on-solid);
+  border: none;
+  border-radius: var(--radius-xl);
+  padding: var(--space-2-5) var(--space-5);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--duration-base) ease;
+  box-shadow: var(--shadow-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.auth-button:hover:not(:disabled) {
+  background-color: var(--primary-color);
+  transform: translateY(-1px);
+}
+
+.auth-button:disabled {
+  background-color: var(--border-color);
+  cursor: not-allowed;
+}
+
+.auth-links {
+  margin-top: var(--space-6);
+  text-align: center;
+  color: var(--text-light);
+}
+
+.auth-link {
+  color: var(--primary-on-surface);
+  text-decoration: none;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
+.success-message {
+  background-color: var(--success-color-light);
+  color: var(--success-text);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(var(--success-color-rgb), 0.2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--font-weight-medium);
+}
+
+.auth-logo {
+  text-align: center;
+  margin-bottom: var(--space-6);
+}
+
+.logo-image {
+  max-width: 200px;
+  height: auto;
+}

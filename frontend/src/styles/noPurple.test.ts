@@ -18,27 +18,15 @@
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
-import path from 'path';
+import { SRC, rel, walkSource } from './sourceTree';
 
-const SRC = path.resolve(__dirname, '..');
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, out);
-    else if (/\.(svelte|css|ts)$/.test(e.name) && !/\.test\.ts$/.test(e.name)) out.push(p);
-  }
-  return out;
-}
-
-const rel = (p: string) => path.relative(SRC, p).split(path.sep).join('/');
 const stripComments = (s: string) =>
   s
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
 
-const FILES = walk(SRC);
+const FILES = walkSource(SRC, /\.(svelte|css|ts)$/, { exclude: /\.test\.ts$/ });
 
 /** Hue (degrees) and saturation (0..1) of an sRGB colour; lightness is returned for the near-black/white cut. */
 export function hsl(r: number, g: number, b: number): { h: number; s: number; l: number } {

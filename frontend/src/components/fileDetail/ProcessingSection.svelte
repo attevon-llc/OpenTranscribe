@@ -18,12 +18,12 @@
   <div class="processing-section">
     <button
       type="button"
-      class="section-header"
+      class="section-toggle"
       aria-expanded={expanded}
       aria-controls={regionId}
       on:click={() => (expanded = !expanded)}
     >
-      <h4 class="section-heading">{$t('fileProcessing.title')}</h4>
+      <h4 class="section-toggle-heading">{$t('fileProcessing.title')}</h4>
       <svg
         class="chevron"
         class:open={expanded}
@@ -53,29 +53,7 @@
     margin-bottom: var(--space-5);
   }
 
-  .section-header {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: var(--space-3) var(--space-4);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    color: var(--text-primary);
-  }
-
-  .section-header:hover {
-    background: var(--surface-hover);
-    border-color: var(--border-hover);
-  }
-
-  .section-heading {
-    margin: 0;
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
+  .section-toggle {
     color: var(--text-primary);
   }
 

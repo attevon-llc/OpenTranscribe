@@ -84,7 +84,7 @@
   <button
     bind:this={buttonEl}
     type="button"
-    class="sort-button"
+    class="pill-chip sort-button"
     on:click={toggleDropdown}
     aria-label={$t(ariaLabelKey)}
     aria-expanded={isOpen}
@@ -188,18 +188,6 @@
   }
 
   .sort-button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    padding: var(--space-1-5) var(--space-3);
-    height: 30px;
-    box-sizing: border-box;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-xl);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-secondary);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);

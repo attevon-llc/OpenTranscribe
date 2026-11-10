@@ -74,3 +74,11 @@ Repo conventions it is configured around, each with its reason in `frontend/styl
 `:global(...)`. Class names a library emits (`.rangeSlider`, `.hljs-built_in`) carry a reasoned
 `stylelint-disable`. `no-descending-specificity` debt is baselined per file; fix a file with a `styling-ab.sh` A/B
 and `--tighten` the baseline in the same commit.
+
+## Shared blocks (de-duplicated, issue: frontend duplicate-code ratchet)
+
+- `auth.css` — the card/header/form/button/link base of the unauthenticated pages (login, register,
+  forgot/reset password, accept invite, verify email); each page imports `$styles/auth.css` and restates
+  only what differs. `utilities.css` also holds `.section-toggle` (+ `.section-toggle-heading`), `.text-btn`,
+  `.pill-chip`, `.copy-button-header` and the `.filter-rail` shell.
+- `sourceTree.ts` — `walkSource` / `rel` / `SRC` for the style-source tests; do not hand-roll another `walk()`.

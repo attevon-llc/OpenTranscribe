@@ -1,4 +1,5 @@
 <script context="module" lang="ts">
+  import './collection-card.css';
   // Re-exported for the components that already import it from here; the
   // canonical declaration lives in $lib/types/collection.
   export type { Collection } from '$lib/types/collection';
@@ -121,75 +122,6 @@
 {/each}
 
 <style>
-  .collection-card {
-    background: var(--card-background);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: var(--space-4);
-    cursor: pointer;
-    transition: all var(--duration-base);
-    display: flex;
-    justify-content: space-between;
-    align-items: start;
-    gap: var(--space-3);
-  }
-
-  .collection-card:hover {
-    border-color: var(--primary-color);
-    background: var(--card-hover);
-  }
-
-  .collection-card.selected {
-    border-color: var(--primary-color);
-    background: var(--primary-bg);
-  }
-
-  .collection-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .collection-info h4 {
-    margin: 0 0 var(--space-1) 0;
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .description {
-    margin: 0 0 var(--space-2) 0;
-    font-size: var(--font-size-md);
-    color: var(--text-secondary);
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .meta {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-  }
-
-  .media-count {
-    font-weight: var(--font-weight-medium);
-  }
-
-  .badge {
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-2xl);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-  }
-
   .badge.restricted {
     display: inline-flex;
     align-items: center;

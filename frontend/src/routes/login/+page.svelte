@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '$styles/auth.css';
   import { focusOnMount } from '$lib/actions/focusOnMount';
   import EyeIcon from '$components/ui/EyeIcon.svelte';
   import { resolve } from '$app/paths';
@@ -1092,57 +1093,12 @@
     font-size: 0.9rem;
   }
 
-  .auth-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    min-height: 100dvh;
-    padding: var(--space-4);
-    background-color: var(--background-color);
-  }
-
-  .auth-card {
-    background-color: var(--surface-color);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    width: 100%;
-    max-width: 400px;
-    padding: var(--space-8);
-  }
-
-  .auth-header {
-    text-align: center;
-    margin-bottom: var(--space-8);
-  }
-
-  .auth-header h1 {
-    font-size: var(--font-size-2xl);
-    color: var(--text-color);
-    margin-bottom: var(--space-2);
-  }
-
-  .auth-header p {
-    color: var(--text-light);
-    font-size: 0.9rem;
-  }
-
   .auth-header p.session-ended-notice {
     margin-top: var(--space-3);
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     color: var(--text-color);
-  }
-
-  .auth-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-  }
-
-  .auth-form input {
-    font-size: var(--font-size-base);
   }
 
   /* Shown when the deployment advertises no usable sign-in method at all. */
@@ -1157,9 +1113,9 @@
     text-align: center;
   }
 
+  /* inherits the card's text colour; the shared base would set --text-light */
   .auth-links {
-    margin-top: var(--space-6);
-    text-align: center;
+    color: inherit;
   }
 
   .auth-link-text {
@@ -1168,13 +1124,7 @@
   }
 
   .auth-link {
-    color: var(--primary-on-surface);
-    text-decoration: none;
     font-weight: var(--font-weight-medium);
-  }
-
-  .auth-link:hover {
-    text-decoration: underline;
   }
 
   .forgot-password-row {
@@ -1209,26 +1159,9 @@
     background-color: var(--surface-hover);
   }
 
-  .success-message {
-    background-color: var(--success-color-light);
-    color: var(--success-text);
-    padding: var(--space-3);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(34, 197, 94, 0.2);
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-weight: var(--font-weight-medium);
-  }
-
   .success-message svg {
     flex-shrink: 0;
     opacity: 0.8;
-  }
-
-  .auth-logo {
-    text-align: center;
-    margin-bottom: var(--space-6);
   }
 
   .auth-logo .logo-banner {

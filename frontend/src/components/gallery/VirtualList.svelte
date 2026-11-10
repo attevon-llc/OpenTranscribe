@@ -5,13 +5,12 @@
   import { locale, t } from '$stores/locale';
   import {
     activateFileRow,
-    handleCheckboxChange,
-    handleCheckboxLabelClick,
     prefetchOnMouseDown,
     uploadDate,
   } from '$lib/gallery/fileRowActions';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
-  import FileStatusIndicator from './FileStatusIndicator.svelte';
+  import FileSelectCheckbox from './FileSelectCheckbox.svelte';
+  import FileRowStatus from './FileRowStatus.svelte';
   import HiddenBadge from './HiddenBadge.svelte';
   import HoldBadge from '$components/ui/HoldBadge.svelte';
   import type { MediaFile } from '$lib/types/media';
@@ -175,20 +174,7 @@
         aria-busy={navigatingTo === file.uuid}
       >
         {#if isSelecting}
-          <label
-            role="presentation"
-            class="list-cell list-cell-checkbox"
-            on:click|stopPropagation={(e) => handleCheckboxLabelClick(file.uuid, e)}
-          >
-            <input
-              type="checkbox"
-              class="file-checkbox"
-              checked={selectedFiles.has(file.uuid)}
-              on:change={(e) => handleCheckboxChange(file.uuid, e)}
-              title={$t('gallery.selectFileTooltip')}
-            />
-            <span class="checkmark"></span>
-          </label>
+          <FileSelectCheckbox fileId={file.uuid} checked={selectedFiles.has(file.uuid)} variant="row" />
         {/if}
 
         <a
@@ -259,16 +245,7 @@
 
           <!-- Status -->
           <div class="list-cell list-cell-status">
-            <!-- Keyed off `is_quarantined`, never bare `status` (issue #576 E11): a file
-                 quarantined mid-pipeline can have `status` overwritten to a terminal value
-                 by a running task while this flag stays correct. -->
-            <FileStatusIndicator
-              status={file.is_quarantined ? 'quarantined' : file.status}
-              displayStatus={file.status === 'error' && file.user_message ? $t('gallery.errorClickForDetails') : undefined}
-              clickable={file.status === 'error' && !!file.user_message}
-              showLabel
-              on:click={() => handleErrorClick(file)}
-            />
+            <FileRowStatus {file} showLabel on:errorclick={(e) => handleErrorClick(e.detail)} />
           </div>
         </a>
       </div>
@@ -295,15 +272,7 @@
   }
 
   .file-list-header {
-    display: grid;
-    grid-template-columns: var(--file-list-columns);
-    gap: var(--file-list-gap);
-    padding: 0.75rem var(--file-list-pad);
-    background: var(--surface-color);
-    border-bottom: 1px solid var(--border-color);
-    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-    color: var(--text-secondary);
     position: sticky;
     top: 0;
     z-index: 2;
@@ -415,52 +384,6 @@
     width: var(--file-list-check);
     justify-content: center;
     position: relative;
-  }
-
-  .list-cell-checkbox .checkmark {
-    width: 18px;
-    height: 18px;
-    background-color: var(--background-color);
-    border: 2px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    position: relative;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .list-cell-checkbox:hover .checkmark {
-    border-color: #3b82f6;
-  }
-
-  .list-cell-checkbox .file-checkbox:checked ~ .checkmark {
-    background-color: var(--primary-color);
-    border-color: #3b82f6;
-  }
-
-  .list-cell-checkbox .file-checkbox {
-    position: absolute;
-    opacity: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    cursor: pointer;
-  }
-
-  .list-cell-checkbox .checkmark::after {
-    content: "";
-    position: absolute;
-    display: none;
-    left: 5px;
-    top: 1px;
-    width: 5px;
-    height: 10px;
-    border: solid white;
-    border-width: 0 2px 2px 0;
-    transform: rotate(45deg);
-  }
-
-  .list-cell-checkbox .file-checkbox:checked ~ .checkmark::after {
-    display: block;
   }
 
   .list-cell-type {

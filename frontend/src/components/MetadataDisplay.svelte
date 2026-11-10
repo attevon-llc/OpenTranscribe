@@ -49,8 +49,8 @@
 </script>
 
 <div class="metadata-dropdown-section">
-  <button class="section-header" on:click={toggleMetadata} on:keydown={e => e.key === 'Enter' && toggleMetadata()} aria-expanded={showMetadata}>
-    <h4 class="section-heading">{$t('metadata.fileDetails')}</h4>
+  <button class="section-toggle" on:click={toggleMetadata} on:keydown={e => e.key === 'Enter' && toggleMetadata()} aria-expanded={showMetadata}>
+    <h4 class="section-toggle-heading">{$t('metadata.fileDetails')}</h4>
     <span class="dropdown-toggle" aria-hidden="true">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({showMetadata ? '180deg' : '0deg'})">
         <polyline points="6 9 12 15 18 9"></polyline>
@@ -249,31 +249,6 @@
 
   .metadata-dropdown-section {
     margin-bottom: var(--space-5);
-  }
-
-  .section-header {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: var(--space-3) var(--space-4);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .section-header:hover {
-    background: var(--surface-hover);
-    border-color: var(--border-hover);
-  }
-
-  .section-heading {
-    margin: 0;
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
   }
 
   .dropdown-toggle svg {

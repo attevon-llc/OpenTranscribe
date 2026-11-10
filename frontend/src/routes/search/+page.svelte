@@ -533,7 +533,7 @@
 
 <div class="search-page">
   <!-- Left Sidebar: Filters (Sticky) -->
-  <div class="filter-sidebar {showFilters ? 'show' : ''}" class:animate={sidebarMounted}>
+  <div class="filter-rail {showFilters ? 'show' : ''}" class:animate={sidebarMounted}>
     <div class="filter-toggle-container">
       <FilterPanelToggle expanded={showFilters} on:click={() => (showFilters = !showFilters)} />
     </div>
@@ -793,44 +793,9 @@
   }
 
   /* Filter Sidebar - matches gallery styling exactly */
-  .filter-sidebar {
-    flex-shrink: 0;
-    background-color: var(--surface-color);
-    border-right: 1px solid var(--border-color);
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-
   /* Only animate after initial mount to prevent flicker on navigation */
-  .filter-sidebar.animate {
+  .filter-rail.animate {
     transition: width var(--duration-slow) ease;
-  }
-
-  /* Expanded state */
-  .filter-sidebar.show {
-    width: 320px;
-  }
-
-  /* Collapsed state */
-  .filter-sidebar:not(.show) {
-    width: 50px;
-  }
-
-  .filter-toggle-container {
-    padding: var(--space-2) var(--space-2) 0;
-    margin-bottom: var(--space-2);
-    flex-shrink: 0;
-  }
-
-  .filter-sidebar.show .filter-toggle-container {
-    padding: var(--space-2) var(--space-4) 0;
-  }
-
-  .filter-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 var(--space-4);
   }
 
   /* Content Area */
@@ -1078,7 +1043,7 @@
     }
 
     /* Slide-in overlay sidebar — matches gallery page pattern */
-    .filter-sidebar {
+    .filter-rail {
       position: fixed;
       top: var(--content-top);
       left: -100%;
@@ -1093,11 +1058,11 @@
       border-top: 1px solid var(--border-color);
     }
 
-    .filter-sidebar.show {
+    .filter-rail.show {
       left: 0;
     }
 
-    .filter-sidebar:not(.show) {
+    .filter-rail:not(.show) {
       width: auto !important;
       min-width: auto !important;
       position: static;

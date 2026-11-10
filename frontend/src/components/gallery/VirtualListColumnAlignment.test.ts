@@ -64,16 +64,20 @@ describe('gallery list column alignment', () => {
   });
 
   it('shares outer padding and gap between header, link and skeleton', () => {
-    for (const [css, selectors] of [
-      [listStyle, ['.file-list-header', '.file-list-link']],
-      [skeletonStyle, ['.file-list-header', '.skel-row']],
+    // The header row is declared once, in the shared grid stylesheet both views import.
+    const headerBody = ruleBody(grid, '.file-list-header');
+    expect(headerBody, '.file-list-header').not.toBeNull();
+    expect(headerBody).toMatch(/gap:\s*var\(--file-list-gap\)/);
+    expect(headerBody).toMatch(/padding:[^;]*var\(--file-list-pad\)/);
+    expect(list).toMatch(/import\s+['"]\.\/file-list-grid\.css['"]/);
+    for (const [css, selector] of [
+      [listStyle, '.file-list-link'],
+      [skeletonStyle, '.skel-row'],
     ] as const) {
-      for (const selector of selectors) {
-        const body = ruleBody(css, selector);
-        expect(body, selector).not.toBeNull();
-        expect(body, selector).toMatch(/gap:\s*var\(--file-list-gap\)/);
-        expect(body, selector).toMatch(/padding:[^;]*var\(--file-list-pad\)/);
-      }
+      const body = ruleBody(css, selector);
+      expect(body, selector).not.toBeNull();
+      expect(body, selector).toMatch(/gap:\s*var\(--file-list-gap\)/);
+      expect(body, selector).toMatch(/padding:[^;]*var\(--file-list-pad\)/);
     }
   });
 

@@ -192,3 +192,5 @@ clipped by any `overflow: auto` ancestor.
   untested-in-production primitive was judged higher risk than the duplication it would have
   removed. It was deleted rather than adopted (H2). Don't re-add one speculatively; build it
   only alongside a real third-plus consumer that actually needs it.
+
+- `tag-pill.css` — unscoped `.tag-pill` base (import from the component); `TagInput` uses it.

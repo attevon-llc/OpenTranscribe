@@ -66,3 +66,15 @@
     --file-list-columns: 40px minmax(0, 1fr) 80px;
   }
 }
+
+/* Header row shared by the table and its skeleton; each adds its own weight and positioning. */
+.file-list-header {
+  display: grid;
+  grid-template-columns: var(--file-list-columns);
+  gap: var(--file-list-gap);
+  padding: var(--space-3) var(--file-list-pad);
+  background: var(--surface-color);
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}

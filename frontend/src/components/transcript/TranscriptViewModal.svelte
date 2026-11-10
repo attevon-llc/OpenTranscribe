@@ -420,19 +420,6 @@
     gap: var(--space-3);
   }
 
-  .copy-button-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: 0.85rem;
-  }
-
   .copy-button-header.copied {
     background-color: var(--success-bg);
     border-color: var(--success-color);

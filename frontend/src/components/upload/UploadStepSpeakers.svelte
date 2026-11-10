@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './upload-shared.css';
   import InfoIcon from '$components/ui/InfoIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
@@ -51,10 +52,10 @@
   {/if}
 
   <div class="settings-row">
-    <div class="field">
+    <div class="stacked-field">
       <label for="min-speakers">
         {$t('uploader.minSpeakers')}
-        <span class="hint">{$t('uploader.minSpeakersHint')}</span>
+        <span class="stacked-field-hint">{$t('uploader.minSpeakersHint')}</span>
       </label>
       <input
         id="min-speakers"
@@ -66,10 +67,10 @@
         disabled={numSpeakers !== null}
       />
     </div>
-    <div class="field">
+    <div class="stacked-field">
       <label for="max-speakers">
         {$t('uploader.maxSpeakers')}
-        <span class="hint">{$t('uploader.maxSpeakersHint')}</span>
+        <span class="stacked-field-hint">{$t('uploader.maxSpeakersHint')}</span>
       </label>
       <input
         id="max-speakers"
@@ -83,10 +84,10 @@
     </div>
   </div>
 
-  <div class="field">
+  <div class="stacked-field">
     <label for="num-speakers">
       {$t('uploader.fixedSpeakerCount')}
-      <span class="hint">{$t('uploader.fixedSpeakerCountHint')}</span>
+      <span class="stacked-field-hint">{$t('uploader.fixedSpeakerCountHint')}</span>
     </label>
     <input
       id="num-speakers"
@@ -108,7 +109,7 @@
       />
       <span class="consent-text">
         {$t('uploader.voiceprintConsent.label')}
-        <span class="hint">{$t('uploader.voiceprintConsent.hint')}</span>
+        <span class="stacked-field-hint">{$t('uploader.voiceprintConsent.hint')}</span>
       </span>
     </label>
   {/if}
@@ -128,7 +129,6 @@
 <style>
   .step-speakers { display: flex; flex-direction: column; gap: var(--space-3); }
 
-  .step-hint { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 0; line-height: 1.5; }
 
   .info-note {
     display: flex; align-items: center; gap: var(--space-2);
@@ -144,15 +144,12 @@
 
   .settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 
-  .field { display: flex; flex-direction: column; gap: var(--space-1-5); }
-  .field label { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); display: flex; flex-direction: column; gap: var(--space-0-5); }
-  .hint { font-size: var(--font-size-2xs); font-weight: var(--font-weight-regular); color: var(--text-secondary); }
 
-  .field input[type="number"] {
+  .stacked-field input[type="number"] {
     padding: 0.4375rem var(--space-2); border: 1px solid var(--border-color); border-radius: var(--radius-md);
   }
-  .field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background); }
-  .field input::placeholder { color: var(--text-light); }
+  .stacked-field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background); }
+  .stacked-field input::placeholder { color: var(--text-light); }
 
   .consent-row {
     display: flex; align-items: flex-start; gap: var(--space-2-5);

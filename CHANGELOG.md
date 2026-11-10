@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `npm run check:i18n` now also fails on an English key that no source file references (`frontend/scripts/check-i18n-unused.mjs`, allowlist in `i18n-dynamic-prefixes.json`), and the untranslated-copy test flags any English word left in the Arabic, Russian, Japanese, Korean or Chinese locale unless allowlisted with a reason.
 - Shared `ui/Banner` notice (info, success, warning, error, neutral; `role="alert"` for errors, `role="status"` otherwise; each tone has its own icon and an inline-start accent bar), and a single global `.sr-only` utility. `ui/Spinner` takes an optional `label` and is otherwise hidden from assistive tech; status badges (`ui/Badge`, sizes `sm`/`md`) and settings empty states (`ui/EmptyState`) replace their local copies, which unifies badge radius and padding.
 - Shared button variants (`.btn-sm`, `.btn-lg`, `.btn-success`, `.btn-ghost`, `.btn-link`, `.btn-danger-outline`, `.btn-icon`) and a `ui/Button` component with busy and icon-only handling.
 
 ### Fixed
 
+- 398 translation keys that nothing in the frontend referenced are removed from all 12 locales, and about 130 settings strings (embedding consistency, local-auth lockout and login banner, trusted-header and SAML configuration, content redaction, SCIM tokens) that shipped in English in German, Spanish, French, Japanese, Portuguese and Chinese are translated.
 - Re-running the corpus injector (`python -m app.scripts.corpus_injection`, also with `--force`) no longer rewrites an injected recording that is under a legal hold or in quarantine; the record says `skipped_protected` and no indexing or redaction is dispatched for it.
 - The manual `batch_speaker_matching` script no longer writes match records or name suggestions for the speakers of a recording under a legal hold or in quarantine (including one held while the script runs); it logs how many it left out.
 - `python -m app.scripts.split_shared_storage_paths --apply` no longer repoints a recording under a legal hold or in quarantine: such a recording keeps the shared original key, a second protected one in the same group is left as it is, and both runs report `skipped_protected`. A hold placed while the script runs is respected too.

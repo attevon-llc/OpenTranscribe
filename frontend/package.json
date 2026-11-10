@@ -27,7 +27,7 @@
     "test:coverage": "NODE_OPTIONS=--no-experimental-webstorage vitest run --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "check:i18n": "node scripts/check-i18n-parity.mjs",
+    "check:i18n": "node scripts/check-i18n-parity.mjs && node scripts/check-i18n-unused.mjs",
     "test:audit": "node scripts/audit-frontend-tests.mjs",
     "test:audit:selftest": "node scripts/audit-frontend-tests.mjs --selftest"
   },

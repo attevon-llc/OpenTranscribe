@@ -302,6 +302,15 @@ caveat: `src/components/ui/CLAUDE.md`.
   (`frontend/src/lib/i18n/locales`: ar de en es fr it ja ko nl pt ru zh), and `ar` is RTL — check
   it renders, don't assume. Two traps:
 
+  - **`npm run check:i18n` also fails on a key in `en.json` that nothing in `src/` references**
+    (`scripts/check-i18n-unused.mjs`). It understands full-key literals, template-literal families
+    (`chat.trace.stage.${stage}`) and the settings-search namespaces; anything else built at runtime
+    needs a prefix and a reason in `scripts/i18n-dynamic-prefixes.json`. Delete a dead key from all
+    12 locales rather than allowlisting it. Test files do not count as a reference.
+  - **Untranslated copy is caught by vitest, not `check:i18n`.** `lib/i18n/untranslated.test.ts`
+    fails when a locale repeats English: any Latin word in the non-Latin locales (ar ru ja ko zh),
+    prose-length strings in the Latin ones. Brands and protocol terms go in
+    `SAME_IN_EVERY_LANGUAGE` (`untranslatedCheck.ts`) with a reason.
   - **`npm run check:i18n` enforces key PARITY, not translation.** A key copied into all 12 files
     with English text passes the gate and ships untranslated. Parity is the floor, not the goal.
   - **It runs in three places, and one of them has a gap.** (1) CI runs it explicitly

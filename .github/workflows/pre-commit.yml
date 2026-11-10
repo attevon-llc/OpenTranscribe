@@ -723,8 +723,6 @@ jobs:
         working-directory: frontend
         run: npm run test:audit
 
-      # Dead code (knip) and import cycles (madge) are ratcheted: the baselines in
-      # scripts/guards/baselines/{knip,madge_cycles}.txt can only shrink, so new unused exports
-      # or a new cycle fail the job. The intentional axios<->auth cycle is baselined with its reason.
-      - name: Dead-code and import-cycle ratchet (knip, madge)
-        run: python3 scripts/guards/check_knip.py
+      # Dead code (knip) and import cycles (madge) are not a step here: they are the
+      # `guard-knip` pre-commit hook (push stage), which the pre-commit job above runs on every
+      # PR, so local `--hook-stage pre-push` and CI run the same command.

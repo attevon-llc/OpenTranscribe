@@ -16,9 +16,9 @@
  */
 import { writable, type Writable } from 'svelte/store';
 
-export type ConfirmVariant = 'primary' | 'danger' | 'warning';
+type ConfirmVariant = 'primary' | 'danger' | 'warning';
 
-export interface ConfirmRequestOptions {
+interface ConfirmRequestOptions {
   /** Confirm button label (empty keeps the modal's default). */
   confirmText?: string;
   /** Cancel button label (empty keeps the modal's default). */

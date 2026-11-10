@@ -386,7 +386,7 @@
   .collapse-btn {
     display: inline-flex;
     align-items: center;
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--on-solid-wash);
     border: none;
     color: var(--text-on-solid);
     padding: var(--space-1) var(--space-2);
@@ -398,7 +398,7 @@
 
   .clear-btn:hover,
   .collapse-btn:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: var(--on-solid-wash-hover);
   }
 
   /* Overall Progress */

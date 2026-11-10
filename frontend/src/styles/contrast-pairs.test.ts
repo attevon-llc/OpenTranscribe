@@ -138,6 +138,15 @@ const PAIRS: Pair[] = [
     themes: BOTH,
     reason: 'white label on a solid fill',
   })),
+  // The header buttons of the upload tray darken the primary bar rather than lighten it: a white
+  // wash would leave the label at about 3.7:1 (3.0:1 hovered).
+  ...['--on-solid-wash', '--on-solid-wash-hover'].map((tint) => ({
+    fg: '--text-on-solid',
+    bg: { tint, over: '--primary-color' },
+    min: TEXT,
+    themes: BOTH,
+    reason: 'white label on a button wash over the primary bar',
+  })),
   ...['--warning-solid', '--warning-solid-hover'].map((bg) => ({
     fg: '--text-on-warning',
     bg,

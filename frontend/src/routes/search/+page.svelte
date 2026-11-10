@@ -883,14 +883,14 @@
     transition: all var(--duration-base) ease;
   }
 
-  .search-btn:hover:not(:disabled) {
-    background-color: var(--primary-color-dark);
-    transform: translateY(-1px);
-  }
-
   .search-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .search-btn:hover:not(:disabled) {
+    background-color: var(--primary-color-dark);
+    transform: translateY(-1px);
   }
 
   /* Results Info */

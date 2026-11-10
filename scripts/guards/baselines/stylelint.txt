@@ -1,2 +1,0 @@
-frontend/src/routes/chat/[[conversationId]]/+page.svelte::no-descending-specificity	1	existing descending-specificity order found when stylelint landed; reordering a rule can change what wins, so each file is fixed with a styling-ab.sh screenshot A/B, not blind
-frontend/src/routes/search/+page.svelte::no-descending-specificity	1	existing descending-specificity order found when stylelint landed; reordering a rule can change what wins, so each file is fixed with a styling-ab.sh screenshot A/B, not blind

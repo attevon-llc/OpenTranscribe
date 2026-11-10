@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Security: the erasure receipt now captures speaker profile and cluster ids as the rows' uuids. It used to capture each as the text of a database row tuple, which matched no speaker-index document, so a profile or cluster-centroid embedding that survived an erasure was reported as erased.
 - Backup S3 prune and list now act only on this install's own backups: the listing is scoped to the exact configured prefix (no recursion into sub-prefixes) and the filename must match `opentranscribe-YYYYMMDD-HHMMSS.dump[.gpg]` at both ends, so two installs sharing a bucket can no longer delete each other's backups.
 - Security: an OCSP response signed by a delegated responder is now accepted only if the responder certificate carries the `id-kp-OCSPSigning` extended key usage and is within its validity period (RFC 6960 section 4.2.2.2). Previously any certificate the CA had issued, such as an ordinary client certificate, could sign a GOOD answer for a revoked certificate; such responses now read as inconclusive.
 - Scheduled jobs (media mirror, directory sync, database backup) that had never run now fire on the first beat tick within 30 minutes after their cron minute, instead of only on a tick landing exactly on it. With the shipped defaults (`30 3 * * *`, `0 4 * * *`) the media mirror and directory sync never ran on their own.

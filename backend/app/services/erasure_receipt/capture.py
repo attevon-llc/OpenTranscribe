@@ -79,7 +79,8 @@ def capture(db: Session, scope: ErasureScope) -> Captured:
         condition = _owner_filter(model, scope)
         if condition is None:
             continue
-        setattr(captured, attr, [str(u) for u in db.execute(select(model.uuid).where(condition))])
+        uuids = db.execute(select(model.uuid).where(condition)).scalars()
+        setattr(captured, attr, [str(u) for u in uuids])
 
     condition = _owner_filter(SpeakerProfile, scope)
     if condition is not None:

@@ -199,8 +199,8 @@ found literals that had no role. The first lane that uses one adds it to both `t
 | `--highlight-search` | rgba(250,204,21,.85) | same | **new** | search-hit ring or mark in the transcript and segment speaker dropdown (`styles/search.css`, SegmentSpeakerDropdown) |
 | `--highlight-current` | rgba(249,115,22,.9) | same | **new** | the current search hit |
 | `--media-scrim` | rgba(0,0,0,.45) | same | **new** | overlay on an image or avatar so white text or icons over it stay legible. It is not a modal backdrop: `--modal-backdrop` is .5 in light and .7 in dark |
-| `--on-solid-wash` | rgba(255,255,255,.2) | same | **new** | translucent button background on a `--primary-color` or `-solid` header (UploadManager header buttons) |
-| `--on-solid-wash-hover` | rgba(255,255,255,.3) | same | **new** | the hover state of the above |
+| `--on-solid-wash` | rgba(0,0,0,.2) | same | **new** | translucent button background on a `--primary-color` or `-solid` header (UploadManager header buttons). A darkening wash: white text on the white .2 wash over #2563eb was 3.7:1 (fails AA); on black .2 it is about 7:1 |
+| `--on-solid-wash-hover` | rgba(0,0,0,.3) | same | **new** | the hover state of the above |
 
 ### 3.3 Spacing (new; theme-independent; rem, 4 px base)
 

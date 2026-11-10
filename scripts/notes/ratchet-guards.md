@@ -21,3 +21,13 @@ an allowlist entry with no violation left fails as stale and is deleted by hand.
   A template/concat prefix (`badge-${tone}`) covers its family; classes rendered by a dependency (highlight.js,
   the datepicker, the range slider) are `third-party-dom` allowlist entries. Lenient by design: it reports only
   certainly-dead classes.
+
+## Running them all: `scripts/lane-check.sh`
+
+One command for every FAST whole-tree guard (the ratchets above plus `guard-hidden-mypy`, `i18n-parity`,
+`audit-tests` and the frontend `test:audit`), run in parallel at `nice 10`, one `PASS`/`FAIL` line each, exit 1 on
+any failure. Each guard runs its hook's own `entry`, read from `.pre-commit-config.yaml` by
+`scripts/lib/precommit_entry.py` (`language: python` hooks under `backend/venv/bin/python`, which holds the same
+pins); a renamed hook makes it exit 2 rather than skip. `--only a,b`, `--skip a,b`, `--list`. It is not
+pre-commit (no stash, safe beside other writers) and runs no builds, `bandit -r` or test suites. Lanes run it
+before reporting and paste its output.

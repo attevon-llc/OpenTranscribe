@@ -691,6 +691,20 @@ a stale entry fails, and `--tighten` never edits an allowlist.
 - **`scripts/` tooling** (guards, lib, audit_tests) is type-checked by `check_scripts_mypy.py`
   against `baselines/scripts_mypy.txt`.
 - The mypy plugin `pydantic.mypy` is enabled in the root config.
+- **Unused global CSS**: `check_unused_css.py` (push stage, about 2 s) fails on a class defined in
+  `frontend/src/styles/*.css` or a component `:global(...)` selector that no non-test frontend
+  source names. svelte-check only reports unused *scoped* selectors. Classes a dependency renders
+  (highlight.js, the date picker, the range slider) are `third-party-dom` allowlist entries.
+
+### Running every fast guard at once
+
+`scripts/lane-check.sh` runs the fast whole-tree guards (the ratchets above, `guard-hidden-mypy`,
+`guard-svelte-unused`, `guard-duplicates`, `i18n-parity`, `audit-tests` and the frontend
+`test:audit`) in parallel and prints one `PASS`/`FAIL` line per guard, exiting 1 on any failure.
+Each guard runs its pre-commit hook's own `entry`, read from `.pre-commit-config.yaml`, so the two
+cannot drift; a renamed hook makes it exit 2. It is not pre-commit, so it never stashes the
+worktree and is safe to run beside other writers. `--only`, `--skip` and `--list` select guards.
+It runs no build, no `bandit -r` and no test suite: it is the pre-report check, not the gate.
 
 ## Debugging Tips
 

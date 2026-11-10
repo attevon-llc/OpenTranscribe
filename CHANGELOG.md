@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared button variants (`.btn-sm`, `.btn-lg`, `.btn-success`, `.btn-ghost`, `.btn-link`, `.btn-danger-outline`, `.btn-icon`) and a `ui/Button` component with busy and icon-only handling.
 - `i18n-parity` pre-commit hook: a commit that touches only `frontend/src/lib/i18n/locales/*.json` now runs the key-parity check locally (the `frontend-check` hook's type filter has no `json`, so such a commit used to fail only in CI).
 - `guard-unused-css` ratchet (push stage): a global class defined in `frontend/src/styles/*.css` or a component `:global(...)` selector that no frontend source references fails the gate; classes rendered by highlight.js, the date picker and the range slider are allowlisted with reasons.
+- `scripts/lane-check.sh`: every fast whole-tree guard (duplicates, hidden-mypy, style-literals, unused-css, suppressions, vulture, svelte-unused, api-boundary, raw-env, ruff-ratchet, i18n parity, audit-tests, frontend test:audit) in one parallel command with a PASS/FAIL line each. Each guard runs its pre-commit hook's own entry (read by `scripts/lib/precommit_entry.py`), so the two cannot drift; it never stashes the worktree.
 
 ### Fixed
 

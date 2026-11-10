@@ -129,7 +129,7 @@ panel to choose *24 hours after reading* (default), *7 days after reading*, or *
 the 100 limit still applies to routine successful notices. If anything was cleared, the panel
 tells you how many the next time you open it. The setting is stored in your browser.
 
-**Processing Time Estimates:**
+**Processing Time Estimates** (rough, not measured on these exact machines):
 
 | Duration | GPU (RTX 3080) | CPU (8-core) |
 |----------|----------------|--------------|
@@ -139,7 +139,7 @@ tells you how many the next time you open it. The setting is stored in your brow
 | 3 hours  | ~15 minutes    | ~3 hours     |
 
 :::info[Processing Speed]
-With GPU acceleration and the `large-v3-turbo` model (default), OpenTranscribe processes at **~40x realtime speed** (full pipeline). A 1-hour file transcribes in about 5 minutes!
+With GPU acceleration and the `large-v3-turbo` model (default), the full pipeline ran at about **40x realtime** on an RTX A6000, so a 1-hour file took roughly 1.5 minutes (see [GPU Setup](../installation/gpu-setup.md)). The table above is a rough estimate for a mid-range card; your times depend on the GPU, the model and the file.
 :::
 
 ## Step 4: View Your Transcript

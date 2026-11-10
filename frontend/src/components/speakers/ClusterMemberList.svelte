@@ -249,7 +249,7 @@
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--success-color) 15%, transparent);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   /* .gender-icon / .gender-svg / .gender-confirmed-tick moved to GenderBadge.svelte
@@ -317,7 +317,7 @@
     border-top: 1px dashed var(--warning-color);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
-    color: var(--warning-color);
+    color: var(--warning-text);
     flex-wrap: wrap;
     min-width: 0;
   }
@@ -358,17 +358,17 @@
 
   .outlier-badge-red {
     background: color-mix(in srgb, var(--error-color) 15%, transparent);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .outlier-badge-yellow {
     background: color-mix(in srgb, var(--warning-color) 15%, transparent);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .outlier-badge-green {
     background: color-mix(in srgb, var(--success-color) 15%, transparent);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   /* Mode banners and actions */
@@ -379,7 +379,7 @@
     border-radius: var(--radius-md);
     margin-bottom: var(--space-2);
     font-size: var(--font-size-sm);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .mode-actions {

@@ -234,7 +234,7 @@
   .field-error {
     margin: var(--space-1-5) 0 0;
     font-size: var(--font-size-xs);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .remove-row {

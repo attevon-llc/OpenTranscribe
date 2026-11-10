@@ -117,13 +117,13 @@
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     background: rgba(var(--success-color-rgb), 0.14);
-    color: var(--success-color);
+    color: var(--success-text);
     border: 1px solid rgba(var(--success-color-rgb), 0.35);
   }
   .add-shared {
     margin-inline-start: auto;
   }
   :global([data-theme='dark']) .chip {
-    color: var(--success-color);
+    color: var(--success-text);
   }
 </style>

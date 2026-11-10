@@ -813,7 +813,7 @@
     gap: 0.2rem;
     font-size: 0.65rem;
     font-weight: var(--font-weight-medium);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .save-speakers-button {
@@ -1067,7 +1067,7 @@
     gap: 0.2rem;
     font-size: 0.65rem;
     font-weight: var(--font-weight-medium);
-    color: var(--success-color);
+    color: var(--success-text);
     white-space: nowrap;
   }
 

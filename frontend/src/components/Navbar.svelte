@@ -688,7 +688,7 @@
     position: absolute;
     top: -5px;
     right: -5px;
-    background-color: var(--error-color);
+    background-color: var(--error-solid);
     color: var(--text-on-solid);
     width: 18px;
     height: 18px;

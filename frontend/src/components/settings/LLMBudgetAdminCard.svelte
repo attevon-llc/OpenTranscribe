@@ -179,7 +179,7 @@
 
   .error {
     font-size: var(--font-size-md);
-    color: var(--error-color);
+    color: var(--error-text);
     margin: var(--space-2) 0 0;
   }
 

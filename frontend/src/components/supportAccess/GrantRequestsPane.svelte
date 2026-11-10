@@ -285,7 +285,7 @@
     font-size: var(--font-size-md);
   }
   .state.error {
-    color: var(--error-color);
+    color: var(--error-text);
   }
   .more {
     display: block;

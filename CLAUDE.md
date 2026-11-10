@@ -344,7 +344,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 - Conventional commits: `<type>(<scope>): <summary>`.
 - `.env` is never overwritten without confirmation; `.env.example` is the editable template — keep new vars in sync.
 - Keep code files under ~300 lines; Google-style Python docstrings; light/dark mode parity for any frontend change.
-- **i18n is a requirement of EVERY release.** Any user-facing copy lands in all **12** locales (`frontend/src/lib/i18n/locales`: ar de en es fr it ja ko nl pt ru zh; `ar` is RTL). `npm run check:i18n` enforces key PARITY, not translation, and a commit touching only locale JSON does not fire the pre-commit hook: run `cd frontend && npm run check:i18n` yourself. The two traps in full: `frontend/CLAUDE.md` ("i18n").
+- **i18n is a requirement of EVERY release.** Any user-facing copy lands in all **12** locales (`frontend/src/lib/i18n/locales`: ar de en es fr it ja ko nl pt ru zh; `ar` is RTL). `npm run check:i18n` enforces key PARITY, not translation, and a commit touching only locale JSON runs it through the `i18n-parity` hook (the `frontend-check` hook has no `json` type). The two traps in full: `frontend/CLAUDE.md` ("i18n").
 - No mocking in production code paths — mocks belong in test fixtures only.
 - Real integration testing: if a test depends on Redis/Postgres/OpenSearch, run against the real service or document the dependency. Don't silently skip.
 - **LLM speaker-ID suggestions are never auto-applied** — they are surfaced with confidence scores for manual verification only.

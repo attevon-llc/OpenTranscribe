@@ -342,7 +342,7 @@
   .fallback-warning-icon {
     display: inline-flex;
     margin-top: 0.1rem;
-    color: var(--warning-color);
+    color: var(--warning-text);
     flex-shrink: 0;
   }
 

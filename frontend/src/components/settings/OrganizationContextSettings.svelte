@@ -371,7 +371,7 @@
   }
 
   .char-warning {
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .toggle-label {

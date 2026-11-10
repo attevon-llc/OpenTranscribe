@@ -12,6 +12,7 @@
  *    only, so without `.btn` the button has no padding -- unless the component defines its own.
  * 3. (Purple/indigo colours: see noPurple.test.ts.)
  * 4. Panel section headings in shouting-caps micro-labels, where chat uses sentence-case muted.
+ * 5. Text coloured with a status or brand FILL token (`--error-color`, `--warning-color`, ...).
  *
  * Every allowlist entry carries a written reason and is itself checked for staleness.
  */
@@ -61,6 +62,27 @@ describe('text is never coloured with the button blue', () => {
 
   it('has no stale allowlist entries', () => {
     expect(scan(TEXT_PRIMARY, STYLED, ALLOW).stale).toEqual([]);
+  });
+});
+
+describe('text is never coloured with a status or brand fill token', () => {
+  // The fill/icon tokens are tuned for a 3:1 shape, not 4.5:1 text: on the light card
+  // --error-color is 3.76:1, --success-color 2.54:1, --warning-color 2.15:1, and the brand
+  // aliases (--accent-color, --ai-accent-color, --color-primary) are the button blue (2.83:1 on
+  // the dark card). Each family has a text role that clears AA on surfaces and its own tint:
+  // --error-text, --success-text, --warning-text, --info-text, --primary-on-surface, --link-hover.
+  // contrast-usage.test.ts checks the ratios; this pins the vocabulary so a fill token cannot
+  // come back as a text colour in a rule whose background the contrast scan cannot see.
+  const FILL_AS_TEXT =
+    /(?<![-\w])color:\s*var\(--(error-color|danger-color|error-solid|warning-color|success-color|info-color|color-info|accent-color|ai-accent-color|color-primary|primary-hover)\)/g;
+
+  it('uses the family text token for text and icons', () => {
+    expect(scan(FILL_AS_TEXT, STYLED, {}).offenders).toEqual([]);
+  });
+
+  it('control: the detector fires on a status fill used as text', () => {
+    expect('.x { color: var(--error-color); }'.match(FILL_AS_TEXT)).toHaveLength(1);
+    expect('.x { border-color: var(--error-color); }'.match(FILL_AS_TEXT)).toBeNull();
   });
 });
 

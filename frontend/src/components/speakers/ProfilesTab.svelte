@@ -345,7 +345,7 @@
   }
 
   .icon-btn.danger:hover {
-    color: var(--error-color);
+    color: var(--error-text);
     background: color-mix(in srgb, var(--error-color) 10%, transparent);
     border-color: color-mix(in srgb, var(--error-color) 30%, transparent);
     transform: none;

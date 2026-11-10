@@ -209,6 +209,6 @@
   .discovery-warning {
     margin: var(--space-3) 0 0;
     font-size: var(--font-size-xs);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 </style>

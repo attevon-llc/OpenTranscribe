@@ -885,12 +885,12 @@
 
   .experimental-badge {
     background: rgba(245, 158, 11, 0.12);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .active-badge {
     background: var(--success-bg);
-    color: var(--success-color);
+    color: var(--success-text);
     border: 1px solid var(--success-border);
   }
 
@@ -1014,12 +1014,12 @@
 
   .cap-yes {
     background: var(--success-bg);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .cap-no {
     background: rgba(239, 68, 68, 0.08);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .cap-neutral {

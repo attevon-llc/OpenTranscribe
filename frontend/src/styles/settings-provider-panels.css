@@ -34,7 +34,7 @@
 
 .provider-panel .config-status.currently-active {
   background-color: var(--success-bg);
-  color: var(--success-color);
+  color: var(--success-text);
   border: 1px solid var(--success-border);
 }
 

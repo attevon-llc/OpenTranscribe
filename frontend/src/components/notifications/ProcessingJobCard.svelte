@@ -292,7 +292,7 @@
   }
 
   .job-chip.state-done {
-    color: var(--success-color);
+    color: var(--success-text);
     background: var(--success-bg);
     border-color: transparent;
   }
@@ -304,7 +304,7 @@
   }
 
   .job-chip.state-failed {
-    color: var(--error-color);
+    color: var(--error-text);
     background: var(--error-background);
     border-color: transparent;
   }

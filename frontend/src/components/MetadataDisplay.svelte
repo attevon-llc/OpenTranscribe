@@ -244,7 +244,7 @@
 
 <style>
   .provenance-error {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .metadata-dropdown-section {
@@ -338,21 +338,21 @@
   }
 
   .status-completed {
-    color: var(--success-color);
+    color: var(--success-text);
     display: flex;
     align-items: center;
     gap: var(--space-1);
   }
 
   .status-processing {
-    color: var(--warning-color);
+    color: var(--warning-text);
     display: flex;
     align-items: center;
     gap: var(--space-1);
   }
 
   .status-error {
-    color: var(--error-color);
+    color: var(--error-text);
     display: flex;
     align-items: center;
     gap: var(--space-1);
@@ -373,7 +373,7 @@
   }
 
   .source-link:hover {
-    color: var(--primary-hover);
+    color: var(--link-hover);
     text-decoration: underline;
   }
 

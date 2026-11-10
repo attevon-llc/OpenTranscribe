@@ -37,11 +37,11 @@
   }
 
   .state-done {
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .state-failed {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .state-running {

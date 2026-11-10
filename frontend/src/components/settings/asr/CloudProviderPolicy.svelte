@@ -151,7 +151,7 @@
     margin-top: var(--space-2);
   }
   .error-text {
-    color: var(--error-color);
+    color: var(--error-text);
     margin: 0;
   }
   .state {

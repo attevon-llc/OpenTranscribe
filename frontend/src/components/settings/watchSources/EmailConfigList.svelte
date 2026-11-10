@@ -163,11 +163,11 @@
   }
   .badge-success {
     background: rgba(34, 197, 94, 0.15);
-    color: var(--success-color);
+    color: var(--success-text);
   }
   .badge-error {
     background: rgba(239, 68, 68, 0.15);
-    color: var(--error-color);
+    color: var(--error-text);
   }
   .linked-badge {
     background: rgba(var(--primary-color-rgb), 0.15);

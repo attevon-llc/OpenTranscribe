@@ -328,7 +328,7 @@
 
 <style>
   .form-text.password-error {
-    color: var(--error-color);
+    color: var(--error-text);
     margin: 0 0 var(--space-3) 0;
   }
 

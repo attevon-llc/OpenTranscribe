@@ -439,7 +439,7 @@
 
   .status-icon.enabled {
     background-color: rgba(16, 185, 129, 0.1);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .status-content h4 {
@@ -559,7 +559,7 @@
   .disable-warning {
     margin: 0 0 var(--space-4) 0;
     font-size: var(--font-size-sm);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .backup-codes-section {
@@ -582,8 +582,8 @@
 
   .warning-badge {
     padding: var(--space-1) var(--space-2);
-    background-color: var(--warning-color);
-    color: var(--text-on-solid);
+    background-color: var(--warning-solid);
+    color: var(--text-on-warning);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;

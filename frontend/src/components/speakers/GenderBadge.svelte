@@ -92,7 +92,7 @@
 
   .gender-confirmed-tick {
     display: inline-flex;
-    color: var(--success-color);
+    color: var(--success-text);
     margin-inline-start: 1px;
   }
 

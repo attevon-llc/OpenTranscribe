@@ -1,0 +1,13 @@
+# Global classes the unused-css guard must not report, because the element carrying the class is
+# rendered by a dependency (or at runtime) and so appears in no frontend source. Key: class name or
+# prefix* pattern; value 1; reason starts with third-party-dom / runtime-generated / external-consumer.
+hljs-*	1	third-party-dom: highlight.js (ChatMarkdown) wraps highlighted tokens in hljs-<scope> spans at render time
+calendars-container	1	third-party-dom: rendered by @svelte-plugins/datepicker inside DateRangePicker
+dow	1	third-party-dom: day-of-week header cells rendered by @svelte-plugins/datepicker inside DateRangePicker
+icon-next-month	1	third-party-dom: month navigation button rendered by @svelte-plugins/datepicker
+icon-next-year	1	third-party-dom: year navigation button rendered by @svelte-plugins/datepicker
+icon-previous-month	1	third-party-dom: month navigation button rendered by @svelte-plugins/datepicker
+icon-previous-year	1	third-party-dom: year navigation button rendered by @svelte-plugins/datepicker
+rangeBar	1	third-party-dom: the selected-range bar rendered by svelte-range-slider-pips (FilterSidebar)
+rangeHandle	1	third-party-dom: the handle element rendered by svelte-range-slider-pips (FilterSidebar)
+rangeNub	1	third-party-dom: the handle nub rendered by svelte-range-slider-pips (FilterSidebar)

@@ -344,6 +344,6 @@
   .error {
     margin: 0;
     font-size: var(--font-size-sm);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 </style>

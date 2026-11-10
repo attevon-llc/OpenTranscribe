@@ -236,7 +236,7 @@
 
   .chip-estimate.over {
     border-color: rgba(var(--error-color-rgb), 0.5);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .add-context,

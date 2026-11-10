@@ -115,7 +115,7 @@
 
   .org-accept-error {
     margin: var(--space-2) 0 0;
-    color: var(--error-color);
+    color: var(--error-text);
     font-size: var(--font-size-sm);
   }
 </style>

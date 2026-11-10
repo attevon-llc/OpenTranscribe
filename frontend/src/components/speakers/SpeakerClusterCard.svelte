@@ -321,12 +321,12 @@
 
   .gender-coherent {
     background: color-mix(in srgb, var(--success-color) 12%, transparent);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .gender-conflict {
     background: color-mix(in srgb, var(--warning-color) 12%, transparent);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .member-count {
@@ -340,7 +340,7 @@
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
     background: color-mix(in srgb, var(--success-color) 15%, transparent);
-    color: var(--success-color);
+    color: var(--success-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -481,7 +481,7 @@
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     background: color-mix(in srgb, var(--warning-color) 12%, transparent);
-    color: var(--warning-color);
+    color: var(--warning-text);
     white-space: nowrap;
   }
 

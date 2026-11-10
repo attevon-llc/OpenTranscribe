@@ -317,7 +317,7 @@
     margin: 0 0 var(--space-3);
     font-size: var(--font-size-sm);
     line-height: 1.4;
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .auth-button {

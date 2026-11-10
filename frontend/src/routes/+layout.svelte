@@ -443,7 +443,7 @@
     height: 1px;
     overflow: hidden;
     padding: 0;
-    background: var(--color-primary);
+    background: var(--primary-color);
     color: var(--text-on-solid);
     z-index: var(--z-critical);
   }

@@ -583,7 +583,7 @@
 
   .confirm-warning {
     font-size: 0.82rem;
-    color: var(--warning-color);
+    color: var(--warning-text);
     margin: 0 0 var(--space-2) 0;
     line-height: 1.4;
   }

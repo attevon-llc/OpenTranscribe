@@ -106,11 +106,11 @@
   }
 
   .importance-high {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .importance-medium {
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .importance-low {

@@ -339,7 +339,7 @@
   .orphans-error {
     margin: 0;
     font-size: 0.8rem;
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .orphans-grid {

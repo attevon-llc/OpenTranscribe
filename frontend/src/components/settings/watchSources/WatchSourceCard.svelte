@@ -176,11 +176,11 @@
   }
   .badge-success {
     background: rgba(34, 197, 94, 0.15);
-    color: var(--success-color);
+    color: var(--success-text);
   }
   .badge-error {
     background: rgba(239, 68, 68, 0.15);
-    color: var(--error-color);
+    color: var(--error-text);
   }
   .badge-running {
     background: rgba(234, 179, 8, 0.15);
@@ -204,7 +204,7 @@
   .disk-banner {
     margin-top: var(--space-1-5);
     font-size: var(--font-size-xs);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
   .source-actions {
     display: flex;

@@ -141,7 +141,7 @@
   .export-redaction-icon {
     vertical-align: -2px;
     margin-inline-end: 0.3rem;
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .export-redaction-hint {

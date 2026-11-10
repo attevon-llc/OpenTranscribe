@@ -335,7 +335,7 @@
   }
 
   .success-message {
-    color: var(--success-color);
+    color: var(--success-text);
     font-size: 0.85rem;
     margin-bottom: var(--space-3);
     padding: var(--space-2) var(--space-3);

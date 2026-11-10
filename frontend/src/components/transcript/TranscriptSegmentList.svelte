@@ -697,7 +697,7 @@
 
   .low-confidence-dot {
     display: inline-flex;
-    color: var(--warning-color);
+    color: var(--warning-text);
     vertical-align: super;
     margin-inline-start: var(--space-0-5);
     cursor: help;

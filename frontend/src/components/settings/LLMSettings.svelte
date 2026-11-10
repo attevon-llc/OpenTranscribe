@@ -990,7 +990,7 @@
   }
 
   .summary-hint.warning {
-    color: var(--warning-color);
+    color: var(--warning-text);
     background: rgba(245, 158, 11, 0.08);
     border-left: 3px solid var(--warning-color);
   }

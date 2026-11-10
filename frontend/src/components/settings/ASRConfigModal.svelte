@@ -524,7 +524,7 @@
   .unsaved-dot {
     display: inline-flex;
     align-items: center;
-    color: var(--warning-color);
+    color: var(--warning-text);
     flex-shrink: 0;
   }
 
@@ -587,7 +587,7 @@
     border: 1px solid rgba(245, 158, 11, 0.3);
     border-radius: var(--radius-md);
     font-size: 0.8rem;
-    color: var(--warning-color);
+    color: var(--warning-text);
     line-height: 1.4;
   }
 

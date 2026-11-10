@@ -145,7 +145,7 @@
 
   .analytics-chip.processing {
     background: var(--warning-light);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .no-analytics {

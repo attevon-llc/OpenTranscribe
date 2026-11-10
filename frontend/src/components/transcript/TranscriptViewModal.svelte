@@ -436,7 +436,7 @@
   .copy-button-header.copied {
     background-color: var(--success-bg);
     border-color: var(--success-color);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .redaction-link-btn {

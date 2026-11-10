@@ -355,7 +355,7 @@
     justify-content: center;
     padding: var(--space-6);
     gap: var(--space-2);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .section-title {
@@ -387,7 +387,7 @@
   }
 
   .counts-row.has-missing {
-    color: var(--warning-color);
+    color: var(--warning-text);
     font-weight: var(--font-weight-semibold);
   }
 
@@ -494,7 +494,7 @@
   }
 
   .failed-count {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .results-title {

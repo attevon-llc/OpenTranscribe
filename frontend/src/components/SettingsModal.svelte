@@ -1362,7 +1362,7 @@
   .dirty-indicator {
     display: inline-flex;
     align-items: center;
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   /* Pending-work count (currently the account-approval queue). Amber rather than

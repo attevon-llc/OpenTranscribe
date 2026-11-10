@@ -257,7 +257,7 @@
   }
 
   .counter.over {
-    color: var(--error-color);
+    color: var(--error-text);
     font-weight: var(--font-weight-semibold);
   }
 

@@ -103,7 +103,7 @@
     border: 1px solid var(--error-border);
     border-radius: var(--radius-md);
     background: var(--error-background);
-    color: var(--error-color);
+    color: var(--error-text);
     font-size: var(--font-size-sm);
   }
 </style>

@@ -253,7 +253,7 @@
   .action-link {
     border: none;
     background: none;
-    color: var(--accent-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     padding: 0;
     font-size: var(--font-size-sm);

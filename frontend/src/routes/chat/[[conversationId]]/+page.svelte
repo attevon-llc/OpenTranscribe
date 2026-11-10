@@ -779,7 +779,7 @@
     border: 1px solid rgba(var(--error-color-rgb), 0.35);
     border-radius: var(--radius-lg);
     background-color: rgba(var(--error-color-rgb), 0.08);
-    color: var(--error-color);
+    color: var(--error-text);
     font-size: 0.85rem;
   }
 

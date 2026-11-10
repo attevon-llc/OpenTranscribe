@@ -863,7 +863,7 @@ let _llmConfigModalWasOpen = false;
   .unsaved-dot {
     display: inline-flex;
     align-items: center;
-    color: var(--warning-color);
+    color: var(--warning-text);
     flex-shrink: 0;
   }
 
@@ -949,7 +949,7 @@ let _llmConfigModalWasOpen = false;
 
   .close-selector {
     background: var(--secondary-color);
-    color: var(--text-on-solid);
+    color: var(--surface-color);
     border: none;
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-sm);

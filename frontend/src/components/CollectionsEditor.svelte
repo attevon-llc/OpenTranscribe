@@ -401,7 +401,7 @@
   }
 
   .collection-remove:hover {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .collection-input-container {
@@ -502,7 +502,7 @@
   }
 
   .ai-icon {
-    color: var(--ai-accent-color);
+    color: var(--primary-on-surface);
     display: flex;
     align-items: center;
   }

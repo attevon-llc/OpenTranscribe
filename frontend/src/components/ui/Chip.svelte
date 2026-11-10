@@ -71,15 +71,15 @@
   }
   .chip-success {
     background: rgba(var(--success-color-rgb), 0.12);
-    color: var(--success-color);
+    color: var(--success-text);
   }
   .chip-warning {
     background: rgba(var(--warning-color-rgb), 0.14);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
   .chip-error {
     background: rgba(var(--error-color-rgb), 0.12);
-    color: var(--error-color);
+    color: var(--error-text);
   }
   .chip-info {
     background: rgba(var(--primary-color-rgb), 0.12);

@@ -199,7 +199,7 @@
   }
 
   .btn-acknowledge {
-    background: var(--color-primary);
+    background: var(--primary-color);
     color: var(--text-on-solid);
     padding: var(--space-3) var(--space-8);
     border: none;

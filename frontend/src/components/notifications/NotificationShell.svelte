@@ -138,13 +138,13 @@
   .status-success .notification-icon {
     background: rgba(16, 185, 129, 0.1);
     border-color: rgba(16, 185, 129, 0.2);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .status-error .notification-icon {
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.2);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .status-info .notification-icon {
@@ -156,7 +156,7 @@
   .status-warning .notification-icon {
     background: rgba(245, 158, 11, 0.1);
     border-color: rgba(245, 158, 11, 0.2);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .notification-content {
@@ -189,7 +189,7 @@
 
   .notification-dismiss:hover {
     background: var(--error-background);
-    color: var(--error-color);
+    color: var(--error-text);
     opacity: 1;
     box-shadow: none;
     transform: none;

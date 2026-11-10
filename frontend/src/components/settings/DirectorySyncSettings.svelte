@@ -332,7 +332,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .toggle-label {

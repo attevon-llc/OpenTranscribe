@@ -261,7 +261,7 @@
 
   .all-processed {
     font-size: 0.85rem;
-    color: var(--success-color);
+    color: var(--success-text);
     padding: var(--space-2-5) var(--space-3-5);
     background: rgba(81, 207, 102, 0.08);
     border: 1px solid rgba(81, 207, 102, 0.2);
@@ -274,7 +274,7 @@
 
   .failed-info {
     font-size: var(--font-size-xs);
-    color: var(--error-color);
+    color: var(--error-text);
     margin-top: var(--space-2);
   }
 

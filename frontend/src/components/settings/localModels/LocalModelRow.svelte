@@ -177,10 +177,10 @@
   }
   .row-error {
     font-size: 0.8rem;
-    color: var(--error-color);
+    color: var(--error-text);
   }
   :global([data-theme='dark']) .row-error {
-    color: var(--error-color);
+    color: var(--error-text);
   }
   @media (max-width: 640px) {
     .model-row {

@@ -431,7 +431,7 @@
 
   .waveform-error {
     flex-direction: column;
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .retry-button {

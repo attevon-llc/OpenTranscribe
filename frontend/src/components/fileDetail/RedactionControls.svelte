@@ -129,7 +129,7 @@
       background-color 0.12s ease;
   }
   .redaction-link-btn:hover {
-    color: var(--primary-hover);
+    color: var(--link-hover);
     background-color: rgba(var(--primary-color-rgb), 0.1);
   }
   .redaction-link-btn:disabled {

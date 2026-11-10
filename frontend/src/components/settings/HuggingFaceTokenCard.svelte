@@ -225,7 +225,7 @@
 
   .status-app,
   .status-environment {
-    color: var(--success-color);
+    color: var(--success-text);
     border-color: var(--success-color);
   }
 
@@ -278,10 +278,10 @@
   .result {
     margin: var(--space-2) 0 0;
     font-size: var(--font-size-sm);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .result.ok {
-    color: var(--success-color);
+    color: var(--success-text);
   }
 </style>

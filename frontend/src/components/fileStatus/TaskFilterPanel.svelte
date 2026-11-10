@@ -128,7 +128,7 @@
   .compact-clear-btn:hover:not(:disabled) {
     border-color: var(--error-color);
     background: var(--field-bg);
-    color: var(--error-color);
+    color: var(--error-text);
     box-shadow: none;
     transform: none;
   }

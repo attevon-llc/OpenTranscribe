@@ -371,7 +371,7 @@
   }
 
   .section-heading-btn.identified {
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .section-heading-btn.unidentified {

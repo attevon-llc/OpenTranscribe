@@ -1071,7 +1071,7 @@
     align-items: center;
     gap: var(--space-2);
     margin-bottom: var(--space-1);
-    color: var(--color-info);
+    color: var(--info-text);
   }
 
   .tip-icon {
@@ -1226,7 +1226,7 @@
   .unsaved-dot {
     display: inline-flex;
     align-items: center;
-    color: var(--warning-color);
+    color: var(--warning-text);
     flex-shrink: 0;
   }
 

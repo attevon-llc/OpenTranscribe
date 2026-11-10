@@ -37,7 +37,7 @@
 
 .ops-panel .status-error {
   font-size: var(--font-size-xs);
-  color: var(--error-color);
+  color: var(--error-text);
   overflow-wrap: anywhere;
 }
 

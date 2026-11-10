@@ -84,7 +84,9 @@
   --surface-color: #ffffff;
   --background-color: #f8fafc;
   --text-color: #1e293b;
-  --text-secondary: #64748b;
+  /* #64748b read 4.34:1 on --hover-color. This clears 4.5:1 on every light surface and
+     tint it sits on (contrast-usage.test.ts). */
+  --text-secondary: #5b677a;
   --border-color: #e5e7eb;
   --error-color: #ef4444;
   /* A solid fill that carries WHITE text (count badges). Distinct from `--error-color`, the
@@ -119,8 +121,6 @@
   --dropdown-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --button-hover: rgba(0, 0, 0, 0.05);
   --hover-color: #f1f5f9;
-  --toggle-bg: #e5e7eb;
-  --toggle-button: #ffffff;
   --table-header-bg: #f1f5f9;
   --table-row-hover: #f8fafc;
   --modal-backdrop: rgba(0, 0, 0, 0.5);
@@ -138,7 +138,8 @@
   --color-primary-alpha: rgba(59, 130, 246, 0.2);
   --color-text: var(--text-color);
   --color-text-secondary: var(--text-secondary);
-  --color-text-tertiary: #94a3b8;
+  /* #94a3b8 read 2.56:1 on the card: a hint is still text (SC 1.4.3) */
+  --color-text-tertiary: #64748b;
   --color-bg: var(--background-color);
   --color-bg-secondary: #f1f5f9;
   --color-bg-tertiary: #e2e8f0;
@@ -147,7 +148,8 @@
   --color-warning: var(--warning-color);
   --color-warning-bg: rgba(245, 158, 11, 0.1);
   --color-warning-border: rgba(245, 158, 11, 0.3);
-  --color-warning-text: #b45309;
+  /* #b45309 read 4.47:1 on the 0.15 warning tint chips use */
+  --color-warning-text: #a84d08;
   --color-info-bg: rgba(59, 130, 246, 0.1);
   --color-info-border: rgba(59, 130, 246, 0.3);
   --color-info: var(--info-color);
@@ -160,8 +162,9 @@
    * success tint measures 2.27:1 and #ef4444 on the error tint 3.29:1. `--color-warning-text`
    * already existed for exactly this reason; these complete the set.
    *
-   * `--text-on-tint` is the same story for `--text-secondary` (#64748b). It clears AA on the
-   * base white surface (4.76:1) and fails on every tint the app actually uses — 4.34:1 on
+   * `--text-on-tint` is the same story for `--text-secondary` (then #64748b, since darkened to
+   * #5b677a, which clears the hover surfaces itself). It cleared AA on the
+   * base white surface (4.76:1) and failed on every tint the app actually uses — 4.34:1 on
    * slate-100, 4.25:1 on the success tint, 4.16:1 on the error tint. All three are near
    * misses, which is why they survived review: they look fine and are measurably not.
    *
@@ -491,13 +494,12 @@
   --dropdown-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
   --button-hover: rgba(255, 255, 255, 0.1);
   --hover-color: #334155;
-  --toggle-bg: #334155;
-  --toggle-button: #f8fafc;
   --table-header-bg: #293548; /* Darker header background for better contrast */
   --table-row-hover: #334155;
   --modal-backdrop: rgba(0, 0, 0, 0.7);
   --link-color: #60a5fa; /* Brighter blue for links in dark mode */
-  --link-hover: #3b82f6; /* Darken on hover — consistent direction with light mode */
+  /* Hover LIGHTENS in dark: the darker #3b82f6 read 3.98:1 on the card */
+  --link-hover: #93c5fd;
 
   /* Aliases for settings components - dark mode */
   --color-primary: var(--primary-color);
@@ -699,69 +701,4 @@ a:hover {
   opacity: 0;
   width: 0;
   height: 0;
-}
-
-.theme-toggle-slider {
-  position: absolute;
-  cursor: pointer;
-  inset: 0;
-  background-color: var(--toggle-bg);
-  transition: 0.4s;
-  border-radius: 34px;
-  overflow: visible; /* Ensure icons are visible */
-}
-
-.theme-toggle-slider::before {
-  position: absolute;
-  content: '';
-  height: 20px;
-  width: 20px;
-  left: 3px;
-  bottom: 3px;
-  background-color: var(--toggle-button);
-  transition: 0.4s;
-  border-radius: 50%;
-  z-index: 2; /* Ensure the circle is above the icons */
-}
-
-input:checked + .theme-toggle-slider {
-  background-color: var(--primary-color);
-}
-
-input:checked + .theme-toggle-slider::before {
-  transform: translateX(26px);
-}
-
-/* Light/Dark mode icons */
-.theme-toggle-slider .sun-icon,
-.theme-toggle-slider .moon-icon {
-  position: absolute;
-  top: 5px;
-  width: 16px;
-  height: 16px;
-  transition: opacity 0.3s ease;
-  z-index: 1; /* Place icons below the slider button */
-  fill: currentcolor;
-  stroke: currentcolor;
-  stroke-width: 2px;
-}
-
-.theme-toggle-slider .sun-icon {
-  left: 6px;
-  color: #f59e0b; /* Sun color - amber */
-  opacity: 1;
-}
-
-.theme-toggle-slider .moon-icon {
-  right: 6px;
-  color: #f8fafc; /* Moon color - white */
-  opacity: 0;
-}
-
-input:checked + .theme-toggle-slider .sun-icon {
-  opacity: 0;
-}
-
-input:checked + .theme-toggle-slider .moon-icon {
-  opacity: 1;
 }

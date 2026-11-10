@@ -15,7 +15,7 @@
  * `input { width: 100% }` rule stretched a checkbox across its row.
  *
  * Variants: `.field-sm` is the compact size for dense toolbars and table cells;
- * `aria-invalid="true"` (or `.is-invalid`) is the error state.
+ * `aria-invalid="true"` is the error state.
  */
 :root {
   --field-radius: var(--radius-lg);
@@ -136,7 +136,7 @@
       ),
     textarea,
     select
-  ):where([aria-invalid='true'], .is-invalid) {
+  ):where([aria-invalid='true']) {
   border-color: var(--error-color);
 }
 
@@ -155,7 +155,7 @@
       ),
     textarea,
     select
-  ):where([aria-invalid='true'], .is-invalid):where(:focus) {
+  ):where([aria-invalid='true']):where(:focus) {
   box-shadow: 0 0 0 3px rgba(var(--error-color-rgb), 0.25);
 }
 
@@ -399,19 +399,16 @@ button:disabled {
   border: 1px solid var(--border-color);
 }
 
-.modal-header,
-.dialog-header {
+.modal-header {
   border-bottom: 1px solid var(--border-color);
   padding: var(--space-4);
 }
 
-.modal-body,
-.dialog-body {
+.modal-body {
   padding: var(--space-4);
 }
 
-.modal-footer,
-.dialog-footer {
+.modal-footer {
   border-top: 1px solid var(--border-color);
   padding: var(--space-4);
 }
@@ -599,9 +596,8 @@ button:disabled {
   justify-content: center;
   gap: var(--space-2);
 }
-/* ─── Refresh / Reset button helpers ───────────────────────────────── */
-.btn-refresh,
-.btn-reset {
+/* ─── Refresh button helpers ───────────────────────────────────────── */
+.btn-refresh {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);

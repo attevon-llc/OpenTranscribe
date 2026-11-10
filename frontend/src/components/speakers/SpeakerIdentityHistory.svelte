@@ -166,7 +166,7 @@
   }
 
   .history-error {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .history-list {

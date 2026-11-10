@@ -313,7 +313,7 @@
     border-radius: var(--radius-lg);
     background-color: rgba(var(--error-color-rgb), 0.08);
     border: 1px solid rgba(var(--error-color-rgb), 0.25);
-    color: var(--error-color);
+    color: var(--error-text);
     font-size: var(--font-size-md);
   }
 

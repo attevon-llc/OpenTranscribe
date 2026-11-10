@@ -453,7 +453,7 @@
   .lock-badge {
     display: inline-flex;
     align-items: center;
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
   .perf-icon,
   .lang-icon {

@@ -177,10 +177,12 @@ export function compositeOver(fg: Colour, bg: Rgb): Rgb {
   return fg.rgb.map((c, i) => Math.round(bg[i] * (1 - fg.alpha) + c * fg.alpha)) as Rgb;
 }
 
+// WCAG 2.2 relative luminance (https://www.w3.org/TR/WCAG22/#dfn-relative-luminance). The spec
+// changed 0.03928 to 0.04045 in May 2021; no 8-bit channel falls between them.
 function relativeLuminance([r, g, b]: Rgb): number {
   const f = (c: number) => {
     const s = c / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
   };
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
 }

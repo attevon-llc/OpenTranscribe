@@ -67,6 +67,6 @@
   .settings-copy-button.copied:hover {
     background-color: var(--success-bg);
     border-color: var(--success-color);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 </style>

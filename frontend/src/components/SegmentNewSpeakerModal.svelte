@@ -142,6 +142,6 @@
   .new-speaker-error {
     margin: var(--space-2-5) 0 0;
     font-size: var(--font-size-xs);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 </style>

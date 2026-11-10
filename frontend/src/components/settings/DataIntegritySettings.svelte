@@ -376,7 +376,7 @@
   }
 
   .error-state {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .section-title {
@@ -465,7 +465,7 @@
 
   .index-body.failed,
   .index-error {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .breakdown-row {

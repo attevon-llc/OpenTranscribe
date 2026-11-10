@@ -350,8 +350,8 @@
   }
 
   .download-button.processing {
-    background: var(--warning-color);
-    color: var(--text-on-solid);
+    background: var(--warning-solid);
+    color: var(--text-on-warning);
     border-color: var(--warning-color);
   }
 

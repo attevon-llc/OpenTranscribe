@@ -597,7 +597,7 @@
     justify-content: center;
     padding: var(--space-6);
     gap: var(--space-2);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .section-title {

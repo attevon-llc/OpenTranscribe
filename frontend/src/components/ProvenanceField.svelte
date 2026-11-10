@@ -158,12 +158,12 @@
      from an inference rather than sharing its styling. */
   .source-badge.manual {
     border-color: var(--success-color);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .source-badge.conflict {
     border-color: var(--warning-color);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .source-badge.unresolved {
@@ -197,6 +197,6 @@
 
   .conflict-note {
     margin: 0.2rem 0;
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 </style>

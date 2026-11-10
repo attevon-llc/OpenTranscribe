@@ -68,14 +68,37 @@ const PAIRS: Pair[] = [
       reason: 'body / blue text on a surface',
     }))
   ),
+  // Secondary and muted text inherit whatever surface they sit on, hover rows included
+  // (contrast-usage.test.ts found --text-secondary at 4.34:1 on --hover-color and
+  // --text-tertiary at 2.56:1 on the card), so they are held on every surface.
+  ...['--text-secondary', '--text-muted'].flatMap((fg) =>
+    SURFACES.map((bg) => ({
+      fg,
+      bg,
+      min: TEXT,
+      themes: BOTH,
+      reason: 'secondary / muted text on a surface',
+    }))
+  ),
+  // Tertiary is only ever placed on the base surfaces (4.34:1 on --hover-color in light, so a
+  // hover row must not use it); contrast-usage.test.ts would flag a new pairing.
   ...['--surface-color', '--background-color'].map((bg) => ({
-    fg: '--text-secondary',
+    fg: '--text-tertiary',
     bg,
     min: TEXT,
     themes: BOTH,
-    reason: 'secondary text on the two base surfaces only (4.34:1 on --hover-color in light)',
+    reason: 'tertiary text on the two base surfaces only',
   })),
-  // The documented near-miss: secondary text on a hover or sunken surface uses --text-on-tint.
+  ...['--link-color', '--link-hover'].flatMap((fg) =>
+    ['--surface-color', '--background-color'].map((bg) => ({
+      fg,
+      bg,
+      min: TEXT,
+      themes: BOTH,
+      reason: 'link text, resting and hovered',
+    }))
+  ),
+  // The stronger secondary tone for a hover or sunken surface (--text-on-tint).
   ...['--hover-color', '--surface-secondary'].map((bg) => ({
     fg: '--text-on-tint',
     bg,

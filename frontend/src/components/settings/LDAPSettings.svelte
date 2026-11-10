@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { LDAPConfig } from '$lib/api/authConfig';
@@ -99,29 +100,27 @@
     <h3>{$t('settings.ldap.serverConnection')}</h3>
 
     <div class="form-row">
-      <div class="form-group">
-        <label for="ldap_server">{$t('settings.ldap.server')}</label>
+      <FormField size="lg" id="ldap_server" label={$t('settings.ldap.server')} hint={$t('settings.ldap.serverHelp')} let:describedby>
         <input dir="ltr"
-          id="ldap_server"
+          id="ldap_server" aria-describedby={describedby}
           type="text"
           bind:value={formData.ldap_server}
           on:input={handleChange}
           placeholder="ldap.example.com"
           disabled={!formData.ldap_enabled}
         />
-        <span class="help-text">{$t('settings.ldap.serverHelp')}</span>
-      </div>
+      </FormField>
 
-      <div class="form-group small">
-        <label for="ldap_port">{$t('settings.ldap.port')}</label>
+      <FormField size="lg" class="field-small" id="ldap_port" label={$t('settings.ldap.port')} let:describedby>
         <input
           id="ldap_port"
+          aria-describedby={describedby}
           type="number"
           bind:value={formData.ldap_port}
           on:input={handleChange}
           disabled={!formData.ldap_enabled}
         />
-      </div>
+      </FormField>
     </div>
 
     <div class="form-row checkboxes">
@@ -148,31 +147,27 @@
 
     <p class="help-text">{$t('settings.ldap.tlsEnvFallbackHelp')}</p>
 
-    <div class="form-group">
-      <label for="ldap_ca_cert_file">{$t('settings.ldap.caCertFile')}</label>
+    <FormField size="lg" id="ldap_ca_cert_file" label={$t('settings.ldap.caCertFile')} hint={$t('settings.ldap.caCertFileHelp')} let:describedby>
       <input dir="ltr"
-        id="ldap_ca_cert_file"
+        id="ldap_ca_cert_file" aria-describedby={describedby}
         type="text"
         bind:value={formData.ldap_ca_cert_file}
         on:input={handleChange}
         placeholder="/etc/ssl/certs/directory-ca.pem"
         disabled={!formData.ldap_enabled || formData.ldap_tls_skip_verify === true}
       />
-      <span class="help-text">{$t('settings.ldap.caCertFileHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="ldap_tls_server_name">{$t('settings.ldap.tlsServerName')}</label>
+    <FormField size="lg" id="ldap_tls_server_name" label={$t('settings.ldap.tlsServerName')} hint={$t('settings.ldap.tlsServerNameHelp')} let:describedby>
       <input dir="ltr"
-        id="ldap_tls_server_name"
+        id="ldap_tls_server_name" aria-describedby={describedby}
         type="text"
         bind:value={formData.ldap_tls_server_name}
         on:input={handleChange}
         placeholder="ldap.example.com"
         disabled={!formData.ldap_enabled || formData.ldap_tls_skip_verify === true}
       />
-      <span class="help-text">{$t('settings.ldap.tlsServerNameHelp')}</span>
-    </div>
+    </FormField>
 
     <label class="checkbox-label">
       <input
@@ -187,8 +182,7 @@
       <p class="insecure-warning" role="alert">{$t('settings.ldap.tlsSkipVerifyWarning')}</p>
     {/if}
 
-    <div class="form-group">
-      <label for="ldap_timeout">{$t('settings.ldap.connectionTimeout')}</label>
+    <FormField size="lg" id="ldap_timeout" label={$t('settings.ldap.connectionTimeout')}>
       <input
         id="ldap_timeout"
         type="number"
@@ -198,58 +192,51 @@
         max="60"
         disabled={!formData.ldap_enabled}
       />
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.ldap_enabled}>
     <h3>{$t('settings.ldap.bindCredentials')}</h3>
 
-    <div class="form-group">
-      <label for="ldap_bind_dn">{$t('settings.ldap.bindDn')}</label>
+    <FormField size="lg" id="ldap_bind_dn" label={$t('settings.ldap.bindDn')} hint={$t('settings.ldap.bindDnHelp')} let:describedby>
       <input dir="ltr"
-        id="ldap_bind_dn"
+        id="ldap_bind_dn" aria-describedby={describedby}
         type="text"
         bind:value={formData.ldap_bind_dn}
         on:input={handleChange}
         placeholder="cn=admin,dc=example,dc=com"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">{$t('settings.ldap.bindDnHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="ldap_bind_password">{$t('settings.ldap.bindPassword')}</label>
+    <FormField size="lg" id="ldap_bind_password" label={$t('settings.ldap.bindPassword')} hint={$t('settings.ldap.bindPasswordHelp')} let:describedby>
       <input dir="ltr"
-        id="ldap_bind_password"
+        id="ldap_bind_password" aria-describedby={describedby}
         type="password"
         bind:value={formData.ldap_bind_password}
         on:input={handleChange}
         placeholder={$t('settings.ldap.enterPassword')}
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">{$t('settings.ldap.bindPasswordHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="ldap_search_base">{$t('settings.ldap.searchBase')}</label>
+    <FormField size="lg" id="ldap_search_base" label={$t('settings.ldap.searchBase')} hint={$t('settings.ldap.searchBaseHelp')} let:describedby>
       <input
-        id="ldap_search_base"
+        id="ldap_search_base" aria-describedby={describedby}
         type="text"
         bind:value={formData.ldap_search_base}
         on:input={handleChange}
         placeholder="dc=example,dc=com"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">{$t('settings.ldap.searchBaseHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.ldap_enabled}>
     <h3>{$t('settings.ldap.userAttributes')}</h3>
 
     <div class="form-row thirds">
-      <div class="form-group">
-        <label for="ldap_username_attr">{$t('settings.ldap.usernameAttr')}</label>
+      <FormField size="lg" id="ldap_username_attr" label={$t('settings.ldap.usernameAttr')}>
         <input dir="ltr"
           id="ldap_username_attr"
           type="text"
@@ -258,10 +245,9 @@
           placeholder="sAMAccountName"
           disabled={!formData.ldap_enabled}
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="ldap_email_attr">{$t('settings.ldap.emailAttr')}</label>
+      <FormField size="lg" id="ldap_email_attr" label={$t('settings.ldap.emailAttr')}>
         <input dir="ltr"
           id="ldap_email_attr"
           type="text"
@@ -270,10 +256,9 @@
           placeholder="mail"
           disabled={!formData.ldap_enabled}
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="ldap_name_attr">{$t('settings.ldap.displayNameAttr')}</label>
+      <FormField size="lg" id="ldap_name_attr" label={$t('settings.ldap.displayNameAttr')}>
         <input dir="ltr"
           id="ldap_name_attr"
           type="text"
@@ -282,28 +267,25 @@
           placeholder="displayName"
           disabled={!formData.ldap_enabled}
         />
-      </div>
+      </FormField>
     </div>
 
-    <div class="form-group">
-      <label for="ldap_user_search_filter">{$t('settings.ldap.userSearchFilter')}</label>
+    <FormField size="lg" id="ldap_user_search_filter" label={$t('settings.ldap.userSearchFilter')} hint={$t('settings.ldap.userSearchFilterHelp')} let:describedby>
       <input dir="ltr"
-        id="ldap_user_search_filter"
+        id="ldap_user_search_filter" aria-describedby={describedby}
         type="text"
         bind:value={formData.ldap_user_search_filter}
         on:input={handleChange}
         placeholder="(uid={'{username}'})"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">{$t('settings.ldap.userSearchFilterHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   <div class="section" class:disabled={!formData.ldap_enabled}>
     <h3>{$t('settings.ldap.groupSettings')}</h3>
 
-    <div class="form-group">
-      <label for="ldap_group_attr">{$t('settings.ldap.groupMembershipAttr')}</label>
+    <FormField size="lg" id="ldap_group_attr" label={$t('settings.ldap.groupMembershipAttr')}>
       <input dir="ltr"
         id="ldap_group_attr"
         type="text"
@@ -312,7 +294,7 @@
         placeholder="memberOf"
         disabled={!formData.ldap_enabled}
       />
-    </div>
+    </FormField>
 
     <label class="checkbox-label">
       <input
@@ -324,44 +306,38 @@
       <span>{$t('settings.ldap.recursiveGroups')}</span>
     </label>
 
-    <div class="form-group">
-      <label for="ldap_admin_groups">{$t('settings.ldap.adminGroups')}</label>
+    <FormField size="lg" id="ldap_admin_groups" label={$t('settings.ldap.adminGroups')} hint={$t('settings.ldap.adminGroupsHelp')} let:describedby>
       <input dir="ltr"
-        id="ldap_admin_groups"
+        id="ldap_admin_groups" aria-describedby={describedby}
         type="text"
         bind:value={formData.ldap_admin_groups}
         on:input={handleChange}
         placeholder="CN=Admins,OU=Groups,DC=example,DC=com"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">{$t('settings.ldap.adminGroupsHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="ldap_admin_users">{$t('settings.ldap.adminUsers')}</label>
+    <FormField size="lg" id="ldap_admin_users" label={$t('settings.ldap.adminUsers')} hint={$t('settings.ldap.adminUsersHelp')} let:describedby>
       <input dir="ltr"
-        id="ldap_admin_users"
+        id="ldap_admin_users" aria-describedby={describedby}
         type="text"
         bind:value={formData.ldap_admin_users}
         on:input={handleChange}
         placeholder="admin,superuser"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">{$t('settings.ldap.adminUsersHelp')}</span>
-    </div>
+    </FormField>
 
-    <div class="form-group">
-      <label for="ldap_user_groups">{$t('settings.ldap.allowedUserGroups')}</label>
+    <FormField size="lg" id="ldap_user_groups" label={$t('settings.ldap.allowedUserGroups')} hint={$t('settings.ldap.allowedUserGroupsHelp')} let:describedby>
       <input dir="ltr"
-        id="ldap_user_groups"
+        id="ldap_user_groups" aria-describedby={describedby}
         type="text"
         bind:value={formData.ldap_user_groups}
         on:input={handleChange}
         placeholder="CN=Users,OU=Groups,DC=example,DC=com"
         disabled={!formData.ldap_enabled}
       />
-      <span class="help-text">{$t('settings.ldap.allowedUserGroupsHelp')}</span>
-    </div>
+    </FormField>
   </div>
 
   <div class="actions">
@@ -441,34 +417,23 @@
     gap: var(--space-8);
   }
 
-  .form-row.thirds .form-group {
-    flex: 1;
+  .section :global(.form-field.field-small) {
+    flex: 0 0 100px;
   }
 
-  .form-group {
+  .section :global(.form-field) {
     flex: 1;
     margin-bottom: var(--space-4);
   }
 
-  .form-group.small {
-    flex: 0 0 100px;
-  }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
-
-  .form-group input[type="text"],
-  .form-group input[type="password"],
-  .form-group input[type="number"] {
+  .section :global(.form-field input[type="text"]),
+  .section :global(.form-field input[type="password"]),
+  .section :global(.form-field input[type="number"]) {
     width: 100%;
   }
 
-  .form-group input:disabled {
+  .section :global(.form-field input:disabled) {
     cursor: not-allowed;
   }
 
@@ -530,7 +495,7 @@
       gap: var(--space-3);
     }
 
-    .form-group.small {
+    .section :global(.form-field.field-small) {
       flex: 1;
     }
 

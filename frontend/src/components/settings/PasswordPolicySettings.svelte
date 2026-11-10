@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { fetchPasswordPolicy, type PasswordPolicy } from '$lib/passwordPolicy';
@@ -183,8 +184,7 @@
   {#if !preset}
   <fieldset class="values" disabled={!editable}>
     <div class="form-row">
-      <div class="form-group">
-        <label for="password_min_length">{$t('settings.localAuth.minPasswordLength')}</label>
+      <FormField size="lg" id="password_min_length" label={$t('settings.localAuth.minPasswordLength')}>
         <input
           id="password_min_length"
           type="number"
@@ -193,19 +193,17 @@
           min="8"
           max="128"
         />
-      </div>
-      <div class="form-group">
-        <label for="password_max_length">{$t('settings.passwordTier.maxLength')}</label>
+      </FormField>
+      <FormField size="lg" id="password_max_length" label={$t('settings.passwordTier.maxLength')} hint={$t('settings.passwordTier.maxLengthHelp')} let:describedby>
         <input
-          id="password_max_length"
+          id="password_max_length" aria-describedby={describedby}
           type="number"
           bind:value={data.password_max_length}
           on:input={changed}
           min="0"
           max="1024"
         />
-        <span class="help-text">{$t('settings.passwordTier.maxLengthHelp')}</span>
-      </div>
+      </FormField>
     </div>
     {#if lengthConflict}
       <p class="field-error" role="alert">{$t('settings.passwordTier.lengthConflict')}</p>
@@ -231,49 +229,42 @@
     </div>
 
     <div class="form-row">
-      <div class="form-group">
-        <label for="password_max_age_days">{$t('settings.localAuth.passwordExpiry')}</label>
+      <FormField size="lg" id="password_max_age_days" label={$t('settings.localAuth.passwordExpiry')} hint={$t('settings.localAuth.passwordExpiryHelp')} let:describedby>
         <input
-          id="password_max_age_days"
+          id="password_max_age_days" aria-describedby={describedby}
           type="number"
           bind:value={data.password_max_age_days}
           on:input={changed}
           min="0"
           max="3650"
         />
-        <span class="help-text">{$t('settings.localAuth.passwordExpiryHelp')}</span>
-      </div>
-      <div class="form-group">
-        <label for="password_history_count">{$t('settings.localAuth.passwordHistoryCount')}</label>
+      </FormField>
+      <FormField size="lg" id="password_history_count" label={$t('settings.localAuth.passwordHistoryCount')} hint={$t('settings.localAuth.passwordHistoryHelp')} let:describedby>
         <input
-          id="password_history_count"
+          id="password_history_count" aria-describedby={describedby}
           type="number"
           bind:value={data.password_history_count}
           on:input={changed}
           min="0"
           max="100"
         />
-        <span class="help-text">{$t('settings.localAuth.passwordHistoryHelp')}</span>
-      </div>
-      <div class="form-group">
-        <label for="password_min_age_hours">{$t('settings.passwordTier.minAge')}</label>
+      </FormField>
+      <FormField size="lg" id="password_min_age_hours" label={$t('settings.passwordTier.minAge')} hint={$t('settings.passwordTier.minAgeHelp')} let:describedby>
         <input
-          id="password_min_age_hours"
+          id="password_min_age_hours" aria-describedby={describedby}
           type="number"
           bind:value={data.password_min_age_hours}
           on:input={changed}
           min="0"
           max="8760"
         />
-        <span class="help-text">{$t('settings.passwordTier.minAgeHelp')}</span>
-      </div>
+      </FormField>
     </div>
   </fieldset>
   {/if}
 
   <div class="screening">
-    <div class="form-group">
-      <label for="password_blocklist_enabled">{$t('settings.passwordTier.blocklistLabel')}</label>
+    <FormField size="lg" id="password_blocklist_enabled" label={$t('settings.passwordTier.blocklistLabel')}>
       <select
         id="password_blocklist_enabled"
         bind:value={data.password_blocklist_enabled}
@@ -284,7 +275,7 @@
         <option value="true">{$t('settings.passwordTier.blocklistOn')}</option>
         <option value="false">{$t('settings.passwordTier.blocklistOff')}</option>
       </select>
-    </div>
+    </FormField>
 
     {#if statusKnown && status}
       <p
@@ -426,26 +417,18 @@
     margin-bottom: var(--space-4);
   }
 
-  .form-group {
+  .policy-panel :global(.form-field) {
     flex: 1;
     margin-bottom: var(--space-4);
   }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
-
-  .form-group input[type='number'],
-  .form-group select {
+  .policy-panel :global(.form-field input[type='number']),
+  .policy-panel :global(.form-field select) {
     width: 100%;
   }
 
-  .form-group input:disabled,
-  .form-group select:disabled {
+  .policy-panel :global(.form-field input:disabled),
+  .policy-panel :global(.form-field select:disabled) {
     cursor: not-allowed;
   }
 

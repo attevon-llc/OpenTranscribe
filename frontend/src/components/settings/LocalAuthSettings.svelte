@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormField from '$components/ui/FormField.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import PasswordPolicySettings from './PasswordPolicySettings.svelte';
@@ -215,24 +216,21 @@
         </label>
         <span class="help-text indented">{$t('settings.localAuth.requireMfaHelp')}</span>
 
-        <div class="form-group">
-          <label for="mfa_issuer_name">{$t('settings.localAuth.mfaIssuerName')}</label>
+        <FormField size="lg" id="mfa_issuer_name" label={$t('settings.localAuth.mfaIssuerName')} hint={$t('settings.localAuth.mfaIssuerHelp')} let:describedby>
           <input
-            id="mfa_issuer_name"
+            id="mfa_issuer_name" aria-describedby={describedby}
             type="text"
             bind:value={formData.mfa_issuer_name}
             on:input={handleChange}
             placeholder="OpenTranscribe"
             disabled={!formData.local_enabled}
           />
-          <span class="help-text">{$t('settings.localAuth.mfaIssuerHelp')}</span>
-        </div>
+        </FormField>
 
         <div class="form-row">
-          <div class="form-group">
-            <label for="mfa_backup_code_count">{$t('settings.localAuth.mfaBackupCodeCount')}</label>
+          <FormField size="lg" id="mfa_backup_code_count" label={$t('settings.localAuth.mfaBackupCodeCount')} hint={$t('settings.localAuth.mfaBackupCodeCountHelp')} let:describedby>
             <input
-              id="mfa_backup_code_count"
+              id="mfa_backup_code_count" aria-describedby={describedby}
               type="number"
               bind:value={formData.mfa_backup_code_count}
               on:input={handleChange}
@@ -240,13 +238,11 @@
               max="50"
               disabled={!formData.local_enabled}
             />
-            <span class="help-text">{$t('settings.localAuth.mfaBackupCodeCountHelp')}</span>
-          </div>
+          </FormField>
 
-          <div class="form-group">
-            <label for="mfa_token_expire_minutes">{$t('settings.localAuth.mfaTokenExpiry')}</label>
+          <FormField size="lg" id="mfa_token_expire_minutes" label={$t('settings.localAuth.mfaTokenExpiry')} hint={$t('settings.localAuth.mfaTokenExpiryHelp')} let:describedby>
             <input
-              id="mfa_token_expire_minutes"
+              id="mfa_token_expire_minutes" aria-describedby={describedby}
               type="number"
               bind:value={formData.mfa_token_expire_minutes}
               on:input={handleChange}
@@ -254,8 +250,7 @@
               max="60"
               disabled={!formData.local_enabled}
             />
-            <span class="help-text">{$t('settings.localAuth.mfaTokenExpiryHelp')}</span>
-          </div>
+          </FormField>
         </div>
       </div>
     {/if}
@@ -277,10 +272,9 @@
 
     {#if formData.account_lockout_enabled}
       <div class="form-row">
-        <div class="form-group">
-          <label for="account_lockout_threshold">{$t('settings.localAuth.maxLoginAttempts')}</label>
+        <FormField size="lg" id="account_lockout_threshold" label={$t('settings.localAuth.maxLoginAttempts')} hint={$t('settings.localAuth.maxLoginAttemptsHelp')} let:describedby>
           <input
-            id="account_lockout_threshold"
+            id="account_lockout_threshold" aria-describedby={describedby}
             type="number"
             bind:value={formData.account_lockout_threshold}
             on:input={handleChange}
@@ -288,13 +282,11 @@
             max="20"
             disabled={!formData.local_enabled}
           />
-          <span class="help-text">{$t('settings.localAuth.maxLoginAttemptsHelp')}</span>
-        </div>
+        </FormField>
 
-        <div class="form-group">
-          <label for="account_lockout_duration_minutes">{$t('settings.localAuth.lockoutDuration')}</label>
+        <FormField size="lg" id="account_lockout_duration_minutes" label={$t('settings.localAuth.lockoutDuration')} hint={$t('settings.localAuth.lockoutDurationHelp')} let:describedby>
           <input
-            id="account_lockout_duration_minutes"
+            id="account_lockout_duration_minutes" aria-describedby={describedby}
             type="number"
             bind:value={formData.account_lockout_duration_minutes}
             on:input={handleChange}
@@ -302,8 +294,7 @@
             max="1440"
             disabled={!formData.local_enabled}
           />
-          <span class="help-text">{$t('settings.localAuth.lockoutDurationHelp')}</span>
-        </div>
+        </FormField>
       </div>
 
       <label class="checkbox-label">
@@ -318,10 +309,9 @@
       <span class="help-text indented">{$t('settings.localAuth.lockoutProgressiveHelp')}</span>
 
       {#if formData.account_lockout_progressive}
-        <div class="form-group">
-          <label for="account_lockout_max_duration_minutes">{$t('settings.localAuth.lockoutMaxDuration')}</label>
+        <FormField size="lg" id="account_lockout_max_duration_minutes" label={$t('settings.localAuth.lockoutMaxDuration')} hint={$t('settings.localAuth.lockoutMaxDurationHelp')} let:describedby>
           <input
-            id="account_lockout_max_duration_minutes"
+            id="account_lockout_max_duration_minutes" aria-describedby={describedby}
             type="number"
             bind:value={formData.account_lockout_max_duration_minutes}
             on:input={handleChange}
@@ -329,8 +319,7 @@
             max="525600"
             disabled={!formData.local_enabled}
           />
-          <span class="help-text">{$t('settings.localAuth.lockoutMaxDurationHelp')}</span>
-        </div>
+        </FormField>
       {/if}
     {/if}
   </div>
@@ -354,8 +343,7 @@
     <span class="help-text indented">{$t('settings.localAuth.loginBannerEnableHelp')}</span>
 
     {#if formData.login_banner_enabled}
-      <div class="form-group">
-        <label for="login_banner_classification">{$t('settings.localAuth.loginBannerClassification')}</label>
+      <FormField size="lg" id="login_banner_classification" label={$t('settings.localAuth.loginBannerClassification')}>
         <input
           id="login_banner_classification"
           type="text"
@@ -363,19 +351,17 @@
           on:input={handleChange}
           placeholder="UNCLASSIFIED"
         />
-      </div>
+      </FormField>
 
-      <div class="form-group">
-        <label for="login_banner_text">{$t('settings.localAuth.loginBannerText')}</label>
+      <FormField size="lg" id="login_banner_text" label={$t('settings.localAuth.loginBannerText')} hint={$t('settings.localAuth.loginBannerTextHelp')} let:describedby>
         <textarea
-          id="login_banner_text"
+          id="login_banner_text" aria-describedby={describedby}
           bind:value={formData.login_banner_text}
           on:input={handleChange}
           rows="6"
           maxlength="10000"
         ></textarea>
-        <span class="help-text">{$t('settings.localAuth.loginBannerTextHelp')}</span>
-      </div>
+      </FormField>
     {/if}
   </div>
 
@@ -467,27 +453,19 @@
     margin-bottom: var(--space-4);
   }
 
-  .form-group {
+  .section :global(.form-field) {
     flex: 1;
     margin-bottom: var(--space-4);
   }
 
-  .form-group label {
-    display: block;
-    margin-bottom: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-  }
-
-  .form-group input[type="text"],
-  .form-group input[type="number"],
-  .form-group textarea {
+  .section :global(.form-field input[type="text"]),
+  .section :global(.form-field input[type="number"]),
+  .section :global(.form-field textarea) {
     width: 100%;
     resize: vertical;
   }
 
-  .form-group input:disabled {
+  .section :global(.form-field input:disabled) {
     cursor: not-allowed;
   }
 

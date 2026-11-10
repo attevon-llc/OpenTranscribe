@@ -723,14 +723,14 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .mount-bad {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .toggle-label {
@@ -787,7 +787,7 @@
 
   .status-error {
     font-size: var(--font-size-xs);
-    color: var(--error-color);
+    color: var(--error-text);
     word-break: break-word;
   }
 

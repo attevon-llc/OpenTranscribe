@@ -505,7 +505,7 @@
 
   .decision-bullet, .follow-up-bullet {
     display: inline-flex;
-    color: var(--success-color);
+    color: var(--success-text);
     margin-top: 0.2rem;
   }
 
@@ -557,11 +557,11 @@
   }
 
   .action-item-priority.priority-high {
-    color: var(--danger-color);
+    color: var(--error-text);
   }
 
   .action-item-priority.priority-medium {
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .action-item-priority.priority-low {
@@ -687,7 +687,7 @@
 
   :global(.bool-value) {
     font-weight: var(--font-weight-medium);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   :global(.number-value) {

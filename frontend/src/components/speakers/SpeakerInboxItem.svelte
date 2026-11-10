@@ -246,7 +246,7 @@
 
   .source-badge.source-profile {
     background: color-mix(in srgb, var(--success-color) 10%, transparent);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .source-badge.source-voice {
@@ -322,7 +322,7 @@
   }
 
   .action-btn.accept {
-    background: var(--success-color);
+    background: var(--success-solid);
     color: var(--text-on-solid);
     border-color: var(--success-color);
   }

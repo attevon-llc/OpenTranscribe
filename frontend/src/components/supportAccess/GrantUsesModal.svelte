@@ -123,7 +123,7 @@
     font-size: var(--font-size-md);
   }
   .state.error {
-    color: var(--error-color);
+    color: var(--error-text);
   }
   .table-wrap {
     overflow-x: auto;

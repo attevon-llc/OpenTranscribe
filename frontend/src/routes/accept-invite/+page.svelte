@@ -394,7 +394,7 @@
 
   .success-message {
     background-color: var(--success-color-light);
-    color: var(--success-color);
+    color: var(--success-text);
     padding: var(--space-3);
     border-radius: var(--radius-sm);
     border: 1px solid rgba(34, 197, 94, 0.2);

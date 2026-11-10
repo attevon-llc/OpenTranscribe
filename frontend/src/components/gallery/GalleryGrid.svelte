@@ -147,7 +147,7 @@
   }
 
   .error-state {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   /* Infinite scroll sentinel - invisible trigger element */
@@ -204,6 +204,6 @@
 
   .end-indicator-content svg {
     flex-shrink: 0;
-    color: var(--success-color);
+    color: var(--success-text);
   }
 </style>

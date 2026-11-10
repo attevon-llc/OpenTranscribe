@@ -267,12 +267,12 @@
 
   .credential-badge.badge-verified,
   .credential-badge.badge-configured {
-    color: var(--success-color);
+    color: var(--success-text);
     border-color: var(--success-color);
   }
 
   .credential-badge.badge-failed {
-    color: var(--error-color);
+    color: var(--error-text);
     border-color: var(--error-color);
   }
 
@@ -326,10 +326,10 @@
   .credential-result {
     margin: var(--space-2) 0 0;
     font-size: var(--font-size-sm);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .credential-result.ok {
-    color: var(--success-color);
+    color: var(--success-text);
   }
 </style>

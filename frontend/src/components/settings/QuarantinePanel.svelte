@@ -331,7 +331,7 @@
   }
 
   .toggle-btn.active {
-    background: var(--accent-color);
+    background: var(--primary-color);
     color: var(--text-on-solid);
     border-color: var(--accent-color);
   }
@@ -476,7 +476,7 @@
   .action-link {
     border: none;
     background: none;
-    color: var(--accent-color);
+    color: var(--primary-on-surface);
     cursor: pointer;
     padding: 0;
     font-size: var(--font-size-sm);

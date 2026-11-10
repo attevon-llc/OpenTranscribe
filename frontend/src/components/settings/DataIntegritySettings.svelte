@@ -380,7 +380,7 @@
   }
 
   .error-state {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .settings-section {
@@ -489,7 +489,7 @@
 
   .index-body.failed,
   .index-error {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .breakdown-row {

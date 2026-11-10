@@ -321,7 +321,7 @@
   .warning :global(svg) {
     flex-shrink: 0;
     margin-top: 0.1875rem;
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .understand {
@@ -349,7 +349,7 @@
   }
 
   .error {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .verified {

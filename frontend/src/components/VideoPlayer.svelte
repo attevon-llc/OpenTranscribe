@@ -348,7 +348,7 @@
   }
 
   .error-message {
-    color: var(--error-color);
+    color: var(--error-text);
     margin: var(--space-2-5) 0;
     text-align: center;
   }

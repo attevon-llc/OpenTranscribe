@@ -364,6 +364,6 @@
   }
 
   .experimental-hint {
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 </style>

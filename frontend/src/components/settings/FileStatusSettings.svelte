@@ -231,7 +231,7 @@
   }
 
   .count-card.error .count-number {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .list-title {
@@ -290,7 +290,7 @@
   }
 
   .all-normal :global(.menu-icon) {
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .all-normal,

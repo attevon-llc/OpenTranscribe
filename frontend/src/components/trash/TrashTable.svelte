@@ -189,6 +189,6 @@
   }
 
   .remaining-due {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 </style>

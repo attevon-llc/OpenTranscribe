@@ -455,7 +455,7 @@
   }
 
   .dropdown-item.logout {
-    color: var(--error-color);
+    color: var(--error-text);
     margin-top: var(--space-0-5);
   }
 
@@ -465,13 +465,13 @@
 
   .dropdown-item.logout:hover {
     background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
+    color: var(--error-text);
     padding-inline-start: calc(1rem + 2px);
   }
 
   .dropdown-item.logout:hover svg {
     opacity: 1;
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   /* Active state for dropdown items */

@@ -998,7 +998,7 @@
   .match-confidence {
     font-weight: var(--font-weight-medium);
     font-size: 0.65rem;
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .more-matches-compact {
@@ -1072,7 +1072,7 @@
     gap: 0.2rem;
     font-size: 0.65rem;
     font-weight: var(--font-weight-medium);
-    color: var(--success-color);
+    color: var(--success-text);
     white-space: nowrap;
   }
 

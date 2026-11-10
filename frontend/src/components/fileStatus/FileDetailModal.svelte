@@ -252,7 +252,7 @@
     font-weight: var(--font-weight-medium);
     border-radius: var(--radius-sm);
     background-color: rgba(var(--warning-color-rgb), 0.15);
-    color: var(--warning-color);
+    color: var(--warning-text);
     border: 1px solid rgba(var(--warning-color-rgb), 0.3);
     vertical-align: middle;
     cursor: help;
@@ -301,7 +301,7 @@
   }
 
   .task-error-details .metadata-label {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .task-error-details .task-error {
@@ -309,7 +309,7 @@
     font-family: monospace;
     white-space: pre-wrap;
     font-size: 0.85rem;
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .warning {
@@ -339,7 +339,7 @@
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all var(--duration-base);
-    background: var(--success-color);
+    background: var(--success-solid);
     color: var(--text-on-solid);
     border-color: var(--success-color);
   }
@@ -374,7 +374,7 @@
   }
 
   .task-error {
-    color: var(--error-color);
+    color: var(--error-text);
     font-size: var(--font-size-md);
     margin-top: var(--space-1);
   }

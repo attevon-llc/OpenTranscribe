@@ -318,7 +318,7 @@
 
   .btn-cancel {
     background: var(--text-secondary);
-    color: var(--text-on-solid);
+    color: var(--surface-color);
     border: 1px solid var(--text-secondary);
     box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
   }
@@ -410,13 +410,13 @@
     gap: var(--space-1-5);
     padding: var(--space-1-5) var(--space-3);
     font-size: var(--font-size-2xs);
-    color: var(--ai-accent-color);
+    color: var(--primary-on-surface);
     background: rgba(var(--accent-rgb), 0.08);
     border-top: 1px solid var(--border-color);
   }
 
   .sparkle-icon {
-    color: var(--ai-accent-color);
+    color: var(--primary-on-surface);
     flex-shrink: 0;
   }
 </style>

@@ -188,7 +188,7 @@
   }
 
   .notice-link:hover {
-    color: var(--primary-hover);
+    color: var(--link-hover);
   }
 
   .notice-link:focus-visible {

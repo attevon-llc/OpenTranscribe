@@ -212,7 +212,7 @@
 
   .trace-node[data-outcome='failed'] .trace-badge--outcome {
     border-color: var(--error-color);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .trace-chip,

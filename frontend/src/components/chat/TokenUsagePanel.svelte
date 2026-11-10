@@ -135,11 +135,11 @@
   .warning {
     margin: 0;
     font-size: 0.76rem;
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .warning.over {
-    color: var(--error-color);
+    color: var(--error-text);
     font-weight: var(--font-weight-semibold);
   }
 

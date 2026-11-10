@@ -208,6 +208,6 @@
   .auth-mail-active {
     margin: 0;
     font-size: 0.8rem;
-    color: var(--success-color);
+    color: var(--success-text);
   }
 </style>

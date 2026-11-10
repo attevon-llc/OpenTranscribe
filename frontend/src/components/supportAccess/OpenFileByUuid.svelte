@@ -66,6 +66,6 @@
   .error {
     margin: 0.35rem 0 0 0;
     font-size: var(--font-size-xs);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 </style>

@@ -908,7 +908,7 @@
   }
 
   .error-message {
-    color: var(--error-color);
+    color: var(--error-text);
     margin-bottom: var(--space-4);
   }
 

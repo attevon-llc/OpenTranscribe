@@ -1028,7 +1028,7 @@
   }
 
   .state-container.error {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .state-container svg {
@@ -1037,7 +1037,7 @@
   }
 
   .state-container.error svg {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .state-title {

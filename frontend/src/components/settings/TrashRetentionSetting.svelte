@@ -157,7 +157,7 @@
 
   .field-error {
     font-size: var(--font-size-sm);
-    color: var(--error-color);
+    color: var(--error-text);
     margin: 0;
   }
 </style>

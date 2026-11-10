@@ -747,7 +747,7 @@
 
   .lang-badge.not-ready {
     border-color: var(--warning-color);
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 
   .model-prepare {
@@ -843,7 +843,7 @@
 
   .stats-row.error {
     margin-top: var(--space-1);
-    color: var(--danger-color);
+    color: var(--error-text);
   }
 
   .stats-mode {

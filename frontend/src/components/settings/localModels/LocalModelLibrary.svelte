@@ -296,10 +296,10 @@
   .error-text {
     margin: 0 0 var(--space-2);
     font-size: 0.8rem;
-    color: var(--error-color);
+    color: var(--error-text);
   }
   :global([data-theme='dark']) .error-text {
-    color: var(--error-color);
+    color: var(--error-text);
   }
   .state {
     display: flex;

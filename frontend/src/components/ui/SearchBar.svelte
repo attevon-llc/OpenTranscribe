@@ -377,7 +377,7 @@
   }
 
   .search-bar-counter.no-results {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .search-bar-nav {

@@ -139,14 +139,14 @@
 
   .state-failed > .line .time,
   .line.state-failed .time {
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .task-message {
     margin: var(--space-0-5) 0 0;
     padding-inline-start: var(--space-5);
     font-size: var(--font-size-xs);
-    color: var(--error-color);
+    color: var(--error-text);
     overflow-wrap: anywhere;
   }
 </style>

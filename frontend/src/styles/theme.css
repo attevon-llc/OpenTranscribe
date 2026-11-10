@@ -84,7 +84,9 @@
   --surface-color: #ffffff;
   --background-color: #f8fafc;
   --text-color: #1e293b;
-  --text-secondary: #64748b;
+  /* #64748b read 4.34:1 on --hover-color. This clears 4.5:1 on every light surface and
+     tint it sits on (contrast-usage.test.ts). */
+  --text-secondary: #5b677a;
   --border-color: #e5e7eb;
   --error-color: #ef4444;
   --error-color-rgb: 239, 68, 68;
@@ -139,7 +141,8 @@
   --color-primary-alpha: rgba(59, 130, 246, 0.2);
   --color-text: var(--text-color);
   --color-text-secondary: var(--text-secondary);
-  --color-text-tertiary: #94a3b8;
+  /* #94a3b8 read 2.56:1 on the card: a hint is still text (SC 1.4.3) */
+  --color-text-tertiary: #64748b;
   --color-bg: var(--background-color);
   --color-bg-secondary: #f1f5f9;
   --color-bg-tertiary: #e2e8f0;
@@ -148,7 +151,8 @@
   --color-warning: var(--warning-color);
   --color-warning-bg: rgba(245, 158, 11, 0.1);
   --color-warning-border: rgba(245, 158, 11, 0.3);
-  --color-warning-text: #b45309;
+  /* #b45309 read 4.47:1 on the 0.15 warning tint chips use */
+  --color-warning-text: #a84d08;
   --color-info-bg: rgba(59, 130, 246, 0.1);
   --color-info-border: rgba(59, 130, 246, 0.3);
   --color-info: var(--info-color);
@@ -161,8 +165,9 @@
    * success tint measures 2.27:1 and #ef4444 on the error tint 3.29:1. `--color-warning-text`
    * already existed for exactly this reason; these complete the set.
    *
-   * `--text-on-tint` is the same story for `--text-secondary` (#64748b). It clears AA on the
-   * base white surface (4.76:1) and fails on every tint the app actually uses — 4.34:1 on
+   * `--text-on-tint` is the same story for `--text-secondary` (then #64748b, since darkened to
+   * #5b677a, which clears the hover surfaces itself). It cleared AA on the
+   * base white surface (4.76:1) and failed on every tint the app actually uses — 4.34:1 on
    * slate-100, 4.25:1 on the success tint, 4.16:1 on the error tint. All three are near
    * misses, which is why they survived review: they look fine and are measurably not.
    *
@@ -499,7 +504,8 @@
   --table-row-hover: #334155;
   --modal-backdrop: rgba(0, 0, 0, 0.7);
   --link-color: #60a5fa; /* Brighter blue for links in dark mode */
-  --link-hover: #3b82f6; /* Darken on hover — consistent direction with light mode */
+  /* Hover LIGHTENS in dark: the darker #3b82f6 read 3.98:1 on the card */
+  --link-hover: #93c5fd;
 
   /* Aliases for settings components - dark mode */
   --color-primary: var(--primary-color);

@@ -227,22 +227,22 @@
   .mark-read-btn {
     background-color: transparent;
     border-color: var(--success-color);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .mark-read-btn:hover {
-    background-color: var(--success-color);
+    background-color: var(--success-solid);
     color: var(--text-on-solid);
   }
 
   .clear-btn {
     background-color: transparent;
     border-color: var(--error-color);
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .clear-btn:hover {
-    background-color: var(--error-color);
+    background-color: var(--error-solid);
     color: var(--text-on-solid);
   }
 

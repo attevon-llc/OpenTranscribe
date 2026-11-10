@@ -180,7 +180,7 @@
 
 .tx-form .capability-warning {
   font-size: 0.8rem;
-  color: var(--warning-color);
+  color: var(--warning-text);
   margin-top: var(--space-1);
   padding: 0.4rem 0.6rem;
   background: var(--warning-bg);
@@ -216,7 +216,7 @@
 
 .tx-form .field-warning {
   font-size: var(--font-size-xs);
-  color: var(--warning-color);
+  color: var(--warning-text);
   margin: var(--space-1-5) 0 0 0;
   padding: var(--space-1) var(--space-2);
   background: var(--warning-bg);

@@ -118,7 +118,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    background: var(--success-color);
+    background: var(--success-solid);
     color: var(--text-on-solid);
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-md);

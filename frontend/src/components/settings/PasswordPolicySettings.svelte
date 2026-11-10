@@ -447,7 +447,7 @@
   .field-error {
     margin: calc(-1 * var(--space-2)) 0 var(--space-4) 0;
     font-size: var(--font-size-xs);
-    color: var(--error-solid);
+    color: var(--error-text);
   }
 
   .checkbox-grid {

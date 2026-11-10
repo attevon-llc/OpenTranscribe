@@ -762,7 +762,7 @@
   }
   .warning-text {
     font-size: 0.8rem;
-    color: var(--warning-color);
+    color: var(--warning-text);
     margin: 0;
   }
   .folder-browser {
@@ -822,11 +822,11 @@
   }
   .test-result.success {
     background: rgba(34, 197, 94, 0.12);
-    color: var(--success-color);
+    color: var(--success-text);
   }
   .test-result.failure {
     background: rgba(239, 68, 68, 0.12);
-    color: var(--error-color);
+    color: var(--error-text);
   }
   .footer-row {
     display: flex;

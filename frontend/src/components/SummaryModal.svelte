@@ -592,13 +592,13 @@
   .copy-button-header.copied {
     background-color: var(--success-bg);
     border-color: var(--success-color);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .copy-button-header.copied:hover {
     background-color: var(--success-bg);
     border-color: var(--success-color);
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .reprocess-button-header {
@@ -648,7 +648,7 @@
 
   .error-message h3 {
     margin: 0 0 var(--space-2) 0;
-    color: var(--error-color);
+    color: var(--error-text);
   }
 
   .error-message p {

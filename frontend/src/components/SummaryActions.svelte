@@ -217,8 +217,8 @@
   }
 
   .action-button.warning {
-    background-color: var(--warning-color);
-    color: var(--text-on-solid);
+    background-color: var(--warning-solid);
+    color: var(--text-on-warning);
   }
 
   .action-button.warning:hover:not(:disabled) {

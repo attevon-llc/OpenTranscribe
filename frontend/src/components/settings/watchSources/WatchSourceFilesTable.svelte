@@ -185,7 +185,7 @@
     margin-top: var(--space-1);
     font-size: var(--font-size-xs);
     font-style: italic;
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
   .attempts-cell,
   .when-cell {

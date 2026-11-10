@@ -121,7 +121,7 @@
     color: var(--text-color);
   }
   .copy-button.copied {
-    color: var(--success-color);
+    color: var(--success-text);
     border-color: var(--success-color);
   }
   .copy-button:focus-visible {

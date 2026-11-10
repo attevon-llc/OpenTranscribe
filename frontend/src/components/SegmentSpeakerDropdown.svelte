@@ -429,11 +429,11 @@
     }
 
     .speaker-dropdown-portal .suggestion-header {
-      color: var(--warning-color);
+      color: var(--warning-text);
     }
 
     .speaker-dropdown-portal .suggestion-btn svg {
-      color: var(--warning-color);
+      color: var(--warning-text);
       margin-right: var(--space-1);
     }
 
@@ -488,7 +488,7 @@
       padding: 0 var(--space-3) var(--space-1-5) var(--space-3);
       font-size: var(--font-size-2xs);
       line-height: 1.35;
-      color: var(--warning-color);
+      color: var(--warning-text);
     }
 
     .speaker-dropdown-portal .inline-name-matches[hidden],
@@ -648,6 +648,6 @@
     width: 12px;
     height: 12px;
     flex-shrink: 0;
-    color: var(--warning-color);
+    color: var(--warning-text);
   }
 </style>

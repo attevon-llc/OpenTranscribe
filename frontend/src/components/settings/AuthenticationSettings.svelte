@@ -589,7 +589,7 @@
     border-radius: var(--radius-sm);
     font-size: var(--font-size-xs);
     margin-bottom: var(--space-2);
-    color: var(--color-primary);
+    color: var(--primary-on-surface);
   }
 
   .config-method p {
@@ -598,7 +598,7 @@
   }
 
   .config-method a {
-    color: var(--color-primary);
+    color: var(--primary-on-surface);
     text-decoration: none;
   }
 
@@ -617,7 +617,7 @@
   }
 
   .note strong {
-    color: var(--color-info);
+    color: var(--info-text);
   }
 
   @media (max-width: 768px) {

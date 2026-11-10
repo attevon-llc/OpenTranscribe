@@ -868,7 +868,7 @@
 
   .config-status.currently-active {
     background-color: var(--success-bg);
-    color: var(--success-color);
+    color: var(--success-text);
     border: 1px solid var(--success-border);
   }
 
@@ -1119,7 +1119,7 @@
     align-items: center;
     gap: var(--space-2);
     margin-bottom: var(--space-1);
-    color: var(--color-info);
+    color: var(--info-text);
   }
 
   .tip-icon {
@@ -1284,7 +1284,7 @@
   .unsaved-dot {
     display: inline-flex;
     align-items: center;
-    color: var(--warning-color);
+    color: var(--warning-text);
     flex-shrink: 0;
   }
 </style>

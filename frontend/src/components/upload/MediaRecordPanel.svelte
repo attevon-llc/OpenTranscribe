@@ -384,7 +384,7 @@
     padding: 0;
   }
 
-  .settings-link:hover { color: var(--primary-hover); }
+  .settings-link:hover { color: var(--link-hover); }
 
   @media (prefers-reduced-motion: reduce) {
     .recording-dot { animation: none; }

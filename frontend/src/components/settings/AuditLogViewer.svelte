@@ -182,6 +182,6 @@
   }
 
   .note strong {
-    color: var(--color-info);
+    color: var(--info-text);
   }
 </style>

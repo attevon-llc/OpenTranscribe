@@ -260,7 +260,7 @@
   .error-state {
     text-align: center;
     padding: var(--space-6) 0;
-    color: var(--danger-color);
+    color: var(--error-text);
     font-size: var(--font-size-sm);
   }
 

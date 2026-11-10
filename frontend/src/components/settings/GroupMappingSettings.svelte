@@ -292,7 +292,7 @@
   }
 
   .source-button.active {
-    background: var(--color-primary);
+    background: var(--primary-color);
     color: var(--text-on-solid);
   }
 

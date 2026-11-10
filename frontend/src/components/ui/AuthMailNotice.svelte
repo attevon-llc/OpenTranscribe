@@ -111,7 +111,7 @@
     text-underline-offset: 2px;
   }
   .notice-link:hover {
-    color: var(--primary-hover);
+    color: var(--link-hover);
   }
   .notice-link:focus-visible {
     outline: 2px solid var(--primary-color);

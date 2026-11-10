@@ -153,12 +153,12 @@
   }
 
   .chip-on {
-    color: var(--success-color);
+    color: var(--success-text);
     border-color: var(--success-color);
   }
 
   .chip-blocked {
-    color: var(--warning-color);
+    color: var(--warning-text);
     border-color: var(--warning-color);
   }
 

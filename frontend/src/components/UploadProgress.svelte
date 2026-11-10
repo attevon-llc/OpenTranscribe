@@ -231,7 +231,7 @@
   .upload-type {
     text-transform: uppercase;
     font-weight: var(--font-weight-medium);
-    background: var(--accent-color);
+    background: var(--primary-color);
     color: var(--text-on-solid);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-sm);

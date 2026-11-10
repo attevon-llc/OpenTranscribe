@@ -500,7 +500,7 @@
   }
 
   .stage.completed .stage-label {
-    color: var(--success-color);
+    color: var(--success-text);
   }
 
   .file-summary {

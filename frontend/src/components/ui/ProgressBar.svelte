@@ -16,6 +16,11 @@
 
   $: clamped = percent === null ? null : Math.min(100, Math.max(0, percent));
   $: name = ariaLabel || label || undefined;
+  // A progressbar without an accessible name is an axe violation (aria-progressbar-name); props
+  // are legacy `export let`, so a required-prop type cannot express "label OR ariaLabel".
+  $: if (import.meta.env.DEV && !name) {
+    console.warn('ProgressBar needs a label or ariaLabel (WAI-ARIA progressbar accessible name).');
+  }
 </script>
 
 <div class="progress-container">

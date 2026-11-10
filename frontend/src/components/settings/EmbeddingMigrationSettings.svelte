@@ -444,7 +444,7 @@
               <div class="queued-message">
                 {progressMessage || $t('settings.embeddingMigration.queued')}
               </div>
-              <ProgressBar percent={null} />
+              <ProgressBar percent={null} ariaLabel={$t('settings.embeddingMigration.queued')} />
             {:else}
               <div class="progress-header">
                 <span class="progress-text">

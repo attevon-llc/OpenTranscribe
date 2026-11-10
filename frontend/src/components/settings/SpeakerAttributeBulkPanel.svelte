@@ -176,7 +176,7 @@
           <div class="queued-message">
             {migrationProgressMessage || $t('settings.speakerAttributes.queued')}
           </div>
-          <ProgressBar percent={null} />
+          <ProgressBar percent={null} ariaLabel={$t('settings.speakerAttributes.queued')} />
         {:else}
           <div class="progress-header">
             <span class="progress-text">

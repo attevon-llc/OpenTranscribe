@@ -305,7 +305,7 @@
             <div class="queued-message">
               {retroactiveMessage || $t('autoLabel.retroactiveQueued')}
             </div>
-            <ProgressBar percent={null} />
+            <ProgressBar percent={null} ariaLabel={$t('autoLabel.retroactiveQueued')} />
           {:else}
             <div class="progress-info">
               <span class="progress-label">

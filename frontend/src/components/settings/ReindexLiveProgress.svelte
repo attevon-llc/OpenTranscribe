@@ -52,7 +52,7 @@
     {:else}
       <div class="progress-container indeterminate-row">
         <div class="progress-bar-wrapper">
-          <ProgressBar percent={null} />
+          <ProgressBar percent={null} ariaLabel={$t('search.reindexStarting')} />
         </div>
         <span class="progress-text">{$t('search.reindexStarting')}</span>
       </div>

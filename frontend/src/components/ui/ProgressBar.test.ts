@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import ProgressBar from './ProgressBar.svelte';
 
@@ -56,5 +56,16 @@ describe('ProgressBar', () => {
         c.startsWith('tone-')
       )
     ).toEqual(['tone-error']);
+  });
+
+  it('warns in development when it has no accessible name, and not when named', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(ProgressBar, { props: { percent: 5 } });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('ProgressBar');
+    warn.mockClear();
+    render(ProgressBar, { props: { percent: 5, ariaLabel: 'Named' } });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

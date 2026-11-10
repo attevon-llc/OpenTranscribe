@@ -181,6 +181,8 @@
       }
       filteredTasks = tasks;
       filtersReady = true;
+      // A filter changed while this first load was in flight was ignored (not ready yet).
+      refetchOnFilterChange(tasksFilterKey);
     } catch (err: unknown) {
       console.error('Error fetching tasks:', err);
       if (!silent) {

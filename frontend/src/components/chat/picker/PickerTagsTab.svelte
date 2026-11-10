@@ -61,7 +61,7 @@
     />
 
     <div class="tag-cloud" data-testid="picker-tags-list">
-      {#each visible as tag (tag.name)}
+      {#each visible as tag, i (i)}
         <button
           type="button"
           class="tag-chip"

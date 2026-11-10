@@ -87,7 +87,7 @@
           disabled={$isRecording}
           title={$t('uploader.selectMicrophoneTooltip')}
         >
-          {#each audioDevices as device, i (device.deviceId)}
+          {#each audioDevices as device, i (i)}
             <option value={device.deviceId}>
               {device.label || `${$t('uploader.microphone')} ${i + 1}`}
             </option>

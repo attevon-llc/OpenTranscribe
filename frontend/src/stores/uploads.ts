@@ -125,14 +125,18 @@ const queueActions = {
     filename: string,
     extractionMetadata: ExtractedAudioMetadata,
     compressionRatio: number,
-    transcriptionParams?: UploadTranscriptionParams
+    transcriptionParams?: UploadTranscriptionParams,
+    collectionIds?: string[],
+    tagNames?: string[]
   ) {
     return uploadService.addExtractedAudio(
       audioBlob,
       filename,
       extractionMetadata,
       compressionRatio,
-      transcriptionParams
+      transcriptionParams,
+      collectionIds,
+      tagNames
     );
   },
 };

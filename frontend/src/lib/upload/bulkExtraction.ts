@@ -4,6 +4,12 @@ import { toastStore } from '$stores/toast';
 import { uploadsStore } from '$stores/uploads';
 import type { UploadTranscriptionParams } from '$lib/services/uploadService';
 
+/** Collections and tags the wizard chose; forwarded to every extracted-audio upload. */
+export interface OrganizeParams {
+  collectionIds?: string[];
+  tagNames?: string[];
+}
+
 /**
  * Load the FFmpeg.wasm wrapper on first use.
  *
@@ -21,7 +27,8 @@ async function loadAudioExtractionService() {
 /** Extract audio from one video in the background and queue the result. */
 export async function extractAndQueue(
   videoFile: File,
-  transcriptionParams: UploadTranscriptionParams
+  transcriptionParams: UploadTranscriptionParams,
+  organize: OrganizeParams = {}
 ): Promise<boolean> {
   try {
     const extractionService = await loadAudioExtractionService();
@@ -31,7 +38,9 @@ export async function extractAndQueue(
       ea.filename,
       ea.metadata,
       ea.metadata.compressionRatio,
-      transcriptionParams
+      transcriptionParams,
+      organize.collectionIds,
+      organize.tagNames
     );
     toastStore.success(
       get(t)('uploader.audioExtractedSuccess', { ratio: ea.metadata.compressionRatio })
@@ -46,7 +55,8 @@ export async function extractAndQueue(
 /** Extract audio from several videos concurrently; each result is queued as it finishes. */
 export function startBulkExtraction(
   videoFiles: File[],
-  transcriptionParams: UploadTranscriptionParams
+  transcriptionParams: UploadTranscriptionParams,
+  organize: OrganizeParams = {}
 ) {
   toastStore.info(get(t)('uploader.extractingAudioFrom', { count: videoFiles.length }));
   videoFiles.forEach(async (videoFile) => {
@@ -57,7 +67,9 @@ export function startBulkExtraction(
         ea.filename,
         ea.metadata,
         ea.metadata.compressionRatio,
-        transcriptionParams
+        transcriptionParams,
+        organize.collectionIds,
+        organize.tagNames
       );
     } catch {
       toastStore.error(get(t)('uploader.failedToExtractAudio', { filename: videoFile.name }));

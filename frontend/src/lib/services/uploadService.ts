@@ -177,7 +177,9 @@ class UploadService {
     filename: string,
     extractionMetadata: ExtractedAudioMetadata,
     compressionRatio: number,
-    transcriptionParams?: UploadTranscriptionParams
+    transcriptionParams?: UploadTranscriptionParams,
+    collectionIds?: string[],
+    tagNames?: string[]
   ): string {
     const id = this.generateId();
 
@@ -198,6 +200,8 @@ class UploadService {
       whisperModel: transcriptionParams?.whisperModel,
       skipSummary: transcriptionParams?.skipSummary,
       voiceprintConsent: transcriptionParams?.voiceprintConsent,
+      collectionIds,
+      tagNames,
     };
 
     this.uploads.set(id, upload);

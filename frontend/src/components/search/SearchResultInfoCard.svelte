@@ -148,7 +148,7 @@
   {#if tags.length > 0}
     <h4 class="group-label">{$t('filter.tags')}</h4>
     <ul class="chips">
-      {#each tags as tag (tag)}
+      {#each tags as tag, i (i)}
         <li>
           <a
             class="chip chip-link tag"

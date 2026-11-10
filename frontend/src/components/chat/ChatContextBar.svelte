@@ -78,7 +78,7 @@
   {/if}
 
   {#if useContext}
-    {#each speakerNames as name (name)}
+    {#each speakerNames as name, i (i)}
       <span class="chip chip-speaker" data-testid="chat-scope-speaker">
         <svg
           width="12"

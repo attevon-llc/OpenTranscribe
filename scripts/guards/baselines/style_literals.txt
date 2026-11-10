@@ -256,13 +256,13 @@ font-size::frontend/src/components/settings/EngineSettings.svelte	2	styling laye
 font-size::frontend/src/components/settings/GroupsSettings.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/IssueRow.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/LLMConfigModal.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/settings/LLMSettings.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/settings/LLMSettings.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/MediaMirrorSettings.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/MediaSourcesSettings.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/OrganizationContextSettings.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/OrphanedDataPanel.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/PipelineOverview.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/settings/PromptSettings.svelte	13	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/settings/PromptSettings.svelte	12	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/PyannoteCredentialForm.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/RedactionPolicySettings.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/RetentionSettings.svelte	11	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

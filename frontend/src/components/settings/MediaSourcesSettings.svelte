@@ -16,6 +16,7 @@
   import { isPlainHttpSource, isPrivateHostRefusal } from '$lib/utils/mediaHost';
   import { user } from '$stores/auth';
   import MediaPrivateHostsCard from './MediaPrivateHostsCard.svelte';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   let loading = true;
   $: isSuperAdmin = $user?.role === 'super_admin';
@@ -335,22 +336,18 @@
 
     <!-- Empty state -->
     {#if sources.length === 0 && sharedSources.length === 0 && !showAddForm}
-      <div class="empty-state">
-        <div class="empty-icon">
-          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
-            <path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
-          </svg>
-        </div>
-        <h4>{$t('settings.mediaSources.noSources')}</h4>
-        <p>{$t('settings.mediaSources.noSourcesHint')}</p>
+      <EmptyState bordered titleSize="lg" padding="var(--space-10) var(--space-8)" title={$t('settings.mediaSources.noSources')} description={$t('settings.mediaSources.noSourcesHint')}>
+        <svg slot="icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
+          <path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" />
+        </svg>
         <button class="btn-add-first" on:click={() => { showAddForm = true; editingUuid = null; deletingUuid = null; }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           {$t('settings.mediaSources.addSource')}
         </button>
-      </div>
+      </EmptyState>
     {/if}
 
     <!-- Add Form -->
@@ -437,34 +434,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: var(--space-10) var(--space-8);
-    border: 2px dashed var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--card-background);
-  }
-
-  .empty-icon {
-    margin-bottom: var(--space-3-5);
-    color: var(--text-secondary);
-    opacity: 0.6;
-  }
-
-  .empty-state h4 {
-    margin: 0 0 var(--space-2);
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .empty-state p {
-    margin: 0 0 var(--space-5);
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    line-height: 1.5;
   }
 
   .btn-add-first {

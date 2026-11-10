@@ -21,6 +21,7 @@
   import { withShareState } from '$lib/settings/shareState';
   import { UserSettingsApi } from '$lib/api/userSettings';
   import { AdminSettingsApi } from '$lib/api/adminSettings';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin: boolean = false;
@@ -668,14 +669,10 @@
       {/if}
 
       {#if savedConfigurations.length === 0 && sharedConfigurations.length === 0}
-        <div class="empty-state">
-          <div class="empty-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14.828 14.828a4 4 0 0 1-5.656 0M9 10h.01M15 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 0 1-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-            </svg>
-          </div>
-          <h4>{$t('settings.llmProvider.noConfigs')}</h4>
-          <p>{$t('settings.llmProvider.noConfigsDesc')}</p>
+        <EmptyState bordered titleSize="xl" padding="var(--space-12) clamp(var(--space-4), 5vw, var(--space-8))" title={$t('settings.llmProvider.noConfigs')} description={$t('settings.llmProvider.noConfigsDesc')}>
+          <svg slot="icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.828 14.828a4 4 0 0 1-5.656 0M9 10h.01M15 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 0 1-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+          </svg>
           <button class="create-first-config-btn" on:click={openCreateModal}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
@@ -683,7 +680,7 @@
             </svg>
             {$t('settings.llmProvider.createFirstConfig')}
           </button>
-        </div>
+        </EmptyState>
       {/if}
     </div>
 
@@ -1032,34 +1029,6 @@
     cursor: not-allowed;
   }
 
-  .empty-state {
-    text-align: center;
-    padding: var(--space-12) var(--space-8);
-    border: 2px dashed var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--card-background);
-  }
-
-  .empty-icon {
-    margin-bottom: var(--space-4);
-    color: var(--text-muted);
-    opacity: 0.6;
-  }
-
-  .empty-state h4 {
-    margin: 0 0 var(--space-2);
-    color: var(--text-color);
-    font-size: 1.125rem;
-    font-weight: var(--font-weight-medium);
-  }
-
-  .empty-state p {
-    margin: 0 0 var(--space-6);
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-    line-height: 1.5;
-  }
-
   .create-first-config-btn {
     display: inline-flex;
     align-items: center;
@@ -1296,10 +1265,6 @@
       width: 100%;
       justify-content: center;
       min-height: 44px;
-    }
-
-    .empty-state {
-      padding: var(--space-8) var(--space-4);
     }
 
   }

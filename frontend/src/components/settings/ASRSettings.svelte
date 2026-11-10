@@ -26,6 +26,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin = false;
@@ -683,24 +684,20 @@
     {/if}
 
     {#if configurations.length === 0 && sharedConfigurations.length === 0}
-      <div class="empty-state">
-        <div class="empty-icon">
-          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
-        </div>
-        <h4>{$t('settings.asrProvider.emptyTitle')}</h4>
-        <p>{$t('settings.asrProvider.emptyDescription')}</p>
+      <EmptyState bordered titleSize="lg" padding="var(--space-10) var(--space-8)" title={$t('settings.asrProvider.emptyTitle')} description={$t('settings.asrProvider.emptyDescription')}>
+        <svg slot="icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
         <button class="btn-add-first" on:click={openCreateModal}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           {$t('settings.asrProvider.addConfig')}
         </button>
-      </div>
+      </EmptyState>
     {/if}
     {/if}
   {/if}
@@ -1038,34 +1035,6 @@
   }
 
   .btn-delete-all:hover:not(:disabled) { background: var(--error-solid); }
-
-  .empty-state {
-    text-align: center;
-    padding: var(--space-10) var(--space-8);
-    border: 2px dashed var(--border-color);
-    border-radius: var(--radius-lg);
-    background: var(--card-bg);
-  }
-
-  .empty-icon {
-    margin-bottom: var(--space-3-5);
-    color: var(--text-muted);
-    opacity: 0.6;
-  }
-
-  .empty-state h4 {
-    margin: 0 0 var(--space-2);
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .empty-state p {
-    margin: 0 0 var(--space-5);
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-    line-height: 1.5;
-  }
 
   .btn-add-first {
     display: inline-flex;

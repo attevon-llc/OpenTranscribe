@@ -21,6 +21,7 @@
   import InfoTip from '$components/settings/transcription/InfoTip.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import { badgeVariantForStatus } from '$lib/fileStatus/statusVariant';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   export let stats: SystemStats;
   export let statsLoading = false;
@@ -460,7 +461,7 @@
     {:else}
       <div class="recent-tasks" class:stats-refreshing={statsRefreshing}>
         <h4>{$t('settings.statistics.recentTasks')}</h4>
-        <p class="empty-state">{$t('settings.statistics.noRecentTasks')}</p>
+        <EmptyState padding="var(--space-4)" description={$t('settings.statistics.noRecentTasks')} />
       </div>
     {/if}
   {/if}
@@ -872,14 +873,6 @@
 
   .data-table tbody tr:hover {
     background-color: var(--background-color);
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: var(--space-4);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    font-style: italic;
   }
 
   /* AI Models Card Styles */

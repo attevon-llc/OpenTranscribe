@@ -483,13 +483,13 @@ button:disabled {
   background-color: var(--error-solid);
   color: var(--text-on-solid);
   border: none;
-  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+  box-shadow: var(--shadow-danger);
 }
 .btn-danger:hover:not(:disabled) {
   background-color: var(--error-solid-hover);
   color: var(--text-on-solid);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+  box-shadow: var(--shadow-danger-hover);
 }
 .btn-danger:active:not(:disabled) {
   transform: scale(1) !important;
@@ -512,8 +512,78 @@ button:disabled {
   transform: scale(1) !important;
 }
 
+/* Success buttons — green, stays green on hover (white label is 5.48:1) */
+.btn-success {
+  background-color: var(--success-solid);
+  color: var(--text-on-solid);
+  border: none;
+}
+.btn-success:hover:not(:disabled) {
+  background-color: var(--success-solid-hover);
+  color: var(--text-on-solid);
+  transform: scale(1.02);
+}
+.btn-success:active:not(:disabled) {
+  transform: scale(1) !important;
+}
+
+/* Ghost — transparent until hovered */
+.btn-ghost {
+  background-color: transparent;
+  color: var(--text-color);
+  border: none;
+}
+.btn-ghost:hover:not(:disabled) {
+  background-color: var(--button-hover);
+}
+
+/* Link-styled button: no chrome, underline on hover */
+.btn-link {
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--primary-on-surface);
+}
+.btn-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* Outlined destructive action, e.g. a Stop button on a progress card */
+.btn-danger-outline {
+  background-color: transparent;
+  color: var(--error-text);
+  border: 1px solid var(--error-border);
+}
+.btn-danger-outline:hover:not(:disabled) {
+  background-color: var(--error-bg);
+}
+
+/* Sizes. `.btn-sm` is the canonical small (`.btn-small` goes in the 2.3 migration);
+   `.btn-lg` shares the `.modal-button` metrics rule below. */
+.btn-sm {
+  padding: var(--space-1) var(--space-2-5);
+  font-size: var(--font-size-xs);
+  min-height: 28px;
+}
+
+/* Icon-only square button (give it an aria-label); combines with `.btn-sm` and any variant */
+.btn-icon {
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: var(--space-1-5);
+  background-color: transparent;
+  color: var(--text-color);
+  border: none;
+}
+.btn-icon:hover:not(:disabled) {
+  background-color: var(--button-hover);
+}
+
 /* ─── Modal Action Buttons ──────────────────────────────────────────── */
 /* Base sizing shared by all modal footer buttons */
+.btn-lg,
 .modal-button {
   padding: 0.6rem 1.2rem;
   border-radius: var(--radius-xl);
@@ -569,7 +639,7 @@ button:disabled {
   background-color: var(--error-solid);
   color: var(--text-on-solid);
   border: none;
-  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+  box-shadow: var(--shadow-danger);
 }
 .modal-delete-button:hover:not(:disabled) {
   background-color: var(--error-solid-hover);

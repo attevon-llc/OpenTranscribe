@@ -150,7 +150,7 @@ colour::frontend/src/routes/register/+page.svelte	1	styling layer: pre-migration
 colour::frontend/src/routes/reset-password/+page.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/routes/search/+page.svelte	13	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/routes/verify-email/+page.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/styles/form-elements.css	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+colour::frontend/src/styles/form-elements.css	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/styles/range-slider.css	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/styles/search.css	14	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/styles/support-access.css	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -602,7 +602,7 @@ shadow::frontend/src/routes/register/+page.svelte	1	styling layer: pre-migration
 shadow::frontend/src/routes/reset-password/+page.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 shadow::frontend/src/routes/search/+page.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 shadow::frontend/src/routes/verify-email/+page.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-shadow::frontend/src/styles/form-elements.css	11	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+shadow::frontend/src/styles/form-elements.css	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 shadow::frontend/src/styles/search.css	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/AISuggestionsDropdown.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/BulkAudioExtractionModal.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

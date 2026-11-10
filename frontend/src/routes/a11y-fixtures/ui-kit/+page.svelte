@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Button from '$components/ui/Button.svelte';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -51,6 +53,18 @@
         </button>
       </div>
     {/each}
+    <div class="kit-row">
+      <button type="button" class="btn btn-success">{$t('common.save')}</button>
+      <button type="button" class="btn btn-ghost">{$t('common.cancel')}</button>
+      <button type="button" class="btn btn-link">{$t('common.edit')}</button>
+      <button type="button" class="btn btn-danger-outline btn-sm">{$t('common.delete')}</button>
+      <button type="button" class="btn btn-lg btn-primary">{$t('common.save')}</button>
+      <button type="button" class="btn btn-icon btn-sm" aria-label={$t('common.close')}>
+        <MenuIcon name="close" size={14} />
+      </button>
+      <Button variant="primary" busy>{$t('common.saving')}</Button>
+      <Button variant="ghost" size="sm">{$t('common.cancel')}</Button>
+    </div>
     <div class="kit-row">
       <button type="button" class="modal-button modal-cancel-button">{$t('common.cancel')}</button>
       <button type="button" class="modal-button modal-primary-button">{$t('common.save')}</button>

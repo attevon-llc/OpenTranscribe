@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Shared button variants (`.btn-sm`, `.btn-lg`, `.btn-success`, `.btn-ghost`, `.btn-link`, `.btn-danger-outline`, `.btn-icon`) and a `ui/Button` component with busy and icon-only handling.
+
 ### Fixed
 
 - Backup S3 prune and list now act only on this install's own backups: the listing is scoped to the exact configured prefix (no recursion into sub-prefixes) and the filename must match `opentranscribe-YYYYMMDD-HHMMSS.dump[.gpg]` at both ends, so two installs sharing a bucket can no longer delete each other's backups.

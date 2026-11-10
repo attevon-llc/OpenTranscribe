@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Security: `POST /api/org-admin/gdpr/erase-file/{uuid}` now answers 404 for a recording under a platform quarantine, as every other delete path does for an organization admin, instead of destroying the takedown evidence. A trashed recording can still be erased.
 - `sweep_orphan_voiceprints --apply` no longer deletes the voiceprint of a speaker created while it scanned: it re-reads the database before deleting and never deletes a document written after the sweep started (reported as `skipped_recent`).
 - Security: the last-active-super-administrator rule is now checked every time an account erasure runs, not only at its first execution. A self-erasure deferred by a legal hold could otherwise erase the last super administrator when the hold was released.
 - Voiceprint retention no longer misses due recordings while a speaker index migration is in progress: the presence check now sizes its multi-index search for one hit per index per id, so a voiceprint held in both the v3 and v4 index cannot crowd other ids out of the answer.

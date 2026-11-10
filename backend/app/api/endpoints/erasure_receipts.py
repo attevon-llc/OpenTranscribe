@@ -48,6 +48,7 @@ from app.services.erasure_receipt import read_queries
 from app.services.erasure_receipt.inventory import STORES
 from app.services.erasure_receipt.receipt import RETAINED_REASONS
 from app.services.erasure_receipt.stores_external import IGNORED_INDICES_KEY
+from app.services.platform_bypass import PlatformBypass
 
 admin_router = APIRouter()
 org_router = APIRouter()
@@ -171,8 +172,19 @@ def read_org_receipts(
     return [_response(r, entry) for r in read_queries.list_receipts(db, entry)]
 
 
-def _require_file(db: Session, file_uuid: UUID, org_id: int | None) -> None:
-    if read_queries.find_file(db, file_uuid, org_id) is None:
+def _require_file(
+    db: Session, file_uuid: UUID, org_id: int | None, bypass: PlatformBypass | None = None
+) -> None:
+    """404 unless the recording exists (in organization ``org_id`` when given).
+
+    With ``bypass`` (the organization route) a quarantined recording is the same 404, as on every
+    other delete path (``delete_permissions.get_deletable_file``): a takedown under review is
+    visible to the platform only. A trashed one stays erasable.
+    """
+    from app.services.file_availability import is_quarantine_hidden_for
+
+    file = read_queries.find_file(db, file_uuid, org_id)
+    if file is None or (bypass is not None and is_quarantine_hidden_for(bypass, file)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
 
@@ -204,7 +216,7 @@ def org_erase_file(
     """The same, for a recording of the caller's own organization (404 for any other)."""
     from app.services.gdpr_erasure_service import erase_file
 
-    _require_file(db, file_uuid, org_id_of(ctx))
+    _require_file(db, file_uuid, org_id_of(ctx), ctx.bypass)
     return erase_file(
         db,
         file_uuid,

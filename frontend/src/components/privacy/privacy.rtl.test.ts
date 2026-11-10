@@ -63,7 +63,9 @@ describe('physical-property detector', () => {
   );
 
   it('sees the logical properties the switch relies on to mirror its knob', () => {
-    expect(styleOf('PrivacySwitchCard')).toContain('inset-inline-start');
+    expect(readFileSync(join(__dirname, '../ui/Toggle.svelte'), 'utf8')).toContain(
+      'inset-inline-start'
+    );
     expect(styleOf('PurgeConfirmDialog')).toContain('padding-inline-start');
     expect(styleOf('SpeakerPrivacyNotice')).toContain('border-inline-start');
   });

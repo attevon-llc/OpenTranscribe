@@ -28,15 +28,16 @@ STEP_KINDS = frozenset({"click", "hover", "focus", "wait", "press", "settings", 
 # The audio player's slider track holds the buffered-range bar, whose width tracks how much of the
 # file the browser has fetched (network timing, not styling). Masking the buffer element alone
 # leaves its differently sized mask rectangle in the diff, so the whole track is masked.
-# .connection-banner appears only while the websocket reconnects, and .free-space prints the
-# host's live free disk bytes; both are state of the machine, not styling.
+# .free-space prints the host's live free disk bytes: machine state, not styling.
 GLOBAL_MASKS = (
     ".notifications-btn",
     ".toast-container",
     "media-slider-track",
-    ".connection-banner",
     ".free-space",
 )
+# The reconnect banner shows only while the websocket is reconnecting, so it can be present on one
+# side and absent on the other. A mask would paint a rectangle on one side only; hide it instead.
+TRANSIENT_HIDE_CSS = ".connection-banner{display:none!important}"
 
 
 @dataclass(frozen=True)

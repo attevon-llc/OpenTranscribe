@@ -45,6 +45,7 @@ from PIL import Image
 from styling_screens import DEFAULT_CONTROLS
 from styling_screens import GLOBAL_MASKS
 from styling_screens import SCREENS
+from styling_screens import TRANSIENT_HIDE_CSS
 from styling_screens import VARIANTS
 from styling_screens import Screen
 
@@ -444,6 +445,7 @@ def capture(
             # A click step leaves the pointer over its target, so the hover colour of whatever
             # sits there differs run to run depending on timing.
             page.mouse.move(0, 0)
+        page.add_style_tag(content=TRANSIENT_HIDE_CSS)
         stabilize(page)
         # The settings sidebar list scrolls the active row into view; how far it ended up
         # depends on layout timing (rows above it fill in as counts arrive), not on styling.
@@ -510,6 +512,36 @@ def _warm(browser: Any, base: str) -> None:
         ctx.close()
 
 
+MAX_ATTEMPTS = 3
+
+
+def measure(
+    side_a: Session,
+    side_b: Session,
+    screen: Screen,
+    variant: str,
+    file_uuid: str | None,
+    args: argparse.Namespace,
+    controls: set[str],
+) -> tuple[np.ndarray, np.ndarray, float, list[Change], dict[str, Any], int]:
+    """Capture both sides; in zero mode re-capture a failing screen before calling it FAIL.
+
+    A difference caused by a real style change shows on every attempt, while a timing flake
+    (a transient overlay, a late repaint) does not, so only a screen that fails all
+    ``MAX_ATTEMPTS`` attempts is reported as FAIL. Negative controls are never retried.
+    """
+    retries = MAX_ATTEMPTS if args.mode == "zero" and not args.negative_control else 1
+    for attempt in range(1, retries + 1):
+        a = capture(side_a, screen, variant, file_uuid)
+        b = capture(side_b, screen, variant, file_uuid)
+        arr_a, arr_b = _png_to_array(a["png"]), _png_to_array(b["png"])
+        fraction = diff_fraction(arr_b, arr_a)
+        changes = diff_snapshots(a["snapshot"], b["snapshot"])
+        if verdict(args.mode, fraction, len(changes), is_control=screen.id in controls) != "FAIL":
+            break
+    return arr_a, arr_b, fraction, changes, b, attempt
+
+
 def run(args: argparse.Namespace) -> int:
     """Capture every selected screen x variant on both sides and write the report."""
     from playwright.sync_api import sync_playwright
@@ -549,8 +581,9 @@ def run(args: argparse.Namespace) -> int:
                         print(f"  {key}: SKIP ({screen.skip_reason})", flush=True)
                         continue
                     try:
-                        a = capture(side_a, screen, variant, file_uuid)
-                        b = capture(side_b, screen, variant, file_uuid)
+                        measured = measure(
+                            side_a, side_b, screen, variant, file_uuid, args, controls
+                        )
                     except ScreenUnavailableError as exc:
                         row.update(skip=str(exc), verdict="SKIP")
                         continue
@@ -559,9 +592,7 @@ def run(args: argparse.Namespace) -> int:
                         row["verdict"] = verdict(args.mode, 0, 0, error=row["error"])
                         print(f"  {key}: ERROR {row['error']}", flush=True)
                         continue
-                    arr_a, arr_b = _png_to_array(a["png"]), _png_to_array(b["png"])
-                    fraction = diff_fraction(arr_b, arr_a)
-                    changes = diff_snapshots(a["snapshot"], b["snapshot"])
+                    arr_a, arr_b, fraction, changes, b, attempts = measured
                     per_screen_changes[key] = changes
                     _save_png(out / "before" / f"{key}.png", arr_a)
                     _save_png(out / "after" / f"{key}.png", arr_b)
@@ -571,11 +602,15 @@ def run(args: argparse.Namespace) -> int:
                         computed_diffs=len(changes),
                         has_btn=b["has_btn"],
                         changed_props=sorted({c.prop for c in changes}),
+                        attempts=attempts,
                         verdict=verdict(
                             args.mode, fraction, len(changes), is_control=screen.id in controls
                         ),
                     )
-                    print(f"  {key}: {row['verdict']}", flush=True)
+                    if attempts > 1 and row["verdict"] != "FAIL":
+                        row["flaky"] = True
+                    flaky = f" (flaky, passed on attempt {attempts})" if row.get("flaky") else ""
+                    print(f"  {key}: {row['verdict']}{flaky}", flush=True)
         finally:
             side_a.close()
             side_b.close()

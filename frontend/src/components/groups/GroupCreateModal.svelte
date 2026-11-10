@@ -85,7 +85,7 @@
   <svelte:fragment slot="footer">
     <button
       type="button"
-      class="modal-button cancel-button"
+      class="btn btn-lg btn-secondary"
       on:click={handleClose}
     >
       {$t('modal.cancel')}
@@ -93,7 +93,7 @@
     <button
       type="submit"
       form="group-create-form"
-      class="modal-button confirm-button"
+      class="btn btn-lg btn-primary"
       disabled={!name.trim() || isCreating}
     >
       {isCreating ? $t('groups.creating') : $t('groups.createGroup')}
@@ -136,50 +136,6 @@
     min-height: 60px;
   }
 
-  .modal-button {
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: var(--radius-lg);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-  }
-
-  .cancel-button {
-    background: var(--card-background);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--card-shadow);
-  }
-
-  .cancel-button:hover {
-    background: var(--button-hover);
-    border-color: var(--border-color);
-  }
-
-  .confirm-button {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: var(--shadow-primary);
-  }
-
-  .confirm-button:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  .confirm-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .confirm-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-  }
-
   .form-hint {
     display: block;
     margin-top: 0.35rem;
@@ -189,7 +145,7 @@
   }
 
   @media (max-width: 768px) {
-    .modal-button {
+    .btn-lg {
       min-height: 44px;
       width: 100%;
     }

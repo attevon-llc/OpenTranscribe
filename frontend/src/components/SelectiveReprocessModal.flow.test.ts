@@ -78,7 +78,7 @@ const BOX = {
   summary: 5,
   topics: 6,
 };
-const primary = () => document.querySelector('.primary-button') as HTMLButtonElement;
+const primary = () => document.querySelector('.btn-primary') as HTMLButtonElement;
 const pills = () =>
   Array.from(document.querySelectorAll('.stage-pill')).map((e) => e.textContent?.trim());
 

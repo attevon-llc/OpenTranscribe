@@ -332,12 +332,12 @@
           <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
           <div class="segment-edit-actions">
             <button
-              class="cancel-button"
+              class="btn btn-secondary cancel-button"
               on:click={cancelEditSegment}
               title={$t('transcript.cancelSegmentTitle')}
             >{$t('common.cancel')}</button>
             <button
-              class="save-button"
+              class="btn btn-primary save-button"
               on:click={() => saveSegment(segment)}
               disabled={savingTranscript}
               title={$t('transcript.saveSegmentTitle')}
@@ -544,31 +544,6 @@
     gap: var(--space-1-5);
   }
 
-  .cancel-button {
-    background: #6b7280;
-    color: var(--text-on-solid);
-    border: 1px solid #6b7280;
-    padding: 0.6rem 1.2rem;
-    border-radius: var(--radius-xl);
-    cursor: pointer;
-    font-weight: var(--font-weight-medium);
-    transition: all var(--duration-base) ease;
-    font-size: 0.95rem;
-    box-shadow: var(--shadow-md);
-  }
-
-  .cancel-button:hover {
-    background: #4b5563;
-    border-color: #4b5563;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
-  }
-
-  .cancel-button:active {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
-  }
-
   .transcript-display-container {
     position: relative;
     border: 1px solid var(--border-color);
@@ -771,59 +746,9 @@
     margin-top: var(--space-2);
   }
 
-  .segment-edit-actions .save-button,
-  .segment-edit-actions .cancel-button {
-    padding: 0.4rem 0.8rem;
-    border-radius: var(--radius-xl);
-    font-size: 0.85rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: none;
+  .segment-edit-actions .btn {
     min-width: 60px;
-    display: inline-flex;
-    align-items: center;
     justify-content: center;
-  }
-
-  .segment-edit-actions .save-button {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: var(--shadow-primary);
-  }
-
-  .segment-edit-actions .save-button:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: var(--shadow-primary-hover);
-  }
-
-  .segment-edit-actions .save-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .segment-edit-actions .save-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .segment-edit-actions .cancel-button {
-    background: #6b7280;
-    color: var(--text-on-solid);
-    border: 1px solid #6b7280;
-    box-shadow: var(--shadow-md);
-  }
-
-  .segment-edit-actions .cancel-button:hover {
-    background: #4b5563;
-    border-color: #4b5563;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
-  }
-
-  .segment-edit-actions .cancel-button:active {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
 
   :global(.highlight-flash) {

@@ -138,7 +138,7 @@
       <div class="comment-actions">
         <button
           type="button"
-          class="edit-button"
+          class="btn btn-link"
           on:click={startEdit}
           disabled={frozen}
           aria-describedby={frozen ? frozenNoteId : undefined}
@@ -148,7 +148,7 @@
         </button>
         <button
           type="button"
-          class="delete-button"
+          class="btn btn-link btn-danger-text"
           on:click={() => dispatch('delete')}
           disabled={frozen}
           aria-describedby={frozen ? frozenNoteId : undefined}
@@ -278,32 +278,16 @@
     color: var(--text-secondary);
   }
 
-  .edit-button,
-  .delete-button {
-    background: none;
-    border: none;
-    box-shadow: none;
-    padding: 0;
+  .comment-actions .btn {
     font-size: var(--font-size-xs);
-    cursor: pointer;
   }
 
-  .edit-button {
-    color: var(--primary-on-surface);
-  }
-
-  .delete-button {
+  .comment-actions .btn-danger-text {
     color: var(--error-text);
   }
 
   .comment-actions {
     flex-wrap: wrap;
     align-items: center;
-  }
-
-  .edit-button:disabled,
-  .delete-button:disabled {
-    color: var(--text-secondary);
-    cursor: not-allowed;
   }
 </style>

@@ -554,7 +554,7 @@
         <svelte:fragment slot="footer">
           {#if currentStep > 1}
             <button
-              class="modal-button cancel-button"
+              class="btn btn-lg btn-secondary"
               on:click={goBack}
               type="button"
             >
@@ -562,7 +562,7 @@
             </button>
           {:else}
             <button
-              class="modal-button cancel-button"
+              class="btn btn-lg btn-secondary"
               on:click={handleClose}
               type="button"
             >
@@ -572,7 +572,7 @@
 
           {#if isLastStep}
             <button
-              class="modal-button primary-button"
+              class="btn btn-lg btn-primary"
               on:click={handleSubmit}
               disabled={!isValid || reprocessing}
               type="button"
@@ -590,7 +590,7 @@
             </button>
           {:else}
             <button
-              class="modal-button primary-button"
+              class="btn btn-lg btn-primary"
               on:click={goNext}
               disabled={!canGoNext}
               type="button"
@@ -1089,67 +1089,7 @@
     margin-top: var(--space-2);
   }
 
-  .modal-button {
-    padding: 0.55rem 1.1rem;
-    border: none;
-    border-radius: var(--radius-xl);
-    font-size: 0.9rem;
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    min-width: 100px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-  }
-
-  .cancel-button {
-    background: var(--card-background);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  }
-
-  .cancel-button:hover {
-    background: var(--button-hover);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
-  }
-
-  .cancel-button:active {
-    transform: scale(1);
-  }
-
-  .primary-button {
-    background: var(--primary-color);
-    color: var(--text-on-solid);
-    box-shadow: var(--shadow-primary);
-  }
-
-  .primary-button:hover:not(:disabled) {
-    background: var(--primary-color);
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
-  }
-
-  .primary-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .primary-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-  }
-
   /* Dark mode */
-  :global([data-theme='dark']) .cancel-button:hover {
-    background: var(--button-hover);
-    color: var(--text-color);
-    border-color: var(--border-color);
-  }
-
   :global([data-theme='dark']) .validation-error {
     background-color: rgba(239, 68, 68, 0.15);
     color: #f87171;
@@ -1161,7 +1101,7 @@
 
   /* Responsive design */
   @media (max-width: 768px) {
-    .modal-button {
+    .btn-lg {
       width: 100%;
       min-height: 44px;
     }
@@ -1198,22 +1138,11 @@
 
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
-    .modal-button,
+    .btn-lg,
     .stage-item,
     .stage-check-custom,
     .step-dot {
       transition: none;
     }
-  }
-
-  /* Focus styles */
-  .modal-button:focus {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .cancel-button:focus {
-    outline: 2px solid var(--border-color);
-    outline-offset: 2px;
   }
 </style>

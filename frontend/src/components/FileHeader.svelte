@@ -133,7 +133,8 @@
             type="button"
             on:click={saveTitle}
             disabled={isSaving}
-            class="save-btn"
+            class="btn btn-success save-btn"
+            aria-label={$t('fileDetail.saveTitle')}
             title={$t('fileDetail.saveTitle')}
           >
             {#if isSaving}
@@ -151,7 +152,8 @@
             type="button"
             on:click={cancelEditingTitle}
             disabled={isSaving}
-            class="cancel-btn"
+            class="btn btn-secondary cancel-btn"
+            aria-label={$t('fileDetail.cancelTitle')}
             title={$t('fileDetail.cancelTitle')}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -666,55 +668,11 @@
     margin-top: var(--space-2);
   }
 
-  .save-btn,
-  .cancel-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
+  .edit-buttons .btn {
+    justify-content: center;
     padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: 1px solid;
     height: 32px;
     box-sizing: border-box;
-  }
-
-  .save-btn {
-    background-color: var(--success-color);
-    border-color: var(--success-color);
-    color: var(--text-on-solid);
-    padding: var(--space-2) var(--space-2);
-  }
-
-  .save-btn:hover:not(:disabled) {
-    background-color: #059669;
-    border-color: #059669;
-  }
-
-  .cancel-btn {
-    background-color: #6b7280;
-    border-color: #6b7280;
-    color: var(--text-on-solid);
-  }
-
-  .cancel-btn:hover:not(:disabled) {
-    background-color: #4b5563;
-    border-color: #4b5563;
-    color: var(--text-on-solid);
-  }
-
-  .save-btn:disabled,
-  .cancel-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .save-btn:focus,
-  .cancel-btn:focus {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
   }
 
   .spinning {

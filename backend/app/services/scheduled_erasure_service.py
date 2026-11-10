@@ -389,9 +389,14 @@ def run_entry(db: Session, entry: ErasureLedgerEntry) -> dict[str, Any]:
     from app.services.erasure_org_member_rerun import cutoff_of
 
     if entry.subject_type == "user":
-        return erasure.erase_user(
-            db, _required_id(entry.subject_user_id, "subject_user_id"), ledger_entry=entry
-        )
+        user_id = _required_id(entry.subject_user_id, "subject_user_id")
+        # Checked again on EVERY run, not only the first: a retry (a hold released, a restore
+        # re-erasure) can come long after the other super administrators were demoted or erased.
+        if _would_remove_last_super_admin(db, user_id):
+            ledger.block_request(db, entry, reason="last_super_admin")
+            logger.warning("Erasure %s blocked: last active super administrator", entry.uuid)
+            return {"complete": False, "blocked": "last_super_admin", "legal_holds_skipped": 0}
+        return erasure.erase_user(db, user_id, ledger_entry=entry)
     if entry.subject_type == "file":
         return erasure.erase_file(db, entry.subject_file_uuid, ledger_entry=entry)
     if entry.subject_type == "organization":

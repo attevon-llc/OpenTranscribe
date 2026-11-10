@@ -25,7 +25,19 @@ STEP_KINDS = frozenset({"click", "hover", "focus", "wait", "press", "settings", 
 
 #: Masked on every screen: the navbar bell renders an unread-count pill that exists in one
 #: notification state and not the other (same reasoning as test_visual_regression.py).
-GLOBAL_MASKS = (".notifications-btn", ".toast-container")
+# The audio player's slider track holds the buffered-range bar, whose width tracks how much of the
+# file the browser has fetched (network timing, not styling). Masking the buffer element alone
+# leaves its differently sized mask rectangle in the diff, so the whole track is masked.
+# .free-space prints the host's live free disk bytes: machine state, not styling.
+GLOBAL_MASKS = (
+    ".notifications-btn",
+    ".toast-container",
+    "media-slider-track",
+    ".free-space",
+)
+# The reconnect banner shows only while the websocket is reconnecting, so it can be present on one
+# side and absent on the other. A mask would paint a rectangle on one side only; hide it instead.
+TRANSIENT_HIDE_CSS = ".connection-banner{display:none!important}"
 
 
 @dataclass(frozen=True)

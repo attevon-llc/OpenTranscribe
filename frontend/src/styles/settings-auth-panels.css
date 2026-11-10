@@ -67,6 +67,11 @@
   cursor: pointer;
 }
 
+.auth-panel .input-with-toggle input,
+.auth-panel .input-with-button input {
+  flex: 1;
+}
+
 .auth-panel .checkbox-label input:disabled {
   cursor: not-allowed;
 }
@@ -85,11 +90,6 @@
   gap: var(--space-2);
 }
 
-.auth-panel .input-with-toggle input,
-.auth-panel .input-with-button input {
-  flex: 1;
-}
-
 .auth-panel .toggle-visibility {
   padding: var(--space-2) var(--space-3);
   background: var(--color-bg-tertiary);
@@ -101,13 +101,13 @@
   white-space: nowrap;
 }
 
-.auth-panel .toggle-visibility:hover:not(:disabled) {
-  background: var(--color-bg-hover);
-}
-
 .auth-panel .toggle-visibility:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.auth-panel .toggle-visibility:hover:not(:disabled) {
+  background: var(--color-bg-hover);
 }
 
 .auth-panel .warning-box {

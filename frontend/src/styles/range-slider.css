@@ -127,10 +127,6 @@
   box-shadow: var(--slider-thumb-shadow-hover);
 }
 
-.range-input:active:not(:disabled) {
-  cursor: grabbing;
-}
-
 .range-input:focus-visible {
   outline: 2px solid var(--slider-focus-ring);
   outline-offset: 4px;
@@ -140,4 +136,8 @@
 .range-input:disabled {
   opacity: var(--slider-disabled-opacity);
   cursor: not-allowed;
+}
+
+.range-input:active:not(:disabled) {
+  cursor: grabbing;
 }

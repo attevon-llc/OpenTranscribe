@@ -318,30 +318,7 @@ button {
   box-shadow: var(--shadow-md);
 }
 
-/*
- * No transform on the bare element, ever. This rule used to `scale(1.02)` every <button> on
- * hover, and a global rule cannot know its layout: a full-width row inside a scrolling panel
- * (every dropdown and menu: `overflow-y: auto` computes overflow-x to auto) grew 2px past the
- * scrollport, raised a horizontal scrollbar, and the scrollbar moved the row out from under the
- * pointer, which flickered. Standalone buttons that want a lift opt in by class (`.btn-*`,
- * `.modal-*-button`, `button.primary`). `menuHover.convention.test.ts` pins both halves.
- */
-button:hover:not(:disabled) {
-  background-color: var(--button-hover);
-  text-decoration: none !important;
-}
-
-/*
- * Rows in a menu, listbox or anchored panel are flat: no resting or hover shadow.
- * `data-floating-panel` is set by `$lib/actions/anchoredPanel` on every panel it places.
- * `:where()` keeps both rules at the specificity they had, so a component rule still wins.
- */
-button:hover:not(:disabled):not(
-    :where([data-floating-panel] *, [role='menu'] *, [role='listbox'] *)
-  ) {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
+/* Flat menu rows; paired with the floating-panel hover-shadow exclusion further down. */
 :where([data-floating-panel], [role='menu'], [role='listbox']) button {
   box-shadow: none;
 }
@@ -369,6 +346,35 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/*
+ * No transform on the bare element, ever. This rule used to `scale(1.02)` every <button> on
+ * hover, and a global rule cannot know its layout: a full-width row inside a scrolling panel
+ * (every dropdown and menu: `overflow-y: auto` computes overflow-x to auto) grew 2px past the
+ * scrollport, raised a horizontal scrollbar, and the scrollbar moved the row out from under the
+ * pointer, which flickered. Standalone buttons that want a lift opt in by class (`.btn-*`,
+ * `.modal-*-button`, `button.primary`). `menuHover.convention.test.ts` pins both halves.
+ */
+button:hover:not(:disabled) {
+  background-color: var(--button-hover);
+  text-decoration: none !important;
+}
+
+/*
+ * Rows in a menu, listbox or anchored panel are flat: no resting or hover shadow.
+ * `data-floating-panel` is set by `$lib/actions/anchoredPanel` on every panel it places.
+ * `:where()` keeps both rules at the specificity they had, so a component rule still wins.
+ */
+button:hover:not(:disabled):not(
+    :where([data-floating-panel] *, [role='menu'] *, [role='listbox'] *)
+  ) {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
 button.primary {
   background-color: var(--primary-color);
   color: var(--text-on-solid) !important;
@@ -382,11 +388,6 @@ button.primary:hover:not(:disabled) {
   color: var(--text-on-solid) !important;
   transform: scale(1.02);
   box-shadow: var(--shadow-primary-hover);
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 /* Modal/Dialog styles */
@@ -575,8 +576,8 @@ button:disabled {
 
 /* Destructive icon button (remove / revoke): neutral at rest, danger signal on
    hover and keyboard focus. --error-text is the AA-checked text red in both themes. */
-.btn-icon-only.btn-icon-danger:hover:not(:disabled),
-.btn-icon-only.btn-icon-danger:focus-visible {
+.btn-icon-only.btn-icon-danger:focus-visible,
+.btn-icon-only.btn-icon-danger:hover:not(:disabled) {
   background-color: var(--error-bg);
   color: var(--error-text);
 }

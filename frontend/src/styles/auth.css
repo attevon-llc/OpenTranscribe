@@ -63,14 +63,14 @@
   gap: var(--space-2);
 }
 
-.auth-button:hover:not(:disabled) {
-  background-color: var(--primary-color);
-  transform: translateY(-1px);
-}
-
 .auth-button:disabled {
   background-color: var(--border-color);
   cursor: not-allowed;
+}
+
+.auth-button:hover:not(:disabled) {
+  background-color: var(--primary-color);
+  transform: translateY(-1px);
 }
 
 .auth-links {

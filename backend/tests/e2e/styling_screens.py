@@ -209,6 +209,16 @@ _APP = (
         ready='[data-kit-section="buttons"]',
         notes="keyboard focus ring over the first button and the first switch",
     ),
+    # --- S20B D4 proof: focus ONLY a .btn-primary (ui-kit-focus ends on the switch, whose
+    # ring already used --focus-ring-color). Dark outline: rgb(37,99,235) -> rgb(96,165,250).
+    Screen(
+        "ui-kit-btn-focus",
+        "/a11y-fixtures/ui-kit",
+        steps=("focus:[data-kit-section='buttons'] .btn-primary",),
+        ready='[data-kit-section="buttons"]',
+        notes="keyboard focus ring on the first primary button only (D4 evidence)",
+    ),
+    # --- end S20B D4 block
     Screen(
         "ui-kit-confirm",
         "/a11y-fixtures/ui-kit",

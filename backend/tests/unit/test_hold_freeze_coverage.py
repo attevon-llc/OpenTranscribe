@@ -1165,6 +1165,7 @@ def test_every_celery_task_is_classified_and_guarded():
 
 #: Operator CLIs under ``app/scripts`` that write file content. They are not decorated, so no
 #: scanner can find them: each is pinned here by hand, as a chain to the guard like a route's.
+#: Each skips a held or quarantined file and counts it.
 CLI_FREEZE_GUARDED: dict[str, tuple[str, ...]] = {
     # Clearing a v449 stamp can change what a held file's label shows.
     "scripts/reverify_identity_sources.py::main": (
@@ -1173,7 +1174,96 @@ CLI_FREEZE_GUARDED: dict[str, tuple[str, ...]] = {
         "services/privacy/identity_reverify.py::_on_unprotected_file",
         "services/privacy/purge_file_guard.py::unprotected_file_pred",
     ),
+    # Repoints a file's storage_path and clears its playback_path.
+    "scripts/split_shared_storage_paths.py::main": (
+        "scripts/split_shared_storage_paths.py::split_shared_storage_paths",
+        "services/privacy/purge_file_guard.py::unprotected_file_pred",
+    ),
+    # Writes match records and name suggestions onto existing speakers.
+    "scripts/batch_speaker_matching.py::batch_process_speaker_matches": (
+        "scripts/batch_speaker_matching.py::still_unprotected",
+        "scripts/batch_speaker_matching.py::_on_unprotected_file",
+        "services/privacy/purge_file_guard.py::unprotected_file_pred",
+    ),
+    # A re-run rewrites an injected file's row and segments. Its --purge goes through
+    # purge_media_file, which refuses a held file like every destroy.
+    "scripts/corpus_injection/__main__.py::main": (
+        "scripts/corpus_injection/injector.py::inject_meeting",
+        "scripts/corpus_injection/injector.py::_is_protected",
+        "services/privacy/purge_file_guard.py::protected_file_pred",
+    ),
 }
+
+_CLI_READS_ONLY = (
+    "measures, probes or checks and prints (or writes a local output file): no row or object of "
+    "any file is written"
+)
+
+#: Every other CLI module under ``app/scripts`` (keyed by module: some have no ``main``), with
+#: why it cannot change a held or quarantined file.
+CLI_EXEMPT: dict[str, str] = {
+    **{
+        f"scripts/{name}.py": _CLI_READS_ONLY
+        for name in (
+            "assert_inert",
+            "benchmark_redaction",
+            "benchmark_reranker_threads",
+            "build_password_blocklist",
+            "diarization_diag",
+            "fetch_backup",
+            "gpu_stage_vram_probe",
+            "probe_torch_thread_scope",
+            "whisper_batch_diag",
+        )
+    },
+    "scripts/backfill_tenant_stamps.py": (
+        "stamps organization_id on speaker_profile, speaker_collection and custom_vocabulary rows "
+        "and on organization profiles' voiceprint documents: a profile's or collection's own "
+        "tenant, no file's speaker, segment or object (like tenant_backfill_task)"
+    ),
+    "scripts/sweep_orphan_voiceprints.py": (
+        "writes no Postgres row; deletes only speaker-index documents with no speaker, profile or "
+        "cluster row, re-checked just before the delete. A held file's speakers have rows, so "
+        "their documents are never candidates"
+    ),
+    "scripts/reingest_minio.py": (
+        "registers new media_file rows for objects no row references; an object already "
+        "referenced is skipped, so no existing (held) file is changed"
+    ),
+    "scripts/verify_redaction.py": (
+        "seeds its own synthetic file, scans and deletes that file only"
+    ),
+    "scripts/demo_seed/__main__.py": (
+        "imports into a database scripts/demo/demo-reset.sh has just emptied (down -v), so there "
+        "is no existing file to change; its rows come from inject_meeting, which leaves a "
+        "protected file alone"
+    ),
+    "scripts/scale_dataset/__main__.py": (
+        "seeds synthetic rows into a database declared isolated (--fresh / --throwaway-db) and "
+        "refuses the dev stack's; it writes only rows it generates"
+    ),
+}
+
+
+def _cli_entry_modules() -> set[str]:
+    """``scripts/...`` modules under ``app/`` that run as a program (``__main__`` guard)."""
+    return {
+        p.relative_to(_APP_ROOT).as_posix()
+        for p in (_APP_ROOT / "scripts").rglob("*.py")
+        if 'if __name__ == "__main__"' in p.read_text(encoding="utf-8")
+    }
+
+
+def test_every_operator_cli_is_classified_for_the_freeze():
+    entries = _cli_entry_modules()
+    assert "scripts/reverify_identity_sources.py" in entries, "the CLI scan found nothing"
+    guarded = {key.partition("::")[0] for key in CLI_FREEZE_GUARDED}
+    assert not guarded & set(CLI_EXEMPT), "a CLI is both guarded and exempt"
+    assert all(reason.strip() for reason in CLI_EXEMPT.values())
+    unclassified = sorted(entries - guarded - set(CLI_EXEMPT))
+    assert not unclassified, f"unclassified CLI {unclassified}; {_HINT}"
+    stale = sorted((guarded | set(CLI_EXEMPT)) - entries)
+    assert not stale, f"stale CLI entry {stale}, no such program"
 
 
 def test_each_pinned_operator_cli_still_reaches_a_hold_guard():

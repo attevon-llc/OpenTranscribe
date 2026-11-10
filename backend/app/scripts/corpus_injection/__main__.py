@@ -249,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:  # a CLI, read top to bottom
                 force=args.force,
             )
             db.commit()
-            if record.action != "skipped":
+            if not record.action.startswith("skipped"):
                 record.index_task_id = dispatch_indexing(record, user_id, mode=args.dispatch)
                 # The transcription pipeline's `_dispatch_redaction` equivalent. Without
                 # it an injected transcript is withheld by the read gate for any owner

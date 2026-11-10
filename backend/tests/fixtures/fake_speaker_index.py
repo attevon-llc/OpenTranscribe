@@ -1,12 +1,14 @@
 """An in-memory speaker index for tests of the voiceprint delete paths (erasure and privacy purge).
 
 Evaluates the ``delete_by_query`` / ``count`` shapes those paths send (``match_all``, ``ids``, or
-a ``bool`` of ``term`` filters and ``exists`` / ``term`` must_nots) against documents, so a wrong
+a ``bool`` of ``term`` / ``range`` filters and ``exists`` / ``term`` / ``terms`` / ``ids``
+must_nots) against documents, so a wrong
 scope shows up as a document that survived or went, not only as a different request body. It
 raises on a clause it does not model, so a new query shape cannot slip through as "matched
 nothing".
 
-A document is ``{"id", "user_id"[, "organization_id"][, "document_type"]}``. ``id`` is the
+A document is ``{"id", "user_id"[, "organization_id"][, "document_type"][, "media_file_id"]
+[, "profile_id"][, "created_at"]}``. ``id`` is the
 OpenSearch ``_id`` (a speaker uuid, ``profile_<uuid>``, ``cluster_<uuid>``); a document with NO
 ``organization_id`` is how legacy and personal documents look, which is exactly what the
 purge-scope tests need to seed inconsistently.
@@ -14,6 +16,7 @@ purge-scope tests need to seed inconsistently.
 
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -35,6 +38,9 @@ class FakeOpenSearch:
         organization_id: int | None,
         document_type: str | None = None,
         media_file_id: int | None = None,
+        *,
+        profile_id: int | None = None,
+        created_at: datetime | None = None,
     ) -> None:
         doc: dict[str, Any] = {"id": doc_id, "user_id": user_id}
         if organization_id is not None:
@@ -43,6 +49,10 @@ class FakeOpenSearch:
             doc["document_type"] = document_type
         if media_file_id is not None:
             doc["media_file_id"] = media_file_id
+        if profile_id is not None:
+            doc["profile_id"] = profile_id
+        if created_at is not None:
+            doc["created_at"] = created_at.isoformat()
         self.docs.append(doc)
 
     def ids(self) -> set[str]:
@@ -60,6 +70,13 @@ class FakeOpenSearch:
         if "terms" in query:
             ((field, values),) = query["terms"].items()
             return bool(doc.get(field) in set(values))
+        if "range" in query:
+            ((field, bounds),) = query["range"].items()
+            assert set(bounds) == {"lte"}, f"unmodelled range {bounds}"
+            # A document without the field does not match a range (OpenSearch semantics).
+            return field in doc and datetime.fromisoformat(doc[field]) <= datetime.fromisoformat(
+                bounds["lte"]
+            )
         if "exists" in query:
             return bool(query["exists"]["field"] in doc)
         clause = query["bool"]

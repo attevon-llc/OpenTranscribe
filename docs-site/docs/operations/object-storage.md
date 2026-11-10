@@ -149,6 +149,11 @@ python -m app.scripts.split_shared_storage_paths            # counts only
 python -m app.scripts.split_shared_storage_paths --apply    # copy, repoint, build the index
 ```
 
+A recording under a legal hold or in quarantine is never repointed: it keeps the original key,
+and a second protected recording sharing that key is left as it is and counted in
+`skipped_protected` (the index stays skipped). Run the script again once the hold or quarantine
+ends.
+
 ### Complete IAM policy reference
 
 This section lists every S3 action the backend calls, derived from the code. A unit test

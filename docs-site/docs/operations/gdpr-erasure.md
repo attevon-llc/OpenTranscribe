@@ -114,7 +114,11 @@ search index is re-pointed at the new owner, so search and chat keep finding the
   and a profile photo keeps `avatars/<uploader id>/...`. Erasing the uploader's account later
   destroys only the objects of the files and profiles that erasure covers: it removes the whole
   `user_<id>/` and `avatars/<id>/` prefixes only when nothing under them belongs to another account
-  or is held, and otherwise each erased file's own directory, wherever its keys live.
+  or is held. Otherwise it removes each erased file's own directory, wherever its keys live, and
+  every other object under those prefixes except the surviving files' directories and the
+  surviving profiles' photos: objects no recording names (an old `user_<id>/youtube_<video id>/`
+  thumbnail, a directory a failed upload left, a replaced photo) are the subject's data too. The
+  receipt counts the same objects, and the same goes for unfinished uploads and the media mirror.
 
 ## The receipt
 

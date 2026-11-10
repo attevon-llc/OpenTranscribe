@@ -16,8 +16,11 @@ from typing import Any
 
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
+from app.services.erasure_receipt.types import ResidueSweep
 from app.services.erasure_receipt.types import avatar_prefixes
+from app.services.erasure_receipt.types import multipart_targets
 from app.services.erasure_receipt.types import object_prefixes
+from app.services.erasure_receipt.types import residue_sweeps
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
@@ -41,6 +44,17 @@ def erase_lockout(captured: Captured, errors: list[dict[str, Any]]) -> None:
         _fail(errors, "lockout", e)
 
 
+def residue_keys(client: Any, bucket: str, sweep: ResidueSweep) -> set[str]:
+    """Every key under ``sweep.prefix`` the sweep selects, including keys with only old versions."""
+    return {
+        str(obj.object_name)
+        for obj in client.list_objects(
+            bucket, prefix=sweep.prefix, recursive=True, include_version=True
+        )
+        if not getattr(obj, "is_dir", False) and sweep.selects(str(obj.object_name))
+    }
+
+
 def erase_object_prefixes(
     scope: ErasureScope, captured: Captured, errors: list[dict[str, Any]]
 ) -> None:
@@ -49,7 +63,8 @@ def erase_object_prefixes(
     The canonical per-file destroy removes the objects it knows by name; this removes what it
     does not (``user_<uid>/youtube_<id>/`` thumbnails, a rendition an older version wrote, noncurrent
     versions of either). A file a legal hold keeps is never touched, and a user prefix is only
-    removed whole when nothing under it survives the erasure (``Captured.whole_user_prefix``).
+    removed whole when nothing under it survives the erasure (``Captured.whole_user_prefix``);
+    otherwise every key under it except the surviving files' goes (``residue_sweeps``).
     """
     from app.core.config import settings
     from app.services.minio_service import minio_client
@@ -62,6 +77,13 @@ def erase_object_prefixes(
         except Exception as e:
             logger.exception("Erasure cleanup stage object_prefix failed")
             _fail(errors, "object_prefix", e)
+    for sweep in residue_sweeps(scope, captured):
+        try:
+            bucket = settings.MEDIA_BUCKET_NAME
+            remove_completely(minio_client, bucket, names=residue_keys(minio_client, bucket, sweep))
+        except Exception as e:
+            logger.exception("Erasure cleanup stage object_residue failed")
+            _fail(errors, "object_residue", e)
 
 
 def erase_derived_cache(captured: Captured, errors: list[dict[str, Any]]) -> None:
@@ -113,13 +135,16 @@ def abort_multipart(scope: ErasureScope, captured: Captured, errors: list[dict[s
     from app.services.minio_service import minio_client
     from app.services.multipart_upload import abort_upload
 
-    for prefix in object_prefixes(scope, captured):
+    for prefix, selects in multipart_targets(scope, captured):
         try:
             listing = minio_client._list_multipart_uploads(  # the SDK exposes no public listing
                 settings.MEDIA_BUCKET_NAME, prefix=prefix
             )
             for upload in listing.uploads or []:
-                if not abort_upload(str(upload.object_name), str(upload.upload_id)):
+                name = str(upload.object_name)
+                if selects is not None and not selects(name):
+                    continue
+                if not abort_upload(name, str(upload.upload_id)):
                     raise RuntimeError("abort refused")
         except Exception as e:
             logger.exception("Erasure cleanup stage multipart failed")
@@ -129,8 +154,11 @@ def abort_multipart(scope: ErasureScope, captured: Captured, errors: list[dict[s
 def erase_mirror(scope: ErasureScope, captured: Captured, errors: list[dict[str, Any]]) -> None:
     try:
         from app.services.media_mirror_erasure import erase_mirrored
+        from app.services.media_mirror_erasure import erase_mirrored_selected
 
         erase_mirrored(object_prefixes(scope, captured))
+        for sweep in residue_sweeps(scope, captured):
+            erase_mirrored_selected(sweep.prefix, sweep.selects)
     except Exception as e:
         logger.exception("Erasure cleanup stage mirror failed")
         _fail(errors, "mirror", e)

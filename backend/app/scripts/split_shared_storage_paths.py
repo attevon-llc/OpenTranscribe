@@ -6,6 +6,10 @@ server-side copy under ``user_<uid>/file_<fid>/<filename>``, its ``storage_path`
 and its (derived, regenerable) ``playback_path`` is cleared. One commit per row, so an
 interrupted run resumes. When nothing is left to split, the missing indexes are built.
 
+A file under a legal hold or in quarantine is frozen as it stands, so its row is never repointed:
+it keeps the original key (instead of the lowest id), and a second protected row in the same group
+is left sharing it and counted in ``skipped_protected``. Re-run once the hold or quarantine ends.
+
 Usage (inside a backend container)::
 
     python -m app.scripts.split_shared_storage_paths            # dry run: counts only
@@ -20,10 +24,35 @@ import argparse
 import json
 import logging
 import sys
+from typing import TYPE_CHECKING
 
 from sqlalchemy.exc import SQLAlchemyError
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 logger = logging.getLogger(__name__)
+
+
+def _protected_ids(db: Session, file_ids: list[int]) -> set[int]:
+    """The held or quarantined files among ``file_ids`` (``purge_file_guard``)."""
+    from app.models.media import MediaFile
+    from app.services.privacy.purge_file_guard import protected_file_pred
+
+    if not file_ids:
+        return set()
+    rows = db.query(MediaFile.id).filter(MediaFile.id.in_(file_ids), protected_file_pred())
+    return {int(r[0]) for r in rows}
+
+
+def _rows_to_split(ids: list[int], protected: set[int]) -> tuple[list[int], int]:
+    """The rows of one shared-key group to repoint, and how many protected rows must keep sharing.
+
+    The original key stays with the first protected row if there is one, else the lowest id.
+    """
+    held = [i for i in ids if i in protected]
+    keeper = held[0] if held else ids[0]
+    return [i for i in ids if i != keeper and i not in protected], max(len(held) - 1, 0)
 
 
 def split_shared_storage_paths(*, apply: bool) -> dict[str, int]:
@@ -35,21 +64,25 @@ def split_shared_storage_paths(*, apply: bool) -> dict[str, int]:
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
     from app.services.minio_service import minio_client
+    from app.services.privacy.purge_file_guard import unprotected_file_pred
     from app.utils.filename import get_safe_storage_filename
 
-    report = {"groups": 0, "rows_to_split": 0, "split": 0, "failed": 0}
+    report = {"groups": 0, "rows_to_split": 0, "split": 0, "failed": 0, "skipped_protected": 0}
     with session_scope() as db:
         groups = object_key_indexes.duplicate_groups(
             db.connection(), object_key_indexes.STORAGE_PATH
         )
+        protected = _protected_ids(db, [i for _, ids in groups for i in ids])
+    plan = [(key, _rows_to_split(ids, protected)) for key, ids in groups]
     report["groups"] = len(groups)
-    report["rows_to_split"] = sum(len(ids) - 1 for _, ids in groups)
+    report["rows_to_split"] = sum(len(split) for _, (split, _) in plan)
+    report["skipped_protected"] = sum(skipped for _, (_, skipped) in plan)
     if not apply:
         return report
 
     bucket = settings.MEDIA_BUCKET_NAME
-    for key, ids in groups:
-        for file_id in ids[1:]:
+    for key, (split, _) in plan:
+        for file_id in split:
             try:
                 with session_scope() as db:
                     row = (
@@ -62,12 +95,20 @@ def split_shared_storage_paths(*, apply: bool) -> dict[str, int]:
                 # The copy runs with no transaction open.
                 minio_client.copy_object(bucket, new_key, CopySource(bucket, key))
                 with session_scope() as db:
-                    db.query(MediaFile).filter(MediaFile.id == file_id).update(
-                        {"storage_path": new_key, "playback_path": None},
-                        synchronize_session=False,
+                    # Held or quarantined since the plan was read: leave the row as it stands.
+                    updated = (
+                        db.query(MediaFile)
+                        .filter(MediaFile.id == file_id, unprotected_file_pred())
+                        .update(
+                            {"storage_path": new_key, "playback_path": None},
+                            synchronize_session=False,
+                        )
                     )
                     db.commit()
-                report["split"] += 1
+                if updated:
+                    report["split"] += 1
+                else:
+                    report["skipped_protected"] += 1
             except Exception:
                 logger.error("Could not split media_file %s from %s", file_id, key, exc_info=True)
                 report["failed"] += 1

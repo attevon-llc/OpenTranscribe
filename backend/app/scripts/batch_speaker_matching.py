@@ -14,13 +14,18 @@ import logging
 from typing import Any
 
 import numpy as np
+from sqlalchemy import ColumnElement
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.db.base import get_db
+from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerMatch
 from app.services.embedding_mode_service import voiceprint_model_id
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.privacy.purge_file_guard import unprotected_file_pred
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_identity_rules import blocked_profile_names
@@ -33,6 +38,29 @@ from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _on_unprotected_file() -> ColumnElement[bool]:
+    """``Speaker`` of a file neither held nor quarantined (``purge_file_guard``)."""
+    return Speaker.media_file_id.in_(select(MediaFile.id).where(unprotected_file_pred()))
+
+
+def speakers_to_match(db: Session) -> tuple[list[Speaker], int]:
+    """The speakers this run may match, and how many it leaves out because their file is frozen.
+
+    A legal hold or a quarantine freezes a file's speakers as they stand (``hold_guard``): no match
+    record or name suggestion is written for them.
+    """
+    on_unprotected = _on_unprotected_file()
+    skipped = int(db.query(Speaker).filter(~on_unprotected).count())
+    return db.query(Speaker).filter(on_unprotected).all(), skipped
+
+
+def still_unprotected(db: Session, speaker: Speaker) -> bool:
+    """Whether the speaker's file is still neither held nor quarantined (a hold can land mid-run)."""
+    return bool(
+        db.query(Speaker.id).filter(Speaker.id == speaker.id, _on_unprotected_file()).first()
+    )
 
 
 def batch_process_speaker_matches() -> None:
@@ -52,8 +80,7 @@ def batch_process_speaker_matches() -> None:
         embedding_service = SpeakerEmbeddingService()
         matching_service = SpeakerMatchingService(db, embedding_service)
 
-        # Get all speakers with embeddings
-        speakers = db.query(Speaker).all()
+        speakers, skipped_protected = speakers_to_match(db)
 
         logger.info(f"Processing {len(speakers)} speakers for matches...")
 
@@ -68,6 +95,9 @@ def batch_process_speaker_matches() -> None:
         privacy.preload_files(int(s.media_file_id) for s in speakers)
 
         for speaker in speakers:
+            if not still_unprotected(db, speaker):
+                skipped_protected += 1
+                continue
             if not privacy.voiceprints(int(speaker.media_file_id)).enabled:
                 skipped_by_policy += 1
                 continue
@@ -145,6 +175,7 @@ def batch_process_speaker_matches() -> None:
         logger.info(f"Processed: {processed} speakers")
         logger.info(f"Matches found: {matches_found}")
         logger.info(f"Skipped by privacy policy: {skipped_by_policy} speakers")
+        logger.info(f"Skipped, file held or quarantined: {skipped_protected} speakers")
         if lookup_failures:
             logger.error(
                 f"OpenSearch lookup FAILED for {lookup_failures} speakers (not 'no match')"

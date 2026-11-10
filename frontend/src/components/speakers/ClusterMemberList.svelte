@@ -202,16 +202,16 @@
   .member-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .member-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: 4px;
-    font-size: 13px;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
     min-width: 0;
   }
 
@@ -220,7 +220,7 @@
   }
 
   .member-name {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     min-width: 80px;
     overflow: hidden;
@@ -241,15 +241,15 @@
 
   .member-confidence {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
   }
 
   .verified-badge {
-    font-size: 11px;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--success-color, #059669) 15%, transparent);
-    color: var(--success-color, #059669);
+    font-size: var(--font-size-2xs);
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--success-color) 15%, transparent);
+    color: var(--success-color);
   }
 
   /* .gender-icon / .gender-svg / .gender-confirmed-tick moved to GenderBadge.svelte
@@ -257,7 +257,7 @@
      needs its styles to live there, not here. */
 
   .gender-outlier {
-    background: color-mix(in srgb, var(--warning-color, #f59e0b) 8%, transparent);
+    background: color-mix(in srgb, var(--warning-color) 8%, transparent);
   }
 
   .split-selectable {
@@ -265,11 +265,11 @@
   }
 
   .split-selectable:hover {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
   }
 
   .split-selectable input[type="checkbox"] {
-    accent-color: var(--primary-color, #3b82f6);
+    accent-color: var(--primary-color);
     width: 16px;
     height: 16px;
     cursor: pointer;
@@ -282,12 +282,12 @@
     width: 24px;
     height: 24px;
     padding: 0;
-    border-radius: 50%;
-    border: 1px solid var(--border-color, #e5e7eb);
-    background: var(--card-background, #fff);
-    color: var(--text-secondary, #6b7280);
+    border-radius: var(--radius-round);
+    border: 1px solid var(--border-color);
+    background: var(--card-background);
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     flex-shrink: 0;
     box-shadow: none;
     font-size: 0;
@@ -295,37 +295,37 @@
 
   .member-play-btn:hover {
     background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color, #3b82f6);
+    color: var(--text-on-solid);
+    border-color: var(--primary-color);
     transform: none;
     box-shadow: none;
   }
 
   .member-play-btn.playing {
     background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color, #3b82f6);
+    color: var(--text-on-solid);
+    border-color: var(--primary-color);
   }
 
   /* Gender separator */
   .gender-separator {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 8px 4px;
-    margin-top: 8px;
-    border-top: 1px dashed var(--warning-color, #f59e0b);
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--warning-color, #f59e0b);
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2) var(--space-1);
+    margin-top: var(--space-2);
+    border-top: 1px dashed var(--warning-color);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--warning-color);
     flex-wrap: wrap;
     min-width: 0;
   }
 
   .separator-hint {
-    font-weight: 400;
-    font-size: 11px;
-    color: var(--text-secondary, #9ca3af);
+    font-weight: var(--font-weight-regular);
+    font-size: var(--font-size-2xs);
+    color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -333,16 +333,16 @@
   }
 
   .majority-separator {
-    padding: 6px 8px 2px;
-    margin-top: 4px;
-    border-top: 1px solid var(--border-color, #e5e7eb);
-    font-size: 12px;
-    color: var(--text-secondary, #9ca3af);
+    padding: var(--space-1-5) var(--space-2) var(--space-0-5);
+    margin-top: var(--space-1);
+    border-top: 1px solid var(--border-color);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
   }
 
   .outlier-loading {
-    padding: 6px 8px;
-    font-size: 12px;
+    padding: var(--space-1-5) var(--space-2);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-style: italic;
   }
@@ -350,73 +350,73 @@
   /* Outlier badges */
   .outlier-badge {
     font-size: 10px;
-    font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 8px;
+    font-weight: var(--font-weight-semibold);
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-lg);
     white-space: nowrap;
   }
 
   .outlier-badge-red {
-    background: color-mix(in srgb, var(--error-color, #ef4444) 15%, transparent);
-    color: var(--error-color, #ef4444);
+    background: color-mix(in srgb, var(--error-color) 15%, transparent);
+    color: var(--error-color);
   }
 
   .outlier-badge-yellow {
-    background: color-mix(in srgb, var(--warning-color, #f59e0b) 15%, transparent);
-    color: var(--warning-color, #f59e0b);
+    background: color-mix(in srgb, var(--warning-color) 15%, transparent);
+    color: var(--warning-color);
   }
 
   .outlier-badge-green {
-    background: color-mix(in srgb, var(--success-color, #10b981) 15%, transparent);
-    color: var(--success-color, #10b981);
+    background: color-mix(in srgb, var(--success-color) 15%, transparent);
+    color: var(--success-color);
   }
 
   /* Mode banners and actions */
   .mode-banner {
-    padding: 8px 12px;
-    background: var(--color-warning-bg, rgba(245, 158, 11, 0.1));
-    border: 1px solid var(--color-warning-border, rgba(245, 158, 11, 0.3));
-    border-radius: 6px;
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: var(--warning-color, #f59e0b);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--warning-color);
   }
 
   .mode-actions {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding-bottom: 8px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    gap: var(--space-2);
+    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border-color);
   }
 
   .btn-cancel {
-    padding: 6px 14px;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 8px;
-    background: var(--card-background, #fff);
-    color: var(--text-color, #111827);
+    padding: var(--space-1-5) var(--space-3-5);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--card-background);
+    color: var(--text-color);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     box-shadow: none;
   }
 
   .btn-cancel:hover {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }
 
   .btn-confirm {
-    padding: 6px 14px;
+    padding: var(--space-1-5) var(--space-3-5);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     box-shadow: none;
   }
 
@@ -433,49 +433,49 @@
 
   @media (max-width: 768px) {
     .member-row {
-      gap: 6px;
-      padding: 6px 4px;
-      font-size: 12px;
+      gap: var(--space-1-5);
+      padding: var(--space-1-5) var(--space-1);
+      font-size: var(--font-size-xs);
     }
 
     .member-name {
       min-width: 60px;
       max-width: 120px;
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
 
     .member-confidence {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
     }
 
     .outlier-badge {
       font-size: 9px;
-      padding: 1px 4px;
+      padding: 1px var(--space-1);
     }
 
     .verified-badge {
       font-size: 10px;
-      padding: 1px 4px;
+      padding: 1px var(--space-1);
     }
 
     .mode-banner {
-      padding: 6px 8px;
-      font-size: 12px;
+      padding: var(--space-1-5) var(--space-2);
+      font-size: var(--font-size-xs);
     }
 
     .mode-actions {
-      gap: 6px;
+      gap: var(--space-1-5);
     }
 
     .btn-cancel,
     .btn-confirm {
-      padding: 5px 10px;
-      font-size: 12px;
+      padding: 5px var(--space-2-5);
+      font-size: var(--font-size-xs);
     }
 
     .gender-separator {
-      font-size: 11px;
-      gap: 4px;
+      font-size: var(--font-size-2xs);
+      gap: var(--space-1);
     }
 
     .separator-hint {

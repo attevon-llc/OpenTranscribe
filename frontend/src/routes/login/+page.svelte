@@ -1088,8 +1088,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1.5rem 0;
+    gap: var(--space-3);
+    padding: var(--space-6) 0;
     color: var(--text-light);
     font-size: 0.9rem;
   }
@@ -1100,28 +1100,28 @@
     align-items: center;
     min-height: 100vh;
     min-height: 100dvh;
-    padding: 1rem;
+    padding: var(--space-4);
     background-color: var(--background-color);
   }
 
   .auth-card {
     background-color: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 400px;
-    padding: 2rem;
+    padding: var(--space-8);
   }
 
   .auth-header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .auth-header h1 {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .auth-header p {
@@ -1130,55 +1130,55 @@
   }
 
   .auth-header p.session-ended-notice {
-    margin-top: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    margin-top: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
   }
 
   .auth-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-group label {
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .form-group input {
-    font-size: 1rem;
+    font-size: var(--font-size-base);
   }
 
   .auth-button {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: 0.6rem 1.2rem;
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .auth-button:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
     transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .auth-button:active:not(:disabled) {
@@ -1194,9 +1194,9 @@
   /* Shown when the deployment advertises no usable sign-in method at all. */
   .no-auth-methods {
     margin: 0;
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
     font-size: 0.9rem;
@@ -1204,7 +1204,7 @@
   }
 
   .auth-links {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
     text-align: center;
   }
 
@@ -1216,7 +1216,7 @@
   .auth-link {
     color: var(--primary-on-surface);
     text-decoration: none;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .auth-link:hover {
@@ -1225,7 +1225,7 @@
 
   .forgot-password-row {
     text-align: right;
-    margin-top: -0.5rem;
+    margin-top: calc(-1 * var(--space-2));
   }
 
   .forgot-password-link {
@@ -1243,41 +1243,41 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .toggle-password {
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-light);
     display: flex;
     align-items: center;
-    border-radius: 4px;
-    transition: background-color 0.2s;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--duration-base);
   }
 
   .toggle-password:hover {
-    background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
+    background-color: var(--surface-hover);
   }
 
   .field-error {
     color: var(--error-color);
     font-size: 0.85rem;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   .success-message {
     background-color: var(--success-color-light);
     color: var(--success-color);
-    padding: 0.75rem;
-    border-radius: 4px;
+    padding: var(--space-3);
+    border-radius: var(--radius-sm);
     border: 1px solid rgba(34, 197, 94, 0.2);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-weight: 500;
+    gap: var(--space-2);
+    font-weight: var(--font-weight-medium);
   }
 
   .success-message svg {
@@ -1287,21 +1287,21 @@
 
   .auth-logo {
     text-align: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .auth-logo .logo-banner {
     height: 60px;
     width: auto;
     object-fit: contain;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   /* Divider for external auth */
   .auth-divider {
     display: flex;
     align-items: center;
-    margin: 1.5rem 0;
+    margin: var(--space-6) 0;
   }
 
   .auth-divider::before,
@@ -1313,7 +1313,7 @@
   }
 
   .auth-divider span {
-    padding: 0 1rem;
+    padding: 0 var(--space-4);
     color: var(--text-light);
     font-size: 0.85rem;
     white-space: nowrap;
@@ -1323,28 +1323,28 @@
   .external-auth-buttons {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .external-auth-button {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     width: 100%;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .external-auth-button:hover:not(:disabled) {
-    background-color: var(--surface-hover, rgba(0, 0, 0, 0.03));
+    background-color: var(--surface-hover);
     border-color: var(--primary-color);
   }
 
@@ -1387,24 +1387,24 @@
   /* Account-lifecycle / email-verification panels. Colours come from theme vars
      so light and dark stay in parity. */
   .lifecycle-panel h2 {
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     text-align: center;
   }
 
   .lifecycle-message {
     color: var(--text-light);
     font-size: 0.9rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
     text-align: center;
   }
 
   .lifecycle-hint {
-    margin-top: 1rem;
-    padding: 0.75rem;
+    margin-top: var(--space-4);
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
     font-size: 0.85rem;
@@ -1412,16 +1412,16 @@
   }
 
   .password-policy {
-    padding: 0.75rem;
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
     font-size: 0.8rem;
   }
 
   .password-policy ul {
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     padding-left: 1.1rem;
   }
 
@@ -1435,20 +1435,20 @@
   }
 
   .mfa-icon {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     color: var(--primary-on-surface);
   }
 
   .mfa-form h2 {
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .mfa-description {
     color: var(--text-light);
     font-size: 0.9rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .mfa-form .form-group {
@@ -1457,16 +1457,16 @@
 
   .mfa-form input {
     text-align: center;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     letter-spacing: 0.25em;
     font-family: monospace;
   }
 
   .mfa-options {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .text-button {
@@ -1475,12 +1475,12 @@
     color: var(--primary-on-surface);
     font-size: 0.9rem;
     cursor: pointer;
-    padding: 0.5rem;
-    transition: color 0.2s;
+    padding: var(--space-2);
+    transition: color var(--duration-base);
   }
 
   .text-button:hover {
-    color: var(--primary-color-dark, #2563eb);
+    color: var(--primary-color-dark);
     text-decoration: underline;
   }
 
@@ -1498,23 +1498,23 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.25rem;
+    gap: var(--space-5);
     min-height: 100vh;
     min-height: 100dvh;
-    background: var(--bg-primary, #f8fafc);
+    background: var(--bg-primary);
   }
 
   .login-success-logo {
     width: 64px;
     height: 64px;
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     animation: login-success-pulse 1.5s ease-in-out infinite;
   }
 
   .login-success-text {
     color: var(--text-light);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     margin: 0;
   }
 

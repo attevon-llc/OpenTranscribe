@@ -17,11 +17,11 @@
   .badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
+    gap: var(--space-1);
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     white-space: nowrap;
     border: 1px solid transparent;
@@ -32,15 +32,15 @@
     color: var(--text-secondary);
   }
   .badge-success {
-    background: rgba(var(--success-color-rgb, 34, 197, 94), 0.12);
+    background: rgba(var(--success-color-rgb), 0.12);
     color: var(--success-text);
   }
   .badge-warning {
-    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.14);
+    background: rgba(var(--warning-color-rgb), 0.14);
     color: var(--warning-text);
   }
   .badge-error {
-    background: rgba(var(--error-color-rgb, 239, 68, 68), 0.12);
+    background: rgba(var(--error-color-rgb), 0.12);
     color: var(--error-text);
   }
   .badge-info {

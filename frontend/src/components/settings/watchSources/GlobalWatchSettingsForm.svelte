@@ -87,7 +87,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin: 8px 0 12px;
+    margin: var(--space-2) 0 var(--space-3);
   }
   .section-head h4 {
     margin: 0;
@@ -95,22 +95,22 @@
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    padding-top: 0.5rem;
+    padding-top: var(--space-2);
     border-top: 1px solid var(--border-color);
   }
   .global-settings,
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
   }
   .form-row {
     display: flex;
-    gap: 12px;
+    gap: var(--space-3);
   }
   .form-group {
     flex: 1;
-    gap: 4px;
+    gap: var(--space-1);
   }
   .form-group label {
     font-size: 0.85rem;
@@ -127,7 +127,7 @@
   .checkbox-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     font-size: 0.9rem;
     cursor: pointer;
   }

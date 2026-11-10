@@ -271,8 +271,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 6px;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-1-5);
     min-height: 32px;
   }
 
@@ -290,17 +290,17 @@
     padding: 0;
     background: none;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
     cursor: pointer;
     flex-shrink: 0;
     transition:
-      background 0.15s ease,
-      color 0.15s ease;
+      background var(--duration-fast) ease,
+      color var(--duration-fast) ease;
   }
 
   .jump-to-playhead-button:hover:not(:disabled) {
-    background: var(--button-hover, var(--hover-color));
+    background: var(--button-hover);
     color: var(--text-color);
   }
 

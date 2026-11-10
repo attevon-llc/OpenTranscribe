@@ -206,49 +206,49 @@
   .file-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .drop-zone {
-    padding: 2.5rem 2rem;
+    padding: var(--space-10) var(--space-8);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     border: 2px dashed var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background-color: var(--surface-color);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     text-align: center;
   }
 
   .drop-zone:hover,
   .drop-zone.active {
     border-color: var(--primary-color);
-    background-color: rgba(59, 130, 246, 0.05);
+    background-color: rgba(var(--accent-rgb), 0.05);
   }
 
   :global([data-theme='dark']) .drop-zone:hover,
   :global([data-theme='dark']) .drop-zone.active {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
   }
 
   .drop-zone svg {
     width: 2.5rem;
     height: 2.5rem;
     color: var(--primary-on-surface);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .upload-text {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     color: var(--text-color);
-    font-size: 0.9375rem;
+    font-size: var(--font-size-body);
     line-height: 1.5;
   }
 
@@ -260,8 +260,8 @@
   .multi-file-hint {
     color: var(--primary-on-surface);
     font-size: 0.8em;
-    font-weight: 500;
-    margin-top: 2px;
+    font-weight: var(--font-weight-medium);
+    margin-top: var(--space-0-5);
   }
 
   .supported-formats {
@@ -270,40 +270,40 @@
 
   .supported-formats p {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-secondary);
   }
 
   .supported-formats .formats-heading {
-    font-weight: 600;
-    margin-bottom: 0.125rem;
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--space-0-5);
   }
 
   .supported-formats .formats-label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .supported-formats .formats-help {
-    margin-top: 0.25rem;
-    font-size: 0.75rem;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
   }
 
   .selected-file {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--surface-color);
   }
 
   .file-info {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     overflow: hidden;
   }
 
@@ -313,16 +313,16 @@
   }
 
   .file-name {
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
     margin: 0;
     word-break: break-all;
   }
 
   .file-size {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin: 0.125rem 0 0 0;
+    margin: var(--space-0-5) 0 0 0;
   }
 
   .file-remove {
@@ -338,14 +338,14 @@
     padding: 0;
     border: none;
     background: transparent;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     color: var(--text-secondary);
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
   }
 
   .file-remove:hover {
-    background: var(--button-hover, #f1f5f9);
+    background: var(--button-hover);
     color: #ef4444;
   }
 </style>

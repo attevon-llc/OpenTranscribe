@@ -76,26 +76,26 @@
 </div>
 
 <style>
-  .step-model { display: flex; flex-direction: column; gap: 1rem; }
-  .step-hint { font-size: 0.8125rem; color: var(--text-secondary); margin: 0; line-height: 1.5; }
+  .step-model { display: flex; flex-direction: column; gap: var(--space-4); }
+  .step-hint { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 0; line-height: 1.5; }
 
-  .field { display: flex; flex-direction: column; gap: 0.375rem; }
-  .field label { font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); display: flex; flex-direction: column; gap: 0.125rem; }
-  .hint { font-size: 0.6875rem; font-weight: 400; color: var(--text-secondary); }
+  .field { display: flex; flex-direction: column; gap: var(--space-1-5); }
+  .field label { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); display: flex; flex-direction: column; gap: var(--space-0-5); }
+  .hint { font-size: var(--font-size-2xs); font-weight: var(--font-weight-regular); color: var(--text-secondary); }
 
-  .model-managed { margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
-  .model-note { margin: 0; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3; }
+  .model-managed { margin: 0; font-size: var(--font-size-sm); color: var(--text-secondary); }
+  .model-note { margin: 0; font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.3; }
 
   /* Section */
   .section {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
   }
 
   .section-title {
     margin: 0;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
@@ -107,20 +107,20 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     cursor: pointer;
   }
 
   .toggle-text {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
   }
 
   .toggle-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
 
@@ -141,7 +141,7 @@
     inset: 0;
     background: var(--border-color);
     border-radius: 20px;
-    transition: background 0.2s ease;
+    transition: background var(--duration-base) ease;
   }
 
   .toggle-slider::before {
@@ -152,10 +152,10 @@
     left: 2px;
     bottom: 2px;
     background: white;
-    border-radius: 50%;
-    transition: transform 0.2s ease;
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base) ease;
   }
 
-  .toggle-switch input:checked + .toggle-slider { background: var(--primary-color, var(--primary-color)); }
+  .toggle-switch input:checked + .toggle-slider { background: var(--primary-color); }
   .toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
 </style>

@@ -143,28 +143,28 @@
   .shares-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .list-title {
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-    margin: 0 0 8px 0;
+    margin: 0 0 var(--space-2) 0;
   }
 
   .share-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 0.5rem 0.6rem;
-    border-radius: 6px;
-    transition: background-color 0.15s ease;
+    gap: var(--space-2);
+    padding: var(--space-2) 0.6rem;
+    border-radius: var(--radius-md);
+    transition: background-color var(--duration-fast) ease;
   }
 
   .share-row:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.03));
+    background-color: var(--hover-color);
   }
 
   .share-row.updating {
@@ -174,7 +174,7 @@
   .share-target {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     min-width: 0;
     flex: 1;
   }
@@ -192,7 +192,7 @@
 
   .target-name {
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
@@ -200,7 +200,7 @@
   }
 
   .target-email {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -210,14 +210,14 @@
   .share-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     flex-shrink: 0;
   }
 
   .permission-label {
     font-size: 0.8rem;
     color: var(--text-secondary);
-    padding: 0.35rem 0.5rem;
+    padding: 0.35rem var(--space-2);
   }
 
   .revoke-btn {
@@ -228,16 +228,16 @@
     height: 28px;
     padding: 0;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
   }
 
   .revoke-btn:hover:not(:disabled) {
-    border-color: var(--error-color, #ef4444);
-    color: var(--error-color, #ef4444);
+    border-color: var(--error-color);
+    color: var(--error-color);
     background: rgba(239, 68, 68, 0.08);
   }
 

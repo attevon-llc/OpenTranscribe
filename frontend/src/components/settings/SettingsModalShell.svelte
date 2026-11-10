@@ -60,22 +60,22 @@
 
 <style>
   .sidebar-skeleton {
-    padding: 0.75rem 0.5rem;
+    padding: var(--space-3) var(--space-2);
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .search-skeleton,
   .heading-skeleton,
   .row-skeleton,
   .title-skeleton {
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: linear-gradient(
       90deg,
-      var(--bg-tertiary, #e8e8e8) 25%,
-      var(--bg-secondary, #f0f0f0) 50%,
-      var(--bg-tertiary, #e8e8e8) 75%
+      var(--bg-tertiary) 25%,
+      var(--bg-secondary) 50%,
+      var(--bg-tertiary) 75%
     );
     background-size: 200% 100%;
     animation: shell-pulse 1.5s ease-in-out infinite;
@@ -101,24 +101,24 @@
   .group-skeleton {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .heading-skeleton {
     width: 40%;
     height: 10px;
-    margin: 0 0.75rem 0.25rem;
+    margin: 0 var(--space-3) var(--space-1);
   }
 
   .row-skeleton {
     height: 26px;
-    margin: 0 0.5rem;
+    margin: 0 var(--space-2);
   }
 
   .content-skeleton {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .title-skeleton {

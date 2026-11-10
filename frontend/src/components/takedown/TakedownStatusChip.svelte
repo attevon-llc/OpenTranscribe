@@ -11,8 +11,8 @@
 <style>
   .chip {
     display: inline-block;
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-pill);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
     white-space: nowrap;

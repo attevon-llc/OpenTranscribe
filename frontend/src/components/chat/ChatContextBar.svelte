@@ -158,7 +158,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 
   .chip {
@@ -166,7 +166,7 @@
     align-items: center;
     gap: 0.3rem;
     padding: 0.22rem 0.6rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     color: var(--text-secondary);
@@ -178,21 +178,21 @@
     border-color: rgba(var(--primary-color-rgb), 0.35);
     background-color: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .chip-off {
-    border-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.5);
-    background-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.12);
+    border-color: rgba(var(--warning-color-rgb), 0.5);
+    background-color: rgba(var(--warning-color-rgb), 0.12);
     color: var(--text-color);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .chip-speaker {
     border-color: rgba(var(--primary-color-rgb), 0.35);
     background-color: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     max-width: 16rem;
   }
 
@@ -212,7 +212,7 @@
     padding: 0;
     margin: 0 -0.15rem 0 0.05rem;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: none;
     color: inherit;
     font-size: 0.9rem;
@@ -230,13 +230,13 @@
   }
 
   .chip-estimate {
-    border-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.5);
+    border-color: rgba(var(--warning-color-rgb), 0.5);
     color: var(--text-color);
   }
 
   .chip-estimate.over {
-    border-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.5);
-    color: var(--error-color, #dc3545);
+    border-color: rgba(var(--error-color-rgb), 0.5);
+    color: var(--error-color);
   }
 
   .add-context,
@@ -246,7 +246,7 @@
     gap: 0.3rem;
     padding: 0.22rem 0.55rem;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
     font-size: 0.76rem;

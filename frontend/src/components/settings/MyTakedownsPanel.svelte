@@ -91,15 +91,15 @@
   .mine {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .state-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    border-radius: 6px;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
     background: var(--bg-secondary);
     font-size: var(--font-size-sm);
   }
@@ -114,13 +114,13 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .card {
-    padding: 0.875rem;
+    padding: var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--bg-color);
   }
 
@@ -128,14 +128,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
   }
 
   dl {
     display: grid;
     grid-template-columns: max-content 1fr;
-    gap: 0.25rem 1rem;
+    gap: var(--space-1) var(--space-4);
     margin: 0;
     font-size: var(--font-size-sm);
   }
@@ -153,7 +153,7 @@
   }
 
   .dispute {
-    margin: 0.75rem 0 0;
+    margin: var(--space-3) 0 0;
     font-size: var(--font-size-sm);
     overflow-wrap: anywhere;
   }

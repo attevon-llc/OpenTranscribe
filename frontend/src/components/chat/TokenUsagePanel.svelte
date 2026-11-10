@@ -68,7 +68,7 @@
 
 <style>
   .token-panel {
-    padding: 0.25rem 0;
+    padding: var(--space-1) 0;
   }
 
   .token-toggle {
@@ -78,7 +78,7 @@
     padding: 0.2rem 0.4rem;
     margin-left: -0.4rem;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
     font-size: 0.74rem;
@@ -93,16 +93,16 @@
   .dot {
     width: 7px;
     height: 7px;
-    border-radius: 50%;
-    background-color: var(--success-color, #22c55e);
+    border-radius: var(--radius-round);
+    background-color: var(--success-color);
   }
 
   .dot.near {
-    background-color: var(--warning-color, #ffc107);
+    background-color: var(--warning-color);
   }
 
   .dot.over {
-    background-color: var(--error-color, #dc3545);
+    background-color: var(--error-color);
   }
 
   .token-total {
@@ -121,7 +121,7 @@
     margin-top: 0.45rem;
     padding: 0.6rem 0.7rem;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--surface-color);
   }
 
@@ -135,20 +135,20 @@
   .warning {
     margin: 0;
     font-size: 0.76rem;
-    color: var(--warning-color, #ffc107);
+    color: var(--warning-color);
   }
 
   .warning.over {
-    color: var(--error-color, #dc3545);
-    font-weight: 600;
+    color: var(--error-color);
+    font-weight: var(--font-weight-semibold);
   }
 
   .token-breakdown {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 0.15rem 0.75rem;
+    gap: 0.15rem var(--space-3);
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   dt {

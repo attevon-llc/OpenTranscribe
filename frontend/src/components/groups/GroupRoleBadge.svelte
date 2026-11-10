@@ -19,10 +19,10 @@
   .role-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     line-height: 1.25rem;
     white-space: nowrap;
   }
@@ -33,13 +33,13 @@
   }
 
   .role-admin {
-    background-color: rgba(59, 130, 246, 0.12);
+    background-color: rgba(var(--accent-rgb), 0.12);
     color: #1e40af;
   }
 
   .role-member {
-    background-color: var(--background-color, #f3f4f6);
-    color: var(--text-secondary, #6b7280);
+    background-color: var(--background-color);
+    color: var(--text-secondary);
   }
 
   :global([data-theme='dark']) .role-owner {
@@ -48,7 +48,7 @@
   }
 
   :global([data-theme='dark']) .role-admin {
-    background-color: rgba(59, 130, 246, 0.15);
+    background-color: rgba(var(--accent-rgb), 0.15);
     color: #93c5fd;
   }
 

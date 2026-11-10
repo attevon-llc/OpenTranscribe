@@ -403,11 +403,11 @@
   }
 
   .modal-title {
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin: 0;
-    margin-right: 1.5rem;
+    margin-right: var(--space-6);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -417,18 +417,18 @@
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .copy-button-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.85rem;
   }
@@ -443,9 +443,9 @@
     background: none;
     border: none;
     padding: 0.15rem 0.35rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
     cursor: pointer;
     white-space: nowrap;
@@ -465,8 +465,8 @@
     z-index: 5;
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.6rem 1.5rem;
+    gap: var(--space-4);
+    padding: 0.6rem var(--space-6);
     border-bottom: 1px solid var(--border-color);
     background-color: var(--bg-secondary);
     flex-shrink: 0;
@@ -474,7 +474,7 @@
   }
 
   .search-query-echo {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -484,7 +484,7 @@
 
   .match-legend {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
     font-size: 0.8rem;
   }
 
@@ -506,7 +506,7 @@
   .nav-controls {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-left: auto;
   }
 
@@ -519,8 +519,8 @@
   .nav-btn {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 0.25rem;
+    border-radius: var(--radius-sm);
+    padding: var(--space-1);
     cursor: pointer;
     color: var(--text-secondary);
     display: flex;
@@ -538,7 +538,7 @@
   .modal-content-wrapper {
     flex: 1;
     overflow: auto;
-    padding: 1.5rem;
+    padding: var(--space-6);
   }
 
   .loading-container,
@@ -548,16 +548,16 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 3rem;
+    padding: var(--space-12);
     text-align: center;
-    gap: 1rem;
+    gap: var(--space-4);
     color: var(--text-secondary);
   }
 
   .no-transcript h3 {
     margin: 0;
     color: var(--text-primary);
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
   }
 </style>

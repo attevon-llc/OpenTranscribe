@@ -185,7 +185,7 @@
   .settings-section {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .section-description {
@@ -210,12 +210,12 @@
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .toggle-label {
     font-size: 0.87rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     cursor: pointer;
   }
@@ -238,9 +238,9 @@
   .toggle-slider {
     position: absolute;
     inset: 0;
-    background-color: var(--border-color, #d1d5db);
+    background-color: var(--border-color);
     border-radius: 1.5rem;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
   }
 
   .toggle-slider::before {
@@ -251,8 +251,8 @@
     left: 0.1875rem;
     bottom: 0.1875rem;
     background-color: white;
-    border-radius: 50%;
-    transition: transform 0.2s;
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base);
   }
 
   .toggle-switch input:checked + .toggle-slider {
@@ -270,7 +270,7 @@
 
   .field-label {
     font-size: 0.87rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -284,7 +284,7 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .hint {
@@ -295,13 +295,13 @@
 
   .char-count {
     flex-shrink: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
 
   .standalone-hint {
-    margin-top: -0.75rem;
+    margin-top: calc(-1 * var(--space-3));
   }
 
   input[type='number'] {

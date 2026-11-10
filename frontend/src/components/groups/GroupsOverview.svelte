@@ -235,7 +235,7 @@
   .groups-overview {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .overview-header {
@@ -246,23 +246,23 @@
   .btn-create {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     padding: 0.6rem 1.2rem;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-create:hover {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-create:active {
@@ -273,10 +273,10 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
-    padding: 2rem 0;
+    gap: var(--space-3);
+    padding: var(--space-8) 0;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .loading-state p {
@@ -285,32 +285,32 @@
 
   .error-state {
     text-align: center;
-    padding: 1.5rem 0;
-    color: var(--danger-color, #dc2626);
-    font-size: 0.8125rem;
+    padding: var(--space-6) 0;
+    color: var(--danger-color);
+    font-size: var(--font-size-sm);
   }
 
   .error-state p {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
   }
 
   .btn-retry {
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-retry:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-retry:active:not(:disabled) {
@@ -332,8 +332,8 @@
 
   .search-input {
     width: 100%;
-    padding: 0.5rem 2rem 0.5rem 2.25rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-8) var(--space-2) 2.25rem;
+    font-size: var(--font-size-sm);
     box-sizing: border-box;
   }
 
@@ -350,13 +350,13 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.15s;
+    transition: color var(--duration-fast);
   }
 
   .search-clear:hover {
@@ -365,9 +365,9 @@
 
   .no-results {
     text-align: center;
-    padding: 1rem 0;
+    padding: var(--space-4) 0;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .no-results p {
@@ -377,12 +377,12 @@
   .groups-section {
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
   }
 
   .groups-section-title {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
@@ -390,19 +390,19 @@
   .groups-grid {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .group-card {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
-    padding: 0.75rem 1rem;
+    gap: var(--space-1-5);
+    padding: var(--space-3) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     text-align: left;
     width: 100%;
   }
@@ -421,12 +421,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .card-name {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
@@ -435,7 +435,7 @@
 
   .card-description {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.4;
     display: -webkit-box;
@@ -449,19 +449,19 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .card-members {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
+    gap: var(--space-1);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
   .card-date {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;

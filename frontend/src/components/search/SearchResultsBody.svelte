@@ -203,7 +203,7 @@
   .results-layout {
     display: grid;
     grid-template-columns: minmax(0, 44rem);
-    gap: 2rem;
+    gap: var(--space-8);
     align-items: start;
   }
 
@@ -220,7 +220,7 @@
   }
 
   .aside-inner.just-pinned {
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     animation: pinned-pulse 0.6s ease-out;
   }
 
@@ -242,11 +242,11 @@
   .results-toolbar {
     display: flex;
     justify-content: flex-end;
-    margin: -0.25rem 0 0.25rem;
+    margin: calc(-1 * var(--space-1)) 0 var(--space-1);
   }
 
   .text-btn {
-    padding: 0.125rem 0;
+    padding: var(--space-0-5) 0;
     background: none;
     border: none;
     /* form-elements.css styles every bare <button> with a drop shadow and a hover
@@ -267,25 +267,25 @@
   .text-btn:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 
   .summary-results-section {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .section-info {
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    margin: 0.25rem 0 0.5rem;
+    margin: var(--space-1) 0 var(--space-2);
   }
 
   .summary-unavailable-notice {
-    padding: 1rem;
-    border-radius: 8px;
-    background: var(--warning-bg, #fef3c7);
-    border: 1px solid var(--warning-border, #f59e0b);
-    margin-bottom: 0.75rem;
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    margin-bottom: var(--space-3);
   }
 
   .summary-results-list,
@@ -296,7 +296,7 @@
   }
 
   .quality-notice-slot {
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .state-container {
@@ -304,13 +304,13 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 4rem 2rem;
+    padding: var(--space-16) var(--space-8);
     text-align: center;
   }
 
   .state-container svg {
     color: var(--text-secondary);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .empty-icon {
@@ -321,7 +321,7 @@
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    margin: 0 0 0.375rem;
+    margin: 0 0 var(--space-1-5);
   }
 
   .state-hint {
@@ -331,11 +331,11 @@
   }
 
   .no-keyword-notice {
-    padding: 12px 16px;
-    margin-bottom: 12px;
-    background: var(--color-warning-bg, #fef3c7);
-    color: var(--color-warning-text, #92400e);
-    border-radius: 8px;
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-3);
+    background: var(--color-warning-bg);
+    color: var(--color-warning-text);
+    border-radius: var(--radius-lg);
     font-size: var(--font-size-sm);
   }
 

@@ -240,7 +240,7 @@
   .email-form {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
   .modal-title {
     margin: 0;
@@ -249,14 +249,14 @@
   .experimental-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    margin-left: 8px;
+    gap: var(--space-1);
+    margin-left: var(--space-2);
     font-size: 0.68rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    padding: 2px 8px;
-    border-radius: 10px;
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-xl);
     background: rgba(234, 179, 8, 0.15);
     color: #b45309;
   }
@@ -266,12 +266,12 @@
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
     flex: 1;
   }
   .form-row {
     display: flex;
-    gap: 12px;
+    gap: var(--space-3);
   }
   .form-group label {
     font-size: 0.85rem;
@@ -283,14 +283,14 @@
     color: var(--text-secondary);
     line-height: 1.5;
     margin: 0;
-    padding: 8px 10px;
+    padding: var(--space-2) var(--space-2-5);
     background: var(--button-hover);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
   .checkbox-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     font-size: 0.9rem;
     cursor: pointer;
   }

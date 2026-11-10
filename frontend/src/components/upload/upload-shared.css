@@ -6,13 +6,13 @@
 .step-collections {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 /* ── Hint text ── */
 .step-hint {
-  font-size: 0.8125rem;
-  color: var(--text-secondary, #64748b);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
   margin: 0;
   line-height: 1.5;
 }
@@ -21,18 +21,18 @@
 .previous-banner {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-  background: rgba(59, 130, 246, 0.06);
-  border: 1px solid rgba(59, 130, 246, 0.15);
-  font-size: 0.75rem;
-  color: var(--text-secondary, #64748b);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgba(var(--accent-rgb), 0.06);
+  border: 1px solid rgba(var(--accent-rgb), 0.15);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
 }
 
 :global([data-theme='dark']) .previous-banner {
-  background: rgba(59, 130, 246, 0.08);
-  border-color: rgba(59, 130, 246, 0.2);
+  background: rgba(var(--accent-rgb), 0.08);
+  border-color: rgba(var(--accent-rgb), 0.2);
 }
 
 .previous-banner-text {
@@ -40,57 +40,57 @@
 }
 
 .previous-banner-clear {
-  padding: 0.125rem 0.5rem;
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 4px;
-  background: var(--surface-color, white);
-  color: var(--text-secondary, #64748b);
-  font-size: 0.6875rem;
+  padding: var(--space-0-5) var(--space-2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--surface-color);
+  color: var(--text-secondary);
+  font-size: var(--font-size-2xs);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--duration-fast) ease;
 }
 
 .previous-banner-clear:hover {
-  background: var(--button-hover, #f1f5f9);
-  color: var(--text-primary, #1e293b);
+  background: var(--button-hover);
+  color: var(--text-primary);
 }
 
 /* ── Selected chips ── */
 .selected-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 999px;
-  background: var(--primary-bg, #eff6ff);
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--primary-bg);
   color: var(--primary-on-surface);
-  font-size: 0.75rem;
-  font-weight: 500;
-  border: 1px solid var(--primary-border, #bfdbfe);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  border: 1px solid var(--primary-border);
 }
 
 :global([data-theme='dark']) .chip {
-  background: rgba(59, 130, 246, 0.15);
-  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(var(--accent-rgb), 0.15);
+  border-color: rgba(var(--accent-rgb), 0.3);
   /* --primary-color stays the same blue in both themes (see theme.css), but
      composited over the dark surface that background resolves to ~#223657 —
      #2563eb text on it is ~2.0:1, far under WCAG AA. --primary-on-surface is
      the token this codebase already uses for "text on a dark surface must be
      light" (see .tag-chip below, via --tag-color -> --primary-dark ->
      --primary-on-surface); use it here too. */
-  color: var(--primary-on-surface, #93c5fd);
+  color: var(--primary-on-surface);
 }
 
 .tag-chip {
-  background: var(--tag-bg, #f0fdf4);
-  color: var(--tag-color, #16a34a);
-  border-color: var(--tag-border, #bbf7d0);
+  background: var(--tag-bg);
+  color: var(--tag-color);
+  border-color: var(--tag-border);
 }
 
 :global([data-theme='dark']) .tag-chip {
@@ -109,8 +109,8 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
-  border-radius: 50%;
-  font-size: 0.875rem;
+  border-radius: var(--radius-round);
+  font-size: var(--font-size-md);
   line-height: 1;
   opacity: 0.7;
 }
@@ -126,60 +126,60 @@
 
 /* ── Empty state ── */
 .empty-text {
-  font-size: 0.8125rem;
-  color: var(--text-tertiary, #94a3b8);
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
   text-align: center;
-  margin: 0.5rem 0;
+  margin: var(--space-2) 0;
 }
 
 /* ── Create new row ── */
 .create-row {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
 .create-input {
   flex: 1;
-  padding: 0.375rem 0.625rem;
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  background: var(--input-bg, white);
-  color: var(--text-primary, #1e293b);
+  padding: var(--space-1-5) var(--space-2-5);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  background: var(--input-bg);
+  color: var(--text-primary);
   outline: none;
   box-sizing: border-box;
 }
 
 .create-input:focus {
-  border-color: var(--primary-color, #3b82f6);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.1);
 }
 
 :global([data-theme='dark']) .create-input {
-  background: var(--dark-input-bg, #1e293b);
-  border-color: var(--dark-border, #334155);
-  color: var(--dark-text, #e2e8f0);
+  background: var(--dark-input-bg);
+  border-color: var(--dark-border);
+  color: var(--dark-text);
 }
 
 .create-btn {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.375rem 0.625rem;
-  border: 1px solid var(--primary-color, #3b82f6);
-  border-radius: 6px;
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-2-5);
+  border: 1px solid var(--primary-color);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--primary-on-surface);
-  font-size: 0.75rem;
-  font-weight: 500;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: all var(--duration-fast) ease;
 }
 
 .create-btn:hover:not(:disabled) {
-  background: rgba(59, 130, 246, 0.08);
+  background: rgba(var(--accent-rgb), 0.08);
 }
 
 .create-btn:disabled {

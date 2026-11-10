@@ -335,9 +335,9 @@
 
 <style>
   .lite-note {
-    margin: 0 0 1rem;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-lg);
     border: 1px solid rgba(var(--primary-color-rgb), 0.3);
     background: rgba(var(--primary-color-rgb), 0.08);
     color: var(--text-color);
@@ -352,27 +352,27 @@
   }
 
   .section-title {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0;
   }
 
   .boundary-heading {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .form-select {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-size-sm);
     height: 36px;
     cursor: pointer;
   }
@@ -384,8 +384,8 @@
 
   .form-input {
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-size-sm);
     box-sizing: border-box;
   }
 
@@ -399,9 +399,9 @@
   .toggle-label {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
-    padding-top: 0.125rem;
+    padding-top: var(--space-0-5);
   }
 
   .toggle-input {
@@ -414,7 +414,7 @@
     height: 18px;
     background: var(--border-color);
     border-radius: 9px;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
     flex-shrink: 0;
     margin-top: 0.1rem;
   }
@@ -427,12 +427,12 @@
     width: 12px;
     height: 12px;
     background: white;
-    border-radius: 50%;
-    transition: transform 0.2s;
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base);
   }
 
   .toggle-input:checked + .toggle-switch {
-    background: var(--primary-color, var(--primary-color));
+    background: var(--primary-color);
   }
 
   .toggle-input:checked + .toggle-switch::after {
@@ -452,38 +452,38 @@
     font-size: 0.775rem;
     color: var(--text-muted);
     line-height: 1.4;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
   }
 
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    padding-top: 0.5rem;
+    padding-top: var(--space-2);
     border-top: 1px solid var(--border-color);
   }
 
   .btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1.25rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    gap: var(--space-1-5);
+    padding: var(--space-2) var(--space-5);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     border: none;
     white-space: nowrap;
   }
 
   .btn-primary {
-    background: var(--primary-color, var(--primary-color));
-    color: white;
+    background: var(--primary-color);
+    color: var(--text-on-solid);
     box-shadow: 0 1px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover, #2563eb);
+    background: var(--primary-hover);
     transform: translateY(-1px);
   }
 
@@ -497,20 +497,20 @@
   .advanced-fields {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding-top: 0.25rem;
+    gap: var(--space-3);
+    padding-top: var(--space-1);
   }
 
   /* The tuning rows sit inside the re-check card; a second border box nested in it is noise. */
   .advanced-fields :global(.form-field) {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
     border: none;
     background: transparent;
   }
 
   .scope-note {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     line-height: 1.4;
   }

@@ -165,17 +165,17 @@
 
   .multiselect-toggle {
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     background-color: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
     font-size: 0.9rem;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
   }
 
   .multiselect-toggle:hover:not(.disabled) {
@@ -195,7 +195,7 @@
   }
 
   .toggle-icon {
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
     color: var(--text-secondary);
   }
 
@@ -209,14 +209,14 @@
     flex-direction: column;
     background-color: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     box-shadow: var(--dropdown-shadow);
     overflow: hidden;
   }
 
   .search-box {
     flex: none;
-    padding: 0.5rem;
+    padding: var(--space-2);
     border-bottom: 1px solid var(--border-color);
     background-color: var(--card-background);
   }
@@ -242,10 +242,10 @@
   .option-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     cursor: pointer;
-    transition: background-color 0.15s;
+    transition: background-color var(--duration-fast);
     user-select: none;
     background-color: var(--card-background);
     width: 100%;
@@ -284,15 +284,15 @@
     background-color: var(--border-color);
     color: var(--text-secondary);
     padding: 0.1rem 0.4rem;
-    border-radius: 10px;
-    font-size: 0.75rem;
-    font-weight: 500;
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     margin-left: auto;
     flex-shrink: 0;
   }
 
   .empty-message {
-    padding: 1rem;
+    padding: var(--space-4);
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.85rem;

@@ -146,13 +146,13 @@
 
 <style>
   .voiceprint-consent {
-    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-    padding: 0.625rem 0.75rem; margin: 0.5rem 0;
-    border: 1px solid var(--border-color); border-radius: 6px;
-    background: var(--surface-color, transparent);
-    font-size: 0.8125rem; color: var(--text-secondary);
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+    padding: var(--space-2-5) var(--space-3); margin: var(--space-2) 0;
+    border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    background: var(--surface-color);
+    font-size: var(--font-size-sm); color: var(--text-secondary);
   }
-  .text { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
-  .text strong { color: var(--text-primary); font-weight: 600; }
+  .text { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+  .text strong { color: var(--text-primary); font-weight: var(--font-weight-semibold); }
   .progress { color: var(--primary-on-surface); }
 </style>

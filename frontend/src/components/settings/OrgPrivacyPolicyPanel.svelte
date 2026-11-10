@@ -309,16 +309,16 @@
   .org-privacy {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 0.25rem 0;
+    gap: var(--space-4);
+    padding: var(--space-1) 0;
   }
 
   .intro {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-secondary);
-    max-width: var(--measure-prose, 72ch);
+    max-width: var(--measure-prose);
   }
 
   .floor {
@@ -372,6 +372,6 @@
 
   .error {
     margin: 0;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 </style>

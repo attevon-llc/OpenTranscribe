@@ -534,23 +534,23 @@
   .summary-scroll-area {
     flex: 1;
     overflow-y: auto;
-    padding: 1.5rem;
+    padding: var(--space-6);
     min-height: 0;
     -webkit-overflow-scrolling: touch;
   }
 
   .summary-actions-fixed {
     flex-shrink: 0;
-    border-top: 1px solid var(--border-color, #e0e0e0);
-    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--border-color);
+    padding: var(--space-3) var(--space-6);
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-    background: var(--bg-primary, #ffffff);
+    background: var(--bg-primary);
   }
 
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -560,21 +560,21 @@
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     flex-shrink: 0;
   }
 
   .copy-button-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     font-size: 0.85rem;
   }
 
@@ -605,15 +605,15 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .reprocess-button-header:hover:not(:disabled) {
@@ -632,8 +632,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 3rem;
-    gap: 1rem;
+    padding: var(--space-12);
+    gap: var(--space-4);
   }
 
   .error-container {
@@ -647,7 +647,7 @@
   }
 
   .error-message h3 {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
     color: var(--error-color);
   }
 
@@ -663,22 +663,22 @@
 
     .header-actions {
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .copy-button-header,
     .reprocess-button-header {
       min-height: 44px;
-      padding: 0.5rem 0.625rem;
+      padding: var(--space-2) var(--space-2-5);
       font-size: 0.8rem;
     }
 
     .summary-scroll-area {
-      padding: 0.75rem;
+      padding: var(--space-3);
     }
 
     .summary-actions-fixed {
-      padding: 0.5rem 0.75rem;
+      padding: var(--space-2) var(--space-3);
       padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
     }
   }

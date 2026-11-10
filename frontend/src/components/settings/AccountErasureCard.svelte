@@ -239,20 +239,20 @@
 
 <style>
   .erasure-card {
-    margin-top: 1rem;
-    padding: 1rem;
-    border-radius: 10px;
-    background: var(--surface-color, #333);
-    border: 1px solid var(--border-color, #444);
+    margin-top: var(--space-4);
+    padding: var(--space-4);
+    border-radius: var(--radius-xl);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
   }
 
   .title {
     margin: 0;
-    font-size: 0.9375rem;
-    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -260,7 +260,7 @@
   .hint,
   .scheduled {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
@@ -270,30 +270,30 @@
   }
 
   .scheduled {
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: var(--font-weight-semibold);
   }
 
   .receipt {
     margin: 0;
     display: grid;
-    gap: 0.25rem;
-    font-size: 0.8125rem;
+    gap: var(--space-1);
+    font-size: var(--font-size-sm);
   }
 
   .receipt dt {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .receipt dd {
-    margin: 0 0 0.375rem;
+    margin: 0 0 var(--space-1-5);
     min-width: 0;
   }
 
   .mono {
     display: block;
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
     overflow-wrap: anywhere;
     text-align: left;
     color: var(--text-color);
@@ -302,35 +302,35 @@
   .form {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    gap: var(--space-1-5);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-2-5);
+    font-size: var(--font-size-sm);
   }
 
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .btn-danger {
-    background: var(--error-color, #dc2626);
-    color: #fff;
+    background: var(--error-color);
+    color: var(--text-on-solid);
     border: 1px solid transparent;
-    border-radius: 6px;
-    padding: 0.5rem 0.875rem;
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3-5);
     cursor: pointer;
   }
 
@@ -341,9 +341,9 @@
 
   .notice {
     margin: 0;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8125rem;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-size-sm);
+    border-radius: var(--radius-md);
     background: #fef3c7;
     color: #78350f;
     border: 1px solid #f59e0b;
@@ -357,7 +357,7 @@
 
   .error {
     margin: 0;
-    font-size: 0.8125rem;
-    color: var(--error-color, #dc2626);
+    font-size: var(--font-size-sm);
+    color: var(--error-color);
   }
 </style>

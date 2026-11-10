@@ -116,12 +116,12 @@
   .toast {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
     background: var(--background-color);
-    padding: 12px 16px;
-    border-radius: 8px;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    margin-bottom: 8px;
+    margin-bottom: var(--space-2);
     min-width: 300px;
     max-width: 500px;
     border-left: 4px solid var(--toast-color);
@@ -141,16 +141,16 @@
     align-items: center;
     justify-content: center;
     background: var(--toast-color);
-    color: white;
-    border-radius: 50%;
+    color: var(--text-on-solid);
+    border-radius: var(--radius-round);
     flex-shrink: 0;
   }
 
   .toast-message {
     flex: 1;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     min-width: 0;
     /* A sentence wraps to three lines before it is cut: a one-line clip hid the reason in
        messages like "speaker detection is back to Automatic". Short messages are unchanged. */
@@ -168,8 +168,8 @@
 
   .toast-retry-hint {
     display: block;
-    font-size: 12px;
-    font-weight: 400;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
     white-space: normal;
   }
@@ -178,18 +178,18 @@
     background: none;
     border: 1px solid var(--toast-color);
     color: var(--toast-color);
-    border-radius: 4px;
-    padding: 4px 10px;
-    font-size: 13px;
-    font-weight: 600;
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2-5);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     cursor: pointer;
     flex-shrink: 0;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
   }
 
   .toast-action:hover:not(:disabled) {
     background: var(--toast-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   :global([data-theme='dark']) .toast-action:hover:not(:disabled) {
@@ -205,13 +205,13 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
-    transition: all 0.2s;
+    transition: all var(--duration-base);
   }
 
   .toast-close:hover {

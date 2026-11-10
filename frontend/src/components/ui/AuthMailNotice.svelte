@@ -106,12 +106,12 @@
   .auth-mail-notice {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    margin-block: 4px 8px;
-    padding: 8px 10px;
+    gap: var(--space-1);
+    margin-block: var(--space-1) var(--space-2);
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--warning-border);
     border-inline-start-width: 4px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--warning-bg);
     color: var(--text-color);
     font-size: 0.8rem;
@@ -140,6 +140,6 @@
   .notice-link:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 </style>

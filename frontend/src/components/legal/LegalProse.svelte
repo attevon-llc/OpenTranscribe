@@ -196,7 +196,7 @@
 
   .legal-prose :global(code) {
     padding: 0.1em 0.35em;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background-color: var(--surface-secondary);
     font-family: var(--font-mono);
     font-size: 0.9em;

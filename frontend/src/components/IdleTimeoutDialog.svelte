@@ -163,7 +163,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .session-backdrop {
@@ -181,18 +181,18 @@
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
   }
 
   .session-dialog h2 {
-    margin: 0 0 0.75rem;
-    font-size: 1.25rem;
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-xl);
   }
 
   .session-dialog p {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
     line-height: 1.5;
   }
 
@@ -204,7 +204,7 @@
   .session-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 1rem;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
   }
 </style>

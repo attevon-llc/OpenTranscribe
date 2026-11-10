@@ -132,7 +132,7 @@
   .model-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.5rem 1rem;
+    gap: var(--space-2) var(--space-4);
     align-items: center;
     padding: 0.85rem 0;
     border-top: 1px solid var(--border-color);
@@ -147,10 +147,10 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .model-name {
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     overflow-wrap: anywhere;
   }
@@ -158,14 +158,14 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.15rem 0.9rem;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     justify-content: flex-end;
   }
   .progress,
@@ -175,16 +175,16 @@
   }
   .bytes {
     display: block;
-    margin-top: 0.25rem;
-    font-size: 0.75rem;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
   .row-error {
     font-size: 0.8rem;
-    color: var(--error-color, #b91c1c);
+    color: var(--error-color);
   }
   :global([data-theme='dark']) .row-error {
-    color: var(--error-color, #f87171);
+    color: var(--error-color);
   }
   .sr-only {
     position: absolute;

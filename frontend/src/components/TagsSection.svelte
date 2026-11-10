@@ -102,10 +102,10 @@
     justify-content: space-between;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 12px 16px;
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .tags-header:hover {
@@ -115,8 +115,8 @@
 
   .section-heading {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -130,10 +130,10 @@
   .tag-chip {
     background: var(--primary-light);
     color: var(--primary-on-surface);
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 500;
+    padding: 3px var(--space-2);
+    border-radius: var(--radius-2xl);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -144,20 +144,20 @@
 
   .no-tags {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-style: italic;
   }
 
   .dropdown-toggle svg {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .tags-content {
     border: 1px solid var(--border-color);
     border-top: none;
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     background: var(--surface-color);
-    padding: 20px;
+    padding: var(--space-5);
   }
 
   .tags-readonly {
@@ -171,6 +171,6 @@
     color: var(--text-secondary);
     font-style: italic;
     text-align: center;
-    padding: 20px;
+    padding: var(--space-5);
   }
 </style>

@@ -72,19 +72,19 @@
   .privacy-notices {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
   }
 
   .notice {
     margin: 0;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-inline-start: 3px solid var(--primary-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--surface-color);
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     text-align: start;
   }

@@ -349,7 +349,7 @@
 
 <style>
   .consistency-settings {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 
   .error-state {
@@ -357,8 +357,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 1.5rem;
-    gap: 0.5rem;
+    padding: var(--space-6);
+    gap: var(--space-2);
     color: var(--error-color);
   }
 
@@ -367,19 +367,19 @@
   .settings-section {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1.25rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
   }
 
   .title-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .section-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
@@ -387,21 +387,21 @@
   .section-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin: 0.25rem 0 1rem 0;
+    margin: var(--space-1) 0 var(--space-4) 0;
   }
 
   .status-chips-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
   }
 
   .counts-section {
-    margin-bottom: 1rem;
-    padding: 0.75rem;
+    margin-bottom: var(--space-4);
+    padding: var(--space-3);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     font-size: 0.8rem;
   }
@@ -409,12 +409,12 @@
   .counts-row {
     display: flex;
     justify-content: space-between;
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
   }
 
   .counts-row.has-missing {
-    color: var(--warning-color, #f59e0b);
-    font-weight: 600;
+    color: var(--warning-color);
+    font-weight: var(--font-weight-semibold);
   }
 
   .counts-row.unrepairable,
@@ -432,18 +432,18 @@
   }
 
   .count-value {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-family: monospace;
   }
 
   .action-box {
     display: flex;
-    gap: 1rem;
-    padding: 1rem;
-    border-radius: 8px;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
     background: rgba(34, 197, 94, 0.08);
     border: 1px solid rgba(34, 197, 94, 0.3);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .action-box.running {
@@ -455,7 +455,7 @@
     flex-shrink: 0;
     width: 40px;
     height: 40px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -473,7 +473,7 @@
   }
 
   .action-content h4 {
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     font-size: 0.9rem;
     color: var(--text-color);
   }
@@ -487,14 +487,14 @@
   .action-buttons {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .progress-section {
-    margin-top: 1rem;
-    padding: 1rem;
+    margin-top: var(--space-4);
+    padding: var(--space-4);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 
@@ -502,7 +502,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .progress-text {
@@ -512,35 +512,35 @@
 
   .progress-percent {
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
   }
 
   .progress-eta {
-    margin-inline-start: 0.5rem;
-    font-weight: 400;
+    margin-inline-start: var(--space-2);
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
   }
 
   .progress-bar-container {
     height: 8px;
     background: var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
     background: var(--primary-color);
-    border-radius: 4px;
-    transition: width 0.3s ease;
+    border-radius: var(--radius-sm);
+    transition: width var(--duration-slow) ease;
   }
 
   .progress-stats {
     display: flex;
-    gap: 1rem;
-    margin-top: 0.5rem;
-    font-size: 0.75rem;
+    gap: var(--space-4);
+    margin-top: var(--space-2);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -549,22 +549,22 @@
   }
 
   .results-section {
-    margin-top: 1rem;
-    padding: 1rem;
+    margin-top: var(--space-4);
+    padding: var(--space-4);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 
   .results-title {
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .results-meta {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     margin: 0;
   }

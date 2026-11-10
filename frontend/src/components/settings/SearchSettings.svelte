@@ -650,19 +650,19 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   .subsection-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 
   .subsection-title {
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
@@ -670,15 +670,15 @@
   .status-chips-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
   }
 
   .progress-container {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-2-5);
+    margin-bottom: var(--space-2);
   }
 
   .progress-bar {
@@ -693,11 +693,11 @@
     height: 100%;
     background: var(--primary-color);
     border-radius: 3px;
-    transition: width 0.3s;
+    transition: width var(--duration-slow);
   }
 
   .progress-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -705,19 +705,19 @@
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-3);
   }
 
   .form-group label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-2-5);
+    font-size: var(--font-size-sm);
   }
 
   .form-control:disabled {
@@ -726,22 +726,22 @@
   }
 
   .form-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   .model-language {
-    margin-top: 0.375rem;
+    margin-top: var(--space-1-5);
   }
 
   /* Colours come from theme vars so light/dark parity is automatic. */
   .lang-badge {
     display: inline-block;
-    padding: 0.125rem 0.5rem;
-    border-radius: 10px;
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-xl);
     font-size: 0.7rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
     background-color: var(--background-color);
@@ -753,15 +753,15 @@
   }
 
   .lang-badge.not-ready {
-    border-color: var(--warning-color, #b45309);
-    color: var(--warning-color, #b45309);
+    border-color: var(--warning-color);
+    color: var(--warning-color);
   }
 
   .model-prepare {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
     flex-wrap: wrap;
   }
 
@@ -772,13 +772,13 @@
   .prepare-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-actions {
     display: flex;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
     justify-content: flex-end;
   }
 
@@ -787,23 +787,23 @@
   }
 
   .section-divider {
-    margin: 1.25rem 0;
+    margin: var(--space-5) 0;
     border-top: 1px solid var(--border-color);
   }
 
   /* Neural search bootstrap warning banner (#625). Colours come from theme vars so
      light/dark parity is automatic, matching the .lang-badge pattern above. */
   .banner {
-    border-radius: 6px;
-    padding: 0.625rem 0.75rem;
-    margin-bottom: 0.75rem;
-    font-size: 0.8125rem;
+    border-radius: var(--radius-md);
+    padding: var(--space-2-5) var(--space-3);
+    margin-bottom: var(--space-3);
+    font-size: var(--font-size-sm);
     line-height: 1.4;
   }
 
   .banner-warning {
-    border: 1px solid var(--warning-color, #b45309);
-    background-color: var(--warning-bg, rgba(180, 83, 9, 0.08));
+    border: 1px solid var(--warning-color);
+    background-color: var(--warning-bg);
     color: var(--text-color);
   }
 
@@ -814,19 +814,19 @@
   }
 
   .banner-title {
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-    color: var(--warning-color, #b45309);
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--space-1);
+    color: var(--warning-color);
   }
 
   .banner-body {
-    margin-bottom: 0.125rem;
+    margin-bottom: var(--space-0-5);
   }
 
   .banner-detail {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   /* Re-embed degraded files banner (#626) — same .banner-warning shell as the bootstrap
@@ -835,7 +835,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .reembed-banner-text {
@@ -846,60 +846,60 @@
   .reembed-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 
   /* Reindex completion stats */
   .reindex-stats {
-    margin-bottom: 0.75rem;
-    padding: 0.625rem 0.75rem;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    font-size: 0.75rem;
+    border-radius: var(--radius-lg);
+    font-size: var(--font-size-xs);
   }
 
   .stats-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .stats-label {
-    font-weight: 600;
-    font-size: 0.8125rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
   .btn-dismiss {
     background: none;
     border: none;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 0 0.25rem;
+    padding: 0 var(--space-1);
     line-height: 1;
   }
 
   .stats-row {
     display: flex;
-    gap: 1rem;
+    gap: var(--space-4);
     color: var(--text-secondary);
     align-items: center;
   }
 
   .stats-row.error {
-    margin-top: 0.25rem;
-    color: var(--danger-color, #dc2626);
+    margin-top: var(--space-1);
+    color: var(--danger-color);
   }
 
   .stats-mode {
-    padding: 0.125rem 0.5rem;
-    border-radius: 10px;
-    font-weight: 600;
-    font-size: 0.6875rem;
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-xl);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
   }
 
@@ -909,13 +909,13 @@
   }
 
   .stats-mode.cpu {
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
   }
 
   .btn-sm {
-    padding: 0.25rem 0.75rem;
-    font-size: 0.75rem;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-xs);
   }
 
   @media (max-width: 768px) {

@@ -187,7 +187,7 @@
 <style>
   .trace-panel {
     position: fixed;
-    top: var(--navbar-height, 60px);
+    top: var(--navbar-height);
     right: 0;
     bottom: 0;
     z-index: 25;
@@ -202,7 +202,7 @@
   .trace-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.7rem 0.85rem;
     border-bottom: 1px solid var(--border-color);
   }
@@ -210,7 +210,7 @@
   .trace-title {
     margin: 0;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -221,10 +221,10 @@
   .trace-beta {
     padding: 0.05rem 0.35rem;
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     color: var(--text-secondary);
     font-size: 0.6rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     cursor: help;
@@ -233,7 +233,7 @@
 
   .trace-live {
     padding: 0.05rem 0.35rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background-color: rgba(var(--primary-color-rgb), 0.14);
     color: var(--primary-on-surface);
     font-size: 0.64rem;

@@ -447,72 +447,72 @@
 
 <style>
   .mirror-settings {
-    margin-top: 1.5rem;
-    padding-top: 1rem;
+    margin-top: var(--space-6);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
   }
 
   .subsection-title {
     font-size: 0.85rem;
-    font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .subsection-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
   }
 
   .never-delete-note {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
     font-style: italic;
   }
 
   .loading-state {
     display: flex;
     align-items: center;
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .banner {
-    border-radius: 6px;
-    padding: 0.6rem 0.75rem;
-    margin-bottom: 0.75rem;
+    border-radius: var(--radius-md);
+    padding: 0.6rem var(--space-3);
+    margin-bottom: var(--space-3);
     font-size: 0.82rem;
     line-height: 1.4;
   }
 
   .banner-warning {
-    border: 1px solid var(--warning-color, #f59e0b);
-    background-color: var(--warning-bg, rgba(245, 158, 11, 0.08));
-    color: var(--warning-color, #b45309);
+    border: 1px solid var(--warning-color);
+    background-color: var(--warning-bg);
+    color: var(--warning-color);
   }
 
   .field-row {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .fields-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 0.75rem 1.25rem;
-    margin-top: 0.75rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-3) var(--space-5);
+    margin-top: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   .field-group {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .destination-type-group {
     max-width: 280px;
-    margin: 0.5rem 0 0.75rem 0;
+    margin: var(--space-2) 0 var(--space-3) 0;
   }
 
   select.form-input {
@@ -522,7 +522,7 @@
   .field-label {
     font-size: 0.78rem;
     color: var(--text-muted);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .field-hint {
@@ -534,20 +534,20 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    color: var(--success-color, #16a34a);
+    color: var(--success-color);
   }
 
   .mount-bad {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    color: var(--warning-color, #b45309);
+    color: var(--warning-color);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     user-select: none;
   }
@@ -564,8 +564,8 @@
     width: 36px;
     height: 20px;
     background-color: var(--border-color);
-    border-radius: 10px;
-    transition: background-color 0.2s ease;
+    border-radius: var(--radius-xl);
+    transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -577,9 +577,9 @@
     width: 16px;
     height: 16px;
     background-color: white;
-    border-radius: 50%;
-    transition: transform 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base) ease;
+    box-shadow: var(--shadow-thumb);
   }
 
   .toggle-input:checked + .toggle-switch {
@@ -591,13 +591,13 @@
   }
 
   .toggle-text {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
   .form-input {
-    padding: 0.375rem 0.5rem;
-    font-size: 0.875rem;
+    padding: var(--space-1-5) var(--space-2);
+    font-size: var(--font-size-md);
   }
 
   .number-input {
@@ -609,11 +609,11 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    margin: 1rem 0 0.75rem 0;
-    padding: 0.6rem 0.75rem;
+    margin: var(--space-4) 0 var(--space-3) 0;
+    padding: 0.6rem var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--background-secondary, rgba(0, 0, 0, 0.03));
+    border-radius: var(--radius-md);
+    background-color: var(--background-secondary);
     font-size: 0.8rem;
   }
 
@@ -626,7 +626,7 @@
 
   .status-label {
     color: var(--text-muted);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .status-value {
@@ -634,19 +634,19 @@
   }
 
   .status-badge {
-    border-radius: 10px;
-    padding: 0 0.5rem;
+    border-radius: var(--radius-xl);
+    padding: 0 var(--space-2);
     font-size: 0.72rem;
     line-height: 1.6;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .status-badge.ok {
-    background-color: var(--success-color, #16a34a);
+    background-color: var(--success-color);
   }
 
   .status-badge.bad {
-    background-color: var(--error-color, #ef4444);
+    background-color: var(--error-color);
   }
 
   .status-badge.running {
@@ -654,17 +654,17 @@
   }
 
   .status-error {
-    font-size: 0.75rem;
-    color: var(--error-color, #ef4444);
+    font-size: var(--font-size-xs);
+    color: var(--error-color);
     word-break: break-word;
   }
 
   .action-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .run-confirm-text {
@@ -676,12 +676,12 @@
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    padding: 0.375rem 0.625rem;
-    border-radius: 4px;
+    padding: var(--space-1-5) var(--space-2-5);
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 0.8rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    font-weight: var(--font-weight-medium);
+    transition: all var(--duration-base) ease;
   }
 
   .btn-link:hover:not(:disabled) {
@@ -690,9 +690,9 @@
 
   .button-row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     justify-content: flex-end;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .button-row .btn-secondary {

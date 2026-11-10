@@ -227,7 +227,7 @@
 
   .field-label {
     font-size: 0.87rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -235,7 +235,7 @@
     align-self: flex-start;
     padding: 0.45rem 0.8rem;
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 0.85rem;
@@ -259,7 +259,7 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .hint {
@@ -270,7 +270,7 @@
 
   .char-count {
     flex-shrink: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
@@ -284,6 +284,6 @@
   .error {
     margin: 0;
     font-size: 0.82rem;
-    color: var(--error-color, #dc3545);
+    color: var(--error-color);
   }
 </style>

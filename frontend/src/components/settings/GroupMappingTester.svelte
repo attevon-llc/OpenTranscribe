@@ -190,29 +190,29 @@
 
 <style>
   .tester {
-    margin-top: 1.5rem;
-    padding: 1rem;
+    margin-top: var(--space-6);
+    padding: var(--space-4);
     background: var(--color-bg-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .tester-head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-bottom: 0.35rem;
   }
 
   .tester-head h4 {
     margin: 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text-secondary);
   }
 
   .tester-note {
-    margin: 0 0 0.75rem 0;
-    font-size: 0.75rem;
+    margin: 0 0 var(--space-3) 0;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
     line-height: 1.5;
   }
@@ -220,15 +220,15 @@
   .mode-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 1.25rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-5);
+    margin-bottom: var(--space-2);
   }
 
   .radio-label {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     /* Without this the flex row shrinks each label to its longest word and
        stacks "Paste / claim / values" vertically. */
@@ -241,15 +241,15 @@
   }
 
   .form-group {
-    margin: 0.75rem 0;
+    margin: var(--space-3) 0;
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -263,7 +263,7 @@
 
   .help-text {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
     line-height: 1.45;
   }
@@ -274,10 +274,10 @@
   }
 
   .result {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
     padding: 0.85rem;
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--color-bg);
     display: flex;
     flex-direction: column;
@@ -288,12 +288,12 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .result-label {
     min-width: 9rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--color-text-secondary);
   }
@@ -305,19 +305,19 @@
   }
 
   .muted {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--color-text-tertiary);
   }
 
   .result-note {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
     line-height: 1.5;
   }
 
   .result-note.warn {
-    color: var(--color-warning-text, var(--warning-color, #d97706));
+    color: var(--color-warning-text);
   }
 
   @media (max-width: 768px) {

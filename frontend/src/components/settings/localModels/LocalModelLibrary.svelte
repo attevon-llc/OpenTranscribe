@@ -256,42 +256,42 @@
 
 <style>
   .library {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
   }
   .rows {
     list-style: none;
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     padding: 0;
   }
   .hint {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
   .locked {
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border: 1px dashed var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
   .error-text {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     font-size: 0.8rem;
-    color: var(--error-color, #b91c1c);
+    color: var(--error-color);
   }
   :global([data-theme='dark']) .error-text {
-    color: var(--error-color, #f87171);
+    color: var(--error-color);
   }
   .state {
     display: flex;
     justify-content: center;
-    padding: 1rem;
+    padding: var(--space-4);
   }
   .switch-status {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
     font-size: 0.85rem;
     color: var(--text-color);
   }

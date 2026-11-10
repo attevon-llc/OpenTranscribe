@@ -161,24 +161,24 @@
   .member-list {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .empty-state {
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
-    padding: 1.5rem 0;
+    font-size: var(--font-size-sm);
+    padding: var(--space-6) 0;
     margin: 0;
   }
 
   .member-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
-    border-radius: 8px;
-    transition: background-color 0.15s;
+    gap: var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
+    border-radius: var(--radius-lg);
+    transition: background-color var(--duration-fast);
   }
 
   .member-row:hover {
@@ -186,20 +186,20 @@
   }
 
   .member-row.is-self {
-    background-color: var(--primary-light, rgba(59, 130, 246, 0.05));
+    background-color: var(--primary-light);
   }
 
   .member-avatar {
     width: 36px;
     height: 36px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     flex-shrink: 0;
   }
 
@@ -209,8 +209,8 @@
   }
 
   .member-name {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
@@ -218,13 +218,13 @@
   }
 
   .you-label {
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .member-email {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -235,12 +235,12 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 0.25rem;
+    gap: var(--space-1);
     flex-shrink: 0;
   }
 
   .member-joined {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -248,13 +248,13 @@
   .member-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 
   .role-select {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 
@@ -267,17 +267,17 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 0.25rem;
+    padding: var(--space-1);
     color: var(--text-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-remove:hover:not(:disabled) {
-    color: var(--danger-color, #dc2626);
+    color: var(--danger-color);
     background-color: rgba(220, 38, 38, 0.08);
   }
 
@@ -287,15 +287,15 @@
   }
 
   .btn-leave {
-    padding: 0.25rem 0.75rem;
-    border: 1px solid var(--danger-color, #dc2626);
-    border-radius: 6px;
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--danger-color);
+    border-radius: var(--radius-md);
     background: transparent;
-    color: var(--danger-color, #dc2626);
-    font-size: 0.75rem;
-    font-weight: 500;
+    color: var(--danger-color);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     white-space: nowrap;
   }
 

@@ -498,27 +498,27 @@
   .selection-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .action-separator {
     width: 1px;
     height: 24px;
     background-color: var(--border-color);
-    margin: 0 0.125rem;
+    margin: 0 var(--space-0-5);
     flex-shrink: 0;
   }
 
   /* Base button style */
   .action-btn {
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    padding: 0.375rem 0.75rem;
-    border-radius: 10px;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    padding: var(--space-1-5) var(--space-3);
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     gap: 0.35rem;
@@ -547,7 +547,7 @@
   }
 
   .chevron {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .chevron.open {
@@ -570,7 +570,7 @@
   }
 
   .select-btn:hover:not(:disabled) {
-    background-color: var(--button-hover, #f1f5f9);
+    background-color: var(--button-hover);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   }
 
@@ -581,14 +581,14 @@
   /* Primary actions — solid blue */
   .select-all-btn,
   .process-btn {
-    background-color: var(--primary-color, var(--primary-color));
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    background-color: var(--primary-color);
+    box-shadow: var(--shadow-primary);
   }
 
   .select-all-btn:hover:not(:disabled),
   .process-btn:hover:not(:disabled) {
-    background-color: var(--primary-hover, #2563eb);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    background-color: var(--primary-hover);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   /* Secondary — surface with border */
@@ -600,7 +600,7 @@
   }
 
   .organize-btn:hover:not(:disabled) {
-    background-color: var(--button-hover, #f1f5f9);
+    background-color: var(--button-hover);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   }
 
@@ -610,7 +610,7 @@
 
   /* Danger — red, destructive only */
   .delete-btn {
-    background-color: #dc2626;
+    background-color: var(--error-solid);
     box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
   }
 
@@ -623,7 +623,7 @@
   .cancel-btn {
     background-color: #6b7280;
     box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     align-self: stretch;
   }
 
@@ -642,30 +642,30 @@
     overflow-y: auto;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
     min-width: 200px;
-    padding: 0.25rem 0;
+    padding: var(--space-1) 0;
   }
 
   .dropdown-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: none;
     background: none;
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     text-align: start;
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
     font-family: inherit;
   }
 
   .dropdown-item:hover:not(:disabled) {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background-color: var(--hover-color);
   }
 
   .dropdown-item:disabled {
@@ -682,7 +682,7 @@
   .dropdown-divider {
     height: 1px;
     background-color: var(--border-color);
-    margin: 0.25rem 0;
+    margin: var(--space-1) 0;
   }
 
   /* Matches .delete-btn's destructive red — this is also a takedown action.
@@ -701,7 +701,7 @@
   @media (max-width: 1200px) {
     .selection-actions {
       flex-wrap: wrap;
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
 
     .action-btn {
@@ -723,7 +723,7 @@
     }
 
     .cancel-btn {
-      padding: 0.35rem 0.5rem;
+      padding: 0.35rem var(--space-2);
     }
 
     .action-separator {
@@ -734,7 +734,7 @@
   @media (max-width: 480px) {
     .action-btn {
       padding: 0.35rem 0.6rem;
-      font-size: 0.75rem;
+      font-size: var(--font-size-xs);
     }
 
     .action-separator {

@@ -352,9 +352,9 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
-    margin-bottom: 1rem;
-    padding-inline-end: 2rem;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+    padding-inline-end: var(--space-8);
   }
 
   .section-header-row .section-description {
@@ -364,7 +364,7 @@
   .table-container {
     overflow-x: auto;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .data-table {
@@ -375,7 +375,7 @@
   }
 
   .data-table th {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     text-align: start;
     font-size: var(--font-size-2xs);
     text-transform: uppercase;
@@ -384,12 +384,12 @@
   }
 
   .data-table td {
-    padding: 0.625rem 0.75rem;
+    padding: var(--space-2-5) var(--space-3);
   }
 
   .placeholder-message {
     text-align: center;
-    padding: 2rem;
+    padding: var(--space-8);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
@@ -399,7 +399,7 @@
       flex-direction: column;
       align-items: stretch;
       padding-inline-end: 0;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .section-header-row .btn-refresh {
@@ -409,7 +409,7 @@
 
     .data-table th,
     .data-table td {
-      padding: 0.4rem 0.5rem;
+      padding: 0.4rem var(--space-2);
       font-size: var(--font-size-xs);
     }
   }

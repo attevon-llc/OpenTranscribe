@@ -244,7 +244,7 @@
   .chat-markdown :global(code) {
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.1em 0.35em;
     font-size: 0.875em;
     font-family: var(--font-mono);
@@ -259,7 +259,7 @@
     text-align: start;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 0;
     overflow: hidden;
     margin: 0 0 0.75em;
@@ -268,7 +268,7 @@
   .chat-markdown :global(pre code) {
     display: block;
     overflow-x: auto;
-    padding: 0.75rem 1rem 0.85rem;
+    padding: var(--space-3) var(--space-4) 0.85rem;
     background: none;
     border: none;
     border-radius: 0;
@@ -280,8 +280,8 @@
   .chat-markdown :global(.code-header) {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.3rem 0.4rem 0.3rem 1rem;
+    gap: var(--space-2);
+    padding: 0.3rem 0.4rem 0.3rem var(--space-4);
     border-bottom: 1px solid var(--border-color);
     background-color: var(--card-background);
     font-family: var(--font-family);
@@ -295,7 +295,7 @@
 
   .chat-markdown :global(.code-copy) {
     margin-inline-start: auto;
-    padding: 0.15rem 0.5rem;
+    padding: 0.15rem var(--space-2);
     border: 1px solid transparent;
     border-radius: 5px;
     background-color: transparent;

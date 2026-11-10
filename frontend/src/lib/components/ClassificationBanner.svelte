@@ -162,10 +162,10 @@ By using this IS (which includes any device attached to this IS), you consent to
   .classification-banner {
     width: 100%;
     text-align: center;
-    padding: 4px 8px;
+    padding: var(--space-1) var(--space-2);
     font-family: 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif;
     font-weight: 700;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     letter-spacing: 0.5px;
     text-transform: uppercase;
     /* Same tier as ToastContainer (H5) — both are globally-rendered and can be
@@ -199,15 +199,15 @@ By using this IS (which includes any device attached to this IS), you consent to
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
-    padding: 1rem;
+    z-index: var(--z-critical);
+    padding: var(--space-4);
     overflow: hidden;
     overscroll-behavior: none;
   }
 
   .consent-modal {
     background-color: #ffffff;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     max-width: 700px;
     width: 100%;
     max-height: 90vh;
@@ -218,20 +218,20 @@ By using this IS (which includes any device attached to this IS), you consent to
   }
 
   .consent-header {
-    padding: 1rem 1.5rem;
+    padding: var(--space-4) var(--space-6);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .consent-header h2 {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .consent-header svg {
@@ -239,9 +239,9 @@ By using this IS (which includes any device attached to this IS), you consent to
   }
 
   .classification-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
     font-weight: 700;
     letter-spacing: 0.5px;
     background-color: rgba(255, 255, 255, 0.2);
@@ -249,7 +249,7 @@ By using this IS (which includes any device attached to this IS), you consent to
   }
 
   .consent-body {
-    padding: 1.5rem;
+    padding: var(--space-6);
     overflow-y: auto;
     flex: 1;
     background-color: #f8fafc;
@@ -257,29 +257,29 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .warning-icon {
     text-align: center;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     color: #dc2626;
   }
 
   .notice-updated {
-    margin: 0 0 1rem;
-    padding: 0.75rem 1rem;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b45309;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background-color: #fef3c7;
     color: #7c2d12;
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .consent-error {
-    margin: 1rem 0 0;
-    padding: 0.75rem 1rem;
+    margin: var(--space-4) 0 0;
+    padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b91c1c;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background-color: #fee2e2;
     color: #7f1d1d;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .consent-text {
@@ -289,7 +289,7 @@ By using this IS (which includes any device attached to this IS), you consent to
   }
 
   .consent-text p {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .consent-text p:last-child {
@@ -297,11 +297,11 @@ By using this IS (which includes any device attached to this IS), you consent to
   }
 
   .consent-footer {
-    padding: 1rem 1.5rem;
+    padding: var(--space-4) var(--space-6);
     background-color: #f1f5f9;
     display: flex;
     justify-content: flex-end;
-    gap: 1rem;
+    gap: var(--space-4);
     border-top: 1px solid #e2e8f0;
   }
 
@@ -309,19 +309,19 @@ By using this IS (which includes any device attached to this IS), you consent to
   .btn-acknowledge {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: 6px;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-6);
+    border-radius: var(--radius-md);
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: none;
   }
 
   .btn-decline {
     background-color: #6b7280;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .btn-decline:hover {
@@ -330,7 +330,7 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .btn-acknowledge {
     background-color: #059669;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .btn-acknowledge:hover {
@@ -364,7 +364,7 @@ By using this IS (which includes any device attached to this IS), you consent to
   /* Responsive */
   @media (max-width: 640px) {
     .consent-modal {
-      margin: 0.5rem;
+      margin: var(--space-2);
       max-height: 95vh;
     }
 

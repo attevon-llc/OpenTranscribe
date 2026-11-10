@@ -256,120 +256,120 @@
 
 
   .bulk-section {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
   }
 
   .bulk-separator {
-    border-top: 1px solid var(--border-color, #444);
-    margin-bottom: 1rem;
+    border-top: 1px solid var(--border-color);
+    margin-bottom: var(--space-4);
   }
 
   .bulk-title {
     font-size: 0.95rem;
-    font-weight: 600;
-    color: var(--text-color, #e0e0e0);
-    margin: 0 0 0.25rem 0;
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-color);
+    margin: 0 0 var(--space-1) 0;
   }
 
   .bulk-description {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
-    margin: 0 0 1rem 0;
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-4) 0;
     line-height: 1.4;
   }
 
   .pending-info {
     font-size: 0.85rem;
-    color: var(--text-secondary, #999);
-    margin-bottom: 0.75rem;
-    padding: 0.625rem 0.875rem;
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.2);
-    border-radius: 6px;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-3);
+    padding: var(--space-2-5) var(--space-3-5);
+    background: rgba(var(--accent-rgb), 0.08);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
+    border-radius: var(--radius-md);
   }
 
   .all-processed {
     font-size: 0.85rem;
-    color: var(--success-color, #51cf66);
-    padding: 0.625rem 0.875rem;
+    color: var(--success-color);
+    padding: var(--space-2-5) var(--space-3-5);
     background: rgba(81, 207, 102, 0.08);
     border: 1px solid rgba(81, 207, 102, 0.2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .progress-section {
-    padding: 1rem;
-    background: var(--background-color, #2a2a2a);
-    border-radius: 6px;
-    border: 1px solid var(--border-color, #444);
+    padding: var(--space-4);
+    background: var(--background-color);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
   }
 
   .progress-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .progress-text {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
   }
 
   .progress-percent {
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
   }
 
   .progress-bar-container {
     height: 8px;
-    background: var(--border-color, #444);
-    border-radius: 4px;
+    background: var(--border-color);
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
-    background: var(--primary-color, #4a9eff);
-    border-radius: 4px;
-    transition: width 0.3s ease;
+    background: var(--primary-color);
+    border-radius: var(--radius-sm);
+    transition: width var(--duration-slow) ease;
   }
 
   .queued-message {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
-    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
     font-style: italic;
   }
 
   .failed-info {
-    font-size: 0.75rem;
-    color: var(--error-color, #ff6b6b);
-    margin-top: 0.5rem;
+    font-size: var(--font-size-xs);
+    color: var(--error-color);
+    margin-top: var(--space-2);
   }
 
   .btn-stop {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .reextract-confirm {
-    padding: 0.875rem;
+    padding: var(--space-3-5);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .reextract-confirm p {
     font-size: 0.85rem;
-    color: var(--text-color, #e0e0e0);
-    margin: 0 0 0.75rem 0;
+    color: var(--text-color);
+    margin: 0 0 var(--space-3) 0;
     line-height: 1.4;
   }
 
   .confirm-buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   @media (max-width: 768px) {

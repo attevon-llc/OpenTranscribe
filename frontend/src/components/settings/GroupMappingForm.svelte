@@ -177,24 +177,24 @@
   .modal-body {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-2-5);
+    font-size: var(--font-size-sm);
   }
 
   .form-textarea {
@@ -203,26 +203,26 @@
   }
 
   .form-hint {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.45;
   }
 
   .warning-banner {
     margin: 0;
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.45);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: rgba(245, 158, 11, 0.12);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.45;
   }
 
   @media (max-width: 768px) {
     .form-control {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

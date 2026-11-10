@@ -152,12 +152,12 @@
   .quality-notice {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
     padding: 0.55rem 0.7rem;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: var(--surface-secondary, var(--background-secondary));
+    border-radius: var(--radius-lg);
+    background-color: var(--surface-secondary);
     /* --text-on-tint, not --text-secondary: this sits on the slate-100 secondary
      * surface, where #64748b measures 4.34:1 and misses WCAG AA's 4.5:1 for the
      * 12.8px text below. It clears AA on the base white surface, which is why the
@@ -194,7 +194,7 @@
   .notice-link:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 
   .notice-dismiss {
@@ -204,15 +204,15 @@
     justify-content: center;
     padding: 0.2rem;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
   }
 
   .notice-dismiss:hover {
-    background-color: var(--button-hover, var(--surface-hover));
+    background-color: var(--button-hover);
     color: var(--text-color);
   }
 

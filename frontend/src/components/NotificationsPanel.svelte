@@ -101,12 +101,12 @@
     max-height: calc(100dvh - 90px);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow:
       0 20px 25px -5px rgba(0, 0, 0, 0.1),
       0 10px 10px -5px rgba(0, 0, 0, 0.04),
       0 0 0 1px rgba(0, 0, 0, 0.05);
-    z-index: 1000;
+    z-index: var(--z-dropdown);
     display: flex;
     flex-direction: column;
     overflow: hidden;

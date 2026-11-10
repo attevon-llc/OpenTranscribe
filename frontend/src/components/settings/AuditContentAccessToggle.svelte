@@ -96,12 +96,12 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-4);
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
     background: var(--color-bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .copy {
@@ -109,20 +109,20 @@
   }
 
   .title {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .help {
-    margin: 0.25rem 0 0;
-    font-size: 0.75rem;
+    margin: var(--space-1) 0 0;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     color: var(--text-secondary);
   }
 
   .note {
     margin: 0.4rem 0 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-color);
   }
 
@@ -145,7 +145,7 @@
     cursor: pointer;
     inset: 0;
     background-color: var(--border-color);
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 24px;
   }
 
@@ -156,9 +156,9 @@
     width: 18px;
     inset-inline-start: 3px;
     bottom: 3px;
-    background-color: var(--toggle-button, white);
-    transition: 0.3s;
-    border-radius: 50%;
+    background-color: var(--toggle-button);
+    transition: var(--duration-slow);
+    border-radius: var(--radius-round);
   }
 
   .toggle-switch input:focus-visible + .toggle-slider {

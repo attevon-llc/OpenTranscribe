@@ -338,8 +338,8 @@
   .virtual-grid-container {
     overflow: visible;
     contain: layout style;
-    padding-top: 0.5rem;
-    margin-top: -0.5rem;
+    padding-top: var(--space-2);
+    margin-top: calc(-1 * var(--space-2));
   }
 
   /* Row wrappers exist for ARIA only; the cards still lay out in .file-grid. */
@@ -350,8 +350,8 @@
   .file-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 0.75rem;
-    padding: 0 2px 0.5rem;
+    gap: var(--space-3);
+    padding: 0 var(--space-0-5) var(--space-2);
   }
 
   /* --- Card --- */
@@ -360,8 +360,8 @@
     position: relative;
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
-    border-radius: 12px;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    border-radius: var(--radius-2xl);
+    transition: transform var(--duration-base) ease, box-shadow var(--duration-base) ease, border-color var(--duration-base) ease;
     cursor: pointer;
     overflow: hidden;
     display: flex;
@@ -396,7 +396,7 @@
   @keyframes newFileGlow {
     0% {
       transform: scale(1);
-      box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+      box-shadow: 0 0 15px rgba(var(--accent-rgb), 0.4);
       border-color: #60a5fa;
     }
     100% {
@@ -433,12 +433,12 @@
 
   .file-card.selected {
     border: 2px solid #3b82f6;
-    background-color: rgba(59, 130, 246, 0.05);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+    background-color: rgba(var(--accent-rgb), 0.05);
+    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.15);
   }
 
   :global([data-theme='dark']) .file-card.selected {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
     border-color: #60a5fa;
     box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
   }
@@ -471,7 +471,7 @@
     position: absolute;
     top: 6px;
     right: 6px;
-    z-index: 10;
+    z-index: var(--z-sticky);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -482,10 +482,10 @@
     height: 18px;
     background-color: var(--background-color);
     border: 2px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     position: relative;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .file-selector:hover .checkmark {
@@ -541,7 +541,7 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.3s ease;
+    transition: transform var(--duration-slow) ease;
   }
 
   .placeholder {
@@ -564,8 +564,8 @@
     align-items: center;
     justify-content: center;
     background: rgba(0, 0, 0, 0.5);
-    border-radius: 4px;
-    color: #fff;
+    border-radius: var(--radius-sm);
+    color: var(--text-on-solid);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
   }
@@ -580,11 +580,11 @@
     bottom: 6px;
     right: 6px;
     background: rgba(0, 0, 0, 0.7);
-    color: #fff;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    padding: 1px 6px;
-    border-radius: 4px;
+    color: var(--text-on-solid);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-sm);
     line-height: 1.4;
     font-variant-numeric: tabular-nums;
     backdrop-filter: blur(4px);
@@ -602,18 +602,18 @@
   }
 
   .card-text {
-    padding: 8px 10px 10px;
+    padding: var(--space-2) var(--space-2-5) var(--space-2-5);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-0-5);
     flex: 1;
   }
 
   .file-name {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     /* Was 600 — the over-bold outlier issue #749 names (the list's `.file-title` is
        already 500; this is the view that needed fixing, not the list). */
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
     margin: 0;
     overflow: hidden;
@@ -625,7 +625,7 @@
   .meta-line {
     display: flex;
     align-items: center;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     line-height: 1.4;
     min-width: 0;
@@ -633,7 +633,7 @@
   }
 
   .meta-dot {
-    margin: 0 4px;
+    margin: 0 var(--space-1);
     opacity: 0.5;
   }
 
@@ -681,7 +681,7 @@
   @media (max-width: 768px) {
     .file-grid {
       grid-template-columns: repeat(2, 1fr);
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .thumbnail-container {
@@ -689,11 +689,11 @@
     }
 
     .card-text {
-      padding: 6px 8px 8px;
+      padding: var(--space-1-5) var(--space-2) var(--space-2);
     }
 
     .file-name {
-      font-size: 0.75rem;
+      font-size: var(--font-size-xs);
     }
 
     .meta-line {
@@ -701,7 +701,7 @@
     }
 
     .file-card {
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
     }
 
     .placeholder svg {
@@ -711,7 +711,7 @@
 
     .duration-badge {
       font-size: 0.6rem;
-      padding: 1px 4px;
+      padding: 1px var(--space-1);
     }
 
     .type-badge {
@@ -738,7 +738,7 @@
     }
 
     .file-name {
-      font-size: 0.8125rem;
+      font-size: var(--font-size-sm);
     }
   }
 

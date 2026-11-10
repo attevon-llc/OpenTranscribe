@@ -150,7 +150,7 @@
   }
 
   .form-group {
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-5);
   }
 
   .form-group:last-child {
@@ -159,8 +159,8 @@
 
   .form-group label {
     display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
+    margin-bottom: var(--space-2);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -172,8 +172,8 @@
 
   .visibility-group legend {
     padding: 0;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
+    margin-bottom: var(--space-2);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -181,12 +181,12 @@
     display: flex;
     gap: 0.6rem;
     align-items: flex-start;
-    padding: 0.6rem 0.75rem;
-    margin-bottom: 0.5rem;
+    padding: 0.6rem var(--space-3);
+    margin-bottom: var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
   }
 
   .visibility-option.chosen {

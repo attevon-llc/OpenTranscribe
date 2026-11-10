@@ -48,17 +48,17 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 10px;
+    gap: var(--space-1-5);
+    padding: 3px var(--space-2-5);
     border-radius: 14px;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     white-space: nowrap;
     border: 1px solid transparent;
   }
   .chip.removable {
-    padding-right: 4px;
+    padding-right: var(--space-1);
   }
   .chip-content {
     display: inline-flex;
@@ -70,16 +70,16 @@
     color: var(--text-secondary);
   }
   .chip-success {
-    background: rgba(var(--success-color-rgb, 34, 197, 94), 0.12);
-    color: var(--success-color, #16a34a);
+    background: rgba(var(--success-color-rgb), 0.12);
+    color: var(--success-color);
   }
   .chip-warning {
-    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.14);
-    color: var(--warning-color, #d97706);
+    background: rgba(var(--warning-color-rgb), 0.14);
+    color: var(--warning-color);
   }
   .chip-error {
-    background: rgba(var(--error-color-rgb, 239, 68, 68), 0.12);
-    color: var(--error-color, #dc2626);
+    background: rgba(var(--error-color-rgb), 0.12);
+    color: var(--error-color);
   }
   .chip-info {
     background: rgba(var(--primary-color-rgb), 0.12);
@@ -93,14 +93,14 @@
     height: 18px;
     padding: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: transparent;
     color: inherit;
     cursor: pointer;
     opacity: 0.7;
     transition:
-      opacity 0.15s ease,
-      background 0.15s ease;
+      opacity var(--duration-fast) ease,
+      background var(--duration-fast) ease;
   }
   .chip-remove:hover {
     opacity: 1;

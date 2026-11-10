@@ -69,13 +69,13 @@
 
 <style>
   .gender-icon {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     /* Rendered inside the cluster card's tinted gender chip, where --text-secondary
      * measures 4.25:1 against the success tint — under WCAG AA for this 11px label. */
-    color: var(--text-on-tint, #475569);
+    color: var(--text-on-tint);
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-0-5);
     line-height: 1;
     vertical-align: middle;
   }
@@ -87,18 +87,18 @@
   }
 
   .gender-label {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
   }
 
   .gender-confirmed-tick {
     display: inline-flex;
-    color: var(--success-color, #10b981);
+    color: var(--success-color);
     margin-inline-start: 1px;
   }
 
   @media (max-width: 768px) {
     .gender-icon {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
     }
   }
 </style>

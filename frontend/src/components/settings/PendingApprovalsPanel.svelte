@@ -135,35 +135,35 @@
 
 <style>
   .approvals-loading {
-    padding: 1rem 0;
+    padding: var(--space-4) 0;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .approvals {
-    margin-bottom: 1.5rem;
-    padding: 1rem;
+    margin-bottom: var(--space-6);
+    padding: var(--space-4);
     border: 1px solid rgba(245, 158, 11, 0.4);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: rgba(245, 158, 11, 0.08);
   }
 
   .approvals-head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .approvals-head h4 {
     margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .approvals-note {
     margin: 0.35rem 0 0.85rem 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -175,14 +175,14 @@
   .approvals-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .approvals-table th {
     text-align: left;
     padding: 0.4rem 0.6rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-secondary);
@@ -199,19 +199,19 @@
 
   .email {
     display: block;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     word-break: break-all;
   }
 
   .name {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
   .flag {
     display: inline-block;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   .requested {
@@ -226,7 +226,7 @@
 
   .btn-row {
     padding: 0.3rem 0.7rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     margin-left: 0.35rem;
   }
 

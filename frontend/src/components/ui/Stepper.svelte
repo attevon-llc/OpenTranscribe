@@ -71,7 +71,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     min-width: 0;
   }
 
@@ -99,7 +99,7 @@
     width: 24px;
     height: 24px;
     border: 2px solid var(--border-color);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--surface-color);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
@@ -112,7 +112,7 @@
   .stepper-step[data-state='current'] .stepper-dot {
     border-color: var(--primary-color);
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .stepper-step[data-state='current'] .stepper-dot {
@@ -121,7 +121,7 @@
 
   .stepper-label {
     max-width: 100%;
-    padding-inline: 0.25rem;
+    padding-inline: var(--space-1);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
@@ -143,7 +143,7 @@
 
   .stepper-caption {
     display: none;
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     color: var(--text-primary);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
@@ -169,9 +169,9 @@
     .stepper-dot,
     .stepper-step::before {
       transition:
-        background-color 0.2s ease,
-        border-color 0.2s ease,
-        box-shadow 0.2s ease;
+        background-color var(--duration-base) ease,
+        border-color var(--duration-base) ease,
+        box-shadow var(--duration-base) ease;
     }
   }
 

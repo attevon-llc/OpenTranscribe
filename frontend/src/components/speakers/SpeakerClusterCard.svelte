@@ -212,36 +212,36 @@
 
 <style>
   .cluster-card {
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 8px;
-    background: var(--card-background, #ffffff);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--card-background);
     overflow: hidden;
-    transition: box-shadow 0.15s ease;
+    transition: box-shadow var(--duration-fast) ease;
   }
 
   .cluster-card:hover {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
   }
 
   .card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
     user-select: none;
-    gap: 8px;
+    gap: var(--space-2);
     min-width: 0;
   }
 
   .card-header:hover {
-    background: var(--hover-color, #f9fafb);
+    background: var(--hover-color);
   }
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     flex: 1;
     min-width: 0;
   }
@@ -250,13 +250,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     width: 16px;
   }
 
   .cluster-label {
-    font-weight: 500;
-    color: var(--text-color, #111827);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -269,18 +269,18 @@
 
   .suggested-badge {
     font-size: 10px;
-    font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
+    font-weight: var(--font-weight-semibold);
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     color: var(--primary-on-surface);
     white-space: nowrap;
     flex-shrink: 0;
   }
 
   .label-input {
-    font-weight: 500;
-    padding: 2px 6px;
+    font-weight: var(--font-weight-medium);
+    padding: var(--space-0-5) var(--space-1-5);
     font-size: inherit;
     min-width: 0;
     flex: 1;
@@ -290,27 +290,27 @@
   .header-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     flex-shrink: 0;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
 
   .quality-badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-xl);
     background: currentColor;
     background: color-mix(in srgb, currentColor 12%, transparent);
     white-space: nowrap;
   }
 
   .gender-chip {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 10px;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
+    padding: 3px var(--space-2);
+    border-radius: var(--radius-xl);
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
@@ -320,27 +320,27 @@
   }
 
   .gender-coherent {
-    background: color-mix(in srgb, var(--success-color, #10b981) 12%, transparent);
-    color: var(--success-color, #10b981);
+    background: color-mix(in srgb, var(--success-color) 12%, transparent);
+    color: var(--success-color);
   }
 
   .gender-conflict {
-    background: color-mix(in srgb, var(--warning-color, #f59e0b) 12%, transparent);
-    color: var(--warning-color, #f59e0b);
+    background: color-mix(in srgb, var(--warning-color) 12%, transparent);
+    color: var(--warning-color);
   }
 
   .member-count {
-    font-size: 13px;
-    color: var(--text-secondary, #6b7280);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
     white-space: nowrap;
   }
 
   .promoted-badge {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--success-color, #059669) 15%, transparent);
-    color: var(--success-color, #059669);
+    font-size: var(--font-size-2xs);
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-xl);
+    background: color-mix(in srgb, var(--success-color) 15%, transparent);
+    color: var(--success-color);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -348,30 +348,30 @@
   }
 
   .card-body {
-    border-top: 1px solid var(--border-color, #e5e7eb);
-    padding: 12px 16px;
+    border-top: 1px solid var(--border-color);
+    padding: var(--space-3) var(--space-4);
   }
 
   .card-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     flex-wrap: wrap;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border-color);
   }
 
   .action-btn {
-    padding: 4px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border-color, #d1d5db);
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
     background: transparent;
-    color: var(--text-secondary, #6b7280);
-    font-size: 13px;
-    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
   }
 
   .action-btn:disabled {
@@ -382,8 +382,8 @@
 
   /* Default (uncolored) hover — grey fill */
   .action-btn:hover {
-    background: var(--button-hover, #e5e7eb);
-    color: var(--text-color, #374151);
+    background: var(--button-hover);
+    color: var(--text-color);
     transform: scale(1.02);
   }
 
@@ -396,23 +396,23 @@
   .action-btn.merge:hover {
     background: var(--primary-color);
     border-color: #3b82f6;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
   }
 
   /* Split — blue outline → solid blue (matches primary action palette) */
   .action-btn.split {
     color: var(--primary-on-surface);
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
   }
 
   .action-btn.split:hover {
-    background: var(--primary-hover, #2563eb);
-    border-color: var(--primary-hover, #2563eb);
-    color: white;
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+    color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
   }
 
   /* Promote — blue outline → solid blue */
@@ -422,11 +422,11 @@
   }
 
   .action-btn.promote:hover {
-    background: #2563eb;
-    border-color: #2563eb;
-    color: white;
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
   }
 
   /* Unassign — amber outline → solid amber */
@@ -438,7 +438,7 @@
   .action-btn.unassign:hover {
     background: #d97706;
     border-color: #d97706;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 3px 8px rgba(217, 119, 6, 0.3);
   }
@@ -450,9 +450,9 @@
   }
 
   .action-btn.delete:hover {
-    background: #dc2626;
-    border-color: #dc2626;
-    color: white;
+    background: var(--error-solid);
+    border-color: var(--error-solid);
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 3px 8px rgba(220, 38, 38, 0.3);
   }
@@ -460,14 +460,14 @@
   /* Confirm Unassign — solid red (irreversible action, stays solid) */
   .action-btn.confirm-unassign {
     background: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
     border-color: #ef4444;
   }
 
   .action-btn.confirm-unassign:hover:not(:disabled) {
-    background: #dc2626;
-    border-color: #dc2626;
-    color: white;
+    background: var(--error-solid);
+    border-color: var(--error-solid);
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 3px 8px rgba(220, 38, 38, 0.3);
   }
@@ -475,34 +475,34 @@
   .outlier-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
-    background: color-mix(in srgb, var(--warning-color, #f59e0b) 12%, transparent);
-    color: var(--warning-color, #f59e0b);
+    gap: var(--space-1);
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
+    background: color-mix(in srgb, var(--warning-color) 12%, transparent);
+    color: var(--warning-color);
     white-space: nowrap;
   }
 
   .selection-chip {
-    font-size: 12px;
-    color: var(--text-secondary, #6b7280);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
     white-space: nowrap;
   }
 
   .blacklist-toggle {
     display: flex;
     align-items: center;
-    gap: 4px;
-    font-size: 12px;
+    gap: var(--space-1);
+    font-size: var(--font-size-xs);
     color: var(--text-color);
     cursor: pointer;
     white-space: nowrap;
   }
 
   .blacklist-toggle input[type="checkbox"] {
-    accent-color: var(--error-color, #ef4444);
+    accent-color: var(--error-color);
     width: 14px;
     height: 14px;
   }
@@ -510,21 +510,21 @@
   .skeleton-members {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .skeleton-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px 0;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
   }
 
   .skeleton-avatar {
     width: 32px;
     height: 32px;
-    border-radius: 50%;
-    background: var(--border-color, #e5e7eb);
+    border-radius: var(--radius-round);
+    background: var(--border-color);
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
 
@@ -532,13 +532,13 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .skeleton-line {
     height: 12px;
-    border-radius: 4px;
-    background: var(--border-color, #e5e7eb);
+    border-radius: var(--radius-sm);
+    background: var(--border-color);
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
 
@@ -549,14 +549,14 @@
   .cluster-avatar {
     width: 24px;
     height: 24px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     object-fit: cover;
     flex-shrink: 0;
   }
 
   @media (max-width: 768px) {
     .card-header {
-      padding: 10px 12px;
+      padding: var(--space-2-5) var(--space-3);
       flex-wrap: wrap;
     }
 
@@ -568,51 +568,51 @@
     .header-right {
       flex-shrink: 1;
       min-width: 0;
-      gap: 6px;
+      gap: var(--space-1-5);
     }
 
     .cluster-label {
-      font-size: 14px;
+      font-size: var(--font-size-md);
     }
 
     .quality-badge,
     .gender-chip,
     .outlier-chip {
       font-size: 10px;
-      padding: 1px 6px;
+      padding: 1px var(--space-1-5);
     }
 
     .member-count {
-      font-size: 12px;
+      font-size: var(--font-size-xs);
     }
 
     .promoted-badge {
       max-width: 100px;
       font-size: 10px;
-      padding: 1px 6px;
+      padding: 1px var(--space-1-5);
     }
 
     .card-body {
-      padding: 10px 12px;
+      padding: var(--space-2-5) var(--space-3);
     }
 
     .card-actions {
-      gap: 6px;
-      margin-bottom: 8px;
-      padding-bottom: 8px;
+      gap: var(--space-1-5);
+      margin-bottom: var(--space-2);
+      padding-bottom: var(--space-2);
     }
 
     .action-btn {
-      padding: 4px 8px;
-      font-size: 12px;
+      padding: var(--space-1) var(--space-2);
+      font-size: var(--font-size-xs);
     }
 
     .selection-chip {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
     }
 
     .blacklist-toggle {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
     }
   }
 
@@ -620,7 +620,7 @@
     .header-right {
       flex-basis: 100%;
       justify-content: flex-start;
-      margin-top: 4px;
+      margin-top: var(--space-1);
     }
 
     .promoted-badge {

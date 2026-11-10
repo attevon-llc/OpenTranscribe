@@ -62,13 +62,13 @@
     gap: 0.35rem;
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
     font-size: 0.8rem;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     padding: 0.35rem 0.7rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     white-space: nowrap;
   }
 
@@ -84,7 +84,7 @@
 
   .filter-chip-btn.selected {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--primary-color);
   }
 

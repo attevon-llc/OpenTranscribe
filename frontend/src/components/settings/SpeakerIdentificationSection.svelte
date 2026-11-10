@@ -202,15 +202,15 @@
 
   .tab-description {
     max-width: 800px;
-    margin: 0 0 1rem;
+    margin: 0 0 var(--space-4);
     color: var(--text-secondary);
     font-size: 0.9rem;
   }
 
   .maintenance-heading {
-    margin: 0 0 0.25rem;
+    margin: 0 0 var(--space-1);
     font-size: 1.05rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -218,16 +218,16 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    margin-top: 1.5rem;
-    padding: 1rem 1.25rem;
+    gap: var(--space-4);
+    margin-top: var(--space-6);
+    padding: var(--space-4) var(--space-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
 
   .embedding-link-text p {
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     color: var(--text-secondary);
     font-size: 0.85rem;
   }

@@ -182,59 +182,59 @@
   .audit-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .panel-description,
   .panel-status,
   .panel-note {
-    font-size: 0.75rem;
-    color: var(--color-text-secondary, var(--text-secondary));
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
     margin: 0;
   }
 
   .panel-note {
-    padding: 0.5rem 0.625rem;
-    border: 1px solid var(--color-border, var(--border-color));
-    border-radius: 6px;
-    background: var(--color-bg-secondary, var(--background-color));
+    padding: var(--space-2) var(--space-2-5);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-secondary);
   }
 
   .controls {
     display: flex;
     align-items: flex-end;
-    gap: 0.75rem;
+    gap: var(--space-3);
     flex-wrap: wrap;
   }
 
   .category-label {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
   }
 
   .label-text {
-    color: var(--color-text-secondary, var(--text-secondary));
+    color: var(--color-text-secondary);
     font-size: var(--font-size-xs);
   }
 
   select {
-    padding: 0.25rem 0.375rem;
-    font-size: 0.75rem;
+    padding: var(--space-1) var(--space-1-5);
+    font-size: var(--font-size-xs);
     min-width: 12rem;
     height: 1.75rem;
   }
 
   .btn-secondary {
-    padding: 0.25rem 0.625rem;
-    border-radius: 6px;
+    padding: var(--space-1) var(--space-2-5);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     height: 1.75rem;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-secondary:hover:not(:disabled) {
@@ -250,46 +250,46 @@
     overflow-x: auto;
     max-height: 420px;
     overflow-y: auto;
-    border: 1px solid var(--color-border, var(--border-color));
-    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
     -webkit-overflow-scrolling: touch;
   }
 
   .audit-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .audit-table th,
   .audit-table td {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     text-align: left;
-    border-bottom: 1px solid var(--color-border, var(--border-color));
-    color: var(--color-text, var(--text-color));
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
     white-space: nowrap;
   }
 
   .audit-table th {
     position: sticky;
     top: 0;
-    z-index: 1;
-    background: var(--color-bg-secondary, var(--table-header-bg));
-    font-weight: 600;
-    font-size: 0.6875rem;
+    z-index: var(--z-base);
+    background: var(--color-bg-secondary);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    color: var(--color-text-secondary, var(--text-secondary));
+    color: var(--color-text-secondary);
   }
 
   .audit-table tbody tr:hover {
-    background: var(--color-bg-secondary, var(--table-row-hover));
+    background: var(--color-bg-secondary);
   }
 
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.6875rem;
-    color: var(--color-text-secondary, var(--text-secondary));
+    font-size: var(--font-size-2xs);
+    color: var(--color-text-secondary);
   }
 
   .value {
@@ -299,13 +299,13 @@
   }
 
   .change-type {
-    padding: 0.125rem 0.375rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 3px;
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
     color: rgb(37, 99, 235);
   }
 
@@ -320,7 +320,7 @@
   }
 
   :global([data-theme='dark']) .change-type {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: rgb(96, 165, 250);
   }
 
@@ -350,7 +350,7 @@
       width: 100%;
       min-height: 44px;
       height: auto;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

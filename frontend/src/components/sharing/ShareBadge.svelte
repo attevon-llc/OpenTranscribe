@@ -24,18 +24,18 @@
   .share-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 500;
-    background: rgba(59, 130, 246, 0.1);
+    gap: var(--space-1);
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-2xl);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     white-space: nowrap;
   }
 
   :global([data-theme='dark']) .share-badge {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: #60a5fa;
   }
 

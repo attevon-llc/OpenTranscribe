@@ -12,7 +12,7 @@
 .transcript-search-highlight {
   background-color: rgba(250, 204, 21, 0.4);
   padding: 0.05em 0.15em;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .transcript-search-highlight.current {
@@ -42,7 +42,7 @@
   color: var(--text-primary);
   padding: 0.1em 0.2em;
   border-radius: 3px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .current-match {
@@ -50,7 +50,7 @@
   color: var(--text-primary);
   padding: 0.1em 0.2em;
   border-radius: 3px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.75);
 }
 
@@ -77,14 +77,14 @@
   color: var(--text-primary);
   padding: 0.1em 0.2em;
   border-radius: 3px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .search-semantic-segment {
   background-color: rgba(var(--primary-color-rgb), 0.12);
   color: var(--text-primary);
   padding: 0.05em 0.1em;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -110,7 +110,7 @@
 /* Settings search: flash the control the user jumped to. */
 .settings-search-flash {
   animation: search-pulse 1.6s ease-in-out;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 @keyframes search-pulse {

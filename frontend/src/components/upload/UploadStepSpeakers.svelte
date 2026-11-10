@@ -126,47 +126,47 @@
 </div>
 
 <style>
-  .step-speakers { display: flex; flex-direction: column; gap: 0.75rem; }
+  .step-speakers { display: flex; flex-direction: column; gap: var(--space-3); }
 
-  .step-hint { font-size: 0.8125rem; color: var(--text-secondary); margin: 0; line-height: 1.5; }
+  .step-hint { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 0; line-height: 1.5; }
 
   .info-note {
-    display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.625rem 0.75rem; font-size: 0.8125rem;
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-3); font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    background: rgba(59, 130, 246, 0.05);
-    border: 1px solid rgba(59, 130, 246, 0.12);
-    border-radius: 6px;
+    background: rgba(var(--accent-rgb), 0.05);
+    border: 1px solid rgba(var(--accent-rgb), 0.12);
+    border-radius: var(--radius-md);
   }
-  :global([data-theme='dark']) .info-note { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.2); }
+  :global([data-theme='dark']) .info-note { background: rgba(var(--accent-rgb), 0.1); border-color: rgba(var(--accent-rgb), 0.2); }
   .info-note :global(svg) { flex-shrink: 0; color: var(--primary-on-surface); }
   .info-note span { flex: 1; }
 
-  .settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 
-  .field { display: flex; flex-direction: column; gap: 0.375rem; }
-  .field label { font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); display: flex; flex-direction: column; gap: 0.125rem; }
-  .hint { font-size: 0.6875rem; font-weight: 400; color: var(--text-secondary); }
+  .field { display: flex; flex-direction: column; gap: var(--space-1-5); }
+  .field label { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); display: flex; flex-direction: column; gap: var(--space-0-5); }
+  .hint { font-size: var(--font-size-2xs); font-weight: var(--font-weight-regular); color: var(--text-secondary); }
 
   .field input[type="number"] {
-    padding: 0.4375rem 0.5rem; border: 1px solid var(--border-color); border-radius: 6px;
+    padding: 0.4375rem var(--space-2); border: 1px solid var(--border-color); border-radius: var(--radius-md);
   }
-  .field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background, #f5f5f5); }
+  .field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background); }
   .field input::placeholder { color: var(--text-light); }
 
   .consent-row {
-    display: flex; align-items: flex-start; gap: 0.625rem;
-    padding: 0.625rem 0.75rem; cursor: pointer;
-    border: 1px solid var(--border-color); border-radius: 6px;
-    background: var(--surface-color, transparent);
+    display: flex; align-items: flex-start; gap: var(--space-2-5);
+    padding: var(--space-2-5) var(--space-3); cursor: pointer;
+    border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    background: var(--surface-color);
   }
   .consent-row input[type='checkbox'] { margin-top: 0.1875rem; flex-shrink: 0; }
-  .consent-text { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); }
+  .consent-text { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); }
 
   .validation-error {
-    display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem;
+    display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2);
     background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 6px; color: #dc2626; font-size: 0.8125rem;
+    border-radius: var(--radius-md); color: #dc2626; font-size: var(--font-size-sm);
   }
   :global([data-theme='dark']) .validation-error { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #f87171; }
 

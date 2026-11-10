@@ -117,8 +117,8 @@
   .card-grid-skeleton {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(var(--min-card-width, 220px), 1fr));
-    gap: 16px;
-    padding: 8px 0;
+    gap: var(--space-4);
+    padding: var(--space-2) 0;
     width: 100%;
   }
 
@@ -127,7 +127,7 @@
   .card-grid-skeleton.is-search {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .sr-only {
@@ -145,7 +145,7 @@
   .skel-card {
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -164,7 +164,7 @@
   .skel-thumb-icon {
     color: rgba(100, 116, 139, 0.35);
     position: relative;
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   :global([data-theme='dark']) .skel-thumb-icon {
@@ -172,91 +172,91 @@
   }
 
   .skel-body {
-    padding: 12px;
+    padding: var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .skel-title {
     height: 16px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skel-meta-row {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
     flex-wrap: wrap;
   }
 
   .skel-meta {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   /* ── Profile card variant ── */
   .skel-profile-top {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 14px 14px 0;
+    gap: var(--space-3);
+    padding: var(--space-3-5) var(--space-3-5) 0;
   }
 
   .skel-avatar {
     flex-shrink: 0;
     width: 44px;
     height: 44px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   .skel-profile-text {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-1-5);
     min-width: 0;
   }
 
   .skel-subtitle {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skel-text-line {
     height: 11px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   /* ── Search result variant ── */
   .skel-search-row {
     display: flex;
-    gap: 14px;
-    padding: 14px;
+    gap: var(--space-3-5);
+    padding: var(--space-3-5);
   }
 
   .skel-thumb-small {
     flex-shrink: 0;
     width: 96px;
     height: 56px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .skel-chip {
     height: 16px;
     width: 52px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
 
   /* ── Responsive ── */
   @media (max-width: 640px) {
     .card-grid-skeleton {
-      gap: 12px;
+      gap: var(--space-3);
     }
     .skel-search-row {
       flex-direction: column;
-      gap: 10px;
+      gap: var(--space-2-5);
     }
     .skel-thumb-small {
       width: 100%;

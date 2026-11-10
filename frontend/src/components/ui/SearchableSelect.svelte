@@ -197,19 +197,19 @@
     overflow-y: auto;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   }
   .searchable-list {
     list-style: none;
     margin: 0;
-    padding: 4px;
+    padding: var(--space-1);
   }
   .searchable-option {
-    padding: 8px 10px;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-2-5);
+    border-radius: var(--radius-md);
     color: var(--text-color);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     cursor: pointer;
   }
   .searchable-option.highlighted {
@@ -220,16 +220,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 16px 12px;
+    padding: var(--space-4) var(--space-3);
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
   }
   .searchable-spinner {
     width: 16px;
     height: 16px;
     border: 2px solid var(--border-color);
     border-top-color: var(--primary-color);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     animation: searchable-spin 0.7s linear infinite;
   }
   @keyframes searchable-spin {

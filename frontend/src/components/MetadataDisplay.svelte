@@ -244,11 +244,11 @@
 
 <style>
   .provenance-error {
-    color: var(--error-color, #c62828);
+    color: var(--error-color);
   }
 
   .metadata-dropdown-section {
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
   }
 
   .section-header {
@@ -258,10 +258,10 @@
     justify-content: space-between;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 12px 16px;
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .section-header:hover {
@@ -271,30 +271,30 @@
 
   .section-heading {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
   .dropdown-toggle svg {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .section-content {
     border: 1px solid var(--border-color);
     border-top: none;
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     background: var(--surface-color);
   }
 
   .metadata-panel {
-    padding: 20px;
+    padding: var(--space-5);
   }
 
   .metadata-grid {
     display: grid;
-    gap: 16px;
-    margin-bottom: 20px;
+    gap: var(--space-4);
+    margin-bottom: var(--space-5);
   }
 
   .metadata-grid.four-columns {
@@ -304,19 +304,19 @@
   .metadata-item {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .metadata-label {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
   .metadata-value {
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .file-id-item {
@@ -341,35 +341,35 @@
     color: var(--success-color);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .status-processing {
     color: var(--warning-color);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .status-error {
     color: var(--error-color);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .status-pending {
     color: var(--text-secondary);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .source-link {
     color: var(--primary-on-surface);
     text-decoration: none;
     word-break: break-all;
-    transition: color 0.2s ease;
+    transition: color var(--duration-base) ease;
   }
 
   .source-link:hover {

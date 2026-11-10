@@ -340,7 +340,7 @@
   .speakers-page {
     max-width: 1000px;
     margin: 0 auto;
-    padding: 24px 16px;
+    padding: var(--space-6) var(--space-4);
     overflow-x: hidden;
     max-width: 100vw;
     box-sizing: border-box;
@@ -355,13 +355,13 @@
   .page-header {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    margin-bottom: 16px;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-4);
   }
 
   .page-header h1 {
-    font-size: 24px;
-    font-weight: 600;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0;
   }
@@ -370,13 +370,13 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    margin-left: 0.5rem;
-    padding: 0.25rem 0.65rem;
-    border-radius: 999px;
+    margin-left: var(--space-2);
+    padding: var(--space-1) 0.65rem;
+    border-radius: var(--radius-pill);
     background-color: rgba(var(--primary-color-rgb), 0.1);
     color: var(--primary-on-surface);
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .rename-propagation-spinner {
@@ -384,7 +384,7 @@
     height: 0.8rem;
     border: 2px solid rgba(var(--primary-color-rgb), 0.3);
     border-top-color: var(--primary-color);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     animation: rename-propagation-spin 0.7s linear infinite;
   }
 
@@ -400,45 +400,45 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     text-decoration: none;
     flex-shrink: 0;
-    transition: background 0.15s, color 0.15s;
+    transition: background var(--duration-fast), color var(--duration-fast);
   }
 
   .back-to-gallery:hover {
-    background: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background: var(--hover-color);
     color: var(--text-color);
   }
 
   .tabs {
     display: flex;
     border-bottom: 2px solid var(--border-color);
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
   }
 
   .tab {
-    padding: 10px 20px;
+    padding: var(--space-2-5) var(--space-5);
     border: none;
     border-radius: 0;
     background: none;
-    color: var(--text-secondary, #6b7280);
-    font-size: 14px;
-    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    transition: color 0.15s ease, border-bottom-color 0.15s ease;
+    margin-bottom: calc(-1 * var(--space-0-5));
+    transition: color var(--duration-fast) ease, border-bottom-color var(--duration-fast) ease;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     box-shadow: none;
   }
 
   .tab:hover,
   .tab:focus {
-    color: var(--text-color, #111827);
+    color: var(--text-color);
     background: none;
     transform: none;
     box-shadow: none;
@@ -450,26 +450,26 @@
   }
 
   .badge {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     padding: 1px 7px;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: var(--hover-color);
     color: var(--text-secondary);
   }
 
   .badge.alert {
-    background: var(--error-solid, #dc2626);
-    color: white;
+    background: var(--error-solid);
+    color: var(--text-on-solid);
   }
 
   @media (max-width: 768px) {
     .speakers-page {
-      padding: 16px 12px;
+      padding: var(--space-4) var(--space-3);
     }
 
     .page-header h1 {
-      font-size: 20px;
-      margin-bottom: 12px;
+      font-size: var(--font-size-xl);
+      margin-bottom: var(--space-3);
     }
 
     .tabs {
@@ -484,8 +484,8 @@
     }
 
     .tab {
-      padding: 8px 14px;
-      font-size: 13px;
+      padding: var(--space-2) var(--space-3-5);
+      font-size: var(--font-size-sm);
       white-space: nowrap;
       flex-shrink: 0;
     }

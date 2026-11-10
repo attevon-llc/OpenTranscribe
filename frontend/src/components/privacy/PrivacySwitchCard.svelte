@@ -89,20 +89,20 @@
 
 <style>
   .card {
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .info {
@@ -111,9 +111,9 @@
   }
 
   .title {
-    margin: 0 0 0.25rem;
-    font-size: 0.9375rem;
-    font-weight: var(--font-weight-semibold, 600);
+    margin: 0 0 var(--space-1);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -121,19 +121,19 @@
   .notice,
   .locked {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-secondary);
   }
 
   .notice,
   .locked {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .locked {
     color: var(--text-color);
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
   }
 
   .toggle {
@@ -153,7 +153,7 @@
     margin: 0;
     opacity: 0;
     cursor: pointer;
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .slider {
@@ -161,7 +161,7 @@
     inset: 0;
     background-color: var(--border-color);
     border-radius: 24px;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
   }
 
   .slider::before {
@@ -172,8 +172,8 @@
     inset-inline-start: 3px;
     bottom: 3px;
     background-color: white;
-    border-radius: 50%;
-    transition: inset-inline-start 0.2s;
+    border-radius: var(--radius-round);
+    transition: inset-inline-start var(--duration-base);
   }
 
   .toggle input:checked + .slider {
@@ -203,14 +203,14 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
-    padding-top: 0.75rem;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border-color);
   }
 
   small {
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     flex: 1;
     min-width: 12rem;
   }

@@ -148,23 +148,23 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 12px;
-    padding: 12px 14px;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
   .source-badges {
     display: flex;
-    gap: 6px;
-    margin-bottom: 4px;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-1);
     flex-wrap: wrap;
   }
   .badge {
     font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-weight: 600;
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-xl);
+    font-weight: var(--font-weight-semibold);
   }
   .type-badge {
     background: var(--button-hover);
@@ -176,11 +176,11 @@
   }
   .badge-success {
     background: rgba(34, 197, 94, 0.15);
-    color: var(--success-color, #16a34a);
+    color: var(--success-color);
   }
   .badge-error {
     background: rgba(239, 68, 68, 0.15);
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
   .badge-running {
     background: rgba(234, 179, 8, 0.15);
@@ -191,7 +191,7 @@
     color: var(--text-secondary);
   }
   .source-name {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-size: 0.95rem;
   }
   .source-meta {
@@ -202,18 +202,18 @@
     font-style: italic;
   }
   .disk-banner {
-    margin-top: 6px;
-    font-size: 0.75rem;
+    margin-top: var(--space-1-5);
+    font-size: var(--font-size-xs);
     color: var(--warning-color);
   }
   .source-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
   .btn-sm {
-    padding: 4px 10px;
+    padding: var(--space-1) var(--space-2-5);
     font-size: 0.8rem;
   }
   .enable-toggle {
@@ -233,7 +233,7 @@
     inset: 0;
     background: var(--border-color);
     border-radius: 20px;
-    transition: 0.2s;
+    transition: var(--duration-base);
   }
   .slider::before {
     content: '';
@@ -243,8 +243,8 @@
     left: 3px;
     bottom: 3px;
     background: white;
-    border-radius: 50%;
-    transition: 0.2s;
+    border-radius: var(--radius-round);
+    transition: var(--duration-base);
   }
   .enable-toggle input:checked + .slider {
     background: var(--primary-color);

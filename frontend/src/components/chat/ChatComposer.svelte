@@ -146,21 +146,21 @@
 
 <style>
   .composer {
-    padding: 0.75rem 0 0;
+    padding: var(--space-3) 0 0;
   }
 
   .input-shell {
     display: flex;
     align-items: flex-end;
-    gap: 0.5rem;
-    padding-block: 0.5rem;
-    padding-inline: 0.9rem 0.5rem;
+    gap: var(--space-2);
+    padding-block: var(--space-2);
+    padding-inline: 0.9rem var(--space-2);
     border: 1px solid var(--field-border);
     border-radius: 24px;
     background-color: var(--field-bg);
     transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease;
+      border-color var(--duration-fast) ease,
+      box-shadow var(--duration-fast) ease;
   }
 
   .input-shell:focus-within {
@@ -169,7 +169,7 @@
   }
 
   .input-shell.too-long {
-    border-color: var(--error-color, #dc3545);
+    border-color: var(--error-color);
   }
 
   /* Embedded field: the shell above draws the one rounded box and its focus ring, so every
@@ -208,13 +208,13 @@
     width: 34px;
     height: 34px;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--primary-color);
-    color: #fff;
+    color: var(--text-on-solid);
     cursor: pointer;
     transition:
-      background-color 0.15s ease,
-      opacity 0.15s ease;
+      background-color var(--duration-fast) ease,
+      opacity var(--duration-fast) ease;
   }
 
   .send-button:disabled {
@@ -245,8 +245,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
-    padding: 0.4rem 0.75rem 0;
+    gap: var(--space-4);
+    padding: 0.4rem var(--space-3) 0;
     min-height: 1.1rem;
   }
 
@@ -257,8 +257,8 @@
   }
 
   .counter.over {
-    color: var(--error-color, #dc3545);
-    font-weight: 600;
+    color: var(--error-color);
+    font-weight: var(--font-weight-semibold);
   }
 
   .ai-disclaimer {

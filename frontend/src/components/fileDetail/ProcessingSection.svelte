@@ -50,7 +50,7 @@
 
 <style>
   .processing-section {
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
   }
 
   .section-header {
@@ -60,10 +60,10 @@
     justify-content: space-between;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 12px 16px;
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     color: var(--text-primary);
   }
 
@@ -74,13 +74,13 @@
 
   .section-heading {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
   .chevron {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .chevron.open {
@@ -90,8 +90,8 @@
   .section-content {
     border: 1px solid var(--border-color);
     border-top: none;
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     background: var(--surface-color);
-    padding: 16px 20px;
+    padding: var(--space-4) var(--space-5);
   }
 </style>

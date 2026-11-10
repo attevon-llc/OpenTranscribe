@@ -188,7 +188,7 @@
 
 <style>
   .chat-sources {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .sources-toggle {
@@ -197,12 +197,12 @@
     gap: 0.35rem;
     background: none;
     border: none;
-    padding: 0.25rem 0.35rem;
+    padding: var(--space-1) 0.35rem;
     margin-inline-start: -0.35rem;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
   }
 
@@ -212,7 +212,7 @@
   }
 
   .chevron {
-    transition: transform 0.15s ease;
+    transition: transform var(--duration-fast) ease;
   }
 
   .chevron.open {
@@ -221,10 +221,10 @@
 
   .sources-list {
     list-style: none;
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     padding: 0;
     display: grid;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   /* Card chrome lives on the LI, not the anchor: the "show more" button is a
@@ -235,12 +235,12 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--surface-color);
     overflow: hidden;
     transition:
-      border-color 0.15s ease,
-      background-color 0.15s ease;
+      border-color var(--duration-fast) ease,
+      background-color var(--duration-fast) ease;
   }
 
   .source-item:hover {
@@ -251,7 +251,7 @@
   .source-card {
     display: flex;
     gap: 0.6rem;
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem var(--space-3);
     text-decoration: none;
     color: inherit;
   }
@@ -282,25 +282,25 @@
 
   .source-meta {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
   .source-speaker {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   /* A digest is derived text, not a quote. The badge is what stops a summary
      from reading as something a participant said — light/dark parity via the
      shared tokens, never a hardcoded colour. */
   .source-kind {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     font-size: var(--font-size-2xs);
     padding: 0.05rem 0.35rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-sm);
     background: var(--background-secondary);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
@@ -333,11 +333,11 @@
     margin-inline: calc(0.75rem + 0.6rem + 1.6rem) 0.75rem;
     padding: 0.15rem 0.4rem;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: none;
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
   }
 

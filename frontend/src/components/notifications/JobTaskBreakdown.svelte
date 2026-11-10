@@ -66,10 +66,10 @@
 
 <style>
   .job-breakdown {
-    margin-top: 8px;
-    padding: 8px 10px;
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
 
@@ -81,34 +81,34 @@
   }
 
   .tier + .tier {
-    margin-top: 8px;
-    padding-top: 8px;
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
     border-top: 1px solid var(--border-color);
   }
 
   .tier-head {
-    margin: 0 0 4px;
+    margin: 0 0 var(--space-1);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
   }
 
   .task-list {
-    padding-inline-start: 8px;
+    padding-inline-start: var(--space-2);
   }
 
   .task-row + .task-row {
-    margin-top: 4px;
+    margin-top: var(--space-1);
   }
 
   .sub-list {
-    margin-top: 2px;
-    padding-inline-start: 20px;
+    margin-top: var(--space-0-5);
+    padding-inline-start: var(--space-5);
   }
 
   .line {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     font-size: var(--font-size-xs);
     line-height: var(--line-height-snug);
     color: var(--text-color);
@@ -143,8 +143,8 @@
   }
 
   .task-message {
-    margin: 2px 0 0;
-    padding-inline-start: 20px;
+    margin: var(--space-0-5) 0 0;
+    padding-inline-start: var(--space-5);
     font-size: var(--font-size-xs);
     color: var(--error-color);
     overflow-wrap: anywhere;

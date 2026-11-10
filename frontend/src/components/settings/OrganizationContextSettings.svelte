@@ -368,7 +368,7 @@
 <style>
   .org-context-settings {
     max-width: 800px;
-    padding: 1.5rem 0;
+    padding: var(--space-6) 0;
   }
 
   .loading-state {
@@ -376,40 +376,40 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 3rem;
-    gap: 1rem;
+    padding: var(--space-12);
+    gap: var(--space-4);
     color: var(--text-secondary);
   }
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .label-hint {
-    font-size: 0.8125rem;
-    font-weight: 400;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
   }
 
   .form-textarea {
-    padding: 0.75rem;
-    font-size: 0.8125rem;
+    padding: var(--space-3);
+    font-size: var(--font-size-sm);
     resize: vertical;
     min-height: 120px;
     line-height: 1.5;
@@ -421,21 +421,21 @@
   }
 
   .char-counter {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     text-align: right;
   }
 
   .char-warning {
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
   }
 
   .toggle-group {
-    padding: 1rem;
+    padding: var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    transition: all 0.2s ease;
+    border-radius: var(--radius-lg);
+    transition: all var(--duration-base) ease;
   }
 
   .toggle-group:hover {
@@ -446,24 +446,24 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .toggle-label {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     cursor: pointer;
   }
 
   .label-text {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .label-description {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -491,7 +491,7 @@
     right: 0;
     bottom: 0;
     background-color: var(--border-color);
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 24px;
   }
 
@@ -503,8 +503,8 @@
     left: 3px;
     bottom: 3px;
     background-color: white;
-    transition: 0.3s;
-    border-radius: 50%;
+    transition: var(--duration-slow);
+    border-radius: var(--radius-round);
   }
 
   input:checked + .toggle-slider {
@@ -517,9 +517,9 @@
 
   .form-actions {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
     justify-content: flex-end;
-    padding-top: 0.5rem;
+    padding-top: var(--space-2);
   }
 
   .btn-secondary {
@@ -531,20 +531,20 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
     background: rgba(var(--primary-color-rgb), 0.08);
     border: 1px solid rgba(var(--primary-color-rgb), 0.2);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .banner-content {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     color: var(--primary-on-surface);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
   }
 
   :global([data-theme='dark']) .banner-content {
@@ -552,21 +552,21 @@
   }
 
   .btn-stop-shared {
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     background-color: #ef4444;
     border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    color: white;
-    transition: all 0.15s;
+    color: var(--text-on-solid);
+    transition: all var(--duration-fast);
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .btn-stop-shared:hover:not(:disabled) {
-    background-color: #dc2626;
-    color: white;
+    background-color: var(--error-solid);
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
   }
@@ -582,27 +582,27 @@
 
   /* Shared by Others section */
   .shared-section {
-    margin-top: 0.5rem;
-    padding-top: 1rem;
+    margin-top: var(--space-2);
+    padding-top: var(--space-4);
     border-top: 1px dashed var(--border-color);
   }
 
   .shared-section-title {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9375rem;
-    font-weight: 600;
+    gap: var(--space-2);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
   }
 
   .shared-card {
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    margin-bottom: 0.75rem;
-    transition: all 0.2s;
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-3);
+    transition: all var(--duration-base);
   }
 
   .shared-card.active {
@@ -618,28 +618,28 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .shared-card-info {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .shared-owner {
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
   .admin-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 10px;
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(245, 158, 11, 0.12);
@@ -654,10 +654,10 @@
   .active-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 10px;
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: rgba(16, 185, 129, 0.12);
@@ -665,7 +665,7 @@
   }
 
   .shared-card-preview {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
     white-space: pre-wrap;
@@ -677,23 +677,23 @@
   }
 
   .btn-shared-action {
-    padding: 0.375rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
+    padding: var(--space-1-5) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-use {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-use:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -704,14 +704,14 @@
 
   .btn-stop {
     background-color: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .btn-stop:hover:not(:disabled) {
-    background-color: #dc2626;
-    color: white;
+    background-color: var(--error-solid);
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
   }
@@ -733,7 +733,7 @@
   /* Responsive */
   @media (max-width: 640px) {
     .org-context-settings {
-      padding: 1rem 0;
+      padding: var(--space-4) 0;
     }
 
     .toggle-header {
@@ -758,7 +758,7 @@
     .shared-card-header {
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
   }
 </style>

@@ -624,7 +624,7 @@
 <style>
   .terms-document {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
     overflow: hidden;
   }
@@ -634,9 +634,9 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 6px 12px;
-    padding: 6px 8px;
-    padding-inline-start: 16px;
+    gap: var(--space-1-5) var(--space-3);
+    padding: var(--space-1-5) var(--space-2);
+    padding-inline-start: var(--space-4);
     border-block-end: 1px solid var(--border-color);
     background-color: var(--surface-color);
   }
@@ -650,7 +650,7 @@
     max-height: 40vh;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 14px 18px;
+    padding: var(--space-3-5) 18px;
     color: var(--text-primary);
   }
 
@@ -671,17 +671,17 @@
   .wizard-step {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .wizard-progress {
-    margin-block-end: 20px;
+    margin-block-end: var(--space-5);
     /* Room above it when a step change scrolls it back into view (the body's own padding). */
     scroll-margin-block-start: 24px;
   }
 
   .wizard-progress-label {
-    margin: 0 0 12px;
+    margin: 0 0 var(--space-3);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
@@ -690,63 +690,63 @@
   .wizard-callout {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 12px 14px;
-    border: 1px solid var(--border-color, #d1d5db);
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-3-5);
+    border: 1px solid var(--border-color);
     border-inline-start-width: 4px;
-    border-radius: 8px;
-    background-color: var(--bg-secondary, white);
-    color: var(--text-primary, #111827);
+    border-radius: var(--radius-lg);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
   }
 
   .wizard-callout-warning {
-    border-color: var(--warning-color, #f59e0b);
-    background-color: rgba(var(--warning-color-rgb, 245, 158, 11), 0.12);
+    border-color: var(--warning-color);
+    background-color: rgba(var(--warning-color-rgb), 0.12);
   }
 
   .wizard-callout-success {
-    border-color: var(--success-color, #10b981);
-    background-color: rgba(var(--success-color-rgb, 16, 185, 129), 0.12);
+    border-color: var(--success-color);
+    background-color: rgba(var(--success-color-rgb), 0.12);
   }
 
   .wizard-hint {
     margin: 0;
-    color: var(--text-secondary, #6b7280);
-    font-size: var(--font-size-sm, 0.9rem);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .wizard-skip-hint {
-    margin-block-start: 20px;
+    margin-block-start: var(--space-5);
   }
 
   .wizard-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: var(--space-2-5);
   }
 
   .wizard-summary {
     margin: 0;
-    padding-inline-start: 20px;
+    padding-inline-start: var(--space-5);
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .posture-cards {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-2-5);
   }
 
   .posture-card {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
     text-align: start;
-    padding: 14px 16px;
+    padding: var(--space-3-5) var(--space-4);
     border: 2px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
     box-shadow: none;
     color: var(--text-primary);
@@ -771,7 +771,7 @@
   .wizard-checkbox {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: var(--space-2-5);
     cursor: pointer;
   }
 
@@ -781,7 +781,7 @@
 
   .wizard-checkbox small {
     display: block;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
     font-weight: normal;
   }
 
@@ -792,9 +792,9 @@
   /* A text link, not a button: the global button rule's surface, radius and shadow must not
      leak onto it (it used to render as a raised white box). */
   .wizard-skip-link {
-    padding: 8px 4px;
+    padding: var(--space-2) var(--space-1);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     box-shadow: none;
     color: var(--text-secondary);
@@ -821,7 +821,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 10px 16px;
+    gap: var(--space-2-5) var(--space-4);
   }
 
   .terms-footer .terms-accept {
@@ -832,15 +832,15 @@
   .terms-footer .terms-accept:focus-within {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .terms-step-compact {
-    gap: 10px;
+    gap: var(--space-2-5);
   }
 
   .wizard-callout-slim {
-    padding: 6px 12px;
+    padding: var(--space-1-5) var(--space-3);
     font-size: var(--font-size-sm);
   }
 </style>

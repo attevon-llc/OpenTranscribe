@@ -105,35 +105,35 @@
   .certificate-info {
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1rem;
-    margin-top: 1rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    margin-top: var(--space-4);
   }
 
   .cert-header {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .cert-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    background: var(--success-color, #22c55e);
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-weight: 600;
-    font-size: 0.875rem;
+    gap: var(--space-2);
+    background: var(--success-color);
+    color: var(--text-on-solid);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
   }
 
   .warning-banner {
     background: rgba(234, 179, 8, 0.15);
     color: #ca8a04;
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
-    margin-bottom: 1rem;
-    font-weight: 500;
-    font-size: 0.8125rem;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-4);
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
     border: 1px solid rgba(234, 179, 8, 0.3);
   }
 
@@ -158,13 +158,13 @@
   .cert-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .cert-item {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .cert-item.full-width {
@@ -179,7 +179,7 @@
 
   .cert-item span,
   .cert-item pre {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
@@ -188,9 +188,9 @@
     white-space: pre-wrap;
     word-break: break-all;
     background: var(--surface-color);
-    padding: 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
     border: 1px solid var(--border-color);
     font-family: 'Courier New', Courier, monospace;
   }
@@ -206,7 +206,7 @@
 
   .expired {
     color: #dc2626;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   :global([data-theme='dark']) .expired {

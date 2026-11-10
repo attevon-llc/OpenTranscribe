@@ -194,7 +194,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
     padding-top: 0.85rem;
     border-top: 1px solid var(--border-color);
   }
@@ -218,15 +218,15 @@
   }
 
   .estimate.over {
-    color: var(--error-color, #dc3545);
-    font-weight: 600;
+    color: var(--error-color);
+    font-weight: var(--font-weight-semibold);
   }
 
   .clear-link {
     background: none;
     border: none;
     padding: 0.15rem 0.3rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
     font-size: 0.78rem;
     cursor: pointer;
@@ -240,7 +240,7 @@
 
   .footer-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-left: auto;
   }
 </style>

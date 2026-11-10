@@ -1278,14 +1278,14 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    padding-bottom: 0.75rem;
+    padding-bottom: var(--space-3);
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
   }
 
   .sidebar-section {
-    margin-bottom: 0.25rem;
-    padding-top: 0.75rem;
+    margin-bottom: var(--space-1);
+    padding-top: var(--space-3);
   }
 
   /* The divider belongs BETWEEN groups. Keep the sibling combinator: the top group must not
@@ -1297,44 +1297,44 @@
 
   .section-heading {
     font-size: var(--font-size-xs);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    margin: 0 1.25rem 0.375rem;
+    margin: 0 var(--space-5) var(--space-1-5);
     padding-top: 0;
   }
 
   .section-nav {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-0-5);
   }
 
   .nav-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.4375rem 0.75rem;
-    margin: 0 0.5rem;
+    padding: 0.4375rem var(--space-3);
+    margin: 0 var(--space-2);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: transparent;
     color: var(--text-color);
     text-align: left;
     cursor: pointer;
-    transition: background-color 0.15s, color 0.15s;
-    font-size: 0.8125rem;
+    transition: background-color var(--duration-fast), color var(--duration-fast);
+    font-size: var(--font-size-sm);
     position: relative;
   }
 
   .nav-item:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.04));
+    background-color: var(--hover-color);
     color: var(--primary-on-surface);
   }
 
   .nav-item.active {
     background-color: var(--primary-light);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   /* Present but not openable: the entry has to stay legible enough to read as a
@@ -1375,11 +1375,11 @@
     flex-shrink: 0;
     min-width: 1.25rem;
     padding: 0 0.35rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: rgba(245, 158, 11, 0.18);
     color: #b45309;
     border: 1px solid rgba(245, 158, 11, 0.45);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     text-align: center;
@@ -1394,24 +1394,24 @@
   /* Mobile section navigation - hidden when sidebar is visible */
   .mobile-section-nav {
     display: none;
-    margin-bottom: 1rem;
-    padding: 0.5rem;
+    margin-bottom: var(--space-4);
+    padding: var(--space-2);
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .mobile-nav-label {
     display: block;
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin-bottom: 0.25rem;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--space-1);
     color: var(--text-secondary);
   }
 
   .mobile-nav-select {
     width: 100%;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     min-height: 44px;
   }
 
@@ -1421,16 +1421,16 @@
 
   .section-title {
     font-size: 1.125rem;
-    font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .section-title-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin: 0 0 0.25rem 0;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-1) 0;
   }
 
   .section-title-row .section-title {
@@ -1438,32 +1438,32 @@
   }
 
   .section-description {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    margin: 0 0 1.25rem 0;
+    margin: 0 0 var(--space-5) 0;
   }
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-2-5);
+    font-size: var(--font-size-sm);
   }
 
   .form-control:disabled {
@@ -1472,18 +1472,18 @@
   }
 
   .form-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     font-weight: normal;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .checkbox-label input[type="checkbox"] {
@@ -1494,8 +1494,8 @@
 
   .form-actions {
     display: flex;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
     justify-content: flex-end;
   }
 
@@ -1505,22 +1505,22 @@
 
   .btn {
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: none;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-primary {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -1543,7 +1543,7 @@
   .btn-secondary:hover:not(:disabled) {
     background-color: var(--button-hover);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-hover);
   }
 
   .btn-secondary:active:not(:disabled) {

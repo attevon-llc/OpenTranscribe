@@ -106,27 +106,27 @@
 
   /* ── File header ── */
   .skeleton-file-header {
-    margin-bottom: 24px;
+    margin-bottom: var(--space-6);
   }
 
   .skeleton-title {
     width: 45%;
     max-width: 480px;
     height: 28px;
-    border-radius: 6px;
-    margin-bottom: 12px;
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3);
   }
 
   .skeleton-meta-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .skeleton-meta-chip {
     width: 72px;
     height: 18px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .skeleton-meta-chip:nth-child(2) { width: 96px; }
@@ -137,7 +137,7 @@
   .skeleton-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 32px;
+    gap: var(--space-8);
     align-items: start;
   }
 
@@ -145,7 +145,7 @@
   .skeleton-transcript-column {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
     min-width: 0;
   }
 
@@ -159,25 +159,25 @@
   .skeleton-small-label {
     width: 72px;
     height: 16px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .skeleton-header-buttons {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .skeleton-button {
     width: 96px;
     height: 36px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   /* ── Video player placeholder ── */
   .skeleton-player {
     width: 100%;
     aspect-ratio: 16 / 9;
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -187,7 +187,7 @@
   .skeleton-player-icon {
     color: rgba(100, 116, 139, 0.35);
     position: relative;
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   :global([data-theme='dark']) .skeleton-player-icon {
@@ -197,14 +197,14 @@
   /* ── Chips row (tags) ── */
   .skeleton-chips-row {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     flex-wrap: wrap;
-    margin-top: 4px;
+    margin-top: var(--space-1);
   }
 
   .skeleton-chip {
     height: 22px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .skeleton-chip:nth-child(1) { width: 68px; }
@@ -216,12 +216,12 @@
     display: flex;
     flex-direction: column;
     gap: 18px;
-    padding: 12px 0;
+    padding: var(--space-3) 0;
   }
 
   .skeleton-transcript-item {
     display: flex;
-    gap: 12px;
+    gap: var(--space-3);
     align-items: flex-start;
   }
 
@@ -229,34 +229,34 @@
     flex-shrink: 0;
     width: 28px;
     height: 28px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   .skeleton-transcript-body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-1-5);
     min-width: 0;
   }
 
   .skeleton-speaker-line {
     width: 110px;
     height: 14px;
-    border-radius: 4px;
-    margin-bottom: 2px;
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-0-5);
   }
 
   .skeleton-text-line {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   /* ── Shimmer effect ── */
   .shimmer {
     position: relative;
     overflow: hidden;
-    background: var(--skeleton-base, rgba(100, 116, 139, 0.12));
+    background: var(--skeleton-base);
   }
 
   :global([data-theme='dark']) .shimmer {
@@ -299,7 +299,7 @@
       background: none;
     }
     .shimmer {
-      background: var(--skeleton-base, rgba(100, 116, 139, 0.15));
+      background: var(--skeleton-base);
     }
   }
 
@@ -307,7 +307,7 @@
   @media (max-width: 1024px) {
     .skeleton-grid {
       grid-template-columns: 1fr;
-      gap: 24px;
+      gap: var(--space-6);
     }
   }
 
@@ -317,10 +317,10 @@
       height: 24px;
     }
     .skeleton-file-header {
-      margin-bottom: 16px;
+      margin-bottom: var(--space-4);
     }
     .skeleton-grid {
-      gap: 16px;
+      gap: var(--space-4);
     }
   }
 </style>

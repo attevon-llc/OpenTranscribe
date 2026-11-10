@@ -94,7 +94,7 @@
     align-items: center;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: 0.1875rem;
     height: 30px;
     box-sizing: border-box;
@@ -123,9 +123,9 @@
     padding: 0;
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     color: var(--text-secondary);
   }
 
@@ -156,7 +156,7 @@
 
   .toggle-btn.active {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .toggle-btn:focus {

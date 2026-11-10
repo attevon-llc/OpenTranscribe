@@ -145,20 +145,20 @@
   .banner {
     position: fixed;
     inset-inline: 0;
-    top: calc(var(--banner-offset, 0px) + var(--navbar-height, 60px));
-    z-index: calc(var(--z-navbar, 1200) - 1);
+    top: calc(var(--banner-offset, 0px) + var(--navbar-height));
+    z-index: calc(var(--z-navbar) - 1);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem 1rem;
+    gap: var(--space-2) var(--space-4);
     min-height: 40px;
-    padding: 0.35rem 1rem;
+    padding: 0.35rem var(--space-4);
     box-sizing: border-box;
     background: var(--warning-bg);
     border-bottom: 2px solid var(--warning-color);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
   .banner.break-glass {
     background: var(--error-background);
@@ -168,20 +168,20 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem 0.6rem;
+    gap: var(--space-1) 0.6rem;
     min-width: 0;
   }
   .what {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     overflow-wrap: anywhere;
   }
   .buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .buttons .btn {
-    padding: 0.25rem 0.7rem;
-    font-size: 0.75rem;
+    padding: var(--space-1) 0.7rem;
+    font-size: var(--font-size-xs);
   }
   .sr-only {
     position: absolute;

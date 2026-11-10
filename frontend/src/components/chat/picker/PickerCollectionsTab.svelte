@@ -100,7 +100,7 @@
   .loading {
     display: flex;
     justify-content: center;
-    padding: 2rem 0;
+    padding: var(--space-8) 0;
   }
 
   .collection-filter {
@@ -120,8 +120,8 @@
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.5rem 0.4rem;
-    border-radius: 6px;
+    padding: var(--space-2) 0.4rem;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.87rem;
     color: var(--text-color);
@@ -146,7 +146,7 @@
 
   .picker-row:has(input:checked) {
     background-color: rgba(var(--primary-color-rgb), 0.12);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .picker-row:focus-within {
@@ -163,13 +163,13 @@
 
   .row-count {
     flex-shrink: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
 
   .empty {
-    padding: 1.5rem 0.5rem;
+    padding: var(--space-6) var(--space-2);
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.85rem;

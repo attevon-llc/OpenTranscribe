@@ -366,30 +366,30 @@
   .speaker-stats.compact-layout {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
     background-color: var(--surface-color);
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    box-shadow: var(--shadow-sm);
   }
 
   /* Analytics Overview Cards */
   .analytics-overview {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
   }
 
   .overview-card {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 0.75rem;
-    transition: all 0.2s ease;
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    transition: all var(--duration-base) ease;
   }
 
   .overview-card:hover {
@@ -419,13 +419,13 @@
 
   .card-value {
     font-size: 1.1rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     line-height: 1.2;
   }
 
   .card-label {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1;
   }
@@ -434,15 +434,15 @@
   .section-compact {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .section-title {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin: 0;
   }
@@ -464,16 +464,16 @@
     display: flex;
     width: 100%;
     height: 24px;
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     overflow: hidden;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-    margin: 0.75rem 0 1rem 0;
+    margin: var(--space-3) 0 var(--space-4) 0;
     border: 1px solid var(--border-color);
   }
 
   .speaker-segment-large {
     height: 100%;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     cursor: pointer;
   }
 
@@ -486,15 +486,15 @@
   .speaker-chips-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .speaker-chip {
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.75rem;
-    transition: all 0.2s ease;
+    border-radius: var(--radius-lg);
+    padding: var(--space-3);
+    transition: all var(--duration-base) ease;
   }
 
   .speaker-chip:hover {
@@ -506,19 +506,19 @@
   .chip-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
   }
 
   .speaker-dot-large {
     width: 16px;
     height: 16px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     flex-shrink: 0;
   }
 
   .speaker-name-chip {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
     font-size: 0.9rem;
     overflow: hidden;
@@ -531,7 +531,7 @@
   .chip-stats {
     display: flex;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .stat-item {
@@ -542,7 +542,7 @@
   }
 
   .stat-value {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     font-size: 0.9rem;
     line-height: 1.2;
@@ -558,15 +558,15 @@
   .additional-metrics-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
   }
 
   .metric-section {
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 0.75rem;
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
   }
 
   .metric-title {
@@ -574,9 +574,9 @@
     align-items: center;
     gap: 0.4rem;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
   }
 
   .metric-icon {
@@ -616,13 +616,13 @@
   .speaker-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     flex-shrink: 0;
   }
 
   .speaker-name-small {
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -630,26 +630,26 @@
 
   .metric-value {
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     flex-shrink: 0;
   }
 
   @media (max-width: 768px) {
     .speaker-stats.compact-layout {
-      padding: 0.75rem;
+      padding: var(--space-3);
     }
 
     .analytics-overview {
       grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .overview-card {
-      padding: 0.5rem;
+      padding: var(--space-2);
     }
 
     .card-value {
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
 
     .card-label {
@@ -661,7 +661,7 @@
     }
 
     .chip-stats {
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .additional-metrics-row {
@@ -685,11 +685,11 @@
 
     .talk-time-bar-large {
       height: 20px;
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
     }
 
     .speaker-chip {
-      padding: 0.5rem;
+      padding: var(--space-2);
     }
 
     .chip-stats {

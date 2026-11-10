@@ -191,23 +191,23 @@
 
 <style>
   .locked-accounts-panel {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
   }
 
   .panel-title {
-    margin: 0 0 0.75rem;
-    font-size: 0.9375rem;
-    font-weight: 600;
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
   }
 
   .state-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    border-radius: 6px;
-    background: var(--bg-secondary, rgba(0, 0, 0, 0.03));
-    font-size: 0.8125rem;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .state-row.error {
@@ -216,25 +216,25 @@
   }
 
   .state-row.disabled {
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
   }
 
   .retry-btn {
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: inherit;
     cursor: pointer;
   }
 
   .degraded-banner {
-    padding: 0.5rem 0.75rem;
-    margin-bottom: 0.75rem;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+    border-radius: var(--radius-md);
     background: rgba(217, 119, 6, 0.12);
     color: #b45309;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   :global([data-theme='dark']) .degraded-banner {
@@ -245,12 +245,12 @@
   .locked-accounts-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .locked-accounts-table th,
   .locked-accounts-table td {
-    padding: 0.5rem 0.5rem;
+    padding: var(--space-2) var(--space-2);
     border-bottom: 1px solid var(--border-color);
     text-align: left;
   }
@@ -261,21 +261,21 @@
 
   .no-match {
     font-style: italic;
-    color: var(--text-secondary, var(--text-color));
+    color: var(--text-secondary);
   }
 
   .actions-cell {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .action-link {
     border: none;
     background: none;
-    color: var(--accent-color, #2563eb);
+    color: var(--accent-color);
     cursor: pointer;
     padding: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .action-link:disabled {
@@ -284,13 +284,13 @@
   }
 
   .load-more-btn {
-    margin-top: 0.75rem;
-    padding: 0.375rem 1rem;
+    margin-top: var(--space-3);
+    padding: var(--space-1-5) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--bg-color);
     color: var(--text-color);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 </style>

@@ -63,17 +63,17 @@
 
 <style>
   .inbox-hint {
-    padding: 8px 16px;
+    padding: var(--space-2) var(--space-4);
     background: var(--hover-color);
-    border-radius: 6px;
-    font-size: 13px;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .inbox-list {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
     max-width: 100%;
   }
@@ -82,25 +82,25 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 16px;
-    margin-top: 16px;
-    font-size: 14px;
+    gap: var(--space-4);
+    margin-top: var(--space-4);
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
   .pagination button {
-    padding: 6px 14px;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 6px;
-    background: var(--card-background, #fff);
-    color: var(--text-color, #111827);
+    padding: var(--space-1-5) var(--space-3-5);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--card-background);
+    color: var(--text-color);
     cursor: pointer;
     box-shadow: none;
-    font-size: 14px;
+    font-size: var(--font-size-md);
   }
 
   .pagination button:hover:not(:disabled) {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }
@@ -112,18 +112,18 @@
 
   @media (max-width: 768px) {
     .inbox-hint {
-      padding: 6px 12px;
-      font-size: 12px;
+      padding: var(--space-1-5) var(--space-3);
+      font-size: var(--font-size-xs);
     }
 
     .pagination {
-      gap: 8px;
-      font-size: 13px;
+      gap: var(--space-2);
+      font-size: var(--font-size-sm);
     }
 
     .pagination button {
-      padding: 6px 10px;
-      font-size: 13px;
+      padding: var(--space-1-5) var(--space-2-5);
+      font-size: var(--font-size-sm);
     }
   }
 </style>

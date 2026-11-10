@@ -22,7 +22,7 @@
 
 .slider-dual .rangeSlider {
   height: var(--slider-track-height);
-  margin: 0.5rem 0;
+  margin: var(--space-2) 0;
   border-radius: var(--slider-track-radius);
   cursor: pointer;
 }
@@ -47,7 +47,7 @@
   border: var(--slider-thumb-border);
   background-color: var(--dual-accent);
   box-shadow: var(--slider-thumb-shadow);
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow var(--duration-fast) ease;
 }
 
 /* The library turns a range-mode nub into a rotated teardrop with selectors of

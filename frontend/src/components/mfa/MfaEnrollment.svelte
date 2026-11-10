@@ -231,13 +231,13 @@
   .mfa-enroll {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
     text-align: center;
   }
 
   .mfa-enroll h2 {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     color: var(--text-color);
   }
 
@@ -245,32 +245,32 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1.5rem 0;
+    gap: var(--space-3);
+    padding: var(--space-6) 0;
   }
 
   .enroll-loading p,
   .enroll-lead,
   .enroll-instruction {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-light);
   }
 
   .enroll-lead {
-    padding: 0.75rem;
+    padding: var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: rgba(245, 158, 11, 0.12);
     color: var(--text-color);
   }
 
   .qr-code {
     align-self: center;
-    padding: 1rem;
+    padding: var(--space-4);
     /* The QR must stay dark-on-white in both themes to remain scannable. */
     background-color: #ffffff;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .qr-code img {
@@ -292,20 +292,20 @@
 
   .manual-entry-label {
     display: block;
-    margin-bottom: 0.375rem;
-    font-size: 0.75rem;
+    margin-bottom: var(--space-1-5);
+    font-size: var(--font-size-xs);
     color: var(--text-light);
   }
 
   .secret-code {
     display: block;
-    padding: 0.625rem 0.75rem;
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--background-color);
     color: var(--text-color);
     font-family: monospace;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     word-break: break-all;
     user-select: all;
   }
@@ -313,28 +313,28 @@
   .verify-form {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
     text-align: left;
   }
 
   .verify-form label {
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .code-input {
     font-family: monospace;
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
     letter-spacing: 0.25em;
     text-align: center;
   }
 
   .codes-warning {
     margin: 0;
-    padding: 0.75rem;
+    padding: var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.45);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: rgba(245, 158, 11, 0.12);
     color: var(--text-color);
     font-size: 0.85rem;
@@ -343,13 +343,13 @@
   .codes-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .backup-code {
-    padding: 0.5rem;
+    padding: var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background-color: var(--background-color);
     color: var(--text-color);
     font-family: monospace;
@@ -358,7 +358,7 @@
 
   .codes-actions {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .codes-actions .btn {
@@ -368,7 +368,7 @@
   .ack-label {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     text-align: left;
     font-size: 0.85rem;
     color: var(--text-color);

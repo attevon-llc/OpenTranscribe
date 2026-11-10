@@ -136,12 +136,12 @@
     border: none;
     cursor: pointer;
     color: var(--text-secondary-color);
-    padding: 6px;
-    border-radius: 50%;
+    padding: var(--space-1-5);
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -156,14 +156,14 @@
   }
 
   .info-button.small {
-    padding: 4px;
+    padding: var(--space-1);
   }
 
   .status-badge {
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 500;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     text-transform: uppercase;
   }
 
@@ -176,7 +176,7 @@
   }
 
   .status-processing {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
   }
 
@@ -207,7 +207,7 @@
   }
 
   :global([data-theme='dark']) .status-processing {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     /* Was a one-off #60a5fa: computed ~4.42:1 against this badge's composited background
      * (rgba(59,130,246,0.2) over the dark surface #1e293b -> rgb(36,59,96)) — just under
      * AA's 4.5:1, same failure class as the dark .status-error bug below (issue #972).
@@ -240,23 +240,23 @@
 
   .tasks-table-wrapper {
     overflow-x: auto;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 
   .tasks-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     margin-bottom: 0;
     box-shadow: none;
   }
 
   .tasks-table thead th {
     text-align: left;
-    padding: 0.6rem 0.75rem;
-    font-weight: 600;
-    font-size: 0.75rem;
+    padding: 0.6rem var(--space-3);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-xs);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-secondary-color);
@@ -271,7 +271,7 @@
   }
 
   .tasks-table tbody td {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--border-color);
     vertical-align: middle;
     color: var(--text-color);
@@ -282,7 +282,7 @@
   }
 
   .tasks-table tbody tr:hover {
-    background: var(--table-row-hover, rgba(0, 0, 0, 0.02));
+    background: var(--table-row-hover);
   }
 
   :global([data-theme='dark']) .tasks-table tbody tr:hover {
@@ -292,8 +292,8 @@
   .task-type-cell {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-weight: 500;
+    gap: var(--space-2);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -308,7 +308,7 @@
 
   .task-filename {
     display: block;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -320,7 +320,7 @@
 
   .task-error-inline {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     /* 3.76:1 as --error-color, even on plain white — the fill red is simply not a text
      * colour at 12px. */
     color: var(--color-error-text);
@@ -334,7 +334,7 @@
   .task-status-cell {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     white-space: nowrap;
   }
 
@@ -342,20 +342,20 @@
     width: 60px;
     height: 4px;
     background: var(--border-color);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     overflow: hidden;
   }
 
   .task-status-cell .progress-bar {
     height: 100%;
     background: var(--primary-color);
-    border-radius: 2px;
-    transition: width 0.3s ease;
+    border-radius: var(--radius-xs);
+    transition: width var(--duration-slow) ease;
   }
 
   .task-progress-text {
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary-color);
   }
 
@@ -366,22 +366,22 @@
 
   .no-tasks {
     text-align: center;
-    padding: 2rem;
+    padding: var(--space-8);
     color: var(--text-secondary-color);
   }
 
   .loading {
     text-align: center;
-    padding: 2rem;
+    padding: var(--space-8);
     color: var(--text-light);
   }
 
   .error-message {
     background: var(--error-background);
     color: var(--error-color);
-    padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
+    padding: var(--space-4);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-4);
     border: 1px solid var(--error-border);
   }
 

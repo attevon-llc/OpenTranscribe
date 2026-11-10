@@ -438,8 +438,8 @@
     overflow: hidden;
     padding: 0;
     background: var(--color-primary);
-    color: white;
-    z-index: var(--z-critical, 10000);
+    color: var(--text-on-solid);
+    z-index: var(--z-critical);
   }
 
   .skip-link:focus-visible {
@@ -447,9 +447,9 @@
     left: 0.5rem;
     width: auto;
     height: auto;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    font-weight: 600;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
+    font-weight: var(--font-weight-semibold);
     text-decoration: none;
   }
 
@@ -462,7 +462,7 @@
      screens) is published as --support-banner-height, and every page that sizes itself from
      --content-top follows. */
   .app.has-support-banner {
-    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px) + var(--demo-banner-height) + var(--erasure-banner-height, 0px));
+    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height) + var(--demo-banner-height) + var(--erasure-banner-height, 0px));
   }
 
   /* The erasure notice is fixed under the navbar too (and under a support banner when both show). */
@@ -482,7 +482,7 @@
        breakpoint below. */
     --content-padding: 1rem;
     padding: var(--content-padding);
-    margin-top: var(--content-top, 60px);
+    margin-top: var(--content-top);
   }
 
   .content.no-navbar {

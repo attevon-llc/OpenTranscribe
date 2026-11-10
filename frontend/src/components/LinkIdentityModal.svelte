@@ -176,23 +176,23 @@
   .modal-body {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .modal-intro {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--color-text-secondary);
   }
 
   .modal-note {
     margin: 0;
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.45);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: rgba(245, 158, 11, 0.12);
     color: var(--color-text);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.5;
   }
 
@@ -203,8 +203,8 @@
   }
 
   .form-group label {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 </style>

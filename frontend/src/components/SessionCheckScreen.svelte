@@ -51,7 +51,7 @@
   .check-shell {
     min-height: 100vh;
     min-height: 100dvh;
-    background: var(--bg-color, var(--bg-primary));
+    background: var(--bg-color);
   }
 
   /* Same box as Navbar's `.navbar` / `.navbar-container`: height, surface, padding, max-width. */
@@ -69,7 +69,7 @@
     height: 100%;
     max-width: 1600px;
     margin: 0 auto;
-    padding: 0.75rem 1.5rem;
+    padding: var(--space-3) var(--space-6);
   }
 
   /* NavbarBrand: a 36px banner inside a 0.25rem-padded button, stepping down with the viewport. */
@@ -77,9 +77,9 @@
     box-sizing: content-box;
     height: 36px;
     width: auto;
-    padding: 0.25rem;
+    padding: var(--space-1);
     object-fit: contain;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .check-body {
@@ -93,7 +93,7 @@
   /* Navbar.svelte's own breakpoints for `.navbar-container` padding and the banner height. */
   @media (max-width: 1560px) {
     .check-bar-inner {
-      padding: 0.5rem 1rem;
+      padding: var(--space-2) var(--space-4);
     }
   }
 
@@ -109,7 +109,7 @@
     }
 
     .check-bar-inner {
-      padding: 0.5rem;
+      padding: var(--space-2);
     }
   }
 
@@ -119,7 +119,7 @@
     }
 
     .check-bar-inner {
-      padding: 0.5rem 0.375rem;
+      padding: var(--space-2) var(--space-1-5);
     }
   }
 
@@ -128,14 +128,14 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.5rem;
+    gap: var(--space-6);
     min-height: 100vh;
     min-height: 100dvh;
-    background-color: var(--bg-primary, #f8fafc);
+    background-color: var(--bg-primary);
   }
 
   .logo {
-    border-radius: 16px;
+    border-radius: var(--radius-3xl);
     animation: check-pulse 1.8s ease-in-out infinite;
   }
 
@@ -144,7 +144,7 @@
     height: 3px;
     overflow: hidden;
     border-radius: 3px;
-    background: var(--border-color, #e2e8f0);
+    background: var(--border-color);
   }
 
   .bar-fill {
@@ -178,16 +178,16 @@
     position: fixed;
     inset-inline: 1rem;
     bottom: 1.5rem;
-    z-index: var(--z-critical, 10000);
+    z-index: var(--z-critical);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem 1rem;
+    gap: var(--space-2) var(--space-4);
     max-width: 32rem;
     margin-inline: auto;
-    padding: 0.875rem 1rem;
+    padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background: var(--card-background);
     color: var(--text-color);
     box-shadow: var(--card-shadow);
@@ -201,7 +201,7 @@
   .notice button {
     padding: 0.4rem 0.9rem;
     border: 1px solid var(--primary-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: transparent;
     color: var(--primary-on-surface);
     font: inherit;

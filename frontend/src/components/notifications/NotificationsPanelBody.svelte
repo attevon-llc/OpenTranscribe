@@ -169,32 +169,32 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
+    padding: var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--border-color);
     background: var(--surface-color);
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   }
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .header-title {
     margin: 0;
-    font-size: 16px;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .unread-badge {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
-    padding: 2px 6px;
-    border-radius: 10px;
+    padding: var(--space-0-5) var(--space-1-5);
+    border-radius: var(--radius-xl);
     min-width: 16px;
     height: 16px;
     display: flex;
@@ -205,7 +205,7 @@
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .icon-btn {
@@ -214,12 +214,12 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    padding: 0.5rem;
-    border-radius: 4px;
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition:
-      background-color 0.2s ease,
-      color 0.2s ease;
+      background-color var(--duration-base) ease,
+      color var(--duration-base) ease;
     border: 1px solid;
     box-sizing: border-box;
   }
@@ -232,7 +232,7 @@
 
   .mark-read-btn:hover {
     background-color: var(--success-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .clear-btn {
@@ -243,7 +243,7 @@
 
   .clear-btn:hover {
     background-color: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .close-btn {
@@ -255,7 +255,7 @@
   .close-btn:hover {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .notifications-content {
@@ -291,11 +291,11 @@
 
   @media (max-width: 480px) {
     .notifications-header {
-      padding: 14px 16px;
+      padding: var(--space-3-5) var(--space-4);
     }
 
     .header-title {
-      font-size: 15px;
+      font-size: var(--font-size-body);
     }
 
     .icon-btn {
@@ -304,7 +304,7 @@
     }
 
     .header-actions {
-      gap: 6px;
+      gap: var(--space-1-5);
     }
   }
 

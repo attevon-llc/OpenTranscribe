@@ -311,48 +311,48 @@
   .group-detail {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .detail-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .btn-back {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     background: none;
     border: none;
     cursor: pointer;
     color: var(--primary-on-surface);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    padding: 0.375rem 0.5rem;
-    border-radius: 6px;
-    transition: background-color 0.15s;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    padding: var(--space-1-5) var(--space-2);
+    border-radius: var(--radius-md);
+    transition: background-color var(--duration-fast);
   }
 
   .btn-back:hover {
-    background-color: var(--primary-light, rgba(59, 130, 246, 0.08));
+    background-color: var(--primary-light);
   }
 
   .btn-delete {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--danger-color, #dc2626);
-    border-radius: 6px;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
+    border: 1px solid var(--danger-color);
+    border-radius: var(--radius-md);
     background: transparent;
-    color: var(--danger-color, #dc2626);
-    font-size: 0.75rem;
-    font-weight: 500;
+    color: var(--danger-color);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-delete:hover:not(:disabled) {
@@ -365,21 +365,21 @@
   }
 
   .detail-name-section {
-    margin-bottom: 0.125rem;
+    margin-bottom: var(--space-0-5);
   }
 
   .display-name {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .display-name.editable {
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    margin: -0.25rem -0.5rem;
-    border-radius: 6px;
-    transition: background-color 0.15s;
+    padding: var(--space-1) var(--space-2);
+    margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+    border-radius: var(--radius-md);
+    transition: background-color var(--duration-fast);
   }
 
   .display-name.editable:hover {
@@ -388,15 +388,15 @@
 
   .group-name {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .edit-icon {
     color: var(--text-secondary);
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--duration-fast);
   }
 
   .display-name.editable:hover .edit-icon {
@@ -409,10 +409,10 @@
 
   .display-description.editable {
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    margin: -0.25rem -0.5rem;
-    border-radius: 6px;
-    transition: background-color 0.15s;
+    padding: var(--space-1) var(--space-2);
+    margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+    border-radius: var(--radius-md);
+    transition: background-color var(--duration-fast);
   }
 
   .display-description.editable:hover {
@@ -421,7 +421,7 @@
 
   .group-description {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -434,17 +434,17 @@
   .edit-inline {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-2-5);
+    font-size: var(--font-size-sm);
   }
 
   .edit-name-input {
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .edit-desc-textarea {
@@ -454,27 +454,27 @@
 
   .edit-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .btn-inline-save,
   .btn-inline-cancel {
-    padding: 0.25rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .btn-inline-save {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
   }
 
   .btn-inline-save:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
   }
 
   .btn-inline-save:disabled {
@@ -495,8 +495,8 @@
   .detail-meta {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    font-size: 0.75rem;
+    gap: var(--space-1-5);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     flex-wrap: wrap;
   }
@@ -507,18 +507,18 @@
 
   .section-divider {
     border-top: 1px solid var(--border-color);
-    margin: 0.25rem 0;
+    margin: var(--space-1) 0;
   }
 
   .members-section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .members-title {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0;
   }

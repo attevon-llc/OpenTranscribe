@@ -154,13 +154,13 @@
     /* Below this the columns crush into one-letter lines; scroll the wrapper instead. */
     min-width: 40rem;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
   .grant-table th {
     text-align: start;
     padding: 0.4rem 0.6rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-on-tint);
@@ -184,12 +184,12 @@
   }
   .who .primary {
     display: block;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     word-break: break-word;
   }
   .secondary {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     word-break: break-word;
   }
@@ -212,7 +212,7 @@
   }
   .btn-row {
     padding: 0.3rem 0.7rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
   .sr-only {
     position: absolute;

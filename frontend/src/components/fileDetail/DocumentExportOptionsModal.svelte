@@ -71,7 +71,7 @@
   }
 
   .export-format-note {
-    margin: 1rem 0 0;
+    margin: var(--space-4) 0 0;
     font-size: 0.85rem;
     color: var(--text-secondary);
     line-height: 1.5;

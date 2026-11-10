@@ -204,39 +204,39 @@
   .loading-state {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 1rem 0;
-    color: var(--text-secondary, #6b7280);
+    gap: var(--space-2);
+    padding: var(--space-4) 0;
+    color: var(--text-secondary);
   }
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-group-header label,
   .toggle-label {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .form-select {
     width: 100%;
-    padding-right: 2.5rem;
+    padding-right: var(--space-10);
     cursor: pointer;
   }
 
@@ -246,8 +246,8 @@
   }
 
   .form-hint {
-    font-size: 0.75rem;
-    color: var(--text-secondary, #6b7280);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
     margin: 0;
   }
 
@@ -277,9 +277,9 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: var(--border-color, #d1d5db);
+    background-color: var(--border-color);
     border-radius: 1.5rem;
-    transition: background-color 0.2s;
+    transition: background-color var(--duration-base);
   }
 
   .toggle-slider::before {
@@ -290,8 +290,8 @@
     left: 0.1875rem;
     bottom: 0.1875rem;
     background-color: white;
-    border-radius: 50%;
-    transition: transform 0.2s;
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base);
   }
 
   .toggle-switch input:checked + .toggle-slider {
@@ -305,9 +305,9 @@
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--border-color, #e5e7eb);
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-color);
   }
 
   .form-actions .btn-secondary {

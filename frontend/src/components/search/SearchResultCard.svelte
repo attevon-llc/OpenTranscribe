@@ -222,13 +222,13 @@
 
 <style>
   .result-card {
-    padding: 0.875rem 1rem;
-    margin-bottom: 0.5rem;
+    padding: var(--space-3-5) var(--space-4);
+    margin-bottom: var(--space-2);
     border: 1px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     transition:
-      border-color 0.15s,
-      background-color 0.15s;
+      border-color var(--duration-fast),
+      background-color var(--duration-fast);
   }
 
   .result-card:hover,
@@ -250,7 +250,7 @@
   .result-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: 0.5rem;
+    column-gap: var(--space-2);
   }
 
   .result-header > :not(.matches-toggle) {
@@ -266,11 +266,11 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    margin-block-start: -0.25rem;
-    margin-inline-end: -0.375rem;
+    margin-block-start: calc(-1 * var(--space-1));
+    margin-inline-end: calc(-1 * var(--space-1-5));
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     /* form-elements.css gives a bare <button> a shadow and a hover scale + fill. */
     box-shadow: none;
@@ -293,7 +293,7 @@
   /* Collapsed: chevron points down ("open me"); open: it turns to point up. */
   .matches-toggle :global(.menu-icon),
   .details-btn.disclosure :global(.menu-icon) {
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
   }
 
   .matches-toggle[aria-expanded='true'] :global(.menu-icon),
@@ -327,21 +327,21 @@
 
   .media-type-icon {
     vertical-align: -2px;
-    margin-inline-end: 0.375rem;
+    margin-inline-end: var(--space-1-5);
     opacity: 0.7;
   }
 
   .result-meta {
     display: flex;
     flex-wrap: wrap;
-    margin: 0.25rem 0 0.5rem;
+    margin: var(--space-1) 0 var(--space-2);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .result-meta > span + span::before {
     content: '·';
-    padding-inline: 0.375rem;
+    padding-inline: var(--space-1-5);
   }
 
   .relevance.dual {
@@ -355,7 +355,7 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   /* `display: flex` above would otherwise override the `hidden` attribute. */
@@ -366,7 +366,7 @@
   .occurrence-row {
     display: flex;
     align-items: flex-start;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
   }
 
   .occurrence-body {
@@ -376,7 +376,7 @@
 
   .occurrence-type-label {
     display: inline-block;
-    margin-bottom: 0.125rem;
+    margin-bottom: var(--space-0-5);
     padding: 0 0.3125rem;
     border-radius: 3px;
     font-size: var(--font-size-2xs);
@@ -405,13 +405,13 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem 1rem;
-    margin-top: 0.5rem;
+    gap: var(--space-1) var(--space-4);
+    margin-top: var(--space-2);
     padding-inline-start: calc(28px + 0.625rem);
   }
 
   .text-btn {
-    padding: 0.125rem 0;
+    padding: var(--space-0-5) 0;
     background: none;
     border: none;
     /* form-elements.css styles every bare <button> with a drop shadow and a hover
@@ -432,21 +432,21 @@
   .text-btn:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 
   .details-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   /* Pinned is a real pressed state: a tinted pill with a filled pin, not just a weight
      change, so the click always shows. */
   .details-btn.pin {
-    padding: 0.125rem 0.5rem;
-    margin-inline: -0.5rem;
-    border-radius: 999px;
+    padding: var(--space-0-5) var(--space-2);
+    margin-inline: calc(-1 * var(--space-2));
+    border-radius: var(--radius-pill);
   }
 
   .details-btn.pin[aria-pressed='true'] {
@@ -472,7 +472,7 @@
 
   @media (max-width: 768px) {
     .result-card {
-      padding: 0.75rem 0.5rem;
+      padding: var(--space-3) var(--space-2);
     }
 
     .result-title {

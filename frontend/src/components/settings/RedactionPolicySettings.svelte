@@ -174,12 +174,12 @@
 
 <style>
   .redaction-policy-settings {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
   .intro-desc {
     font-size: 0.85rem;
@@ -190,24 +190,24 @@
   .settings-section {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1.25rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
   }
   .section-title {
     font-size: 0.95rem;
-    font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
   .section-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
   }
   .field-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
-    margin: 0.375rem 0 0 0;
+    margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
   }
   .form-group {
@@ -216,13 +216,13 @@
   .setting-row {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--space-4);
     flex-wrap: wrap;
   }
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     user-select: none;
   }
@@ -237,8 +237,8 @@
     width: 36px;
     height: 20px;
     background-color: var(--border-color);
-    border-radius: 10px;
-    transition: background-color 0.2s ease;
+    border-radius: var(--radius-xl);
+    transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
   .toggle-switch::after {
@@ -249,9 +249,9 @@
     width: 16px;
     height: 16px;
     background-color: white;
-    border-radius: 50%;
-    transition: transform 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base) ease;
+    box-shadow: var(--shadow-thumb);
   }
   .toggle-input:checked + .toggle-switch {
     background-color: var(--primary-color);
@@ -260,12 +260,12 @@
     transform: translateX(16px);
   }
   .toggle-text {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
   .button-row {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 </style>

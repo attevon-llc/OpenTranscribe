@@ -251,7 +251,7 @@
   .date-trigger-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
     margin: 0;
     padding: var(--field-padding-y) var(--field-padding-x);
@@ -267,7 +267,7 @@
     box-shadow: none;
     font-family: inherit;
     font-size: var(--field-font-size);
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     line-height: var(--field-line-height);
     text-align: start;
     cursor: pointer;
@@ -316,9 +316,9 @@
     z-index: calc(var(--z-modal) + 10);
     box-sizing: border-box;
     overflow-y: auto;
-    padding: 0.75rem;
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background: var(--surface-color);
     color: var(--text-color);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
@@ -333,7 +333,7 @@
     inset: auto 0 0 0;
     width: auto;
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-    border-radius: 16px 16px 0 0;
+    border-radius: var(--radius-3xl) var(--radius-3xl) 0 0;
     animation-name: drp-sheet-in;
   }
 
@@ -367,15 +367,15 @@
 
   .typed-date-fields {
     display: flex;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
   }
 
   .typed-date-field {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     min-width: 0;
   }
 
@@ -386,26 +386,26 @@
   }
 
   .typed-date-field label {
-    font-size: var(--font-size-xs, 0.75rem);
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
   .drp-footer {
     display: flex;
     justify-content: flex-end;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .drp-clear {
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--primary-on-surface);
     box-shadow: none;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     transform: none;
   }
 
@@ -474,7 +474,7 @@
     background-color: transparent;
     box-shadow: none;
     transform: none;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     padding: 0;
   }
 
@@ -490,12 +490,12 @@
   .drp-layer :global(.datepicker .calendars-container .calendar .date span) {
     width: 34px !important;
     height: 34px !important;
-    font-size: 0.8125rem !important;
-    padding: 2px !important;
+    font-size: var(--font-size-sm) !important;
+    padding: var(--space-0-5) !important;
   }
 
   .drp-layer :global(.datepicker .calendars-container .calendar .dow) {
-    font-size: 0.75rem !important;
+    font-size: var(--font-size-xs) !important;
   }
 
   :global([data-theme='dark']) .drp-layer {
@@ -503,21 +503,21 @@
   }
 
   :global([data-theme='dark']) .drp-layer :global(.datepicker .calendars-container) {
-    --datepicker-state-hover: rgba(59, 130, 246, 0.15);
+    --datepicker-state-hover: rgba(var(--accent-rgb), 0.15);
     --datepicker-calendar-day-color-hover: #fff;
     --datepicker-calendar-day-color-disabled: var(--text-secondary);
     --datepicker-calendar-day-background-hover: rgba(255, 255, 255, 0.1);
     --datepicker-calendar-header-month-nav-background-hover: rgba(255, 255, 255, 0.1);
     /* Range selection colours */
-    --datepicker-calendar-range-background: rgba(59, 130, 246, 0.2);
+    --datepicker-calendar-range-background: rgba(var(--accent-rgb), 0.2);
     --datepicker-calendar-range-color: var(--text-color);
     --datepicker-calendar-range-start-end-background: var(--primary-color);
     --datepicker-calendar-range-start-end-color: #fff;
-    --datepicker-calendar-range-included-background: rgba(59, 130, 246, 0.12);
+    --datepicker-calendar-range-included-background: rgba(var(--accent-rgb), 0.12);
     --datepicker-calendar-range-included-color: var(--text-color);
-    --datepicker-calendar-range-included-box-shadow: inset 20px 0 0 rgba(59, 130, 246, 0.12);
-    --datepicker-calendar-range-start-box-shadow: inset -20px 0 0 rgba(59, 130, 246, 0.15);
-    --datepicker-calendar-range-end-box-shadow: inset 20px 0 0 rgba(59, 130, 246, 0.15);
+    --datepicker-calendar-range-included-box-shadow: inset 20px 0 0 rgba(var(--accent-rgb), 0.12);
+    --datepicker-calendar-range-start-box-shadow: inset -20px 0 0 rgba(var(--accent-rgb), 0.15);
+    --datepicker-calendar-range-end-box-shadow: inset 20px 0 0 rgba(var(--accent-rgb), 0.15);
     --datepicker-calendar-range-start-box-shadow-selected: inset -20px 0 0 var(--surface-color);
     --datepicker-calendar-range-end-box-shadow-selected: inset 20px 0 0 var(--surface-color);
   }

@@ -113,7 +113,7 @@
   .step-extraction {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .info-section {
@@ -125,24 +125,24 @@
 
   .info-icon {
     color: var(--primary-on-surface);
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .info-message {
     margin: 0;
     color: var(--text-secondary);
     line-height: 1.5;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .comparison {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 0.625rem;
+    gap: var(--space-3);
+    padding: var(--space-2-5);
     background: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
   }
 
@@ -151,15 +151,15 @@
   .comparison-label {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-bottom: 0.25rem;
-    font-weight: 500;
+    margin-bottom: var(--space-1);
+    font-weight: var(--font-weight-medium);
   }
 
   .comparison-value {
-    font-size: 1rem;
-    font-weight: 600;
-    padding: 0.25rem;
-    border-radius: 6px;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--space-1);
+    border-radius: var(--radius-md);
   }
 
   .comparison-value.video { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
@@ -170,33 +170,33 @@
   .choice-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .choice-option {
     display: flex;
     align-items: flex-start;
-    gap: 0.625rem;
-    padding: 0.625rem 0.75rem;
+    gap: var(--space-2-5);
+    padding: var(--space-2-5) var(--space-3);
     border: 2px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     background: var(--background-color);
   }
 
   .choice-option:hover {
-    border-color: var(--primary-color, #3b82f6);
-    background: rgba(59, 130, 246, 0.02);
+    border-color: var(--primary-color);
+    background: rgba(var(--accent-rgb), 0.02);
   }
 
   .choice-option.selected {
-    border-color: var(--primary-color, #3b82f6);
-    background: rgba(59, 130, 246, 0.04);
+    border-color: var(--primary-color);
+    background: rgba(var(--accent-rgb), 0.04);
   }
 
   :global([data-theme='dark']) .choice-option.selected {
-    background: rgba(59, 130, 246, 0.08);
+    background: rgba(var(--accent-rgb), 0.08);
   }
 
   .choice-option input[type="radio"] {
@@ -204,7 +204,7 @@
     height: 18px;
     margin-top: 1px;
     cursor: pointer;
-    accent-color: var(--primary-color, #3b82f6);
+    accent-color: var(--primary-color);
     flex-shrink: 0;
   }
 
@@ -218,7 +218,7 @@
   .choice-header {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .choice-header svg {
@@ -231,16 +231,16 @@
   }
 
   .choice-title {
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
   .choice-badge {
     font-size: 0.6rem;
-    font-weight: 600;
-    padding: 0.0625rem 0.375rem;
-    border-radius: 999px;
+    font-weight: var(--font-weight-semibold);
+    padding: 0.0625rem var(--space-1-5);
+    border-radius: var(--radius-pill);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -252,7 +252,7 @@
   }
 
   .choice-desc {
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -261,13 +261,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    color: var(--text-tertiary, #94a3b8);
-    font-size: 0.75rem;
+    gap: var(--space-2);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
   }
 
   @media (max-width: 480px) {
-    .comparison { flex-direction: column; gap: 0.375rem; }
+    .comparison { flex-direction: column; gap: var(--space-1-5); }
     .comparison-arrow svg { transform: rotate(90deg); }
   }
 </style>

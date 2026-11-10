@@ -30,11 +30,11 @@
     align-items: center;
     text-decoration: none;
     color: var(--primary-on-surface);
-    font-weight: 600;
-    font-size: 1.25rem;
-    transition: transform 0.2s ease;
-    border-radius: 8px;
-    padding: 0.25rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-xl);
+    transition: transform var(--duration-base) ease;
+    border-radius: var(--radius-lg);
+    padding: var(--space-1);
     background: none;
     border: none;
     cursor: pointer;
@@ -48,7 +48,7 @@
     height: 36px;
     width: auto;
     object-fit: contain;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     transition: inherit;
   }
 

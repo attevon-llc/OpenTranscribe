@@ -251,8 +251,8 @@
 <style>
   .transcript-actions {
     display: flex;
-    gap: 12px;
-    margin-top: 16px;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
     flex-wrap: wrap;
   }
 
@@ -266,17 +266,17 @@
   .action-button {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-primary);
     text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .export-transcript-button:hover,
@@ -291,7 +291,7 @@
     overflow-y: auto;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     min-width: 200px;
   }
@@ -299,16 +299,16 @@
   .export-dropdown-content button {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2-5);
     width: 100%;
-    padding: 10px 16px;
+    padding: var(--space-2-5) var(--space-4);
     background: none;
     border: none;
     text-align: start;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--font-size-md);
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
   }
 
   .export-dropdown-content button:hover {
@@ -322,16 +322,16 @@
   }
 
   .export-dropdown-content button:first-child {
-    border-radius: 6px 6px 0 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
 
   .export-dropdown-content button:last-child {
-    border-radius: 0 0 6px 6px;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
   }
 
 
   .download-dropdown-label {
-    padding: 8px 16px 4px;
+    padding: var(--space-2) var(--space-4) var(--space-1);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
@@ -346,14 +346,14 @@
 
   .download-button.downloading {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--primary-color);
   }
 
   .download-button.processing {
-    background: var(--warning-color, #f59e0b);
-    color: white;
-    border-color: var(--warning-color, #f59e0b);
+    background: var(--warning-color);
+    color: var(--text-on-solid);
+    border-color: var(--warning-color);
   }
 
   .spinner {

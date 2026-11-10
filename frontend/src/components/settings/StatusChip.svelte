@@ -14,10 +14,10 @@
   .status-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.3rem 0.625rem;
-    border-radius: 16px;
-    font-size: 0.75rem;
+    gap: var(--space-1-5);
+    padding: 0.3rem var(--space-2-5);
+    border-radius: var(--radius-3xl);
+    font-size: var(--font-size-xs);
     border: 1px solid var(--border-color);
     background: var(--surface-color);
     white-space: nowrap;
@@ -26,19 +26,19 @@
   .chip-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     flex-shrink: 0;
     background: var(--text-secondary);
   }
 
   .chip-label {
     color: var(--text-secondary);
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
   }
 
   .chip-value {
     color: var(--text-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   /* Green */
@@ -70,8 +70,8 @@
 
   /* Blue */
   .status-chip.blue {
-    border-color: rgba(59, 130, 246, 0.3);
-    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    background: rgba(var(--accent-rgb), 0.08);
   }
   .status-chip.blue .chip-dot {
     background: var(--primary-color);

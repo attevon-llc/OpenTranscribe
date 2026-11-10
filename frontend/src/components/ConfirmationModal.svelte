@@ -85,11 +85,11 @@
   .modal-button {
     padding: 0.6rem 1.2rem;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     min-width: 120px;
   }
 
@@ -98,52 +98,52 @@
     color: var(--text-color);
     border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.95rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    font-weight: var(--font-weight-medium);
+    transition: all var(--duration-base) ease;
     cursor: pointer;
     box-shadow: var(--card-shadow);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     min-width: 120px;
     /* Ensure high contrast */
     opacity: 1;
   }
 
   .cancel-button:hover {
-    background: var(--button-hover, #e5e7eb);
+    background: var(--button-hover);
     border-color: var(--border-color);
   }
 
   .confirm-button {
     background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: var(--shadow-primary);
   }
 
   .confirm-button:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 4px 8px rgba(var(--accent-rgb), 0.3);
   }
 
   .confirm-button:active {
     transform: scale(1);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   /* Delete / destructive confirmation — red override */
   .delete-confirm {
     background: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .delete-confirm:hover {
-    background: #dc2626;
+    background: var(--error-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
   }
@@ -155,7 +155,7 @@
 
   /* Dark mode adjustments */
   :global([data-theme='dark']) .cancel-button:hover {
-    background: var(--button-hover, rgba(255, 255, 255, 0.1));
+    background: var(--button-hover);
     border-color: var(--border-color);
   }
 

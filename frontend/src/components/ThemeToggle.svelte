@@ -64,7 +64,7 @@
     display: inline-block;
     width: 56px;
     height: 28px;
-    margin: 0 8px;
+    margin: 0 var(--space-2);
   }
 
   /* Hide the input */
@@ -83,7 +83,7 @@
     height: 100%;
     background-color: #f1f5f9; /* Light mode track */
     border-radius: 34px;
-    transition: all 0.3s ease;
+    transition: all var(--duration-slow) ease;
     /* Ensure strong outline is visible in both modes */
     border: 2px solid #cbd5e1;
     box-shadow: 0 0 3px rgba(0, 0, 0, 0.1);
@@ -108,7 +108,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1;
+    z-index: var(--z-base);
     pointer-events: none; /* Ensure clicks pass through to the track */
   }
 
@@ -116,14 +116,14 @@
   .sun-icon {
     left: 7px;
     opacity: 1;
-    transition: opacity 0.3s ease;
+    transition: opacity var(--duration-slow) ease;
   }
 
   /* Position moon on right side */
   .moon-icon {
     right: 7px;
     opacity: 1;
-    transition: opacity 0.3s ease;
+    transition: opacity var(--duration-slow) ease;
   }
 
   /* Toggle thumb (the sliding circle) */
@@ -133,9 +133,9 @@
     left: 3px;
     width: 22px;
     height: 22px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: white;
-    transition: transform 0.3s ease;
+    transition: transform var(--duration-slow) ease;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     z-index: 2;
     transform: translateY(-50%); /* Perfect vertical centering */

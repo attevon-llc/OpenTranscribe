@@ -367,34 +367,34 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     border-bottom: 1px solid var(--border-color);
-    background: var(--bg-secondary, var(--surface-color));
+    background: var(--bg-secondary);
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: var(--z-sticky);
   }
 
   .section-heading {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
   .comments-preview {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
   }
 
   .tag-chip {
     background: var(--primary-light);
     color: var(--primary-on-surface);
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 500;
+    padding: 3px var(--space-2);
+    border-radius: var(--radius-2xl);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -402,7 +402,7 @@
     /* Sits on the slate-100 secondary surface, where --text-secondary is 4.34:1 —
      * under WCAG AA, and italic 12px is the least legible text on the page. */
     color: var(--text-on-tint);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-style: italic;
   }
 
@@ -414,7 +414,7 @@
     max-height: 1200px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     overflow: hidden;
   }
 
@@ -423,22 +423,22 @@
     position: sticky;
     top: 0;
     z-index: 5;
-    padding: 1rem 0.5rem;
-    border-bottom: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
+    padding: var(--space-4) var(--space-2);
+    border-bottom: 1px solid var(--border-color);
   }
 
   .comments-list-container {
     flex: 1;
     overflow-y: auto;
-    padding: 0.5rem;
+    padding: var(--space-2);
     max-height: 800px;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .loading-state {
-    padding: 1rem;
+    padding: var(--space-4);
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.9rem;

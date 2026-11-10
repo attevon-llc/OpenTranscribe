@@ -187,8 +187,8 @@
 
 <style>
   .ai-suggestions {
-    margin-top: 8px;
-    border-radius: 6px;
+    margin-top: var(--space-2);
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: var(--surface-color);
     overflow: hidden;
@@ -198,12 +198,12 @@
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     background: transparent;
     border: none;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
   }
 
   .ai-suggestions-header:hover:not(:disabled) {
@@ -218,9 +218,9 @@
   .ai-badge {
     display: flex;
     align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    font-weight: 500;
+    gap: var(--space-1);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
   }
 
@@ -231,15 +231,15 @@
   .suggestion-count {
     background: var(--primary-light);
     color: var(--primary-on-surface);
-    padding: 2px 6px;
-    border-radius: 10px;
+    padding: var(--space-0-5) var(--space-1-5);
+    border-radius: var(--radius-xl);
     font-size: 10px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .dropdown-icon {
     margin-left: auto;
-    transition: transform 0.2s;
+    transition: transform var(--duration-base);
     color: var(--text-secondary);
   }
 
@@ -250,44 +250,44 @@
   /* Edit Modal Styles */
   .edit-modal {
     background: var(--surface-color);
-    padding: 12px;
+    padding: var(--space-3);
   }
 
   .edit-header {
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .edit-header h4 {
     margin: 0;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
   .edit-body {
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .edit-input {
     width: 100%;
-    padding: 8px 12px;
-    font-size: 13px;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-size-sm);
   }
 
   .edit-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     justify-content: flex-end;
   }
 
   /* Match comment edit button styling */
   .btn-cancel, .btn-save {
     padding: 0.4rem 0.8rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: none;
     min-width: 60px;
     display: inline-flex;
@@ -297,14 +297,14 @@
 
   .btn-save {
     background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-save:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-save:active {
@@ -318,7 +318,7 @@
 
   .btn-cancel {
     background: var(--text-secondary);
-    color: white;
+    color: var(--text-on-solid);
     border: 1px solid var(--text-secondary);
     box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
   }
@@ -337,27 +337,27 @@
 
   /* Chips Layout */
   .suggestions-chips {
-    padding: 8px;
+    padding: var(--space-2);
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .suggestion-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 6px 4px 4px;
-    border-radius: 16px;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-1-5) var(--space-1) var(--space-1);
+    border-radius: var(--radius-3xl);
     border: 1px solid;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
   }
 
   .chip-name {
-    font-size: 12px;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
-    padding: 0 4px;
+    padding: 0 var(--space-1);
   }
 
   .chip-add, .chip-edit {
@@ -367,9 +367,9 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    padding: 2px;
-    border-radius: 50%;
-    transition: all 0.15s;
+    padding: var(--space-0-5);
+    border-radius: var(--radius-round);
+    transition: all var(--duration-fast);
     color: var(--text-secondary);
   }
 
@@ -407,16 +407,16 @@
   .auto-applied-banner {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    font-size: 11px;
-    color: var(--ai-accent-color, var(--primary-color, #3b82f6));
-    background: rgba(59, 130, 246, 0.08);
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
+    font-size: var(--font-size-2xs);
+    color: var(--ai-accent-color);
+    background: rgba(var(--accent-rgb), 0.08);
     border-top: 1px solid var(--border-color);
   }
 
   .sparkle-icon {
-    color: var(--ai-accent-color, var(--primary-color, #3b82f6));
+    color: var(--ai-accent-color);
     flex-shrink: 0;
   }
 </style>

@@ -365,32 +365,32 @@
   .collections-editor {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .collections-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
   }
 
   .collection {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
-    padding: 0.35rem 0.5rem;
-    border-radius: 4px;
+    padding: 0.35rem var(--space-2);
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .collection-remove {
     background: none;
     border: none;
     color: var(--text-light);
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     cursor: pointer;
     padding: 0;
     display: flex;
@@ -421,13 +421,13 @@
 
   .collection-add-button {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2);
     font-size: 0.8rem;
     cursor: pointer;
-    margin-left: 0.5rem;
+    margin-left: var(--space-2);
   }
 
   .collection-add-button:disabled {
@@ -438,7 +438,7 @@
   .suggested-collections {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
     font-size: 0.8rem;
   }
@@ -450,8 +450,8 @@
   .suggested-collection {
     background: none;
     border: 1px dashed var(--border-color);
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2);
     font-size: 0.8rem;
     cursor: pointer;
     color: var(--text-light);
@@ -460,7 +460,7 @@
   .suggested-collection:hover {
     border-color: var(--primary-color);
     color: var(--primary-on-surface);
-    background-color: rgba(59, 130, 246, 0.05);
+    background-color: rgba(var(--accent-rgb), 0.05);
   }
 
   .suggested-collection:disabled {
@@ -472,23 +472,23 @@
     color: var(--text-secondary);
     font-size: 0.85rem;
     font-style: italic;
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 
   /* Dark mode support */
   :global([data-theme='dark']) .collection {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: var(--primary-on-surface);
   }
 
   :global([data-theme='dark']) .suggested-collection:hover {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
   }
 
   .dropdown-section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .dropdown-label {
@@ -497,12 +497,12 @@
   }
 
   .ai-collection {
-    background-color: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.25);
+    background-color: rgba(var(--accent-rgb), 0.08);
+    border: 1px solid rgba(var(--accent-rgb), 0.25);
   }
 
   .ai-icon {
-    color: var(--ai-accent-color, var(--primary-color, #3b82f6));
+    color: var(--ai-accent-color);
     display: flex;
     align-items: center;
   }

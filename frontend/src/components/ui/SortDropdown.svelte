@@ -190,18 +190,18 @@
   .sort-button {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     height: 30px;
     box-sizing: border-box;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     backdrop-filter: blur(8px);
     user-select: none;
@@ -241,9 +241,9 @@
     min-width: 200px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-    padding: 0.5rem;
+    padding: var(--space-2);
     backdrop-filter: blur(12px);
   }
 
@@ -263,16 +263,16 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
-    padding: 0.625rem 0.75rem;
+    padding: var(--space-2-5) var(--space-3);
     background: transparent;
     border: none;
-    border-radius: 8px;
-    font-size: 0.875rem;
+    border-radius: var(--radius-lg);
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     text-align: start;
   }
 
@@ -303,7 +303,7 @@
 
   .dropdown-item.active {
     color: var(--primary-on-surface);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .option-label {
@@ -312,7 +312,7 @@
 
   .option-arrow {
     flex-shrink: 0;
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   /* Hide sort label on tablet and below to save space */
@@ -324,8 +324,8 @@
 
   @media (max-width: 768px) {
     .sort-button {
-      font-size: 0.8125rem;
-      padding: 0.4rem 0.75rem;
+      font-size: var(--font-size-sm);
+      padding: 0.4rem var(--space-3);
     }
 
     .dropdown-menu {

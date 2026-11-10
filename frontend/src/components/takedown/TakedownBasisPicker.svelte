@@ -94,15 +94,15 @@
   .basis {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     margin: 0;
   }
 
   legend {
-    padding: 0 0.25rem;
+    padding: 0 var(--space-1);
     font-weight: var(--font-weight-semibold);
     font-size: var(--font-size-md);
   }
@@ -110,12 +110,12 @@
   .choice {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: var(--font-size-sm);
   }
 
   .indented {
-    margin-inline-start: 1.5rem;
+    margin-inline-start: var(--space-6);
     min-width: 0;
   }
 
@@ -127,14 +127,14 @@
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     font-weight: var(--font-weight-medium);
     font-size: var(--font-size-sm);
   }
 
   select,
   textarea {
-    padding: 0.4rem 0.5rem;
+    padding: 0.4rem var(--space-2);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-regular);
   }

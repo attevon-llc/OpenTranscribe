@@ -34,8 +34,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 0;
+    gap: var(--space-4);
+    padding: var(--space-3) 0;
   }
 
   :global(.recovery-actions) > .action-row:not(:first-child) {
@@ -55,7 +55,7 @@
   }
 
   .action-help {
-    margin: 0.125rem 0 0;
+    margin: var(--space-0-5) 0 0;
     font-size: var(--font-size-sm);
     line-height: var(--line-height-snug);
     color: var(--text-secondary);

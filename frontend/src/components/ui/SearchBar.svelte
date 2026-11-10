@@ -272,7 +272,7 @@
 
   /* Same focus treatment as every other field (styles/form-elements.css). */
   .search-bar:focus-within {
-    border-color: var(--primary-color);
+    border-color: var(--focus-ring-color);
     box-shadow: var(--field-focus-ring);
   }
 
@@ -288,7 +288,7 @@
   }
 
   .search-bar.pill:focus-within {
-    border-color: var(--primary-color);
+    border-color: var(--focus-ring-color);
     background: var(--surface-color);
     box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.22);
   }

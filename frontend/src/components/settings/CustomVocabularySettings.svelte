@@ -391,7 +391,7 @@
 
   .term-row:hover {
     background: var(--hover-color);
-    border-color: var(--input-focus-border);
+    border-color: var(--focus-ring-color);
   }
 
   .term-info {

@@ -280,7 +280,7 @@
 
   .date-trigger-btn:focus-visible,
   .date-trigger-btn[aria-expanded='true'] {
-    border-color: var(--primary-color);
+    border-color: var(--focus-ring-color);
     box-shadow: var(--field-focus-ring);
     outline: 2px solid transparent;
     outline-offset: 0;

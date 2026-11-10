@@ -159,7 +159,7 @@
       <!-- Save Button -->
       <div class="form-actions">
         <button
-          class="btn btn-primary save-button"
+          class="btn btn-primary btn-lg save-button"
           on:click={saveSettings}
           disabled={saving || !settingsChanged}
         >

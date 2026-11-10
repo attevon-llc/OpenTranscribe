@@ -4,7 +4,7 @@
  * fires and stays quiet, the second applies it to every shipped locale.
  */
 import { describe, it, expect } from 'vitest';
-import { findUntranslated, SAME_IN_EVERY_LANGUAGE } from './untranslatedCheck';
+import { findUntranslated, NON_LATIN_LOCALES, SAME_IN_EVERY_LANGUAGE } from './untranslatedCheck';
 import en from './locales/en.json';
 import ar from './locales/ar.json';
 import de from './locales/de.json';
@@ -63,9 +63,26 @@ describe('findUntranslated', () => {
   });
 });
 
+describe('strict mode (non-Latin locales)', () => {
+  const english = { 'a.label': 'Backup Codes', 'a.tpl': '{{count}}' };
+
+  it('flags a short English word that prose mode lets through', () => {
+    expect(findUntranslated(english, { ...english }, {})).toEqual([]);
+    expect(findUntranslated(english, { ...english }, {}, true)).toEqual(['a.label']);
+  });
+
+  it('ignores placeholder-only values', () => {
+    expect(findUntranslated({ 'a.tpl': '{{count}}' }, { 'a.tpl': '{{count}}' }, {}, true)).toEqual(
+      []
+    );
+  });
+});
+
 describe('shipped locales carry no untranslated prose', () => {
   it.each(Object.keys(LOCALES))('%s', (code) => {
-    expect(findUntranslated(EN, LOCALES[code])).toEqual([]);
+    expect(
+      findUntranslated(EN, LOCALES[code], SAME_IN_EVERY_LANGUAGE, NON_LATIN_LOCALES.includes(code))
+    ).toEqual([]);
   });
 
   it('every allowlist entry has a reason and names a real English key', () => {

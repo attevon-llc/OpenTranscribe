@@ -46,7 +46,7 @@
     {#each buttonVariants as variant (variant)}
       <div class="kit-row">
         <button type="button" class="btn {variant}">{$t('common.save')}</button>
-        <button type="button" class="btn {variant} btn-small">{$t('common.save')}</button>
+        <button type="button" class="btn {variant} btn-sm">{$t('common.save')}</button>
         <button type="button" class="btn {variant}" disabled>{$t('common.save')}</button>
         <button type="button" class="btn {variant}" aria-busy="true" aria-disabled="true">
           <Spinner size="small" />
@@ -67,10 +67,10 @@
       <Button variant="ghost" size="sm">{$t('common.cancel')}</Button>
     </div>
     <div class="kit-row">
-      <button type="button" class="modal-button modal-cancel-button">{$t('common.cancel')}</button>
-      <button type="button" class="modal-button modal-primary-button">{$t('common.save')}</button>
-      <button type="button" class="modal-button modal-delete-button">{$t('common.delete')}</button>
-      <button type="button" class="modal-button modal-warning-button">{$t('common.apply')}</button>
+      <button type="button" class="btn btn-lg btn-secondary">{$t('common.cancel')}</button>
+      <button type="button" class="btn btn-lg btn-primary">{$t('common.save')}</button>
+      <button type="button" class="btn btn-lg btn-danger">{$t('common.delete')}</button>
+      <button type="button" class="btn btn-lg btn-warning">{$t('common.apply')}</button>
     </div>
   </section>
 

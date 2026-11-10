@@ -374,7 +374,7 @@
             <span class="terms-toolbar-meta">{$t('legal.viewer.officialText')}</span>
             <button
               type="button"
-              class="btn btn-secondary btn-small"
+              class="btn btn-secondary btn-sm"
               data-testid="terms-fullscreen"
               on:click={() => openViewer(OPERATOR_ACK_KEY, true)}
             >

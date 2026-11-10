@@ -281,7 +281,7 @@
     {#if trimmedInput}
       <button
         type="button"
-        class="btn btn-primary btn-small tag-add-button"
+        class="btn btn-primary btn-sm tag-add-button"
         title={$t('tags.createAndAddHint', { tagName: trimmedInput })}
         disabled={busy}
         on:click={() => void submitTyped()}
@@ -297,7 +297,7 @@
       <div class="near-match-actions">
         <button
           type="button"
-          class="btn btn-secondary btn-small"
+          class="btn btn-secondary btn-sm"
           disabled={busy}
           on:click={() => resolveNearMatch(true)}
         >
@@ -305,7 +305,7 @@
         </button>
         <button
           type="button"
-          class="btn btn-secondary btn-small"
+          class="btn btn-secondary btn-sm"
           disabled={busy}
           on:click={() => resolveNearMatch(false)}
         >

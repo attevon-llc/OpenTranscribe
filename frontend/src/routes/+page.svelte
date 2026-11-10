@@ -828,34 +828,4 @@
     }
 
   }
-
-
-
-  /* Modal button styling to match app design */
-  :global(.modal-delete-button) {
-    background-color: #ef4444 !important;
-    color: var(--text-on-solid) !important;
-    border: none !important;
-    padding: 0.6rem 1.2rem !important;
-    border-radius: var(--radius-xl) !important;
-    font-size: 0.95rem !important;
-    font-weight: var(--font-weight-medium) !important;
-    cursor: pointer !important;
-    transition: all var(--duration-base) ease !important;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
-  }
-
-  :global(.modal-delete-button:hover) {
-    background-color: var(--error-solid) !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
-  }
-
-  :global(.modal-cancel-button:hover) {
-    background-color: var(--button-hover) !important;
-    color: var(--text-color) !important;
-    border-color: var(--border-color) !important;
-    transform: scale(1.02) !important;
-    box-shadow: var(--shadow-hover) !important;
-  }
 </style>

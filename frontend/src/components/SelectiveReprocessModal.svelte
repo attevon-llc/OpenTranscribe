@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoIcon from '$components/ui/InfoIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
@@ -541,11 +542,7 @@
 
                 {#if selectedStages.has('rediarize')}
                   <div class="warning-banner warning-caution">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="16" x2="12" y2="12"></line>
-                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
+                    <InfoIcon />
                     <span>{$t('reprocess.warningRediarize')}</span>
                   </div>
                 {/if}
@@ -609,11 +606,7 @@
 
 {#snippet infoBanner(text: string)}
   <div class="warning-banner warning-info" style="margin-top: 0; margin-bottom: 0.75rem;">
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10"></circle>
-      <line x1="12" y1="16" x2="12" y2="12"></line>
-      <line x1="12" y1="8" x2="12.01" y2="8"></line>
-    </svg>
+    <InfoIcon />
     <span>{text}</span>
   </div>
 {/snippet}
@@ -622,11 +615,7 @@
 {#snippet v4InfoCard()}
   <div class="v4-info-card">
     <div class="v4-info-header">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="16" x2="12" y2="12"></line>
-        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-      </svg>
+      <InfoIcon />
       <span>{$t('reprocess.v4InfoTitle')}</span>
     </div>
     {#if selectedStages.has('transcription')}
@@ -975,7 +964,7 @@
     border-bottom: 1px solid rgba(59, 130, 246, 0.1);
   }
 
-  .v4-info-header svg {
+  .v4-info-header :global(svg) {
     flex-shrink: 0;
   }
 
@@ -1009,7 +998,7 @@
     margin-top: 0.75rem;
   }
 
-  .warning-banner svg {
+  .warning-banner :global(svg) {
     flex-shrink: 0;
     margin-top: 1px;
   }
@@ -1020,7 +1009,7 @@
     color: var(--text-secondary);
   }
 
-  .warning-destructive svg {
+  .warning-destructive :global(svg) {
     color: #ef4444;
   }
 
@@ -1030,7 +1019,7 @@
     color: var(--text-secondary);
   }
 
-  .warning-caution svg {
+  .warning-caution :global(svg) {
     color: #f59e0b;
   }
 
@@ -1040,7 +1029,7 @@
     color: var(--text-secondary);
   }
 
-  .warning-info svg {
+  .warning-info :global(svg) {
     color: var(--primary-on-surface);
   }
 

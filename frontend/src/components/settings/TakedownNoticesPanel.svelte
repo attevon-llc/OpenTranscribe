@@ -1,4 +1,5 @@
 <script lang="ts">
+  import OffsetPager from '$components/ui/OffsetPager.svelte';
   import { formatDate } from '$lib/utils/formatting';
   /**
    * Takedown notice records (issue #1254): the durable list of legal notices (and operator
@@ -219,18 +220,7 @@
       </tbody>
     </table>
 
-    <div class="pagination">
-      <button
-        disabled={offset === 0 || loading}
-        on:click={() => load(Math.max(0, offset - PAGE_SIZE))}
-      >
-        {$t('common.previous')}
-      </button>
-      <span>{offset + 1}-{Math.min(offset + PAGE_SIZE, total)} / {total}</span>
-      <button disabled={offset + PAGE_SIZE >= total || loading} on:click={() => load(offset + PAGE_SIZE)}>
-        {$t('common.next')}
-      </button>
-    </div>
+    <OffsetPager {offset} {total} pageSize={PAGE_SIZE} {loading} onpage={load} />
   {/if}
 </div>
 
@@ -254,24 +244,6 @@
     gap: 0.5rem;
     font-size: var(--font-size-sm);
     white-space: nowrap;
-  }
-
-  .pagination button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.875rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--bg-color);
-    color: var(--text-color);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-  }
-
-  .pagination button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .record-actions {
@@ -332,10 +304,4 @@
     font-size: var(--font-size-sm);
   }
 
-  .pagination {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    font-size: var(--font-size-sm);
-  }
 </style>

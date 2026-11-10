@@ -179,6 +179,22 @@
   }
 </script>
 
+{#snippet metaBadges(source: MediaSource)}
+  <div class="source-meta">
+    {#if source.has_credentials}
+      <span class="meta-badge creds">{$t('settings.mediaSources.credentialsStored')}</span>
+    {:else}
+      <span class="meta-badge no-creds">{$t('settings.mediaSources.noCreds')}</span>
+    {/if}
+    {#if !source.verify_ssl}
+      <span class="meta-badge ssl-off">{$t('settings.mediaSources.sslOff')}</span>
+    {/if}
+    {#if isPlainHttpSource(source.hostname)}
+      <span class="meta-badge http-plain">{$t('settings.mediaSources.plainHttpBadge')}</span>
+    {/if}
+  </div>
+{/snippet}
+
 {#if loading}
   <div class="loading-state">
     <Spinner size="small" />
@@ -248,19 +264,7 @@
                   <div class="source-label">{source.label}</div>
                 {/if}
               </div>
-              <div class="source-meta">
-                {#if source.has_credentials}
-                  <span class="meta-badge creds">{$t('settings.mediaSources.credentialsStored')}</span>
-                {:else}
-                  <span class="meta-badge no-creds">{$t('settings.mediaSources.noCreds')}</span>
-                {/if}
-                {#if !source.verify_ssl}
-                  <span class="meta-badge ssl-off">{$t('settings.mediaSources.sslOff')}</span>
-                {/if}
-                {#if isPlainHttpSource(source.hostname)}
-                  <span class="meta-badge http-plain">{$t('settings.mediaSources.plainHttpBadge')}</span>
-                {/if}
-              </div>
+              {@render metaBadges(source)}
             </div>
             <div class="source-actions">
               <button class="btn btn-sm btn-ghost" on:click={() => startEdit(source)} disabled={saving}>
@@ -323,19 +327,7 @@
                 <div class="shared-by">{$t('settings.mediaSources.sharedBy')} {source.owner_name}</div>
               {/if}
             </div>
-            <div class="source-meta">
-              {#if source.has_credentials}
-                <span class="meta-badge creds">{$t('settings.mediaSources.credentialsStored')}</span>
-              {:else}
-                <span class="meta-badge no-creds">{$t('settings.mediaSources.noCreds')}</span>
-              {/if}
-              {#if !source.verify_ssl}
-                <span class="meta-badge ssl-off">{$t('settings.mediaSources.sslOff')}</span>
-              {/if}
-              {#if isPlainHttpSource(source.hostname)}
-                <span class="meta-badge http-plain">{$t('settings.mediaSources.plainHttpBadge')}</span>
-              {/if}
-            </div>
+            {@render metaBadges(source)}
           </div>
         </div>
       {/each}

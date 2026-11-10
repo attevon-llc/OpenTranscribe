@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoIcon from '$components/ui/InfoIcon.svelte';
   import type { TranscriptSourceFile } from '$lib/types/media';
   import type { CrossVideoMatch, SpeakerEditorEntry } from '$lib/types/speaker';
   import { resolve } from '$app/paths';
@@ -152,11 +153,7 @@
       <span class="legend-title">{$t('transcript.colorLegend')}</span>
       <div class="legend-info-wrapper">
         <button class="legend-info-icon" title={$t('transcript.clickToSeeConfidenceColors')}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
+          <InfoIcon />
         </button>
         <div class="legend-tooltip">
           <div class="legend-item">
@@ -441,11 +438,7 @@
                       title={$t('transcript.clickForDetails')}
                       on:click|stopPropagation={() => speaker.showMatches = !speaker.showMatches}
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="16" x2="12" y2="12"></line>
-                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                      </svg>
+                      <InfoIcon size={12} />
                     </button>
                     <button
                       class="dropdown-arrow"

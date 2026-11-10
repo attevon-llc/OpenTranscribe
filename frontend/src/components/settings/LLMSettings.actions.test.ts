@@ -191,3 +191,14 @@ describe('activating', () => {
     expect(onSettingsChange).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('activate button icon', () => {
+  it('draws the full icon for own and shared configurations alike', async () => {
+    const { container } = await mount();
+    const buttons = container.querySelectorAll('.activate-button');
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect(button.querySelectorAll('svg circle')).toHaveLength(9);
+    }
+  });
+});

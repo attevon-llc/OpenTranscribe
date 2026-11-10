@@ -1,4 +1,5 @@
 <script lang="ts">
+  import OffsetPager from '$components/ui/OffsetPager.svelte';
   import { resolve } from '$app/paths';
   /**
    * Abuse/DMCA takedown review queue (issue #576).
@@ -274,15 +275,7 @@
     </table>
     </div>
 
-    <div class="pagination">
-      <button disabled={offset === 0 || loading} on:click={() => load(Math.max(0, offset - PAGE_SIZE))}>
-        {$t('common.previous')}
-      </button>
-      <span>{offset + 1}-{Math.min(offset + PAGE_SIZE, total)} / {total}</span>
-      <button disabled={offset + PAGE_SIZE >= total || loading} on:click={() => load(offset + PAGE_SIZE)}>
-        {$t('common.next')}
-      </button>
-    </div>
+    <OffsetPager {offset} {total} pageSize={PAGE_SIZE} {loading} onpage={load} />
   {/if}
 </div>
 
@@ -503,25 +496,4 @@
     cursor: not-allowed;
   }
 
-  .pagination {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
-    font-size: 0.8125rem;
-  }
-
-  .pagination button {
-    padding: 0.25rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--bg-color);
-    color: var(--text-color);
-    cursor: pointer;
-  }
-
-  .pagination button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
 </style>

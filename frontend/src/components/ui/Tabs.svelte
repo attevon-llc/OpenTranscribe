@@ -161,7 +161,7 @@
      overlaps a bottom border. */
   .tabs {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
     box-shadow: inset 0 -1px 0 var(--border-color);
     overflow-x: auto;
     overflow-y: hidden;
@@ -186,8 +186,8 @@
     position: sticky;
     top: calc(-1 * var(--tabs-sticky-inset, 0px));
     z-index: var(--z-sticky);
-    margin: -0.5rem 0 1.25rem;
-    padding-top: 0.5rem;
+    margin: calc(-1 * var(--space-2)) 0 var(--space-5);
+    padding-top: var(--space-2);
     /* Opaque so the panel scrolls beneath it; the modal body paints with the surface token. */
     background: var(--surface-color);
   }
@@ -205,8 +205,8 @@
   .tab {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-4);
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
@@ -217,13 +217,13 @@
     border-radius: 0;
     box-shadow: none;
     color: var(--text-secondary);
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition:
-      color 0.15s ease,
-      border-color 0.15s ease,
-      background 0.15s ease;
+      color var(--duration-fast) ease,
+      border-color var(--duration-fast) ease,
+      background var(--duration-fast) ease;
   }
   /* Neutralize the global `button:hover/:focus { transform: scale; box-shadow }`
      so tabs never lift, round, or shadow on hover/focus. */
@@ -257,7 +257,7 @@
     flex: none;
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--warning-color);
     /* A ring in the surface colour keeps the dot legible on the active tab's tint in
        both themes. */
@@ -269,13 +269,13 @@
     justify-content: center;
     min-width: 18px;
     height: 18px;
-    padding: 0 6px;
+    padding: 0 var(--space-1-5);
     border-radius: 9px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     line-height: 1;
   }
   .tab.active .tab-badge {

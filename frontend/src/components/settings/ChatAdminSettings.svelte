@@ -268,7 +268,7 @@
   .settings-section {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .section-description {
@@ -281,7 +281,7 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .field {
@@ -297,7 +297,7 @@
 
   label {
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -306,7 +306,7 @@
     align-items: center;
     gap: 0.6rem;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   /* form-elements.css sets `input { width: 100% }` with no type exemption, so an
@@ -323,7 +323,7 @@
   }
 
   .checkbox-field {
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   input[type='number'] {
@@ -351,19 +351,19 @@
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    margin-top: 0.5rem;
-    padding-top: 1rem;
+    margin-top: var(--space-2);
+    padding-top: var(--space-4);
     border-top: 1px dashed var(--border-color);
   }
 
   .experimental-title {
     margin: 0;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .experimental-hint {
-    color: var(--warning-color, var(--text-secondary));
+    color: var(--warning-color);
   }
 </style>

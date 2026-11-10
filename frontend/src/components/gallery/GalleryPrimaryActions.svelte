@@ -59,18 +59,18 @@
   .gallery-primary-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .action-btn {
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    padding: 0.375rem 0.75rem;
-    border-radius: 10px;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    padding: var(--space-1-5) var(--space-3);
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     gap: 0.35rem;
@@ -100,13 +100,13 @@
 
   /* Primary action — solid blue */
   .upload-btn {
-    background-color: var(--primary-color, var(--primary-color));
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    background-color: var(--primary-color);
+    box-shadow: var(--shadow-primary);
   }
 
   .upload-btn:hover:not(:disabled) {
-    background-color: var(--primary-hover, #2563eb);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    background-color: var(--primary-hover);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   /* Secondary actions — surface with border (not colored) */
@@ -120,7 +120,7 @@
 
   .collections-btn:hover:not(:disabled),
   .tags-btn:hover:not(:disabled) {
-    background-color: var(--button-hover, #f1f5f9);
+    background-color: var(--button-hover);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   }
 
@@ -132,7 +132,7 @@
   @media (max-width: 1200px) {
     .gallery-primary-actions {
       flex-wrap: wrap;
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
 
     .action-btn {
@@ -151,7 +151,7 @@
   @media (max-width: 480px) {
     .action-btn {
       padding: 0.35rem 0.6rem;
-      font-size: 0.75rem;
+      font-size: var(--font-size-xs);
     }
   }
 

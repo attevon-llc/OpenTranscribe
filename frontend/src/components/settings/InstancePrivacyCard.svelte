@@ -162,44 +162,44 @@
   .instance-privacy {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.5rem 0 1.5rem;
+    gap: var(--space-3);
+    padding: var(--space-2) 0 var(--space-6);
   }
 
   .heading {
     margin: 0;
-    font-size: 1rem;
-    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .intro {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-secondary);
-    max-width: var(--measure-prose, 72ch);
+    max-width: var(--measure-prose);
   }
 
   .scope {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    font-size: 0.8125rem;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
   .scope legend {
-    padding: 0 0.375rem;
-    font-weight: var(--font-weight-medium, 500);
+    padding: 0 var(--space-1-5);
+    font-weight: var(--font-weight-medium);
   }
 
   .scope label {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: flex-start;
     cursor: pointer;
   }
@@ -210,6 +210,6 @@
 
   .error {
     margin: 0;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 </style>

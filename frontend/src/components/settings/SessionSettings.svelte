@@ -246,9 +246,9 @@
   }
 
   .intro-text {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
     color: var(--color-text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .intro-text p {
@@ -256,10 +256,10 @@
   }
 
   .section {
-    margin-bottom: 2rem;
-    padding: 1rem;
+    margin-bottom: var(--space-8);
+    padding: var(--space-4);
     background: var(--color-bg-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .section.info {
@@ -268,22 +268,22 @@
   }
 
   .section h3 {
-    margin: 0 0 1rem 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    margin: 0 0 var(--space-4) 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text-secondary);
   }
 
   .form-group {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .form-group label,
   .form-group .group-label {
     display: block;
-    margin-bottom: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
+    margin-bottom: var(--space-2);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -294,31 +294,31 @@
   .input-with-preview {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .preview {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--color-text-secondary);
   }
 
   .help-text {
     display: block;
-    margin-top: 0.25rem;
-    font-size: 0.75rem;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
 
   .restart-badge {
     display: inline-block;
-    margin-left: 0.5rem;
+    margin-left: var(--space-2);
     padding: 0.1rem 0.45rem;
     border: 1px solid var(--color-warning-border);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--color-warning-bg);
     color: var(--color-warning-text);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: none;
     letter-spacing: 0;
     vertical-align: middle;
@@ -327,43 +327,43 @@
   .token-info {
     background: var(--color-bg);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 0.75rem;
-    margin-top: 1rem;
-    font-size: 0.875rem;
+    border-radius: var(--radius-sm);
+    padding: var(--space-3);
+    margin-top: var(--space-4);
+    font-size: var(--font-size-md);
   }
 
   .token-info strong {
     color: var(--color-text);
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .token-info ul {
     margin: 0;
-    padding-left: 1.25rem;
+    padding-left: var(--space-5);
     color: var(--color-text-secondary);
   }
 
   .token-info li {
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .radio-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .radio-label {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-3);
     border: 1px solid var(--color-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     cursor: pointer;
-    transition: border-color 0.2s, background-color 0.2s;
+    transition: border-color var(--duration-base), background-color var(--duration-base);
   }
 
   .radio-label:hover {
@@ -371,7 +371,7 @@
   }
 
   .radio-label input[type="radio"] {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     width: 1rem;
     height: 1rem;
   }
@@ -379,50 +379,50 @@
   .radio-content {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .radio-title {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .radio-description {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
 
   .recommendations {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .recommendation {
     background: var(--color-bg);
-    border-radius: 4px;
-    padding: 0.75rem;
+    border-radius: var(--radius-sm);
+    padding: var(--space-3);
   }
 
   .recommendation strong {
     display: block;
-    margin-bottom: 0.25rem;
-    font-size: 0.875rem;
+    margin-bottom: var(--space-1);
+    font-size: var(--font-size-md);
     color: var(--color-text);
   }
 
   .recommendation p {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
   }
 
   .actions {
     display: flex;
-    gap: 1rem;
+    gap: var(--space-4);
     justify-content: flex-end;
-    padding-top: 1rem;
+    padding-top: var(--space-4);
     border-top: 1px solid var(--color-border);
   }
 

@@ -93,15 +93,15 @@
   .erasure-banner {
     position: fixed;
     inset-inline: 0;
-    top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px) + var(--demo-banner-height));
+    top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height) + var(--demo-banner-height));
     z-index: 1150;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 0.375rem 1rem;
-    font-size: 0.8125rem;
+    gap: var(--space-3);
+    padding: var(--space-1-5) var(--space-4);
+    font-size: var(--font-size-sm);
     background: #fef3c7;
     color: #78350f;
     border-bottom: 1px solid #f59e0b;

@@ -98,31 +98,31 @@
   .copy-button {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     line-height: 1;
     cursor: pointer;
     transition:
-      background 0.15s ease,
-      border-color 0.15s ease,
-      color 0.15s ease;
+      background var(--duration-fast) ease,
+      border-color var(--duration-fast) ease,
+      color var(--duration-fast) ease;
   }
   .copy-button.icon-only {
-    padding: 6px;
+    padding: var(--space-1-5);
   }
   .copy-button:hover {
     background: var(--button-hover);
     color: var(--text-color);
   }
   .copy-button.copied {
-    color: var(--success-color, #16a34a);
-    border-color: var(--success-color, #16a34a);
+    color: var(--success-color);
+    border-color: var(--success-color);
   }
   .copy-button:focus-visible {
     outline: 2px solid var(--primary-color);

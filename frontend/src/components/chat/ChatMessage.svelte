@@ -272,8 +272,8 @@
   .chat-message {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 1.5rem;
+    gap: var(--space-1);
+    margin-bottom: var(--space-6);
   }
 
   .chat-message.user {
@@ -288,9 +288,9 @@
      logical end-end corner, so it follows the bubble to the left in RTL. */
   .chat-message.user .bubble {
     max-width: min(80%, 42rem);
-    padding: 0.625rem 1rem;
+    padding: var(--space-2-5) var(--space-4);
     border-radius: 18px;
-    border-end-end-radius: 4px;
+    border-end-end-radius: var(--radius-sm);
     background-color: rgba(var(--primary-color-rgb), 0.1);
   }
 
@@ -308,19 +308,19 @@
   }
 
   .error-text {
-    margin: 0.25rem 0 0;
-    padding: 0.6rem 0.75rem;
-    border-radius: 8px;
-    background-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.08);
-    border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.25);
-    color: var(--error-color, #dc3545);
+    margin: var(--space-1) 0 0;
+    padding: 0.6rem var(--space-3);
+    border-radius: var(--radius-lg);
+    background-color: rgba(var(--error-color-rgb), 0.08);
+    border: 1px solid rgba(var(--error-color-rgb), 0.25);
+    color: var(--error-color);
     font-size: var(--font-size-md);
   }
 
   .context-warning {
-    margin: 0.5rem 0 0;
-    padding: 0.6rem 0.75rem;
-    border-radius: 8px;
+    margin: var(--space-2) 0 0;
+    padding: 0.6rem var(--space-3);
+    border-radius: var(--radius-lg);
     /* Theme-provided pair — light/dark parity is handled in theme.css. */
     background-color: var(--warning-bg);
     border: 1px solid var(--warning-border);
@@ -341,7 +341,7 @@
     align-items: center;
     gap: 0.15rem;
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity var(--duration-fast) ease;
   }
 
   .chat-message:hover .actions,
@@ -360,7 +360,7 @@
     padding: 0 0.4rem;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     /* Ghost icon buttons: no global button shadow or hover scale. */
     box-shadow: none;
     color: var(--text-secondary);
@@ -394,9 +394,9 @@
   }
 
   .edit-btn {
-    padding: 0.25rem 0.7rem;
+    padding: var(--space-1) 0.7rem;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--card-background);
     color: var(--text-color);
     font-size: 0.78rem;
@@ -410,7 +410,7 @@
   .edit-btn.primary {
     border-color: var(--primary-color);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .timestamp {

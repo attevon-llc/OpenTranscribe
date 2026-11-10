@@ -92,7 +92,7 @@
   .chip-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
 
@@ -107,7 +107,7 @@
 
   .chip-overflow {
     align-self: center;
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 

@@ -62,9 +62,9 @@
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.25rem 0.75rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
     border-inline-start: 3px solid;
     font-size: 0.8rem;
     line-height: 1.45;
@@ -94,12 +94,12 @@
     justify-content: center;
     width: 1.1rem;
     height: 1.1rem;
-    border-radius: 50%;
-    color: #fff;
+    border-radius: var(--radius-round);
+    color: var(--text-on-solid);
   }
 
   .issue-error .issue-glyph {
-    background: var(--error-solid, var(--error-color));
+    background: var(--error-solid);
   }
 
   .issue-warning .issue-glyph {

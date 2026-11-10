@@ -20,25 +20,25 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 3rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-12) var(--space-4);
     text-align: center;
   }
   .redaction-pending-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.4rem 0.9rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .redaction-pending-chip .chip-dot {
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--primary-color);
     animation: redaction-pulse 1.2s ease-in-out infinite;
   }

@@ -868,12 +868,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .prompt-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
     align-items: center;
   }
@@ -883,21 +883,21 @@
   .create-config-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .create-config-button:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -909,11 +909,11 @@
   .config-status {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.375rem 0.75rem;
-    border-radius: 4px;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-3);
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     width: fit-content;
   }
 
@@ -932,12 +932,12 @@
   .activate-button, .view-button, .edit-button, .delete-config-button {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 4px;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: 1px solid;
     height: 32px;
     box-sizing: border-box;
@@ -946,8 +946,8 @@
   .activate-button {
     background-color: var(--success-color);
     border-color: var(--success-color);
-    color: white;
-    padding: 0.5rem 0.5rem;
+    color: var(--text-on-solid);
+    padding: var(--space-2) var(--space-2);
   }
 
   .activate-button:hover:not(:disabled) {
@@ -964,7 +964,7 @@
   .view-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .edit-button {
@@ -976,7 +976,7 @@
   .edit-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .delete-config-button {
@@ -988,7 +988,7 @@
   .delete-config-button:hover:not(:disabled) {
     background-color: var(--error-color);
     border-color: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
   }
@@ -999,25 +999,25 @@
   }
 
   .saved-configs-section {
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--border-color);
   }
 
   .section-header h4 {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin: 0;
     font-size: 1.125rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -1030,18 +1030,18 @@
   .config-list {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .config-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--card-bg);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .config-item.active {
@@ -1060,13 +1060,13 @@
   }
 
   .config-name {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
-    margin-bottom: 0.25rem;
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--space-1);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .info-tooltip {
@@ -1075,7 +1075,7 @@
     color: var(--text-muted);
     opacity: 0.6;
     cursor: help;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--duration-base) ease;
     position: relative;
   }
 
@@ -1090,14 +1090,14 @@
     left: var(--tooltip-left, 50%);
     top: var(--tooltip-top, 50%);
     background: #1a1a1a;
-    color: white;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 13px;
+    color: var(--text-on-solid);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
     font-weight: normal;
     max-width: 320px;
     white-space: normal;
-    z-index: 9999;
+    z-index: var(--z-toast);
     line-height: 1.4;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     text-align: left;
@@ -1109,11 +1109,11 @@
   .config-provider {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .config-url {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     opacity: 0.7;
     max-width: 400px;
@@ -1132,7 +1132,7 @@
     align-items: center;
     gap: 0.35rem;
     margin-top: 0.4rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .linked-label {
@@ -1144,12 +1144,12 @@
   .collection-tag {
     display: inline-flex;
     align-items: center;
-    padding: 0.125rem 0.5rem;
-    background: rgba(59, 130, 246, 0.1);
+    padding: var(--space-0-5) var(--space-2);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -1157,7 +1157,7 @@
     display: inline-flex;
     flex-wrap: wrap;
     gap: 0.35rem;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   :global([data-theme='dark']) .collection-tag {
@@ -1167,50 +1167,50 @@
 
   .empty-state {
     text-align: center;
-    padding: 3rem 2rem;
+    padding: var(--space-12) var(--space-8);
     border: 2px dashed var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-bg);
   }
 
   .empty-icon {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     color: var(--text-muted);
     opacity: 0.6;
   }
 
   .empty-state h4 {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     color: var(--text-color);
     font-size: 1.125rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .empty-state p {
-    margin: 0 0 1.5rem;
+    margin: 0 0 var(--space-6);
     color: var(--text-muted);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
   }
 
   .create-first-config-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .create-first-config-btn:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -1223,38 +1223,38 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .prompt-text-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .prompt-form {
-    padding: 1.5rem;
+    padding: var(--space-6);
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   label {
-    font-weight: 500;
-    font-size: 0.8125rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
   .form-control {
-    padding: 0.75rem;
-    font-size: 0.8125rem;
+    padding: var(--space-3);
+    font-size: var(--font-size-sm);
   }
 
   .form-control.textarea {
@@ -1278,7 +1278,7 @@
     .section-header {
       flex-direction: column;
       align-items: stretch;
-      gap: 1rem;
+      gap: var(--space-4);
     }
 
     .prompt-actions {
@@ -1298,12 +1298,12 @@
 
   /* LLM Hint Styling */
   .llm-hint {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
+    margin-top: var(--space-3);
+    padding: var(--space-3);
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
     color: var(--text-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.8rem;
     line-height: 1.3;
   }
@@ -1311,8 +1311,8 @@
   .llm-hint strong {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.25rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
     color: var(--color-info);
   }
 
@@ -1322,39 +1322,39 @@
 
   /* View Modal Styling */
   .prompt-details {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .detail-row {
-    margin-bottom: 0.75rem;
-    font-size: 0.8125rem;
+    margin-bottom: var(--space-3);
+    font-size: var(--font-size-sm);
   }
 
   .detail-row strong {
     color: var(--primary-on-surface);
-    margin-right: 0.5rem;
+    margin-right: var(--space-2);
   }
 
   .prompt-text-container {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
   }
 
   .prompt-text-container strong {
     display: block;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
     color: var(--primary-on-surface);
   }
 
   .prompt-text-display {
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     line-height: 1.6;
     color: var(--text-color);
     white-space: pre-wrap;
     word-wrap: break-word;
     background-color: var(--surface-color);
-    padding: 1rem;
-    border-radius: 6px;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     max-height: 400px;
     overflow-y: auto;
@@ -1362,8 +1362,8 @@
 
   /* Shared config styles */
   .config-item.shared {
-    border-left: 3px solid var(--info-color, #3b82f6);
-    background: rgba(59, 130, 246, 0.04);
+    border-left: 3px solid var(--info-color);
+    background: rgba(var(--accent-rgb), 0.04);
   }
 
   :global([data-theme='dark']) .config-item.shared {
@@ -1373,11 +1373,11 @@
   .share-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 10px;
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
-    background: rgba(59, 130, 246, 0.12);
+    font-weight: var(--font-weight-semibold);
+    background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
     text-transform: uppercase;
     letter-spacing: 0.02em;
@@ -1391,10 +1391,10 @@
   .admin-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 10px;
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-xl);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     background: rgba(245, 158, 11, 0.12);
     color: #d97706;
     text-transform: uppercase;
@@ -1425,18 +1425,18 @@
   .tag-pills {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem;
+    gap: var(--space-1);
     margin-top: 0.35rem;
   }
 
   .tag-pill {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    background: rgba(59, 130, 246, 0.12);
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-2xl);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
   }
 
@@ -1449,18 +1449,18 @@
   .share-toggle-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
     border-top: 1px dashed var(--border-color);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
   }
 
   .toggle-input {
@@ -1475,8 +1475,8 @@
     width: 36px;
     height: 20px;
     background-color: var(--border-color);
-    border-radius: 10px;
-    transition: background-color 0.2s ease;
+    border-radius: var(--radius-xl);
+    transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -1488,8 +1488,8 @@
     width: 16px;
     height: 16px;
     background-color: white;
-    border-radius: 50%;
-    transition: transform 0.2s ease;
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base) ease;
   }
 
   .toggle-input:checked + .toggle-switch {
@@ -1501,14 +1501,14 @@
   }
 
   .toggle-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 

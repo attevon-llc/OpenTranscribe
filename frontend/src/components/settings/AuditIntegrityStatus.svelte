@@ -41,21 +41,21 @@
 
 <style>
   .integrity {
-    padding: 0.75rem;
-    margin-bottom: 0.75rem;
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
     background: var(--color-bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .title {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .state {
-    margin: 0.25rem 0 0;
-    font-size: 0.75rem;
+    margin: var(--space-1) 0 0;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     color: var(--text-secondary);
   }
@@ -66,8 +66,8 @@
 
   .docs {
     display: inline-block;
-    margin-top: 0.25rem;
-    font-size: 0.75rem;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
     color: var(--primary-on-surface);
   }
 </style>

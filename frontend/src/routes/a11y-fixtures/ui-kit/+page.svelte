@@ -207,26 +207,26 @@
   .kit-page {
     width: 100%;
     max-width: 60rem;
-    padding: 1rem;
+    padding: var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .kit-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
-    margin-block-end: 0.5rem;
+    gap: var(--space-3);
+    margin-block-end: var(--space-2);
   }
 
   .kit-field {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     max-width: 24rem;
-    margin-block-end: 0.75rem;
+    margin-block-end: var(--space-3);
   }
 
   .kit-hint {
@@ -242,8 +242,8 @@
   }
 
   .kit-tint {
-    margin: 0 0 0.5rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
+    margin: 0 0 var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
   }
 </style>

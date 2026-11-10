@@ -325,13 +325,13 @@
 
 <style>
   .policy-panel h3 {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
   }
 
   .intro,
   .tradeoffs {
-    margin: 0 0 1rem 0;
-    font-size: 0.8125rem;
+    margin: 0 0 var(--space-4) 0;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--color-text-secondary);
   }
@@ -339,17 +339,17 @@
   .tier-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 1rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
 
   .tier-card {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    padding: 0.75rem;
+    padding: var(--space-3);
     border: 1px solid var(--color-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--color-bg);
     cursor: pointer;
   }
@@ -366,7 +366,7 @@
   .tier-head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .tier-card input[type='radio'] {
@@ -378,13 +378,13 @@
   }
 
   .tier-name {
-    font-weight: 600;
-    font-size: 0.9375rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-body);
     color: var(--color-text);
   }
 
   .tier-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     color: var(--color-text-secondary);
   }
@@ -392,50 +392,50 @@
   .policy-preview {
     background: var(--color-bg);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 0.75rem;
-    margin-bottom: 1rem;
-    font-size: 0.875rem;
+    border-radius: var(--radius-sm);
+    padding: var(--space-3);
+    margin-bottom: var(--space-4);
+    font-size: var(--font-size-md);
   }
 
   .policy-preview ul {
-    margin: 0.5rem 0 0 0;
-    padding-left: 1.25rem;
+    margin: var(--space-2) 0 0 0;
+    padding-left: var(--space-5);
   }
 
   .info-note {
-    margin: 0 0 1rem 0;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--color-info-border, rgba(var(--primary-color-rgb), 0.3));
-    border-radius: 6px;
-    background: var(--color-info-bg, rgba(var(--primary-color-rgb), 0.08));
+    margin: 0 0 var(--space-4) 0;
+    padding: 0.6rem var(--space-3);
+    border: 1px solid var(--color-info-border);
+    border-radius: var(--radius-md);
+    background: var(--color-info-bg);
     color: var(--color-text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.5;
   }
 
   .values {
     border: none;
     padding: 0;
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
   }
 
   .form-row {
     display: flex;
-    gap: 1rem;
-    margin-bottom: 1rem;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
   }
 
   .form-group {
     flex: 1;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .form-group label {
     display: block;
-    margin-bottom: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
+    margin-bottom: var(--space-2);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -451,36 +451,36 @@
 
   .help-text {
     display: block;
-    margin-top: 0.25rem;
-    font-size: 0.75rem;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
 
   .help-text.indented {
-    margin-left: 1.5rem;
-    margin-bottom: 0.75rem;
+    margin-left: var(--space-6);
+    margin-bottom: var(--space-3);
   }
 
   .field-error {
-    margin: -0.5rem 0 1rem 0;
-    font-size: 0.75rem;
+    margin: calc(-1 * var(--space-2)) 0 var(--space-4) 0;
+    font-size: var(--font-size-xs);
     color: var(--error-solid);
   }
 
   .checkbox-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
   }
 
   .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
-    font-size: 0.875rem;
-    margin-bottom: 0.5rem;
+    font-size: var(--font-size-md);
+    margin-bottom: var(--space-2);
   }
 
   .checkbox-label input[type='checkbox'] {
@@ -494,11 +494,11 @@
   }
 
   .list-status {
-    margin: 0 0 1rem 0;
-    padding: 0.6rem 0.75rem;
+    margin: 0 0 var(--space-4) 0;
+    padding: 0.6rem var(--space-3);
     border: 1px solid var(--color-border);
-    border-radius: 6px;
-    font-size: 0.8125rem;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--color-text-secondary);
   }
@@ -512,7 +512,7 @@
   .list-status code {
     display: block;
     margin-top: 0.35rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     user-select: all;
   }
 

@@ -509,20 +509,20 @@
 
 <style>
   .auth-settings {
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .settings-header {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
   }
 
   .settings-header h2 {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
   }
 
   .rerun-wizard-button {
@@ -530,15 +530,15 @@
   }
 
   .tab-content {
-    padding: 1rem 0;
+    padding: var(--space-4) 0;
   }
 
   /* Coming Soon Section Styles */
   .coming-soon {
     text-align: center;
-    padding: 2rem;
+    padding: var(--space-8);
     background: var(--color-surface);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--color-border);
   }
 
@@ -546,54 +546,54 @@
     display: flex;
     justify-content: center;
     color: var(--text-secondary);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .coming-soon h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1.25rem;
+    margin: 0 0 var(--space-2) 0;
+    font-size: var(--font-size-xl);
     color: var(--color-text);
   }
 
   .coming-soon p {
     color: var(--color-text-secondary);
-    margin: 0.5rem 0;
+    margin: var(--space-2) 0;
   }
 
   .config-methods {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin: 1.5rem 0;
+    gap: var(--space-4);
+    margin: var(--space-6) 0;
     text-align: left;
   }
 
   .config-method {
     background: var(--color-background);
-    padding: 1rem;
-    border-radius: 6px;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
     border: 1px solid var(--color-border);
   }
 
   .config-method h4 {
-    margin: 0 0 0.5rem 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    margin: 0 0 var(--space-2) 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text);
   }
 
   .config-method code {
     display: block;
     background: var(--color-surface);
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    margin-bottom: 0.5rem;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    margin-bottom: var(--space-2);
     color: var(--color-primary);
   }
 
   .config-method p {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     margin: 0;
   }
 
@@ -607,17 +607,17 @@
   }
 
   .note {
-    background: var(--color-info-bg, rgba(var(--primary-color-rgb), 0.1));
-    border: 1px solid var(--color-info-border, rgba(var(--primary-color-rgb), 0.3));
-    border-radius: 6px;
-    padding: 1rem;
-    margin-top: 1rem;
+    background: var(--color-info-bg);
+    border: 1px solid var(--color-info-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    margin-top: var(--space-4);
     text-align: left;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .note strong {
-    color: var(--color-info, var(--primary-color));
+    color: var(--color-info);
   }
 
   @media (max-width: 768px) {

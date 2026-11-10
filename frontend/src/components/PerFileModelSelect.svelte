@@ -59,19 +59,19 @@
 <style>
   .model-select {
     width: 100%;
-    padding: 0.4375rem 0.625rem;
-    font-size: 0.875rem;
+    padding: 0.4375rem var(--space-2-5);
+    font-size: var(--font-size-md);
     cursor: pointer;
   }
 
   .model-flags {
-    margin-top: 0.375rem;
+    margin-top: var(--space-1-5);
   }
 
   @media (max-width: 640px) {
     .model-select {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

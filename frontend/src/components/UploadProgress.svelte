@@ -173,23 +173,23 @@
   .upload-item {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 12px;
-    margin-bottom: 8px;
-    font-size: 0.875rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-3);
+    margin-bottom: var(--space-2);
+    font-size: var(--font-size-md);
   }
 
   .upload-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .upload-info {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2-5);
     flex: 1;
     min-width: 0;
   }
@@ -209,30 +209,30 @@
   }
 
   .upload-name {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-bottom: 2px;
+    margin-bottom: var(--space-0-5);
   }
 
   .upload-meta {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 8px;
-    font-size: 0.75rem;
+    gap: var(--space-1) var(--space-2);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
   .upload-type {
     text-transform: uppercase;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     background: var(--accent-color);
-    color: white;
-    padding: 1px 6px;
-    border-radius: 4px;
+    color: var(--text-on-solid);
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-sm);
     font-size: 10px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -241,18 +241,18 @@
   .upload-dedup-skipped {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-weight: 500;
+    gap: var(--space-1);
+    font-weight: var(--font-weight-medium);
     color: #b45309;
     background: rgba(245, 158, 11, 0.12);
-    border-radius: 4px;
-    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    padding: 1px var(--space-1-5);
     white-space: nowrap;
   }
 
   .upload-actions {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .upload-action-btn {
@@ -261,13 +261,13 @@
     justify-content: center;
     background: none;
     border: none;
-    padding: 4px 6px;
-    border-radius: 4px;
+    padding: var(--space-1) var(--space-1-5);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     line-height: 1;
     color: var(--text-secondary);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .upload-action-btn:hover {
@@ -288,38 +288,38 @@
   .progress-container {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-top: 8px;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .progress-bar {
     flex: 1;
     height: 4px;
     background: var(--border-color);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     overflow: hidden;
   }
 
   .progress-fill {
     height: 100%;
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   .progress-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     min-width: 35px;
     text-align: end;
   }
 
   .error-message {
-    margin-top: 6px;
-    padding: 6px 8px;
+    margin-top: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-2);
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: #ef4444;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.3;
   }
 

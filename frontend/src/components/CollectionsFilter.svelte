@@ -96,7 +96,7 @@
   .collections-filter {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .loading-text,

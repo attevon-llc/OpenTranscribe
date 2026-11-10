@@ -120,7 +120,7 @@
     flex: 1;
     overflow-y: auto;
     /* Full-width scroller (scrollbar at the pane edge); content stays a 52rem column. */
-    padding-block: 1.5rem 0.5rem;
+    padding-block: var(--space-6) var(--space-2);
     padding-inline: max(var(--chat-gutter, 1.25rem), calc((100% - 52rem) / 2));
     scroll-behavior: auto;
   }
@@ -135,7 +135,7 @@
     gap: 0.35rem;
     padding: 0.4rem 0.9rem;
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 0.8rem;

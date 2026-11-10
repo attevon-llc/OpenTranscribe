@@ -182,22 +182,22 @@
   .pipeline-overview {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .state-box {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
-    padding: 2.5rem 1rem;
+    gap: var(--space-4);
+    padding: var(--space-10) var(--space-4);
     color: var(--text-secondary);
   }
 
   .banner {
     margin: 0;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
     font-size: 0.85rem;
     line-height: 1.45;
@@ -225,8 +225,8 @@
 
   .audio-node {
     align-self: flex-start;
-    padding: 0.25rem 0.75rem;
-    border-radius: 999px;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-pill);
     border: 1px dashed var(--border-color);
     font-size: 0.8rem;
     color: var(--text-secondary);
@@ -312,11 +312,11 @@
   .step-card {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1rem 1.25rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-4) var(--space-5);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   /* A step that does not run is dimmed, but its problem and its link are not. */
@@ -327,7 +327,7 @@
   .step-head {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
   }
 
   .step-number {
@@ -337,10 +337,10 @@
     justify-content: center;
     width: 1.5rem;
     height: 1.5rem;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
   }
 
@@ -348,7 +348,7 @@
     flex: 1;
     margin: 0;
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -364,30 +364,30 @@
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.5rem;
-    font-size: 0.875rem;
+    gap: var(--space-2);
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
   .engine-name {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .engine-model {
     font-size: 0.8rem;
     color: var(--text-secondary);
     background: var(--surface-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.05rem 0.4rem;
   }
 
   .issues {
     list-style: none;
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .step-foot {

@@ -93,7 +93,7 @@
   .loading {
     display: flex;
     justify-content: center;
-    padding: 2rem 0;
+    padding: var(--space-8) 0;
   }
 
   .tag-filter {
@@ -115,14 +115,14 @@
     gap: 0.35rem;
     padding: 0.3rem 0.7rem;
     border: 1px solid var(--border-color);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: 0.8rem;
     cursor: pointer;
     transition:
-      border-color 0.15s ease,
-      background-color 0.15s ease;
+      border-color var(--duration-fast) ease,
+      background-color var(--duration-fast) ease;
   }
 
   .tag-chip:hover {
@@ -133,7 +133,7 @@
     border-color: var(--primary-color);
     background-color: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .tag-count {
@@ -144,7 +144,7 @@
 
   .empty {
     width: 100%;
-    padding: 1.5rem 0.5rem;
+    padding: var(--space-6) var(--space-2);
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.85rem;

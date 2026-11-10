@@ -388,15 +388,15 @@
   }
 
   .enable-toggle {
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
+    margin-bottom: var(--space-6);
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--color-border);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     cursor: pointer;
   }
 
@@ -407,16 +407,16 @@
   }
 
   .toggle-text {
-    font-weight: 500;
-    font-size: 1rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-base);
   }
 
   .section {
-    margin-bottom: 2rem;
-    padding: 1rem;
+    margin-bottom: var(--space-8);
+    padding: var(--space-4);
     background: var(--color-bg-secondary);
-    border-radius: 8px;
-    transition: opacity 0.2s;
+    border-radius: var(--radius-lg);
+    transition: opacity var(--duration-base);
   }
 
   .section.disabled {
@@ -425,20 +425,20 @@
   }
 
   .section h3 {
-    margin: 0 0 1rem 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    margin: 0 0 var(--space-4) 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text-secondary);
   }
 
   .form-row {
     display: flex;
-    gap: 1rem;
-    margin-bottom: 1rem;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
   }
 
   .form-row.checkboxes {
-    gap: 2rem;
+    gap: var(--space-8);
   }
 
   .form-row.thirds .form-group {
@@ -447,7 +447,7 @@
 
   .form-group {
     flex: 1;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .form-group.small {
@@ -456,9 +456,9 @@
 
   .form-group label {
     display: block;
-    margin-bottom: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
+    margin-bottom: var(--space-2);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -474,8 +474,8 @@
 
   .help-text {
     display: block;
-    margin-top: 0.25rem;
-    font-size: 0.75rem;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
 
@@ -492,10 +492,10 @@
   .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
-    font-size: 0.875rem;
-    margin-bottom: 0.75rem;
+    font-size: var(--font-size-md);
+    margin-bottom: var(--space-3);
   }
 
   .checkbox-label input[type="checkbox"] {
@@ -510,9 +510,9 @@
 
   .actions {
     display: flex;
-    gap: 1rem;
+    gap: var(--space-4);
     justify-content: flex-end;
-    padding-top: 1rem;
+    padding-top: var(--space-4);
     border-top: 1px solid var(--color-border);
   }
 
@@ -527,7 +527,7 @@
     }
 
     .form-row.checkboxes {
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     .form-group.small {

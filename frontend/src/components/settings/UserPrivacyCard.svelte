@@ -128,12 +128,12 @@
   .user-privacy {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    margin-top: 1.5rem;
+    gap: var(--space-4);
+    margin-top: var(--space-6);
   }
 
   .error {
     margin: 0;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 </style>

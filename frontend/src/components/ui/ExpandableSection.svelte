@@ -75,17 +75,17 @@
   .expandable-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     width: 100%;
-    padding: 12px 4px;
+    padding: var(--space-3) var(--space-1);
     background: transparent;
     border: none;
     border-radius: 0;
     box-shadow: none;
     cursor: pointer;
     color: var(--text-color);
-    font-size: 14px;
-    font-weight: 600;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     text-align: start;
   }
   /* Flat disclosure row: cancel form-elements.css's global button hover (fill + scale). */
@@ -98,11 +98,11 @@
   .expandable-header:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
   .chevron {
     flex-shrink: 0;
-    transition: transform 0.15s ease;
+    transition: transform var(--duration-fast) ease;
   }
   .chevron.open {
     transform: rotate(90deg);
@@ -115,6 +115,6 @@
     flex: 1;
   }
   .expandable-content {
-    padding: 0 4px 12px;
+    padding: 0 var(--space-1) var(--space-3);
   }
 </style>

@@ -94,9 +94,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.5rem 0.25rem 0;
-    margin-top: 0.5rem;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-1) 0;
+    margin-top: var(--space-2);
     border-top: 1px solid var(--border-color);
     flex-wrap: wrap;
   }
@@ -115,9 +115,9 @@
     background: none;
     border: none;
     padding: 0.15rem 0.35rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
     cursor: pointer;
     white-space: nowrap;

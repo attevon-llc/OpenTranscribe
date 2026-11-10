@@ -143,25 +143,25 @@
 
 <style>
   .inbox-item {
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    border-bottom: 1px solid var(--border-color);
     transition: background 0.1s ease;
   }
 
   .inbox-item:hover {
-    background: var(--hover-color, #f9fafb);
+    background: var(--hover-color);
   }
 
   .inbox-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 16px;
+    padding: var(--space-2-5) var(--space-4);
   }
 
   .item-left {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2-5);
     flex: 1;
     min-width: 0;
   }
@@ -175,11 +175,11 @@
     height: 30px;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--primary-on-surface);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     box-shadow: none;
   }
 
@@ -200,9 +200,9 @@
   }
 
   .speaker-name {
-    font-weight: 500;
-    color: var(--text-color, #111827);
-    font-size: 14px;
+    font-weight: var(--font-weight-medium);
+    color: var(--text-color);
+    font-size: var(--font-size-md);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -211,20 +211,20 @@
   .suggestion {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-top: 2px;
-    font-size: 13px;
+    gap: var(--space-1-5);
+    margin-top: var(--space-0-5);
+    font-size: var(--font-size-sm);
     flex-wrap: wrap;
     min-width: 0;
   }
 
   .suggestion-label {
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
   }
 
   .suggestion-name {
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -232,40 +232,40 @@
   }
 
   .confidence {
-    font-weight: 600;
-    font-size: 12px;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-xs);
   }
 
   .source-badge {
-    font-size: 11px;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: var(--hover-color, #f3f4f6);
-    color: var(--text-secondary, #9ca3af);
+    font-size: var(--font-size-2xs);
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-lg);
+    background: var(--hover-color);
+    color: var(--text-secondary);
   }
 
   .source-badge.source-profile {
-    background: color-mix(in srgb, var(--success-color, #10b981) 10%, transparent);
-    color: var(--success-color, #10b981);
+    background: color-mix(in srgb, var(--success-color) 10%, transparent);
+    color: var(--success-color);
   }
 
   .source-badge.source-voice {
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 10%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
     color: var(--primary-on-surface);
   }
 
   .source-badge.source-llm {
-    background: color-mix(in srgb, var(--text-secondary, #9ca3af) 10%, transparent);
-    color: var(--text-secondary, #9ca3af);
+    background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+    color: var(--text-secondary);
   }
 
   .meta {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     margin-top: 3px;
-    font-size: 12px;
-    color: var(--text-secondary, #9ca3af);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
     flex-wrap: wrap;
     min-width: 0;
   }
@@ -282,15 +282,15 @@
   }
 
   .cluster-tag {
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: var(--hover-color, #f3f4f6);
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-lg);
+    background: var(--hover-color);
   }
 
   .item-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     flex-shrink: 0;
   }
 
@@ -298,14 +298,14 @@
     /* Never let a one-word action wrap. Adding the assign dropdown to this row
        squeezed Skip until it broke across two lines as "Ski"/"p". */
     white-space: nowrap;
-    padding: 4px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border-color, #d1d5db);
-    background: var(--hover-color, #f9fafb);
-    color: var(--text-color, #374151);
-    font-size: 13px;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--hover-color);
+    color: var(--text-color);
+    font-size: var(--font-size-sm);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     box-shadow: none;
   }
 
@@ -316,15 +316,15 @@
   }
 
   .action-btn:hover {
-    background: var(--border-color, #e5e7eb);
+    background: var(--border-color);
     transform: none;
     box-shadow: none;
   }
 
   .action-btn.accept {
-    background: var(--success-color, #10b981);
-    color: white;
-    border-color: var(--success-color, #10b981);
+    background: var(--success-color);
+    color: var(--text-on-solid);
+    border-color: var(--success-color);
   }
 
   .action-btn.accept:hover {
@@ -337,8 +337,8 @@
     max-width: 170px;
     min-width: 0;
     flex-shrink: 1;
-    padding: 0.3rem 0.5rem;
-    font-size: 0.8125rem;
+    padding: 0.3rem var(--space-2);
+    font-size: var(--font-size-sm);
     cursor: pointer;
   }
 
@@ -348,36 +348,36 @@
   }
 
   .action-btn.skip {
-    background: var(--card-background, #fff);
-    color: var(--text-secondary, #6b7280);
-    border-color: var(--border-color, #d1d5db);
+    background: var(--card-background);
+    color: var(--text-secondary);
+    border-color: var(--border-color);
   }
 
   .action-btn.skip:hover {
-    background: var(--button-hover, #e5e7eb);
-    border-color: var(--text-secondary, #9ca3af);
-    color: var(--text-color, #374151);
+    background: var(--button-hover);
+    border-color: var(--text-secondary);
+    color: var(--text-color);
     transform: none;
     box-shadow: none;
   }
 
   @media (max-width: 768px) {
     .inbox-row {
-      padding: 8px 12px;
-      gap: 8px;
+      padding: var(--space-2) var(--space-3);
+      gap: var(--space-2);
     }
 
     .item-left {
-      gap: 8px;
+      gap: var(--space-2);
     }
 
     .speaker-name {
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
 
     .suggestion {
-      font-size: 12px;
-      gap: 4px;
+      font-size: var(--font-size-xs);
+      gap: var(--space-1);
     }
 
     .suggestion-name {
@@ -389,17 +389,17 @@
     }
 
     .meta {
-      font-size: 11px;
-      gap: 4px;
+      font-size: var(--font-size-2xs);
+      gap: var(--space-1);
     }
 
     .item-actions {
-      gap: 4px;
+      gap: var(--space-1);
     }
 
     .action-btn {
-      padding: 4px 8px;
-      font-size: 12px;
+      padding: var(--space-1) var(--space-2);
+      font-size: var(--font-size-xs);
     }
   }
 

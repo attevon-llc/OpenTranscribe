@@ -65,7 +65,7 @@
   /* Never fall back to the OS control font (system-ui 13.33px on macOS). */
   font-family: inherit;
   font-size: var(--field-font-size);
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   line-height: var(--field-line-height);
   letter-spacing: normal;
   outline: 2px solid transparent;
@@ -73,9 +73,9 @@
   -webkit-appearance: none;
   appearance: none;
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    background-color 0.15s ease;
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    background-color var(--duration-fast) ease;
 }
 
 :where(textarea) {
@@ -276,22 +276,22 @@ table {
   border-collapse: collapse;
   background-color: var(--card-background);
   color: var(--text-color);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   box-shadow: var(--card-shadow);
 }
 
 th {
   background-color: var(--table-header-bg);
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   text-align: left;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--text-color);
   border-bottom: 1px solid var(--border-color);
 }
 
 td {
-  padding: 10px 16px;
+  padding: var(--space-2-5) var(--space-4);
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -308,14 +308,14 @@ button {
   background-color: var(--surface-color);
   color: var(--text-color);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
   padding: 0.6rem 1.2rem;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s ease;
-  font-weight: 500;
+  transition: all var(--duration-base) ease;
+  font-weight: var(--font-weight-medium);
   font-size: 0.95rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
 }
 
 /*
@@ -371,17 +371,17 @@ button:focus-visible {
 
 button.primary {
   background-color: var(--primary-color);
-  color: white !important;
+  color: var(--text-on-solid) !important;
   border: none;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  box-shadow: var(--shadow-primary);
 }
 
 /* `:focus` deliberately omitted — see the `button:focus-visible` note above (#746). */
 button.primary:hover:not(:disabled) {
   background-color: var(--primary-hover);
-  color: white !important;
+  color: var(--text-on-solid) !important;
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  box-shadow: var(--shadow-primary-hover);
 }
 
 button:disabled {
@@ -394,26 +394,26 @@ button:disabled {
 .dialog {
   background-color: var(--card-background);
   color: var(--text-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
   border: 1px solid var(--border-color);
 }
 
 .modal-header,
 .dialog-header {
   border-bottom: 1px solid var(--border-color);
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 .modal-body,
 .dialog-body {
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 .modal-footer,
 .dialog-footer {
   border-top: 1px solid var(--border-color);
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 /* ─── Settings Page Buttons (shared across all settings components) ─── */
@@ -421,18 +421,18 @@ button:disabled {
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
+  gap: var(--space-1-5);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-base) ease;
   font-family: inherit;
   white-space: nowrap;
 }
 .btn-small {
-  padding: 0.25rem 0.625rem;
+  padding: var(--space-1) var(--space-2-5);
   font-size: var(--font-size-xs);
 }
 .btn:disabled {
@@ -449,14 +449,14 @@ button:disabled {
    it at 3.68:1, under WCAG AA's 4.5:1. Pinned by `primary-contrast.test.ts`. */
 .btn-primary {
   background-color: var(--primary-color);
-  color: white;
+  color: var(--text-on-solid);
   border: none;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  box-shadow: var(--shadow-primary);
 }
 .btn-primary:hover:not(:disabled) {
   background-color: var(--primary-hover);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  box-shadow: var(--shadow-primary-hover);
 }
 .btn-primary:active:not(:disabled) {
   transform: scale(1) !important;
@@ -467,12 +467,12 @@ button:disabled {
   background-color: var(--surface-color);
   color: var(--text-color);
   border: 1px solid var(--border-color);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-xs);
 }
 .btn-secondary:hover:not(:disabled) {
   background-color: var(--button-hover);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-hover);
 }
 .btn-secondary:active:not(:disabled) {
   transform: scale(1) !important;
@@ -516,16 +516,16 @@ button:disabled {
 /* Base sizing shared by all modal footer buttons */
 .modal-button {
   padding: 0.6rem 1.2rem;
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
   font-size: 0.95rem;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-base) ease;
   min-width: 100px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .modal-button:disabled {
   opacity: 0.6;
@@ -535,14 +535,14 @@ button:disabled {
 
 .modal-primary-button {
   background-color: var(--primary-color);
-  color: white;
+  color: var(--text-on-solid);
   border: none;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  box-shadow: var(--shadow-primary);
 }
 .modal-primary-button:hover:not(:disabled) {
   background-color: var(--primary-hover);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  box-shadow: var(--shadow-primary-hover);
 }
 .modal-primary-button:active:not(:disabled) {
   transform: scale(1);
@@ -559,7 +559,7 @@ button:disabled {
   background-color: var(--button-hover);
   border-color: var(--border-color);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-hover);
 }
 .modal-cancel-button:active:not(:disabled) {
   transform: scale(1);
@@ -600,11 +600,11 @@ button:disabled {
 .btn-reset {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 .refresh-icon {
   flex-shrink: 0;
-  transition: transform 0.3s ease;
+  transition: transform var(--duration-slow) ease;
 }
 .refresh-icon.spinning {
   animation: spin 1s linear infinite;

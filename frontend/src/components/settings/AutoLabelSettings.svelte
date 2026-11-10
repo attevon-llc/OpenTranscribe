@@ -333,21 +333,21 @@
 
 <style>
   .auto-label-settings {
-    padding: 1rem 0;
+    padding: var(--space-4) 0;
   }
 
   .settings-group {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .setting-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
   }
@@ -355,14 +355,14 @@
   .setting-info {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     flex: 1;
     min-width: 0;
   }
 
   .setting-label {
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
 
@@ -374,7 +374,7 @@
 
   .setting-note {
     font-size: 0.775rem;
-    color: var(--text-muted, var(--text-secondary));
+    color: var(--text-muted);
     line-height: 1.3;
   }
 
@@ -385,7 +385,7 @@
     width: 44px;
     height: 24px;
     flex-shrink: 0;
-    margin-left: 1rem;
+    margin-left: var(--space-4);
   }
 
   .toggle-switch input {
@@ -402,7 +402,7 @@
     right: 0;
     bottom: 0;
     background-color: var(--border-color);
-    transition: 0.3s;
+    transition: var(--duration-slow);
     border-radius: 24px;
   }
 
@@ -413,13 +413,13 @@
     width: 18px;
     left: 3px;
     bottom: 3px;
-    background-color: var(--toggle-button, white);
-    transition: 0.3s;
-    border-radius: 50%;
+    background-color: var(--toggle-button);
+    transition: var(--duration-slow);
+    border-radius: var(--radius-round);
   }
 
   .toggle-switch input:focus-visible + .toggle-slider {
-    outline: 2px solid var(--primary-color, #3b82f6);
+    outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
 
@@ -442,26 +442,26 @@
 
   /* Save Section */
   .save-section {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
     display: flex;
     justify-content: flex-end;
   }
 
   .btn-save {
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: none;
     background: var(--primary-color);
-    color: white;
-    font-weight: 500;
+    color: var(--text-on-solid);
+    font-weight: var(--font-weight-medium);
     font-size: 0.95rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-save:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -477,32 +477,32 @@
 
   /* Retroactive Section */
   .retroactive-section {
-    margin-top: 1.5rem;
-    padding: 1rem;
-    border-radius: 8px;
+    margin-top: var(--space-6);
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
   }
 
   .btn-retroactive {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: none;
     background: var(--primary-color);
-    color: white;
-    font-weight: 500;
+    color: var(--text-on-solid);
+    font-weight: var(--font-weight-medium);
     font-size: 0.9rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-retroactive:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -518,45 +518,45 @@
 
   /* Progress Section */
   .progress-section {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .queued-message {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
-    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
   }
 
   .progress-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .progress-label {
     font-size: 0.8rem;
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .progress-percent {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
   .progress-bar-container {
     height: 8px;
-    background: var(--border-color, #444);
-    border-radius: 4px;
+    background: var(--border-color);
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
-    background: var(--primary-color, #4a9eff);
-    border-radius: 4px;
-    transition: width 0.3s ease;
+    background: var(--primary-color);
+    border-radius: var(--radius-sm);
+    transition: width var(--duration-slow) ease;
   }
 
   /* Skeleton Loading */
@@ -569,7 +569,7 @@
     .setting-row {
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     .toggle-switch {

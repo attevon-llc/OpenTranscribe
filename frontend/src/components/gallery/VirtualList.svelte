@@ -284,7 +284,7 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     overflow: hidden;
     background: var(--surface-color);
   }
@@ -301,8 +301,8 @@
     padding: 0.75rem var(--file-list-pad);
     background: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     position: sticky;
     top: 0;
@@ -317,7 +317,7 @@
     position: relative;
     border-bottom: 1px solid var(--border-color);
     background: var(--surface-color);
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
     overflow: hidden;
   }
 
@@ -333,11 +333,11 @@
   }
 
   .file-list-row.navigating {
-    background: rgba(59, 130, 246, 0.05);
+    background: rgba(var(--accent-rgb), 0.05);
   }
 
   :global([data-theme='dark']) .file-list-row.navigating {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
   }
 
   /* Selection mode: the row is a grid on the header's own template, and the link is a
@@ -370,7 +370,7 @@
   }
 
   .file-list-row:hover {
-    background-color: var(--hover-bg, rgba(0, 0, 0, 0.03));
+    background-color: var(--hover-bg);
   }
 
   :global([data-theme='dark']) .file-list-row:hover {
@@ -386,12 +386,12 @@
   }
 
   .file-list-row.selected {
-    background-color: rgba(59, 130, 246, 0.08);
-    border-color: rgba(59, 130, 246, 0.2);
+    background-color: rgba(var(--accent-rgb), 0.08);
+    border-color: rgba(var(--accent-rgb), 0.2);
   }
 
   :global([data-theme='dark']) .file-list-row.selected {
-    background-color: rgba(59, 130, 246, 0.15);
+    background-color: rgba(var(--accent-rgb), 0.15);
   }
 
   .file-list-row.new-file {
@@ -399,7 +399,7 @@
   }
 
   @keyframes listNewFileGlow {
-    0% { background-color: rgba(59, 130, 246, 0.15); }
+    0% { background-color: rgba(var(--accent-rgb), 0.15); }
     100% { background-color: transparent; }
   }
 
@@ -425,10 +425,10 @@
     height: 18px;
     background-color: var(--background-color);
     border: 2px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     position: relative;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .list-cell-checkbox:hover .checkmark {
@@ -493,8 +493,8 @@
     display: block;
     min-width: 0;
     flex: 0 1 auto;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -502,19 +502,19 @@
   }
 
   .list-cell-speakers {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     overflow: hidden;
     min-width: 0;
     /* 32px gutter before the duration column: the shared 8px grid `gap` (file-list-grid.css)
        plus 24px here. Column geometry otherwise lives ONLY in file-list-grid.css — this is
        the one exception, scoped to a single cell's trailing edge rather than the grid gap,
        which would widen every column boundary. */
-    padding-inline-end: 24px;
+    padding-inline-end: var(--space-6);
   }
 
   .speaker-names {
@@ -527,14 +527,14 @@
 
   .speaker-count {
     flex: 0 0 auto;
-    font-size: 0.6875rem;
-    font-weight: 500;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
-    background: var(--primary-color-alpha, rgba(59, 130, 246, 0.1));
-    padding: 0.125rem 0.375rem;
+    background: var(--primary-color-alpha);
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 9999px;
     white-space: nowrap;
-    margin-left: 0.25rem;
+    margin-left: var(--space-1);
   }
 
   .no-speakers {
@@ -550,7 +550,7 @@
   .list-cell-duration,
   .list-cell-date,
   .list-cell-size {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
     justify-content: flex-end;
@@ -560,7 +560,7 @@
     justify-content: flex-end;
     min-width: 0;
     overflow: hidden;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   /* The header cells share the body cells' column classes, so the body font sizes above

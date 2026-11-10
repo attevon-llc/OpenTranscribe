@@ -111,20 +111,20 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
     flex-wrap: wrap;
   }
 
   .setting-controls {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     user-select: none;
   }
@@ -141,8 +141,8 @@
     width: 36px;
     height: 20px;
     background-color: var(--border-color);
-    border-radius: 10px;
-    transition: background-color 0.2s ease;
+    border-radius: var(--radius-xl);
+    transition: background-color var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -154,9 +154,9 @@
     width: 16px;
     height: 16px;
     background-color: white;
-    border-radius: 50%;
-    transition: transform 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base) ease;
+    box-shadow: var(--shadow-thumb);
   }
 
   .toggle-input:checked + .toggle-switch {
@@ -168,14 +168,14 @@
   }
 
   .toggle-text {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
   .inline-input {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .input-label {
@@ -184,8 +184,8 @@
   }
 
   .form-input {
-    padding: 0.375rem 0.5rem;
-    font-size: 0.875rem;
+    padding: var(--space-1-5) var(--space-2);
+    font-size: var(--font-size-md);
   }
 
   .form-input:disabled {
@@ -200,7 +200,7 @@
 
   .button-row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     justify-content: flex-end;
   }
 
@@ -212,7 +212,7 @@
     .setting-controls {
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.75rem;
+      gap: var(--space-3);
       width: 100%;
     }
 
@@ -233,7 +233,7 @@
 
     .number-input {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

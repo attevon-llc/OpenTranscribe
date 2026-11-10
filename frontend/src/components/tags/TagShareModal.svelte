@@ -130,13 +130,13 @@
   .tag-share {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .share-note,
   .share-empty {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -146,30 +146,30 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .share-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .share-target {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
     min-width: 0;
   }
 
   .share-kind {
     flex-shrink: 0;
     font-size: 10px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--text-secondary);
@@ -182,6 +182,6 @@
   }
 
   .share-loading {
-    padding: 4px 0;
+    padding: var(--space-1) 0;
   }
 </style>

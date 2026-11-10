@@ -45,6 +45,6 @@
 <style>
   .a11y-fixture-page {
     width: 100%;
-    padding: 1rem;
+    padding: var(--space-4);
   }
 </style>

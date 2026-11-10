@@ -243,52 +243,52 @@
 
 <style>
   .block {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
   h4 {
-    margin: 0 0 0.5rem 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
+    margin: 0 0 var(--space-2) 0;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
   .count {
     margin-inline-start: 0.4rem;
     padding: 0 0.45rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: var(--warning-bg);
     color: var(--text-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
   .history-head {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .filter {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     white-space: nowrap;
   }
   select {
-    padding: 0.3rem 0.5rem;
-    font-size: 0.8125rem;
+    padding: 0.3rem var(--space-2);
+    font-size: var(--font-size-sm);
   }
   .state {
-    margin: 1rem 0;
+    margin: var(--space-4) 0;
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
   .state.error {
     color: var(--error-color);
   }
   .more {
     display: block;
-    margin: 1rem auto 0 auto;
+    margin: var(--space-4) auto 0 auto;
   }
 </style>

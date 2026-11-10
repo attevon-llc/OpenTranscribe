@@ -943,46 +943,46 @@
 <style>
   .filter-sidebar {
     background-color: var(--surface-color);
-    border-radius: 8px;
-    padding: 0.75rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3);
+    box-shadow: var(--shadow-sm);
     display: flex;
     flex-direction: column;
     /* #750 items 3+4: more breathing room between sections, and a thinner,
        fully-opaque divider reads as more structure than the old thick faded
        one at less distance. */
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .filter-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .filter-header h2 {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     margin: 0;
   }
 
   .header-buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
   }
 
   .reset-button {
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     padding: 0.3rem 0.7rem;
-    font-size: 0.75rem;
-    font-weight: 400;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .reset-button:hover:not(:disabled) {
@@ -997,12 +997,12 @@
   .filter-section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     position: relative;
   }
 
   .filter-section:not(:first-child) {
-    padding-top: 0.25rem;
+    padding-top: var(--space-1);
   }
 
   .filter-section:not(:first-child)::before {
@@ -1018,7 +1018,7 @@
 
   .filter-section h3 {
     font-size: var(--font-size-xs);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin: 0;
   }
@@ -1038,11 +1038,11 @@
     height: 22px;
     padding: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--background-color);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .clear-inline-btn:hover {
@@ -1051,7 +1051,7 @@
   }
 
   .dropdown-section {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .loading-text,
@@ -1068,16 +1068,16 @@
     direction: ltr;
     display: flex;
     justify-content: space-between;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     font-variant-numeric: tabular-nums;
   }
 
   .slider-wrapper {
     direction: ltr;
-    padding: 0 0.25rem;
-    font-size: 0.75rem;
+    padding: 0 var(--space-1);
+    font-size: var(--font-size-xs);
   }
 
   /* Status row for the dropdown's server-side speaker search. */
@@ -1093,12 +1093,12 @@
   .retry-button {
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     color: var(--text-color);
     padding: 0.3rem 0.8rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .retry-button:hover {
@@ -1117,20 +1117,20 @@
   .duration-chip-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .duration-chip-list {
     margin-top: 0;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   /* Input help text */
   .input-help {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     display: block;
     font-style: italic;
   }

@@ -106,24 +106,24 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-2-5);
+    font-size: var(--font-size-sm);
   }
 
   .form-control::placeholder {
@@ -139,11 +139,11 @@
   .modal-button {
     padding: 0.6rem 1.2rem;
     border: none;
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    border-radius: var(--radius-lg);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .cancel-button {
@@ -154,20 +154,20 @@
   }
 
   .cancel-button:hover {
-    background: var(--button-hover, #e5e7eb);
+    background: var(--button-hover);
     border-color: var(--border-color);
   }
 
   .confirm-button {
     background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: var(--shadow-primary);
   }
 
   .confirm-button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .confirm-button:active:not(:disabled) {
@@ -196,7 +196,7 @@
 
     .form-control {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 

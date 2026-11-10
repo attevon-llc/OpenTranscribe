@@ -140,12 +140,12 @@
   .audit-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .audit-table th,
   .audit-table td {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     text-align: start;
     border-bottom: 1px solid var(--color-border);
     white-space: nowrap;
@@ -153,14 +153,14 @@
 
   .audit-table th {
     background: var(--color-bg-secondary);
-    font-weight: 600;
-    font-size: 0.6875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     color: var(--color-text-secondary);
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .audit-table tbody tr:hover {
@@ -183,28 +183,28 @@
   .uuid,
   .ip {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--color-text-secondary);
   }
 
   .event-type {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     background: var(--color-bg-secondary);
-    padding: 0.125rem 0.375rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 3px;
     display: inline-block;
   }
 
   .event-label {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .outcome {
-    padding: 0.125rem 0.375rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 3px;
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
   }
@@ -232,14 +232,14 @@
   .details-btn {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    padding: 0.125rem 0.375rem;
-    border-radius: 6px;
+    padding: var(--space-0-5) var(--space-1-5);
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.625rem;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .details-btn:hover {
@@ -254,9 +254,9 @@
 
   .no-logs {
     text-align: center;
-    padding: 1rem;
+    padding: var(--space-4);
     color: var(--color-text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   /* Scrollable table container for many logs */
@@ -264,7 +264,7 @@
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     position: relative;
   }
 
@@ -272,32 +272,32 @@
     position: sticky;
     top: 0;
     text-align: end;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
-    padding: 4px 8px;
+    padding: var(--space-1) var(--space-2);
     background: var(--surface-color);
     z-index: 2;
   }
 
   .loading-more {
     text-align: center;
-    padding: 0.75rem;
+    padding: var(--space-3);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
 
   /* Details modal: chrome comes from ui/BaseModal; only the JSON block is styled here. */
   .details-modal-body {
-    padding: 1rem;
+    padding: var(--space-4);
     margin: 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.5;
     color: var(--color-text);
     white-space: pre-wrap;
     word-break: break-word;
-    background: var(--color-bg-secondary, #f9fafb);
-    border-radius: 6px;
+    background: var(--color-bg-secondary);
+    border-radius: var(--radius-md);
   }
 
   @media (max-width: 768px) {

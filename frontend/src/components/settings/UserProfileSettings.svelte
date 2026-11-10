@@ -334,26 +334,26 @@
 <style>
   .form-text.password-error {
     color: var(--error-color);
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
   }
 
   .section-title {
     font-size: 1.125rem;
-    font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .section-description {
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    margin: 0 0 1.25rem 0;
+    margin: 0 0 var(--space-5) 0;
   }
 
   .profile-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   @media (max-width: 700px) {
@@ -363,53 +363,53 @@
   }
 
   .profile-card {
-    padding: 1rem;
-    border-radius: 10px;
-    background: var(--surface-color, #333);
-    border: 1px solid var(--border-color, #444);
+    padding: var(--space-4);
+    border-radius: var(--radius-xl);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
   }
 
   .card-title {
     font-size: 0.9rem;
-    font-weight: 600;
-    margin: 0 0 0.75rem 0;
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-3) 0;
     color: var(--text-color);
   }
 
   .card-divider {
-    border-top: 1px solid var(--border-color, #444);
-    margin: 1rem 0;
+    border-top: 1px solid var(--border-color);
+    margin: var(--space-4) 0;
   }
 
   .mfa-card {
-    margin-top: 1rem;
-    padding: 1rem;
-    border-radius: 10px;
-    background: var(--surface-color, #333);
-    border: 1px solid var(--border-color, #444);
+    margin-top: var(--space-4);
+    padding: var(--space-4);
+    border-radius: var(--radius-xl);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
   }
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-2-5);
+    font-size: var(--font-size-sm);
   }
 
   .form-control:disabled {
@@ -418,9 +418,9 @@
   }
 
   .form-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   .password-header {
@@ -433,12 +433,12 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-secondary);
     display: flex;
     align-items: center;
-    border-radius: 4px;
-    transition: background-color 0.2s;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--duration-base);
   }
 
   .toggle-password:hover {
@@ -448,29 +448,29 @@
 
   .form-actions {
     display: flex;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
     justify-content: flex-end;
   }
 
   .btn {
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     border: none;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-primary {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }

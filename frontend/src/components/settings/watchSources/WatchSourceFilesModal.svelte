@@ -349,8 +349,8 @@
   }
   .filters {
     display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
   }
   .search {
     flex: 1;
@@ -362,20 +362,20 @@
   .bulk-bar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    margin-bottom: 10px;
-    border-radius: 6px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2-5);
+    margin-bottom: var(--space-2-5);
+    border-radius: var(--radius-md);
     background: var(--button-hover);
     font-size: 0.85rem;
   }
   .files-loading {
     display: flex;
     justify-content: center;
-    padding: 32px;
+    padding: var(--space-8);
   }
   .btn-sm {
-    padding: 4px 10px;
+    padding: var(--space-1) var(--space-2-5);
     font-size: 0.8rem;
   }
   .modal-title {

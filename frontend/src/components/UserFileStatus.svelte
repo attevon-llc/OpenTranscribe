@@ -470,10 +470,10 @@
   .file-status-container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 1rem;
+    padding: var(--space-4);
     color: var(--text-color);
-    height: calc(100vh - var(--content-top, 60px));
-    height: calc(100dvh - var(--content-top, 60px));
+    height: calc(100vh - var(--content-top));
+    height: calc(100dvh - var(--content-top));
     overflow-y: auto;
   }
 
@@ -481,7 +481,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .header h2 {
@@ -491,24 +491,24 @@
 
   .controls {
     display: flex;
-    gap: 1rem;
+    gap: var(--space-4);
     align-items: center;
   }
 
   .recovery-btn, .flower-btn {
     padding: 0.6rem 1.2rem;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
-    transition: all 0.2s ease;
-    font-weight: 500;
+    transition: all var(--duration-base) ease;
+    font-weight: var(--font-weight-medium);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.95rem;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .flower-btn {
@@ -518,9 +518,9 @@
   }
 
   .recovery-btn:hover {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .recovery-btn:active {
@@ -557,11 +557,11 @@
     top: calc(100% + 8px);
     right: 0;
     background: rgba(0, 0, 0, 0.85);
-    color: #fff;
-    font-size: 0.6875rem;
-    font-weight: 400;
-    padding: 6px 10px;
-    border-radius: 6px;
+    color: var(--text-on-solid);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-regular);
+    padding: var(--space-1-5) var(--space-2-5);
+    border-radius: var(--radius-md);
     white-space: nowrap;
     pointer-events: none;
     opacity: 0;
@@ -582,19 +582,19 @@
   .status-cards {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 0.75rem;
-    margin: 0 auto 0.75rem auto;
+    gap: var(--space-3);
+    margin: 0 auto var(--space-3) auto;
     max-width: 700px;
   }
 
   .status-card {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 1rem;
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
     text-align: center;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    transition: all 0.2s ease;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--duration-base) ease;
   }
 
   .status-card:hover {
@@ -616,10 +616,10 @@
   }
 
   .status-number {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .status-label {
@@ -627,15 +627,15 @@
      * (an alias of --text-secondary) measures 4.16:1, under WCAG AA. */
     color: var(--text-on-tint);
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .error-message {
     background: var(--error-background);
     color: var(--error-color);
-    padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
+    padding: var(--space-4);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-4);
     border: 1px solid var(--error-border);
   }
 
@@ -648,18 +648,18 @@
     .header {
       flex-direction: column;
       align-items: flex-start;
-      gap: 1rem;
+      gap: var(--space-4);
     }
 
     .controls {
       width: 100%;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .status-cards {
       grid-template-columns: repeat(3, 1fr);
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .status-card {
@@ -667,7 +667,7 @@
     }
 
     .status-number {
-      font-size: 1.25rem;
+      font-size: var(--font-size-xl);
     }
 
     .status-label {
@@ -685,20 +685,20 @@
   .skeleton-status {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .skeleton-card {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .skeleton-table {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1rem 1.5rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-4) var(--space-6);
   }
 
 

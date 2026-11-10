@@ -269,7 +269,7 @@
     z-index: var(--z-toast);
     font-family: var(--font-family);
     user-select: none;
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
     margin-bottom: env(safe-area-inset-bottom, 0px);
   }
 
@@ -281,12 +281,12 @@
   /* Minimized Badge */
   .upload-badge {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-radius: 20px;
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     cursor: grab;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     position: relative;
     backdrop-filter: blur(8px);
   }
@@ -303,7 +303,7 @@
   .badge-content {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     position: relative;
   }
 
@@ -313,8 +313,8 @@
   }
 
   .badge-text {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
@@ -325,7 +325,7 @@
     width: 8px;
     height: 8px;
     background: #ef4444;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     border: 2px solid white;
     animation: pulse 2s ease-in-out infinite;
   }
@@ -334,7 +334,7 @@
   .upload-panel {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     width: 350px;
     max-height: 60vh;
@@ -344,8 +344,8 @@
 
   .panel-header {
     background: var(--primary-color);
-    color: white;
-    padding: 12px 16px;
+    color: var(--text-on-solid);
+    padding: var(--space-3) var(--space-4);
     cursor: grab;
     display: flex;
     align-items: center;
@@ -358,15 +358,15 @@
 
   .header-content h3 {
     margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
   }
 
   .header-stats {
     display: flex;
-    gap: 8px;
-    font-size: 0.75rem;
-    margin-top: 2px;
+    gap: var(--space-2);
+    font-size: var(--font-size-xs);
+    margin-top: var(--space-0-5);
   }
 
   /* The header is --primary-color in BOTH themes, so these are fixed pairs, not theme-split.
@@ -378,19 +378,19 @@
     background: #fff;
     color: var(--primary-color);
     font-weight: var(--font-weight-semibold);
-    padding: 0 8px;
-    border-radius: 999px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-pill);
   }
 
   .stat-queued,
   .stat-completed {
-    color: #fff;
-    font-weight: 500;
+    color: var(--text-on-solid);
+    font-weight: var(--font-weight-medium);
   }
 
   .header-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
   }
 
@@ -400,12 +400,12 @@
     align-items: center;
     background: rgba(255, 255, 255, 0.2);
     border: none;
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.75rem;
+    color: var(--text-on-solid);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
     cursor: pointer;
-    transition: background 0.2s ease;
+    transition: background var(--duration-base) ease;
   }
 
   .clear-btn:hover,
@@ -415,7 +415,7 @@
 
   /* Overall Progress */
   .overall-progress {
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     border-bottom: 1px solid var(--border-color);
     background: var(--background-color);
   }
@@ -424,17 +424,17 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 6px;
+    margin-bottom: var(--space-1-5);
   }
 
   .progress-label {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
 
   .progress-percent {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
@@ -448,14 +448,14 @@
   .progress-fill {
     height: 100%;
     background: var(--primary-on-surface);
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   /* Upload List */
   .upload-list {
     max-height: 40vh;
     overflow-y: auto;
-    padding: 8px;
+    padding: var(--space-2);
   }
 
   .upload-list::-webkit-scrollbar {

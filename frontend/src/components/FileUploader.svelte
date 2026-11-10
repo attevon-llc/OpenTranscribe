@@ -906,7 +906,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 0.5rem 1rem;
+    padding: 0 var(--space-2) var(--space-4);
     gap: 0;
     flex-shrink: 0;
   }
@@ -915,13 +915,13 @@
   .step-item {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.375rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1) var(--space-1-5);
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: default;
-    transition: background 0.15s ease;
+    transition: background var(--duration-fast) ease;
     flex-shrink: 0;
   }
 
@@ -930,15 +930,15 @@
   .step-item:not(:disabled) { cursor: pointer; }
 
   .step-item:not(:disabled):hover {
-    background: rgba(59, 130, 246, 0.08);
+    background: rgba(var(--accent-rgb), 0.08);
   }
 
   :global([data-theme='dark']) .step-item:not(:disabled):hover {
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
   }
 
   .step-item:focus-visible {
-    outline: 2px solid var(--primary-color, #3b82f6);
+    outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
 
@@ -946,12 +946,12 @@
   .step-dot {
     width: 24px;
     height: 24px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     border: 2px solid var(--border-color);
     background: var(--background-color);
     color: var(--text-secondary);
@@ -960,19 +960,19 @@
   }
 
   .step-item.active .step-dot {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .step-item.completed .step-dot {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .step-item.visited .step-dot {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     color: var(--primary-on-surface);
   }
 
@@ -981,10 +981,10 @@
   /* Label */
   .step-label {
     font-size: 0.65rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;
-    transition: color 0.2s ease;
+    transition: color var(--duration-base) ease;
   }
 
   /* --primary-on-surface, not --primary-color: the accent is a FILL colour tuned for a
@@ -992,7 +992,7 @@
    * WCAG AA. The on-surface token inverts to a light blue in dark mode. Caught by #972's
    * dark-theme axe scan; the light-only scan had always passed. The `.visited` rule is
    * the worst of the three, since it then multiplies by opacity 0.7. */
-  .step-item.active .step-label { color: var(--primary-on-surface); font-weight: 600; }
+  .step-item.active .step-label { color: var(--primary-on-surface); font-weight: var(--font-weight-semibold); }
   .step-item.completed .step-label { color: var(--primary-on-surface); }
   .step-item.visited .step-label { color: var(--primary-on-surface); opacity: 0.7; }
 
@@ -1001,14 +1001,14 @@
     flex: 1;
     height: 2px;
     background: var(--border-color);
-    margin: 0 0.25rem;
+    margin: 0 var(--space-1);
     min-width: 12px;
     max-width: 36px;
     transition: background 0.25s ease;
   }
 
   .step-line.completed { background: var(--primary-color); }
-  .step-line.visited { background: rgba(59, 130, 246, 0.4); }
+  .step-line.visited { background: rgba(var(--accent-rgb), 0.4); }
 
   /* ── Step Content ── */
   .step-body {
@@ -1022,7 +1022,7 @@
   }
 
   .step-content {
-    padding: 0 0.25rem;
+    padding: 0 var(--space-1);
   }
 
   /* Narrower steps (e.g. Tags) fit their natural width instead of stretching to
@@ -1037,9 +1037,9 @@
   .tab-navigation {
     display: flex;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     border-bottom: 1px solid var(--border-color);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     padding: 0;
     width: 100%;
     position: relative;
@@ -1048,64 +1048,64 @@
   .tab-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.875rem;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-3-5);
     background: none;
     border: none;
     cursor: pointer;
     color: var(--text-secondary);
     font-size: 0.9rem;
-    font-weight: 500;
-    border-radius: 6px 6px 0 0;
-    transition: all 0.2s ease;
+    font-weight: var(--font-weight-medium);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    transition: all var(--duration-base) ease;
     position: relative;
   }
 
-  .tab-button:hover { color: var(--primary-on-surface); background-color: rgba(59, 130, 246, 0.05); }
+  .tab-button:hover { color: var(--primary-on-surface); background-color: rgba(var(--accent-rgb), 0.05); }
   .tab-button.active { color: var(--primary-on-surface); border-bottom: 2px solid var(--primary-color); }
   .tab-button:disabled { opacity: 0.5; cursor: not-allowed; }
   .tab-button:disabled:hover { background: transparent; color: var(--text-secondary); }
 
   /* ── Messages ── */
-  .message { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.75rem; font-size: 0.8125rem; }
+  .message { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-lg); margin-bottom: var(--space-3); font-size: var(--font-size-sm); }
   .message-icon { flex-shrink: 0; }
   .message-content { flex: 1; }
 
   .duplicate-message {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     border: 1px solid var(--primary-color);
     border-left: 4px solid var(--primary-color);
     color: var(--primary-on-surface);
   }
 
-  .duplicate-message strong { display: block; margin-bottom: 0.25rem; font-size: 0.875rem; }
-  .duplicate-message p { margin: 0 0 0.5rem 0; line-height: 1.4; }
+  .duplicate-message strong { display: block; margin-bottom: var(--space-1); font-size: var(--font-size-md); }
+  .duplicate-message p { margin: 0 0 var(--space-2) 0; line-height: 1.4; }
 
   .btn-acknowledge {
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-weight: 500;
-    font-size: 0.8125rem;
-    transition: background 0.15s ease;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
+    transition: background var(--duration-fast) ease;
   }
 
-  .btn-acknowledge:hover { background: #2563eb; }
+  .btn-acknowledge:hover { background: var(--primary-color); }
 
   .error-msg {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-3);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     color: var(--text-primary);
-    font-size: 0.8125rem;
-    margin-bottom: 0.75rem;
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--space-3);
   }
 
   .error-msg svg { flex-shrink: 0; color: #ef4444; }
@@ -1114,14 +1114,14 @@
   .bg-recording {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.375rem 0.75rem;
-    margin-top: 0.5rem;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-3);
+    margin-top: var(--space-2);
     background: rgba(220, 38, 38, 0.08);
     border: 1px solid rgba(220, 38, 38, 0.2);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: #dc2626;
     width: 100%;
   }
@@ -1131,8 +1131,8 @@
   .rec-pulse {
     width: 8px;
     height: 8px;
-    border-radius: 50%;
-    background: #dc2626;
+    border-radius: var(--radius-round);
+    background: var(--error-solid);
     animation: recPulse 1.5s ease-in-out infinite;
   }
 
@@ -1143,13 +1143,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.75rem 0.25rem 0;
-    margin-top: 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-1) 0;
+    margin-top: var(--space-3);
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
     position: relative;
-    z-index: 1;
+    z-index: var(--z-base);
     /* Transparent, NOT `var(--background-color)`. That token is the PAGE
        background (#0f172a in dark), while the dialog surface is
        `--surface-color` (#1e293b) — so the footer painted a visibly different,
@@ -1163,20 +1163,20 @@
 
   .nav-left, .nav-right {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
   }
 
   .nav-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 500;
+    gap: var(--space-1-5);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-lg);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     white-space: nowrap;
   }
 
@@ -1190,36 +1190,36 @@
 
   /* "Review with defaults" — prominent secondary action, clearly distinct from Next */
   .nav-review-defaults {
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid var(--primary-color, #3b82f6);
+    background: rgba(var(--accent-rgb), 0.08);
+    border: 1px solid var(--primary-color);
     color: var(--primary-on-surface);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .nav-review-defaults:hover {
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
     transform: translateY(-1px);
   }
 
   :global([data-theme='dark']) .nav-review-defaults {
-    background: rgba(59, 130, 246, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
   }
 
   :global([data-theme='dark']) .nav-review-defaults:hover {
-    background: rgba(59, 130, 246, 0.22);
+    background: rgba(var(--accent-rgb), 0.22);
   }
 
   .nav-next, .nav-submit {
     background: var(--primary-color);
     border: 1px solid #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: var(--shadow-primary);
   }
 
   .nav-next:hover:not(:disabled), .nav-submit:hover:not(:disabled) {
-    background: #2563eb;
-    border-color: #2563eb;
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow-primary-hover);
     transform: translateY(-1px);
   }
 
@@ -1234,7 +1234,7 @@
   @media (max-width: 480px) {
     .step-label { display: none; }
     .step-line { min-width: 12px; }
-    .tab-button { padding: 0.5rem 0.625rem; font-size: 0.8125rem; }
+    .tab-button { padding: var(--space-2) var(--space-2-5); font-size: var(--font-size-sm); }
     .tab-button svg { width: 16px; height: 16px; }
   }
 

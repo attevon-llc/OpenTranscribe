@@ -114,7 +114,7 @@
 
   .field-label {
     font-size: 0.82rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -131,20 +131,20 @@
   .switch-warning {
     margin-top: 0.35rem;
     padding: 0.6rem 0.7rem;
-    border: 1px solid rgba(var(--warning-color-rgb, 255, 193, 7), 0.5);
-    border-radius: 8px;
-    background-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.1);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.5);
+    border-radius: var(--radius-lg);
+    background-color: rgba(var(--warning-color-rgb), 0.1);
   }
 
   .warning-title {
     margin: 0 0 0.2rem;
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .warning-body {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     font-size: 0.76rem;
     color: var(--text-secondary);
     line-height: 1.45;
@@ -156,9 +156,9 @@
   }
 
   .warning-btn {
-    padding: 0.25rem 0.6rem;
+    padding: var(--space-1) 0.6rem;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--card-background);
     color: var(--text-color);
     font-size: 0.76rem;
@@ -172,6 +172,6 @@
   .warning-btn.primary {
     border-color: var(--primary-color);
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 </style>

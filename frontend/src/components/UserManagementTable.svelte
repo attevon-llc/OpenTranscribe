@@ -919,7 +919,7 @@
 <style>
   .user-management {
     width: 100%;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .table-controls {
@@ -927,8 +927,8 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem 1rem;
-    margin-bottom: 1rem;
+    gap: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
   }
 
   .search-container {
@@ -937,77 +937,77 @@
 
   .search-container input {
     width: 100%;
-    padding: 0.5rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2);
+    font-size: var(--font-size-sm);
   }
 
   .table-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .add-user-form {
     background-color: var(--card-background);
-    padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
+    padding: var(--space-4);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-4);
     border: 1px solid var(--border-color);
     color: var(--text-color);
   }
 
   .add-user-form h3 {
     font-size: 1.125rem;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .form-group {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .form-group label {
     display: block;
-    margin-bottom: 0.25rem;
-    font-size: 0.8125rem;
+    margin-bottom: var(--space-1);
+    font-size: var(--font-size-sm);
   }
 
   .form-group input, .form-group select {
     width: 100%;
-    padding: 0.5rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2);
+    font-size: var(--font-size-sm);
   }
 
   .role-warning {
     display: block;
-    margin-top: 0.375rem;
-    padding: 0.5rem 0.625rem;
+    margin-top: var(--space-1-5);
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid rgba(245, 158, 11, 0.4);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: rgba(245, 158, 11, 0.12);
     color: var(--text-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
   }
 
   .create-button {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    margin-top: 0.5rem;
-    transition: all 0.2s ease;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    margin-top: var(--space-2);
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .create-button:hover:not(:disabled),
   .create-button:focus:not(:disabled) {
-    background-color: #2563eb;
-    color: white;
+    background-color: var(--primary-color);
+    color: var(--text-on-solid);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
     text-decoration: none;
@@ -1027,17 +1027,17 @@
     width: 100%;
     border-collapse: collapse;
     background-color: var(--card-background);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     box-shadow: var(--card-shadow);
   }
 
   .users-table th, .users-table td {
-    padding: 0.75rem;
+    padding: var(--space-3);
     border-bottom: 1px solid var(--border-color);
     text-align: left;
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .users-table th {
@@ -1051,7 +1051,7 @@
 
   .table-actions {
     display: flex;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     align-items: center;
   }
 
@@ -1064,9 +1064,9 @@
     height: 32px;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .icon-button svg {
@@ -1086,7 +1086,7 @@
 
   .delete-button:hover:not(:disabled) {
     background-color: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1102,7 +1102,7 @@
 
   .recover-button:hover:not(:disabled) {
     background-color: #10b981;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1118,7 +1118,7 @@
 
   .fallback-toggle-button:hover:not(:disabled) {
     background-color: #f59e0b;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1128,7 +1128,7 @@
 
   .fallback-toggle-button.active {
     background-color: #f59e0b;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .fallback-toggle-button.active:hover:not(:disabled) {
@@ -1137,34 +1137,34 @@
 
   /* Expiration button - blue */
   .expiration-button {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
   }
 
   .expiration-button:hover:not(:disabled) {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
   .expiration-button.active {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .expiration-button.active:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
   }
 
   .expiration-editor {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .expiration-editor input[type='date'] {
     height: 32px;
-    padding: 0 6px;
+    padding: 0 var(--space-1-5);
     font-size: 0.85rem;
   }
 
@@ -1175,7 +1175,7 @@
 
   .expiration-save-button:hover:not(:disabled) {
     background-color: #10b981;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .expiration-cancel-button {
@@ -1185,7 +1185,7 @@
 
   .expiration-cancel-button:hover:not(:disabled) {
     background-color: #6b7280;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   /* Reset password button - brand blue */
@@ -1196,7 +1196,7 @@
 
   .reset-password-button:hover:not(:disabled) {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1212,7 +1212,7 @@
 
   .lock-button:hover:not(:disabled) {
     background-color: #f97316;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1228,7 +1228,7 @@
 
   .unlock-button:hover:not(:disabled) {
     background-color: #0ea5e9;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1244,7 +1244,7 @@
 
   .force-logout-button:hover:not(:disabled) {
     background-color: #475569;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1258,7 +1258,7 @@
 
   :global([data-theme='dark']) .force-logout-button:hover:not(:disabled) {
     background-color: #64748b;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   /* MFA reset - teal */
@@ -1269,7 +1269,7 @@
 
   .mfa-reset-button:hover:not(:disabled) {
     background-color: #0f766e;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1285,7 +1285,7 @@
 
   .link-identity-button:hover:not(:disabled) {
     background-color: #14b8a6;
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.05);
   }
 
@@ -1295,11 +1295,11 @@
 
   .status-badge {
     display: inline-block;
-    margin-left: 0.375rem;
-    padding: 0.0625rem 0.375rem;
-    border-radius: 999px;
+    margin-left: var(--space-1-5);
+    padding: 0.0625rem var(--space-1-5);
+    border-radius: var(--radius-pill);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     vertical-align: middle;
@@ -1351,35 +1351,35 @@
 
   .form-hint {
     display: block;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
   }
 
   .external-note {
-    margin: 0 0 0.5rem;
-    padding: 0.5rem 0.625rem;
+    margin: 0 0 var(--space-2);
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--background-color);
   }
 
   .invitations-section {
-    margin-top: 2rem;
+    margin-top: var(--space-8);
   }
 
   .invitations-section h3 {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .invite-name {
     display: block;
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .current-role {
@@ -1390,17 +1390,17 @@
   .self-user {
     font-style: italic;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .loading-state {
-    padding: 2rem;
+    padding: var(--space-8);
     text-align: center;
     background-color: var(--card-background);
-    border-radius: 4px;
-    margin-top: 1rem;
+    border-radius: var(--radius-sm);
+    margin-top: var(--space-4);
     color: var(--text-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .table-scroll-wrapper {
@@ -1412,12 +1412,12 @@
     .table-controls {
       flex-direction: column;
       align-items: stretch;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .search-container input {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
 
     .table-actions {
@@ -1433,7 +1433,7 @@
     .add-user-form input,
     .add-user-form select {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
 
     .create-button {
@@ -1448,8 +1448,8 @@
     .users-table th,
     .users-table td {
       white-space: nowrap;
-      padding: 0.5rem;
-      font-size: 0.75rem;
+      padding: var(--space-2);
+      font-size: var(--font-size-xs);
     }
 
     .icon-button {

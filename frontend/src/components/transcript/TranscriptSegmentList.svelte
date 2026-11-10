@@ -494,7 +494,7 @@
     right: 0;
     height: 3px;
     background: var(--border-color);
-    z-index: 10;
+    z-index: var(--z-sticky);
     border-radius: 0;
   }
 
@@ -508,17 +508,17 @@
   /* Infinite scroll styles */
   .infinite-scroll-sentinel {
     min-height: 1px;
-    padding: 8px 0;
+    padding: var(--space-2) 0;
   }
 
   .loading-more-indicator {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 16px;
+    gap: var(--space-2);
+    padding: var(--space-4);
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: var(--font-size-md);
   }
 
   /* Segments loaded info bar */
@@ -526,35 +526,35 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    padding: 8px 16px;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
     background: var(--surface-secondary);
     border-top: 1px solid var(--border-color);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .segments-count {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .loading-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .cancel-button {
     background: #6b7280;
-    color: white;
+    color: var(--text-on-solid);
     border: 1px solid #6b7280;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    font-weight: var(--font-weight-medium);
+    transition: all var(--duration-base) ease;
     font-size: 0.95rem;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
   }
 
   .cancel-button:hover {
@@ -572,7 +572,7 @@
   .transcript-display-container {
     position: relative;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
 
@@ -614,16 +614,16 @@
     flex: 1 1 0; /* Allow shrinking below content size */
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr); /* minmax(0, 1fr) allows column to shrink */
-    gap: 12px;
+    gap: var(--space-3);
     align-items: start;
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     background: none;
     border: none;
     text-align: left;
     cursor: pointer;
-    transition: all 0.2s ease;
-    border-radius: 4px;
-    margin: 2px 4px;
+    transition: all var(--duration-base) ease;
+    border-radius: var(--radius-sm);
+    margin: var(--space-0-5) var(--space-1);
     min-width: 0; /* Allow grid to shrink */
     max-width: 100%;
     overflow: hidden;
@@ -640,12 +640,12 @@
   }
 
   .segment-content:hover {
-    background: rgba(59, 130, 246, 0.08);
+    background: rgba(var(--accent-rgb), 0.08);
   }
 
   .segment-time {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     font-family: monospace;
     white-space: nowrap;
@@ -653,10 +653,10 @@
   }
 
   .segment-speaker {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
-    padding: 2px 8px;
-    border-radius: 12px;
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-2xl);
     white-space: nowrap;
     min-width: fit-content;
     max-width: 150px;
@@ -665,7 +665,7 @@
     border: 1px solid;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     color: var(--speaker-light);
   }
 
@@ -675,11 +675,11 @@
   }
 
   .segment-text {
-    font-size: 14px;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
     line-height: 1.4;
     position: relative;
-    padding-left: 12px;
+    padding-left: var(--space-3);
     word-wrap: break-word;
     overflow-wrap: break-word;
     word-break: break-word;
@@ -693,7 +693,7 @@
     border-left: 3px solid var(--primary-color);
   }
   .segment-text.semantic-segment {
-    border-left: 3px solid var(--text-secondary, #94a3b8);
+    border-left: 3px solid var(--text-secondary);
   }
 
   /* Content redaction — "blur" mask style. The backend emits
@@ -701,7 +701,7 @@
      and reveal on hover (authorized viewers only see this style at all). */
   .segment-text :global(span.redacted) {
     filter: blur(5px);
-    background: var(--surface-hover, rgba(127, 127, 127, 0.15));
+    background: var(--surface-hover);
     border-radius: 3px;
     cursor: help;
     transition: filter 0.12s ease;
@@ -725,21 +725,21 @@
 
   .low-confidence-dot {
     display: inline-flex;
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
     vertical-align: super;
-    margin-inline-start: 2px;
+    margin-inline-start: var(--space-0-5);
     cursor: help;
   }
 
   .edit-button {
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     background: none;
     border: none;
     color: var(--primary-on-surface);
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 400;
-    transition: all 0.2s ease;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    transition: all var(--duration-base) ease;
     text-decoration: underline;
     text-decoration-color: transparent;
   }
@@ -750,13 +750,13 @@
   }
 
   .segment-edit-container {
-    padding: 16px;
+    padding: var(--space-4);
     background: var(--background-secondary);
     border-left: 3px solid var(--primary-color);
   }
 
   .segment-edit-input {
-    margin-top: 8px;
+    margin-top: var(--space-2);
   }
 
   .segment-textarea {
@@ -767,18 +767,18 @@
   .segment-edit-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 8px;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .segment-edit-actions .save-button,
   .segment-edit-actions .cancel-button {
     padding: 0.4rem 0.8rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: none;
     min-width: 60px;
     display: inline-flex;
@@ -788,14 +788,14 @@
 
   .segment-edit-actions .save-button {
     background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    color: var(--text-on-solid);
+    box-shadow: var(--shadow-primary);
   }
 
   .segment-edit-actions .save-button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .segment-edit-actions .save-button:active:not(:disabled) {
@@ -809,9 +809,9 @@
 
   .segment-edit-actions .cancel-button {
     background: #6b7280;
-    color: white;
+    color: var(--text-on-solid);
     border: 1px solid #6b7280;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
   }
 
   .segment-edit-actions .cancel-button:hover {
@@ -831,30 +831,30 @@
   }
 
   @keyframes highlightFlash {
-    0% { background-color: rgba(59, 130, 246, 0.3); }
+    0% { background-color: rgba(var(--accent-rgb), 0.3); }
     100% { background-color: transparent; }
   }
 
   /* Overlap Group Styles */
   .overlap-group {
     position: relative;
-    margin: 8px 0;
-    padding-left: 12px;
+    margin: var(--space-2) 0;
+    padding-left: var(--space-3);
     border-left: 3px solid var(--primary-color);
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.05) 0%, transparent 100%);
-    border-radius: 0 8px 8px 0;
+    background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.05) 0%, transparent 100%);
+    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   }
 
   .overlap-indicator {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    background: rgba(59, 130, 246, 0.1);
-    border-radius: 0 6px 0 0;
-    font-size: 12px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: rgba(var(--accent-rgb), 0.1);
+    border-radius: 0 var(--radius-md) 0 0;
+    font-size: var(--font-size-xs);
     color: var(--primary-on-surface);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .overlap-indicator svg {
@@ -868,9 +868,9 @@
 
   .overlap-time {
     font-family: monospace;
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .overlap-connector {
@@ -885,7 +885,7 @@
   }
 
   .transcript-segment.in-overlap {
-    margin-left: 4px;
+    margin-left: var(--space-1);
     border-left: none;
   }
 
@@ -894,24 +894,24 @@
   }
 
   .transcript-segment.in-overlap:hover .segment-content {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
   }
 
   .transcript-segment.first-in-overlap {
-    margin-top: 4px;
+    margin-top: var(--space-1);
   }
 
   .transcript-segment.last-in-overlap {
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
   }
 
   /* Dark mode adjustments for overlap groups */
   :global([data-theme='dark']) .overlap-group {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.08) 0%, transparent 100%);
+    background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.08) 0%, transparent 100%);
   }
 
   :global([data-theme='dark']) .overlap-indicator {
-    background: rgba(59, 130, 246, 0.15);
+    background: rgba(var(--accent-rgb), 0.15);
   }
 
   @media (max-width: 768px) {
@@ -919,8 +919,8 @@
     .segment-content {
       grid-template-columns: auto 1fr;
       grid-template-rows: auto auto;
-      gap: 4px 8px;
-      padding: 8px;
+      gap: var(--space-1) var(--space-2);
+      padding: var(--space-2);
     }
 
     .segment-content.monologue {
@@ -929,7 +929,7 @@
 
     /* Time stays in column 1 */
     .segment-time {
-      font-size: 11px;
+      font-size: var(--font-size-2xs);
       grid-column: 1;
       grid-row: 1;
     }
@@ -942,7 +942,7 @@
 
     .segment-speaker {
       font-size: 10px;
-      padding: 1px 6px;
+      padding: 1px var(--space-1-5);
       white-space: normal;
       max-width: none;
       text-align: center;
@@ -954,7 +954,7 @@
       grid-column: 1 / -1;
       grid-row: 2;
       padding-left: 0;
-      font-size: 13px;
+      font-size: var(--font-size-sm);
     }
 
     .segment-text::before {

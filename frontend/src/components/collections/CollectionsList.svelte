@@ -124,14 +124,14 @@
   .collection-card {
     background: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 16px;
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
     display: flex;
     justify-content: space-between;
     align-items: start;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .collection-card:hover {
@@ -141,7 +141,7 @@
 
   .collection-card.selected {
     border-color: var(--primary-color);
-    background: var(--primary-bg, rgba(59, 130, 246, 0.05));
+    background: var(--primary-bg);
   }
 
   .collection-info {
@@ -150,9 +150,9 @@
   }
 
   .collection-info h4 {
-    margin: 0 0 4px 0;
-    font-size: 16px;
-    font-weight: 600;
+    margin: 0 0 var(--space-1) 0;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
@@ -160,8 +160,8 @@
   }
 
   .description {
-    margin: 0 0 8px 0;
-    font-size: 14px;
+    margin: 0 0 var(--space-2) 0;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     line-height: 1.4;
     display: -webkit-box;
@@ -174,26 +174,26 @@
   .meta {
     display: flex;
     align-items: center;
-    gap: 12px;
-    font-size: 13px;
+    gap: var(--space-3);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .media-count {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .badge {
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-2xl);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
   }
 
   .badge.restricted {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     background: var(--surface-secondary);
     color: var(--text-secondary);
     border: 1px solid var(--border-color);
@@ -205,31 +205,31 @@
   }
 
   .badge.prompt {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
   }
 
   .collection-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .section-label {
     font-size: 0.8rem;
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    padding: 4px 0;
+    padding: var(--space-1) 0;
   }
 
   .share-button {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 4px;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: 1px solid;
     background-color: transparent;
     border-color: var(--border-color);
@@ -239,18 +239,18 @@
   .share-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .edit-button, .delete-config-button {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 4px;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     border: 1px solid;
   }
 
@@ -263,7 +263,7 @@
   .edit-button:hover:not(:disabled) {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .delete-config-button {
@@ -275,25 +275,25 @@
   .delete-config-button:hover:not(:disabled) {
     background-color: var(--error-color);
     border-color: var(--error-color);
-    color: white;
+    color: var(--text-on-solid);
     transform: scale(1.02);
   }
 
   .btn-add {
-    padding: 6px 12px;
+    padding: var(--space-1-5) var(--space-3);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 500;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-base);
     white-space: nowrap;
   }
 
   .btn-add:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
   }
 
   .btn-add:disabled {
@@ -312,7 +312,7 @@
   }
 
   :global([data-theme='dark']) .badge.prompt {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: #60a5fa;
   }
 
@@ -325,7 +325,7 @@
 
     .btn-add {
       min-height: 44px;
-      padding: 0.5rem 1rem;
+      padding: var(--space-2) var(--space-4);
     }
   }
 </style>

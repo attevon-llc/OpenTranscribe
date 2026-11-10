@@ -129,7 +129,7 @@
 
 <style>
   .cloud-policy {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
   }
   .policy-list {
     list-style: none;
@@ -143,12 +143,12 @@
     margin: 0;
   }
   .locked-hint {
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border: 1px dashed var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
   .keys-note {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
   .error-text {
     color: var(--error-color);
@@ -157,19 +157,19 @@
   .state {
     display: flex;
     justify-content: center;
-    padding: 1rem;
+    padding: var(--space-4);
   }
   .own-keys {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    margin-top: 1rem;
-    padding-top: 1rem;
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
   }
   .actions {
     display: flex;
     justify-content: flex-end;
-    margin-top: 1rem;
+    margin-top: var(--space-4);
   }
 </style>

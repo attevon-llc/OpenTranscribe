@@ -275,39 +275,39 @@
 
   .settings-section h3 {
     font-size: 1.1rem;
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-    color: var(--text-color, #e0e0e0);
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--space-1);
+    color: var(--text-color);
   }
 
   .section-description {
     font-size: 0.85rem;
-    color: var(--text-secondary, #999);
-    margin-bottom: 1.5rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-6);
     line-height: 1.4;
   }
 
   .settings-group {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-6);
   }
 
   .setting-row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
-    padding: 0.75rem;
-    border-radius: 8px;
-    background: var(--background-color, #2a2a2a);
+    gap: var(--space-4);
+    padding: var(--space-3);
+    border-radius: var(--radius-lg);
+    background: var(--background-color);
     border: 1px solid var(--border-color);
   }
 
   .setting-row.sub-setting {
-    margin-left: 1.5rem;
-    background: var(--surface-color, #333);
+    margin-left: var(--space-6);
+    background: var(--surface-color);
   }
 
   .setting-info {
@@ -316,29 +316,29 @@
 
   .setting-label {
     font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--text-color, #e0e0e0);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-color);
     display: block;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .setting-description {
     font-size: 0.8rem;
-    color: var(--text-secondary, #999);
+    color: var(--text-secondary);
     margin: 0;
     line-height: 1.3;
   }
 
   .setting-note {
     font-size: 0.775rem;
-    color: var(--text-muted, #999);
-    margin: 0.375rem 0 0;
+    color: var(--text-muted);
+    margin: var(--space-1-5) 0 0;
     line-height: 1.3;
   }
 
   .locked-note {
-    color: var(--text-color, #e0e0e0);
-    font-weight: 500;
+    color: var(--text-color);
+    font-weight: var(--font-weight-medium);
   }
 
   .toggle {
@@ -360,9 +360,9 @@
     position: absolute;
     cursor: pointer;
     inset: 0;
-    background-color: var(--border-color, #555);
+    background-color: var(--border-color);
     border-radius: 24px;
-    transition: 0.2s;
+    transition: var(--duration-base);
   }
 
   .toggle-slider::before {
@@ -373,12 +373,12 @@
     left: 3px;
     bottom: 3px;
     background-color: white;
-    border-radius: 50%;
-    transition: 0.2s;
+    border-radius: var(--radius-round);
+    transition: var(--duration-base);
   }
 
   .toggle input:checked + .toggle-slider {
-    background-color: var(--primary-color, #4a9eff);
+    background-color: var(--primary-color);
   }
 
   .toggle input:checked + .toggle-slider::before {
@@ -393,8 +393,8 @@
   .button-group {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
-    margin-top: 1rem;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
   }
 
   .button-group .btn-secondary {
@@ -402,21 +402,21 @@
   }
 
   .error-message {
-    color: var(--error-color, #ff6b6b);
+    color: var(--error-color);
     font-size: 0.85rem;
-    margin-bottom: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     background: rgba(255, 107, 107, 0.1);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .success-message {
-    color: var(--success-color, #51cf66);
+    color: var(--success-color);
     font-size: 0.85rem;
-    margin-bottom: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     background: rgba(81, 207, 102, 0.1);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
 

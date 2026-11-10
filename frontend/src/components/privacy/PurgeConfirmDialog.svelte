@@ -285,8 +285,8 @@
   .purge {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    font-size: 0.875rem;
+    gap: var(--space-3);
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
@@ -297,49 +297,49 @@
 
   .deleted {
     margin: 0;
-    padding-inline-start: 1.25rem;
+    padding-inline-start: var(--space-5);
     line-height: 1.5;
   }
 
   .kept,
   small {
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .warning {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: flex-start;
-    padding: 0.625rem 0.75rem;
-    border-radius: 6px;
-    border: 1px solid var(--error-color, #dc2626);
+    padding: var(--space-2-5) var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--error-color);
     background: rgba(220, 38, 38, 0.08);
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-medium);
   }
 
   .warning :global(svg) {
     flex-shrink: 0;
     margin-top: 0.1875rem;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 
   .understand {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: flex-start;
     cursor: pointer;
   }
 
   .understand input {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   .typed {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    font-weight: var(--font-weight-medium, 500);
+    gap: var(--space-1);
+    font-weight: var(--font-weight-medium);
   }
 
   .typed input {
@@ -349,30 +349,30 @@
   }
 
   .error {
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 
   .verified {
-    color: var(--color-success-text, #047857);
+    color: var(--color-success-text);
   }
 
   .results {
     margin: 0;
-    padding-inline-start: 1.25rem;
+    padding-inline-start: var(--space-5);
     line-height: 1.5;
   }
 
   .events {
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     padding: 0;
     list-style: none;
   }
 
   code {
-    font-size: 0.8125rem;
-    background: var(--surface-secondary, rgba(127, 127, 127, 0.12));
-    border-radius: 4px;
-    padding: 0 0.25rem;
+    font-size: var(--font-size-sm);
+    background: var(--surface-secondary);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-1);
     white-space: nowrap;
   }
 

@@ -251,15 +251,15 @@
   .search-bar {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     width: 100%;
-    padding: 0 8px;
+    padding: 0 var(--space-2);
     background: var(--field-bg);
     border: 1px solid var(--field-border);
     border-radius: var(--field-radius);
     transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease;
+      border-color var(--duration-fast) ease,
+      box-shadow var(--duration-fast) ease;
   }
 
   .search-bar-md {
@@ -280,10 +280,10 @@
      the text colour so it reads on both the light and the dark sidebar. */
   .search-bar.pill {
     height: 36px;
-    padding: 0 10px;
-    gap: 8px;
+    padding: 0 var(--space-2-5);
+    gap: var(--space-2);
     border-color: transparent;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: color-mix(in srgb, var(--text-color) 8%, transparent);
   }
 
@@ -296,7 +296,7 @@
   .pill .search-bar-clear {
     width: 22px;
     height: 22px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
   }
 
   /* We render our own clear button; the browser's would double it. */
@@ -361,7 +361,7 @@
   .search-bar-loading {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .search-bar-status-text {
@@ -371,19 +371,19 @@
 
   .search-bar-counter {
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;
   }
 
   .search-bar-counter.no-results {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color);
   }
 
   .search-bar-nav {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-0-5);
     flex-shrink: 0;
   }
 
@@ -397,12 +397,12 @@
     padding: 0;
     background: none;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
     cursor: pointer;
     transition:
-      background 0.15s ease,
-      color 0.15s ease;
+      background var(--duration-fast) ease,
+      color var(--duration-fast) ease;
     flex-shrink: 0;
   }
 
@@ -412,7 +412,7 @@
 
   .search-bar-btn:hover:not(:disabled),
   .search-bar-clear:hover:not(:disabled) {
-    background: var(--button-hover, var(--hover-color));
+    background: var(--button-hover);
     color: var(--text-color);
   }
 

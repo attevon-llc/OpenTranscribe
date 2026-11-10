@@ -182,8 +182,8 @@
 <style>
   .summary-actions {
     display: flex;
-    gap: 1rem;
-    padding: 1rem;
+    gap: var(--space-4);
+    padding: var(--space-4);
     background-color: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
     flex-wrap: wrap;
@@ -193,13 +193,13 @@
   .action-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.25rem;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
     border: none;
-    border-radius: 6px;
-    font-weight: 500;
+    border-radius: var(--radius-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .action-button:disabled {
@@ -209,7 +209,7 @@
 
   .action-button.primary {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .action-button.primary:hover:not(:disabled) {
@@ -218,7 +218,7 @@
 
   .action-button.warning {
     background-color: var(--warning-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .action-button.warning:hover:not(:disabled) {
@@ -227,8 +227,8 @@
 
   .action-button.regenerate {
     background-color: var(--primary-color);
-    color: white;
-    padding: 0.5rem 1rem;
+    color: var(--text-on-solid);
+    padding: var(--space-2) var(--space-4);
     font-size: 0.85rem;
   }
 
@@ -239,7 +239,7 @@
   .prompt-picker {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex: 1;
     min-width: 0;
   }
@@ -248,7 +248,7 @@
     flex: 1;
     min-width: 0;
     cursor: pointer;
-    padding-right: 2.5rem;
+    padding-right: var(--space-10);
   }
 
   .prompt-select:disabled {
@@ -259,11 +259,11 @@
   .disabled-badge {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-muted);
     background: var(--surface-color);
     border: 1px solid var(--border-color);

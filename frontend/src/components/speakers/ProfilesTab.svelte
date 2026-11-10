@@ -147,23 +147,23 @@
 <style>
   .gender-confirm-group {
     display: inline-flex;
-    gap: 4px;
+    gap: var(--space-1);
     align-items: center;
   }
 
   .gender-toggle-btn {
-    font-size: 14px;
-    padding: 3px 6px;
-    border-radius: 6px;
-    border: 1px solid var(--border-color, #d1d5db);
+    font-size: var(--font-size-md);
+    padding: 3px var(--space-1-5);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
     background: transparent;
-    color: var(--text-secondary, #9ca3af);
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     line-height: 1;
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-0-5);
   }
 
   .gender-svg {
@@ -173,45 +173,45 @@
   }
 
   .gender-toggle-label {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
   }
 
   .gender-toggle-btn:hover {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary-color);
     color: var(--primary-on-surface);
   }
 
   .gender-toggle-btn.active {
-    border-color: var(--primary-color, #3b82f6);
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 12%, transparent);
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     color: var(--primary-on-surface);
   }
 
   .profile-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 12px;
+    gap: var(--space-3);
     max-width: 100%;
   }
 
   .profile-card {
-    padding: 16px;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 8px;
-    background: var(--card-background, #fff);
-    transition: box-shadow 0.15s ease;
+    padding: var(--space-4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--card-background);
+    transition: box-shadow var(--duration-fast) ease;
     overflow: hidden;
     min-width: 0;
   }
 
   .profile-card:hover {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
   }
 
   .profile-avatar-wrapper {
     width: 48px;
     height: 48px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     flex-shrink: 0;
     cursor: pointer;
     position: relative;
@@ -225,56 +225,56 @@
   .profile-avatar {
     width: 48px;
     height: 48px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     object-fit: cover;
   }
 
   .avatar-initials {
     width: 48px;
     height: 48px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 20%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 20%, transparent);
   }
 
   .avatar-overlay {
     position: absolute;
     inset: 0;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: rgba(0, 0, 0, 0.45);
     display: flex;
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity 0.15s ease;
-    color: white;
+    transition: opacity var(--duration-fast) ease;
+    color: var(--text-on-solid);
   }
 
   .avatar-spinner {
     width: 48px;
     height: 48px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 20%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 20%, transparent);
   }
 
   .profile-header {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
     min-width: 0;
   }
 
   .profile-name {
-    font-weight: 600;
-    font-size: 15px;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-body);
     color: var(--text-color);
     flex: 1;
     min-width: 0;
@@ -284,19 +284,19 @@
   }
 
   .profile-desc {
-    margin-top: 4px;
-    font-size: 13px;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     word-break: break-word;
     overflow-wrap: break-word;
   }
 
   .profile-meta {
-    margin-top: 8px;
+    margin-top: var(--space-2);
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: 12px;
+    gap: var(--space-2-5);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     flex-wrap: wrap;
   }
@@ -304,8 +304,8 @@
   .meta-stat {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-weight: 500;
+    gap: var(--space-1);
+    font-weight: var(--font-weight-medium);
     cursor: default;
   }
 
@@ -316,7 +316,7 @@
 
   .profile-actions {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
     flex-shrink: 0;
   }
 
@@ -328,27 +328,27 @@
     height: 28px;
     min-width: 28px;
     padding: 0;
-    border-radius: 6px;
-    border: 1px solid var(--border-color, #e5e7eb);
-    background: var(--card-background, #fff);
-    color: var(--text-secondary, #6b7280);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--card-background);
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all var(--duration-fast) ease;
     box-shadow: none;
     font-size: 0;
   }
 
   .icon-btn:hover {
-    background: var(--hover-color, #f3f4f6);
-    color: var(--text-color, #111827);
+    background: var(--hover-color);
+    color: var(--text-color);
     transform: none;
     box-shadow: none;
   }
 
   .icon-btn.danger:hover {
-    color: var(--error-color, #ef4444);
-    background: color-mix(in srgb, var(--error-color, #ef4444) 10%, transparent);
-    border-color: color-mix(in srgb, var(--error-color, #ef4444) 30%, transparent);
+    color: var(--error-color);
+    background: color-mix(in srgb, var(--error-color) 10%, transparent);
+    border-color: color-mix(in srgb, var(--error-color) 30%, transparent);
     transform: none;
     box-shadow: none;
   }
@@ -356,21 +356,21 @@
   .profile-edit-input {
     flex: 1;
     min-width: 0;
-    padding: 4px 8px;
-    font-size: 15px;
-    font-weight: 600;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
     box-sizing: border-box;
   }
 
   .shared-badge {
     display: inline-block;
     font-size: 0.65rem;
-    font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: var(--accent-light, #e0e7ff);
+    font-weight: var(--font-weight-semibold);
+    padding: 1px var(--space-1-5);
+    border-radius: var(--radius-lg);
+    background: var(--accent-light);
     color: var(--primary-on-surface);
-    margin-left: 6px;
+    margin-left: var(--space-1-5);
     vertical-align: middle;
     white-space: nowrap;
   }
@@ -382,15 +382,15 @@
   @media (max-width: 768px) {
     .profile-list {
       grid-template-columns: 1fr;
-      gap: 10px;
+      gap: var(--space-2-5);
     }
 
     .profile-card {
-      padding: 12px;
+      padding: var(--space-3);
     }
 
     .profile-header {
-      gap: 8px;
+      gap: var(--space-2);
     }
 
     .profile-avatar-wrapper,
@@ -402,15 +402,15 @@
     }
 
     .avatar-initials {
-      font-size: 14px;
+      font-size: var(--font-size-md);
     }
 
     .profile-name {
-      font-size: 14px;
+      font-size: var(--font-size-md);
     }
 
     .profile-meta {
-      gap: 8px;
+      gap: var(--space-2);
     }
   }
 </style>

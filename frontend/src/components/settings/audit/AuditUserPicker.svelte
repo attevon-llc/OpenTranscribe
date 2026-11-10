@@ -98,8 +98,8 @@
   .picker {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
-    font-size: 0.75rem;
+    gap: var(--space-0-5);
+    font-size: var(--font-size-xs);
   }
 
   .label-text {
@@ -108,8 +108,8 @@
   }
 
   input {
-    padding: 0.25rem 0.375rem;
-    font-size: 0.75rem;
+    padding: var(--space-1) var(--space-1-5);
+    font-size: var(--font-size-xs);
     height: 1.75rem;
     min-width: 11rem;
   }
@@ -117,10 +117,10 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     height: 1.75rem;
-    padding: 0 0.5rem;
-    border-radius: 6px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-md);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
@@ -131,7 +131,7 @@
     border: none;
     cursor: pointer;
     color: var(--text-secondary);
-    font-size: 1rem;
+    font-size: var(--font-size-base);
     line-height: 1;
     padding: 0;
   }
@@ -144,12 +144,12 @@
   .results {
     overflow-y: auto;
     margin: 0;
-    padding: 0.25rem;
+    padding: var(--space-1);
     list-style: none;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
   }
 
   .results button {
@@ -157,13 +157,13 @@
     flex-direction: column;
     width: 100%;
     text-align: start;
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     background: none;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     color: var(--text-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .results button:hover {
@@ -173,10 +173,10 @@
   .sub,
   .hint {
     color: var(--text-secondary);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
   }
 
   .hint {
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
   }
 </style>

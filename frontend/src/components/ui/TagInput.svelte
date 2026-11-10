@@ -87,12 +87,12 @@
     flex-wrap: wrap;
     border: 1px solid var(--field-border);
     border-radius: var(--field-radius);
-    padding: 0.375rem;
+    padding: var(--space-1-5);
     background: var(--field-bg);
     min-height: 2.375rem;
     transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease;
+      border-color var(--duration-fast) ease,
+      box-shadow var(--duration-fast) ease;
     cursor: text;
   }
 
@@ -109,7 +109,7 @@
   .tags-wrapper {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     align-items: center;
     width: 100%;
   }
@@ -117,18 +117,18 @@
   .tag-pill {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    background: rgba(59, 130, 246, 0.12);
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-2xl);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
-    gap: 0.25rem;
+    gap: var(--space-1);
     white-space: nowrap;
   }
 
   :global([data-theme='dark']) .tag-pill {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(var(--accent-rgb), 0.2);
     color: #60a5fa;
   }
 
@@ -141,10 +141,10 @@
     color: inherit;
     cursor: pointer;
     padding: 0;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     line-height: 1;
     opacity: 0.7;
-    transition: opacity 0.15s;
+    transition: opacity var(--duration-fast);
   }
 
   .tag-remove:hover {
@@ -157,9 +157,9 @@
     border: none;
     outline: none;
     background: transparent;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
-    padding: 2px 4px;
+    padding: var(--space-0-5) var(--space-1);
   }
 
   .tag-input::placeholder {

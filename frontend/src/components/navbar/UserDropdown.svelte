@@ -232,15 +232,15 @@
   .user-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: transparent;
     border: none;
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
     color: var(--text-color);
     font-family: inherit;
-    font-size: 1rem;
+    font-size: var(--font-size-base);
   }
 
   .user-button:hover {
@@ -253,14 +253,14 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--primary-color);
-    color: white;
-    font-weight: 600;
+    color: var(--text-on-solid);
+    font-weight: var(--font-weight-semibold);
   }
 
   .username {
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -268,7 +268,7 @@
   }
 
   .dropdown-icon {
-    margin-left: 0.25rem;
+    margin-left: var(--space-1);
     opacity: 0.7;
   }
 
@@ -276,7 +276,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-left: 0.25rem;
+    margin-left: var(--space-1);
   }
 
   .pki-badge .shield-icon {
@@ -290,17 +290,17 @@
     width: 240px;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
     overflow-y: auto;
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
     min-width: 200px;
     display: flex;
     flex-direction: column;
   }
 
   .dropdown-header {
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     color: var(--text-color-secondary);
     font-size: 0.8rem;
     line-height: 1.4;
@@ -310,15 +310,15 @@
   .dropdown-header strong {
     display: block;
     color: var(--text-color);
-    font-weight: 600;
-    margin-top: 0.25rem;
+    font-weight: var(--font-weight-semibold);
+    margin-top: var(--space-1);
     word-break: break-all;
   }
 
   .dropdown-divider {
     height: 1px;
     background-color: var(--border-color);
-    margin: 0.125rem 0;
+    margin: var(--space-0-5) 0;
     border: none;
   }
 
@@ -326,13 +326,13 @@
   .dropdown-item {
     display: flex !important;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
     color: var(--text-color) !important;
     text-decoration: none !important;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     border: none;
     width: calc(100% - 1rem);
     text-align: start;
@@ -340,8 +340,8 @@
     cursor: pointer;
     font-family: inherit;
     box-sizing: border-box;
-    margin: 0.125rem 0.5rem;
-    border-radius: 6px;
+    margin: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-md);
     white-space: nowrap;
     position: relative;
   }
@@ -352,20 +352,20 @@
     text-decoration: none !important;
     display: flex !important;
     align-items: center !important;
-    gap: 0.75rem !important;
-    padding: 0.5rem 1rem !important;
-    margin: 0.125rem 0.5rem !important;
+    gap: var(--space-3) !important;
+    padding: var(--space-2) var(--space-4) !important;
+    margin: var(--space-0-5) var(--space-2) !important;
     width: calc(100% - 1rem) !important;
-    font-weight: 500 !important;
-    border-radius: 6px !important;
+    font-weight: var(--font-weight-medium) !important;
+    border-radius: var(--radius-md) !important;
     background-color: transparent !important;
-    transition: all 0.2s ease !important;
+    transition: all var(--duration-base) ease !important;
   }
 
   .dropdown-menu :global(a.dropdown-item:hover) {
     color: var(--primary-on-surface) !important;
     text-decoration: none !important;
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05)) !important;
+    background-color: var(--hover-color) !important;
     padding-inline-start: calc(1rem + 2px) !important;
   }
 
@@ -374,12 +374,12 @@
   .dropdown-menu :global(.dropdown-item) {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
     color: var(--text-color);
     text-decoration: none;
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     border: none;
     width: calc(100% - 1rem);
     text-align: start;
@@ -387,13 +387,13 @@
     cursor: pointer;
     font-family: inherit;
     box-sizing: border-box;
-    margin: 0.125rem 0.5rem;
-    border-radius: 6px;
+    margin: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-md);
     white-space: nowrap;
   }
 
   .dropdown-menu :global(.dropdown-item:hover) {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background-color: var(--hover-color);
     color: var(--primary-on-surface);
   }
 
@@ -417,7 +417,7 @@
     height: 16px;
     flex-shrink: 0;
     opacity: 0.7;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   /* Ensure SVGs in Link components behave the same as button SVGs */
@@ -426,7 +426,7 @@
     height: 16px !important;
     flex-shrink: 0 !important;
     opacity: 0.7 !important;
-    transition: all 0.2s ease !important;
+    transition: all var(--duration-base) ease !important;
   }
 
   .dropdown-menu :global(a.dropdown-item:hover svg) {
@@ -439,7 +439,7 @@
      translateX pushed them past the scrollport and, with overflow-y:auto
      computing overflow-x to auto, produced a horizontal scrollbar on hover. */
   .dropdown-item:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background-color: var(--hover-color);
     color: var(--primary-on-surface);
     padding-inline-start: calc(1rem + 2px);
   }
@@ -455,8 +455,8 @@
   }
 
   .dropdown-item.logout {
-    color: var(--error-color, #ef4444);
-    margin-top: 0.125rem;
+    color: var(--error-color);
+    margin-top: var(--space-0-5);
   }
 
   .dropdown-item.logout svg {
@@ -465,28 +465,28 @@
 
   .dropdown-item.logout:hover {
     background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
     padding-inline-start: calc(1rem + 2px);
   }
 
   .dropdown-item.logout:hover svg {
     opacity: 1;
-    color: var(--error-color, #dc2626);
+    color: var(--error-color);
   }
 
   /* Active state for dropdown items */
   .dropdown-item:active {
     padding-inline-start: calc(1rem + 1px);
-    background-color: var(--primary-color-light, rgba(59, 130, 246, 0.1));
+    background-color: var(--primary-color-light);
   }
 
   /* Improved spacing between groups */
   .dropdown-item + .dropdown-divider {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   .dropdown-divider + .dropdown-item {
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   /* Hide username + chevron.
@@ -518,13 +518,13 @@
     }
 
     .dropdown-item {
-      padding: 0.625rem 1rem;
-      margin: 0.125rem 0.25rem;
+      padding: var(--space-2-5) var(--space-4);
+      margin: var(--space-0-5) var(--space-1);
       font-size: 0.95rem;
     }
 
     .dropdown-item:hover {
-      padding-inline-start: 1rem; /* No hover nudge on touch */
+      padding-inline-start: var(--space-4); /* No hover nudge on touch */
     }
 
     /* Hide username text on mobile, show avatar only */
@@ -537,8 +537,8 @@
     }
 
     .user-button {
-      gap: 0.25rem;
-      padding: 0.25rem;
+      gap: var(--space-1);
+      padding: var(--space-1);
     }
   }
 

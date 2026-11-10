@@ -34,12 +34,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 8px 20px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
     border-bottom: 1px solid var(--border-color);
     background: var(--background-color);
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   button {
@@ -51,7 +51,7 @@
     height: 24px;
     padding: 0;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
@@ -63,7 +63,7 @@
 
   @media (max-width: 640px) {
     .cleared-notice {
-      padding: 8px 16px;
+      padding: var(--space-2) var(--space-4);
     }
   }
 </style>

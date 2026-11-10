@@ -125,13 +125,13 @@
 
 <style>
   .org-audit {
-    padding: 0.5rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2);
+    font-size: var(--font-size-sm);
   }
 
   .intro {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
     color: var(--color-text-secondary);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 </style>

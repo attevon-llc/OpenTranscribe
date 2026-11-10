@@ -93,14 +93,14 @@
 <style>
   .filters {
     background: var(--color-bg-secondary);
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    margin-bottom: 0.5rem;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-2);
   }
 
   .filter-row {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
     flex-wrap: wrap;
     align-items: flex-end;
   }
@@ -108,8 +108,8 @@
   .filter-row label {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
-    font-size: 0.75rem;
+    gap: var(--space-0-5);
+    font-size: var(--font-size-xs);
   }
 
   .label-text {
@@ -119,8 +119,8 @@
 
   .filter-row input,
   .filter-row select {
-    padding: 0.25rem 0.375rem;
-    font-size: 0.75rem;
+    padding: var(--space-1) var(--space-1-5);
+    font-size: var(--font-size-xs);
     height: 1.75rem;
   }
 
@@ -138,23 +138,23 @@
   }
 
   .btn-apply {
-    padding: 0.25rem 0.625rem;
-    border-radius: 6px;
+    padding: var(--space-1) var(--space-2-5);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     height: 1.75rem;
     white-space: nowrap;
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     align-self: flex-end;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-apply:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
   }
@@ -169,11 +169,11 @@
   }
 
   .btn-clear {
-    padding: 0.25rem 0.625rem;
-    border-radius: 6px;
+    padding: var(--space-1) var(--space-2-5);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     height: 1.75rem;
     white-space: nowrap;
     background: var(--surface-color);
@@ -187,21 +187,21 @@
 
   .export-actions {
     display: flex;
-    gap: 0.25rem;
+    gap: var(--space-1);
     margin-inline-start: auto;
   }
 
   .btn-secondary {
-    padding: 0.25rem 0.5rem;
-    border-radius: 6px;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     height: 1.75rem;
     white-space: nowrap;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn-secondary:hover {
@@ -216,7 +216,7 @@
   @media (max-width: 768px) {
     .filter-row {
       flex-direction: column;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .filter-row label {
@@ -227,7 +227,7 @@
     .filter-row select {
       height: auto;
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
 
     .filter-row input[type='date'],

@@ -43,7 +43,7 @@
   .empty-icon {
     font-size: 2.5rem;
     line-height: 1;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
     color: var(--text-secondary);
     opacity: 0.5;
   }
@@ -68,7 +68,7 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-top: var(--empty-state-action-gap);
   }
 </style>

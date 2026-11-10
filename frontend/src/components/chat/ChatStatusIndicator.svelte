@@ -45,7 +45,7 @@
 <style>
   .status-region {
     min-height: 1.25rem;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .shimmer {

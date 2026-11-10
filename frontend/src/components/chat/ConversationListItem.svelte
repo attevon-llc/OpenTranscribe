@@ -183,7 +183,7 @@
     display: flex;
     align-items: center;
     gap: 0.15rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 0 0.2rem;
     position: relative;
   }
@@ -203,7 +203,7 @@
     top: 20%;
     bottom: 20%;
     width: 3px;
-    border-radius: 0 2px 2px 0;
+    border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
     background-color: var(--primary-color);
   }
 
@@ -218,7 +218,7 @@
        painting a rounded card behind the title in light mode. */
     border-radius: 0;
     box-shadow: none;
-    padding: 0.5rem 0.35rem;
+    padding: var(--space-2) 0.35rem;
     color: var(--text-color);
     font-size: 0.85rem;
     cursor: pointer;
@@ -248,7 +248,7 @@
     display: flex;
     gap: 0.1rem;
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity var(--duration-fast) ease;
   }
 
   .conversation-item:hover .item-actions,
@@ -286,12 +286,12 @@
   }
 
   .icon-btn.danger:hover {
-    color: var(--error-color, #dc3545);
+    color: var(--error-color);
   }
 
   .rename-input {
     width: 100%;
-    padding: 0.4rem 0.5rem;
+    padding: 0.4rem var(--space-2);
     font-size: 0.85rem;
   }
 
@@ -299,7 +299,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    padding: 0.5rem 0.35rem;
+    padding: var(--space-2) 0.35rem;
     width: 100%;
   }
 
@@ -319,7 +319,7 @@
     border-radius: 5px;
     background-color: var(--card-background);
     color: var(--text-color);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 
@@ -328,8 +328,8 @@
   }
 
   .confirm-btn.danger {
-    border-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.5);
-    color: var(--error-color, #dc3545);
+    border-color: rgba(var(--error-color-rgb), 0.5);
+    color: var(--error-color);
   }
 
   @media (hover: none) {

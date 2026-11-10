@@ -126,9 +126,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2rem;
+    gap: var(--space-8);
     flex: 1;
-    padding: 2rem 1rem;
+    padding: var(--space-8) var(--space-4);
     text-align: center;
   }
 
@@ -136,7 +136,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     max-width: 34rem;
   }
 
@@ -146,14 +146,14 @@
     justify-content: center;
     width: 56px;
     height: 56px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: rgba(var(--primary-color-rgb), 0.1);
     color: var(--primary-on-surface);
   }
 
   .hero-icon.warning {
-    background-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.15);
-    color: var(--warning-color, #ffc107);
+    background-color: rgba(var(--warning-color-rgb), 0.15);
+    color: var(--warning-color);
   }
 
   h1 {
@@ -186,9 +186,9 @@
   }
 
   .suggestion-card {
-    padding: 0.85rem 1rem;
+    padding: 0.85rem var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background-color: var(--surface-color);
     color: var(--text-color);
     font-size: var(--font-size-md);
@@ -196,8 +196,8 @@
     text-align: start;
     cursor: pointer;
     transition:
-      border-color 0.15s ease,
-      background-color 0.15s ease;
+      border-color var(--duration-fast) ease,
+      background-color var(--duration-fast) ease;
   }
 
   .suggestion-card:hover {

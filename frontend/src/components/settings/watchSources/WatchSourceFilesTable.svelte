@@ -158,16 +158,16 @@
   .files-table th,
   .files-table td {
     text-align: left;
-    padding: 8px 10px;
+    padding: var(--space-2) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     vertical-align: top;
   }
   .files-table th {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: var(--text-secondary);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .file-cell {
     max-width: 260px;
@@ -182,8 +182,8 @@
     color: var(--text-secondary);
   }
   .row-hint {
-    margin-top: 4px;
-    font-size: 0.75rem;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
     font-style: italic;
     color: var(--warning-color);
   }
@@ -200,10 +200,10 @@
     text-align: right;
   }
   .actions-col .btn {
-    margin-left: 4px;
+    margin-left: var(--space-1);
   }
   .btn-sm {
-    padding: 4px 10px;
+    padding: var(--space-1) var(--space-2-5);
     font-size: 0.8rem;
   }
   /* Override the global `input { width:100% }` base so checkboxes stay square. */

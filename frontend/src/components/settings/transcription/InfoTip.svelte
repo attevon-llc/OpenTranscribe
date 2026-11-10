@@ -162,7 +162,7 @@
   }
 
   .tip.inline {
-    margin-inline-start: 0.25rem;
+    margin-inline-start: var(--space-1);
     vertical-align: middle;
   }
 
@@ -173,7 +173,7 @@
     padding: 0;
     margin: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: none;
     color: inherit;
     cursor: help;
@@ -198,14 +198,14 @@
   .panel {
     width: min(280px, calc(100vw - 2rem));
     box-sizing: border-box;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
-    background-color: var(--surface-color, #333);
+    background-color: var(--surface-color);
     color: var(--text-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    font-size: 0.75rem;
-    font-weight: 400;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
     line-height: 1.4;
     text-align: start;
     white-space: normal;
@@ -214,8 +214,8 @@
 
   .panel.inline {
     width: min(320px, calc(100vw - 2rem));
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     line-height: 1.5;
   }
@@ -239,11 +239,11 @@
   }
 
   .panel :global(ul) {
-    margin: 0.375rem 0 0;
+    margin: var(--space-1-5) 0 0;
     padding-inline-start: 1.125rem;
   }
 
   .panel :global(li + li) {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 </style>

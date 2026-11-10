@@ -274,7 +274,7 @@
     min-height: 180px;
   }
   .scope-note {
-    margin: 0 0 12px;
+    margin: 0 0 var(--space-3);
     font-size: 0.8rem;
     color: var(--text-secondary);
     font-style: italic;
@@ -282,27 +282,27 @@
   .links-loading {
     display: flex;
     justify-content: center;
-    padding: 32px;
+    padding: var(--space-8);
   }
   .link-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
   .link-card {
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
-    padding: 12px 14px;
+    padding: var(--space-3) var(--space-3-5);
   }
   .link-head {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
   }
   .link-name {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-size: 0.95rem;
   }
   .unlink {
@@ -310,9 +310,9 @@
   }
   .badge {
     font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-weight: 600;
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-xl);
+    font-weight: var(--font-weight-semibold);
   }
   .type-badge {
     background: var(--button-hover);
@@ -320,14 +320,14 @@
   }
   .link-options {
     display: flex;
-    gap: 16px;
-    margin-bottom: 8px;
+    gap: var(--space-4);
+    margin-bottom: var(--space-2);
     flex-wrap: wrap;
   }
   .checkbox-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     font-size: 0.9rem;
     cursor: pointer;
   }
@@ -345,7 +345,7 @@
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
   .form-group label {
     font-size: 0.85rem;
@@ -357,9 +357,9 @@
     font-style: italic;
   }
   .link-warning {
-    margin-top: 8px;
-    padding: 6px 10px;
-    border-radius: 6px;
+    margin-top: var(--space-2);
+    padding: var(--space-1-5) var(--space-2-5);
+    border-radius: var(--radius-md);
     border-left: 3px solid var(--warning-color);
     background: rgba(234, 179, 8, 0.1);
     font-size: 0.8rem;
@@ -368,14 +368,14 @@
   .link-actions {
     display: flex;
     justify-content: flex-end;
-    margin-top: 10px;
+    margin-top: var(--space-2-5);
   }
   .add-row {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
-    margin-top: 16px;
-    padding-top: 12px;
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border-color);
   }
   .muted {
@@ -384,7 +384,7 @@
     margin: 0;
   }
   .btn-sm {
-    padding: 4px 10px;
+    padding: var(--space-1) var(--space-2-5);
     font-size: 0.8rem;
   }
   .modal-title {

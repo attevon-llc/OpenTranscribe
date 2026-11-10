@@ -373,9 +373,9 @@
     display: flex;
     flex-direction: column;
     gap: 1.1rem;
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border-radius: var(--radius-2xl);
     background-color: var(--card-background);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
     /* ⚠️ Without these the panel had NO bound at all — `max-height: none`,
@@ -386,7 +386,7 @@
        (navbar + the 3.25rem offset above), hence the subtraction.
        `overscroll-behavior` stops a scroll that reaches the end of the panel
        from chaining into the transcript thread behind it. */
-    max-height: calc(100vh - var(--navbar-height, 60px) - 5rem);
+    max-height: calc(100vh - var(--navbar-height) - 5rem);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -398,9 +398,9 @@
   .panel-header {
     position: sticky;
     top: -1rem;
-    z-index: 1;
-    margin: -1rem -1rem 0;
-    padding: 1rem 1rem 0.6rem;
+    z-index: var(--z-base);
+    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+    padding: var(--space-4) var(--space-4) 0.6rem;
     background-color: var(--card-background);
     display: flex;
     align-items: center;
@@ -411,7 +411,7 @@
     margin: 0;
     flex: 1;
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -428,8 +428,8 @@
     line-height: 1;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 0 0.25rem;
-    border-radius: 4px;
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
   }
 
   .close-btn:hover {
@@ -451,7 +451,7 @@
   .advanced summary {
     cursor: pointer;
     font-size: 0.82rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     list-style: revert;
   }
@@ -463,7 +463,7 @@
   .advanced summary:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .advanced > .control-group {
@@ -482,7 +482,7 @@
   .number-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .number-row .btn {
@@ -525,14 +525,14 @@
   .toggle-label {
     display: block;
     font-size: 0.87rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .toggle-hint,
   .range-hint {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -542,7 +542,7 @@
     justify-content: space-between;
     align-items: center;
     font-size: 0.82rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 

@@ -857,15 +857,15 @@ let _llmConfigModalWasOpen = false;
 <style>
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .field-desc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
-    margin: 0.375rem 0 0 0;
+    margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
   }
 
@@ -877,19 +877,19 @@ let _llmConfigModalWasOpen = false;
   }
 
   .config-form {
-    padding: 1.5rem;
+    padding: var(--space-6);
   }
 
   .form-group {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .form-group label {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
+    margin-bottom: var(--space-2);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
@@ -901,7 +901,7 @@ let _llmConfigModalWasOpen = false;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .form-label-row label {
@@ -911,19 +911,19 @@ let _llmConfigModalWasOpen = false;
   .discover-models-btn {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
   }
 
   .discover-models-btn:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
   }
 
   .discover-models-btn:disabled {
@@ -941,70 +941,70 @@ let _llmConfigModalWasOpen = false;
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
-    color: var(--text-secondary, var(--text-muted));
+    padding: var(--space-1);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
-    border-radius: 4px;
-    transition: background-color 0.2s, color 0.2s;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--duration-base), color var(--duration-base);
   }
 
   .toggle-password:hover {
-    background-color: var(--background-color, var(--hover-color));
+    background-color: var(--background-color);
     color: var(--text-color);
   }
 
   .advanced-settings {
-    margin: 1.5rem 0;
-    padding: 1rem;
+    margin: var(--space-6) 0;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--card-bg);
   }
 
   .advanced-settings h4 {
-    margin: 0 0 1rem;
-    font-size: 1rem;
-    font-weight: 500;
+    margin: 0 0 var(--space-4);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .form-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .model-selector {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--card-bg);
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .model-selector h4 {
-    margin: 0 0 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
+    margin: 0 0 var(--space-2);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
   }
 
   .model-list {
     max-height: 200px;
     overflow-y: auto;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .model-item {
     width: 100%;
     text-align: left;
-    padding: 0.5rem;
+    padding: var(--space-2);
     border: 1px solid var(--border-color);
     background: var(--input-bg);
-    margin-bottom: 0.25rem;
-    border-radius: 4px;
+    margin-bottom: var(--space-1);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .model-item:hover {
@@ -1013,51 +1013,51 @@ let _llmConfigModalWasOpen = false;
   }
 
   .model-name {
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-md);
   }
 
   .model-details {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .close-selector {
     background: var(--secondary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .test-section {
-    margin: 1.5rem 0;
-    padding: 1rem;
+    margin: var(--space-6) 0;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--card-bg);
   }
 
   .test-connection-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.95rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    font-weight: var(--font-weight-medium);
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .test-connection-btn:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -1074,19 +1074,19 @@ let _llmConfigModalWasOpen = false;
   .share-toggle-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-top: 1.5rem;
-    padding-top: 1rem;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
+    padding-top: var(--space-4);
     border-top: 1px dashed var(--border-color);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 400;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-regular);
     user-select: none;
   }
 
@@ -1099,8 +1099,8 @@ let _llmConfigModalWasOpen = false;
     width: 36px;
     height: 20px;
     background: var(--border-color);
-    border-radius: 10px;
-    transition: background-color 0.2s;
+    border-radius: var(--radius-xl);
+    transition: background-color var(--duration-base);
     flex-shrink: 0;
   }
 
@@ -1112,8 +1112,8 @@ let _llmConfigModalWasOpen = false;
     width: 16px;
     height: 16px;
     background: white;
-    border-radius: 50%;
-    transition: transform 0.2s;
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base);
   }
 
   .toggle-input:checked + .toggle-switch {
@@ -1131,9 +1131,9 @@ let _llmConfigModalWasOpen = false;
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 1rem;
-    margin-top: 2rem;
-    padding-top: 1rem;
+    gap: var(--space-4);
+    margin-top: var(--space-8);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
   }
 
@@ -1142,18 +1142,18 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-color);
     border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.95rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-weight: var(--font-weight-medium);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-md);
   }
 
   .cancel-button:hover:not(:disabled) {
     background: var(--button-hover);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-hover);
   }
 
   .cancel-button:active {
@@ -1163,21 +1163,21 @@ let _llmConfigModalWasOpen = false;
   .save-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
     padding: 0.6rem 1.2rem;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: 0.95rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    font-weight: var(--font-weight-medium);
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .save-button:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -1198,9 +1198,9 @@ let _llmConfigModalWasOpen = false;
     color: var(--text-muted);
     opacity: 0.6;
     cursor: help;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--duration-base) ease;
     position: relative;
-    margin-left: 0.5rem;
+    margin-left: var(--space-2);
   }
 
   .info-tooltip:hover {
@@ -1214,14 +1214,14 @@ let _llmConfigModalWasOpen = false;
     left: var(--tooltip-left, 50%);
     top: var(--tooltip-top, 50%);
     background: #1a1a1a;
-    color: white;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 13px;
+    color: var(--text-on-solid);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
     font-weight: normal;
     max-width: 320px;
     white-space: normal;
-    z-index: 9999;
+    z-index: var(--z-toast);
     line-height: 1.4;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     text-align: left;
@@ -1233,22 +1233,22 @@ let _llmConfigModalWasOpen = false;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     font-size: 0.9rem;
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .label-with-tooltip {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   @media (max-width: 768px) {
     .form-actions {
       flex-direction: column;
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     .cancel-button,
@@ -1260,7 +1260,7 @@ let _llmConfigModalWasOpen = false;
 
     .form-control {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 

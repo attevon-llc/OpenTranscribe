@@ -203,35 +203,35 @@
   .sessions-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .panel-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .card-title {
     font-size: 0.9rem;
-    font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .panel-description,
   .panel-status,
   .panel-note {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin: 0;
   }
 
   .panel-note {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background-color: var(--background-color);
   }
 
@@ -243,12 +243,12 @@
   .sessions-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .sessions-table th,
   .sessions-table td {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     text-align: left;
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
@@ -256,8 +256,8 @@
   }
 
   .sessions-table th {
-    font-weight: 600;
-    font-size: 0.6875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     color: var(--text-secondary);
@@ -277,14 +277,14 @@
   }
 
   .current-badge {
-    margin-left: 0.375rem;
-    padding: 0.0625rem 0.375rem;
-    border-radius: 999px;
+    margin-left: var(--space-1-5);
+    padding: 0.0625rem var(--space-1-5);
+    border-radius: var(--radius-pill);
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    background-color: rgba(59, 130, 246, 0.15);
+    background-color: rgba(var(--accent-rgb), 0.15);
     color: var(--primary-on-surface);
   }
 
@@ -294,12 +294,12 @@
   }
 
   .btn {
-    padding: 0.5rem 1rem;
-    border-radius: 10px;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   .btn:disabled {
@@ -325,7 +325,7 @@
 
   .btn-danger:hover:not(:disabled) {
     background-color: #ef4444;
-    color: white;
+    color: var(--text-on-solid);
   }
 
   :global([data-theme='dark']) .btn-danger {
@@ -333,7 +333,7 @@
   }
 
   :global([data-theme='dark']) .btn-danger:hover:not(:disabled) {
-    color: white;
+    color: var(--text-on-solid);
   }
 
   @media (max-width: 768px) {

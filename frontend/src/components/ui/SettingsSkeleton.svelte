@@ -70,8 +70,8 @@
   .settings-skeleton {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 0.25rem 0;
+    gap: var(--space-4);
+    padding: var(--space-1) 0;
   }
 
   .sk-field {
@@ -82,39 +82,39 @@
 
   .sk-label {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .sk-input {
     height: 38px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .sk-toggle-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.5rem 0;
+    gap: var(--space-4);
+    padding: var(--space-2) 0;
   }
 
   .sk-toggle {
     flex: none;
     width: 40px;
     height: 22px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .chips-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .sk-chip {
     width: 90px;
     height: 28px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
 
   .sk-chip.wide {
@@ -125,20 +125,20 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    padding: 1.25rem;
+    padding: var(--space-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .sk-title {
     width: 38%;
     height: 16px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .sk-text {
     height: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .sk-text.short {

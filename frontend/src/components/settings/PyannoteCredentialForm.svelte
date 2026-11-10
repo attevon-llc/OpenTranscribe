@@ -214,10 +214,10 @@
 
 <style>
   .pyannote-credential {
-    margin-top: 1rem;
-    padding: 1rem;
+    margin-top: var(--space-4);
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
 
@@ -225,23 +225,23 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
     flex-wrap: wrap;
   }
 
   .credential-title {
     margin: 0;
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .credential-badge {
-    padding: 0.125rem 0.625rem;
-    border-radius: 999px;
+    padding: var(--space-0-5) var(--space-2-5);
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
@@ -258,36 +258,36 @@
 
   .credential-desc,
   .credential-note {
-    margin: 0.375rem 0 0.75rem;
-    font-size: 0.8125rem;
+    margin: var(--space-1-5) 0 var(--space-3);
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .credential-note {
-    margin: 0.5rem 0 0;
-    font-size: 0.75rem;
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-xs);
   }
 
   .credential-warning {
-    margin: 0 0 0.75rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
+    margin: 0 0 var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
     border: 1px solid var(--warning-color);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
   .credential-label {
     display: block;
-    margin-bottom: 0.375rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    margin-bottom: var(--space-1-5);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .credential-row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: stretch;
   }
 
@@ -298,8 +298,8 @@
 
   .credential-actions {
     display: flex;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
     flex-wrap: wrap;
   }
 
@@ -308,21 +308,21 @@
   .cred-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-1-5);
+    padding: var(--space-2) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--background-color);
     color: var(--text-color);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
   }
 
   .cred-btn.primary {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
   }
 
   .cred-btn.danger {
@@ -336,8 +336,8 @@
   }
 
   .credential-result {
-    margin: 0.5rem 0 0;
-    font-size: 0.8125rem;
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-sm);
     color: var(--error-color);
   }
 

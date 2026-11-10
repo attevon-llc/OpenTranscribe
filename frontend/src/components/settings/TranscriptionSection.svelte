@@ -139,7 +139,7 @@
 
   .tab-description {
     max-width: 800px;
-    margin: 0 0 1rem;
+    margin: 0 0 var(--space-4);
     color: var(--text-secondary);
     font-size: 0.9rem;
   }

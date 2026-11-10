@@ -59,17 +59,17 @@
 
 <style>
   .account-status-strip {
-    margin-bottom: 1.25rem;
-    padding: 0.75rem 1rem;
-    background: var(--background-color, #2a2a2a);
-    border: 1px solid var(--border-color, #444);
-    border-radius: 10px;
+    margin-bottom: var(--space-5);
+    padding: var(--space-3) var(--space-4);
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
   }
 
   .status-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
     justify-content: center;
   }
@@ -77,13 +77,13 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     border-radius: 20px;
     font-size: 0.8rem;
-    background: var(--surface-color, #333);
-    border: 1px solid var(--border-color, #444);
-    color: var(--text-color, #e0e0e0);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
   }
 
   .chip-value {
@@ -92,8 +92,8 @@
   }
 
   .chip-label {
-    color: var(--text-secondary, #999);
-    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
   }
 
   .chip.success {
@@ -109,10 +109,10 @@
   .chip.warning .chip-value { color: rgb(234, 179, 8); }
 
   .chip.info {
-    border-color: rgba(59, 130, 246, 0.3);
-    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    background: rgba(var(--accent-rgb), 0.08);
   }
-  .chip.info .chip-value { color: rgb(59, 130, 246); }
+  .chip.info .chip-value { color: rgb(var(--accent-rgb)); }
 
   .chip.danger {
     border-color: rgba(239, 68, 68, 0.3);

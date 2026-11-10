@@ -890,7 +890,7 @@
 
 <style>
   div.file-detail-page {
-    padding: 2rem;
+    padding: var(--space-8);
     max-width: 1200px;
     margin: 0 auto;
     font-family: var(--font-family-sans);
@@ -909,18 +909,18 @@
 
   .error-message {
     color: var(--error-color);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .error-container button {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    padding: 10px 20px;
-    border-radius: 6px;
+    padding: var(--space-2-5) var(--space-5);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
   }
 
   .error-container button:hover {
@@ -929,8 +929,8 @@
 
   .back-to-gallery-link {
     color: var(--primary-on-surface);
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     text-decoration: none;
   }
 
@@ -940,21 +940,21 @@
 
 
   .file-header {
-    margin-bottom: 24px;
+    margin-bottom: var(--space-6);
   }
 
 
   .main-content-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 32px;
+    gap: var(--space-8);
     align-items: start;
   }
 
   .video-column {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   /* The actions wrap under the heading when they do not fit beside it; the heading never
@@ -973,36 +973,36 @@
     flex-shrink: 0;
     margin: 0;
     font-size: 18px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
   .transcript-column {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
 
   @media (max-width: 1024px) {
     .main-content-grid {
       grid-template-columns: 1fr;
-      gap: 24px;
+      gap: var(--space-6);
     }
   }
 
   @media (max-width: 768px) {
     div.file-detail-page {
-      padding: 1rem;
+      padding: var(--space-4);
     }
 
     .main-content-grid {
-      gap: 20px;
+      gap: var(--space-5);
     }
 
     .video-header {
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
   }
 
@@ -1010,18 +1010,18 @@
   :global(.transcript-segment .segment-content) {
     border: 1px solid transparent;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   :global(.transcript-segment.active-segment .segment-content) {
-    background-color: rgba(59, 130, 246, 0.12);
-    border-color: rgba(59, 130, 246, 0.3);
-    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
+    background-color: rgba(var(--accent-rgb), 0.12);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    box-shadow: 0 1px 3px rgba(var(--accent-rgb), 0.2);
   }
 
   :global(.transcript-segment.active-segment .segment-content:hover) {
-    background-color: rgba(59, 130, 246, 0.16);
-    border-color: rgba(59, 130, 246, 0.4);
+    background-color: rgba(var(--accent-rgb), 0.16);
+    border-color: rgba(var(--accent-rgb), 0.4);
   }
 
 </style>

@@ -27,7 +27,7 @@
     z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
     pointer-events: none;
   }

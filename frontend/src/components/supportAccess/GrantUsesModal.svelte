@@ -117,10 +117,10 @@
 
 <style>
   .state {
-    margin: 1rem 0;
+    margin: var(--space-4) 0;
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
   .state.error {
     color: var(--error-color);
@@ -131,13 +131,13 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
   th {
     text-align: start;
     padding: 0.4rem 0.6rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-on-tint);
@@ -145,7 +145,7 @@
     white-space: nowrap;
   }
   td {
-    padding: 0.5rem 0.6rem;
+    padding: var(--space-2) 0.6rem;
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
     vertical-align: top;
@@ -154,7 +154,7 @@
     white-space: nowrap;
   }
   code {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     overflow-wrap: anywhere;
   }
   .uuid {
@@ -163,6 +163,6 @@
   }
   .more {
     display: block;
-    margin: 1rem auto 0 auto;
+    margin: var(--space-4) auto 0 auto;
   }
 </style>

@@ -137,11 +137,11 @@
 
   /* Shape carries the outcome. Colour only reinforces it. */
   .trace-marker--dot {
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--primary-color);
   }
   .trace-marker--ring {
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     border: 1.5px solid var(--text-secondary);
   }
   .trace-marker--dash {
@@ -149,11 +149,11 @@
     background: var(--text-secondary);
   }
   .trace-marker--square {
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     background: var(--primary-color);
   }
   .trace-marker--slash {
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     border: 1.5px solid var(--text-color);
     position: relative;
   }
@@ -166,7 +166,7 @@
     transform: rotate(45deg);
   }
   .trace-marker--cross {
-    background: var(--error-color, #ef4444);
+    background: var(--error-color);
     clip-path: polygon(
       20% 0%,
       0% 20%,
@@ -185,7 +185,7 @@
 
   .trace-label {
     color: var(--text-color);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   /* A skipped step is de-emphasised but never hidden: "we never looked" is a
@@ -197,7 +197,7 @@
   .trace-badge {
     padding: 0.02rem 0.3rem;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--background-secondary);
     color: var(--text-secondary);
     font-size: 0.66rem;
@@ -211,8 +211,8 @@
   }
 
   .trace-node[data-outcome='failed'] .trace-badge--outcome {
-    border-color: var(--error-color, #ef4444);
-    color: var(--error-color, #ef4444);
+    border-color: var(--error-color);
+    color: var(--error-color);
   }
 
   .trace-chip,

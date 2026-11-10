@@ -68,38 +68,38 @@
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .step-row {
     display: grid;
     grid-template-columns: minmax(8rem, max-content) 1fr;
-    gap: 4px 12px;
+    gap: var(--space-1) var(--space-3);
     align-items: baseline;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
   }
 
   .step-name {
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .step-detail {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-1-5);
     align-items: baseline;
     color: var(--text-primary);
     min-width: 0;
   }
 
   .provider {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .model {
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
     overflow-wrap: anywhere;
   }
 

@@ -110,10 +110,10 @@
 <style>
   .discovery-panel {
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--card-bg);
-    padding: 0 1rem;
-    margin-bottom: 1.5rem;
+    padding: 0 var(--space-4);
+    margin-bottom: var(--space-6);
   }
 
   /* The disclosure draws its own rule under the header; the panel border replaces it. */
@@ -122,8 +122,8 @@
   }
 
   .discovery-summary {
-    font-size: 0.8125rem;
-    font-weight: 400;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
     color: var(--text-muted);
   }
 
@@ -134,7 +134,7 @@
   .discovery-toolbar {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .discovery-rescan-btn {
@@ -143,14 +143,14 @@
     gap: 0.35rem;
     background: none;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 0.2rem 0.6rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-color);
     cursor: pointer;
     transition:
-      background-color 0.2s,
-      border-color 0.2s;
+      background-color var(--duration-base),
+      border-color var(--duration-base);
   }
 
   .discovery-rescan-btn:hover:not(:disabled) {
@@ -169,7 +169,7 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .discovery-row {
@@ -187,7 +187,7 @@
     flex-shrink: 0;
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--text-muted);
   }
 
@@ -201,23 +201,23 @@
   }
 
   .discovery-row-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .discovery-row-detail {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: baseline;
     word-break: break-all;
   }
 
   .discovery-row-detail code {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .discovery-row-detail-muted {
@@ -230,13 +230,13 @@
 
   .discovery-use-btn {
     flex-shrink: 0;
-    padding: 0.3rem 0.75rem;
-    font-size: 0.75rem;
+    padding: 0.3rem var(--space-3);
+    font-size: var(--font-size-xs);
   }
 
   .discovery-warning {
-    margin: 0.75rem 0 0;
-    font-size: 0.75rem;
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-xs);
     color: var(--warning-color);
   }
 </style>

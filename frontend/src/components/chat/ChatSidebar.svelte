@@ -285,12 +285,12 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    padding: 0.85rem 0.75rem;
+    padding: 0.85rem var(--space-3);
     border-bottom: 1px solid var(--border-color);
     position: sticky;
     top: 0;
     background-color: var(--surface-color);
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .new-chat-btn {
@@ -299,15 +299,15 @@
     justify-content: center;
     gap: 0.4rem;
     width: 100%;
-    padding: 0.55rem 0.75rem;
+    padding: 0.55rem var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background-color: var(--card-background);
     color: var(--text-color);
     font-size: 0.87rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
   }
 
   .new-chat-btn:hover {
@@ -336,13 +336,13 @@
 
   .archive-toggle.active {
     color: var(--primary-on-surface);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .sidebar-list {
     flex: 1;
     overflow-y: auto;
-    padding: 0.5rem 0.5rem 1rem;
+    padding: var(--space-2) var(--space-2) var(--space-4);
     min-height: 0;
   }
 
@@ -361,7 +361,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .add-project,
@@ -401,14 +401,14 @@
   .project-conversations {
     margin-left: 0.7rem;
     border-left: 1px solid var(--border-color);
-    padding-left: 0.25rem;
+    padding-left: var(--space-1);
   }
 
   .project-row {
     display: flex;
     align-items: center;
     gap: 0.15rem;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     padding: 0 0.2rem;
   }
 
@@ -441,7 +441,7 @@
 
   .chevron {
     flex: none;
-    transition: transform 0.15s ease;
+    transition: transform var(--duration-fast) ease;
   }
 
   .chevron.open {
@@ -487,7 +487,7 @@
   }
 
   .empty {
-    padding: 1.5rem 0.75rem;
+    padding: var(--space-6) var(--space-3);
     text-align: center;
     font-size: 0.82rem;
     color: var(--text-secondary);
@@ -497,6 +497,6 @@
     display: flex;
     justify-content: center;
     min-height: 1.5rem;
-    padding-top: 0.5rem;
+    padding-top: var(--space-2);
   }
 </style>

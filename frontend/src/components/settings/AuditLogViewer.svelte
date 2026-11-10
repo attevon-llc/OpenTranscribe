@@ -139,16 +139,16 @@
 
 <style>
   .audit-log-viewer {
-    padding: 0.5rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2);
+    font-size: var(--font-size-sm);
   }
 
   /* Coming Soon Section Styles */
   .coming-soon {
     text-align: center;
-    padding: 1.5rem;
+    padding: var(--space-6);
     background: var(--color-surface);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--color-border);
   }
 
@@ -156,32 +156,32 @@
     display: flex;
     justify-content: center;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .coming-soon h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1rem;
+    margin: 0 0 var(--space-2) 0;
+    font-size: var(--font-size-base);
     color: var(--color-text);
   }
 
   .coming-soon p {
     color: var(--color-text-secondary);
-    margin: 0.25rem 0;
-    font-size: 0.8125rem;
+    margin: var(--space-1) 0;
+    font-size: var(--font-size-sm);
   }
 
   .note {
-    background: var(--color-info-bg, rgba(59, 130, 246, 0.1));
-    border: 1px solid var(--color-info-border, rgba(59, 130, 246, 0.3));
-    border-radius: 4px;
-    padding: 0.75rem;
-    margin-top: 0.75rem;
+    background: var(--color-info-bg);
+    border: 1px solid var(--color-info-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-3);
+    margin-top: var(--space-3);
     text-align: left;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .note strong {
-    color: var(--color-info, #3b82f6);
+    color: var(--color-info);
   }
 </style>

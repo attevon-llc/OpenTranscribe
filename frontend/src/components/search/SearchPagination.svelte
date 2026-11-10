@@ -113,9 +113,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.25rem;
-    margin-top: 1.5rem;
-    padding: 1rem 0;
+    gap: var(--space-1);
+    margin-top: var(--space-6);
+    padding: var(--space-4) 0;
   }
 
   .page-btn {
@@ -124,24 +124,24 @@
     justify-content: center;
     min-width: 36px;
     height: 36px;
-    padding: 0 0.5rem;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 6px;
-    background: var(--surface-color, #fff);
-    color: var(--text-color, #374151);
-    font-size: 0.875rem;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-size: var(--font-size-md);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
   }
 
   .page-btn:hover:not(:disabled):not(.active) {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     border-color: var(--primary-color);
   }
 
   .page-btn.active {
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border-color: var(--primary-color);
   }
 
@@ -151,7 +151,7 @@
   }
 
   .ellipsis {
-    padding: 0 0.25rem;
-    color: var(--text-secondary, #6b7280);
+    padding: 0 var(--space-1);
+    color: var(--text-secondary);
   }
 </style>

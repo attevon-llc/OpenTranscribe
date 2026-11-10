@@ -322,16 +322,16 @@
 <svelte:head>
   <style>
     .speaker-dropdown-portal .dropdown-menu {
-      background: var(--surface-color, #1e293b);
-      border: 1px solid var(--border-color, #334155);
-      border-radius: 8px;
+      background: var(--surface-color);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
       min-width: 200px;
       /* A long suggested name used to widen the menu past the viewport edge, where
          the fixed `left` offset left it unreachable and overlapping the transcript.
          Cap it and let the row labels ellipsise instead (#741). */
       max-width: min(340px, calc(100vw - 24px));
-      padding: 4px;
+      padding: var(--space-1);
       max-height: 400px;
       overflow-y: auto;
       overflow-x: hidden;
@@ -339,18 +339,18 @@
     }
 
     .speaker-dropdown-portal .dropdown-header {
-      font-size: 11px;
-      font-weight: 600;
+      font-size: var(--font-size-2xs);
+      font-weight: var(--font-weight-semibold);
       text-transform: uppercase;
-      color: var(--text-secondary, #94a3b8);
-      padding: 8px 12px 4px 12px;
+      color: var(--text-secondary);
+      padding: var(--space-2) var(--space-3) var(--space-1) var(--space-3);
       letter-spacing: 0.5px;
     }
 
     .speaker-dropdown-portal .dropdown-divider {
       height: 1px;
-      background: var(--border-light, #475569);
-      margin: 4px 0;
+      background: var(--border-light);
+      margin: var(--space-1) 0;
     }
 
     .speaker-dropdown-portal .dropdown-item {
@@ -358,29 +358,29 @@
       align-items: center;
       justify-content: space-between;
       width: 100%;
-      padding: 8px 12px;
+      padding: var(--space-2) var(--space-3);
       background: none;
       border: none;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       cursor: pointer;
-      transition: background-color 0.15s ease;
-      color: var(--text-primary, #f1f5f9);
-      font-size: 14px;
+      transition: background-color var(--duration-fast) ease;
+      color: var(--text-primary);
+      font-size: var(--font-size-md);
       text-align: start;
     }
 
     .speaker-dropdown-portal .dropdown-item:hover {
-      background: var(--surface-hover, #334155);
+      background: var(--surface-hover);
     }
 
     .speaker-dropdown-portal .dropdown-item.selected {
-      background: rgba(59, 130, 246, 0.15);
+      background: rgba(var(--accent-rgb), 0.15);
     }
 
     .speaker-dropdown-portal .speaker-option {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-2);
       flex: 1;
       min-width: 0;
     }
@@ -394,14 +394,14 @@
     .speaker-dropdown-portal .speaker-color-indicator {
       width: 12px;
       height: 12px;
-      border-radius: 50%;
+      border-radius: var(--radius-round);
       border: 1px solid;
       flex-shrink: 0;
     }
 
     .speaker-dropdown-portal .speaker-color-indicator.no-speaker {
-      background: var(--border-color, #475569);
-      border-color: var(--border-hover, #64748b);
+      background: var(--border-color);
+      border-color: var(--border-hover);
     }
 
     .speaker-dropdown-portal .create-speaker-btn {
@@ -409,7 +409,7 @@
     }
 
     .speaker-dropdown-portal .create-speaker-btn:hover {
-      background: rgba(59, 130, 246, 0.1);
+      background: rgba(var(--accent-rgb), 0.1);
     }
 
     /* Every icon in a menu row is a fixed 12px square that never shrinks. They used
@@ -425,34 +425,34 @@
 
     .speaker-dropdown-portal .create-speaker-btn svg {
       color: var(--primary-on-surface);
-      margin-right: 4px;
+      margin-right: var(--space-1);
     }
 
     .speaker-dropdown-portal .suggestion-header {
-      color: var(--warning-color, #f59e0b);
+      color: var(--warning-color);
     }
 
     .speaker-dropdown-portal .suggestion-btn svg {
-      color: var(--warning-color, #f59e0b);
-      margin-right: 4px;
+      color: var(--warning-color);
+      margin-right: var(--space-1);
     }
 
     .speaker-dropdown-portal .suggestion-btn:hover {
-      background: var(--surface-hover, #334155);
+      background: var(--surface-hover);
     }
 
     .speaker-dropdown-portal .inline-name-row {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 8px 6px 8px;
+      gap: var(--space-1-5);
+      padding: var(--space-1) var(--space-2) var(--space-1-5) var(--space-2);
     }
 
     .speaker-dropdown-portal .inline-name-input {
       flex: 1;
       min-width: 0;
-      padding: 6px 8px;
-      font-size: 13px;
+      padding: var(--space-1-5) var(--space-2);
+      font-size: var(--font-size-sm);
     }
 
     .speaker-dropdown-portal .inline-name-save {
@@ -466,10 +466,10 @@
          content box at all (computed width 0) and it vanishes. */
       padding: 0;
       box-sizing: border-box;
-      color: #fff;
-      background: var(--primary-color, #3b82f6);
+      color: var(--text-on-solid);
+      background: var(--primary-color);
       border: none;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       cursor: pointer;
     }
 
@@ -485,10 +485,10 @@
     }
 
     .speaker-dropdown-portal .inline-name-hint {
-      padding: 0 12px 6px 12px;
-      font-size: 11px;
+      padding: 0 var(--space-3) var(--space-1-5) var(--space-3);
+      font-size: var(--font-size-2xs);
       line-height: 1.35;
-      color: var(--warning-color, #f59e0b);
+      color: var(--warning-color);
     }
 
     .speaker-dropdown-portal .inline-name-matches[hidden],
@@ -502,10 +502,10 @@
 
     .speaker-dropdown-portal .suggestion-confidence {
       flex-shrink: 0;
-      margin-left: 8px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-secondary, #94a3b8);
+      margin-left: var(--space-2);
+      font-size: var(--font-size-2xs);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-secondary);
       font-variant-numeric: tabular-nums;
     }
   </style>
@@ -574,7 +574,7 @@
   .speaker-trigger {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     background: none;
     border: none;
     cursor: pointer;
@@ -588,10 +588,10 @@
   }
 
   .segment-speaker {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
-    padding: 2px 8px;
-    border-radius: 12px;
+    padding: var(--space-0-5) var(--space-2);
+    border-radius: var(--radius-2xl);
     /* A confirmed name is shown in full: it wraps inside the pill instead of being cut to
        "UNKNOWN (NOT …" (#1149). `overflow-wrap: anywhere` also breaks an unbroken token. */
     white-space: normal;
@@ -605,7 +605,7 @@
     border: 1px solid;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     color: var(--speaker-light);
   }
 
@@ -627,7 +627,7 @@
 
   .dropdown-arrow {
     color: var(--text-secondary);
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -648,6 +648,6 @@
     width: 12px;
     height: 12px;
     flex-shrink: 0;
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
   }
 </style>

@@ -274,34 +274,34 @@
     align-items: center;
     min-height: 100vh;
     min-height: 100dvh;
-    padding: 1rem;
+    padding: var(--space-4);
     background-color: var(--background-color);
   }
 
   .auth-card {
     background-color: var(--surface-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 400px;
-    padding: 2rem;
+    padding: var(--space-8);
   }
 
   .registration-check {
     display: flex;
     justify-content: center;
-    padding: 2rem 0;
+    padding: var(--space-8) 0;
   }
 
   .auth-header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .auth-header h1 {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .auth-header p {
@@ -312,52 +312,52 @@
   .auth-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-group label {
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .form-group input {
-    font-size: 1rem;
+    font-size: var(--font-size-base);
   }
 
   .form-error {
-    margin: 0 0 12px;
-    font-size: 13px;
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-sm);
     line-height: 1.4;
     color: var(--error-color);
   }
 
   .auth-button {
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: 0.6rem 1.2rem;
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .auth-button:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
     transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .auth-button:active:not(:disabled) {
@@ -381,7 +381,7 @@
   .auth-link {
     color: var(--primary-on-surface);
     text-decoration: none;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .auth-link:hover {
@@ -390,43 +390,43 @@
 
   .auth-logo {
     text-align: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .auth-logo .logo-banner {
     height: 60px;
     width: auto;
     object-fit: contain;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   .password-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .toggle-password {
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-light);
     display: flex;
     align-items: center;
-    border-radius: 4px;
-    transition: background-color 0.2s;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--duration-base);
   }
 
   .toggle-password:hover {
-    background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
+    background-color: var(--surface-hover);
   }
 
   .label-with-info {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .info-tooltip {
@@ -438,7 +438,7 @@
   .info-icon {
     color: var(--text-light);
     cursor: help;
-    transition: color 0.2s;
+    transition: color var(--duration-base);
   }
 
   .info-icon:hover {
@@ -452,14 +452,14 @@
     transform: translateX(-50%);
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
+    box-shadow: var(--shadow-lg);
     width: 250px;
     z-index: 100;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.2s, visibility 0.2s;
+    transition: opacity var(--duration-base), visibility var(--duration-base);
   }
 
   .info-tooltip:hover .tooltip-content {
@@ -479,20 +479,20 @@
 
   .tooltip-content strong {
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     font-size: 0.8rem;
     color: var(--text-color);
   }
 
   .tooltip-content ul {
     margin: 0;
-    padding-left: 1.25rem;
-    font-size: 0.75rem;
+    padding-left: var(--space-5);
+    font-size: var(--font-size-xs);
     color: var(--text-light);
   }
 
   .tooltip-content li {
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .tooltip-content li:last-child {

@@ -638,8 +638,8 @@
   .current-collections {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-bottom: 12px;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-3);
   }
 
   .current-label {
@@ -663,13 +663,13 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
   }
 
   .panel-header h3 {
     margin: 0;
     font-size: 18px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
@@ -677,24 +677,24 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     padding: 0.6rem 1.2rem;
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     font-size: 0.95rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    transition: all var(--duration-base) ease;
+    box-shadow: var(--shadow-primary);
   }
 
   .btn-create:hover:not(:disabled) {
-    background-color: #2563eb;
-    color: white;
+    background-color: var(--primary-color);
+    color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
     text-decoration: none;
   }
 
@@ -710,13 +710,13 @@
   .icon {
     font-size: 18px;
     line-height: 1;
-    color: white;
+    color: var(--text-on-solid);
     font-weight: var(--font-weight-semibold);
   }
 
   .search-wrapper {
     position: relative;
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .search-icon {
@@ -730,11 +730,11 @@
 
   .search-input {
     width: 100%;
-    padding: 0.5rem 2rem 0.5rem 2.25rem;
+    padding: var(--space-2) var(--space-8) var(--space-2) 2.25rem;
     /* The app's input tokens, not --surface-color/--border-color: matches
        form-elements.css and TagManagerModal, which this panel's search bar
        is converging on (issue #757). */
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     box-sizing: border-box;
   }
 
@@ -751,13 +751,13 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-secondary);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.15s;
+    transition: color var(--duration-fast);
   }
 
   .search-clear:hover {
@@ -766,9 +766,9 @@
 
   .no-results {
     text-align: center;
-    padding: 1.5rem 0;
+    padding: var(--space-6) 0;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .no-results p {
@@ -787,18 +787,18 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 40px;
+    padding: var(--space-10);
     color: var(--text-secondary);
   }
 
   .collections-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
     overflow-y: auto;
     flex: 1;
     max-height: 400px;
-    padding-right: 8px;
+    padding-right: var(--space-2);
   }
 
   /* Custom scrollbar styling */

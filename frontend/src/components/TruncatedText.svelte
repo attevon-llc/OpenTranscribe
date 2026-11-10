@@ -42,7 +42,7 @@
   }
 
   .truncated-text p {
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     white-space: pre-wrap;
     word-wrap: break-word;
     line-height: 1.5;
@@ -57,7 +57,7 @@
     font-size: 0.85rem;
     cursor: pointer;
     text-decoration: underline;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .toggle-truncation:hover {

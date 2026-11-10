@@ -167,14 +167,14 @@
   .tab-heading {
     margin: 0;
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .tab-description {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     max-width: 800px;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     color: var(--text-secondary);
     font-size: 0.9rem;
   }

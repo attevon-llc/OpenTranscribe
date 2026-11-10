@@ -586,16 +586,16 @@
 
 <style>
   .migration-settings {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 
   .locked-state {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
     color: var(--text-secondary);
   }
@@ -607,7 +607,7 @@
   .locked-controls {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .error-state {
@@ -615,8 +615,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 1.5rem;
-    gap: 0.5rem;
+    padding: var(--space-6);
+    gap: var(--space-2);
     color: var(--error-color);
   }
 
@@ -625,26 +625,26 @@
   .status-chips-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
   }
 
   .settings-section {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1.25rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
   }
 
   .title-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .section-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
@@ -652,17 +652,17 @@
   .section-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin: 0.25rem 0 1rem 0;
+    margin: var(--space-1) 0 var(--space-4) 0;
   }
 
 
 
   .migration-box {
     display: flex;
-    gap: 1rem;
-    padding: 1rem;
-    border-radius: 8px;
-    margin-bottom: 1rem;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-4);
   }
 
   .migration-box.upgrade {
@@ -679,7 +679,7 @@
     flex-shrink: 0;
     width: 40px;
     height: 40px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -700,7 +700,7 @@
   }
 
   .migration-content h4 {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
     font-size: 0.9rem;
     color: var(--text-color);
   }
@@ -712,34 +712,34 @@
   }
 
   .benefit-list {
-    margin: 0.5rem 0;
-    padding-left: 1.25rem;
+    margin: var(--space-2) 0;
+    padding-left: var(--space-5);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
 
   .benefit-list li {
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .policy-skip-notice {
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
     padding: 0.6rem 0.9rem;
-    border: 1px solid var(--warning-color, #d97706);
-    border-radius: 6px;
+    border: 1px solid var(--warning-color);
+    border-radius: var(--radius-md);
     font-size: 0.8rem;
     color: var(--text-color);
     background: var(--surface-color);
   }
 
   .migration-note {
-    margin-top: 0.5rem !important;
+    margin-top: var(--space-2) !important;
     font-style: italic;
   }
 
   .migration-estimate {
-    margin-top: 0.25rem !important;
-    font-size: 0.75rem;
+    margin-top: var(--space-1) !important;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -749,14 +749,14 @@
   }
 
   .finalize-section {
-    padding: 1rem;
+    padding: var(--space-4);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .finalize-section p {
@@ -768,14 +768,14 @@
   .migration-controls {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .progress-section {
-    margin-top: 1rem;
-    padding: 1rem;
+    margin-top: var(--space-4);
+    padding: var(--space-4);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 
@@ -783,7 +783,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .progress-text {
@@ -793,41 +793,41 @@
 
   .progress-percent {
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
   }
 
   .progress-bar-container {
     height: 8px;
     background: var(--border-color);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
     background: var(--primary-color);
-    border-radius: 4px;
-    transition: width 0.3s ease;
+    border-radius: var(--radius-sm);
+    transition: width var(--duration-slow) ease;
   }
 
   .queued-message {
     font-size: 0.8rem;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     font-style: italic;
   }
 
   .failed-files-info {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 4px;
-    font-size: 0.75rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
     color: #ef4444;
   }
 
@@ -837,21 +837,21 @@
   }
 
   .stalled-section {
-    padding: 1rem;
+    padding: var(--space-4);
     background: rgba(251, 191, 36, 0.08);
     border: 1px solid rgba(251, 191, 36, 0.3);
-    border-radius: 8px;
-    margin-top: 0.75rem;
+    border-radius: var(--radius-lg);
+    margin-top: var(--space-3);
   }
 
   .stalled-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.85rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .stalled-header svg {
@@ -861,7 +861,7 @@
 
   .stalled-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: flex-start;
     flex-wrap: wrap;
   }
@@ -869,37 +869,37 @@
   .force-complete-confirm {
     flex: 1;
     min-width: 200px;
-    padding: 0.75rem;
+    padding: var(--space-3);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .force-complete-confirm p {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
 
   .confirm-buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .reextract-section {
-    margin-top: 0.75rem;
-    padding: 0.75rem 1rem;
+    margin-top: var(--space-3);
+    padding: var(--space-3) var(--space-4);
     background: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     flex-wrap: wrap;
   }
 
   .reextract-hint {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -908,7 +908,7 @@
   }
 
   .reextract-confirm p {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
     font-size: 0.8rem;
     color: var(--text-secondary);
   }

@@ -71,10 +71,10 @@
 <style>
   /* Live reindex progress styles */
   .reindex-live-progress {
-    margin-bottom: 0.75rem;
-    padding: 0.75rem;
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
     background: var(--background-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
   }
 
@@ -82,26 +82,26 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .reindex-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
   }
 
   .reindex-count {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .progress-bar.reindexing {
-    background: var(--primary-light, rgba(var(--primary-color-rgb), 0.2));
+    background: var(--primary-light);
   }
 
   .progress-bar.reindexing .progress-fill {
@@ -122,8 +122,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 0.25rem;
-    font-size: 0.75rem;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
@@ -133,24 +133,24 @@
 
   .reindex-eta {
     white-space: nowrap;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
   }
 
   .reindex-actions {
     display: flex;
     justify-content: flex-end;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .btn-danger-outline {
     background: transparent;
-    color: var(--danger-color, #dc2626);
-    border: 1px solid var(--danger-color, #dc2626);
+    color: var(--danger-color);
+    border: 1px solid var(--danger-color);
   }
 
   .btn-danger-outline:hover:not(:disabled) {
-    background: var(--danger-bg, rgba(220, 38, 38, 0.08));
+    background: var(--danger-bg);
   }
 
   .btn-danger-outline:disabled {
@@ -159,15 +159,15 @@
   }
 
   .btn-sm {
-    padding: 0.25rem 0.75rem;
-    font-size: 0.75rem;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-xs);
   }
 
   .progress-container {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-2-5);
+    margin-bottom: var(--space-2);
   }
 
   .progress-bar {
@@ -182,11 +182,11 @@
     height: 100%;
     background: var(--primary-color);
     border-radius: 3px;
-    transition: width 0.3s;
+    transition: width var(--duration-slow);
   }
 
   .progress-text {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
   }
@@ -194,8 +194,8 @@
   .indeterminate-row {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-2-5);
+    margin-bottom: var(--space-2);
   }
 
   .indeterminate-row .progress-bar-wrapper {

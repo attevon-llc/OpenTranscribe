@@ -226,8 +226,8 @@
 <style>
   .toolbar {
     display: flex;
-    gap: 12px;
-    margin-bottom: 16px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
     align-items: center;
     flex-wrap: wrap;
   }
@@ -250,21 +250,21 @@
     border: none;
     cursor: pointer;
     color: var(--text-secondary);
-    padding: 4px;
-    border-radius: 50%;
-    transition: color 0.15s, background 0.15s;
+    padding: var(--space-1);
+    border-radius: var(--radius-round);
+    transition: color var(--duration-fast), background var(--duration-fast);
   }
 
   .search-clear-btn:hover {
     color: var(--text-color);
-    background: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background: var(--hover-color);
   }
 
   .search-input {
     width: 100%;
     min-width: 0;
-    padding: 8px 32px 8px 12px;
-    font-size: 14px;
+    padding: var(--space-2) var(--space-8) var(--space-2) var(--space-3);
+    font-size: var(--font-size-md);
     box-sizing: border-box;
   }
 
@@ -273,23 +273,23 @@
   }
 
   .btn-recluster {
-    padding: 8px 16px;
-    border-radius: 8px;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-lg);
     border: none;
     background: var(--primary-color);
-    color: white;
-    font-size: 14px;
-    font-weight: 500;
+    color: var(--text-on-solid);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     white-space: nowrap;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-    transition: all 0.2s ease;
+    box-shadow: var(--shadow-primary);
+    transition: all var(--duration-base) ease;
   }
 
   .btn-recluster:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   .btn-recluster:active:not(:disabled) {
@@ -302,18 +302,18 @@
   }
 
   .last-clustered-chip {
-    font-size: 11px;
+    font-size: var(--font-size-2xs);
     /* 11px on the hover tint — --text-secondary measures 4.34:1 here, under AA. */
     color: var(--text-on-tint);
     background: var(--hover-color);
     padding: 1px 7px;
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     white-space: nowrap;
     align-self: center;
   }
 
   .clustering-progress {
-    margin-top: 12px;
+    margin-top: var(--space-3);
   }
 
   .progress-bar {
@@ -327,7 +327,7 @@
     height: 100%;
     background: var(--primary-color);
     border-radius: 3px;
-    transition: width 0.3s ease;
+    transition: width var(--duration-slow) ease;
   }
 
   .progress-fill.queued-pulse {
@@ -342,38 +342,38 @@
 
   .progress-text {
     display: block;
-    margin-top: 4px;
-    font-size: 12px;
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
   .cluster-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .section-heading-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 13px;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    color: var(--text-secondary, #6b7280);
-    margin: 16px 0 4px;
-    padding: 4px 4px;
+    color: var(--text-secondary);
+    margin: var(--space-4) 0 var(--space-1);
+    padding: var(--space-1) var(--space-1);
     border: none;
     background: none;
     cursor: pointer;
     width: 100%;
     text-align: left;
-    border-radius: 4px;
-    transition: background 0.15s ease;
+    border-radius: var(--radius-sm);
+    transition: background var(--duration-fast) ease;
     box-shadow: none;
   }
 
   .section-heading-btn:hover {
-    background: var(--hover-color, #f9fafb);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }
@@ -383,11 +383,11 @@
   }
 
   .section-heading-btn.identified {
-    color: var(--success-color, #059669);
+    color: var(--success-color);
   }
 
   .section-heading-btn.unidentified {
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary);
   }
 
   .section-heading-btn svg {
@@ -400,45 +400,45 @@
     justify-content: center;
     width: 16px;
     flex-shrink: 0;
-    transition: transform 0.15s ease;
+    transition: transform var(--duration-fast) ease;
   }
 
   .section-empty-note {
-    padding: 12px 24px;
-    font-size: 13px;
-    color: var(--text-secondary, #6b7280);
+    padding: var(--space-3) var(--space-6);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
     font-style: italic;
   }
 
   .loading-members {
-    padding: 12px;
+    padding: var(--space-3);
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--font-size-sm);
   }
 
   .pagination {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 16px;
-    margin-top: 16px;
-    font-size: 14px;
+    gap: var(--space-4);
+    margin-top: var(--space-4);
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
   .pagination button {
-    padding: 6px 14px;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 6px;
-    background: var(--card-background, #fff);
-    color: var(--text-color, #111827);
+    padding: var(--space-1-5) var(--space-3-5);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--card-background);
+    color: var(--text-color);
     cursor: pointer;
     box-shadow: none;
-    font-size: 14px;
+    font-size: var(--font-size-md);
   }
 
   .pagination button:hover:not(:disabled) {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }
@@ -452,13 +452,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 8px 16px;
-    background: color-mix(in srgb, var(--primary-color, var(--primary-color)) 10%, transparent);
-    border: 1px solid var(--primary-color, #3b82f6);
-    border-radius: 6px;
-    margin-bottom: 12px;
-    font-size: 14px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+    border: 1px solid var(--primary-color);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3);
+    font-size: var(--font-size-md);
     color: var(--primary-on-surface);
   }
 
@@ -470,32 +470,32 @@
   }
 
   .btn-cancel-merge {
-    padding: 4px 12px;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 6px;
-    background: var(--card-background, #fff);
-    color: var(--text-color, #111827);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--card-background);
+    color: var(--text-color);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--font-size-sm);
     box-shadow: none;
   }
 
   .btn-cancel-merge:hover {
-    background: var(--hover-color, #f3f4f6);
+    background: var(--hover-color);
     transform: none;
     box-shadow: none;
   }
 
   .merge-source-highlight {
-    outline: 2px solid var(--primary-color, #3b82f6);
+    outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
 
   @media (max-width: 768px) {
     .toolbar {
       flex-wrap: wrap;
-      gap: 8px;
+      gap: var(--space-2);
     }
 
     .search-input {
@@ -506,8 +506,8 @@
     .btn-recluster {
       flex: 1;
       min-width: 0;
-      padding: 8px 12px;
-      font-size: 13px;
+      padding: var(--space-2) var(--space-3);
+      font-size: var(--font-size-sm);
     }
 
     .last-clustered-chip {
@@ -518,8 +518,8 @@
 
     .merge-banner {
       flex-wrap: wrap;
-      padding: 8px 12px;
-      font-size: 13px;
+      padding: var(--space-2) var(--space-3);
+      font-size: var(--font-size-sm);
     }
 
     .merge-banner span {
@@ -528,18 +528,18 @@
     }
 
     .section-heading-btn {
-      font-size: 12px;
-      padding: 4px 2px;
+      font-size: var(--font-size-xs);
+      padding: var(--space-1) var(--space-0-5);
     }
 
     .pagination {
-      gap: 8px;
-      font-size: 13px;
+      gap: var(--space-2);
+      font-size: var(--font-size-sm);
     }
 
     .pagination button {
-      padding: 6px 10px;
-      font-size: 13px;
+      padding: var(--space-1-5) var(--space-2-5);
+      font-size: var(--font-size-sm);
     }
   }
 </style>

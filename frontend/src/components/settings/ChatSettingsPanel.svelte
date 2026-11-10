@@ -83,10 +83,10 @@
   }
 
   .tab-intro {
-    margin: 0 0 1.25rem;
+    margin: 0 0 var(--space-5);
     padding: 0.7rem 0.85rem;
     border-left: 3px solid var(--primary-color);
-    border-radius: 0 6px 6px 0;
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
     background-color: rgba(var(--primary-color-rgb), 0.08);
     font-size: 0.82rem;
     line-height: 1.5;

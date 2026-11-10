@@ -57,15 +57,15 @@
     height: 28px;
     padding: 0;
     border: 1px solid var(--border-color);
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--surface-color);
     box-shadow: none;
     color: var(--primary-on-surface);
     cursor: pointer;
     transition:
-      background-color 0.15s,
-      border-color 0.15s,
-      color 0.15s;
+      background-color var(--duration-fast),
+      border-color var(--duration-fast),
+      color var(--duration-fast);
   }
 
   .preview-btn:hover {
@@ -83,7 +83,7 @@
   .preview-btn.active {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    color: #fff;
+    color: var(--text-on-solid);
   }
 
   /* A ring, not a darker fill: --primary-color-dark aliases --primary-on-surface, which is a

@@ -47,8 +47,8 @@
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 0.125rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-0-5);
     font-size: var(--font-size-xs);
   }
 
@@ -72,13 +72,13 @@
   .timestamp-link:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 
   .snippet {
     font-size: var(--font-size-md);
     line-height: var(--line-height-body);
-    color: var(--text-color, #374151);
+    color: var(--text-color);
     overflow-wrap: break-word;
     word-break: break-word;
   }
@@ -87,7 +87,7 @@
     background: var(--highlight-bg);
     color: inherit;
     padding: 0.05em 0.15em;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     font-weight: var(--font-weight-medium);
   }
 
@@ -100,7 +100,7 @@
     background: rgba(245, 158, 11, 0.2);
     color: inherit;
     padding: 0.05em 0.15em;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     font-weight: var(--font-weight-medium);
   }
 
@@ -111,11 +111,11 @@
   .snippet.semantic-snippet {
     background: rgba(245, 158, 11, 0.08);
     border-inline-start: 3px solid rgba(245, 158, 11, 0.4);
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border-start-start-radius: 0;
     border-end-start-radius: 0;
-    border-start-end-radius: 4px;
-    border-end-end-radius: 4px;
+    border-start-end-radius: var(--radius-sm);
+    border-end-end-radius: var(--radius-sm);
   }
 
   :global([data-theme='dark']) .snippet.semantic-snippet {

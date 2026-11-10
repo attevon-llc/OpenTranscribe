@@ -783,8 +783,8 @@
 <style>
   /* Main Container - Fixed Height Layout */
   .media-library-container {
-    height: calc(100vh - var(--content-top, 60px)); /* Full viewport minus navbar + safe-area */
-    height: calc(100dvh - var(--content-top, 60px));
+    height: calc(100vh - var(--content-top)); /* Full viewport minus navbar + safe-area */
+    height: calc(100dvh - var(--content-top));
     display: flex;
     overflow: hidden;
     padding-top: 0;
@@ -808,7 +808,7 @@
   .scrollable-content {
     flex: 1;
     overflow-y: auto;
-    padding: 1rem;
+    padding: var(--space-4);
     padding-top: 0; /* Gallery header provides top spacing */
   }
 
@@ -823,7 +823,7 @@
     }
 
     .scrollable-content {
-      padding: 1rem;
+      padding: var(--space-4);
       padding-top: 0;
       background-color: var(--background-color);
     }
@@ -835,19 +835,19 @@
   /* Modal button styling to match app design */
   :global(.modal-delete-button) {
     background-color: #ef4444 !important;
-    color: white !important;
+    color: var(--text-on-solid) !important;
     border: none !important;
     padding: 0.6rem 1.2rem !important;
-    border-radius: 10px !important;
+    border-radius: var(--radius-xl) !important;
     font-size: 0.95rem !important;
-    font-weight: 500 !important;
+    font-weight: var(--font-weight-medium) !important;
     cursor: pointer !important;
-    transition: all 0.2s ease !important;
+    transition: all var(--duration-base) ease !important;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
   }
 
   :global(.modal-delete-button:hover) {
-    background-color: #dc2626 !important;
+    background-color: var(--error-solid) !important;
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
   }
@@ -857,6 +857,6 @@
     color: var(--text-color) !important;
     border-color: var(--border-color) !important;
     transform: scale(1.02) !important;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: var(--shadow-hover) !important;
   }
 </style>

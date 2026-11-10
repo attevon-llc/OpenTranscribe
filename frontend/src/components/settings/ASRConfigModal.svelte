@@ -505,22 +505,22 @@
 
 <style>
   .model-capabilities {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .model-notices {
     list-style: none;
-    margin: 0.5rem 0 1rem;
+    margin: var(--space-2) 0 var(--space-4);
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
@@ -534,28 +534,28 @@
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .form-input, .form-select {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-size-sm);
   }
 
   .form-select {
-    padding-right: 2.5rem;
+    padding-right: var(--space-10);
     cursor: pointer;
   }
 
   .input-with-toggle {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .input-with-toggle .form-input {
@@ -563,12 +563,12 @@
   }
 
   .toggle-visibility {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     background: var(--card-bg);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     white-space: nowrap;
   }
@@ -578,29 +578,29 @@
   .capabilities {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .cap-badge {
-    padding: 0.2rem 0.5rem;
-    background: rgba(59, 130, 246, 0.1);
+    padding: 0.2rem var(--space-2);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .experimental-warning {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.6rem 0.8rem;
-    margin: 0.5rem 0;
+    margin: var(--space-2) 0;
     background: rgba(245, 158, 11, 0.1);
     border: 1px solid rgba(245, 158, 11, 0.3);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.8rem;
-    color: var(--warning-color, #d97706);
+    color: var(--warning-color);
     line-height: 1.4;
   }
 
@@ -617,21 +617,21 @@
   }
 
   .cost-hint {
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     font-size: 0.775rem;
     color: var(--text-muted);
   }
 
   .field-hint {
-    margin: 0.25rem 0 0;
-    font-size: 0.75rem;
+    margin: var(--space-1) 0 0;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     font-style: italic;
   }
 
   .pricing-disclaimer {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     font-style: italic;
   }
@@ -639,10 +639,10 @@
   .test-result {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.875rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-3-5);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
   }
 
   .test-result.success {
@@ -660,19 +660,19 @@
   .share-toggle-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-top: 1rem;
-    padding-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
     border-top: 1px dashed var(--border-color);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 400;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
     user-select: none;
   }
 
@@ -685,8 +685,8 @@
     width: 36px;
     height: 20px;
     background: var(--border-color);
-    border-radius: 10px;
-    transition: background-color 0.2s;
+    border-radius: var(--radius-xl);
+    transition: background-color var(--duration-base);
     flex-shrink: 0;
   }
 
@@ -698,8 +698,8 @@
     width: 16px;
     height: 16px;
     background: white;
-    border-radius: 50%;
-    transition: transform 0.2s;
+    border-radius: var(--radius-round);
+    transition: transform var(--duration-base);
   }
 
   .toggle-input:checked + .toggle-switch {
@@ -719,32 +719,32 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .footer-actions {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .btn-test-conn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.875rem;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3-5);
     border: none;
-    color: white;
+    color: var(--text-on-solid);
     background: var(--primary-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
   .btn-test-conn:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--primary-color);
     transform: scale(1.02);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
   }
@@ -754,15 +754,15 @@
   }
 
   .btn-cancel {
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     color: var(--text-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.8125rem;
-    transition: all 0.15s;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-size: var(--font-size-sm);
+    transition: all var(--duration-fast);
+    box-shadow: var(--shadow-md);
   }
 
   .btn-cancel:hover:not(:disabled) {
@@ -777,19 +777,19 @@
   }
 
   .btn-save {
-    padding: 0.5rem 1.25rem;
+    padding: var(--space-2) var(--space-5);
     background: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: background 0.15s;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    transition: background var(--duration-fast);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
-  .btn-save:hover:not(:disabled) { background: #2563eb; }
+  .btn-save:hover:not(:disabled) { background: var(--primary-color); }
 
   button:disabled {
     opacity: 0.6;
@@ -799,7 +799,7 @@
   @media (max-width: 768px) {
     .footer-row {
       flex-direction: column;
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     .footer-actions {
@@ -818,7 +818,7 @@
     .form-group input,
     .form-group select {
       min-height: 44px;
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 

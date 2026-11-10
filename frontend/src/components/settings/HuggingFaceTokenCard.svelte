@@ -187,34 +187,34 @@
 <style>
   .hf-token {
     max-width: 800px;
-    margin-top: 1.5rem;
-    padding: 1rem;
+    margin-top: var(--space-6);
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--surface-color);
   }
 
   .head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
 
   .title {
     margin: 0;
-    font-size: var(--font-size-md, 0.95rem);
-    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .status-chip {
     margin-inline-start: auto;
-    padding: 0.125rem 0.625rem;
-    border-radius: 999px;
+    padding: var(--space-0-5) var(--space-2-5);
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
-    font-size: 0.75rem;
-    font-weight: var(--font-weight-medium, 500);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
@@ -227,34 +227,34 @@
   .desc,
   .hint,
   .note {
-    margin: 0.375rem 0 0.75rem;
-    font-size: 0.8125rem;
+    margin: var(--space-1-5) 0 var(--space-3);
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .hint {
-    margin: 0.375rem 0 0;
-    font-size: 0.75rem;
+    margin: var(--space-1-5) 0 0;
+    font-size: var(--font-size-xs);
   }
 
   .note.warn {
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
     border: 1px solid var(--warning-color);
     color: var(--text-color);
   }
 
   .label {
     display: block;
-    margin-bottom: 0.375rem;
-    font-size: 0.8125rem;
-    font-weight: var(--font-weight-medium, 500);
+    margin-bottom: var(--space-1-5);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: stretch;
   }
 
@@ -265,14 +265,14 @@
 
   .actions {
     display: flex;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
     flex-wrap: wrap;
   }
 
   .result {
-    margin: 0.5rem 0 0;
-    font-size: 0.8125rem;
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-sm);
     color: var(--error-color);
   }
 

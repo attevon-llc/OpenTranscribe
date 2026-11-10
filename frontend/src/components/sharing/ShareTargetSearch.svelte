@@ -183,25 +183,25 @@
 
   .search-input {
     width: 100%;
-    padding: 0.6rem 0.75rem 0.6rem 2rem;
-    font-size: 0.875rem;
+    padding: 0.6rem var(--space-3) 0.6rem var(--space-8);
+    font-size: var(--font-size-md);
   }
 
   .search-loading {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0.5rem;
+    gap: var(--space-2);
+    padding: var(--space-2);
     font-size: 0.85rem;
     color: var(--text-secondary);
   }
 
   .search-results {
     list-style: none;
-    margin: 4px 0 0 0;
+    margin: var(--space-1) 0 0 0;
     padding: 0;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     max-height: 200px;
     overflow-y: auto;
     background: var(--surface-color);
@@ -214,19 +214,19 @@
   .result-item {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2-5);
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: none;
     background: transparent;
     color: var(--text-color);
     cursor: pointer;
     text-align: left;
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) ease;
   }
 
   .result-item:hover {
-    background-color: var(--hover-color, rgba(59, 130, 246, 0.08));
+    background-color: var(--hover-color);
   }
 
   .type-icon {
@@ -241,15 +241,15 @@
   }
 
   .result-name {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .result-detail {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -257,7 +257,7 @@
   }
 
   .no-results {
-    padding: 0.5rem;
+    padding: var(--space-2);
     font-size: 0.85rem;
     color: var(--text-secondary);
     text-align: center;
@@ -268,8 +268,8 @@
   }
 
   .search-hint {
-    padding: 0.375rem 0.5rem;
-    font-size: 0.75rem;
+    padding: var(--space-1-5) var(--space-2);
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     text-align: center;
   }

@@ -119,7 +119,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
+    z-index: var(--z-critical);
   }
 
   .banner-modal {
@@ -127,42 +127,42 @@
     max-width: 800px;
     max-height: 90vh;
     overflow-y: auto;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
   .classification-header,
   .classification-footer {
-    padding: 8px;
+    padding: var(--space-2);
     text-align: center;
     font-weight: bold;
-    color: white;
+    color: var(--text-on-solid);
     text-transform: uppercase;
     letter-spacing: 2px;
   }
 
   .banner-content {
-    padding: 24px;
+    padding: var(--space-6);
     color: #1f2937;
   }
 
   .banner-content h2 {
-    margin: 0 0 16px;
-    font-size: 1.5rem;
+    margin: 0 0 var(--space-4);
+    font-size: var(--font-size-2xl);
   }
 
   .banner-text {
     white-space: pre-wrap;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     line-height: 1.6;
-    margin: 16px 0;
-    padding: 16px;
+    margin: var(--space-4) 0;
+    padding: var(--space-4);
     background: #f5f5f5;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .legal-notice {
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
     color: #6b7280;
     font-style: italic;
   }
@@ -170,40 +170,40 @@
   /* The card is deliberately light in both themes (a paper notice), so these
      two use fixed colours chosen for contrast on white rather than theme vars. */
   .notice-updated {
-    margin: 0 0 16px;
-    padding: 12px 16px;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b45309;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: #fef3c7;
     color: #7c2d12;
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .banner-error {
-    margin: 16px 0 0;
-    padding: 12px 16px;
+    margin: var(--space-4) 0 0;
+    padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b91c1c;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: #fee2e2;
     color: #7f1d1d;
-    font-size: 0.875rem;
+    font-size: var(--font-size-md);
   }
 
   .banner-actions {
     display: flex;
-    gap: 16px;
+    gap: var(--space-4);
     justify-content: center;
-    padding: 16px;
+    padding: var(--space-4);
     border-top: 1px solid #eee;
   }
 
   .btn-acknowledge {
-    background: var(--color-primary, var(--primary-color));
-    color: white;
-    padding: 12px 32px;
+    background: var(--color-primary);
+    color: var(--text-on-solid);
+    padding: var(--space-3) var(--space-8);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-weight: bold;
     cursor: pointer;
   }
@@ -211,9 +211,9 @@
   .btn-decline {
     background: #ddd;
     color: #666;
-    padding: 12px 32px;
+    padding: var(--space-3) var(--space-8);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
   }
 

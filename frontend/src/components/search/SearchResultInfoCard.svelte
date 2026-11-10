@@ -195,9 +195,9 @@
   .info-card.panel {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 1rem 1.125rem;
-    transition: border-color 0.15s;
+    border-radius: var(--radius-2xl);
+    padding: var(--space-4) 1.125rem;
+    transition: border-color var(--duration-fast);
   }
 
   .info-card.panel.pinned {
@@ -209,8 +209,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    margin: -0.25rem 0 0.5rem;
+    gap: var(--space-2);
+    margin: calc(-1 * var(--space-1)) 0 var(--space-2);
   }
 
   .pinned-label {
@@ -234,7 +234,7 @@
     height: 28px;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     box-shadow: none;
     color: var(--text-secondary);
@@ -254,8 +254,8 @@
   }
 
   .info-card.inline {
-    margin-top: 0.5rem;
-    padding-block-start: 0.625rem;
+    margin-top: var(--space-2);
+    padding-block-start: var(--space-2-5);
     border-block-start: 1px solid var(--border-color);
   }
 
@@ -268,7 +268,7 @@
   }
 
   .info-kind {
-    margin: 0.125rem 0 0.75rem;
+    margin: var(--space-0-5) 0 var(--space-3);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
   }
@@ -276,13 +276,13 @@
   .facts {
     margin: 0;
     display: grid;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .fact {
     display: grid;
     grid-template-columns: minmax(5.5rem, max-content) 1fr;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .fact dt {
@@ -304,7 +304,7 @@
   }
 
   .group-label {
-    margin: 0.875rem 0 0.375rem;
+    margin: var(--space-3-5) 0 var(--space-1-5);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
@@ -316,7 +316,7 @@
     padding: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .chips > li {
@@ -326,10 +326,10 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     max-width: 100%;
-    padding: 0.0625rem 0.5rem;
-    border-radius: 999px;
+    padding: 0.0625rem var(--space-2);
+    border-radius: var(--radius-pill);
     background: var(--hover-color);
     border: 1px solid var(--border-color);
     font-size: var(--font-size-xs);
@@ -340,7 +340,7 @@
 
   .chip.tag,
   .chip.collection {
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .chip-link {
@@ -384,7 +384,7 @@
 
   .open-file {
     display: inline-block;
-    margin-top: 1rem;
+    margin-top: var(--space-4);
     color: var(--primary-on-surface);
     font-weight: var(--font-weight-medium);
     text-decoration: none;
@@ -397,6 +397,6 @@
   .open-file:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 </style>

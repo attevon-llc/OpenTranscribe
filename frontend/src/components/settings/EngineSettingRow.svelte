@@ -62,24 +62,24 @@
   .form-field {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
-    padding: 0.875rem 1rem;
+    gap: var(--space-1-5);
+    padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--card-bg);
   }
 
   .field-label-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
 
   .field-label-row label,
   .field-label-row .field-name {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
     color: var(--text-color);
     flex: 1;
     min-width: 0;
@@ -88,10 +88,10 @@
   .source-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
+    padding: 0.15rem var(--space-2);
+    border-radius: var(--radius-sm);
     font-size: 0.675rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.4px;
     white-space: nowrap;
@@ -119,16 +119,16 @@
   .reset-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     padding: 0.2rem 0.6rem;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     background: var(--surface-color);
     color: var(--text-muted);
     border: 1px solid var(--border-color);
-    transition: all 0.15s;
+    transition: all var(--duration-fast);
     white-space: nowrap;
     flex-shrink: 0;
   }
@@ -145,18 +145,18 @@
 
   .field-hint {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     line-height: 1.4;
   }
 
   @media (max-width: 768px) {
     .field-label-row {
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
 
     .form-field {
-      padding: 0.75rem;
+      padding: var(--space-3);
     }
   }
 </style>

@@ -32,19 +32,19 @@
   .count-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     height: 30px;
     box-sizing: border-box;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    border-radius: var(--radius-xl);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     backdrop-filter: blur(8px);
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     user-select: none;
   }
 
@@ -64,8 +64,8 @@
 
   @media (max-width: 768px) {
     .count-chip {
-      font-size: 0.75rem;
-      padding: 0.3rem 0.625rem;
+      font-size: var(--font-size-xs);
+      padding: 0.3rem var(--space-2-5);
       gap: 0.3rem;
     }
 
@@ -79,8 +79,8 @@
 
   @media (max-width: 480px) {
     .count-chip {
-      font-size: 0.6875rem;
-      padding: 0.25rem 0.5rem;
+      font-size: var(--font-size-2xs);
+      padding: var(--space-1) var(--space-2);
     }
   }
 </style>

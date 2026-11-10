@@ -133,7 +133,7 @@
   .provenance-field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .editor {
@@ -147,7 +147,7 @@
     margin-left: 0.4rem;
     padding: 0.05rem 0.4rem;
     border: 1px solid var(--border-color);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-2xl);
     background: var(--surface-color);
     color: var(--text-secondary);
     font-size: 0.72rem;
@@ -157,13 +157,13 @@
   /* A hand-entered value is the one fact here nobody derived, so it reads differently
      from an inference rather than sharing its styling. */
   .source-badge.manual {
-    border-color: var(--success-color, #2e7d32);
-    color: var(--success-color, #2e7d32);
+    border-color: var(--success-color);
+    color: var(--success-color);
   }
 
   .source-badge.conflict {
-    border-color: var(--warning-color, #b26a00);
-    color: var(--warning-color, #b26a00);
+    border-color: var(--warning-color);
+    color: var(--warning-color);
   }
 
   .source-badge.unresolved {
@@ -192,11 +192,11 @@
 
   .details ul {
     margin: 0.2rem 0;
-    padding-left: 1rem;
+    padding-left: var(--space-4);
   }
 
   .conflict-note {
     margin: 0.2rem 0;
-    color: var(--warning-color, #b26a00);
+    color: var(--warning-color);
   }
 </style>

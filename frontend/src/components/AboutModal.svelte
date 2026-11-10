@@ -404,30 +404,30 @@
   .header-title-group {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .modal-title {
     margin: 0;
-    font-size: 1.25rem;
-    color: var(--text-primary, #1a1a1a);
+    font-size: var(--font-size-xl);
+    color: var(--text-primary);
   }
 
   .about-modal-wrapper :global(.modal-body) {
-    padding: 2rem !important;
+    padding: var(--space-8) !important;
   }
 
   .about-content {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: var(--space-8);
   }
 
   .subtitle {
     font-size: 1.125rem;
     color: var(--primary-on-surface);
-    font-weight: 500;
-    margin: 0 0 1rem 0;
+    font-weight: var(--font-weight-medium);
+    margin: 0 0 var(--space-4) 0;
   }
 
   .description {
@@ -439,33 +439,33 @@
   .features-section h3,
   .workflow-section h3 {
     color: var(--text-color);
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 0 0 1rem 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-4) 0;
   }
 
   .features-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .feature-item {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
     align-items: flex-start;
   }
 
   .feature-icon {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2xl);
     flex-shrink: 0;
   }
 
   .feature-item h4 {
     color: var(--text-color);
     font-size: 0.95rem;
-    font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-1) 0;
   }
 
   .feature-item p {
@@ -478,13 +478,13 @@
   .workflow-steps {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .step {
     display: flex;
     align-items: flex-start;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .step-number {
@@ -492,20 +492,20 @@
     width: 32px;
     height: 32px;
     background: var(--primary-color);
-    color: white;
-    border-radius: 50%;
+    color: var(--text-on-solid);
+    border-radius: var(--radius-round);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 600;
-    font-size: 0.875rem;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-md);
   }
 
   .step-content h4 {
     color: var(--text-color);
     font-size: 0.95rem;
-    font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-1) 0;
   }
 
   .step-content p {
@@ -518,20 +518,20 @@
   .header-version {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
 
   .header-version-number {
-    color: var(--text-color, var(--text-primary, #1a1a1a));
+    color: var(--text-color);
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
 
   .header-version-number.mismatch {
-    color: var(--warning-text, var(--warning-color));
-    font-weight: 600;
+    color: var(--warning-text);
+    font-weight: var(--font-weight-semibold);
   }
 
   .header-version-sep {
@@ -554,11 +554,11 @@
 
   .version-mismatch {
     margin: 0;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border: 1px solid var(--warning-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--warning-bg);
-    color: var(--warning-text, var(--text-primary));
+    color: var(--warning-text);
     font-size: 0.9rem;
     line-height: 1.5;
   }
@@ -571,15 +571,15 @@
   /* Legal / license section (issue #862) */
   .legal-section h3 {
     color: var(--text-color);
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 2rem 0 1rem 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    margin: var(--space-8) 0 var(--space-4) 0;
   }
 
   .legal-line {
     color: var(--text-secondary);
     line-height: 1.6;
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
   }
 
   .legal-caveat {
@@ -594,53 +594,53 @@
   /* Credits Section Styles */
   .credits-section h3 {
     color: var(--text-color);
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 0 0 1rem 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-4) 0;
   }
 
   .credits-intro {
     color: var(--text-secondary);
     line-height: 1.6;
-    margin: 0 0 1.5rem 0;
+    margin: 0 0 var(--space-6) 0;
   }
 
   .credits-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2rem;
+    gap: var(--space-6);
+    margin-bottom: var(--space-8);
   }
 
   .credit-category h4 {
     color: var(--text-color);
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 0.75rem 0;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-3) 0;
   }
 
   .credit-links {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .credit-link {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     color: var(--text-secondary);
     text-decoration: none;
     font-size: 0.9rem;
     line-height: 1.5;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    transition: all 0.2s ease;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    transition: all var(--duration-base) ease;
   }
 
   .credit-link:hover {
     color: var(--primary-on-surface);
-    background: var(--hover-color, rgba(59, 130, 246, 0.1));
+    background: var(--hover-color);
     transform: translateX(4px);
   }
 
@@ -664,7 +664,7 @@
   .inline-link {
     color: var(--primary-on-surface);
     text-decoration: none;
-    font-weight: 500;
+    font-weight: var(--font-weight-medium);
   }
 
   .inline-link:hover {
@@ -674,33 +674,33 @@
   /* Mobile responsive */
   @media (max-width: 768px) {
     .about-modal-wrapper :global(.modal-body) {
-      padding: 1rem !important;
+      padding: var(--space-4) !important;
     }
 
     .about-content {
-      gap: 1.25rem;
+      gap: var(--space-5);
     }
 
     .features-grid {
       grid-template-columns: 1fr;
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     /* Keep steps as rows (number left, text right) — stacking them vertically
        wastes too much space on a small screen */
     .step {
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     .workflow-steps {
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     /* Credits responsive adjustments */
     .credits-grid {
       grid-template-columns: 1fr;
-      gap: 1rem;
-      margin-bottom: 1rem;
+      gap: var(--space-4);
+      margin-bottom: var(--space-4);
     }
 
     .credit-link {

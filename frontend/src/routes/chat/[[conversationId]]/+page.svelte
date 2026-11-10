@@ -628,8 +628,8 @@
        The app shell pads .content, so cancel that padding rather than
        subtracting it from the height; otherwise the shell's padding is added
        back below the page and the whole window scrolls by exactly 2x padding. */
-    margin: -1rem;
-    height: calc(100vh - var(--navbar-height, 60px));
+    margin: calc(-1 * var(--space-4));
+    height: calc(100vh - var(--navbar-height));
     overflow: hidden;
   }
 
@@ -638,7 +638,7 @@
      scroll of 2x the difference. */
   @media (min-width: 768px) {
     .chat-page {
-      margin: -2rem;
+      margin: calc(-1 * var(--space-8));
     }
   }
 
@@ -689,8 +689,8 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 0;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
     border-bottom: 1px solid var(--border-color);
   }
 
@@ -713,7 +713,7 @@
     width: 32px;
     height: 32px;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     /* form-elements.css's bare `button` rule sets a drop-shadow that survives
        unless cleared here — without this, light mode shows an empty shadowed
        box instead of a plain icon button (the shadow all but disappears
@@ -770,16 +770,16 @@
   .chat-error {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     box-sizing: border-box;
     width: calc(100% - 2 * var(--chat-gutter));
     max-width: 52rem;
-    margin: 0.75rem auto 0;
+    margin: var(--space-3) auto 0;
     padding: 0.6rem 0.85rem;
-    border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.35);
-    border-radius: 8px;
-    background-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.08);
-    color: var(--error-color, #dc3545);
+    border: 1px solid rgba(var(--error-color-rgb), 0.35);
+    border-radius: var(--radius-lg);
+    background-color: rgba(var(--error-color-rgb), 0.08);
+    color: var(--error-color);
     font-size: 0.85rem;
   }
 
@@ -787,7 +787,7 @@
     margin-left: auto;
     padding: 0.2rem 0.6rem;
     border: 1px solid currentColor;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: none;
     color: inherit;
     font-size: 0.78rem;
@@ -795,7 +795,7 @@
   }
 
   .error-action:hover {
-    background-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.12);
+    background-color: rgba(var(--error-color-rgb), 0.12);
   }
 
   .chat-unavailable {
@@ -819,7 +819,7 @@
     right: 0.28rem;
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background-color: var(--primary-color);
   }
 
@@ -838,13 +838,13 @@
 
     .sidebar-pane {
       position: fixed;
-      top: var(--navbar-height, 60px);
+      top: var(--navbar-height);
       bottom: 0;
       left: 0;
       width: min(17rem, 82vw);
       z-index: 30;
       transform: translateX(-100%);
-      transition: transform 0.2s ease;
+      transition: transform var(--duration-base) ease;
     }
 
     .chat-page.sidebar-open .sidebar-pane {
@@ -854,7 +854,7 @@
     .sidebar-scrim {
       display: block;
       position: fixed;
-      inset: var(--navbar-height, 60px) 0 0 0;
+      inset: var(--navbar-height) 0 0 0;
       z-index: 29;
       border: none;
       background-color: rgba(0, 0, 0, 0.4);

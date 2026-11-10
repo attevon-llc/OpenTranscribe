@@ -92,7 +92,7 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    transition: all 0.3s ease;
+    transition: all var(--duration-slow) ease;
   }
 
   /* Expanded state */
@@ -106,26 +106,26 @@
   }
 
   .filter-toggle-container {
-    padding: 0.5rem 0.5rem 0;
-    margin-bottom: 0.5rem;
+    padding: var(--space-2) var(--space-2) 0;
+    margin-bottom: var(--space-2);
     flex-shrink: 0;
   }
 
   .filter-sidebar.show .filter-toggle-container {
-    padding: 0.5rem 1rem 0;
+    padding: var(--space-2) var(--space-4) 0;
   }
 
   .filter-content {
     flex: 1;
     overflow-y: auto;
-    padding: 0 1rem;
+    padding: 0 var(--space-4);
   }
 
   /* Mobile filter overlay backdrop - hidden on desktop */
   .filter-overlay-backdrop {
     display: none;
     position: fixed;
-    top: var(--content-top, 60px);
+    top: var(--content-top);
     left: 0;
     right: 0;
     bottom: 0;
@@ -144,15 +144,15 @@
   @media (max-width: 768px) {
     .filter-sidebar {
       position: fixed;
-      top: var(--content-top, 60px);
+      top: var(--content-top);
       left: -100%;
       width: 85%;
       max-width: 320px;
-      height: calc(100vh - var(--content-top, 60px));
-      height: calc(100dvh - var(--content-top, 60px));
+      height: calc(100vh - var(--content-top));
+      height: calc(100dvh - var(--content-top));
       background: var(--surface-color);
       z-index: var(--z-modal);
-      transition: left 0.3s ease;
+      transition: left var(--duration-slow) ease;
       border-right: 1px solid var(--border-color);
       border-top: 1px solid var(--border-color);
       box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);

@@ -60,28 +60,28 @@
 
 <style>
   .topics-section {
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .section-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 0.75rem;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--space-3);
     color: var(--text-primary);
     border-bottom: 2px solid var(--border-color);
-    padding-bottom: 0.5rem;
+    padding-bottom: var(--space-2);
   }
 
   .topics-list {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .topic-item {
     border-left: 3px solid var(--border-color);
-    padding-left: 1.25rem;
-    padding-bottom: 1rem;
+    padding-left: var(--space-5);
+    padding-bottom: var(--space-4);
   }
 
   .topic-item:not(:last-child) {
@@ -91,18 +91,18 @@
   .topic-heading {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 1.1rem;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
     line-height: 1.3;
   }
 
   .importance-indicator {
     display: inline-flex;
     vertical-align: middle;
-    margin-inline-end: 0.25rem;
+    margin-inline-end: var(--space-1);
   }
 
   .importance-high {
@@ -118,20 +118,20 @@
   }
 
   .topic-meta {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
     color: var(--text-secondary);
     font-size: 0.9rem;
   }
 
   .topic-points {
-    margin: 0.75rem 0 0 0;
-    padding-left: 1.25rem;
+    margin: var(--space-3) 0 0 0;
+    padding-left: var(--space-5);
   }
 
   .topic-points li {
     line-height: 1.5;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .topic-points li:last-child {
@@ -148,11 +148,11 @@
 
   @media (max-width: 768px) {
     .topic-item {
-      padding-left: 1rem;
+      padding-left: var(--space-4);
     }
 
     .topic-heading {
-      font-size: 1rem;
+      font-size: var(--font-size-base);
     }
   }
 </style>

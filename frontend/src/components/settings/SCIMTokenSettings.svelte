@@ -237,9 +237,9 @@
   .info-box {
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
-    border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 1.5rem;
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    margin-bottom: var(--space-6);
   }
 
   .info-box strong {
@@ -247,8 +247,8 @@
   }
 
   .info-box p {
-    margin: 0.5rem 0 0 0;
-    font-size: 0.875rem;
+    margin: var(--space-2) 0 0 0;
+    font-size: var(--font-size-md);
     color: var(--color-text-secondary);
     line-height: 1.5;
   }
@@ -256,7 +256,7 @@
   .toolbar {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
 
@@ -267,14 +267,14 @@
   .token-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .token-table th {
     text-align: left;
-    padding: 0.5rem 0.6rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    padding: var(--space-2) 0.6rem;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--color-text-secondary);
@@ -296,18 +296,18 @@
 
   .btn-row {
     padding: 0.3rem 0.65rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .form-group {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .form-group label {
     display: block;
     margin-bottom: 0.35rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
   }
 
@@ -317,29 +317,29 @@
   }
 
   .warning-box {
-    background: var(--color-warning-bg, rgba(217, 119, 6, 0.1));
-    border: 1px solid var(--color-warning-border, rgba(217, 119, 6, 0.3));
-    border-radius: 6px;
-    padding: 0.75rem;
-    font-size: 0.8125rem;
-    margin-bottom: 1rem;
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--space-4);
   }
 
   .token-reveal {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--color-bg-secondary);
     border: 1px solid var(--color-border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 0.6rem;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .token-reveal code {
     flex: 1;
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
     word-break: break-all;
   }
 </style>

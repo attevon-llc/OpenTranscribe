@@ -391,7 +391,7 @@
     width: 100%;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     cursor: pointer;
     user-select: none;
@@ -426,8 +426,8 @@
     align-items: center;
     justify-content: center;
     color: var(--text-secondary);
-    font-size: 14px;
-    gap: 0.5rem;
+    font-size: var(--font-size-md);
+    gap: var(--space-2);
     background-color: var(--surface-color);
   }
 
@@ -438,18 +438,18 @@
   }
 
   .retry-button {
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     background-color: var(--primary-color);
-    color: white;
+    color: var(--text-on-solid);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 0.875rem;
-    transition: background-color 0.2s ease;
+    font-size: var(--font-size-md);
+    transition: background-color var(--duration-base) ease;
   }
 
   .retry-button:hover {
-    background-color: #2563eb;
+    background-color: var(--primary-color);
   }
 
   .retry-button:active {
@@ -469,13 +469,13 @@
   /* Responsive adjustments */
   @media (max-width: 768px) {
     .waveform-container {
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
     }
 
     .waveform-loading,
     .waveform-error,
     .waveform-placeholder {
-      font-size: 13px;
+      font-size: var(--font-size-sm);
       height: 60px;
     }
   }

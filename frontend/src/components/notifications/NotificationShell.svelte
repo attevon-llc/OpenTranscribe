@@ -51,10 +51,10 @@
     position: relative;
     display: flex;
     align-items: flex-start;
-    gap: 12px;
-    padding: 16px 20px;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--border-color);
-    transition: background-color 0.2s ease;
+    transition: background-color var(--duration-base) ease;
     background: var(--background-color);
     list-style: none;
   }
@@ -64,7 +64,7 @@
   }
 
   .notification-item:hover {
-    background: var(--hover-color, rgba(0, 0, 0, 0.025));
+    background: var(--hover-color);
   }
 
   .notification-item.unread {
@@ -98,7 +98,7 @@
   }
 
   .status-warning .notification-indicator {
-    background: var(--warning-color, #f59e0b);
+    background: var(--warning-color);
   }
 
   /* An error keeps its colour even while unread: it is the thing to notice. */
@@ -125,14 +125,14 @@
     flex-shrink: 0;
     width: 32px;
     height: 32px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    margin-top: 2px;
+    margin-top: var(--space-0-5);
   }
 
   .status-success .notification-icon {
@@ -156,7 +156,7 @@
   .status-warning .notification-icon {
     background: rgba(245, 158, 11, 0.1);
     border-color: rgba(245, 158, 11, 0.2);
-    color: var(--warning-color, #f59e0b);
+    color: var(--warning-color);
   }
 
   .notification-content {
@@ -173,7 +173,7 @@
     padding: 0;
     background: none;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     /* Flat icon control: the global button rule's shadow drew a raised box around the x. */
     box-shadow: none;
     cursor: pointer;
@@ -182,13 +182,13 @@
     align-items: center;
     justify-content: center;
     transition:
-      background-color 0.2s ease,
-      color 0.2s ease;
+      background-color var(--duration-base) ease,
+      color var(--duration-base) ease;
     opacity: 0.6;
   }
 
   .notification-dismiss:hover {
-    background: var(--error-background, rgba(239, 68, 68, 0.1));
+    background: var(--error-background);
     color: var(--error-color);
     opacity: 1;
     box-shadow: none;
@@ -205,8 +205,8 @@
 
   @media (max-width: 480px) {
     .notification-item {
-      padding: 14px 16px;
-      gap: 10px;
+      padding: var(--space-3-5) var(--space-4);
+      gap: var(--space-2-5);
     }
 
     .notification-icon {

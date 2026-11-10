@@ -533,7 +533,7 @@
 
 <div class="search-page">
   <!-- Left Sidebar: Filters (Sticky) -->
-  <div class="filter-sidebar {showFilters ? 'show' : ''}" class:animate={sidebarMounted}>
+  <div class="filter-rail {showFilters ? 'show' : ''}" class:animate={sidebarMounted}>
     <div class="filter-toggle-container">
       <FilterPanelToggle expanded={showFilters} on:click={() => (showFilters = !showFilters)} />
     </div>
@@ -794,7 +794,7 @@
 
   /* Filter Sidebar - matches gallery styling exactly */
   /* Only animate after initial mount to prevent flicker on navigation */
-  .filter-sidebar.animate {
+  .filter-rail.animate {
     transition: width var(--duration-slow) ease;
   }
 
@@ -1043,7 +1043,7 @@
     }
 
     /* Slide-in overlay sidebar — matches gallery page pattern */
-    .filter-sidebar {
+    .filter-rail {
       position: fixed;
       top: var(--content-top);
       left: -100%;
@@ -1058,11 +1058,11 @@
       border-top: 1px solid var(--border-color);
     }
 
-    .filter-sidebar.show {
+    .filter-rail.show {
       left: 0;
     }
 
-    .filter-sidebar:not(.show) {
+    .filter-rail:not(.show) {
       width: auto !important;
       min-width: auto !important;
       position: static;

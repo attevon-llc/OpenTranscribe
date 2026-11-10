@@ -84,9 +84,9 @@
   color: var(--text-secondary);
 }
 
-/* Left filter sidebar shell shared by the gallery and the search page (each adds its own
+/* Left filter rail shell (not FilterSidebar.svelte's own `.filter-sidebar` card) shared by the gallery and the search page (each adds its own
    transition and mobile overrides). */
-.filter-sidebar {
+.filter-rail {
   flex-shrink: 0;
   background-color: var(--surface-color);
   border-inline-end: 1px solid var(--border-color);
@@ -95,11 +95,11 @@
   flex-direction: column;
 }
 
-.filter-sidebar.show {
+.filter-rail.show {
   width: 320px;
 }
 
-.filter-sidebar:not(.show) {
+.filter-rail:not(.show) {
   width: 50px;
 }
 
@@ -109,7 +109,7 @@
   flex-shrink: 0;
 }
 
-.filter-sidebar.show .filter-toggle-container {
+.filter-rail.show .filter-toggle-container {
   padding: var(--space-2) var(--space-4) 0;
 }
 

@@ -46,7 +46,7 @@
 {/if}
 
 <!-- Left Sidebar: Filters (Sticky) -->
-<div class="filter-sidebar {showFilters ? 'show' : ''}">
+<div class="filter-rail {showFilters ? 'show' : ''}">
   <!-- Filters Toggle Button (always visible). A compact rotating chevron —
        see issue #750 item 1: the old control was a 40px full-width button
        carrying a sliders icon and no text, a leftover from a label that no
@@ -85,7 +85,7 @@
 
 <style>
   /* Left Sidebar - Sticky Filters */
-  .filter-sidebar {
+  .filter-rail {
     transition: all var(--duration-slow) ease;
   }
 
@@ -103,14 +103,14 @@
 
   /* Narrower filter sidebar on tablet to give more room to content */
   @media (max-width: 1200px) {
-    .filter-sidebar.show {
+    .filter-rail.show {
       width: 260px;
     }
   }
 
   /* Responsive design */
   @media (max-width: 768px) {
-    .filter-sidebar {
+    .filter-rail {
       position: fixed;
       top: var(--content-top);
       left: -100%;
@@ -126,7 +126,7 @@
       box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);
     }
 
-    .filter-sidebar.show {
+    .filter-rail.show {
       left: 0;
     }
 

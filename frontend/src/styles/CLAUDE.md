@@ -70,5 +70,5 @@ Screenshot A/B for any restyle: `scripts/e2e/styling-ab.sh` against a `--fresh` 
 - `auth.css` — the card/header/form/button/link base of the unauthenticated pages (login, register,
   forgot/reset password, accept invite, verify email); each page imports `$styles/auth.css` and restates
   only what differs. `utilities.css` also holds `.section-toggle` (+ `.section-toggle-heading`), `.text-btn`,
-  `.pill-chip`, `.copy-button-header` and the `.filter-sidebar` shell.
+  `.pill-chip`, `.copy-button-header` and the `.filter-rail` shell.
 - `sourceTree.ts` — `walkSource` / `rel` / `SRC` for the style-source tests; do not hand-roll another `walk()`.

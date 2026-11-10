@@ -267,6 +267,12 @@ TEST_TMP_SPECS: list[ArtifactSpec] = [
         'unit/test_admin_status_surfaces_are_opaque.py',
     ),
     _spec(
+        'docker-stub',
+        rf'ot-test-docker-stub-{_MKDTEMP}',
+        TIER_A,
+        'unit/test_release_test_fresh_stack.py',
+    ),
+    _spec(
         'compose-project-stub',
         rf'ot-compose-project-stub-{_MKDTEMP}',
         TIER_A,

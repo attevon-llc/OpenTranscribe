@@ -245,10 +245,8 @@ frontend/src/components/search/SearchResultsBody.svelte	2	pre-existing duplicate
 frontend/src/components/search/SummaryResultCard.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/ASRConfigModal.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/ASRSettings.enabled.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/settings/ASRSettings.localModelRole.test.ts	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/ASRSettings.outcome.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/ASRSettings.svelte	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/settings/ASRSettings.userProvidersOff.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/AudioExtractionSettings.svelte	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/AuthMailDesignation.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/AutoLabelSettings.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -305,7 +303,7 @@ frontend/src/components/settings/RetentionSettings.svelte	4	pre-existing duplica
 frontend/src/components/settings/RetrySettings.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/SAMLSettings.svelte	6	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/SCIMTokenSettings.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/settings/SearchSettings.bootstrap.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/settings/SearchSettings.bootstrap.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/SearchSettings.reembed.test.ts	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/SearchSettings.statusUnavailable.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/SearchSettings.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -326,7 +324,6 @@ frontend/src/components/settings/TranscriptionLanguageSettings.test.ts	2	pre-exi
 frontend/src/components/settings/UserProfileSettings.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/WatchSourceModal.svelte	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/YouTubePolicySettings.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/settings/localModels/LocalModelLibrary.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/watchSources/GlobalWatchSettingsForm.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/watchSources/WatchSourceEmailLinksModal.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/watchSources/WatchSourceEmailLinksModal.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

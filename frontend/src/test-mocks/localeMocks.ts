@@ -53,3 +53,16 @@ export const keyLocale = (options: { code?: string | null } = {}) => {
   const t = readable((key: string) => key);
   return code === null ? { t } : { t, locale: readable(code) };
 };
+
+/**
+ * Returns `key:{json}` when vars are given, else the key, and exposes `locale` as 'en'. Hand-rolled
+ * store contract (`subscribe` only), as the components under test read it.
+ */
+export const keyColonVarsLocale = () => {
+  const t = (key: string, params?: Record<string, unknown>) =>
+    params ? `${key}:${JSON.stringify(params)}` : key;
+  return {
+    locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
+    t: { subscribe: (run: (value: typeof t) => void) => (run(t), () => {}) },
+  };
+};

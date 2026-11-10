@@ -24,47 +24,19 @@ vi.mock('$lib/api/asrSettings', () => ({
   },
 }));
 
-vi.mock('$lib/api/localModels', () => ({
-  getLocalModelCatalog: vi.fn().mockResolvedValue({
-    models: [
-      {
-        id: 'tiny',
-        display_name: 'tiny',
-        repo_id: 'Systran/faster-whisper-tiny',
-        approx_bytes: 75_000_000,
-        vram_hint_gb: 1,
-        language_support: 'multilingual',
-        supports_translation: true,
-        is_default: false,
-        downloaded: false,
-        partial: false,
-        present_bytes: 0,
-        is_active: false,
-      },
-    ],
-    download: null,
-    free_bytes: 50_000_000_000,
-    cache_writable: true,
-    active_model: 'large-v3-turbo',
-  }),
-  startLocalModelDownload: vi.fn(),
-  cancelLocalModelDownload: vi.fn(),
-}));
-vi.mock('$lib/api/transcriptionSettings', () => ({
-  getTranscriptionSettings: vi.fn().mockResolvedValue({ diarization_source: 'provider' }),
-}));
+vi.mock('$lib/api/localModels', async () =>
+  (await import('$testMocks/asrMocks')).localModelsApiMock()
+);
+vi.mock('$lib/api/transcriptionSettings', async () =>
+  (await import('$testMocks/asrMocks')).transcriptionSettingsApiMock()
+);
 vi.mock('$components/settings/asr/CloudProviderPolicy.svelte', async () => ({
   default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
-vi.mock('$stores/locale', () => ({
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-  t: {
-    subscribe: (
-      run: (value: (key: string, params?: Record<string, unknown>) => string) => void
-    ) => (run((k, params) => (params ? `${k}:${JSON.stringify(params)}` : k)), () => {}),
-  },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyColonVarsLocale()
+);
 
 import ASRSettings from './ASRSettings.svelte';
 

@@ -1,0 +1,85 @@
+/* Small controls shared by several settings panels and modals (classes are settings-* so they never collide with page-level names). */
+
+.settings-state-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.settings-toggle-password {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--duration-base);
+}
+
+.settings-toggle-password:hover {
+  background-color: var(--background-color);
+  color: var(--text-color);
+}
+
+.settings-pill {
+  margin-inline-start: auto;
+  padding: var(--space-0-5) var(--space-2-5);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.settings-info-box {
+  background: var(--color-info-bg);
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.settings-info-box strong {
+  color: var(--color-text);
+}
+
+.settings-info-box p {
+  margin: var(--space-2) 0 0 0;
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.settings-experimental-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-xl);
+  background: rgba(var(--warning-color-rgb), 0.15);
+  color: var(--color-warning-text);
+}
+
+.settings-copy-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-base) ease;
+  font-size: var(--font-size-sm);
+}

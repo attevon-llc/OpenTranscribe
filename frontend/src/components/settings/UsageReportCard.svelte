@@ -73,7 +73,7 @@
   <div class="head">
     <h3 id="usage-report-heading" class="heading">{$t('settings.usageReport.heading')}</h3>
     {#if !loading && status}
-      <span class="chip chip-{badge}" data-testid="usage-report-status">
+      <span class="settings-pill chip-{badge}" data-testid="usage-report-status">
         {$t(usageReportBadgeKey(badge))}
       </span>
     {/if}
@@ -140,16 +140,6 @@
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-  }
-
-  .chip {
-    margin-inline-start: auto;
-    padding: var(--space-0-5) var(--space-2-5);
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--border-color);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-secondary);
   }
 
   .chip-on {

@@ -14,6 +14,11 @@
   import "$styles/animations.css";
   import "$styles/search.css";
   import "$styles/support-access.css";
+  import "$styles/settings-auth-panels.css";
+  import "$styles/settings-ops-panels.css";
+  import "$styles/settings-form-panels.css";
+  import "$styles/settings-provider-panels.css";
+  import "$styles/settings-shared.css";
   import "$styles/utilities.css";
 
   // Import auth store

@@ -295,14 +295,14 @@ describe('view and copy', () => {
     const { container } = await mount();
     await fireEvent.click(container.querySelector('.view-button') as HTMLElement);
     expect(await screen.findByText('text')).toBeTruthy();
-    await fireEvent.click(document.querySelector('.copy-button-header') as HTMLElement);
+    await fireEvent.click(document.querySelector('.settings-copy-button') as HTMLElement);
     expect(clipboard.copyToClipboard).toHaveBeenCalledWith(
       'text',
       expect.any(Function),
       expect.any(Function)
     );
     await waitFor(() =>
-      expect(document.querySelector('.copy-button-header.copied')).not.toBeNull()
+      expect(document.querySelector('.settings-copy-button.copied')).not.toBeNull()
     );
   });
 });

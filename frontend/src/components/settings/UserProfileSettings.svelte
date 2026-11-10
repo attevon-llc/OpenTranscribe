@@ -229,7 +229,7 @@
           <svelte:fragment slot="label-after">
             <button
               type="button"
-              class="toggle-password"
+              class="settings-toggle-password"
               on:click={() => showCurrentPassword = !showCurrentPassword}
               tabindex="-1"
               aria-label={showCurrentPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
@@ -249,7 +249,7 @@
           <svelte:fragment slot="label-after">
             <button
               type="button"
-              class="toggle-password"
+              class="settings-toggle-password"
               on:click={() => showNewPassword = !showNewPassword}
               tabindex="-1"
               aria-label={showNewPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
@@ -272,7 +272,7 @@
           <svelte:fragment slot="label-after">
             <button
               type="button"
-              class="toggle-password"
+              class="settings-toggle-password"
               on:click={() => showConfirmPassword = !showConfirmPassword}
               tabindex="-1"
               aria-label={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
@@ -390,8 +390,6 @@
     gap: var(--space-4);
   }
 
-
-
   .form-control {
     padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-sm);
@@ -408,23 +406,6 @@
     margin-top: var(--space-0-5);
   }
 
-
-  .toggle-password {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: var(--space-1);
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    border-radius: var(--radius-sm);
-    transition: background-color var(--duration-base);
-  }
-
-  .toggle-password:hover {
-    background-color: var(--background-color);
-    color: var(--text-color);
-  }
 
   .form-actions {
     display: flex;

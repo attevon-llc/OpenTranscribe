@@ -28,7 +28,7 @@
 <div class="section-head">
   <div class="email-heading">
     <h4>{$t('settings.emailNotifications.heading')}</h4>
-    <span class="experimental-badge" title={$t('settings.emailNotifications.experimentalNote')}>
+    <span class="settings-experimental-badge" title={$t('settings.emailNotifications.experimentalNote')}>
       <svg
         width="13"
         height="13"
@@ -200,22 +200,6 @@
   }
   .email-heading h4 {
     margin: 0;
-  }
-  .experimental-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    font-size: 0.68rem;
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-xl);
-    background: rgba(234, 179, 8, 0.15);
-    color: #b45309;
-  }
-  :global([data-theme='dark']) .experimental-badge {
-    color: #fbbf24;
   }
   .info-icon {
     display: inline-flex;

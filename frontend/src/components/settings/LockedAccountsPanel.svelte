@@ -100,17 +100,17 @@
   <h4 class="panel-title">{$t('settings.lockedAccounts.title')}</h4>
 
   {#if loading && accounts.length === 0}
-    <div class="state-row">
+    <div class="settings-state-row">
       <Spinner size="small" />
       <span>{$t('common.loading')}</span>
     </div>
   {:else if loadFailed}
-    <div class="state-row error">
+    <div class="settings-state-row error">
       <span>{$t('settings.lockedAccounts.loadFailed')}</span>
       <button class="btn btn-secondary" on:click={() => loadPage()}>{$t('common.retry')}</button>
     </div>
   {:else if !lockoutEnabled}
-    <div class="state-row disabled">
+    <div class="settings-state-row disabled">
       <span>{$t('settings.lockedAccounts.lockoutDisabled')}</span>
     </div>
   {:else}
@@ -121,7 +121,7 @@
     {/if}
 
     {#if accounts.length === 0}
-      <div class="state-row empty">
+      <div class="settings-state-row empty">
         <span>{$t('settings.lockedAccounts.noneLocked')}</span>
       </div>
     {:else}
@@ -200,22 +200,12 @@
     font-weight: var(--font-weight-semibold);
   }
 
-  .state-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--bg-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .state-row.error {
+  .settings-state-row.error {
     color: #dc2626;
     justify-content: space-between;
   }
 
-  .state-row.disabled {
+  .settings-state-row.disabled {
     color: var(--text-secondary);
   }
 

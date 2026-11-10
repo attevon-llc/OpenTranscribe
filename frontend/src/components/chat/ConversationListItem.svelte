@@ -218,7 +218,7 @@
        painting a rounded card behind the title in light mode. */
     border-radius: 0;
     box-shadow: none;
-    padding: 0.5rem 0.35rem;
+    padding: var(--space-2) 0.35rem;
     color: var(--text-color);
     font-size: 0.85rem;
     cursor: pointer;
@@ -291,7 +291,7 @@
 
   .rename-input {
     width: 100%;
-    padding: 0.4rem 0.5rem;
+    padding: 0.4rem var(--space-2);
     font-size: 0.85rem;
   }
 
@@ -299,7 +299,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    padding: 0.5rem 0.35rem;
+    padding: var(--space-2) 0.35rem;
     width: 100%;
   }
 

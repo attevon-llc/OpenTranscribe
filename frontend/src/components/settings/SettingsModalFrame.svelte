@@ -112,7 +112,7 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
     min-height: 44px;
@@ -133,7 +133,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 0.5rem;
+    padding: var(--space-2);
     color: var(--text-secondary);
     transition: color var(--duration-base) ease;
     border-radius: 6px;
@@ -173,7 +173,7 @@
     --tabs-sticky-inset: 1.5rem;
     flex: 1;
     overflow-y: auto;
-    padding: 1.5rem;
+    padding: var(--space-6);
     overscroll-behavior: contain;
   }
 
@@ -201,12 +201,12 @@
     }
 
     .settings-header-bar {
-      padding: 0.75rem 1rem;
+      padding: var(--space-3) var(--space-4);
     }
 
     .settings-content {
       --tabs-sticky-inset: 1rem;
-      padding: 1rem;
+      padding: var(--space-4);
       flex: 1 1 0;
       min-height: 0;
       overflow-y: auto;

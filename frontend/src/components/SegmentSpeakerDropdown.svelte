@@ -331,7 +331,7 @@
          the fixed `left` offset left it unreachable and overlapping the transcript.
          Cap it and let the row labels ellipsise instead (#741). */
       max-width: min(340px, calc(100vw - 24px));
-      padding: 4px;
+      padding: var(--space-1);
       max-height: 400px;
       overflow-y: auto;
       overflow-x: hidden;
@@ -343,14 +343,14 @@
       font-weight: 600;
       text-transform: uppercase;
       color: var(--text-secondary);
-      padding: 8px 12px 4px 12px;
+      padding: var(--space-2) var(--space-3) var(--space-1) var(--space-3);
       letter-spacing: 0.5px;
     }
 
     .speaker-dropdown-portal .dropdown-divider {
       height: 1px;
       background: var(--border-light);
-      margin: 4px 0;
+      margin: var(--space-1) 0;
     }
 
     .speaker-dropdown-portal .dropdown-item {
@@ -358,7 +358,7 @@
       align-items: center;
       justify-content: space-between;
       width: 100%;
-      padding: 8px 12px;
+      padding: var(--space-2) var(--space-3);
       background: none;
       border: none;
       border-radius: 6px;
@@ -380,7 +380,7 @@
     .speaker-dropdown-portal .speaker-option {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-2);
       flex: 1;
       min-width: 0;
     }
@@ -425,7 +425,7 @@
 
     .speaker-dropdown-portal .create-speaker-btn svg {
       color: var(--primary-on-surface);
-      margin-right: 4px;
+      margin-right: var(--space-1);
     }
 
     .speaker-dropdown-portal .suggestion-header {
@@ -434,7 +434,7 @@
 
     .speaker-dropdown-portal .suggestion-btn svg {
       color: var(--warning-color);
-      margin-right: 4px;
+      margin-right: var(--space-1);
     }
 
     .speaker-dropdown-portal .suggestion-btn:hover {
@@ -444,14 +444,14 @@
     .speaker-dropdown-portal .inline-name-row {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 8px 6px 8px;
+      gap: var(--space-1-5);
+      padding: var(--space-1) var(--space-2) var(--space-1-5) var(--space-2);
     }
 
     .speaker-dropdown-portal .inline-name-input {
       flex: 1;
       min-width: 0;
-      padding: 6px 8px;
+      padding: var(--space-1-5) var(--space-2);
       font-size: 13px;
     }
 
@@ -485,7 +485,7 @@
     }
 
     .speaker-dropdown-portal .inline-name-hint {
-      padding: 0 12px 6px 12px;
+      padding: 0 var(--space-3) var(--space-1-5) var(--space-3);
       font-size: 11px;
       line-height: 1.35;
       color: var(--warning-color);
@@ -502,7 +502,7 @@
 
     .speaker-dropdown-portal .suggestion-confidence {
       flex-shrink: 0;
-      margin-left: 8px;
+      margin-left: var(--space-2);
       font-size: 11px;
       font-weight: 600;
       color: var(--text-secondary);
@@ -574,7 +574,7 @@
   .speaker-trigger {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     background: none;
     border: none;
     cursor: pointer;
@@ -590,7 +590,7 @@
   .segment-speaker {
     font-size: 12px;
     font-weight: var(--font-weight-semibold);
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 12px;
     /* A confirmed name is shown in full: it wraps inside the pill instead of being cut to
        "UNKNOWN (NOT …" (#1149). `overflow-wrap: anywhere` also breaks an unbroken token. */

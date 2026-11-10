@@ -89,20 +89,20 @@
 
 <style>
   .card {
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--surface-color);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .info {
@@ -111,7 +111,7 @@
   }
 
   .title {
-    margin: 0 0 0.25rem;
+    margin: 0 0 var(--space-1);
     font-size: 0.9375rem;
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
@@ -128,7 +128,7 @@
 
   .notice,
   .locked {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .locked {
@@ -203,8 +203,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
-    padding-top: 0.75rem;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border-color);
   }
 

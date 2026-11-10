@@ -144,7 +144,7 @@
   }
 
   .warning-body {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     font-size: 0.76rem;
     color: var(--text-secondary);
     line-height: 1.45;
@@ -156,7 +156,7 @@
   }
 
   .warning-btn {
-    padding: 0.25rem 0.6rem;
+    padding: var(--space-1) 0.6rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background-color: var(--card-background);

@@ -7,14 +7,14 @@ table {
   background-color: var(--card-background);
   border-radius: 6px;
   overflow: hidden;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
   box-shadow: var(--card-shadow);
 }
 
 /* Table headers */
 table th {
   text-align: left;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   font-weight: 600;
   background-color: var(--table-header-bg);
   color: var(--text-color);
@@ -24,7 +24,7 @@ table th {
 
 /* Table cells */
 table td {
-  padding: 10px 16px;
+  padding: var(--space-2-5) var(--space-4);
   border-bottom: 1px solid var(--border-color);
   color: var(--text-color);
 }

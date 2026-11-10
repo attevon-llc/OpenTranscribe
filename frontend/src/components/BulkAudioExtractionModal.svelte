@@ -138,12 +138,12 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .info-icon {
     color: var(--primary-on-surface);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .info-message {
@@ -154,14 +154,14 @@
   }
 
   .file-list-container {
-    margin: 1.5rem 0;
+    margin: var(--space-6) 0;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
   }
 
   .file-list-header {
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     background: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
     font-weight: 500;
@@ -178,8 +178,8 @@
   .file-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
     border-bottom: 1px solid var(--border-color);
     transition: background var(--duration-fast);
   }
@@ -217,14 +217,14 @@
   .regular-files-notice {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
     background: rgba(var(--accent-rgb), 0.05);
     border: 1px solid rgba(var(--accent-rgb), 0.2);
     border-radius: 6px;
     color: var(--text-secondary);
     font-size: 0.875rem;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .regular-files-notice :global(svg) {
@@ -236,9 +236,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 1rem;
-    margin: 1.5rem 0;
-    padding: 1rem;
+    gap: var(--space-4);
+    margin: var(--space-6) 0;
+    padding: var(--space-4);
     background: var(--surface-color);
     border-radius: 8px;
     border: 1px solid var(--border-color);
@@ -252,14 +252,14 @@
   .comparison-label {
     font-size: 0.75rem;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     font-weight: 500;
   }
 
   .comparison-value {
     font-size: 1.1rem;
     font-weight: 600;
-    padding: 0.5rem;
+    padding: var(--space-2);
     border-radius: 6px;
   }
 
@@ -283,8 +283,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
     background: rgba(16, 185, 129, 0.1);
     border: 1px solid rgba(16, 185, 129, 0.2);
     border-radius: 8px;
@@ -305,7 +305,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .secondary-button {
@@ -350,7 +350,7 @@
 
     .comparison-section {
       flex-direction: column;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .comparison-arrow {

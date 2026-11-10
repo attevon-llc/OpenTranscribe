@@ -116,12 +116,12 @@
   .toast {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
     background: var(--background-color);
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    margin-bottom: 8px;
+    margin-bottom: var(--space-2);
     min-width: 300px;
     max-width: 500px;
     border-left: 4px solid var(--toast-color);
@@ -179,7 +179,7 @@
     border: 1px solid var(--toast-color);
     color: var(--toast-color);
     border-radius: 4px;
-    padding: 4px 10px;
+    padding: var(--space-1) var(--space-2-5);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
@@ -205,7 +205,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     display: flex;
     align-items: center;
     justify-content: center;

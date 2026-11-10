@@ -41,8 +41,8 @@
 
 <style>
   .integrity {
-    padding: 0.75rem;
-    margin-bottom: 0.75rem;
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
     background: var(--color-bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -54,7 +54,7 @@
   }
 
   .state {
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     font-size: 0.75rem;
     line-height: 1.4;
     color: var(--text-secondary);
@@ -66,7 +66,7 @@
 
   .docs {
     display: inline-block;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     font-size: 0.75rem;
     color: var(--primary-on-surface);
   }

@@ -146,15 +146,15 @@
 
 <style>
   .composer {
-    padding: 0.75rem 0 0;
+    padding: var(--space-3) 0 0;
   }
 
   .input-shell {
     display: flex;
     align-items: flex-end;
-    gap: 0.5rem;
-    padding-block: 0.5rem;
-    padding-inline: 0.9rem 0.5rem;
+    gap: var(--space-2);
+    padding-block: var(--space-2);
+    padding-inline: 0.9rem var(--space-2);
     border: 1px solid var(--field-border);
     border-radius: 24px;
     background-color: var(--field-bg);
@@ -245,8 +245,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
-    padding: 0.4rem 0.75rem 0;
+    gap: var(--space-4);
+    padding: 0.4rem var(--space-3) 0;
     min-height: 1.1rem;
   }
 

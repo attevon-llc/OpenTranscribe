@@ -113,7 +113,7 @@
   .step-extraction {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .info-section {
@@ -125,7 +125,7 @@
 
   .info-icon {
     color: var(--primary-on-surface);
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .info-message {
@@ -139,8 +139,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 0.625rem;
+    gap: var(--space-3);
+    padding: var(--space-2-5);
     background: var(--surface-color);
     border-radius: 8px;
     border: 1px solid var(--border-color);
@@ -151,14 +151,14 @@
   .comparison-label {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     font-weight: 500;
   }
 
   .comparison-value {
     font-size: 1rem;
     font-weight: 600;
-    padding: 0.25rem;
+    padding: var(--space-1);
     border-radius: 6px;
   }
 
@@ -170,14 +170,14 @@
   .choice-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .choice-option {
     display: flex;
     align-items: flex-start;
-    gap: 0.625rem;
-    padding: 0.625rem 0.75rem;
+    gap: var(--space-2-5);
+    padding: var(--space-2-5) var(--space-3);
     border: 2px solid var(--border-color);
     border-radius: 8px;
     cursor: pointer;
@@ -218,7 +218,7 @@
   .choice-header {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .choice-header svg {
@@ -239,7 +239,7 @@
   .choice-badge {
     font-size: 0.6rem;
     font-weight: 600;
-    padding: 0.0625rem 0.375rem;
+    padding: 0.0625rem var(--space-1-5);
     border-radius: 999px;
     text-transform: uppercase;
     letter-spacing: 0.03em;
@@ -261,13 +261,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     color: var(--text-tertiary);
     font-size: 0.75rem;
   }
 
   @media (max-width: 480px) {
-    .comparison { flex-direction: column; gap: 0.375rem; }
+    .comparison { flex-direction: column; gap: var(--space-1-5); }
     .comparison-arrow svg { transform: rotate(90deg); }
   }
 </style>

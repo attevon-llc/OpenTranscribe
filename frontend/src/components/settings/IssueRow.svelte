@@ -62,8 +62,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.25rem 0.75rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-3);
     border-radius: 6px;
     border-inline-start: 3px solid;
     font-size: 0.8rem;

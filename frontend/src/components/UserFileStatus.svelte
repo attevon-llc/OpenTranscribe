@@ -468,7 +468,7 @@
   .file-status-container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 1rem;
+    padding: var(--space-4);
     color: var(--text-color);
     height: calc(100vh - var(--content-top));
     height: calc(100dvh - var(--content-top));
@@ -479,7 +479,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .header h2 {
@@ -489,7 +489,7 @@
 
   .controls {
     display: flex;
-    gap: 1rem;
+    gap: var(--space-4);
     align-items: center;
   }
 
@@ -504,7 +504,7 @@
     font-weight: 500;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.95rem;
     box-shadow: var(--shadow-primary);
   }
@@ -558,7 +558,7 @@
     color: var(--text-on-solid);
     font-size: 0.6875rem;
     font-weight: 400;
-    padding: 6px 10px;
+    padding: var(--space-1-5) var(--space-2-5);
     border-radius: 6px;
     white-space: nowrap;
     pointer-events: none;
@@ -580,8 +580,8 @@
   .status-cards {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 0.75rem;
-    margin: 0 auto 0.75rem auto;
+    gap: var(--space-3);
+    margin: 0 auto var(--space-3) auto;
     max-width: 700px;
   }
 
@@ -589,7 +589,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 1rem;
+    padding: var(--space-4);
     text-align: center;
     box-shadow: var(--shadow-sm);
     transition: all var(--duration-base) ease;
@@ -617,7 +617,7 @@
     font-size: 1.5rem;
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .status-label {
@@ -631,9 +631,9 @@
   .error-message {
     background: var(--error-background);
     color: var(--error-color);
-    padding: 1rem;
+    padding: var(--space-4);
     border-radius: 4px;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     border: 1px solid var(--error-border);
   }
 
@@ -646,18 +646,18 @@
     .header {
       flex-direction: column;
       align-items: flex-start;
-      gap: 1rem;
+      gap: var(--space-4);
     }
 
     .controls {
       width: 100%;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .status-cards {
       grid-template-columns: repeat(3, 1fr);
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .status-card {
@@ -683,20 +683,20 @@
   .skeleton-status {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .skeleton-card {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .skeleton-table {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 1rem 1.5rem;
+    padding: var(--space-4) var(--space-6);
   }
 
 

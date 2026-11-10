@@ -246,45 +246,45 @@
 
 <style>
   .where-line {
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
   }
 
   .notices {
     list-style: none;
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .sub-label {
     display: block;
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .chosen-flags {
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
   }
 
   .saved-heading {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .saved-list {
     list-style: none;
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .saved-list li {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem 0.5rem;
+    gap: var(--space-1) var(--space-2);
     font-size: 0.8125rem;
   }
 
@@ -304,7 +304,7 @@
 
   .link-button {
     display: inline;
-    margin-inline-start: 0.25rem;
+    margin-inline-start: var(--space-1);
     padding: 0;
     border: none;
     border-radius: 0;

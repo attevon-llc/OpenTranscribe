@@ -292,15 +292,15 @@
   .vocab-settings {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
     max-width: 800px;
   }
 
   .info-note {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1rem;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-4);
     background: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -311,13 +311,13 @@
   .domain-tabs {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
-    padding-bottom: 0.25rem;
+    gap: var(--space-1-5);
+    padding-bottom: var(--space-1);
     border-bottom: 1px solid var(--border-color);
   }
 
   .domain-tab {
-    padding: 0.35rem 0.75rem;
+    padding: 0.35rem var(--space-3);
     border-radius: 6px;
     font-size: 0.8125rem;
     cursor: pointer;
@@ -339,31 +339,31 @@
     background: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 0.875rem;
+    padding: var(--space-3-5);
   }
 
   .add-row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
 
   .term-input {
     flex: 2;
     min-width: 140px;
-    padding: 0.45rem 0.625rem;
+    padding: 0.45rem var(--space-2-5);
     font-size: 0.8125rem;
   }
 
   .domain-select, .category-input {
     flex: 1;
     min-width: 110px;
-    padding: 0.45rem 0.625rem;
+    padding: 0.45rem var(--space-2-5);
     font-size: 0.8125rem;
   }
 
   .btn-add {
-    padding: 0.45rem 1rem;
+    padding: 0.45rem var(--space-4);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -388,7 +388,7 @@
 
   .list-loading, .empty-terms {
     text-align: center;
-    padding: 1.5rem;
+    padding: var(--space-6);
     color: var(--text-muted);
     font-size: 0.8125rem;
   }
@@ -396,19 +396,19 @@
   .terms-list {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .term-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-background);
     transition: all var(--duration-fast) ease;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .term-row.inactive { opacity: 0.5; }
@@ -421,7 +421,7 @@
   .term-info {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex: 1;
     min-width: 0;
     flex-wrap: wrap;
@@ -457,7 +457,7 @@
   .term-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 
@@ -535,11 +535,11 @@
   .delete-confirm-inline {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .btn-confirm-delete {
-    padding: 0.25rem 0.625rem;
+    padding: var(--space-1) var(--space-2-5);
     background: var(--error-color);
     color: var(--text-on-solid);
     border: none;
@@ -557,7 +557,7 @@
   }
 
   .btn-cancel-delete {
-    padding: 0.25rem 0.625rem;
+    padding: var(--space-1) var(--space-2-5);
     background: transparent;
     color: var(--text-secondary);
     border: 1px solid var(--border-color);
@@ -575,11 +575,11 @@
 
   .bulk-section {
     border-top: 1px solid var(--border-color);
-    padding-top: 0.875rem;
+    padding-top: var(--space-3-5);
   }
 
   .btn-bulk-toggle {
-    padding: 0.4rem 0.875rem;
+    padding: 0.4rem var(--space-3-5);
     background: transparent;
     border: 1px solid var(--border-color);
     color: var(--text-muted);
@@ -592,15 +592,15 @@
   .btn-bulk-toggle:hover { color: var(--text-color); border-color: var(--border-hover); }
 
   .bulk-form {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .bulk-textarea {
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.8125rem;
     resize: vertical;
     box-sizing: border-box;
@@ -609,12 +609,12 @@
 
   .bulk-row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
   }
 
   .btn-import {
-    padding: 0.45rem 1rem;
+    padding: 0.45rem var(--space-4);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;

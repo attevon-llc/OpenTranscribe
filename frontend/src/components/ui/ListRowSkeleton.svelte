@@ -39,9 +39,9 @@
   .list-skeleton {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
     width: 100%;
-    padding: 8px 0;
+    padding: var(--space-2) 0;
   }
 
   .sr-only {
@@ -59,16 +59,16 @@
   .skel-row {
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 14px 16px;
+    gap: var(--space-3-5);
+    padding: var(--space-3-5) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 10px;
   }
 
   .skel-row.compact {
-    padding: 10px 14px;
-    gap: 10px;
+    padding: var(--space-2-5) var(--space-3-5);
+    gap: var(--space-2-5);
   }
 
   .skel-avatar {
@@ -87,7 +87,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-1-5);
     min-width: 0;
   }
 
@@ -103,7 +103,7 @@
 
   .skel-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 

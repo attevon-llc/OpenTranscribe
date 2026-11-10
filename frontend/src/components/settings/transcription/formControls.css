@@ -1,5 +1,5 @@
 .tx-form .form-group {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
 .tx-form .form-group.compact {
@@ -11,12 +11,12 @@
   font-size: 0.8125rem;
   font-weight: 500;
   color: var(--text-color);
-  margin-bottom: 0.375rem;
+  margin-bottom: var(--space-1-5);
 }
 
 .tx-form .form-select {
   width: 100%;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background-color: var(--background-color);
@@ -25,7 +25,7 @@
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  padding-right: 2.5rem;
+  padding-right: var(--space-10);
 }
 
 .tx-form .form-select:focus {
@@ -35,19 +35,19 @@
 }
 
 .tx-form .input-hint {
-  margin: 0.375rem 0 0 0;
+  margin: var(--space-1-5) 0 0 0;
   font-size: 0.75rem;
   color: var(--text-muted);
 }
 
 .tx-form .speaker-range-row {
   display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
 }
 
 .tx-form .form-input {
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background-color: var(--background-color);
@@ -75,20 +75,20 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 
 .tx-form .setting-controls {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: var(--space-6);
 }
 
 .tx-form .toggle-label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   cursor: pointer;
   user-select: none;
 }
@@ -148,7 +148,7 @@
 .tx-form .inline-input {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .tx-form .input-label {
@@ -162,7 +162,7 @@
 }
 
 .tx-form .subsection {
-  padding: 1rem;
+  padding: var(--space-4);
   background: var(--background-color);
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -171,14 +171,14 @@
 .tx-form .subsection-title {
   font-size: 0.875rem;
   font-weight: 600;
-  margin: 0 0 0.25rem 0;
+  margin: 0 0 var(--space-1) 0;
   color: var(--text-color);
 }
 
 .tx-form .subsection-desc {
   font-size: 0.75rem;
   color: var(--text-muted);
-  margin: 0 0 1rem 0;
+  margin: 0 0 var(--space-4) 0;
 }
 
 .tx-form .number-input-wide {
@@ -189,7 +189,7 @@
 .tx-form .capability-warning {
   font-size: 0.8rem;
   color: var(--warning-color);
-  margin-top: 0.25rem;
+  margin-top: var(--space-1);
   padding: 0.4rem 0.6rem;
   background: var(--warning-bg);
   border-radius: 4px;
@@ -214,7 +214,7 @@
 .tx-form .field-desc {
   font-size: 0.75rem;
   color: var(--text-muted);
-  margin: 0.25rem 0 0 0;
+  margin: var(--space-1) 0 0 0;
 }
 
 .tx-form .field-desc.dimmed {
@@ -225,13 +225,13 @@
 .tx-form .field-warning {
   font-size: 0.75rem;
   color: var(--warning-color);
-  margin: 0.375rem 0 0 0;
-  padding: 0.25rem 0.5rem;
+  margin: var(--space-1-5) 0 0 0;
+  padding: var(--space-1) var(--space-2);
   background: var(--warning-bg);
   border-radius: 4px;
 }
 
 .tx-form .field-desc.hint-italic {
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
   font-style: italic;
 }

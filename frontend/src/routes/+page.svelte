@@ -808,7 +808,7 @@
   .scrollable-content {
     flex: 1;
     overflow-y: auto;
-    padding: 1rem;
+    padding: var(--space-4);
     padding-top: 0; /* Gallery header provides top spacing */
   }
 
@@ -823,7 +823,7 @@
     }
 
     .scrollable-content {
-      padding: 1rem;
+      padding: var(--space-4);
       padding-top: 0;
       background-color: var(--background-color);
     }

@@ -104,26 +104,26 @@
     z-index: var(--z-sticky);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-    padding: 0.75rem 1rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+    padding: var(--space-3) var(--space-4);
     background-color: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
-    margin-left: -1rem;
-    margin-right: -1rem;
+    margin-left: calc(-1 * var(--space-4));
+    margin-right: calc(-1 * var(--space-4));
   }
 
   .toolbar-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .toolbar-row-left {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex: 1 1 auto;
     min-width: 0;
   }
@@ -131,7 +131,7 @@
   .toolbar-row-right {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 
@@ -190,7 +190,7 @@
   @media (max-width: 1200px) and (min-width: 769px) {
     .toolbar-row {
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .toolbar-row-left {
@@ -200,7 +200,7 @@
     .toolbar-row-right {
       flex: 1 1 auto;
       justify-content: flex-end;
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
   }
 
@@ -210,9 +210,9 @@
     }
 
     .gallery-toolbar {
-      margin-left: -1rem;
-      margin-right: -1rem;
-      padding: 0.5rem 1rem;
+      margin-left: calc(-1 * var(--space-4));
+      margin-right: calc(-1 * var(--space-4));
+      padding: var(--space-2) var(--space-4);
       /* Prevent content showing through gap between navbar and toolbar */
       background-color: var(--background-color);
       box-shadow: 0 -20px 0 0 var(--background-color);
@@ -220,7 +220,7 @@
 
     .toolbar-row {
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .toolbar-row-left {
@@ -231,7 +231,7 @@
     .toolbar-row-right {
       flex: 1 1 auto;
       justify-content: flex-end;
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
 
     .toolbar-search {
@@ -241,13 +241,13 @@
 
   @media (max-width: 480px) {
     .gallery-toolbar {
-      gap: 0.375rem;
-      padding-top: 0.5rem;
-      padding-bottom: 0.5rem;
+      gap: var(--space-1-5);
+      padding-top: var(--space-2);
+      padding-bottom: var(--space-2);
     }
 
     .toolbar-row {
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
 
     .toolbar-row-left {

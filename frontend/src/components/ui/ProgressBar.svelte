@@ -46,7 +46,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     font-size: 0.85rem;
     color: var(--text-secondary);
   }

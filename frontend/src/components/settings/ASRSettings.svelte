@@ -750,8 +750,8 @@
 
 <style>
   .lite-note {
-    margin: 0 0 1rem;
-    padding: 0.75rem 1rem;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4);
     border-radius: 8px;
     border: 1px solid rgba(var(--primary-color-rgb), 0.3);
     background: rgba(var(--primary-color-rgb), 0.08);
@@ -768,7 +768,7 @@
 
   .loading {
     text-align: center;
-    padding: 3rem;
+    padding: var(--space-12);
     color: var(--text-muted);
     font-size: 0.8125rem;
   }
@@ -776,10 +776,10 @@
   .status-bar {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1rem;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-4);
     border-radius: 6px;
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-5);
     font-size: 0.8125rem;
     background: var(--primary-bg);
     color: var(--primary-on-surface);
@@ -795,13 +795,13 @@
   .status-text { flex: 1; }
 
   .in-use-flags {
-    margin: -0.5rem 0 1.25rem;
+    margin: calc(-1 * var(--space-2)) 0 var(--space-5);
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
 
   .flags-legend {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .flags-legend summary {
@@ -811,12 +811,12 @@
   }
 
   .flags-legend[open] summary {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .btn-use-local {
     margin-left: auto;
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     font-size: 0.75rem;
     border-radius: 4px;
     border: 1px solid var(--border-color);
@@ -831,15 +831,15 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--border-color);
   }
 
   .section-header h4 {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin: 0;
     font-size: 1.125rem;
     font-weight: 500;
@@ -849,11 +849,11 @@
   .add-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.8125rem;
@@ -868,19 +868,19 @@
   .config-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .config-card {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.875rem 1rem;
+    padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--card-bg);
     transition: all var(--duration-fast) ease;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .config-card.active {
@@ -900,14 +900,14 @@
   .config-badges {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
-    margin-bottom: 0.375rem;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-1-5);
   }
 
   .badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem 0.5rem;
+    padding: 0.15rem var(--space-2);
     border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 500;
@@ -929,8 +929,8 @@
     border: 1px solid var(--success-border);
   }
 
-  .test-badge { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; }
-  .cap-mark { display: inline-flex; margin-inline-end: 0.25rem; }
+  .test-badge { display: inline-flex; align-items: center; gap: var(--space-1); font-size: 0.7rem; }
+  .cap-mark { display: inline-flex; margin-inline-end: var(--space-1); }
   .test-badge.test-success { background: rgba(16, 185, 129, 0.1); color: #10b981; }
   .test-badge.test-failed { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 
@@ -949,12 +949,12 @@
   .config-actions {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     flex-shrink: 0;
   }
 
   .btn-activate {
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     border-radius: 5px;
     font-size: 0.775rem;
     font-weight: 500;
@@ -1017,8 +1017,8 @@
   }
 
   .delete-all-section {
-    margin-top: 1.5rem;
-    padding-top: 1rem;
+    margin-top: var(--space-6);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
     text-align: center;
   }
@@ -1026,11 +1026,11 @@
   .btn-delete-all {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: #ef4444;
     color: var(--text-on-solid);
     border: none;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.8125rem;
@@ -1042,27 +1042,27 @@
 
   .empty-state {
     text-align: center;
-    padding: 2.5rem 2rem;
+    padding: var(--space-10) var(--space-8);
     border: 2px dashed var(--border-color);
     border-radius: 8px;
     background: var(--card-bg);
   }
 
   .empty-icon {
-    margin-bottom: 0.875rem;
+    margin-bottom: var(--space-3-5);
     color: var(--text-muted);
     opacity: 0.6;
   }
 
   .empty-state h4 {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     font-size: 1rem;
     font-weight: 500;
     color: var(--text-color);
   }
 
   .empty-state p {
-    margin: 0 0 1.25rem;
+    margin: 0 0 var(--space-5);
     font-size: 0.8125rem;
     color: var(--text-muted);
     line-height: 1.5;
@@ -1071,11 +1071,11 @@
   .btn-add-first {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    padding: 0.5rem 1.1rem;
+    padding: var(--space-2) 1.1rem;
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.8125rem;
@@ -1096,15 +1096,15 @@
   }
   :global([data-theme='dark']) .config-card.shared { background: rgba(96, 165, 250, 0.06); }
 
-  .shared-section-header { margin-top: 1.5rem; }
+  .shared-section-header { margin-top: var(--space-6); }
 
   .share-badge {
     display: inline-flex; align-items: center;
-    padding: 1px 6px; border-radius: 10px;
+    padding: 1px var(--space-1-5); border-radius: 10px;
     font-size: 0.625rem; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.5px;
     background: rgba(var(--primary-color-rgb), 0.12); color: var(--primary-on-surface);
-    margin-left: 0.5rem; vertical-align: middle;
+    margin-left: var(--space-2); vertical-align: middle;
   }
   :global([data-theme='dark']) .share-badge { background: rgba(var(--primary-color-rgb), 0.2); color: #60a5fa; }
 
@@ -1115,17 +1115,17 @@
 
   .shared-by {
     font-size: 0.725rem; color: var(--text-muted);
-    font-style: italic; margin-top: 0.125rem;
+    font-style: italic; margin-top: var(--space-0-5);
   }
 
   .share-toggle-row {
-    display: flex; align-items: center; gap: 0.75rem;
-    margin-top: 0.5rem; padding-top: 0.5rem;
+    display: flex; align-items: center; gap: var(--space-3);
+    margin-top: var(--space-2); padding-top: var(--space-2);
     border-top: 1px dashed var(--border-color);
   }
 
   .toggle-label {
-    display: flex; align-items: center; gap: 0.5rem;
+    display: flex; align-items: center; gap: var(--space-2);
     cursor: pointer; font-size: 0.75rem; color: var(--text-muted);
   }
 
@@ -1147,25 +1147,25 @@
 
   /* Local model section (all users) */
   .local-model-section {
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--card-bg);
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-5);
   }
 
   .model-info-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
     flex-wrap: wrap;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .local-model-section.admin-mode .model-info-row {
-    margin-bottom: 0.75rem;
-    padding-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-3);
     border-bottom: 1px dashed var(--border-color);
   }
 
@@ -1189,14 +1189,14 @@
   .model-capabilities {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
 
   .cap-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem 0.5rem;
+    padding: 0.15rem var(--space-2);
     border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 500;
@@ -1222,13 +1222,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .admin-section-header h4 {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin: 0;
     font-size: 0.9375rem;
     font-weight: 500;
@@ -1238,7 +1238,7 @@
   .admin-badge-tag {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem 0.5rem;
+    padding: 0.15rem var(--space-2);
     border-radius: 4px;
     font-size: 0.675rem;
     font-weight: 600;
@@ -1273,7 +1273,7 @@
 
     .section-header {
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .config-actions .btn-icon,

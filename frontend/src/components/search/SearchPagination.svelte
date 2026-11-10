@@ -113,9 +113,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.25rem;
-    margin-top: 1.5rem;
-    padding: 1rem 0;
+    gap: var(--space-1);
+    margin-top: var(--space-6);
+    padding: var(--space-4) 0;
   }
 
   .page-btn {
@@ -124,7 +124,7 @@
     justify-content: center;
     min-width: 36px;
     height: 36px;
-    padding: 0 0.5rem;
+    padding: 0 var(--space-2);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--surface-color);
@@ -151,7 +151,7 @@
   }
 
   .ellipsis {
-    padding: 0 0.25rem;
+    padding: 0 var(--space-1);
     color: var(--text-secondary);
   }
 </style>

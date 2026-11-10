@@ -235,7 +235,7 @@
   .groups-overview {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .overview-header {
@@ -246,7 +246,7 @@
   .btn-create {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     padding: 0.6rem 1.2rem;
     background-color: var(--primary-color);
     color: var(--text-on-solid);
@@ -273,8 +273,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
-    padding: 2rem 0;
+    gap: var(--space-3);
+    padding: var(--space-8) 0;
     color: var(--text-secondary);
     font-size: 0.8125rem;
   }
@@ -285,17 +285,17 @@
 
   .error-state {
     text-align: center;
-    padding: 1.5rem 0;
+    padding: var(--space-6) 0;
     color: var(--danger-color);
     font-size: 0.8125rem;
   }
 
   .error-state p {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
   }
 
   .btn-retry {
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -332,7 +332,7 @@
 
   .search-input {
     width: 100%;
-    padding: 0.5rem 2rem 0.5rem 2.25rem;
+    padding: var(--space-2) var(--space-8) var(--space-2) 2.25rem;
     font-size: 0.8125rem;
     box-sizing: border-box;
   }
@@ -350,7 +350,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-secondary);
     border-radius: 4px;
     display: flex;
@@ -365,7 +365,7 @@
 
   .no-results {
     text-align: center;
-    padding: 1rem 0;
+    padding: var(--space-4) 0;
     color: var(--text-secondary);
     font-size: 0.8125rem;
   }
@@ -377,7 +377,7 @@
   .groups-section {
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
   }
 
   .groups-section-title {
@@ -390,14 +390,14 @@
   .groups-grid {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .group-card {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
-    padding: 0.75rem 1rem;
+    gap: var(--space-1-5);
+    padding: var(--space-3) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -421,7 +421,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .card-name {
@@ -449,13 +449,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .card-members {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     font-size: 0.75rem;
     color: var(--text-secondary);
   }

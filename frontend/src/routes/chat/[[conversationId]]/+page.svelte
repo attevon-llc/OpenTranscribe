@@ -628,7 +628,7 @@
        The app shell pads .content, so cancel that padding rather than
        subtracting it from the height; otherwise the shell's padding is added
        back below the page and the whole window scrolls by exactly 2x padding. */
-    margin: -1rem;
+    margin: calc(-1 * var(--space-4));
     height: calc(100vh - var(--navbar-height));
     overflow: hidden;
   }
@@ -638,7 +638,7 @@
      scroll of 2x the difference. */
   @media (min-width: 768px) {
     .chat-page {
-      margin: -2rem;
+      margin: calc(-1 * var(--space-8));
     }
   }
 
@@ -689,8 +689,8 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 0;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
     border-bottom: 1px solid var(--border-color);
   }
 
@@ -770,11 +770,11 @@
   .chat-error {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     box-sizing: border-box;
     width: calc(100% - 2 * var(--chat-gutter));
     max-width: 52rem;
-    margin: 0.75rem auto 0;
+    margin: var(--space-3) auto 0;
     padding: 0.6rem 0.85rem;
     border: 1px solid rgba(var(--error-color-rgb), 0.35);
     border-radius: 8px;

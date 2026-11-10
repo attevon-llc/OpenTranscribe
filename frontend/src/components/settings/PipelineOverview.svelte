@@ -182,21 +182,21 @@
   .pipeline-overview {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .state-box {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
-    padding: 2.5rem 1rem;
+    gap: var(--space-4);
+    padding: var(--space-10) var(--space-4);
     color: var(--text-secondary);
   }
 
   .banner {
     margin: 0;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border-radius: 8px;
     border: 1px solid var(--border-color);
     font-size: 0.85rem;
@@ -225,7 +225,7 @@
 
   .audio-node {
     align-self: flex-start;
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     border-radius: 999px;
     border: 1px dashed var(--border-color);
     font-size: 0.8rem;
@@ -313,10 +313,10 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 1rem 1.25rem;
+    padding: var(--space-4) var(--space-5);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   /* A step that does not run is dimmed, but its problem and its link are not. */
@@ -327,7 +327,7 @@
   .step-head {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
   }
 
   .step-number {
@@ -364,7 +364,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.875rem;
     color: var(--text-color);
   }
@@ -383,11 +383,11 @@
 
   .issues {
     list-style: none;
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .step-foot {

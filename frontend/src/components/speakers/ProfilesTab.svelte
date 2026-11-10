@@ -144,13 +144,13 @@
 <style>
   .gender-confirm-group {
     display: inline-flex;
-    gap: 4px;
+    gap: var(--space-1);
     align-items: center;
   }
 
   .gender-toggle-btn {
     font-size: 14px;
-    padding: 3px 6px;
+    padding: 3px var(--space-1-5);
     border-radius: 6px;
     border: 1px solid var(--border-color);
     background: transparent;
@@ -160,7 +160,7 @@
     line-height: 1;
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-0-5);
   }
 
   .gender-svg {
@@ -187,12 +187,12 @@
   .profile-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 12px;
+    gap: var(--space-3);
     max-width: 100%;
   }
 
   .profile-card {
-    padding: 16px;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--card-background);
@@ -265,7 +265,7 @@
   .profile-header {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
     min-width: 0;
   }
 
@@ -281,7 +281,7 @@
   }
 
   .profile-desc {
-    margin-top: 4px;
+    margin-top: var(--space-1);
     font-size: 13px;
     color: var(--text-secondary);
     word-break: break-word;
@@ -289,10 +289,10 @@
   }
 
   .profile-meta {
-    margin-top: 8px;
+    margin-top: var(--space-2);
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2-5);
     font-size: 12px;
     color: var(--text-secondary);
     flex-wrap: wrap;
@@ -301,7 +301,7 @@
   .meta-stat {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     font-weight: 500;
     cursor: default;
   }
@@ -313,7 +313,7 @@
 
   .profile-actions {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
     flex-shrink: 0;
   }
 
@@ -353,7 +353,7 @@
   .profile-edit-input {
     flex: 1;
     min-width: 0;
-    padding: 4px 8px;
+    padding: var(--space-1) var(--space-2);
     font-size: 15px;
     font-weight: 600;
     box-sizing: border-box;
@@ -363,11 +363,11 @@
     display: inline-block;
     font-size: 0.65rem;
     font-weight: 600;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 8px;
     background: var(--accent-light);
     color: var(--primary-on-surface);
-    margin-left: 6px;
+    margin-left: var(--space-1-5);
     vertical-align: middle;
     white-space: nowrap;
   }
@@ -379,15 +379,15 @@
   @media (max-width: 768px) {
     .profile-list {
       grid-template-columns: 1fr;
-      gap: 10px;
+      gap: var(--space-2-5);
     }
 
     .profile-card {
-      padding: 12px;
+      padding: var(--space-3);
     }
 
     .profile-header {
-      gap: 8px;
+      gap: var(--space-2);
     }
 
     .profile-avatar-wrapper,
@@ -407,7 +407,7 @@
     }
 
     .profile-meta {
-      gap: 8px;
+      gap: var(--space-2);
     }
   }
 </style>

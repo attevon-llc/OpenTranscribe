@@ -187,8 +187,8 @@
 <style>
   .hf-token {
     max-width: 800px;
-    margin-top: 1.5rem;
-    padding: 1rem;
+    margin-top: var(--space-6);
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--surface-color);
@@ -197,7 +197,7 @@
   .head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
 
@@ -210,7 +210,7 @@
 
   .status-chip {
     margin-inline-start: auto;
-    padding: 0.125rem 0.625rem;
+    padding: var(--space-0-5) var(--space-2-5);
     border-radius: 999px;
     border: 1px solid var(--border-color);
     font-size: 0.75rem;
@@ -227,18 +227,18 @@
   .desc,
   .hint,
   .note {
-    margin: 0.375rem 0 0.75rem;
+    margin: var(--space-1-5) 0 var(--space-3);
     font-size: 0.8125rem;
     color: var(--text-muted);
   }
 
   .hint {
-    margin: 0.375rem 0 0;
+    margin: var(--space-1-5) 0 0;
     font-size: 0.75rem;
   }
 
   .note.warn {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border-radius: 6px;
     border: 1px solid var(--warning-color);
     color: var(--text-color);
@@ -246,7 +246,7 @@
 
   .label {
     display: block;
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
     font-size: 0.8125rem;
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
@@ -254,7 +254,7 @@
 
   .row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: stretch;
   }
 
@@ -265,13 +265,13 @@
 
   .actions {
     display: flex;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
     flex-wrap: wrap;
   }
 
   .result {
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     font-size: 0.8125rem;
     color: var(--error-color);
   }

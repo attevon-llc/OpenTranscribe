@@ -427,7 +427,7 @@
     justify-content: center;
     color: var(--text-secondary);
     font-size: 14px;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background-color: var(--surface-color);
   }
 
@@ -438,7 +438,7 @@
   }
 
   .retry-button {
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;

@@ -349,7 +349,7 @@
 
 <style>
   .consistency-settings {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 
   .error-state {
@@ -357,8 +357,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 1.5rem;
-    gap: 0.5rem;
+    padding: var(--space-6);
+    gap: var(--space-2);
     color: var(--error-color);
   }
 
@@ -368,13 +368,13 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 1.25rem;
+    padding: var(--space-5);
   }
 
   .title-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .section-title {
@@ -387,19 +387,19 @@
   .section-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin: 0.25rem 0 1rem 0;
+    margin: var(--space-1) 0 var(--space-4) 0;
   }
 
   .status-chips-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
   }
 
   .counts-section {
-    margin-bottom: 1rem;
-    padding: 0.75rem;
+    margin-bottom: var(--space-4);
+    padding: var(--space-3);
     background: var(--background-color);
     border-radius: 6px;
     border: 1px solid var(--border-color);
@@ -409,7 +409,7 @@
   .counts-row {
     display: flex;
     justify-content: space-between;
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
   }
 
   .counts-row.has-missing {
@@ -438,12 +438,12 @@
 
   .action-box {
     display: flex;
-    gap: 1rem;
-    padding: 1rem;
+    gap: var(--space-4);
+    padding: var(--space-4);
     border-radius: 8px;
     background: rgba(34, 197, 94, 0.08);
     border: 1px solid rgba(34, 197, 94, 0.3);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .action-box.running {
@@ -473,7 +473,7 @@
   }
 
   .action-content h4 {
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     font-size: 0.9rem;
     color: var(--text-color);
   }
@@ -487,12 +487,12 @@
   .action-buttons {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .progress-section {
-    margin-top: 1rem;
-    padding: 1rem;
+    margin-top: var(--space-4);
+    padding: var(--space-4);
     background: var(--background-color);
     border-radius: 6px;
     border: 1px solid var(--border-color);
@@ -502,7 +502,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .progress-text {
@@ -517,7 +517,7 @@
   }
 
   .progress-eta {
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
     font-weight: 400;
     color: var(--text-secondary);
   }
@@ -538,8 +538,8 @@
 
   .progress-stats {
     display: flex;
-    gap: 1rem;
-    margin-top: 0.5rem;
+    gap: var(--space-4);
+    margin-top: var(--space-2);
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
@@ -549,15 +549,15 @@
   }
 
   .results-section {
-    margin-top: 1rem;
-    padding: 1rem;
+    margin-top: var(--space-4);
+    padding: var(--space-4);
     background: var(--background-color);
     border-radius: 6px;
     border: 1px solid var(--border-color);
   }
 
   .results-title {
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-color);

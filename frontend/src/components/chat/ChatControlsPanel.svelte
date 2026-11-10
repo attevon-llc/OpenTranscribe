@@ -373,7 +373,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.1rem;
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     background-color: var(--card-background);
@@ -399,8 +399,8 @@
     position: sticky;
     top: -1rem;
     z-index: var(--z-base);
-    margin: -1rem -1rem 0;
-    padding: 1rem 1rem 0.6rem;
+    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+    padding: var(--space-4) var(--space-4) 0.6rem;
     background-color: var(--card-background);
     display: flex;
     align-items: center;
@@ -428,7 +428,7 @@
     line-height: 1;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 0 0.25rem;
+    padding: 0 var(--space-1);
     border-radius: 4px;
   }
 
@@ -482,7 +482,7 @@
   .number-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .number-row .btn {

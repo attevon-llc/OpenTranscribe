@@ -107,7 +107,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     min-width: 120px;
     /* Ensure high contrast */
     opacity: 1;

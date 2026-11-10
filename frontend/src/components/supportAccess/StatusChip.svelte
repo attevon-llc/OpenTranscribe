@@ -17,7 +17,7 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border: 1px solid transparent;
     border-radius: 10px;
     font-size: 11px;

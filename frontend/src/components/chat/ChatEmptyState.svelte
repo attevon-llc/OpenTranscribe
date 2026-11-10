@@ -126,9 +126,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2rem;
+    gap: var(--space-8);
     flex: 1;
-    padding: 2rem 1rem;
+    padding: var(--space-8) var(--space-4);
     text-align: center;
   }
 
@@ -136,7 +136,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     max-width: 34rem;
   }
 
@@ -186,7 +186,7 @@
   }
 
   .suggestion-card {
-    padding: 0.85rem 1rem;
+    padding: 0.85rem var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     background-color: var(--surface-color);

@@ -638,8 +638,8 @@
   .current-collections {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-bottom: 12px;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-3);
   }
 
   .current-label {
@@ -663,7 +663,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
   }
 
   .panel-header h3 {
@@ -677,7 +677,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     padding: 0.6rem 1.2rem;
     background-color: var(--primary-color);
     color: var(--text-on-solid);
@@ -716,7 +716,7 @@
 
   .search-wrapper {
     position: relative;
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .search-icon {
@@ -730,7 +730,7 @@
 
   .search-input {
     width: 100%;
-    padding: 0.5rem 2rem 0.5rem 2.25rem;
+    padding: var(--space-2) var(--space-8) var(--space-2) 2.25rem;
     /* The app's input tokens, not --surface-color/--border-color: matches
        form-elements.css and TagManagerModal, which this panel's search bar
        is converging on (issue #757). */
@@ -751,7 +751,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-secondary);
     border-radius: 4px;
     display: flex;
@@ -766,7 +766,7 @@
 
   .no-results {
     text-align: center;
-    padding: 1.5rem 0;
+    padding: var(--space-6) 0;
     color: var(--text-secondary);
     font-size: 0.875rem;
   }
@@ -787,18 +787,18 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 40px;
+    padding: var(--space-10);
     color: var(--text-secondary);
   }
 
   .collections-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
     overflow-y: auto;
     flex: 1;
     max-height: 400px;
-    padding-right: 8px;
+    padding-right: var(--space-2);
   }
 
   /* Custom scrollbar styling */

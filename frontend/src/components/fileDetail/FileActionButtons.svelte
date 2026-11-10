@@ -122,7 +122,7 @@
   .header-buttons {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
     justify-content: flex-end;
   }
@@ -132,7 +132,7 @@
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 0 1rem;
+    padding: 0 var(--space-4);
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
@@ -140,7 +140,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     box-shadow: var(--shadow-sm);
     height: 40px;
     white-space: nowrap;
@@ -192,9 +192,9 @@
   @media (max-width: 480px) {
     .header-action-btn {
       font-size: 0.75rem;
-      padding: 0 0.5rem;
+      padding: 0 var(--space-2);
       height: 32px;
-      gap: 0.25rem;
+      gap: var(--space-1);
     }
 
     .header-action-btn.icon-only {

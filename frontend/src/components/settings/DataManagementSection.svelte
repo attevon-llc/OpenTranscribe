@@ -172,9 +172,9 @@
   }
 
   .tab-description {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     max-width: 800px;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     color: var(--text-secondary);
     font-size: 0.9rem;
   }

@@ -63,7 +63,7 @@
 
 <style>
   .summary-search {
-    padding: 0.75rem 1.5rem;
+    padding: var(--space-3) var(--space-6);
     border-bottom: 1px solid var(--border-color);
     background-color: var(--bg-secondary);
   }
@@ -72,8 +72,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 1rem;
+    gap: var(--space-2);
+    padding: var(--space-4);
     color: var(--text-muted);
     font-size: 0.9rem;
   }

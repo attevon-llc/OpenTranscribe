@@ -253,13 +253,13 @@
   .search-input {
     width: 100%;
     height: 44px;
-    padding: 0 1rem;
+    padding: 0 var(--space-4);
     font-size: 0.9375rem;
     color-scheme: light dark;
   }
 
   .search-input.has-value {
-    padding-right: 2.5rem;
+    padding-right: var(--space-10);
   }
 
   .clear-btn {
@@ -299,9 +299,9 @@
   .suggestion-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: none;
     background: none;
     color: var(--text-color);
@@ -340,8 +340,8 @@
     top: 100%;
     left: 0;
     right: 0;
-    margin-top: 4px;
-    padding: 0.5rem 0.75rem;
+    margin-top: var(--space-1);
+    padding: var(--space-2) var(--space-3);
     background: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -349,7 +349,7 @@
     z-index: 100;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8125rem;
     color: var(--text-secondary);
   }
@@ -365,7 +365,7 @@
     font-size: 0.75rem;
     background: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
-    padding: 0.125rem 0.375rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 4px;
   }
 </style>

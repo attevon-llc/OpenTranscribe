@@ -818,19 +818,19 @@
   }
 
   .filter-toggle-container {
-    padding: 0.5rem 0.5rem 0;
-    margin-bottom: 0.5rem;
+    padding: var(--space-2) var(--space-2) 0;
+    margin-bottom: var(--space-2);
     flex-shrink: 0;
   }
 
   .filter-sidebar.show .filter-toggle-container {
-    padding: 0.5rem 1rem 0;
+    padding: var(--space-2) var(--space-4) 0;
   }
 
   .filter-content {
     flex: 1;
     overflow-y: auto;
-    padding: 0 1rem;
+    padding: 0 var(--space-4);
   }
 
   /* Content Area */
@@ -844,7 +844,7 @@
   .scrollable-content {
     flex: 1;
     overflow-y: scroll;
-    padding: 1.5rem;
+    padding: var(--space-6);
   }
 
   /* Header */
@@ -852,14 +852,14 @@
      content area like the gallery toolbar; only the results column below is capped at a
      reading measure (SearchResultsBody). docs/design/search_polish_round2_plan.md, item 1. */
   .search-header {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .search-title-row {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    margin-bottom: 1rem;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-4);
   }
 
   .back-to-gallery {
@@ -889,17 +889,17 @@
 
   .search-bar {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .filter-hint {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     font-size: 0.75rem;
     color: var(--primary-on-surface);
     opacity: 0.7;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   .search-btn {
@@ -908,7 +908,7 @@
     justify-content: center;
     min-width: 52px;
     height: 44px;
-    padding: 0 1rem;
+    padding: 0 var(--space-4);
     flex-shrink: 0;
     background-color: var(--primary-color);
     color: var(--text-on-solid);
@@ -934,9 +934,9 @@
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 0.75rem;
-    margin-top: 1rem;
-    padding-bottom: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding-bottom: var(--space-3);
     border-bottom: 1px solid var(--border-color);
   }
 
@@ -948,7 +948,7 @@
   .results-controls {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   /* Search Mode Toggle - sliding pill style */
@@ -956,12 +956,12 @@
     display: flex;
     background: var(--hover-color);
     border-radius: 8px;
-    padding: 2px;
+    padding: var(--space-0-5);
     gap: 0;
   }
 
   .mode-btn {
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     background: transparent;
     border: none;
     border-radius: 6px;
@@ -990,8 +990,8 @@
   .source-toggle {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .visually-hidden {
@@ -1023,7 +1023,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 4rem 2rem;
+    padding: var(--space-16) var(--space-8);
     text-align: center;
   }
 
@@ -1033,7 +1033,7 @@
 
   .state-container svg {
     color: var(--text-secondary);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .state-container.error svg {
@@ -1044,7 +1044,7 @@
     font-size: 1rem;
     font-weight: 500;
     color: var(--text-color);
-    margin: 0 0 0.375rem;
+    margin: 0 0 var(--space-1-5);
   }
 
   .state-text {
@@ -1060,7 +1060,7 @@
   }
 
   .search-tip {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
     font-size: 0.75rem;
     font-style: italic;
     opacity: 0.7;
@@ -1111,7 +1111,7 @@
     }
 
     .scrollable-content {
-      padding: 0.75rem;
+      padding: var(--space-3);
       overflow-x: hidden;
     }
 
@@ -1122,7 +1122,7 @@
 
     .results-controls {
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .search-title {
@@ -1144,7 +1144,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.25rem 0.625rem;
+    padding: var(--space-1) var(--space-2-5);
     border-radius: 20px;
     font-size: 0.7rem;
     font-weight: 500;

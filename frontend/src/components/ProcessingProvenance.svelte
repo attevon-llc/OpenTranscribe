@@ -68,13 +68,13 @@
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .step-row {
     display: grid;
     grid-template-columns: minmax(8rem, max-content) 1fr;
-    gap: 4px 12px;
+    gap: var(--space-1) var(--space-3);
     align-items: baseline;
     font-size: 13px;
   }
@@ -87,7 +87,7 @@
   .step-detail {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-1-5);
     align-items: baseline;
     color: var(--text-primary);
     min-width: 0;

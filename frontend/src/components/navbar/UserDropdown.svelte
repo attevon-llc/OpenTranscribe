@@ -232,11 +232,11 @@
   .user-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: transparent;
     border: none;
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border-radius: 4px;
     color: var(--text-color);
     font-family: inherit;
@@ -268,7 +268,7 @@
   }
 
   .dropdown-icon {
-    margin-left: 0.25rem;
+    margin-left: var(--space-1);
     opacity: 0.7;
   }
 
@@ -276,7 +276,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-left: 0.25rem;
+    margin-left: var(--space-1);
   }
 
   .pki-badge .shield-icon {
@@ -293,14 +293,14 @@
     border-radius: 8px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
     overflow-y: auto;
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
     min-width: 200px;
     display: flex;
     flex-direction: column;
   }
 
   .dropdown-header {
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     color: var(--text-color-secondary);
     font-size: 0.8rem;
     line-height: 1.4;
@@ -311,14 +311,14 @@
     display: block;
     color: var(--text-color);
     font-weight: 600;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     word-break: break-all;
   }
 
   .dropdown-divider {
     height: 1px;
     background-color: var(--border-color);
-    margin: 0.125rem 0;
+    margin: var(--space-0-5) 0;
     border: none;
   }
 
@@ -326,8 +326,8 @@
   .dropdown-item {
     display: flex !important;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
     color: var(--text-color) !important;
     text-decoration: none !important;
     transition: all var(--duration-base) ease;
@@ -340,7 +340,7 @@
     cursor: pointer;
     font-family: inherit;
     box-sizing: border-box;
-    margin: 0.125rem 0.5rem;
+    margin: var(--space-0-5) var(--space-2);
     border-radius: 6px;
     white-space: nowrap;
     position: relative;
@@ -352,9 +352,9 @@
     text-decoration: none !important;
     display: flex !important;
     align-items: center !important;
-    gap: 0.75rem !important;
-    padding: 0.5rem 1rem !important;
-    margin: 0.125rem 0.5rem !important;
+    gap: var(--space-3) !important;
+    padding: var(--space-2) var(--space-4) !important;
+    margin: var(--space-0-5) var(--space-2) !important;
     width: calc(100% - 1rem) !important;
     font-weight: 500 !important;
     border-radius: 6px !important;
@@ -374,8 +374,8 @@
   .dropdown-menu :global(.dropdown-item) {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
     color: var(--text-color);
     text-decoration: none;
     font-size: 0.9rem;
@@ -387,7 +387,7 @@
     cursor: pointer;
     font-family: inherit;
     box-sizing: border-box;
-    margin: 0.125rem 0.5rem;
+    margin: var(--space-0-5) var(--space-2);
     border-radius: 6px;
     white-space: nowrap;
   }
@@ -456,7 +456,7 @@
 
   .dropdown-item.logout {
     color: var(--error-color);
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   .dropdown-item.logout svg {
@@ -482,11 +482,11 @@
 
   /* Improved spacing between groups */
   .dropdown-item + .dropdown-divider {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   .dropdown-divider + .dropdown-item {
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   /* Hide username + chevron.
@@ -518,13 +518,13 @@
     }
 
     .dropdown-item {
-      padding: 0.625rem 1rem;
-      margin: 0.125rem 0.25rem;
+      padding: var(--space-2-5) var(--space-4);
+      margin: var(--space-0-5) var(--space-1);
       font-size: 0.95rem;
     }
 
     .dropdown-item:hover {
-      padding-inline-start: 1rem; /* No hover nudge on touch */
+      padding-inline-start: var(--space-4); /* No hover nudge on touch */
     }
 
     /* Hide username text on mobile, show avatar only */
@@ -537,8 +537,8 @@
     }
 
     .user-button {
-      gap: 0.25rem;
-      padding: 0.25rem;
+      gap: var(--space-1);
+      padding: var(--space-1);
     }
   }
 

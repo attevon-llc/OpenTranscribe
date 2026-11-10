@@ -269,16 +269,16 @@
   .share-header {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
   }
 
   .collection-name {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin: 0;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.9rem;
     color: var(--text-primary);
     font-weight: 600;
@@ -295,9 +295,9 @@
   .restricted-note {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin: 0;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.8125rem;
     line-height: 1.5;
     color: var(--text-primary);
@@ -320,8 +320,8 @@
 
   /* Permission guide */
   .permission-guide {
-    margin-bottom: 1rem;
-    padding: 0.625rem 0.75rem;
+    margin-bottom: var(--space-4);
+    padding: var(--space-2-5) var(--space-3);
     background: rgba(var(--accent-rgb), 0.05);
     border: 1px solid rgba(var(--accent-rgb), 0.15);
     border-radius: 6px;
@@ -336,14 +336,14 @@
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .permission-guide-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.25rem;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
     font-size: 0.75rem;
     line-height: 1.4;
   }
@@ -353,7 +353,7 @@
     display: inline-block;
     min-width: 52px;
     text-align: center;
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 999px;
     font-weight: 600;
     font-size: 0.6875rem;
@@ -378,7 +378,7 @@
   }
 
   .search-section {
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   /* Empty state for no existing shares */
@@ -387,18 +387,18 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 1.25rem 1rem;
+    padding: var(--space-5) var(--space-4);
     text-align: center;
     color: var(--text-secondary);
   }
 
   .empty-shares svg {
     color: var(--text-tertiary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .empty-title {
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -413,7 +413,7 @@
   }
 
   .pending-section h4 {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-color);
@@ -422,14 +422,14 @@
   .pending-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .pending-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--space-2);
     padding: 0.4rem 0.6rem;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -439,7 +439,7 @@
   .pending-info {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     min-width: 0;
     flex: 1;
   }
@@ -461,7 +461,7 @@
   .pending-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     flex-shrink: 0;
   }
 
@@ -488,14 +488,14 @@
   .share-action {
     display: flex;
     justify-content: flex-end;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .share-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1.2rem;
+    gap: var(--space-2);
+    padding: var(--space-2) 1.2rem;
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -526,14 +526,14 @@
   .divider {
     height: 1px;
     background: var(--border-color);
-    margin: 0.25rem 0;
+    margin: var(--space-1) 0;
   }
 
   .loading-shares {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 1rem 0;
+    gap: var(--space-2);
+    padding: var(--space-4) 0;
     font-size: 0.85rem;
     color: var(--text-secondary);
     justify-content: center;
@@ -547,7 +547,7 @@
     .pending-item {
       flex-direction: column;
       align-items: stretch;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .pending-actions {

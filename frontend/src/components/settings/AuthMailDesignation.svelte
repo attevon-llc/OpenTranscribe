@@ -170,8 +170,8 @@
   .auth-mail {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
   }
   .auth-mail h5 {
     margin: 0;
@@ -186,12 +186,12 @@
   .auth-mail-row {
     display: flex;
     align-items: flex-end;
-    gap: 12px;
+    gap: var(--space-3);
   }
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
     flex: 1;
   }
   .form-group label {
@@ -202,7 +202,7 @@
      stay in parity without a second rule set. */
   .auth-mail-warning {
     margin: 0;
-    padding: 8px 10px;
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--warning-border);
     border-radius: 6px;
     background: var(--warning-bg);

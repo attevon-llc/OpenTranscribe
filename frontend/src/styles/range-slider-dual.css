@@ -22,7 +22,7 @@
 
 .slider-dual .rangeSlider {
   height: var(--slider-track-height);
-  margin: 0.5rem 0;
+  margin: var(--space-2) 0;
   border-radius: var(--slider-track-radius);
   cursor: pointer;
 }

@@ -239,14 +239,14 @@
 
 <style>
   .erasure-card {
-    margin-top: 1rem;
-    padding: 1rem;
+    margin-top: var(--space-4);
+    padding: var(--space-4);
     border-radius: 10px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
   }
 
   .title {
@@ -276,7 +276,7 @@
   .receipt {
     margin: 0;
     display: grid;
-    gap: 0.25rem;
+    gap: var(--space-1);
     font-size: 0.8125rem;
   }
 
@@ -286,7 +286,7 @@
   }
 
   .receipt dd {
-    margin: 0 0 0.375rem;
+    margin: 0 0 var(--space-1-5);
     min-width: 0;
   }
 
@@ -302,27 +302,27 @@
   .form {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-color);
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     font-size: 0.8125rem;
   }
 
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .btn-danger {
@@ -330,7 +330,7 @@
     color: var(--text-on-solid);
     border: 1px solid transparent;
     border-radius: 6px;
-    padding: 0.5rem 0.875rem;
+    padding: var(--space-2) var(--space-3-5);
     cursor: pointer;
   }
 
@@ -341,7 +341,7 @@
 
   .notice {
     margin: 0;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.8125rem;
     border-radius: 6px;
     background: #fef3c7;

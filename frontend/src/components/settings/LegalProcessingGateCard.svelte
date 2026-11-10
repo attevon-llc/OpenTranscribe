@@ -139,9 +139,9 @@
   .gate {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    margin-block: 8px 20px;
-    padding: 12px 14px;
+    gap: var(--space-3);
+    margin-block: var(--space-2) var(--space-5);
+    padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--bg-secondary);
@@ -161,9 +161,9 @@
   .gate-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin: 0;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: var(--font-size-sm);
@@ -171,13 +171,13 @@
   }
 
   .gate-group legend {
-    padding: 0 0.375rem;
+    padding: 0 var(--space-1-5);
     font-weight: var(--font-weight-medium);
   }
 
   .gate-option {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: flex-start;
     cursor: pointer;
   }

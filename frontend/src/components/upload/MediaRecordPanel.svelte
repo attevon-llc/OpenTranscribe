@@ -181,14 +181,14 @@
   .record-panel {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .unsupported-msg {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
+    gap: var(--space-3);
+    padding: var(--space-4);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: 8px;
@@ -203,13 +203,13 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .device-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -225,8 +225,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1.5rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-6) var(--space-4);
     border: 2px solid var(--border-color);
     border-radius: 12px;
     background-color: var(--surface-color);
@@ -237,8 +237,8 @@
   .start-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-6);
     border-radius: 8px;
     font-size: 0.9375rem;
     font-weight: 600;
@@ -261,7 +261,7 @@
   .recording-active {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
     align-items: center;
   }
@@ -269,7 +269,7 @@
   .status-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     justify-content: center;
   }
 
@@ -299,7 +299,7 @@
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(var(--accent-rgb), 0.1);
-    padding: 0.1875rem 0.625rem;
+    padding: 0.1875rem var(--space-2-5);
     border-radius: 4px;
   }
 
@@ -327,14 +327,14 @@
   .level-bar.active.medium { background-color: #f59e0b; opacity: 1; }
   .level-bar.active.high { background-color: var(--error-solid); opacity: 1; }
 
-  .control-row { display: flex; gap: 0.75rem; justify-content: center; }
+  .control-row { display: flex; gap: var(--space-3); justify-content: center; }
 
   .ctrl-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.25rem;
-    padding: 0.4375rem 0.625rem;
+    gap: var(--space-1);
+    padding: 0.4375rem var(--space-2-5);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: transparent;
@@ -352,7 +352,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     width: 100%;
   }
 
@@ -367,7 +367,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     font-size: 0.6875rem;
     color: var(--text-tertiary);
     text-align: center;

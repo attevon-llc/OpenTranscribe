@@ -69,11 +69,11 @@
 
 <style>
   .notification-main {
-    margin-bottom: 8px;
+    margin-bottom: var(--space-2);
   }
 
   .notification-title {
-    margin: 0 0 4px 0;
+    margin: 0 0 var(--space-1) 0;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
@@ -81,7 +81,7 @@
   }
 
   .notification-message {
-    margin: 0 0 8px 0;
+    margin: 0 0 var(--space-2) 0;
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.4;
@@ -90,7 +90,7 @@
 
   .notification-action {
     display: block;
-    margin-top: 8px;
+    margin-top: var(--space-2);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);

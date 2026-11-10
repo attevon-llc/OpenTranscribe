@@ -263,14 +263,14 @@
   .url-panel {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .offline-banner {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-3);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: 8px;
@@ -278,18 +278,18 @@
     color: var(--text-primary);
   }
 
-  .offline-banner svg { flex-shrink: 0; color: #ef4444; margin-top: 2px; }
+  .offline-banner svg { flex-shrink: 0; color: #ef4444; margin-top: var(--space-0-5); }
 
   .url-input-section {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .url-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.9375rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -305,7 +305,7 @@
 
   .url-input {
     width: 100%;
-    padding: 0.625rem 2.5rem 0.625rem 0.75rem;
+    padding: var(--space-2-5) var(--space-10) var(--space-2-5) var(--space-3);
     font-size: 0.9375rem;
   }
   .url-input:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -317,7 +317,7 @@
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 6px;
+    padding: var(--space-1-5);
     border-radius: 4px;
     display: flex;
     align-items: center;
@@ -331,12 +331,12 @@
   /* Protected Media Auth */
   .protected-media-auth {
     border-radius: 8px;
-    padding: 0.75rem;
+    padding: var(--space-3);
     background-color: var(--surface-color);
     border: 1px dashed var(--border-color);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .protected-media-header { font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); }
@@ -344,15 +344,15 @@
   .protected-media-fields {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.5rem 1rem;
+    gap: var(--space-2) var(--space-4);
   }
 
-  .protected-media-field { display: flex; flex-direction: column; gap: 0.25rem; }
+  .protected-media-field { display: flex; flex-direction: column; gap: var(--space-1); }
   .protected-media-field label { font-size: 0.75rem; color: var(--text-secondary); }
 
   .protected-input {
     width: 100%;
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     font-size: 0.8125rem;
   }
 
@@ -369,8 +369,8 @@
   .download-options-summary {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-secondary);
@@ -383,24 +383,24 @@
   .download-options-summary:hover { background: var(--surface-color); }
 
   .download-options-content {
-    padding: 0.75rem;
+    padding: var(--space-3);
     border-top: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
   }
 
   .download-option-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .download-option-row label { font-size: 0.8125rem; color: var(--text-primary); }
 
   .download-select {
-    padding: 0.3125rem 0.5rem;
+    padding: 0.3125rem var(--space-2);
     font-size: 0.8125rem;
     min-width: 120px;
   }
@@ -434,14 +434,14 @@
   .download-toggle input:checked + .download-toggle-slider::before { transform: translateX(16px); }
 
   .download-options-hint { font-size: 0.6875rem; color: var(--text-secondary); margin: 0; }
-  .download-options-loading { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem; font-size: 0.8125rem; color: var(--text-secondary); }
+  .download-options-loading { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); font-size: 0.8125rem; color: var(--text-secondary); }
 
   /* URL Info Footer */
   .url-info-footer {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
-    padding: 0.625rem;
+    gap: var(--space-1-5);
+    padding: var(--space-2-5);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--surface-color);
@@ -452,7 +452,7 @@
   .url-terms-notice {
     display: flex;
     align-items: baseline;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     margin: 0;
     font-size: 0.625rem;
     line-height: 1.4;

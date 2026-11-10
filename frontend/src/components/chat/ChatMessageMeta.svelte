@@ -192,7 +192,7 @@
 
 <style>
   .message-meta {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .meta-toggle {
@@ -214,9 +214,9 @@
   .meta-grid {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 0.25rem 0.85rem;
-    margin: 0.5rem 0 0;
-    padding: 0.65rem 0.75rem;
+    gap: var(--space-1) 0.85rem;
+    margin: var(--space-2) 0 0;
+    padding: 0.65rem var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--surface-color);
@@ -243,7 +243,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -252,7 +252,7 @@
   .plan-steps li {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     color: inherit;
   }
 
@@ -263,7 +263,7 @@
   .estimated {
     color: var(--text-secondary);
     font-size: 0.72rem;
-    margin-left: 0.25rem;
+    margin-left: var(--space-1);
   }
 
   .disambiguation-hint {

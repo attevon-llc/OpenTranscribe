@@ -13,7 +13,7 @@
 
 <style>
   .content {
-    padding: 1rem;
+    padding: var(--space-4);
     margin-top: var(--content-top);
   }
 
@@ -24,7 +24,7 @@
 
   @media (min-width: 768px) {
     .content {
-      padding: 2rem;
+      padding: var(--space-8);
     }
   }
 </style>

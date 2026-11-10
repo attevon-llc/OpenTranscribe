@@ -508,14 +508,14 @@
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     overflow: hidden;
     min-width: 0;
     /* 32px gutter before the duration column: the shared 8px grid `gap` (file-list-grid.css)
        plus 24px here. Column geometry otherwise lives ONLY in file-list-grid.css — this is
        the one exception, scoped to a single cell's trailing edge rather than the grid gap,
        which would widen every column boundary. */
-    padding-inline-end: 24px;
+    padding-inline-end: var(--space-6);
   }
 
   .speaker-names {
@@ -532,10 +532,10 @@
     font-weight: 500;
     color: var(--primary-on-surface);
     background: var(--primary-color-alpha);
-    padding: 0.125rem 0.375rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 9999px;
     white-space: nowrap;
-    margin-left: 0.25rem;
+    margin-left: var(--space-1);
   }
 
   .no-speakers {

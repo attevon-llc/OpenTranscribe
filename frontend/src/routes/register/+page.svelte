@@ -274,7 +274,7 @@
     align-items: center;
     min-height: 100vh;
     min-height: 100dvh;
-    padding: 1rem;
+    padding: var(--space-4);
     background-color: var(--background-color);
   }
 
@@ -284,24 +284,24 @@
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 400px;
-    padding: 2rem;
+    padding: var(--space-8);
   }
 
   .registration-check {
     display: flex;
     justify-content: center;
-    padding: 2rem 0;
+    padding: var(--space-8) 0;
   }
 
   .auth-header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .auth-header h1 {
     font-size: 1.5rem;
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .auth-header p {
@@ -312,13 +312,13 @@
   .auth-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-group label {
@@ -331,7 +331,7 @@
   }
 
   .form-error {
-    margin: 0 0 12px;
+    margin: 0 0 var(--space-3);
     font-size: 13px;
     line-height: 1.4;
     color: var(--error-color);
@@ -351,7 +351,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .auth-button:hover:not(:disabled) {
@@ -390,7 +390,7 @@
 
   .auth-logo {
     text-align: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .auth-logo .logo-banner {
@@ -404,14 +404,14 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .toggle-password {
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-light);
     display: flex;
     align-items: center;
@@ -426,7 +426,7 @@
   .label-with-info {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .info-tooltip {
@@ -453,7 +453,7 @@
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     box-shadow: var(--shadow-lg);
     width: 250px;
     z-index: 100;
@@ -479,20 +479,20 @@
 
   .tooltip-content strong {
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     font-size: 0.8rem;
     color: var(--text-color);
   }
 
   .tooltip-content ul {
     margin: 0;
-    padding-left: 1.25rem;
+    padding-left: var(--space-5);
     font-size: 0.75rem;
     color: var(--text-light);
   }
 
   .tooltip-content li {
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .tooltip-content li:last-child {

@@ -183,22 +183,22 @@
 
   .search-input {
     width: 100%;
-    padding: 0.6rem 0.75rem 0.6rem 2rem;
+    padding: 0.6rem var(--space-3) 0.6rem var(--space-8);
     font-size: 0.875rem;
   }
 
   .search-loading {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0.5rem;
+    gap: var(--space-2);
+    padding: var(--space-2);
     font-size: 0.85rem;
     color: var(--text-secondary);
   }
 
   .search-results {
     list-style: none;
-    margin: 4px 0 0 0;
+    margin: var(--space-1) 0 0 0;
     padding: 0;
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -214,9 +214,9 @@
   .result-item {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2-5);
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: none;
     background: transparent;
     color: var(--text-color);
@@ -257,7 +257,7 @@
   }
 
   .no-results {
-    padding: 0.5rem;
+    padding: var(--space-2);
     font-size: 0.85rem;
     color: var(--text-secondary);
     text-align: center;
@@ -268,7 +268,7 @@
   }
 
   .search-hint {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     font-size: 0.75rem;
     color: var(--text-secondary);
     text-align: center;

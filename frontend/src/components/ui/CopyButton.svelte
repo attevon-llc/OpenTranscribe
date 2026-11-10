@@ -98,8 +98,8 @@
   .copy-button {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -114,7 +114,7 @@
       color var(--duration-fast) ease;
   }
   .copy-button.icon-only {
-    padding: 6px;
+    padding: var(--space-1-5);
   }
   .copy-button:hover {
     background: var(--button-hover);

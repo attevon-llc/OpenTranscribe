@@ -106,13 +106,13 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
@@ -122,7 +122,7 @@
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     font-size: 0.8125rem;
   }
 

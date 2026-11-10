@@ -32,8 +32,8 @@
   .count-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     height: 30px;
     box-sizing: border-box;
     background: var(--surface-color);
@@ -65,7 +65,7 @@
   @media (max-width: 768px) {
     .count-chip {
       font-size: 0.75rem;
-      padding: 0.3rem 0.625rem;
+      padding: 0.3rem var(--space-2-5);
       gap: 0.3rem;
     }
 
@@ -80,7 +80,7 @@
   @media (max-width: 480px) {
     .count-chip {
       font-size: 0.6875rem;
-      padding: 0.25rem 0.5rem;
+      padding: var(--space-1) var(--space-2);
     }
   }
 </style>

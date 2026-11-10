@@ -24,8 +24,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 10px 20px;
+    gap: var(--space-3);
+    padding: var(--space-2-5) var(--space-5);
     border-top: 1px solid var(--border-color);
     background: var(--surface-color);
     font-size: 0.8125rem;
@@ -39,13 +39,13 @@
   select {
     flex: 0 1 60%;
     min-width: 0;
-    padding: 4px 8px;
+    padding: var(--space-1) var(--space-2);
     font-size: 0.8125rem;
   }
 
   @media (max-width: 640px) {
     .retention-setting {
-      padding: 10px 16px;
+      padding: var(--space-2-5) var(--space-4);
     }
   }
 </style>

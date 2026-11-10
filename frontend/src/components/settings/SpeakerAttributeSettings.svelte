@@ -276,37 +276,37 @@
   .settings-section h3 {
     font-size: 1.1rem;
     font-weight: 600;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     color: var(--text-color);
   }
 
   .section-description {
     font-size: 0.85rem;
     color: var(--text-secondary);
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
     line-height: 1.4;
   }
 
   .settings-group {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-6);
   }
 
   .setting-row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
-    padding: 0.75rem;
+    gap: var(--space-4);
+    padding: var(--space-3);
     border-radius: 8px;
     background: var(--background-color);
     border: 1px solid var(--border-color);
   }
 
   .setting-row.sub-setting {
-    margin-left: 1.5rem;
+    margin-left: var(--space-6);
     background: var(--surface-color);
   }
 
@@ -319,7 +319,7 @@
     font-weight: 500;
     color: var(--text-color);
     display: block;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .setting-description {
@@ -332,7 +332,7 @@
   .setting-note {
     font-size: 0.775rem;
     color: var(--text-muted);
-    margin: 0.375rem 0 0;
+    margin: var(--space-1-5) 0 0;
     line-height: 1.3;
   }
 
@@ -393,8 +393,8 @@
   .button-group {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
-    margin-top: 1rem;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
   }
 
   .button-group .btn-secondary {
@@ -404,8 +404,8 @@
   .error-message {
     color: var(--error-color);
     font-size: 0.85rem;
-    margin-bottom: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     background: rgba(255, 107, 107, 0.1);
     border-radius: 6px;
   }
@@ -413,8 +413,8 @@
   .success-message {
     color: var(--success-color);
     font-size: 0.85rem;
-    margin-bottom: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     background: rgba(81, 207, 102, 0.1);
     border-radius: 6px;
   }

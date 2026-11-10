@@ -93,7 +93,7 @@
   .loading {
     display: flex;
     justify-content: center;
-    padding: 2rem 0;
+    padding: var(--space-8) 0;
   }
 
   .tag-filter {
@@ -144,7 +144,7 @@
 
   .empty {
     width: 100%;
-    padding: 1.5rem 0.5rem;
+    padding: var(--space-6) var(--space-2);
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.85rem;

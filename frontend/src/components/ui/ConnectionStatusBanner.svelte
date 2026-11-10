@@ -51,7 +51,7 @@
     align-items: center;
     gap: 0.6rem;
     max-width: calc(100vw - 2rem);
-    padding: 0.55rem 1rem;
+    padding: 0.55rem var(--space-4);
     border-radius: 999px;
     background: var(--surface-color);
     border: 1px solid var(--warning-color);
@@ -80,7 +80,7 @@
 
   .connection-retry {
     flex: 0 0 auto;
-    padding: 0.3rem 0.75rem;
+    padding: 0.3rem var(--space-3);
     border-radius: 999px;
     border: 1px solid var(--border-color);
     background: var(--button-hover);

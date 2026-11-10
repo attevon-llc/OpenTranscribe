@@ -335,8 +335,8 @@
 
 <style>
   .lite-note {
-    margin: 0 0 1rem;
-    padding: 0.75rem 1rem;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4);
     border-radius: 8px;
     border: 1px solid rgba(var(--primary-color-rgb), 0.3);
     background: rgba(var(--primary-color-rgb), 0.08);
@@ -359,19 +359,19 @@
   }
 
   .boundary-heading {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .form-select {
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.8125rem;
     height: 36px;
     cursor: pointer;
@@ -384,7 +384,7 @@
 
   .form-input {
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.8125rem;
     box-sizing: border-box;
   }
@@ -399,9 +399,9 @@
   .toggle-label {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
-    padding-top: 0.125rem;
+    padding-top: var(--space-0-5);
   }
 
   .toggle-input {
@@ -458,15 +458,15 @@
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    padding-top: 0.5rem;
+    padding-top: var(--space-2);
     border-top: 1px solid var(--border-color);
   }
 
   .btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1.25rem;
+    gap: var(--space-1-5);
+    padding: var(--space-2) var(--space-5);
     border-radius: 6px;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -497,13 +497,13 @@
   .advanced-fields {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding-top: 0.25rem;
+    gap: var(--space-3);
+    padding-top: var(--space-1);
   }
 
   /* The tuning rows sit inside the re-check card; a second border box nested in it is noise. */
   .advanced-fields :global(.form-field) {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
     border: none;
     background: transparent;
   }

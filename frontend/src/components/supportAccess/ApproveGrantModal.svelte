@@ -79,8 +79,8 @@
   .facts {
     display: grid;
     grid-template-columns: max-content 1fr;
-    gap: 0.35rem 1rem;
-    margin: 0 0 1rem 0;
+    gap: 0.35rem var(--space-4);
+    margin: 0 0 var(--space-4) 0;
     font-size: 0.875rem;
   }
   dt {
@@ -93,7 +93,7 @@
     overflow-wrap: anywhere;
   }
   .requested {
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
     font-size: 0.875rem;
     color: var(--text-color);
   }

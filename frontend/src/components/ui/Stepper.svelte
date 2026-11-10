@@ -71,7 +71,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     min-width: 0;
   }
 
@@ -121,7 +121,7 @@
 
   .stepper-label {
     max-width: 100%;
-    padding-inline: 0.25rem;
+    padding-inline: var(--space-1);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
@@ -143,7 +143,7 @@
 
   .stepper-caption {
     display: none;
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     color: var(--text-primary);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);

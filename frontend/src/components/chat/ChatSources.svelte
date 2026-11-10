@@ -188,7 +188,7 @@
 
 <style>
   .chat-sources {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .sources-toggle {
@@ -197,7 +197,7 @@
     gap: 0.35rem;
     background: none;
     border: none;
-    padding: 0.25rem 0.35rem;
+    padding: var(--space-1) 0.35rem;
     margin-inline-start: -0.35rem;
     border-radius: 6px;
     color: var(--text-secondary);
@@ -221,10 +221,10 @@
 
   .sources-list {
     list-style: none;
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     padding: 0;
     display: grid;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   /* Card chrome lives on the LI, not the anchor: the "show more" button is a
@@ -251,7 +251,7 @@
   .source-card {
     display: flex;
     gap: 0.6rem;
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem var(--space-3);
     text-decoration: none;
     color: inherit;
   }
@@ -282,7 +282,7 @@
 
   .source-meta {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }

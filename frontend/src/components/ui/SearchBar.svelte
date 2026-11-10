@@ -251,9 +251,9 @@
   .search-bar {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     width: 100%;
-    padding: 0 8px;
+    padding: 0 var(--space-2);
     background: var(--field-bg);
     border: 1px solid var(--field-border);
     border-radius: var(--field-radius);
@@ -280,8 +280,8 @@
      the text colour so it reads on both the light and the dark sidebar. */
   .search-bar.pill {
     height: 36px;
-    padding: 0 10px;
-    gap: 8px;
+    padding: 0 var(--space-2-5);
+    gap: var(--space-2);
     border-color: transparent;
     border-radius: 10px;
     background: color-mix(in srgb, var(--text-color) 8%, transparent);
@@ -361,7 +361,7 @@
   .search-bar-loading {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .search-bar-status-text {
@@ -383,7 +383,7 @@
   .search-bar-nav {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-0-5);
     flex-shrink: 0;
   }
 

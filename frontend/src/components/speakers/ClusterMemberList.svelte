@@ -202,14 +202,14 @@
   .member-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .member-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
     border-radius: 4px;
     font-size: 13px;
     min-width: 0;
@@ -246,7 +246,7 @@
 
   .verified-badge {
     font-size: 11px;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 8px;
     background: color-mix(in srgb, var(--success-color) 15%, transparent);
     color: var(--success-color);
@@ -311,9 +311,9 @@
   .gender-separator {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 8px 4px;
-    margin-top: 8px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2) var(--space-1);
+    margin-top: var(--space-2);
     border-top: 1px dashed var(--warning-color);
     font-size: 12px;
     font-weight: 600;
@@ -333,15 +333,15 @@
   }
 
   .majority-separator {
-    padding: 6px 8px 2px;
-    margin-top: 4px;
+    padding: var(--space-1-5) var(--space-2) var(--space-0-5);
+    margin-top: var(--space-1);
     border-top: 1px solid var(--border-color);
     font-size: 12px;
     color: var(--text-secondary);
   }
 
   .outlier-loading {
-    padding: 6px 8px;
+    padding: var(--space-1-5) var(--space-2);
     font-size: 12px;
     color: var(--text-secondary);
     font-style: italic;
@@ -351,7 +351,7 @@
   .outlier-badge {
     font-size: 10px;
     font-weight: 600;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 8px;
     white-space: nowrap;
   }
@@ -373,11 +373,11 @@
 
   /* Mode banners and actions */
   .mode-banner {
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     background: var(--color-warning-bg);
     border: 1px solid var(--color-warning-border);
     border-radius: 6px;
-    margin-bottom: 8px;
+    margin-bottom: var(--space-2);
     font-size: 13px;
     color: var(--warning-color);
   }
@@ -386,14 +386,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding-bottom: 8px;
-    margin-bottom: 8px;
+    gap: var(--space-2);
+    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-2);
     border-bottom: 1px solid var(--border-color);
   }
 
   .btn-cancel {
-    padding: 6px 14px;
+    padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--card-background);
@@ -410,7 +410,7 @@
   }
 
   .btn-confirm {
-    padding: 6px 14px;
+    padding: var(--space-1-5) var(--space-3-5);
     border: none;
     border-radius: 8px;
     background: var(--primary-color);
@@ -433,8 +433,8 @@
 
   @media (max-width: 768px) {
     .member-row {
-      gap: 6px;
-      padding: 6px 4px;
+      gap: var(--space-1-5);
+      padding: var(--space-1-5) var(--space-1);
       font-size: 12px;
     }
 
@@ -450,32 +450,32 @@
 
     .outlier-badge {
       font-size: 9px;
-      padding: 1px 4px;
+      padding: 1px var(--space-1);
     }
 
     .verified-badge {
       font-size: 10px;
-      padding: 1px 4px;
+      padding: 1px var(--space-1);
     }
 
     .mode-banner {
-      padding: 6px 8px;
+      padding: var(--space-1-5) var(--space-2);
       font-size: 12px;
     }
 
     .mode-actions {
-      gap: 6px;
+      gap: var(--space-1-5);
     }
 
     .btn-cancel,
     .btn-confirm {
-      padding: 5px 10px;
+      padding: 5px var(--space-2-5);
       font-size: 12px;
     }
 
     .gender-separator {
       font-size: 11px;
-      gap: 4px;
+      gap: var(--space-1);
     }
 
     .separator-hint {

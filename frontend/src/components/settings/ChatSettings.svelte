@@ -185,7 +185,7 @@
   .settings-section {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .section-description {
@@ -210,7 +210,7 @@
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .toggle-label {
@@ -284,7 +284,7 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .hint {
@@ -301,7 +301,7 @@
   }
 
   .standalone-hint {
-    margin-top: -0.75rem;
+    margin-top: calc(-1 * var(--space-3));
   }
 
   input[type='number'] {

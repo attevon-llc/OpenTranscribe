@@ -72,11 +72,11 @@
   .range-slider__label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-color);
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .range-slider__badge {
@@ -90,12 +90,12 @@
 
   .range-slider__hint,
   .range-slider__default {
-    margin: 0.5rem 0 0 0;
+    margin: var(--space-2) 0 0 0;
     font-size: 0.75rem;
     color: var(--text-muted);
   }
 
   .range-slider__default {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 </style>

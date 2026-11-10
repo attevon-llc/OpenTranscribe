@@ -106,7 +106,7 @@
 
   /* ── File header ── */
   .skeleton-file-header {
-    margin-bottom: 24px;
+    margin-bottom: var(--space-6);
   }
 
   .skeleton-title {
@@ -114,13 +114,13 @@
     max-width: 480px;
     height: 28px;
     border-radius: 6px;
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .skeleton-meta-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .skeleton-meta-chip {
@@ -137,7 +137,7 @@
   .skeleton-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 32px;
+    gap: var(--space-8);
     align-items: start;
   }
 
@@ -145,7 +145,7 @@
   .skeleton-transcript-column {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
     min-width: 0;
   }
 
@@ -164,7 +164,7 @@
 
   .skeleton-header-buttons {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .skeleton-button {
@@ -197,9 +197,9 @@
   /* ── Chips row (tags) ── */
   .skeleton-chips-row {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     flex-wrap: wrap;
-    margin-top: 4px;
+    margin-top: var(--space-1);
   }
 
   .skeleton-chip {
@@ -216,12 +216,12 @@
     display: flex;
     flex-direction: column;
     gap: 18px;
-    padding: 12px 0;
+    padding: var(--space-3) 0;
   }
 
   .skeleton-transcript-item {
     display: flex;
-    gap: 12px;
+    gap: var(--space-3);
     align-items: flex-start;
   }
 
@@ -236,7 +236,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-1-5);
     min-width: 0;
   }
 
@@ -244,7 +244,7 @@
     width: 110px;
     height: 14px;
     border-radius: 4px;
-    margin-bottom: 2px;
+    margin-bottom: var(--space-0-5);
   }
 
   .skeleton-text-line {
@@ -307,7 +307,7 @@
   @media (max-width: 1024px) {
     .skeleton-grid {
       grid-template-columns: 1fr;
-      gap: 24px;
+      gap: var(--space-6);
     }
   }
 
@@ -317,10 +317,10 @@
       height: 24px;
     }
     .skeleton-file-header {
-      margin-bottom: 16px;
+      margin-bottom: var(--space-4);
     }
     .skeleton-grid {
-      gap: 16px;
+      gap: var(--space-4);
     }
   }
 </style>

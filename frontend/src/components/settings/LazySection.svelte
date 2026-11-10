@@ -70,15 +70,15 @@
 
 <style>
   .section-loading {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 
   .section-load-error {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.75rem;
-    padding: 1rem;
+    gap: var(--space-3);
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--background-color);

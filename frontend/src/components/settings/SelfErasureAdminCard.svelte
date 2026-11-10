@@ -101,22 +101,22 @@
   .self-erasure-admin {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 1.5rem;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
   }
 
   .grace {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8125rem;
     color: var(--text-color);
   }
 
   .grace input {
     width: 5rem;
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
   }
 
   .hint {

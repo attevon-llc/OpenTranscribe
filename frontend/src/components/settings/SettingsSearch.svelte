@@ -175,7 +175,7 @@
   }
 
   .search-field {
-    padding: 0 0 12px;
+    padding: 0 0 var(--space-3);
     border-bottom: 1px solid transparent;
     transition:
       border-color var(--duration-fast) ease,
@@ -195,7 +195,7 @@
 
   /* About 0.75rem in from the sidebar edges, like the Settings apps this is modelled on. */
   .sidebar .search-field {
-    padding: 12px 12px 10px;
+    padding: var(--space-3) var(--space-3) var(--space-2-5);
   }
 
   .raised .search-field {
@@ -204,7 +204,7 @@
   }
 
   .settings-search-results {
-    margin-top: 8px;
+    margin-top: var(--space-2);
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
@@ -216,7 +216,7 @@
     min-height: 0;
     max-height: none;
     margin-top: 0;
-    padding: 8px;
+    padding: var(--space-2);
   }
 
   .sr-only {
@@ -240,14 +240,14 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-0-5);
   }
 
   .result-item {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 8px 10px;
+    gap: var(--space-0-5);
+    padding: var(--space-2) var(--space-2-5);
     border-radius: 6px;
     cursor: pointer;
     border: 1px solid transparent;

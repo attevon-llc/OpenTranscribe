@@ -83,7 +83,7 @@
   }
 
   .tab-intro {
-    margin: 0 0 1.25rem;
+    margin: 0 0 var(--space-5);
     padding: 0.7rem 0.85rem;
     border-left: 3px solid var(--primary-color);
     border-radius: 0 6px 6px 0;

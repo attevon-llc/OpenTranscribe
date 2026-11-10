@@ -349,14 +349,14 @@
 
 <style>
   .content-redaction-settings {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .intro-desc {
@@ -370,26 +370,26 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 1.25rem;
+    padding: var(--space-5);
   }
 
   .section-title {
     font-size: 0.95rem;
     font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .section-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
   }
 
   .field-desc {
     font-size: 0.75rem;
     color: var(--text-muted);
-    margin: 0.375rem 0 0 0;
+    margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
   }
 
@@ -397,17 +397,17 @@
     margin-bottom: 0;
   }
   .form-group + .form-group {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
   }
 
   .form-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-color);
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .form-select,
@@ -419,18 +419,18 @@
   }
 
   .perf-note {
-    margin: 0.5rem 0 0 0;
+    margin: var(--space-2) 0 0 0;
     font-size: 0.75rem;
     color: var(--text-color);
     background: rgba(var(--warning-color-rgb), 0.12);
     border-radius: 6px;
-    padding: 0.5rem 0.65rem;
+    padding: var(--space-2) 0.65rem;
     line-height: 1.5;
   }
 
   .example-box {
     margin-top: 0.6rem;
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem var(--space-3);
     background: var(--background-color);
     border: 1px dashed var(--border-color);
     border-radius: 6px;
@@ -439,7 +439,7 @@
     display: block;
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
   .example-text {
     font-size: 0.85rem;
@@ -457,7 +457,7 @@
   .chip-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .chip {
     display: inline-flex;
@@ -519,7 +519,7 @@
   }
   .lang-icon {
     vertical-align: -2px;
-    margin-right: 0.25rem;
+    margin-right: var(--space-1);
   }
 
   .lang-note {
@@ -528,8 +528,8 @@
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 0.6rem 0.75rem;
-    margin: 0 0 0.75rem 0;
+    padding: 0.6rem var(--space-3);
+    margin: 0 0 var(--space-3) 0;
     line-height: 1.6;
   }
   .lang-note strong {
@@ -544,13 +544,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
     flex-wrap: wrap;
   }
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     user-select: none;
   }
@@ -601,6 +601,6 @@
   .button-row {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 </style>

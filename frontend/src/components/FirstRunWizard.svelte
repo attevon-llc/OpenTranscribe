@@ -634,9 +634,9 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 6px 12px;
-    padding: 6px 8px;
-    padding-inline-start: 16px;
+    gap: var(--space-1-5) var(--space-3);
+    padding: var(--space-1-5) var(--space-2);
+    padding-inline-start: var(--space-4);
     border-block-end: 1px solid var(--border-color);
     background-color: var(--surface-color);
   }
@@ -650,7 +650,7 @@
     max-height: 40vh;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 14px 18px;
+    padding: var(--space-3-5) 18px;
     color: var(--text-primary);
   }
 
@@ -671,17 +671,17 @@
   .wizard-step {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .wizard-progress {
-    margin-block-end: 20px;
+    margin-block-end: var(--space-5);
     /* Room above it when a step change scrolls it back into view (the body's own padding). */
     scroll-margin-block-start: 24px;
   }
 
   .wizard-progress-label {
-    margin: 0 0 12px;
+    margin: 0 0 var(--space-3);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
@@ -690,8 +690,8 @@
   .wizard-callout {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 12px 14px;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-inline-start-width: 4px;
     border-radius: 8px;
@@ -716,35 +716,35 @@
   }
 
   .wizard-skip-hint {
-    margin-block-start: 20px;
+    margin-block-start: var(--space-5);
   }
 
   .wizard-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: var(--space-2-5);
   }
 
   .wizard-summary {
     margin: 0;
-    padding-inline-start: 20px;
+    padding-inline-start: var(--space-5);
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .posture-cards {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-2-5);
   }
 
   .posture-card {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
     text-align: start;
-    padding: 14px 16px;
+    padding: var(--space-3-5) var(--space-4);
     border: 2px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--bg-secondary);
@@ -771,7 +771,7 @@
   .wizard-checkbox {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: var(--space-2-5);
     cursor: pointer;
   }
 
@@ -792,7 +792,7 @@
   /* A text link, not a button: the global button rule's surface, radius and shadow must not
      leak onto it (it used to render as a raised white box). */
   .wizard-skip-link {
-    padding: 8px 4px;
+    padding: var(--space-2) var(--space-1);
     border: none;
     border-radius: 6px;
     background: none;
@@ -821,7 +821,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 10px 16px;
+    gap: var(--space-2-5) var(--space-4);
   }
 
   .terms-footer .terms-accept {
@@ -836,11 +836,11 @@
   }
 
   .terms-step-compact {
-    gap: 10px;
+    gap: var(--space-2-5);
   }
 
   .wizard-callout-slim {
-    padding: 6px 12px;
+    padding: var(--space-1-5) var(--space-3);
     font-size: var(--font-size-sm);
   }
 </style>

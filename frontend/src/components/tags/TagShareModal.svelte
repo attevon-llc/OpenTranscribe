@@ -130,7 +130,7 @@
   .tag-share {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .share-note,
@@ -146,15 +146,15 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .share-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
     border: 1px solid var(--border-color);
     border-radius: 6px;
   }
@@ -162,7 +162,7 @@
   .share-target {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
     min-width: 0;
   }
 
@@ -182,6 +182,6 @@
   }
 
   .share-loading {
-    padding: 4px 0;
+    padding: var(--space-1) 0;
   }
 </style>

@@ -178,8 +178,8 @@
 
 <style>
   .bedrock-block {
-    margin-bottom: 1.5rem;
-    padding: 0.75rem 1rem 0.25rem;
+    margin-bottom: var(--space-6);
+    padding: var(--space-3) var(--space-4) var(--space-1);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--card-bg);
@@ -188,8 +188,8 @@
   .bedrock-title-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
   }
 
   .bedrock-title {
@@ -203,14 +203,14 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
-    margin: 0 0 1rem;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-4);
     font-size: 0.8125rem;
   }
 
   .status-chip {
     display: inline-block;
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     border: 1px solid var(--border-color);
     border-radius: 999px;
     color: var(--text-muted);
@@ -227,12 +227,12 @@
   }
 
   .form-group {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .form-group label {
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     font-weight: 500;
     color: var(--text-color);
   }
@@ -242,7 +242,7 @@
   }
 
   .field-error {
-    margin: 0.375rem 0 0;
+    margin: var(--space-1-5) 0 0;
     font-size: 0.75rem;
     color: var(--error-color);
   }
@@ -250,8 +250,8 @@
   .remove-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
     font-size: 0.8125rem;
     color: var(--text-color);
     cursor: pointer;

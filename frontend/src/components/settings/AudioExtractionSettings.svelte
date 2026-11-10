@@ -217,7 +217,7 @@
 <style>
   .audio-extraction-settings {
     max-width: 800px;
-    padding: 1.5rem 0;
+    padding: var(--space-6) 0;
   }
 
   .loading-state {
@@ -225,21 +225,21 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 3rem;
-    gap: 1rem;
+    padding: var(--space-12);
+    gap: var(--space-4);
     color: var(--text-secondary);
   }
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-label {
@@ -247,7 +247,7 @@
     color: var(--text-color);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .label-hint {
@@ -257,7 +257,7 @@
   }
 
   .toggle-group {
-    padding: 1rem;
+    padding: var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -272,14 +272,14 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .toggle-label {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     cursor: pointer;
   }
 
@@ -354,7 +354,7 @@
   .threshold-input-group {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .threshold-input {
@@ -367,7 +367,7 @@
   }
 
   .form-input {
-    padding: 0.75rem;
+    padding: var(--space-3);
     font-size: 0.8125rem;
   }
 
@@ -380,11 +380,11 @@
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    padding-top: 0.5rem;
+    padding-top: var(--space-2);
   }
 
   .save-button {
-    padding: 0.75rem 2rem;
+    padding: var(--space-3) var(--space-8);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -394,7 +394,7 @@
     transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -415,12 +415,12 @@
 
   .info-box {
     display: flex;
-    gap: 1rem;
-    padding: 1rem;
+    gap: var(--space-4);
+    padding: var(--space-4);
     background: rgba(var(--primary-color-rgb), 0.05);
     border: 1px solid rgba(var(--primary-color-rgb), 0.2);
     border-radius: 8px;
-    margin-top: 1rem;
+    margin-top: var(--space-4);
   }
 
   .info-icon {
@@ -433,20 +433,20 @@
   }
 
   .info-content p {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
     color: var(--text-color);
   }
 
   .info-content ul {
     margin: 0;
-    padding-left: 1.25rem;
+    padding-left: var(--space-5);
     color: var(--text-secondary);
     font-size: 0.8125rem;
     line-height: 1.6;
   }
 
   .info-content li {
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   /* Dark mode */
@@ -457,7 +457,7 @@
   /* Responsive */
   @media (max-width: 640px) {
     .audio-extraction-settings {
-      padding: 1rem 0;
+      padding: var(--space-4) 0;
     }
 
     .toggle-header {

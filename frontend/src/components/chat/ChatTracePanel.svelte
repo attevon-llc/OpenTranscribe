@@ -202,7 +202,7 @@
   .trace-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.7rem 0.85rem;
     border-bottom: 1px solid var(--border-color);
   }

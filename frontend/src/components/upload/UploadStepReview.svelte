@@ -152,7 +152,7 @@
 </div>
 
 <style>
-  .step-review { display: flex; flex-direction: column; gap: 0.75rem; }
+  .step-review { display: flex; flex-direction: column; gap: var(--space-3); }
 
   .review-card {
     display: flex; flex-direction: column; gap: 0;
@@ -161,8 +161,8 @@
   }
 
   .review-row {
-    display: flex; align-items: flex-start; gap: 0.75rem;
-    padding: 0.625rem 0.875rem;
+    display: flex; align-items: flex-start; gap: var(--space-3);
+    padding: var(--space-2-5) var(--space-3-5);
     border-bottom: 1px solid var(--border-color);
   }
 
@@ -171,7 +171,7 @@
   .review-label {
     flex-shrink: 0; width: 90px;
     font-size: 0.75rem; font-weight: var(--font-weight-medium); color: var(--text-secondary);
-    padding-top: 0.125rem;
+    padding-top: var(--space-0-5);
   }
 
   .review-value {
@@ -181,10 +181,10 @@
 
   .review-value em { color: var(--text-tertiary); font-style: italic; }
 
-  .review-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .review-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 
   .review-chip {
-    display: inline-block; padding: 0.125rem 0.4375rem;
+    display: inline-block; padding: var(--space-0-5) 0.4375rem;
     border-radius: 999px; font-size: 0.6875rem; font-weight: 500;
   }
 

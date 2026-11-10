@@ -508,15 +508,15 @@
   /* Infinite scroll styles */
   .infinite-scroll-sentinel {
     min-height: 1px;
-    padding: 8px 0;
+    padding: var(--space-2) 0;
   }
 
   .loading-more-indicator {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 16px;
+    gap: var(--space-2);
+    padding: var(--space-4);
     color: var(--text-muted);
     font-size: 14px;
   }
@@ -526,8 +526,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    padding: 8px 16px;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
     background: var(--surface-secondary);
     border-top: 1px solid var(--border-color);
     font-size: 13px;
@@ -541,7 +541,7 @@
   .loading-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .cancel-button {
@@ -614,16 +614,16 @@
     flex: 1 1 0; /* Allow shrinking below content size */
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr); /* minmax(0, 1fr) allows column to shrink */
-    gap: 12px;
+    gap: var(--space-3);
     align-items: start;
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     background: none;
     border: none;
     text-align: left;
     cursor: pointer;
     transition: all var(--duration-base) ease;
     border-radius: 4px;
-    margin: 2px 4px;
+    margin: var(--space-0-5) var(--space-1);
     min-width: 0; /* Allow grid to shrink */
     max-width: 100%;
     overflow: hidden;
@@ -655,7 +655,7 @@
   .segment-speaker {
     font-size: 12px;
     font-weight: var(--font-weight-semibold);
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 12px;
     white-space: nowrap;
     min-width: fit-content;
@@ -679,7 +679,7 @@
     color: var(--text-primary);
     line-height: 1.4;
     position: relative;
-    padding-left: 12px;
+    padding-left: var(--space-3);
     word-wrap: break-word;
     overflow-wrap: break-word;
     word-break: break-word;
@@ -727,12 +727,12 @@
     display: inline-flex;
     color: var(--warning-color);
     vertical-align: super;
-    margin-inline-start: 2px;
+    margin-inline-start: var(--space-0-5);
     cursor: help;
   }
 
   .edit-button {
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     background: none;
     border: none;
     color: var(--primary-on-surface);
@@ -750,13 +750,13 @@
   }
 
   .segment-edit-container {
-    padding: 16px;
+    padding: var(--space-4);
     background: var(--background-secondary);
     border-left: 3px solid var(--primary-color);
   }
 
   .segment-edit-input {
-    margin-top: 8px;
+    margin-top: var(--space-2);
   }
 
   .segment-textarea {
@@ -767,8 +767,8 @@
   .segment-edit-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 8px;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .segment-edit-actions .save-button,
@@ -838,8 +838,8 @@
   /* Overlap Group Styles */
   .overlap-group {
     position: relative;
-    margin: 8px 0;
-    padding-left: 12px;
+    margin: var(--space-2) 0;
+    padding-left: var(--space-3);
     border-left: 3px solid var(--primary-color);
     background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.05) 0%, transparent 100%);
     border-radius: 0 8px 8px 0;
@@ -848,8 +848,8 @@
   .overlap-indicator {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     background: rgba(var(--accent-rgb), 0.1);
     border-radius: 0 6px 0 0;
     font-size: 12px;
@@ -885,7 +885,7 @@
   }
 
   .transcript-segment.in-overlap {
-    margin-left: 4px;
+    margin-left: var(--space-1);
     border-left: none;
   }
 
@@ -898,11 +898,11 @@
   }
 
   .transcript-segment.first-in-overlap {
-    margin-top: 4px;
+    margin-top: var(--space-1);
   }
 
   .transcript-segment.last-in-overlap {
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
   }
 
   /* Dark mode adjustments for overlap groups */
@@ -919,8 +919,8 @@
     .segment-content {
       grid-template-columns: auto 1fr;
       grid-template-rows: auto auto;
-      gap: 4px 8px;
-      padding: 8px;
+      gap: var(--space-1) var(--space-2);
+      padding: var(--space-2);
     }
 
     .segment-content.monologue {
@@ -942,7 +942,7 @@
 
     .segment-speaker {
       font-size: 10px;
-      padding: 1px 6px;
+      padding: 1px var(--space-1-5);
       white-space: normal;
       max-width: none;
       text-align: center;

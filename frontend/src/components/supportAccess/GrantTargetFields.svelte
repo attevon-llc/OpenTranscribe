@@ -151,7 +151,7 @@
 
 <style>
   .field {
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
     padding: 0;
     border: 0;
     min-width: 0;
@@ -168,7 +168,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    margin-inline-end: 1.25rem;
+    margin-inline-end: var(--space-5);
     font-size: 0.875rem;
     color: var(--text-color);
     white-space: nowrap;
@@ -189,8 +189,8 @@
   .hint {
     display: flex;
     justify-content: space-between;
-    gap: 1rem;
-    margin-top: 0.25rem;
+    gap: var(--space-4);
+    margin-top: var(--space-1);
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
@@ -198,8 +198,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--surface-secondary);

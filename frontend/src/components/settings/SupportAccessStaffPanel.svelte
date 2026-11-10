@@ -220,14 +220,14 @@
   .panel {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
   .head {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
   .description {
     flex: 1 1 18rem;
@@ -239,7 +239,7 @@
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .bg-wrap {
     display: inline-flex;
@@ -249,7 +249,7 @@
     vertical-align: -2px;
   }
   .state {
-    margin: 1.5rem 0;
+    margin: var(--space-6) 0;
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.875rem;

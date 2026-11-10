@@ -181,9 +181,9 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
-    margin-bottom: 1rem;
-    padding-inline-end: 2rem;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+    padding-inline-end: var(--space-8);
   }
 
   .section-header-row .section-description {
@@ -201,18 +201,18 @@
   .loading-state {
     display: flex;
     justify-content: center;
-    padding: 2rem 0;
+    padding: var(--space-8) 0;
   }
 
   .counts {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-6);
   }
 
   .count-card {
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--background-color);
@@ -234,14 +234,14 @@
   }
 
   .list-title {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-secondary);
   }
 
   .file-list {
-    margin: 0 0 1.5rem;
+    margin: 0 0 var(--space-6);
     padding: 0;
     list-style: none;
     border: 1px solid var(--border-color);
@@ -252,8 +252,8 @@
   .file-list li {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     background-color: var(--background-color);
   }
 
@@ -285,7 +285,7 @@
   .all-normal {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .all-normal :global(.menu-icon) {
@@ -294,13 +294,13 @@
 
   .all-normal,
   .empty {
-    margin: 0 0 1.5rem;
+    margin: 0 0 var(--space-6);
     font-size: 0.875rem;
     color: var(--text-secondary);
   }
 
   .error-message {
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border-radius: 8px;
     color: var(--error-color);
     border: 1px solid var(--error-color);

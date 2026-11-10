@@ -34,8 +34,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 8px 20px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
     border-bottom: 1px solid var(--border-color);
     background: var(--background-color);
     color: var(--text-secondary);
@@ -63,7 +63,7 @@
 
   @media (max-width: 640px) {
     .cleared-notice {
-      padding: 8px 16px;
+      padding: var(--space-2) var(--space-4);
     }
   }
 </style>

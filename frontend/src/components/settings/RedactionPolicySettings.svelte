@@ -174,12 +174,12 @@
 
 <style>
   .redaction-policy-settings {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
   .intro-desc {
     font-size: 0.85rem;
@@ -191,23 +191,23 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 1.25rem;
+    padding: var(--space-5);
   }
   .section-title {
     font-size: 0.95rem;
     font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
   .section-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
   }
   .field-desc {
     font-size: 0.75rem;
     color: var(--text-muted);
-    margin: 0.375rem 0 0 0;
+    margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
   }
   .form-group {
@@ -216,13 +216,13 @@
   .setting-row {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--space-4);
     flex-wrap: wrap;
   }
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     user-select: none;
   }
@@ -266,6 +266,6 @@
   .button-row {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 </style>

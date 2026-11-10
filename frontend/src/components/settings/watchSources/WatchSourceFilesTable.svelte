@@ -158,7 +158,7 @@
   .files-table th,
   .files-table td {
     text-align: left;
-    padding: 8px 10px;
+    padding: var(--space-2) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     vertical-align: top;
   }
@@ -182,7 +182,7 @@
     color: var(--text-secondary);
   }
   .row-hint {
-    margin-top: 4px;
+    margin-top: var(--space-1);
     font-size: 0.75rem;
     font-style: italic;
     color: var(--warning-color);
@@ -200,10 +200,10 @@
     text-align: right;
   }
   .actions-col .btn {
-    margin-left: 4px;
+    margin-left: var(--space-1);
   }
   .btn-sm {
-    padding: 4px 10px;
+    padding: var(--space-1) var(--space-2-5);
     font-size: 0.8rem;
   }
   /* Override the global `input { width:100% }` base so checkboxes stay square. */

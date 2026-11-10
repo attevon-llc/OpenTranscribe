@@ -447,7 +447,7 @@
     left: 0.5rem;
     width: auto;
     height: auto;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 4px;
     font-weight: 600;
     text-decoration: none;

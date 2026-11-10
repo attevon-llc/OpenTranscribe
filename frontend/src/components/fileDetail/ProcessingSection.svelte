@@ -50,7 +50,7 @@
 
 <style>
   .processing-section {
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
   }
 
   .section-header {
@@ -61,7 +61,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     color: var(--text-primary);
@@ -92,6 +92,6 @@
     border-top: none;
     border-radius: 0 0 8px 8px;
     background: var(--surface-color);
-    padding: 16px 20px;
+    padding: var(--space-4) var(--space-5);
   }
 </style>

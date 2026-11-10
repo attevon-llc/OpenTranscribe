@@ -133,8 +133,8 @@
   .detail {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-3);
     background: var(--bg-secondary);
     border-radius: 6px;
   }
@@ -177,7 +177,7 @@
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .action-link {
@@ -192,7 +192,7 @@
   .notify-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .action-link:disabled {

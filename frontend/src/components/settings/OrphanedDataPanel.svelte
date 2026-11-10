@@ -283,8 +283,8 @@
 
 <style>
   .orphans {
-    margin-bottom: 1rem;
-    padding: 1rem;
+    margin-bottom: var(--space-4);
+    padding: var(--space-4);
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -294,7 +294,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .orphans-title {
@@ -305,7 +305,7 @@
   }
 
   .orphans-desc {
-    margin: 0.25rem 0 0.75rem;
+    margin: var(--space-1) 0 var(--space-3);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
@@ -313,7 +313,7 @@
   .orphans-state {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
@@ -327,11 +327,11 @@
   .orphans-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .orphan-card {
-    padding: 0.75rem;
+    padding: var(--space-3);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -340,7 +340,7 @@
   }
 
   .orphan-card-title {
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
     font-weight: 600;
     color: var(--text-color);
   }
@@ -348,8 +348,8 @@
   .orphan-row {
     display: flex;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.125rem 0;
+    gap: var(--space-2);
+    padding: var(--space-0-5) 0;
   }
 
   .orphan-row.sub {
@@ -369,7 +369,7 @@
   }
 
   .muted {
-    margin: 0.375rem 0 0;
+    margin: var(--space-1-5) 0 0;
     font-size: 0.75rem;
     color: var(--text-muted);
   }
@@ -379,15 +379,15 @@
   }
 
   .notice {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
+    margin-top: var(--space-3);
+    padding: var(--space-3);
     border-radius: 6px;
     font-size: 0.8rem;
     color: var(--text-color);
   }
 
   .notice p {
-    margin: 0.25rem 0;
+    margin: var(--space-1) 0;
   }
 
   .notice-warn {
@@ -399,7 +399,7 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
   }
 </style>

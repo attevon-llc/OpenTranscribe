@@ -309,8 +309,8 @@
   .org-privacy {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 0.25rem 0;
+    gap: var(--space-4);
+    padding: var(--space-1) 0;
   }
 
   .intro {

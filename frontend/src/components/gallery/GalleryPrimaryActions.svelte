@@ -59,13 +59,13 @@
   .gallery-primary-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .action-btn {
     color: var(--text-on-solid);
     border: none;
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     border-radius: 10px;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -132,7 +132,7 @@
   @media (max-width: 1200px) {
     .gallery-primary-actions {
       flex-wrap: wrap;
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
 
     .action-btn {

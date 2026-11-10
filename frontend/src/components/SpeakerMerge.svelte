@@ -292,7 +292,7 @@
 
 <style>
   .speaker-merge {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
     background: var(--background-secondary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -304,7 +304,7 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    padding: 0.875rem 1rem;
+    padding: var(--space-3-5) var(--space-4);
     background: transparent;
     border: none;
     cursor: pointer;
@@ -319,7 +319,7 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
   }
 
   .merge-header-left h5 {
@@ -345,11 +345,11 @@
   }
 
   .merge-content {
-    padding: 0 1rem 1rem;
+    padding: 0 var(--space-4) var(--space-4);
   }
 
   .help-text {
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
     font-size: 12px;
     color: var(--text-secondary);
     line-height: 1.4;
@@ -358,15 +358,15 @@
   .speaker-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 1rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
 
   .speaker-card {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-3);
     background: var(--surface-color);
     border: 2px solid var(--border-color);
     border-radius: 6px;
@@ -395,14 +395,14 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     min-width: 0;
   }
 
   .speaker-badge {
     font-size: 11px;
     font-weight: var(--font-weight-semibold);
-    padding: 3px 8px;
+    padding: 3px var(--space-2);
     border-radius: 12px;
     border: 1px solid;
     text-transform: uppercase;
@@ -426,7 +426,7 @@
 
   .merge-actions {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
     justify-content: flex-end;
   }
 
@@ -441,7 +441,7 @@
     border: none;
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .btn-primary {
@@ -491,7 +491,7 @@
   }
 
   .modal-description {
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
     font-size: 14px;
     color: var(--text-secondary);
     line-height: 1.5;
@@ -500,14 +500,14 @@
   .target-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .target-option {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-3);
     background: var(--background-secondary);
     border: 2px solid var(--border-color);
     border-radius: 6px;
@@ -537,7 +537,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   @media (max-width: 768px) {

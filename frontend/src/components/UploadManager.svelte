@@ -283,7 +283,7 @@
     background: var(--primary-color);
     color: var(--text-on-solid);
     border-radius: 20px;
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     cursor: grab;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     transition: all var(--duration-base) ease;
@@ -303,7 +303,7 @@
   .badge-content {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     position: relative;
   }
 
@@ -345,7 +345,7 @@
   .panel-header {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     cursor: grab;
     display: flex;
     align-items: center;
@@ -364,9 +364,9 @@
 
   .header-stats {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     font-size: 0.75rem;
-    margin-top: 2px;
+    margin-top: var(--space-0-5);
   }
 
   /* The header is --primary-color in BOTH themes, so these are fixed pairs, not theme-split.
@@ -378,7 +378,7 @@
     background: #fff;
     color: var(--primary-color);
     font-weight: var(--font-weight-semibold);
-    padding: 0 8px;
+    padding: 0 var(--space-2);
     border-radius: 999px;
   }
 
@@ -390,7 +390,7 @@
 
   .header-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
   }
 
@@ -401,7 +401,7 @@
     background: rgba(255, 255, 255, 0.2);
     border: none;
     color: var(--text-on-solid);
-    padding: 4px 8px;
+    padding: var(--space-1) var(--space-2);
     border-radius: 4px;
     font-size: 0.75rem;
     cursor: pointer;
@@ -415,7 +415,7 @@
 
   /* Overall Progress */
   .overall-progress {
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     border-bottom: 1px solid var(--border-color);
     background: var(--background-color);
   }
@@ -424,7 +424,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 6px;
+    margin-bottom: var(--space-1-5);
   }
 
   .progress-label {
@@ -455,7 +455,7 @@
   .upload-list {
     max-height: 40vh;
     overflow-y: auto;
-    padding: 8px;
+    padding: var(--space-2);
   }
 
   .upload-list::-webkit-scrollbar {

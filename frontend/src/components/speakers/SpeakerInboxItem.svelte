@@ -155,13 +155,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 16px;
+    padding: var(--space-2-5) var(--space-4);
   }
 
   .item-left {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2-5);
     flex: 1;
     min-width: 0;
   }
@@ -211,8 +211,8 @@
   .suggestion {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-top: 2px;
+    gap: var(--space-1-5);
+    margin-top: var(--space-0-5);
     font-size: 13px;
     flex-wrap: wrap;
     min-width: 0;
@@ -238,7 +238,7 @@
 
   .source-badge {
     font-size: 11px;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 8px;
     background: var(--hover-color);
     color: var(--text-secondary);
@@ -262,7 +262,7 @@
   .meta {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     margin-top: 3px;
     font-size: 12px;
     color: var(--text-secondary);
@@ -282,7 +282,7 @@
   }
 
   .cluster-tag {
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 8px;
     background: var(--hover-color);
   }
@@ -290,7 +290,7 @@
   .item-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     flex-shrink: 0;
   }
 
@@ -298,7 +298,7 @@
     /* Never let a one-word action wrap. Adding the assign dropdown to this row
        squeezed Skip until it broke across two lines as "Ski"/"p". */
     white-space: nowrap;
-    padding: 4px 12px;
+    padding: var(--space-1) var(--space-3);
     border-radius: 6px;
     border: 1px solid var(--border-color);
     background: var(--hover-color);
@@ -337,7 +337,7 @@
     max-width: 170px;
     min-width: 0;
     flex-shrink: 1;
-    padding: 0.3rem 0.5rem;
+    padding: 0.3rem var(--space-2);
     font-size: 0.8125rem;
     cursor: pointer;
   }
@@ -363,12 +363,12 @@
 
   @media (max-width: 768px) {
     .inbox-row {
-      padding: 8px 12px;
-      gap: 8px;
+      padding: var(--space-2) var(--space-3);
+      gap: var(--space-2);
     }
 
     .item-left {
-      gap: 8px;
+      gap: var(--space-2);
     }
 
     .speaker-name {
@@ -377,7 +377,7 @@
 
     .suggestion {
       font-size: 12px;
-      gap: 4px;
+      gap: var(--space-1);
     }
 
     .suggestion-name {
@@ -390,15 +390,15 @@
 
     .meta {
       font-size: 11px;
-      gap: 4px;
+      gap: var(--space-1);
     }
 
     .item-actions {
-      gap: 4px;
+      gap: var(--space-1);
     }
 
     .action-btn {
-      padding: 4px 8px;
+      padding: var(--space-1) var(--space-2);
       font-size: 12px;
     }
   }

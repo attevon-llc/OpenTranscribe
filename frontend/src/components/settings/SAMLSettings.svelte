@@ -388,15 +388,15 @@
   }
 
   .enable-toggle {
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
+    margin-bottom: var(--space-6);
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--color-border);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     cursor: pointer;
   }
 
@@ -415,8 +415,8 @@
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
     border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 1.5rem;
+    padding: var(--space-4);
+    margin-bottom: var(--space-6);
   }
 
   .info-box strong {
@@ -424,14 +424,14 @@
   }
 
   .info-box p {
-    margin: 0.5rem 0 0 0;
+    margin: var(--space-2) 0 0 0;
     font-size: 0.875rem;
     color: var(--color-text-secondary);
   }
 
   .section {
-    margin-bottom: 2rem;
-    padding: 1rem;
+    margin-bottom: var(--space-8);
+    padding: var(--space-4);
     background: var(--color-bg-secondary);
     border-radius: 8px;
     transition: opacity var(--duration-base);
@@ -443,7 +443,7 @@
   }
 
   .section h3 {
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--color-text-secondary);
@@ -451,12 +451,12 @@
 
   .form-group {
     flex: 1;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .form-group label {
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--color-text);
@@ -483,7 +483,7 @@
   .input-with-toggle,
   .input-with-button {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .input-with-toggle input,
@@ -492,7 +492,7 @@
   }
 
   .toggle-visibility {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);
     border-radius: 4px;
@@ -512,26 +512,26 @@
   }
 
   .btn-small {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.75rem;
     white-space: nowrap;
   }
 
   .help-text {
     display: block;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     font-size: 0.75rem;
     color: var(--color-text-tertiary);
   }
 
   .help-text.indented {
-    margin-left: 1.5rem;
-    margin-bottom: 0.75rem;
+    margin-left: var(--space-6);
+    margin-bottom: var(--space-3);
   }
 
   .admission-warning {
-    margin: 0.5rem 0 0 0;
-    padding: 0.6rem 0.75rem;
+    margin: var(--space-2) 0 0 0;
+    padding: 0.6rem var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.45);
     border-radius: 6px;
     background: rgba(245, 158, 11, 0.12);
@@ -543,10 +543,10 @@
   .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     font-size: 0.875rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .checkbox-label input[type="checkbox"] {
@@ -561,9 +561,9 @@
 
   .actions {
     display: flex;
-    gap: 1rem;
+    gap: var(--space-4);
     justify-content: flex-end;
-    padding-top: 1rem;
+    padding-top: var(--space-4);
     border-top: 1px solid var(--color-border);
   }
 </style>

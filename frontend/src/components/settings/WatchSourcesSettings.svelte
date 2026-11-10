@@ -457,14 +457,14 @@
 <style>
   .scope-toggle {
     display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
   }
   .section-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin: 8px 0 12px;
+    margin: var(--space-2) 0 var(--space-3);
   }
   .section-head h4 {
     margin: 0;
@@ -472,6 +472,6 @@
   .source-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-2-5);
   }
 </style>

@@ -190,8 +190,8 @@
 
 <style>
   .tester {
-    margin-top: 1.5rem;
-    padding: 1rem;
+    margin-top: var(--space-6);
+    padding: var(--space-4);
     background: var(--color-bg-secondary);
     border-radius: 8px;
   }
@@ -199,7 +199,7 @@
   .tester-head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-bottom: 0.35rem;
   }
 
@@ -211,7 +211,7 @@
   }
 
   .tester-note {
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
     font-size: 0.75rem;
     color: var(--color-text-tertiary);
     line-height: 1.5;
@@ -220,8 +220,8 @@
   .mode-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 1.25rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-5);
+    margin-bottom: var(--space-2);
   }
 
   .radio-label {
@@ -241,10 +241,10 @@
   }
 
   .form-group {
-    margin: 0.75rem 0;
+    margin: var(--space-3) 0;
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
@@ -274,7 +274,7 @@
   }
 
   .result {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
     padding: 0.85rem;
     border: 1px solid var(--color-border);
     border-radius: 6px;
@@ -288,7 +288,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .result-label {

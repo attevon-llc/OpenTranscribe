@@ -75,9 +75,9 @@
   .expandable-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     width: 100%;
-    padding: 12px 4px;
+    padding: var(--space-3) var(--space-1);
     background: transparent;
     border: none;
     border-radius: 0;
@@ -115,6 +115,6 @@
     flex: 1;
   }
   .expandable-content {
-    padding: 0 4px 12px;
+    padding: 0 var(--space-1) var(--space-3);
   }
 </style>

@@ -87,7 +87,7 @@
     flex-wrap: wrap;
     border: 1px solid var(--field-border);
     border-radius: var(--field-radius);
-    padding: 0.375rem;
+    padding: var(--space-1-5);
     background: var(--field-bg);
     min-height: 2.375rem;
     transition:
@@ -109,7 +109,7 @@
   .tags-wrapper {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     align-items: center;
     width: 100%;
   }
@@ -117,13 +117,13 @@
   .tag-pill {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 12px;
     font-size: 0.6875rem;
     font-weight: 500;
     background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
-    gap: 0.25rem;
+    gap: var(--space-1);
     white-space: nowrap;
   }
 
@@ -159,7 +159,7 @@
     background: transparent;
     font-size: 0.8125rem;
     color: var(--text-color);
-    padding: 2px 4px;
+    padding: var(--space-0-5) var(--space-1);
   }
 
   .tag-input::placeholder {

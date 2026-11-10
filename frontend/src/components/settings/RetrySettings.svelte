@@ -111,20 +111,20 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
     flex-wrap: wrap;
   }
 
   .setting-controls {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     user-select: none;
   }
@@ -175,7 +175,7 @@
   .inline-input {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .input-label {
@@ -184,7 +184,7 @@
   }
 
   .form-input {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     font-size: 0.875rem;
   }
 
@@ -200,7 +200,7 @@
 
   .button-row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     justify-content: flex-end;
   }
 
@@ -212,7 +212,7 @@
     .setting-controls {
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.75rem;
+      gap: var(--space-3);
       width: 100%;
     }
 

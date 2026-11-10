@@ -203,10 +203,10 @@
   .searchable-list {
     list-style: none;
     margin: 0;
-    padding: 4px;
+    padding: var(--space-1);
   }
   .searchable-option {
-    padding: 8px 10px;
+    padding: var(--space-2) var(--space-2-5);
     border-radius: 6px;
     color: var(--text-color);
     font-size: 14px;
@@ -220,7 +220,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 16px 12px;
+    padding: var(--space-4) var(--space-3);
     color: var(--text-secondary);
     font-size: 13px;
   }

@@ -222,10 +222,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
     user-select: none;
-    gap: 8px;
+    gap: var(--space-2);
     min-width: 0;
   }
 
@@ -236,7 +236,7 @@
   .header-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     flex: 1;
     min-width: 0;
   }
@@ -265,7 +265,7 @@
   .suggested-badge {
     font-size: 10px;
     font-weight: 600;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 8px;
     background: color-mix(in srgb, var(--primary-color) 12%, transparent);
     color: var(--primary-on-surface);
@@ -275,7 +275,7 @@
 
   .label-input {
     font-weight: 500;
-    padding: 2px 6px;
+    padding: var(--space-0-5) var(--space-1-5);
     font-size: inherit;
     min-width: 0;
     flex: 1;
@@ -285,7 +285,7 @@
   .header-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     flex-shrink: 0;
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -294,7 +294,7 @@
   .quality-badge {
     font-size: 11px;
     font-weight: 600;
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     background: currentColor;
     background: color-mix(in srgb, currentColor 12%, transparent);
@@ -304,7 +304,7 @@
   .gender-chip {
     font-size: 11px;
     font-weight: 600;
-    padding: 3px 8px;
+    padding: 3px var(--space-2);
     border-radius: 10px;
     white-space: nowrap;
     display: inline-flex;
@@ -332,7 +332,7 @@
 
   .promoted-badge {
     font-size: 11px;
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     background: color-mix(in srgb, var(--success-color) 15%, transparent);
     color: var(--success-color);
@@ -344,21 +344,21 @@
 
   .card-body {
     border-top: 1px solid var(--border-color);
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
   }
 
   .card-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     flex-wrap: wrap;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-3);
     border-bottom: 1px solid var(--border-color);
   }
 
   .action-btn {
-    padding: 4px 12px;
+    padding: var(--space-1) var(--space-3);
     border-radius: 6px;
     border: 1px solid var(--border-color);
     background: transparent;
@@ -470,8 +470,8 @@
   .outlier-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
+    gap: var(--space-1);
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     font-size: 11px;
     font-weight: 600;
@@ -489,7 +489,7 @@
   .blacklist-toggle {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     font-size: 12px;
     color: var(--text-color);
     cursor: pointer;
@@ -505,14 +505,14 @@
   .skeleton-members {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .skeleton-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px 0;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
   }
 
   .skeleton-avatar {
@@ -527,7 +527,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .skeleton-line {
@@ -551,7 +551,7 @@
 
   @media (max-width: 768px) {
     .card-header {
-      padding: 10px 12px;
+      padding: var(--space-2-5) var(--space-3);
       flex-wrap: wrap;
     }
 
@@ -563,7 +563,7 @@
     .header-right {
       flex-shrink: 1;
       min-width: 0;
-      gap: 6px;
+      gap: var(--space-1-5);
     }
 
     .cluster-label {
@@ -574,7 +574,7 @@
     .gender-chip,
     .outlier-chip {
       font-size: 10px;
-      padding: 1px 6px;
+      padding: 1px var(--space-1-5);
     }
 
     .member-count {
@@ -584,21 +584,21 @@
     .promoted-badge {
       max-width: 100px;
       font-size: 10px;
-      padding: 1px 6px;
+      padding: 1px var(--space-1-5);
     }
 
     .card-body {
-      padding: 10px 12px;
+      padding: var(--space-2-5) var(--space-3);
     }
 
     .card-actions {
-      gap: 6px;
-      margin-bottom: 8px;
-      padding-bottom: 8px;
+      gap: var(--space-1-5);
+      margin-bottom: var(--space-2);
+      padding-bottom: var(--space-2);
     }
 
     .action-btn {
-      padding: 4px 8px;
+      padding: var(--space-1) var(--space-2);
       font-size: 12px;
     }
 
@@ -615,7 +615,7 @@
     .header-right {
       flex-basis: 100%;
       justify-content: flex-start;
-      margin-top: 4px;
+      margin-top: var(--space-1);
     }
 
     .promoted-badge {

@@ -638,7 +638,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 1rem 1.5rem;
+    padding: var(--space-4) var(--space-6);
     gap: 0;
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
@@ -709,7 +709,7 @@
     flex: 1;
     height: 2px;
     background: var(--border-color);
-    margin: 0 0.5rem;
+    margin: 0 var(--space-2);
     min-width: 20px;
     max-width: 60px;
     transition: background 0.25s ease;
@@ -721,7 +721,7 @@
 
   /* Body */
   .modal-body {
-    padding: 1rem 1.5rem 1.25rem;
+    padding: var(--space-4) var(--space-6) var(--space-5);
     overflow-y: auto;
     overflow-x: hidden;
     flex: 1;
@@ -737,7 +737,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .step-instruction-row .step-instruction {
@@ -745,7 +745,7 @@
   }
 
   .step-instruction {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
     font-size: 0.85rem;
     color: var(--text-secondary);
   }
@@ -755,7 +755,7 @@
     border: 1px solid var(--border-color);
     color: var(--primary-on-surface);
     font-size: 0.75rem;
-    padding: 0.25rem 0.6rem;
+    padding: var(--space-1) 0.6rem;
     border-radius: 4px;
     cursor: pointer;
     white-space: nowrap;
@@ -769,7 +769,7 @@
 
   /* Stage Groups */
   .stage-group {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .stage-group:last-of-type {
@@ -779,8 +779,8 @@
   .stage-group-header {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
   }
 
   .stage-group-label {
@@ -800,12 +800,12 @@
   .stage-item {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.6rem 0.75rem;
+    gap: var(--space-3);
+    padding: 0.6rem var(--space-3);
     border-radius: 8px;
     cursor: pointer;
     transition: background-color var(--duration-fast) ease;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .stage-item:hover:not(.disabled) {
@@ -898,7 +898,7 @@
 
   /* Review step */
   .review-section {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .review-label {
@@ -906,7 +906,7 @@
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .review-pills {
@@ -930,7 +930,7 @@
   .review-settings {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .review-setting {
@@ -945,7 +945,7 @@
 
   /* V4 Info Card */
   .v4-info-card {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
     border: 1px solid rgba(var(--accent-rgb), 0.2);
     border-radius: 8px;
     overflow: hidden;
@@ -955,8 +955,8 @@
   .v4-info-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.6rem 0.75rem;
+    gap: var(--space-2);
+    padding: 0.6rem var(--space-3);
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--primary-on-surface);
@@ -969,7 +969,7 @@
   }
 
   .v4-path {
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem var(--space-3);
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
@@ -990,12 +990,12 @@
   .warning-banner {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
-    padding: 0.6rem 0.75rem;
+    gap: var(--space-2);
+    padding: 0.6rem var(--space-3);
     border-radius: 6px;
     font-size: 0.78rem;
     line-height: 1.45;
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .warning-banner :global(svg) {
@@ -1041,8 +1041,8 @@
   .settings-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   .setting-field {
@@ -1086,7 +1086,7 @@
     border-radius: 6px;
     color: #dc2626;
     font-size: 0.75rem;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .modal-button {
@@ -1101,7 +1101,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .cancel-button {
@@ -1179,15 +1179,15 @@
     }
 
     .step-indicator {
-      padding: 0.75rem 1rem;
+      padding: var(--space-3) var(--space-4);
     }
 
     .modal-body {
-      padding: 1rem;
+      padding: var(--space-4);
     }
 
     .stage-item {
-      padding: 0.75rem;
+      padding: var(--space-3);
     }
 
     .setting-field input {

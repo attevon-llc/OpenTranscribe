@@ -292,7 +292,7 @@
   .quarantine-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .hold-help .action-link {
@@ -312,16 +312,16 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-    margin: 0.5rem 0;
+    margin: var(--space-2) 0;
   }
 
   .view-toggle {
     display: flex;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .toggle-btn {
-    padding: 0.375rem 0.875rem;
+    padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--bg-color);
@@ -339,8 +339,8 @@
   .state-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-3);
     border-radius: 6px;
     background: var(--bg-secondary);
     font-size: 0.8125rem;
@@ -352,7 +352,7 @@
   }
 
   .retry-btn {
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: transparent;
@@ -370,7 +370,7 @@
 
   .quarantine-table th,
   .quarantine-table td {
-    padding: 0.5rem;
+    padding: var(--space-2);
     border-bottom: 1px solid var(--border-color);
     text-align: start;
     vertical-align: top;
@@ -427,15 +427,15 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.375rem;
-    margin-top: 0.25rem;
+    gap: var(--space-1-5);
+    margin-top: var(--space-1);
     white-space: normal;
     font-size: 0.75rem;
   }
 
   .badge {
     display: inline-block;
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 999px;
     font-size: 0.6875rem;
     font-weight: 600;
@@ -478,7 +478,7 @@
 
   .actions-cell {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
     white-space: nowrap;
   }
 

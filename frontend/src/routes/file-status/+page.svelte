@@ -62,9 +62,9 @@
   .back-to-settings {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    margin-bottom: 0.5rem;
-    padding: 0.25rem 0.5rem;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-2);
+    padding: var(--space-1) var(--space-2);
     border: none;
     border-radius: 6px;
     background: none;

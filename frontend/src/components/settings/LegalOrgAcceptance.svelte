@@ -75,15 +75,15 @@
 
 <style>
   .org-accept {
-    margin-block-end: 16px;
+    margin-block-end: var(--space-4);
   }
 
   .org-accept-title {
-    margin: 0 0 4px;
+    margin: 0 0 var(--space-1);
   }
 
   .org-accept-note {
-    margin: 0 0 8px;
+    margin: 0 0 var(--space-2);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
@@ -91,7 +91,7 @@
   .org-accept-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -101,8 +101,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 10px 14px;
+    gap: var(--space-3);
+    padding: var(--space-2-5) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--bg-secondary);
@@ -114,7 +114,7 @@
   }
 
   .org-accept-error {
-    margin: 8px 0 0;
+    margin: var(--space-2) 0 0;
     color: var(--error-color);
     font-size: var(--font-size-sm);
   }

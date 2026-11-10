@@ -120,7 +120,7 @@
     flex: 1;
     overflow-y: auto;
     /* Full-width scroller (scrollbar at the pane edge); content stays a 52rem column. */
-    padding-block: 1.5rem 0.5rem;
+    padding-block: var(--space-6) var(--space-2);
     padding-inline: max(var(--chat-gutter, 1.25rem), calc((100% - 52rem) / 2));
     scroll-behavior: auto;
   }

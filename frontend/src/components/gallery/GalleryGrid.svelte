@@ -151,11 +151,11 @@
   }
 
   .retry-button {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.875rem;
@@ -175,7 +175,7 @@
   /* Infinite scroll sentinel - invisible trigger element */
   .scroll-sentinel {
     height: 20px;
-    margin-top: 2rem;
+    margin-top: var(--space-8);
     pointer-events: none;
   }
 
@@ -185,8 +185,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 2rem;
-    gap: 1rem;
+    padding: var(--space-8);
+    gap: var(--space-4);
   }
 
   .loading-more p {
@@ -200,8 +200,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 1rem;
-    padding: 3rem 1rem;
+    gap: var(--space-4);
+    padding: var(--space-12) var(--space-4);
   }
 
   .end-indicator-line {
@@ -214,8 +214,8 @@
   .end-indicator-content {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 20px;

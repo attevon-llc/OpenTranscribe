@@ -13,7 +13,7 @@
   .groups-settings {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .section-title {

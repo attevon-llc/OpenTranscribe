@@ -906,7 +906,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 0.5rem 1rem;
+    padding: 0 var(--space-2) var(--space-4);
     gap: 0;
     flex-shrink: 0;
   }
@@ -915,8 +915,8 @@
   .step-item {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.375rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1) var(--space-1-5);
     background: transparent;
     border: none;
     border-radius: 6px;
@@ -1001,7 +1001,7 @@
     flex: 1;
     height: 2px;
     background: var(--border-color);
-    margin: 0 0.25rem;
+    margin: 0 var(--space-1);
     min-width: 12px;
     max-width: 36px;
     transition: background 0.25s ease;
@@ -1022,7 +1022,7 @@
   }
 
   .step-content {
-    padding: 0 0.25rem;
+    padding: 0 var(--space-1);
   }
 
   /* Narrower steps (e.g. Tags) fit their natural width instead of stretching to
@@ -1037,9 +1037,9 @@
   .tab-navigation {
     display: flex;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     border-bottom: 1px solid var(--border-color);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     padding: 0;
     width: 100%;
     position: relative;
@@ -1048,8 +1048,8 @@
   .tab-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.875rem;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-3-5);
     background: none;
     border: none;
     cursor: pointer;
@@ -1067,7 +1067,7 @@
   .tab-button:disabled:hover { background: transparent; color: var(--text-secondary); }
 
   /* ── Messages ── */
-  .message { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.75rem; font-size: 0.8125rem; }
+  .message { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border-radius: 8px; margin-bottom: var(--space-3); font-size: 0.8125rem; }
   .message-icon { flex-shrink: 0; }
   .message-content { flex: 1; }
 
@@ -1078,11 +1078,11 @@
     color: var(--primary-on-surface);
   }
 
-  .duplicate-message strong { display: block; margin-bottom: 0.25rem; font-size: 0.875rem; }
-  .duplicate-message p { margin: 0 0 0.5rem 0; line-height: 1.4; }
+  .duplicate-message strong { display: block; margin-bottom: var(--space-1); font-size: 0.875rem; }
+  .duplicate-message p { margin: 0 0 var(--space-2) 0; line-height: 1.4; }
 
   .btn-acknowledge {
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -1098,14 +1098,14 @@
   .error-msg {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-3);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: 8px;
     color: var(--text-primary);
     font-size: 0.8125rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .error-msg svg { flex-shrink: 0; color: #ef4444; }
@@ -1114,9 +1114,9 @@
   .bg-recording {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.375rem 0.75rem;
-    margin-top: 0.5rem;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-3);
+    margin-top: var(--space-2);
     background: rgba(220, 38, 38, 0.08);
     border: 1px solid rgba(220, 38, 38, 0.2);
     border-radius: 6px;
@@ -1143,9 +1143,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.75rem 0.25rem 0;
-    margin-top: 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-1) 0;
+    margin-top: var(--space-3);
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
     position: relative;
@@ -1163,15 +1163,15 @@
 
   .nav-left, .nav-right {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
   }
 
   .nav-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-1-5);
+    padding: var(--space-2) var(--space-4);
     border-radius: 8px;
     font-size: 0.875rem;
     font-weight: 500;
@@ -1234,7 +1234,7 @@
   @media (max-width: 480px) {
     .step-label { display: none; }
     .step-line { min-width: 12px; }
-    .tab-button { padding: 0.5rem 0.625rem; font-size: 0.8125rem; }
+    .tab-button { padding: var(--space-2) var(--space-2-5); font-size: 0.8125rem; }
     .tab-button svg { width: 16px; height: 16px; }
   }
 

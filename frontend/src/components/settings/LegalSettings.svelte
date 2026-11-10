@@ -140,7 +140,7 @@
 
 <style>
   .legal-note {
-    margin: 0 0 12px;
+    margin: 0 0 var(--space-3);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
@@ -148,8 +148,8 @@
   .legal-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin: 0 0 16px;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-4);
     padding: 0;
     list-style: none;
   }
@@ -158,8 +158,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 12px 14px;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--bg-secondary);
@@ -169,7 +169,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 12px;
+    gap: var(--space-1-5) var(--space-3);
   }
 
   .legal-row-meta {
@@ -178,7 +178,7 @@
   }
 
   .legal-badge {
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border: 1px solid var(--border-color);
     border-radius: 999px;
     font-size: var(--font-size-xs);
@@ -191,8 +191,8 @@
   }
 
   .legal-callout {
-    margin-block-end: 16px;
-    padding: 10px 14px;
+    margin-block-end: var(--space-4);
+    padding: var(--space-2-5) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-inline-start-width: 4px;
     border-radius: 8px;
@@ -205,7 +205,7 @@
   }
 
   .legal-subtitle {
-    margin: 0 0 8px;
+    margin: 0 0 var(--space-2);
   }
 
   .legal-table-wrap {
@@ -220,7 +220,7 @@
 
   .legal-table th,
   .legal-table td {
-    padding: 6px 10px;
+    padding: var(--space-1-5) var(--space-2-5);
     border-block-end: 1px solid var(--border-color);
     text-align: start;
   }

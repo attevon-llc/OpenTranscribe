@@ -190,8 +190,8 @@
   .sort-button {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     height: 30px;
     box-sizing: border-box;
     background: var(--surface-color);
@@ -243,7 +243,7 @@
     border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-    padding: 0.5rem;
+    padding: var(--space-2);
     backdrop-filter: blur(12px);
   }
 
@@ -263,9 +263,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
-    padding: 0.625rem 0.75rem;
+    padding: var(--space-2-5) var(--space-3);
     background: transparent;
     border: none;
     border-radius: 8px;
@@ -312,7 +312,7 @@
 
   .option-arrow {
     flex-shrink: 0;
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   /* Hide sort label on tablet and below to save space */
@@ -325,7 +325,7 @@
   @media (max-width: 768px) {
     .sort-button {
       font-size: 0.8125rem;
-      padding: 0.4rem 0.75rem;
+      padding: 0.4rem var(--space-3);
     }
 
     .dropdown-menu {

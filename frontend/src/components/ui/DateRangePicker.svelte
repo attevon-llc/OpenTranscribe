@@ -251,7 +251,7 @@
   .date-trigger-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
     margin: 0;
     padding: var(--field-padding-y) var(--field-padding-x);
@@ -316,7 +316,7 @@
     z-index: calc(var(--z-modal) + 10);
     box-sizing: border-box;
     overflow-y: auto;
-    padding: 0.75rem;
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     background: var(--surface-color);
@@ -367,15 +367,15 @@
 
   .typed-date-fields {
     display: flex;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
   }
 
   .typed-date-field {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     min-width: 0;
   }
 
@@ -394,11 +394,11 @@
   .drp-footer {
     display: flex;
     justify-content: flex-end;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .drp-clear {
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border: none;
     border-radius: 6px;
     background: transparent;
@@ -491,7 +491,7 @@
     width: 34px !important;
     height: 34px !important;
     font-size: 0.8125rem !important;
-    padding: 2px !important;
+    padding: var(--space-0-5) !important;
   }
 
   .drp-layer :global(.datepicker .calendars-container .calendar .dow) {

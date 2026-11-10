@@ -165,7 +165,7 @@
 
   .multiselect-toggle {
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     background-color: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -216,7 +216,7 @@
 
   .search-box {
     flex: none;
-    padding: 0.5rem;
+    padding: var(--space-2);
     border-bottom: 1px solid var(--border-color);
     background-color: var(--card-background);
   }
@@ -242,8 +242,8 @@
   .option-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     cursor: pointer;
     transition: background-color var(--duration-fast);
     user-select: none;
@@ -292,7 +292,7 @@
   }
 
   .empty-message {
-    padding: 1rem;
+    padding: var(--space-4);
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.85rem;

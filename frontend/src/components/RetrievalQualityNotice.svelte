@@ -152,7 +152,7 @@
   .quality-notice {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
     padding: 0.55rem 0.7rem;
     border: 1px solid var(--border-color);

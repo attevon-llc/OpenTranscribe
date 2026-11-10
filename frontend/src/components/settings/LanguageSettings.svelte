@@ -56,13 +56,13 @@
   .language-settings {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-label {
@@ -77,7 +77,7 @@
       box-shadow var(--duration-fast);
     cursor: pointer;
     max-width: 300px;
-    padding-right: 2.5rem;
+    padding-right: var(--space-10);
   }
 
   .input-hint {
@@ -90,13 +90,13 @@
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .preview-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .preview-label {

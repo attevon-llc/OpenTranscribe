@@ -69,7 +69,7 @@
     height: 100%;
     max-width: 1600px;
     margin: 0 auto;
-    padding: 0.75rem 1.5rem;
+    padding: var(--space-3) var(--space-6);
   }
 
   /* NavbarBrand: a 36px banner inside a 0.25rem-padded button, stepping down with the viewport. */
@@ -77,7 +77,7 @@
     box-sizing: content-box;
     height: 36px;
     width: auto;
-    padding: 0.25rem;
+    padding: var(--space-1);
     object-fit: contain;
     border-radius: 6px;
   }
@@ -93,7 +93,7 @@
   /* Navbar.svelte's own breakpoints for `.navbar-container` padding and the banner height. */
   @media (max-width: 1560px) {
     .check-bar-inner {
-      padding: 0.5rem 1rem;
+      padding: var(--space-2) var(--space-4);
     }
   }
 
@@ -109,7 +109,7 @@
     }
 
     .check-bar-inner {
-      padding: 0.5rem;
+      padding: var(--space-2);
     }
   }
 
@@ -119,7 +119,7 @@
     }
 
     .check-bar-inner {
-      padding: 0.5rem 0.375rem;
+      padding: var(--space-2) var(--space-1-5);
     }
   }
 
@@ -128,7 +128,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.5rem;
+    gap: var(--space-6);
     min-height: 100vh;
     min-height: 100dvh;
     background-color: var(--bg-primary);
@@ -182,10 +182,10 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem 1rem;
+    gap: var(--space-2) var(--space-4);
     max-width: 32rem;
     margin-inline: auto;
-    padding: 0.875rem 1rem;
+    padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     background: var(--card-background);

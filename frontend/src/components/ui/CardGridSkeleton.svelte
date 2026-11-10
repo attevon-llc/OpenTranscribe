@@ -117,8 +117,8 @@
   .card-grid-skeleton {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(var(--min-card-width, 220px), 1fr));
-    gap: 16px;
-    padding: 8px 0;
+    gap: var(--space-4);
+    padding: var(--space-2) 0;
     width: 100%;
   }
 
@@ -127,7 +127,7 @@
   .card-grid-skeleton.is-search {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .sr-only {
@@ -172,10 +172,10 @@
   }
 
   .skel-body {
-    padding: 12px;
+    padding: var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .skel-title {
@@ -185,7 +185,7 @@
 
   .skel-meta-row {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
     flex-wrap: wrap;
   }
@@ -199,8 +199,8 @@
   .skel-profile-top {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 14px 14px 0;
+    gap: var(--space-3);
+    padding: var(--space-3-5) var(--space-3-5) 0;
   }
 
   .skel-avatar {
@@ -214,7 +214,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-1-5);
     min-width: 0;
   }
 
@@ -231,8 +231,8 @@
   /* ── Search result variant ── */
   .skel-search-row {
     display: flex;
-    gap: 14px;
-    padding: 14px;
+    gap: var(--space-3-5);
+    padding: var(--space-3-5);
   }
 
   .skel-thumb-small {
@@ -252,11 +252,11 @@
   /* ── Responsive ── */
   @media (max-width: 640px) {
     .card-grid-skeleton {
-      gap: 12px;
+      gap: var(--space-3);
     }
     .skel-search-row {
       flex-direction: column;
-      gap: 10px;
+      gap: var(--space-2-5);
     }
     .skel-thumb-small {
       width: 100%;

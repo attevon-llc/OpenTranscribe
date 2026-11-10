@@ -308,11 +308,11 @@
   }
 
   .file-header-main {
-    margin-bottom: 24px;
+    margin-bottom: var(--space-6);
   }
 
   .file-title h1 {
-    margin: 0 0 16px 0;
+    margin: 0 0 var(--space-4) 0;
     font-size: 28px;
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
@@ -321,8 +321,8 @@
   }
 
   .status-message {
-    margin: 16px 0;
-    padding: 12px 16px;
+    margin: var(--space-4) 0;
+    padding: var(--space-3) var(--space-4);
     border-radius: 8px;
     border-inline-start: 4px solid;
   }
@@ -340,34 +340,34 @@
   }
 
   .status-message .error-heading {
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
   }
 
   .status-message .error-suggestions-title {
-    margin-top: 8px;
+    margin-top: var(--space-2);
     font-weight: 600;
   }
 
   .status-message .error-suggestions {
-    margin: 4px 0 0;
-    padding-inline-start: 20px;
+    margin: var(--space-1) 0 0;
+    padding-inline-start: var(--space-5);
     font-size: 14px;
     font-weight: 400;
   }
 
   .status-message .error-suggestions li {
-    margin: 2px 0;
+    margin: var(--space-0-5) 0;
   }
 
   .status-message .error-retryable {
-    margin-top: 8px;
+    margin-top: var(--space-2);
     font-weight: 400;
     font-style: italic;
   }
 
   .processing-info {
-    margin: 16px 0;
-    padding: 20px;
+    margin: var(--space-4) 0;
+    padding: var(--space-5);
     background: var(--info-light);
     border: 1px solid var(--info-color);
     border-radius: 12px;
@@ -376,8 +376,8 @@
   .processing-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
 
   .processing-icon {
@@ -390,7 +390,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-0-5);
   }
 
   .processing-label {
@@ -413,7 +413,7 @@
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(var(--primary-color-rgb), 0.1);
-    padding: 4px 8px;
+    padding: var(--space-1) var(--space-2);
     border-radius: 4px;
     flex-shrink: 0;
   }
@@ -447,8 +447,8 @@
   .processing-stages {
     display: flex;
     justify-content: space-between;
-    margin-top: 16px;
-    padding-top: 16px;
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
   }
 
@@ -456,7 +456,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     flex: 1;
     position: relative;
   }
@@ -525,7 +525,7 @@
   }
 
   .file-summary {
-    margin: 16px 0;
+    margin: var(--space-4) 0;
   }
 
   .summary-text {
@@ -585,11 +585,11 @@
   .title-display-container {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .title-display-container h1 {
-    margin: 0 0 16px 0;
+    margin: 0 0 var(--space-4) 0;
     flex: 1;
   }
 
@@ -598,14 +598,14 @@
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 8px;
+    padding: var(--space-2);
     border-radius: 6px;
     transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    margin-bottom: 16px;
+    margin-bottom: var(--space-4);
   }
 
   .edit-btn:hover {
@@ -621,8 +621,8 @@
   .shared-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
+    gap: var(--space-1);
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 12px;
     font-size: 12px;
     font-weight: 500;
@@ -630,7 +630,7 @@
     color: var(--primary-on-surface);
     white-space: nowrap;
     flex-shrink: 0;
-    margin-bottom: 16px;
+    margin-bottom: var(--space-4);
     text-transform: capitalize;
   }
 
@@ -642,8 +642,8 @@
   .title-edit-container {
     display: flex;
     align-items: flex-start;
-    gap: 8px;
-    margin: 0 0 16px 0;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-4) 0;
     min-height: calc(28px * 1.2);
   }
 
@@ -661,17 +661,17 @@
 
   .edit-buttons {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
     align-self: flex-start;
-    margin-top: 8px;
+    margin-top: var(--space-2);
   }
 
   .save-btn,
   .cancel-btn {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
@@ -685,7 +685,7 @@
     background-color: var(--success-color);
     border-color: var(--success-color);
     color: var(--text-on-solid);
-    padding: 0.5rem 0.5rem;
+    padding: var(--space-2) var(--space-2);
   }
 
   .save-btn:hover:not(:disabled) {
@@ -736,11 +736,11 @@
 
     .title-input {
       font-size: 24px;
-      padding: 6px 8px;
+      padding: var(--space-1-5) var(--space-2);
     }
 
     .title-display-container {
-      gap: 8px;
+      gap: var(--space-2);
     }
 
     .edit-buttons {

@@ -368,7 +368,7 @@
 <style>
   .org-context-settings {
     max-width: 800px;
-    padding: 1.5rem 0;
+    padding: var(--space-6) 0;
   }
 
   .loading-state {
@@ -376,21 +376,21 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 3rem;
-    gap: 1rem;
+    padding: var(--space-12);
+    gap: var(--space-4);
     color: var(--text-secondary);
   }
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-label {
@@ -398,7 +398,7 @@
     color: var(--text-color);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .label-hint {
@@ -408,7 +408,7 @@
   }
 
   .form-textarea {
-    padding: 0.75rem;
+    padding: var(--space-3);
     font-size: 0.8125rem;
     resize: vertical;
     min-height: 120px;
@@ -431,7 +431,7 @@
   }
 
   .toggle-group {
-    padding: 1rem;
+    padding: var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -446,14 +446,14 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .toggle-label {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     cursor: pointer;
   }
 
@@ -517,9 +517,9 @@
 
   .form-actions {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
     justify-content: flex-end;
-    padding-top: 0.5rem;
+    padding-top: var(--space-2);
   }
 
   .btn-secondary {
@@ -531,8 +531,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
     background: rgba(var(--primary-color-rgb), 0.08);
     border: 1px solid rgba(var(--primary-color-rgb), 0.2);
     border-radius: 8px;
@@ -541,7 +541,7 @@
   .banner-content {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     color: var(--primary-on-surface);
     font-size: 0.8125rem;
     font-weight: 500;
@@ -552,7 +552,7 @@
   }
 
   .btn-stop-shared {
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     background-color: #ef4444;
     border: none;
     border-radius: 6px;
@@ -582,26 +582,26 @@
 
   /* Shared by Others section */
   .shared-section {
-    margin-top: 0.5rem;
-    padding-top: 1rem;
+    margin-top: var(--space-2);
+    padding-top: var(--space-4);
     border-top: 1px dashed var(--border-color);
   }
 
   .shared-section-title {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.9375rem;
     font-weight: 600;
     color: var(--text-color);
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
   }
 
   .shared-card {
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
     transition: all var(--duration-base);
   }
 
@@ -618,13 +618,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .shared-card-info {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .shared-owner {
@@ -636,7 +636,7 @@
   .admin-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 10px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -654,7 +654,7 @@
   .active-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 10px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -677,7 +677,7 @@
   }
 
   .btn-shared-action {
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 500;
@@ -733,7 +733,7 @@
   /* Responsive */
   @media (max-width: 640px) {
     .org-context-settings {
-      padding: 1rem 0;
+      padding: var(--space-4) 0;
     }
 
     .toggle-header {
@@ -758,7 +758,7 @@
     .shared-card-header {
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
   }
 </style>

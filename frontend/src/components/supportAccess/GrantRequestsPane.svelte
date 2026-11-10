@@ -243,10 +243,10 @@
 
 <style>
   .block {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
   h4 {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
     font-size: 0.9375rem;
     font-weight: 600;
     color: var(--text-color);
@@ -264,7 +264,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .filter {
     display: inline-flex;
@@ -275,11 +275,11 @@
     white-space: nowrap;
   }
   select {
-    padding: 0.3rem 0.5rem;
+    padding: 0.3rem var(--space-2);
     font-size: 0.8125rem;
   }
   .state {
-    margin: 1rem 0;
+    margin: var(--space-4) 0;
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.875rem;
@@ -289,6 +289,6 @@
   }
   .more {
     display: block;
-    margin: 1rem auto 0 auto;
+    margin: var(--space-4) auto 0 auto;
   }
 </style>

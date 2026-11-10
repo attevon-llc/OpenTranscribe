@@ -333,20 +333,20 @@
 
 <style>
   .auto-label-settings {
-    padding: 1rem 0;
+    padding: var(--space-4) 0;
   }
 
   .settings-group {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .setting-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border-radius: 8px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -355,7 +355,7 @@
   .setting-info {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     flex: 1;
     min-width: 0;
   }
@@ -385,7 +385,7 @@
     width: 44px;
     height: 24px;
     flex-shrink: 0;
-    margin-left: 1rem;
+    margin-left: var(--space-4);
   }
 
   .toggle-switch input {
@@ -442,7 +442,7 @@
 
   /* Save Section */
   .save-section {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
     display: flex;
     justify-content: flex-end;
   }
@@ -477,15 +477,15 @@
 
   /* Retroactive Section */
   .retroactive-section {
-    margin-top: 1.5rem;
-    padding: 1rem;
+    margin-top: var(--space-6);
+    padding: var(--space-4);
     border-radius: 8px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
   }
 
   .btn-retroactive {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     border: none;
@@ -497,7 +497,7 @@
     transition: all var(--duration-base) ease;
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
 
@@ -518,20 +518,20 @@
 
   /* Progress Section */
   .progress-section {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .queued-message {
     font-size: 0.8rem;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .progress-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .progress-label {
@@ -569,7 +569,7 @@
     .setting-row {
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     .toggle-switch {

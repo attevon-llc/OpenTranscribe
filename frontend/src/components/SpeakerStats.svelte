@@ -366,10 +366,10 @@
   .speaker-stats.compact-layout {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
     background-color: var(--surface-color);
     border-radius: 8px;
-    padding: 1rem;
+    padding: var(--space-4);
     box-shadow: var(--shadow-sm);
   }
 
@@ -377,18 +377,18 @@
   .analytics-overview {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
   }
 
   .overview-card {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 0.75rem;
+    padding: var(--space-3);
     transition: all var(--duration-base) ease;
   }
 
@@ -434,13 +434,13 @@
   .section-compact {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .section-title {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -467,7 +467,7 @@
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-    margin: 0.75rem 0 1rem 0;
+    margin: var(--space-3) 0 var(--space-4) 0;
     border: 1px solid var(--border-color);
   }
 
@@ -486,14 +486,14 @@
   .speaker-chips-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .speaker-chip {
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 0.75rem;
+    padding: var(--space-3);
     transition: all var(--duration-base) ease;
   }
 
@@ -506,8 +506,8 @@
   .chip-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
   }
 
   .speaker-dot-large {
@@ -531,7 +531,7 @@
   .chip-stats {
     display: flex;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .stat-item {
@@ -558,15 +558,15 @@
   .additional-metrics-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
   }
 
   .metric-section {
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 0.75rem;
+    padding: var(--space-3);
   }
 
   .metric-title {
@@ -576,7 +576,7 @@
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
   }
 
   .metric-icon {
@@ -636,16 +636,16 @@
 
   @media (max-width: 768px) {
     .speaker-stats.compact-layout {
-      padding: 0.75rem;
+      padding: var(--space-3);
     }
 
     .analytics-overview {
       grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .overview-card {
-      padding: 0.5rem;
+      padding: var(--space-2);
     }
 
     .card-value {
@@ -661,7 +661,7 @@
     }
 
     .chip-stats {
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .additional-metrics-row {
@@ -689,7 +689,7 @@
     }
 
     .speaker-chip {
-      padding: 0.5rem;
+      padding: var(--space-2);
     }
 
     .chip-stats {

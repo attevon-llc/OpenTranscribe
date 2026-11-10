@@ -133,7 +133,7 @@
   .provenance-field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .editor {
@@ -192,7 +192,7 @@
 
   .details ul {
     margin: 0.2rem 0;
-    padding-left: 1rem;
+    padding-left: var(--space-4);
   }
 
   .conflict-note {

@@ -63,12 +63,12 @@
 
 <style>
   .inbox-hint {
-    padding: 8px 16px;
+    padding: var(--space-2) var(--space-4);
     background: var(--hover-color);
     border-radius: 6px;
     font-size: 13px;
     color: var(--text-secondary);
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .inbox-list {
@@ -82,14 +82,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 16px;
-    margin-top: 16px;
+    gap: var(--space-4);
+    margin-top: var(--space-4);
     font-size: 14px;
     color: var(--text-secondary);
   }
 
   .pagination button {
-    padding: 6px 14px;
+    padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-background);
@@ -112,17 +112,17 @@
 
   @media (max-width: 768px) {
     .inbox-hint {
-      padding: 6px 12px;
+      padding: var(--space-1-5) var(--space-3);
       font-size: 12px;
     }
 
     .pagination {
-      gap: 8px;
+      gap: var(--space-2);
       font-size: 13px;
     }
 
     .pagination button {
-      padding: 6px 10px;
+      padding: var(--space-1-5) var(--space-2-5);
       font-size: 13px;
     }
   }

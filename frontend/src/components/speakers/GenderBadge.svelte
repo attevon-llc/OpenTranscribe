@@ -75,7 +75,7 @@
     color: var(--text-on-tint);
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-0-5);
     line-height: 1;
     vertical-align: middle;
   }

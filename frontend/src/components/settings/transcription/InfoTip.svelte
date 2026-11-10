@@ -162,7 +162,7 @@
   }
 
   .tip.inline {
-    margin-inline-start: 0.25rem;
+    margin-inline-start: var(--space-1);
     vertical-align: middle;
   }
 
@@ -198,7 +198,7 @@
   .panel {
     width: min(280px, calc(100vw - 2rem));
     box-sizing: border-box;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border-radius: 6px;
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
@@ -214,7 +214,7 @@
 
   .panel.inline {
     width: min(320px, calc(100vw - 2rem));
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     line-height: 1.5;
@@ -239,11 +239,11 @@
   }
 
   .panel :global(ul) {
-    margin: 0.375rem 0 0;
+    margin: var(--space-1-5) 0 0;
     padding-inline-start: 1.125rem;
   }
 
   .panel :global(li + li) {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 </style>

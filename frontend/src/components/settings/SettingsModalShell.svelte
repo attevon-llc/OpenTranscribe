@@ -60,10 +60,10 @@
 
 <style>
   .sidebar-skeleton {
-    padding: 0.75rem 0.5rem;
+    padding: var(--space-3) var(--space-2);
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .search-skeleton,
@@ -101,24 +101,24 @@
   .group-skeleton {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .heading-skeleton {
     width: 40%;
     height: 10px;
-    margin: 0 0.75rem 0.25rem;
+    margin: 0 var(--space-3) var(--space-1);
   }
 
   .row-skeleton {
     height: 26px;
-    margin: 0 0.5rem;
+    margin: 0 var(--space-2);
   }
 
   .content-skeleton {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .title-skeleton {

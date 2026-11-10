@@ -121,19 +121,19 @@
   .legal-document.fullscreen {
     max-inline-size: var(--measure-prose);
     margin-inline: auto;
-    padding-block: 0.5rem 2rem;
+    padding-block: var(--space-2) var(--space-8);
   }
 
   .legal-state {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     color: var(--text-secondary);
   }
 
   .legal-draft-banner {
-    margin-block-end: 12px;
-    padding: 10px 14px;
+    margin-block-end: var(--space-3);
+    padding: var(--space-2-5) var(--space-3-5);
     border: 1px solid var(--warning-color);
     border-inline-start-width: 4px;
     border-radius: 8px;
@@ -146,9 +146,9 @@
   .legal-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 16px;
-    margin: 0 0 1.25rem;
-    padding-block-end: 0.75rem;
+    gap: var(--space-1) var(--space-4);
+    margin: 0 0 var(--space-5);
+    padding-block-end: var(--space-3);
     border-block-end: 1px solid var(--border-color);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);

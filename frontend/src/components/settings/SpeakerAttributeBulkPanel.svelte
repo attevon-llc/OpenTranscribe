@@ -256,33 +256,33 @@
 
 
   .bulk-section {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
   }
 
   .bulk-separator {
     border-top: 1px solid var(--border-color);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .bulk-title {
     font-size: 0.95rem;
     font-weight: 600;
     color: var(--text-color);
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
   }
 
   .bulk-description {
     font-size: 0.8rem;
     color: var(--text-secondary);
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
     line-height: 1.4;
   }
 
   .pending-info {
     font-size: 0.85rem;
     color: var(--text-secondary);
-    margin-bottom: 0.75rem;
-    padding: 0.625rem 0.875rem;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2-5) var(--space-3-5);
     background: rgba(var(--accent-rgb), 0.08);
     border: 1px solid rgba(var(--accent-rgb), 0.2);
     border-radius: 6px;
@@ -291,14 +291,14 @@
   .all-processed {
     font-size: 0.85rem;
     color: var(--success-color);
-    padding: 0.625rem 0.875rem;
+    padding: var(--space-2-5) var(--space-3-5);
     background: rgba(81, 207, 102, 0.08);
     border: 1px solid rgba(81, 207, 102, 0.2);
     border-radius: 6px;
   }
 
   .progress-section {
-    padding: 1rem;
+    padding: var(--space-4);
     background: var(--background-color);
     border-radius: 6px;
     border: 1px solid var(--border-color);
@@ -308,7 +308,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .progress-text {
@@ -339,22 +339,22 @@
   .queued-message {
     font-size: 0.8rem;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     font-style: italic;
   }
 
   .failed-info {
     font-size: 0.75rem;
     color: var(--error-color);
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .btn-stop {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .reextract-confirm {
-    padding: 0.875rem;
+    padding: var(--space-3-5);
     background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: 6px;
@@ -363,13 +363,13 @@
   .reextract-confirm p {
     font-size: 0.85rem;
     color: var(--text-color);
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
     line-height: 1.4;
   }
 
   .confirm-buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   @media (max-width: 768px) {

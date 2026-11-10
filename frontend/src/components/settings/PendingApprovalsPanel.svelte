@@ -135,14 +135,14 @@
 
 <style>
   .approvals-loading {
-    padding: 1rem 0;
+    padding: var(--space-4) 0;
     color: var(--text-secondary);
     font-size: 0.875rem;
   }
 
   .approvals {
-    margin-bottom: 1.5rem;
-    padding: 1rem;
+    margin-bottom: var(--space-6);
+    padding: var(--space-4);
     border: 1px solid rgba(245, 158, 11, 0.4);
     border-radius: 8px;
     background: rgba(245, 158, 11, 0.08);
@@ -151,7 +151,7 @@
   .approvals-head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .approvals-head h4 {
@@ -211,7 +211,7 @@
 
   .flag {
     display: inline-block;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   .requested {

@@ -182,8 +182,8 @@
 <style>
   .summary-actions {
     display: flex;
-    gap: 1rem;
-    padding: 1rem;
+    gap: var(--space-4);
+    padding: var(--space-4);
     background-color: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
     flex-wrap: wrap;
@@ -193,8 +193,8 @@
   .action-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.25rem;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
     border: none;
     border-radius: 6px;
     font-weight: 500;
@@ -228,7 +228,7 @@
   .action-button.regenerate {
     background-color: var(--primary-color);
     color: var(--text-on-solid);
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     font-size: 0.85rem;
   }
 
@@ -239,7 +239,7 @@
   .prompt-picker {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex: 1;
     min-width: 0;
   }
@@ -248,7 +248,7 @@
     flex: 1;
     min-width: 0;
     cursor: pointer;
-    padding-right: 2.5rem;
+    padding-right: var(--space-10);
   }
 
   .prompt-select:disabled {
@@ -259,8 +259,8 @@
   .disabled-badge {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
     border-radius: 6px;
     font-size: 0.85rem;
     font-weight: 500;

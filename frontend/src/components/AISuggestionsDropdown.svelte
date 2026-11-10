@@ -187,7 +187,7 @@
 
 <style>
   .ai-suggestions {
-    margin-top: 8px;
+    margin-top: var(--space-2);
     border-radius: 6px;
     border: 1px solid var(--border-color);
     background: var(--surface-color);
@@ -198,8 +198,8 @@
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     background: transparent;
     border: none;
     cursor: pointer;
@@ -218,7 +218,7 @@
   .ai-badge {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     font-size: 11px;
     font-weight: 500;
     color: var(--primary-on-surface);
@@ -231,7 +231,7 @@
   .suggestion-count {
     background: var(--primary-light);
     color: var(--primary-on-surface);
-    padding: 2px 6px;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 10px;
     font-size: 10px;
     font-weight: 600;
@@ -250,11 +250,11 @@
   /* Edit Modal Styles */
   .edit-modal {
     background: var(--surface-color);
-    padding: 12px;
+    padding: var(--space-3);
   }
 
   .edit-header {
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .edit-header h4 {
@@ -265,18 +265,18 @@
   }
 
   .edit-body {
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
   }
 
   .edit-input {
     width: 100%;
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     font-size: 13px;
   }
 
   .edit-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
     justify-content: flex-end;
   }
 
@@ -337,17 +337,17 @@
 
   /* Chips Layout */
   .suggestions-chips {
-    padding: 8px;
+    padding: var(--space-2);
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .suggestion-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 6px 4px 4px;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-1-5) var(--space-1) var(--space-1);
     border-radius: 16px;
     border: 1px solid;
     transition: all var(--duration-base);
@@ -357,7 +357,7 @@
     font-size: 12px;
     font-weight: 500;
     color: var(--text-primary);
-    padding: 0 4px;
+    padding: 0 var(--space-1);
   }
 
   .chip-add, .chip-edit {
@@ -367,7 +367,7 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    padding: 2px;
+    padding: var(--space-0-5);
     border-radius: 50%;
     transition: all var(--duration-fast);
     color: var(--text-secondary);
@@ -407,8 +407,8 @@
   .auto-applied-banner {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     font-size: 11px;
     color: var(--ai-accent-color);
     background: rgba(var(--accent-rgb), 0.08);

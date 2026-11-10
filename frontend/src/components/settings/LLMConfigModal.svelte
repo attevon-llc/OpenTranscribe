@@ -865,7 +865,7 @@ let _llmConfigModalWasOpen = false;
   .field-desc {
     font-size: 0.75rem;
     color: var(--text-muted);
-    margin: 0.375rem 0 0 0;
+    margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
   }
 
@@ -877,18 +877,18 @@ let _llmConfigModalWasOpen = false;
   }
 
   .config-form {
-    padding: 1.5rem;
+    padding: var(--space-6);
   }
 
   .form-group {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .form-group label {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     font-weight: 500;
     color: var(--text-color);
   }
@@ -901,7 +901,7 @@ let _llmConfigModalWasOpen = false;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .form-label-row label {
@@ -911,11 +911,11 @@ let _llmConfigModalWasOpen = false;
   .discover-models-btn {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border-radius: 4px;
     font-size: 0.75rem;
     cursor: pointer;
@@ -941,7 +941,7 @@ let _llmConfigModalWasOpen = false;
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-secondary);
     display: flex;
     align-items: center;
@@ -955,15 +955,15 @@ let _llmConfigModalWasOpen = false;
   }
 
   .advanced-settings {
-    margin: 1.5rem 0;
-    padding: 1rem;
+    margin: var(--space-6) 0;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--card-bg);
   }
 
   .advanced-settings h4 {
-    margin: 0 0 1rem;
+    margin: 0 0 var(--space-4);
     font-size: 1rem;
     font-weight: 500;
     color: var(--text-color);
@@ -972,19 +972,19 @@ let _llmConfigModalWasOpen = false;
   .form-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .model-selector {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--card-bg);
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .model-selector h4 {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     font-size: 0.875rem;
     font-weight: 500;
   }
@@ -992,16 +992,16 @@ let _llmConfigModalWasOpen = false;
   .model-list {
     max-height: 200px;
     overflow-y: auto;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .model-item {
     width: 100%;
     text-align: left;
-    padding: 0.5rem;
+    padding: var(--space-2);
     border: 1px solid var(--border-color);
     background: var(--input-bg);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     border-radius: 4px;
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -1026,15 +1026,15 @@ let _llmConfigModalWasOpen = false;
     background: var(--secondary-color);
     color: var(--text-on-solid);
     border: none;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.875rem;
   }
 
   .test-section {
-    margin: 1.5rem 0;
-    padding: 1rem;
+    margin: var(--space-6) 0;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--card-bg);
@@ -1043,7 +1043,7 @@ let _llmConfigModalWasOpen = false;
   .test-connection-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -1074,16 +1074,16 @@ let _llmConfigModalWasOpen = false;
   .share-toggle-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-top: 1.5rem;
-    padding-top: 1rem;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
+    padding-top: var(--space-4);
     border-top: 1px dashed var(--border-color);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     font-size: 0.875rem;
     font-weight: 400;
@@ -1131,9 +1131,9 @@ let _llmConfigModalWasOpen = false;
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 1rem;
-    margin-top: 2rem;
-    padding-top: 1rem;
+    gap: var(--space-4);
+    margin-top: var(--space-8);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
   }
 
@@ -1163,7 +1163,7 @@ let _llmConfigModalWasOpen = false;
   .save-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -1200,7 +1200,7 @@ let _llmConfigModalWasOpen = false;
     cursor: help;
     transition: opacity var(--duration-base) ease;
     position: relative;
-    margin-left: 0.5rem;
+    margin-left: var(--space-2);
   }
 
   .info-tooltip:hover {
@@ -1215,7 +1215,7 @@ let _llmConfigModalWasOpen = false;
     top: var(--tooltip-top, 50%);
     background: #1a1a1a;
     color: var(--text-on-solid);
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     border-radius: 6px;
     font-size: 13px;
     font-weight: normal;
@@ -1236,19 +1236,19 @@ let _llmConfigModalWasOpen = false;
     font-weight: 500;
     font-size: 0.9rem;
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .label-with-tooltip {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   @media (max-width: 768px) {
     .form-actions {
       flex-direction: column;
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     .cancel-button,

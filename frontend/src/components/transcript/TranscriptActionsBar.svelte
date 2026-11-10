@@ -253,8 +253,8 @@
 <style>
   .transcript-actions {
     display: flex;
-    gap: 12px;
-    margin-top: 16px;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
     flex-wrap: wrap;
   }
 
@@ -268,8 +268,8 @@
   .action-button {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -301,9 +301,9 @@
   .export-dropdown-content button {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2-5);
     width: 100%;
-    padding: 10px 16px;
+    padding: var(--space-2-5) var(--space-4);
     background: none;
     border: none;
     text-align: start;
@@ -333,7 +333,7 @@
 
 
   .download-dropdown-label {
-    padding: 8px 16px 4px;
+    padding: var(--space-2) var(--space-4) var(--space-1);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);

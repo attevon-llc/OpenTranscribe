@@ -139,14 +139,14 @@
 
 <style>
   .audit-log-viewer {
-    padding: 0.5rem;
+    padding: var(--space-2);
     font-size: 0.8125rem;
   }
 
   /* Coming Soon Section Styles */
   .coming-soon {
     text-align: center;
-    padding: 1.5rem;
+    padding: var(--space-6);
     background: var(--color-surface);
     border-radius: 6px;
     border: 1px solid var(--color-border);
@@ -156,18 +156,18 @@
     display: flex;
     justify-content: center;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .coming-soon h3 {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
     font-size: 1rem;
     color: var(--color-text);
   }
 
   .coming-soon p {
     color: var(--color-text-secondary);
-    margin: 0.25rem 0;
+    margin: var(--space-1) 0;
     font-size: 0.8125rem;
   }
 
@@ -175,8 +175,8 @@
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
     border-radius: 4px;
-    padding: 0.75rem;
-    margin-top: 0.75rem;
+    padding: var(--space-3);
+    margin-top: var(--space-3);
     text-align: left;
     font-size: 0.75rem;
   }

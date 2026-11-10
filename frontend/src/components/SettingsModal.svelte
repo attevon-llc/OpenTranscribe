@@ -1278,14 +1278,14 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    padding-bottom: 0.75rem;
+    padding-bottom: var(--space-3);
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
   }
 
   .sidebar-section {
-    margin-bottom: 0.25rem;
-    padding-top: 0.75rem;
+    margin-bottom: var(--space-1);
+    padding-top: var(--space-3);
   }
 
   /* The divider belongs BETWEEN groups. Keep the sibling combinator: the top group must not
@@ -1299,22 +1299,22 @@
     font-size: var(--font-size-xs);
     font-weight: 500;
     color: var(--text-secondary);
-    margin: 0 1.25rem 0.375rem;
+    margin: 0 var(--space-5) var(--space-1-5);
     padding-top: 0;
   }
 
   .section-nav {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-0-5);
   }
 
   .nav-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.4375rem 0.75rem;
-    margin: 0 0.5rem;
+    padding: 0.4375rem var(--space-3);
+    margin: 0 var(--space-2);
     border: none;
     border-radius: 6px;
     background-color: transparent;
@@ -1394,8 +1394,8 @@
   /* Mobile section navigation - hidden when sidebar is visible */
   .mobile-section-nav {
     display: none;
-    margin-bottom: 1rem;
-    padding: 0.5rem;
+    margin-bottom: var(--space-4);
+    padding: var(--space-2);
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -1405,7 +1405,7 @@
     display: block;
     font-size: 0.75rem;
     font-weight: 600;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     color: var(--text-secondary);
   }
 
@@ -1422,15 +1422,15 @@
   .section-title {
     font-size: 1.125rem;
     font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .section-title-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin: 0 0 0.25rem 0;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-1) 0;
   }
 
   .section-title-row .section-title {
@@ -1440,19 +1440,19 @@
   .section-description {
     font-size: 0.8125rem;
     color: var(--text-secondary);
-    margin: 0 0 1.25rem 0;
+    margin: 0 0 var(--space-5) 0;
   }
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
@@ -1462,7 +1462,7 @@
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     font-size: 0.8125rem;
   }
 
@@ -1474,13 +1474,13 @@
   .form-text {
     font-size: 0.75rem;
     color: var(--text-secondary);
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     font-weight: normal;
     font-size: 0.8125rem;
@@ -1494,8 +1494,8 @@
 
   .form-actions {
     display: flex;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
     justify-content: flex-end;
   }
 

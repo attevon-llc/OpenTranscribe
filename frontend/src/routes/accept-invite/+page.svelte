@@ -265,7 +265,7 @@
     align-items: center;
     min-height: 100vh;
     min-height: 100dvh;
-    padding: 1rem;
+    padding: var(--space-4);
     background-color: var(--background-color);
   }
 
@@ -275,12 +275,12 @@
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 420px;
-    padding: 2rem;
+    padding: var(--space-8);
   }
 
   .auth-logo {
     text-align: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .logo-image {
@@ -290,13 +290,13 @@
 
   .auth-header {
     text-align: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .auth-header h1 {
     font-size: 1.5rem;
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .auth-header p {
@@ -308,13 +308,13 @@
   .auth-form {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-group label {
@@ -337,7 +337,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-light);
     display: flex;
     align-items: center;
@@ -351,7 +351,7 @@
 
   .password-policy,
   .sso-note {
-    padding: 0.75rem;
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--background-color);
@@ -361,7 +361,7 @@
   }
 
   .password-policy ul {
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     padding-left: 1.1rem;
   }
 
@@ -384,7 +384,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .auth-button:hover:not(:disabled) {
@@ -398,7 +398,7 @@
   }
 
   .auth-links {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
     text-align: center;
     color: var(--text-light);
   }
@@ -415,7 +415,7 @@
   .error-message {
     background-color: var(--error-color-light);
     color: var(--error-color);
-    padding: 0.75rem;
+    padding: var(--space-3);
     border-radius: 4px;
     border: 1px solid rgba(239, 68, 68, 0.2);
     font-weight: 500;
@@ -424,22 +424,22 @@
   .success-message {
     background-color: var(--success-color-light);
     color: var(--success-color);
-    padding: 0.75rem;
+    padding: var(--space-3);
     border-radius: 4px;
     border: 1px solid rgba(34, 197, 94, 0.2);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-weight: 500;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .centered {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1.5rem 0;
+    gap: var(--space-3);
+    padding: var(--space-6) 0;
   }
 
   .muted {

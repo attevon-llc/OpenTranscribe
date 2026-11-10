@@ -112,8 +112,8 @@
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--card-bg);
-    padding: 0 1rem;
-    margin-bottom: 1.5rem;
+    padding: 0 var(--space-4);
+    margin-bottom: var(--space-6);
   }
 
   /* The disclosure draws its own rule under the header; the panel border replaces it. */
@@ -134,7 +134,7 @@
   .discovery-toolbar {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .discovery-rescan-btn {
@@ -169,7 +169,7 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .discovery-row {
@@ -211,7 +211,7 @@
     color: var(--text-muted);
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: baseline;
     word-break: break-all;
   }
@@ -230,12 +230,12 @@
 
   .discovery-use-btn {
     flex-shrink: 0;
-    padding: 0.3rem 0.75rem;
+    padding: 0.3rem var(--space-3);
     font-size: 0.75rem;
   }
 
   .discovery-warning {
-    margin: 0.75rem 0 0;
+    margin: var(--space-3) 0 0;
     font-size: 0.75rem;
     color: var(--warning-color);
   }

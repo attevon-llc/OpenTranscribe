@@ -20,14 +20,14 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 3rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-12) var(--space-4);
     text-align: center;
   }
   .redaction-pending-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.4rem 0.9rem;
     border-radius: 999px;
     background: rgba(var(--primary-color-rgb), 0.12);

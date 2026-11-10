@@ -283,7 +283,7 @@ table {
 
 th {
   background-color: var(--table-header-bg);
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   text-align: left;
   font-weight: 600;
   color: var(--text-color);
@@ -291,7 +291,7 @@ th {
 }
 
 td {
-  padding: 10px 16px;
+  padding: var(--space-2-5) var(--space-4);
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -402,18 +402,18 @@ button:disabled {
 .modal-header,
 .dialog-header {
   border-bottom: 1px solid var(--border-color);
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 .modal-body,
 .dialog-body {
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 .modal-footer,
 .dialog-footer {
   border-top: 1px solid var(--border-color);
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 /* ─── Settings Page Buttons (shared across all settings components) ─── */
@@ -421,8 +421,8 @@ button:disabled {
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem 1rem;
+  gap: var(--space-1-5);
+  padding: var(--space-2) var(--space-4);
   border-radius: 8px;
   font-size: 0.875rem;
   font-weight: 500;
@@ -432,7 +432,7 @@ button:disabled {
   white-space: nowrap;
 }
 .btn-small {
-  padding: 0.25rem 0.625rem;
+  padding: var(--space-1) var(--space-2-5);
   font-size: var(--font-size-xs);
 }
 .btn:disabled {
@@ -525,7 +525,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .modal-button:disabled {
   opacity: 0.6;
@@ -600,7 +600,7 @@ button:disabled {
 .btn-reset {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 .refresh-icon {
   flex-shrink: 0;

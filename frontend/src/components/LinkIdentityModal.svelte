@@ -176,7 +176,7 @@
   .modal-body {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .modal-intro {
@@ -187,7 +187,7 @@
 
   .modal-note {
     margin: 0;
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.45);
     border-radius: 6px;
     background: rgba(245, 158, 11, 0.12);

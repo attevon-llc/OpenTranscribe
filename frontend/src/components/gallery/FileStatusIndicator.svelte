@@ -87,7 +87,7 @@
   .status-indicator {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     cursor: help;
     width: fit-content;
     max-width: 100%;

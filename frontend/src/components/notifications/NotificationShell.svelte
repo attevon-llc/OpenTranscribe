@@ -51,8 +51,8 @@
     position: relative;
     display: flex;
     align-items: flex-start;
-    gap: 12px;
-    padding: 16px 20px;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--border-color);
     transition: background-color var(--duration-base) ease;
     background: var(--background-color);
@@ -132,7 +132,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    margin-top: 2px;
+    margin-top: var(--space-0-5);
   }
 
   .status-success .notification-icon {
@@ -205,8 +205,8 @@
 
   @media (max-width: 480px) {
     .notification-item {
-      padding: 14px 16px;
-      gap: 10px;
+      padding: var(--space-3-5) var(--space-4);
+      gap: var(--space-2-5);
     }
 
     .notification-icon {

@@ -196,7 +196,7 @@
 
 <style>
   .status-badge {
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 500;
@@ -249,26 +249,26 @@
   }
 
   .file-details h4 {
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
     color: var(--text-color);
     font-weight: 600;
   }
 
   .processing-provenance {
-    margin-bottom: 16px;
+    margin-bottom: var(--space-4);
   }
 
   .metadata-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-6);
   }
 
   .metadata-item {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .metadata-label {
@@ -312,22 +312,22 @@
   .task-metadata-grid {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .task-metadata-card {
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .task-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--border-color);
   }
 
@@ -340,12 +340,12 @@
   .task-metadata-items {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .task-error-details {
-    margin-top: 1rem;
-    padding: 0.75rem;
+    margin-top: var(--space-4);
+    padding: var(--space-3);
     background: rgba(var(--error-color-rgb), 0.05);
     border-radius: 4px;
     border: 1px solid rgba(var(--error-color-rgb), 0.2);
@@ -356,7 +356,7 @@
   }
 
   .task-error-details .task-error {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     font-family: monospace;
     white-space: pre-wrap;
     font-size: 0.85rem;
@@ -366,9 +366,9 @@
   .warning {
     background: var(--warning-background);
     color: var(--warning-text);
-    padding: 0.75rem;
+    padding: var(--space-3);
     border-radius: 4px;
-    margin: 1rem 0;
+    margin: var(--space-4) 0;
     border: 1px solid var(--warning-border);
   }
 
@@ -380,11 +380,11 @@
 
   .retry-section {
     text-align: center;
-    margin: 1rem 0;
+    margin: var(--space-4) 0;
   }
 
   .retry-btn {
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     font-size: 0.875rem;
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -409,24 +409,24 @@
   }
 
   .retry-btn.large {
-    padding: 0.75rem 1.5rem;
+    padding: var(--space-3) var(--space-6);
     font-size: 1rem;
   }
 
   .task-details {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
     border-top: 1px solid var(--border-color);
-    padding-top: 1.5rem;
+    padding-top: var(--space-6);
   }
 
   .task-details h4 {
     color: var(--text-color);
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
   }
 
   .task-error {
     color: var(--error-color);
     font-size: 0.875rem;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 </style>

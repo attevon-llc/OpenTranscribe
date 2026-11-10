@@ -198,7 +198,7 @@
 
 <style>
   .step {
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
     font-size: 1rem;
     color: var(--text-color);
   }
@@ -210,7 +210,7 @@
     outline-offset: 2px;
   }
   .warning {
-    margin: 0 0 1rem 0;
+    margin: 0 0 var(--space-4) 0;
     padding: 0.65rem 0.85rem;
     border: 1px solid var(--warning-color);
     border-inline-start-width: 4px;
@@ -221,15 +221,15 @@
     line-height: 1.5;
   }
   .confirm-form {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
   }
   .max {
-    margin: -0.5rem 0 1rem 0;
+    margin: calc(-1 * var(--space-2)) 0 var(--space-4) 0;
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
   .field {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
   .label {
     display: block;
@@ -242,13 +242,13 @@
     width: 100%;
   }
   .hint {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
   .error {
-    margin: 0.75rem 0 0 0;
-    padding: 0.5rem 0.75rem;
+    margin: var(--space-3) 0 0 0;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--error-border);
     border-radius: 6px;
     background: var(--error-background);

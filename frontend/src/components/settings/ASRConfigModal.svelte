@@ -505,16 +505,16 @@
 
 <style>
   .model-capabilities {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .model-notices {
     list-style: none;
-    margin: 0.5rem 0 1rem;
+    margin: var(--space-2) 0 var(--space-4);
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .modal-title {
@@ -534,7 +534,7 @@
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
@@ -544,18 +544,18 @@
   }
 
   .form-input, .form-select {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.8125rem;
   }
 
   .form-select {
-    padding-right: 2.5rem;
+    padding-right: var(--space-10);
     cursor: pointer;
   }
 
   .input-with-toggle {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .input-with-toggle .form-input {
@@ -563,7 +563,7 @@
   }
 
   .toggle-visibility {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     background: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -578,11 +578,11 @@
   .capabilities {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .cap-badge {
-    padding: 0.2rem 0.5rem;
+    padding: 0.2rem var(--space-2);
     background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     border-radius: 4px;
@@ -593,9 +593,9 @@
   .experimental-warning {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding: 0.6rem 0.8rem;
-    margin: 0.5rem 0;
+    margin: var(--space-2) 0;
     background: rgba(245, 158, 11, 0.1);
     border: 1px solid rgba(245, 158, 11, 0.3);
     border-radius: 6px;
@@ -617,13 +617,13 @@
   }
 
   .cost-hint {
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     font-size: 0.775rem;
     color: var(--text-muted);
   }
 
   .field-hint {
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     font-size: 0.75rem;
     color: var(--text-muted);
     font-style: italic;
@@ -639,8 +639,8 @@
   .test-result {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.875rem;
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-3-5);
     border-radius: 6px;
     font-size: 0.8125rem;
   }
@@ -660,16 +660,16 @@
   .share-toggle-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-top: 1rem;
-    padding-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
     border-top: 1px dashed var(--border-color);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 400;
@@ -719,19 +719,19 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .footer-actions {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .btn-test-conn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.875rem;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3-5);
     border: none;
     color: var(--text-on-solid);
     background: var(--primary-color);
@@ -754,7 +754,7 @@
   }
 
   .btn-cancel {
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     color: var(--text-color);
@@ -777,7 +777,7 @@
   }
 
   .btn-save {
-    padding: 0.5rem 1.25rem;
+    padding: var(--space-2) var(--space-5);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -799,7 +799,7 @@
   @media (max-width: 768px) {
     .footer-row {
       flex-direction: column;
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     .footer-actions {

@@ -98,7 +98,7 @@
   .picker {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
     font-size: 0.75rem;
   }
 
@@ -108,7 +108,7 @@
   }
 
   input {
-    padding: 0.25rem 0.375rem;
+    padding: var(--space-1) var(--space-1-5);
     font-size: 0.75rem;
     height: 1.75rem;
     min-width: 11rem;
@@ -117,9 +117,9 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     height: 1.75rem;
-    padding: 0 0.5rem;
+    padding: 0 var(--space-2);
     border-radius: 6px;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -144,7 +144,7 @@
   .results {
     overflow-y: auto;
     margin: 0;
-    padding: 0.25rem;
+    padding: var(--space-1);
     list-style: none;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -157,7 +157,7 @@
     flex-direction: column;
     width: 100%;
     text-align: start;
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     background: none;
     border: none;
     border-radius: 4px;
@@ -177,6 +177,6 @@
   }
 
   .hint {
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
   }
 </style>

@@ -805,22 +805,22 @@
 
 
   .saved-configs-section {
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--border-color);
   }
 
   .section-header h4 {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin: 0;
     font-size: 1.125rem;
     font-weight: 500;
@@ -830,7 +830,7 @@
   .create-config-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -856,14 +856,14 @@
   .config-list {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .config-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-background);
@@ -889,13 +889,13 @@
     font-weight: 500;
     color: var(--text-color);
     font-size: 0.8125rem;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .config-provider {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .config-url {
@@ -908,15 +908,15 @@
   .config-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 
   .config-status {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.375rem 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-3);
     border-radius: 4px;
     font-size: 0.8rem;
     font-weight: 500;
@@ -938,8 +938,8 @@
   .activate-button, .edit-button, .delete-config-button, .test-connection-button {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
@@ -953,7 +953,7 @@
     background-color: var(--success-color);
     border-color: var(--success-color);
     color: var(--text-on-solid);
-    padding: 0.5rem 0.5rem;
+    padding: var(--space-2) var(--space-2);
   }
 
   .activate-button:hover:not(:disabled) {
@@ -1005,8 +1005,8 @@
   }
 
   .delete-all-section {
-    margin-top: 2rem;
-    padding-top: 1rem;
+    margin-top: var(--space-8);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
     text-align: center;
   }
@@ -1014,7 +1014,7 @@
   .delete-all-button {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: #ef4444;
     color: var(--text-on-solid);
     border: none;
@@ -1045,27 +1045,27 @@
 
   .empty-state {
     text-align: center;
-    padding: 3rem 2rem;
+    padding: var(--space-12) var(--space-8);
     border: 2px dashed var(--border-color);
     border-radius: 8px;
     background: var(--card-background);
   }
 
   .empty-icon {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     color: var(--text-muted);
     opacity: 0.6;
   }
 
   .empty-state h4 {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     color: var(--text-color);
     font-size: 1.125rem;
     font-weight: 500;
   }
 
   .empty-state p {
-    margin: 0 0 1.5rem;
+    margin: 0 0 var(--space-6);
     color: var(--text-muted);
     font-size: 0.8125rem;
     line-height: 1.5;
@@ -1074,7 +1074,7 @@
   .create-first-config-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -1109,13 +1109,13 @@
   }
 
   .shared-section-header {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
   }
 
   .share-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 10px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -1123,7 +1123,7 @@
     letter-spacing: 0.5px;
     background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
-    margin-left: 0.5rem;
+    margin-left: var(--space-2);
     vertical-align: middle;
   }
 
@@ -1135,7 +1135,7 @@
   .admin-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 10px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -1143,7 +1143,7 @@
     letter-spacing: 0.5px;
     background: rgba(245, 158, 11, 0.12);
     color: #d97706;
-    margin-left: 0.5rem;
+    margin-left: var(--space-2);
     vertical-align: middle;
   }
 
@@ -1156,22 +1156,22 @@
     font-size: 0.75rem;
     color: var(--text-muted);
     font-style: italic;
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   .share-toggle-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
     border-top: 1px dashed var(--border-color);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     font-size: 0.75rem;
     color: var(--text-muted);
@@ -1217,25 +1217,25 @@
 
   /* Auto-summary settings */
   .auto-summary-section {
-    margin-top: 2rem;
-    padding-top: 1rem;
+    margin-top: var(--space-8);
+    padding-top: var(--space-4);
   }
 
   .summary-toggle-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-background);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .summary-toggle-row.admin-toggle {
     border-color: var(--warning-color);
     background: rgba(245, 158, 11, 0.04);
-    margin-top: 1rem;
+    margin-top: var(--space-4);
   }
 
   :global([data-theme='dark']) .summary-toggle-row.admin-toggle {
@@ -1245,7 +1245,7 @@
   .toggle-info {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     flex: 1;
     min-width: 0;
   }
@@ -1265,10 +1265,10 @@
   .summary-hint {
     font-size: 0.75rem;
     color: var(--text-muted);
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     background: var(--surface-color);
     border-radius: 4px;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     line-height: 1.4;
   }
 
@@ -1285,7 +1285,7 @@
 
     .section-header {
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .section-header h4 {
@@ -1302,7 +1302,7 @@
     .config-item {
       flex-direction: column;
       align-items: stretch;
-      gap: 0.75rem;
+      gap: var(--space-3);
     }
 
     .config-info {
@@ -1319,7 +1319,7 @@
 
     .config-actions {
       flex-wrap: wrap;
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
 
     .activate-button,
@@ -1344,7 +1344,7 @@
     }
 
     .empty-state {
-      padding: 2rem 1rem;
+      padding: var(--space-8) var(--space-4);
     }
 
   }

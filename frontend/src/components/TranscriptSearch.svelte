@@ -384,9 +384,9 @@
   .transcript-search {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     width: 100%;
-    margin: 0 0 6px 0;
+    margin: 0 0 var(--space-1-5) 0;
   }
 
   .transcript-search.disabled {
@@ -399,7 +399,7 @@
     align-items: center;
     justify-content: center;
     height: 32px;
-    padding: 0 8px;
+    padding: 0 var(--space-2);
     background: var(--primary-color);
     border: 1px solid var(--primary-color);
     border-radius: 4px;
@@ -450,7 +450,7 @@
   }
 
   .search-trigger {
-    margin: 0 0 6px 0;
+    margin: 0 0 var(--space-1-5) 0;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -464,8 +464,8 @@
   .search-trigger-button {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 0.6rem 1rem;
+    gap: var(--space-1-5);
+    padding: 0.6rem var(--space-4);
     background: transparent;
     border: none;
     color: var(--text-secondary);

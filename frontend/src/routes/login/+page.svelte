@@ -1088,8 +1088,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1.5rem 0;
+    gap: var(--space-3);
+    padding: var(--space-6) 0;
     color: var(--text-light);
     font-size: 0.9rem;
   }
@@ -1100,7 +1100,7 @@
     align-items: center;
     min-height: 100vh;
     min-height: 100dvh;
-    padding: 1rem;
+    padding: var(--space-4);
     background-color: var(--background-color);
   }
 
@@ -1110,18 +1110,18 @@
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 400px;
-    padding: 2rem;
+    padding: var(--space-8);
   }
 
   .auth-header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .auth-header h1 {
     font-size: 1.5rem;
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .auth-header p {
@@ -1130,8 +1130,8 @@
   }
 
   .auth-header p.session-ended-notice {
-    margin-top: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    margin-top: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     color: var(--text-color);
@@ -1140,13 +1140,13 @@
   .auth-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-group label {
@@ -1172,7 +1172,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .auth-button:hover:not(:disabled) {
@@ -1194,7 +1194,7 @@
   /* Shown when the deployment advertises no usable sign-in method at all. */
   .no-auth-methods {
     margin: 0;
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--background-color);
@@ -1204,7 +1204,7 @@
   }
 
   .auth-links {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
     text-align: center;
   }
 
@@ -1225,7 +1225,7 @@
 
   .forgot-password-row {
     text-align: right;
-    margin-top: -0.5rem;
+    margin-top: calc(-1 * var(--space-2));
   }
 
   .forgot-password-link {
@@ -1243,14 +1243,14 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .toggle-password {
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--space-1);
     color: var(--text-light);
     display: flex;
     align-items: center;
@@ -1265,18 +1265,18 @@
   .field-error {
     color: var(--error-color);
     font-size: 0.85rem;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   .success-message {
     background-color: var(--success-color-light);
     color: var(--success-color);
-    padding: 0.75rem;
+    padding: var(--space-3);
     border-radius: 4px;
     border: 1px solid rgba(34, 197, 94, 0.2);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-weight: 500;
   }
 
@@ -1287,7 +1287,7 @@
 
   .auth-logo {
     text-align: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .auth-logo .logo-banner {
@@ -1301,7 +1301,7 @@
   .auth-divider {
     display: flex;
     align-items: center;
-    margin: 1.5rem 0;
+    margin: var(--space-6) 0;
   }
 
   .auth-divider::before,
@@ -1313,7 +1313,7 @@
   }
 
   .auth-divider span {
-    padding: 0 1rem;
+    padding: 0 var(--space-4);
     color: var(--text-light);
     font-size: 0.85rem;
     white-space: nowrap;
@@ -1323,16 +1323,16 @@
   .external-auth-buttons {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .external-auth-button {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     width: 100%;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--surface-color);
@@ -1389,20 +1389,20 @@
   .lifecycle-panel h2 {
     font-size: 1.25rem;
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     text-align: center;
   }
 
   .lifecycle-message {
     color: var(--text-light);
     font-size: 0.9rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
     text-align: center;
   }
 
   .lifecycle-hint {
-    margin-top: 1rem;
-    padding: 0.75rem;
+    margin-top: var(--space-4);
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--background-color);
@@ -1412,7 +1412,7 @@
   }
 
   .password-policy {
-    padding: 0.75rem;
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--background-color);
@@ -1421,7 +1421,7 @@
   }
 
   .password-policy ul {
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     padding-left: 1.1rem;
   }
 
@@ -1435,20 +1435,20 @@
   }
 
   .mfa-icon {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     color: var(--primary-on-surface);
   }
 
   .mfa-form h2 {
     font-size: 1.25rem;
     color: var(--text-color);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .mfa-description {
     color: var(--text-light);
     font-size: 0.9rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .mfa-form .form-group {
@@ -1463,10 +1463,10 @@
   }
 
   .mfa-options {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .text-button {
@@ -1475,7 +1475,7 @@
     color: var(--primary-on-surface);
     font-size: 0.9rem;
     cursor: pointer;
-    padding: 0.5rem;
+    padding: var(--space-2);
     transition: color var(--duration-base);
   }
 
@@ -1498,7 +1498,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.25rem;
+    gap: var(--space-5);
     min-height: 100vh;
     min-height: 100dvh;
     background: var(--bg-primary);

@@ -177,13 +177,13 @@
   .modal-body {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group label {
@@ -193,7 +193,7 @@
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     font-size: 0.8125rem;
   }
 
@@ -210,7 +210,7 @@
 
   .warning-banner {
     margin: 0;
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem var(--space-3);
     border: 1px solid rgba(245, 158, 11, 0.45);
     border-radius: 6px;
     background: rgba(245, 158, 11, 0.12);

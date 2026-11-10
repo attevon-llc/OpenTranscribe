@@ -131,7 +131,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin: 8px 0 12px;
+    margin: var(--space-2) 0 var(--space-3);
   }
   .section-head h4 {
     margin: 0;
@@ -139,21 +139,21 @@
   .email-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-2-5);
   }
   .email-card {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
-    padding: 12px 14px;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--surface-color);
   }
   .badge {
     font-size: 0.7rem;
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     font-weight: 600;
   }
@@ -172,7 +172,7 @@
   .linked-badge {
     background: rgba(var(--primary-color-rgb), 0.15);
     color: var(--primary-on-surface);
-    margin-left: 6px;
+    margin-left: var(--space-1-5);
   }
   .email-name {
     font-weight: 600;
@@ -181,16 +181,16 @@
   .email-from {
     color: var(--text-secondary);
     font-size: 0.85rem;
-    margin-left: 8px;
+    margin-left: var(--space-2);
   }
   .email-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
   .btn-sm {
-    padding: 4px 10px;
+    padding: var(--space-1) var(--space-2-5);
     font-size: 0.8rem;
   }
   .muted {
@@ -200,7 +200,7 @@
   .email-heading {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
   .email-heading h4 {
     margin: 0;
@@ -208,12 +208,12 @@
   .experimental-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     font-size: 0.68rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     background: rgba(234, 179, 8, 0.15);
     color: #b45309;
@@ -228,7 +228,7 @@
     background: transparent;
     border: none;
     box-shadow: none;
-    padding: 2px;
+    padding: var(--space-0-5);
     cursor: pointer;
     color: var(--text-secondary);
     border-radius: 50%;
@@ -242,22 +242,22 @@
   .experimental-note {
     font-size: 0.8rem;
     color: var(--text-secondary);
-    margin: 0 0 10px;
+    margin: 0 0 var(--space-2-5);
   }
   .email-help {
     border: 1px solid var(--border-color);
     border-left: 3px solid var(--primary-color);
     border-radius: 6px;
     background: var(--button-hover);
-    padding: 10px 14px;
-    margin-bottom: 12px;
+    padding: var(--space-2-5) var(--space-3-5);
+    margin-bottom: var(--space-3);
   }
   .email-help h5 {
-    margin: 0 0 6px;
+    margin: 0 0 var(--space-1-5);
     font-size: 0.85rem;
   }
   .email-help p {
-    margin: 4px 0;
+    margin: var(--space-1) 0;
     font-size: 0.8rem;
     color: var(--text-secondary);
     line-height: 1.5;

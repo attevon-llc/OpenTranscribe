@@ -650,13 +650,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   .subsection-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 
@@ -670,15 +670,15 @@
   .status-chips-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
   }
 
   .progress-container {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-2-5);
+    margin-bottom: var(--space-2);
   }
 
   .progress-bar {
@@ -705,8 +705,8 @@
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-3);
   }
 
   .form-group label {
@@ -716,7 +716,7 @@
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     font-size: 0.8125rem;
   }
 
@@ -728,17 +728,17 @@
   .form-text {
     font-size: 0.75rem;
     color: var(--text-secondary);
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   .model-language {
-    margin-top: 0.375rem;
+    margin-top: var(--space-1-5);
   }
 
   /* Colours come from theme vars so light/dark parity is automatic. */
   .lang-badge {
     display: inline-block;
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     font-size: 0.7rem;
     font-weight: 600;
@@ -760,8 +760,8 @@
   .model-prepare {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
     flex-wrap: wrap;
   }
 
@@ -772,13 +772,13 @@
   .prepare-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-actions {
     display: flex;
-    gap: 0.75rem;
-    margin-top: 0.75rem;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
     justify-content: flex-end;
   }
 
@@ -787,7 +787,7 @@
   }
 
   .section-divider {
-    margin: 1.25rem 0;
+    margin: var(--space-5) 0;
     border-top: 1px solid var(--border-color);
   }
 
@@ -795,8 +795,8 @@
      light/dark parity is automatic, matching the .lang-badge pattern above. */
   .banner {
     border-radius: 6px;
-    padding: 0.625rem 0.75rem;
-    margin-bottom: 0.75rem;
+    padding: var(--space-2-5) var(--space-3);
+    margin-bottom: var(--space-3);
     font-size: 0.8125rem;
     line-height: 1.4;
   }
@@ -815,18 +815,18 @@
 
   .banner-title {
     font-weight: 600;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     color: var(--warning-color);
   }
 
   .banner-body {
-    margin-bottom: 0.125rem;
+    margin-bottom: var(--space-0-5);
   }
 
   .banner-detail {
     font-size: 0.75rem;
     color: var(--text-secondary);
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
   }
 
   /* Re-embed degraded files banner (#626) — same .banner-warning shell as the bootstrap
@@ -835,7 +835,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .reembed-banner-text {
@@ -846,14 +846,14 @@
   .reembed-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 
   /* Reindex completion stats */
   .reindex-stats {
-    margin-bottom: 0.75rem;
-    padding: 0.625rem 0.75rem;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -864,7 +864,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .stats-label {
@@ -879,24 +879,24 @@
     font-size: 1rem;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 0 0.25rem;
+    padding: 0 var(--space-1);
     line-height: 1;
   }
 
   .stats-row {
     display: flex;
-    gap: 1rem;
+    gap: var(--space-4);
     color: var(--text-secondary);
     align-items: center;
   }
 
   .stats-row.error {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     color: var(--danger-color);
   }
 
   .stats-mode {
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     font-weight: 600;
     font-size: 0.6875rem;
@@ -914,7 +914,7 @@
   }
 
   .btn-sm {
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     font-size: 0.75rem;
   }
 

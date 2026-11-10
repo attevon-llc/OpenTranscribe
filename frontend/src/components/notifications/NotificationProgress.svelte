@@ -40,8 +40,8 @@
   .progress-container {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-top: 8px;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .progress-bar-bg {
@@ -94,7 +94,7 @@
 
   .progress-eta {
     font-weight: var(--font-weight-medium);
-    margin-inline-start: 4px;
+    margin-inline-start: var(--space-1);
   }
 
   @media (prefers-reduced-motion: reduce) {

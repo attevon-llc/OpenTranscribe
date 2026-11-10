@@ -206,16 +206,16 @@
   .file-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .drop-zone {
-    padding: 2.5rem 2rem;
+    padding: var(--space-10) var(--space-8);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     border: 2px dashed var(--border-color);
     border-radius: 12px;
     background-color: var(--surface-color);
@@ -239,14 +239,14 @@
     width: 2.5rem;
     height: 2.5rem;
     color: var(--primary-on-surface);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .upload-text {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     color: var(--text-color);
     font-size: 0.9375rem;
     line-height: 1.5;
@@ -261,7 +261,7 @@
     color: var(--primary-on-surface);
     font-size: 0.8em;
     font-weight: 500;
-    margin-top: 2px;
+    margin-top: var(--space-0-5);
   }
 
   .supported-formats {
@@ -277,7 +277,7 @@
 
   .supported-formats .formats-heading {
     font-weight: 600;
-    margin-bottom: 0.125rem;
+    margin-bottom: var(--space-0-5);
   }
 
   .supported-formats .formats-label {
@@ -286,7 +286,7 @@
   }
 
   .supported-formats .formats-help {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     font-size: 0.75rem;
   }
 
@@ -294,7 +294,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--surface-color);
@@ -303,7 +303,7 @@
   .file-info {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     overflow: hidden;
   }
 
@@ -322,7 +322,7 @@
   .file-size {
     font-size: 0.75rem;
     color: var(--text-secondary);
-    margin: 0.125rem 0 0 0;
+    margin: var(--space-0-5) 0 0 0;
   }
 
   .file-remove {

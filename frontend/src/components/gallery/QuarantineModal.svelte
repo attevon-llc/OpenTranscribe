@@ -231,18 +231,18 @@
   .quarantine-modal-body {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .file-list-label {
-    margin: 0 0 0.375rem;
+    margin: 0 0 var(--space-1-5);
     font-weight: 600;
     font-size: 0.875rem;
   }
 
   .file-list ul {
     margin: 0;
-    padding-inline-start: 1.25rem;
+    padding-inline-start: var(--space-5);
     font-size: 0.8125rem;
     color: var(--text-secondary);
     max-height: 120px;
@@ -256,7 +256,7 @@
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     font-weight: 600;
     font-size: 0.875rem;
   }
@@ -264,7 +264,7 @@
   textarea {
     resize: vertical;
     min-height: 80px;
-    padding: 0.5rem;
+    padding: var(--space-2);
     font-size: 0.8125rem;
     font-weight: normal;
   }
@@ -279,7 +279,7 @@
   .legal-hold-field {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8125rem;
     color: var(--text-secondary);
   }
@@ -304,7 +304,7 @@
   }
 
   .btn-secondary {
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--bg-color);
@@ -320,8 +320,8 @@
   .btn-destructive {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-1-5);
+    padding: var(--space-2) var(--space-4);
     border: none;
     border-radius: 6px;
     background: var(--error-solid);

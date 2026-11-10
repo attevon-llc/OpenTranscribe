@@ -59,8 +59,8 @@
 
 <style>
   .account-status-strip {
-    margin-bottom: 1.25rem;
-    padding: 0.75rem 1rem;
+    margin-bottom: var(--space-5);
+    padding: var(--space-3) var(--space-4);
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 10px;
@@ -69,7 +69,7 @@
   .status-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
     justify-content: center;
   }
@@ -77,8 +77,8 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     border-radius: 20px;
     font-size: 0.8rem;
     background: var(--surface-color);

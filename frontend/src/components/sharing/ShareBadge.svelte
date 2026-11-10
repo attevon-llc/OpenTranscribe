@@ -24,8 +24,8 @@
   .share-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
+    gap: var(--space-1);
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 12px;
     font-size: 11px;
     font-weight: 500;

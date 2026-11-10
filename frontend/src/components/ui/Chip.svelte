@@ -48,8 +48,8 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 10px;
+    gap: var(--space-1-5);
+    padding: 3px var(--space-2-5);
     border-radius: 14px;
     font-size: 12px;
     font-weight: 600;
@@ -58,7 +58,7 @@
     border: 1px solid transparent;
   }
   .chip.removable {
-    padding-right: 4px;
+    padding-right: var(--space-1);
   }
   .chip-content {
     display: inline-flex;

@@ -34,7 +34,7 @@
     font-size: 1.25rem;
     transition: transform var(--duration-base) ease;
     border-radius: 8px;
-    padding: 0.25rem;
+    padding: var(--space-1);
     background: none;
     border: none;
     cursor: pointer;

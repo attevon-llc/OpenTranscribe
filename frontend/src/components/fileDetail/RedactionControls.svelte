@@ -94,9 +94,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.5rem 0.25rem 0;
-    margin-top: 0.5rem;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-1) 0;
+    margin-top: var(--space-2);
     border-top: 1px solid var(--border-color);
     flex-wrap: wrap;
   }

@@ -103,7 +103,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -130,7 +130,7 @@
   .tag-chip {
     background: var(--primary-light);
     color: var(--primary-on-surface);
-    padding: 3px 8px;
+    padding: 3px var(--space-2);
     border-radius: 12px;
     font-size: 11px;
     font-weight: 500;
@@ -157,7 +157,7 @@
     border-top: none;
     border-radius: 0 0 8px 8px;
     background: var(--surface-color);
-    padding: 20px;
+    padding: var(--space-5);
   }
 
   .tags-readonly {
@@ -171,6 +171,6 @@
     color: var(--text-secondary);
     font-style: italic;
     text-align: center;
-    padding: 20px;
+    padding: var(--space-5);
   }
 </style>

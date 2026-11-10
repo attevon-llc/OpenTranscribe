@@ -75,7 +75,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
     flex-wrap: wrap;
   }
   .provider-name {
@@ -86,7 +86,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem 0.75rem;
+    gap: var(--space-2) var(--space-3);
     font-size: 0.8rem;
   }
   .credentials-label,
@@ -112,7 +112,7 @@
     font-weight: var(--font-weight-medium);
   }
   .chip {
-    padding: 1px 8px;
+    padding: 1px var(--space-2);
     border-radius: 10px;
     font-size: 11px;
     font-weight: 600;

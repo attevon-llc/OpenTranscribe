@@ -436,17 +436,17 @@
     border: 1px solid var(--warning-color);
     border-left: 4px solid var(--warning-color);
     border-radius: 6px;
-    padding: 14px 18px;
-    margin-bottom: 20px;
+    padding: var(--space-3-5) 18px;
+    margin-bottom: var(--space-5);
     color: var(--text-color);
   }
 
   .cpu-mode-banner-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     font-size: 1rem;
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
   }
 
   .cpu-mode-icon {
@@ -457,11 +457,11 @@
   .cpu-mode-banner-reason {
     font-size: 0.85rem;
     color: var(--text-secondary);
-    margin-bottom: 10px;
+    margin-bottom: var(--space-2-5);
   }
 
   .cpu-mode-banner-list {
-    margin: 0 0 10px 0;
+    margin: 0 0 var(--space-2-5) 0;
     padding-left: 22px;
     font-size: 0.9rem;
     line-height: 1.55;
@@ -479,21 +479,21 @@
     font-size: 0.82rem;
     color: var(--text-secondary);
     border-top: 1px solid var(--border-color);
-    padding-top: 8px;
-    margin-top: 4px;
+    padding-top: var(--space-2);
+    margin-top: var(--space-1);
   }
 
   .section-title {
     font-size: 1.125rem;
     font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .section-description {
     font-size: 0.8125rem;
     color: var(--text-secondary);
-    margin: 0 0 1.25rem 0;
+    margin: 0 0 var(--space-5) 0;
   }
 
   .btn {
@@ -530,7 +530,7 @@
   .btn-refresh {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .refresh-icon {
@@ -552,9 +552,9 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
-    margin-bottom: 1rem;
-    padding-right: 2rem;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+    padding-right: var(--space-8);
   }
 
   .section-header-row .section-description {
@@ -566,7 +566,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 2rem;
+    padding: var(--space-8);
     color: var(--text-secondary);
   }
 
@@ -578,15 +578,15 @@
   .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
   }
 
   .stat-card {
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .stat-card-clickable {
@@ -607,7 +607,7 @@
   .stat-card-stacked {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .stat-section {
@@ -619,41 +619,41 @@
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
   }
 
   .stat-section .stat-value {
     font-size: 1.5rem;
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .stat-detail-compact {
     font-size: 0.6875rem;
     color: var(--text-secondary);
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .stat-card-content {
     flex: 1;
     display: flex;
     flex-direction: column;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .stat-card h4 {
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
   }
 
   .stat-value {
     font-size: 1.5rem;
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-    margin-bottom: 0.375rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .loading-text {
@@ -669,16 +669,16 @@
   .stat-detail {
     font-size: 0.75rem;
     color: var(--text-secondary);
-    margin-bottom: 0.125rem;
+    margin-bottom: var(--space-0-5);
   }
 
   .stat-detail span {
     display: block;
-    margin-bottom: 0.125rem;
+    margin-bottom: var(--space-0-5);
   }
 
   .stat-detail-hint {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     font-size: 0.6875rem;
     opacity: 0.6;
     font-style: italic;
@@ -706,8 +706,8 @@
   .search-health-row {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    margin-top: 0.375rem;
+    gap: var(--space-1-5);
+    margin-top: var(--space-1-5);
   }
 
   .search-health-dot {
@@ -787,14 +787,14 @@
   }
 
   .recent-tasks {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
   }
 
   .recent-tasks h4 {
     font-size: 0.9375rem;
     font-weight: 600;
     color: var(--text-color);
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
   }
 
   .table-container {
@@ -814,7 +814,7 @@
   }
 
   .data-table th {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     text-align: left;
     font-size: 0.6875rem;
     font-weight: 600;
@@ -825,7 +825,7 @@
   }
 
   .data-table td {
-    padding: 0.625rem 0.75rem;
+    padding: var(--space-2-5) var(--space-3);
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
   }
@@ -841,7 +841,7 @@
   .status-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     font-size: 0.6875rem;
     font-weight: 500;
@@ -898,7 +898,7 @@
 
   .empty-state {
     text-align: center;
-    padding: 1rem;
+    padding: var(--space-4);
     color: var(--text-secondary);
     font-size: 0.8125rem;
     font-style: italic;
@@ -912,13 +912,13 @@
   .model-info {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .model-item {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
   }
 
   .model-label {
@@ -937,16 +937,16 @@
   .model-fallback-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     align-self: flex-start;
-    margin-top: 0.125rem;
+    margin-top: var(--space-0-5);
     font-size: 0.6875rem;
     font-weight: 600;
     color: var(--warning-text);
     background: rgba(var(--warning-color-rgb), 0.12);
     border: 1px solid var(--warning-color);
     border-radius: 10px;
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     cursor: help;
   }
 
@@ -966,7 +966,7 @@
       flex-direction: column;
       align-items: flex-start;
       padding-right: 0;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .section-header-row .btn-refresh {
@@ -976,7 +976,7 @@
     }
 
     .stat-card {
-      padding: 0.75rem;
+      padding: var(--space-3);
     }
 
     .stat-value {
@@ -996,7 +996,7 @@
 
     .data-table th,
     .data-table td {
-      padding: 0.4rem 0.5rem;
+      padding: 0.4rem var(--space-2);
       font-size: 0.75rem;
     }
   }

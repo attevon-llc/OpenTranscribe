@@ -203,20 +203,20 @@
   .sessions-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .panel-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .card-title {
     font-size: 0.9rem;
     font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
@@ -229,7 +229,7 @@
   }
 
   .panel-note {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background-color: var(--background-color);
@@ -248,7 +248,7 @@
 
   .sessions-table th,
   .sessions-table td {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     text-align: left;
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
@@ -277,8 +277,8 @@
   }
 
   .current-badge {
-    margin-left: 0.375rem;
-    padding: 0.0625rem 0.375rem;
+    margin-left: var(--space-1-5);
+    padding: 0.0625rem var(--space-1-5);
     border-radius: 999px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -294,7 +294,7 @@
   }
 
   .btn {
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 10px;
     font-size: 0.8125rem;
     font-weight: 500;

@@ -148,21 +148,21 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 12px;
-    padding: 12px 14px;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--surface-color);
   }
   .source-badges {
     display: flex;
-    gap: 6px;
-    margin-bottom: 4px;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-1);
     flex-wrap: wrap;
   }
   .badge {
     font-size: 0.7rem;
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     font-weight: 600;
   }
@@ -202,18 +202,18 @@
     font-style: italic;
   }
   .disk-banner {
-    margin-top: 6px;
+    margin-top: var(--space-1-5);
     font-size: 0.75rem;
     color: var(--warning-color);
   }
   .source-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
   .btn-sm {
-    padding: 4px 10px;
+    padding: var(--space-1) var(--space-2-5);
     font-size: 0.8rem;
   }
   .enable-toggle {

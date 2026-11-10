@@ -162,8 +162,8 @@
   .instance-privacy {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.5rem 0 1.5rem;
+    gap: var(--space-3);
+    padding: var(--space-2) 0 var(--space-6);
   }
 
   .heading {
@@ -184,22 +184,22 @@
   .scope {
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8125rem;
     color: var(--text-color);
   }
 
   .scope legend {
-    padding: 0 0.375rem;
+    padding: 0 var(--space-1-5);
     font-weight: var(--font-weight-medium);
   }
 
   .scope label {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: flex-start;
     cursor: pointer;
   }

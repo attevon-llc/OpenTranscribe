@@ -311,27 +311,27 @@
   .group-detail {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .detail-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .btn-back {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     background: none;
     border: none;
     cursor: pointer;
     color: var(--primary-on-surface);
     font-size: 0.8125rem;
     font-weight: 500;
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     border-radius: 6px;
     transition: background-color var(--duration-fast);
   }
@@ -343,8 +343,8 @@
   .btn-delete {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     border: 1px solid var(--danger-color);
     border-radius: 6px;
     background: transparent;
@@ -365,19 +365,19 @@
   }
 
   .detail-name-section {
-    margin-bottom: 0.125rem;
+    margin-bottom: var(--space-0-5);
   }
 
   .display-name {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .display-name.editable {
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    margin: -0.25rem -0.5rem;
+    padding: var(--space-1) var(--space-2);
+    margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
     border-radius: 6px;
     transition: background-color var(--duration-fast);
   }
@@ -409,8 +409,8 @@
 
   .display-description.editable {
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    margin: -0.25rem -0.5rem;
+    padding: var(--space-1) var(--space-2);
+    margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
     border-radius: 6px;
     transition: background-color var(--duration-fast);
   }
@@ -434,11 +434,11 @@
   .edit-inline {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-control {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     font-size: 0.8125rem;
   }
 
@@ -454,12 +454,12 @@
 
   .edit-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .btn-inline-save,
   .btn-inline-cancel {
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 500;
@@ -495,7 +495,7 @@
   .detail-meta {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     font-size: 0.75rem;
     color: var(--text-secondary);
     flex-wrap: wrap;
@@ -507,13 +507,13 @@
 
   .section-divider {
     border-top: 1px solid var(--border-color);
-    margin: 0.25rem 0;
+    margin: var(--space-1) 0;
   }
 
   .members-section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .members-title {

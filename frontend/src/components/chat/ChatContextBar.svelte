@@ -158,7 +158,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 
   .chip {

@@ -64,7 +64,7 @@
     display: inline-block;
     width: 56px;
     height: 28px;
-    margin: 0 8px;
+    margin: 0 var(--space-2);
   }
 
   /* Hide the input */

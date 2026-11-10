@@ -77,7 +77,7 @@
 
 <style>
   .chat-reasoning {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     max-width: min(80%, 42rem);
     border: 1px solid var(--border-color);
     border-radius: 10px;

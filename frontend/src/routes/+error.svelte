@@ -41,7 +41,7 @@
     align-items: center;
     justify-content: center;
     min-height: 60vh;
-    padding: 2rem 1rem;
+    padding: var(--space-8) var(--space-4);
   }
 
   .error-card {
@@ -52,12 +52,12 @@
     border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-    padding: 2.5rem 2rem;
+    padding: var(--space-10) var(--space-8);
     color: var(--text-color);
   }
 
   .error-status {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
     font-size: 0.85rem;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -66,7 +66,7 @@
   }
 
   .error-heading {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
     font-size: 1.6rem;
     line-height: 1.2;
     color: var(--text-color);
@@ -85,7 +85,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .error-home,
@@ -94,7 +94,7 @@
     align-items: center;
     justify-content: center;
     min-height: 44px;
-    padding: 0.6rem 1.5rem;
+    padding: 0.6rem var(--space-6);
     border-radius: 8px;
     font-weight: 600;
     font-size: 1rem;

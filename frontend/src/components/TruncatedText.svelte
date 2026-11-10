@@ -42,7 +42,7 @@
   }
 
   .truncated-text p {
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     white-space: pre-wrap;
     word-wrap: break-word;
     line-height: 1.5;

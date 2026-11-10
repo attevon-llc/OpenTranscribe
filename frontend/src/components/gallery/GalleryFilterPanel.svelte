@@ -107,19 +107,19 @@
   }
 
   .filter-toggle-container {
-    padding: 0.5rem 0.5rem 0;
-    margin-bottom: 0.5rem;
+    padding: var(--space-2) var(--space-2) 0;
+    margin-bottom: var(--space-2);
     flex-shrink: 0;
   }
 
   .filter-sidebar.show .filter-toggle-container {
-    padding: 0.5rem 1rem 0;
+    padding: var(--space-2) var(--space-4) 0;
   }
 
   .filter-content {
     flex: 1;
     overflow-y: auto;
-    padding: 0 1rem;
+    padding: 0 var(--space-4);
   }
 
   /* Mobile filter overlay backdrop - hidden on desktop */

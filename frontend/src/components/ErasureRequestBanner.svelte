@@ -99,8 +99,8 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 0.375rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-1-5) var(--space-4);
     font-size: 0.8125rem;
     background: #fef3c7;
     color: #78350f;

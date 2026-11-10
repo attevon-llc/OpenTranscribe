@@ -248,7 +248,7 @@
   }
 
   .metadata-dropdown-section {
-    margin-bottom: 20px;
+    margin-bottom: var(--space-5);
   }
 
   .section-header {
@@ -259,7 +259,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -288,13 +288,13 @@
   }
 
   .metadata-panel {
-    padding: 20px;
+    padding: var(--space-5);
   }
 
   .metadata-grid {
     display: grid;
-    gap: 16px;
-    margin-bottom: 20px;
+    gap: var(--space-4);
+    margin-bottom: var(--space-5);
   }
 
   .metadata-grid.four-columns {
@@ -304,7 +304,7 @@
   .metadata-item {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .metadata-label {
@@ -341,28 +341,28 @@
     color: var(--success-color);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .status-processing {
     color: var(--warning-color);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .status-error {
     color: var(--error-color);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .status-pending {
     color: var(--text-secondary);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .source-link {

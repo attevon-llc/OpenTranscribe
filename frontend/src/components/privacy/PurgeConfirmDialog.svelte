@@ -285,7 +285,7 @@
   .purge {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
     font-size: 0.875rem;
     color: var(--text-color);
   }
@@ -297,7 +297,7 @@
 
   .deleted {
     margin: 0;
-    padding-inline-start: 1.25rem;
+    padding-inline-start: var(--space-5);
     line-height: 1.5;
   }
 
@@ -309,9 +309,9 @@
 
   .warning {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: flex-start;
-    padding: 0.625rem 0.75rem;
+    padding: var(--space-2-5) var(--space-3);
     border-radius: 6px;
     border: 1px solid var(--error-color);
     background: rgba(220, 38, 38, 0.08);
@@ -326,19 +326,19 @@
 
   .understand {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: flex-start;
     cursor: pointer;
   }
 
   .understand input {
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   .typed {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
     font-weight: var(--font-weight-medium);
   }
 
@@ -358,12 +358,12 @@
 
   .results {
     margin: 0;
-    padding-inline-start: 1.25rem;
+    padding-inline-start: var(--space-5);
     line-height: 1.5;
   }
 
   .events {
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     padding: 0;
     list-style: none;
   }
@@ -372,7 +372,7 @@
     font-size: 0.8125rem;
     background: var(--surface-secondary);
     border-radius: 4px;
-    padding: 0 0.25rem;
+    padding: 0 var(--space-1);
     white-space: nowrap;
   }
 

@@ -145,7 +145,7 @@
 
   .audit-table th,
   .audit-table td {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     text-align: start;
     border-bottom: 1px solid var(--color-border);
     white-space: nowrap;
@@ -191,7 +191,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.6875rem;
     background: var(--color-bg-secondary);
-    padding: 0.125rem 0.375rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 3px;
     display: inline-block;
   }
@@ -201,7 +201,7 @@
   }
 
   .outcome {
-    padding: 0.125rem 0.375rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 3px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -232,7 +232,7 @@
   .details-btn {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    padding: 0.125rem 0.375rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.625rem;
@@ -254,7 +254,7 @@
 
   .no-logs {
     text-align: center;
-    padding: 1rem;
+    padding: var(--space-4);
     color: var(--color-text-secondary);
     font-size: 0.8125rem;
   }
@@ -274,21 +274,21 @@
     text-align: end;
     font-size: 0.6875rem;
     color: var(--text-secondary);
-    padding: 4px 8px;
+    padding: var(--space-1) var(--space-2);
     background: var(--surface-color);
     z-index: 2;
   }
 
   .loading-more {
     text-align: center;
-    padding: 0.75rem;
+    padding: var(--space-3);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
 
   /* Details modal: chrome comes from ui/BaseModal; only the JSON block is styled here. */
   .details-modal-body {
-    padding: 1rem;
+    padding: var(--space-4);
     margin: 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.75rem;

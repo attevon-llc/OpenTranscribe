@@ -106,21 +106,21 @@
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 1rem;
-    margin-top: 1rem;
+    padding: var(--space-4);
+    margin-top: var(--space-4);
   }
 
   .cert-header {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .cert-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--success-color);
     color: var(--text-on-solid);
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 6px;
     font-weight: 600;
     font-size: 0.875rem;
@@ -129,9 +129,9 @@
   .warning-banner {
     background: rgba(234, 179, 8, 0.15);
     color: #ca8a04;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     border-radius: 6px;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     font-weight: 500;
     font-size: 0.8125rem;
     border: 1px solid rgba(234, 179, 8, 0.3);
@@ -158,13 +158,13 @@
   .cert-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .cert-item {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .cert-item.full-width {
@@ -188,7 +188,7 @@
     white-space: pre-wrap;
     word-break: break-all;
     background: var(--surface-color);
-    padding: 0.5rem;
+    padding: var(--space-2);
     border-radius: 4px;
     font-size: 0.75rem;
     border: 1px solid var(--border-color);

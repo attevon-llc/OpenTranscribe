@@ -868,12 +868,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .prompt-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
     align-items: center;
   }
@@ -883,7 +883,7 @@
   .create-config-button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -909,8 +909,8 @@
   .config-status {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.375rem 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-3);
     border-radius: 4px;
     font-size: 0.8rem;
     font-weight: 500;
@@ -932,8 +932,8 @@
   .activate-button, .view-button, .edit-button, .delete-config-button {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.75rem;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
@@ -947,7 +947,7 @@
     background-color: var(--success-color);
     border-color: var(--success-color);
     color: var(--text-on-solid);
-    padding: 0.5rem 0.5rem;
+    padding: var(--space-2) var(--space-2);
   }
 
   .activate-button:hover:not(:disabled) {
@@ -999,22 +999,22 @@
   }
 
   .saved-configs-section {
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--border-color);
   }
 
   .section-header h4 {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin: 0;
     font-size: 1.125rem;
     font-weight: 500;
@@ -1030,14 +1030,14 @@
   .config-list {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .config-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem;
+    padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-bg);
@@ -1063,10 +1063,10 @@
     font-weight: 500;
     color: var(--text-color);
     font-size: 0.8125rem;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .info-tooltip {
@@ -1091,7 +1091,7 @@
     top: var(--tooltip-top, 50%);
     background: #1a1a1a;
     color: var(--text-on-solid);
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     border-radius: 6px;
     font-size: 13px;
     font-weight: normal;
@@ -1109,7 +1109,7 @@
   .config-provider {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .config-url {
@@ -1144,7 +1144,7 @@
   .collection-tag {
     display: inline-flex;
     align-items: center;
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     border-radius: 10px;
@@ -1157,7 +1157,7 @@
     display: inline-flex;
     flex-wrap: wrap;
     gap: 0.35rem;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
   }
 
   :global([data-theme='dark']) .collection-tag {
@@ -1167,27 +1167,27 @@
 
   .empty-state {
     text-align: center;
-    padding: 3rem 2rem;
+    padding: var(--space-12) var(--space-8);
     border: 2px dashed var(--border-color);
     border-radius: 8px;
     background: var(--card-bg);
   }
 
   .empty-icon {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     color: var(--text-muted);
     opacity: 0.6;
   }
 
   .empty-state h4 {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     color: var(--text-color);
     font-size: 1.125rem;
     font-weight: 500;
   }
 
   .empty-state p {
-    margin: 0 0 1.5rem;
+    margin: 0 0 var(--space-6);
     color: var(--text-muted);
     font-size: 0.8125rem;
     line-height: 1.5;
@@ -1196,7 +1196,7 @@
   .create-first-config-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -1223,27 +1223,27 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .prompt-text-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .prompt-form {
-    padding: 1.5rem;
+    padding: var(--space-6);
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   label {
@@ -1253,7 +1253,7 @@
   }
 
   .form-control {
-    padding: 0.75rem;
+    padding: var(--space-3);
     font-size: 0.8125rem;
   }
 
@@ -1278,7 +1278,7 @@
     .section-header {
       flex-direction: column;
       align-items: stretch;
-      gap: 1rem;
+      gap: var(--space-4);
     }
 
     .prompt-actions {
@@ -1298,8 +1298,8 @@
 
   /* LLM Hint Styling */
   .llm-hint {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
+    margin-top: var(--space-3);
+    padding: var(--space-3);
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
     color: var(--text-color);
@@ -1311,8 +1311,8 @@
   .llm-hint strong {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.25rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
     color: var(--color-info);
   }
 
@@ -1322,26 +1322,26 @@
 
   /* View Modal Styling */
   .prompt-details {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .detail-row {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
     font-size: 0.8125rem;
   }
 
   .detail-row strong {
     color: var(--primary-on-surface);
-    margin-right: 0.5rem;
+    margin-right: var(--space-2);
   }
 
   .prompt-text-container {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
   }
 
   .prompt-text-container strong {
     display: block;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
     color: var(--primary-on-surface);
   }
 
@@ -1353,7 +1353,7 @@
     white-space: pre-wrap;
     word-wrap: break-word;
     background-color: var(--surface-color);
-    padding: 1rem;
+    padding: var(--space-4);
     border-radius: 6px;
     border: 1px solid var(--border-color);
     max-height: 400px;
@@ -1373,7 +1373,7 @@
   .share-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 10px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -1391,7 +1391,7 @@
   .admin-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 10px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -1425,14 +1425,14 @@
   .tag-pills {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem;
+    gap: var(--space-1);
     margin-top: 0.35rem;
   }
 
   .tag-pill {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 12px;
     font-size: 0.6875rem;
     font-weight: 500;
@@ -1449,16 +1449,16 @@
   .share-toggle-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
     border-top: 1px dashed var(--border-color);
   }
 
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     font-weight: 400;
   }

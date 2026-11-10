@@ -447,41 +447,41 @@
 
 <style>
   .mirror-settings {
-    margin-top: 1.5rem;
-    padding-top: 1rem;
+    margin-top: var(--space-6);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);
   }
 
   .subsection-title {
     font-size: 0.85rem;
     font-weight: 600;
-    margin: 0 0 0.25rem 0;
+    margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .subsection-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--space-2) 0;
   }
 
   .never-delete-note {
     font-size: 0.75rem;
     color: var(--text-muted);
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 var(--space-3) 0;
     font-style: italic;
   }
 
   .loading-state {
     display: flex;
     align-items: center;
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .banner {
     border-radius: 6px;
-    padding: 0.6rem 0.75rem;
-    margin-bottom: 0.75rem;
+    padding: 0.6rem var(--space-3);
+    margin-bottom: var(--space-3);
     font-size: 0.82rem;
     line-height: 1.4;
   }
@@ -493,26 +493,26 @@
   }
 
   .field-row {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .fields-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 0.75rem 1.25rem;
-    margin-top: 0.75rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-3) var(--space-5);
+    margin-top: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   .field-group {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .destination-type-group {
     max-width: 280px;
-    margin: 0.5rem 0 0.75rem 0;
+    margin: var(--space-2) 0 var(--space-3) 0;
   }
 
   select.form-input {
@@ -547,7 +547,7 @@
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     cursor: pointer;
     user-select: none;
   }
@@ -596,7 +596,7 @@
   }
 
   .form-input {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     font-size: 0.875rem;
   }
 
@@ -609,8 +609,8 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    margin: 1rem 0 0.75rem 0;
-    padding: 0.6rem 0.75rem;
+    margin: var(--space-4) 0 var(--space-3) 0;
+    padding: 0.6rem var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background-color: var(--background-secondary);
@@ -635,7 +635,7 @@
 
   .status-badge {
     border-radius: 10px;
-    padding: 0 0.5rem;
+    padding: 0 var(--space-2);
     font-size: 0.72rem;
     line-height: 1.6;
     color: var(--text-on-solid);
@@ -662,9 +662,9 @@
   .action-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .run-confirm-text {
@@ -676,7 +676,7 @@
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    padding: 0.375rem 0.625rem;
+    padding: var(--space-1-5) var(--space-2-5);
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.8rem;
@@ -690,9 +690,9 @@
 
   .button-row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     justify-content: flex-end;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .button-row .btn-secondary {

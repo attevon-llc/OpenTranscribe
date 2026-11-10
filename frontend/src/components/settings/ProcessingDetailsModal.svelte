@@ -211,8 +211,8 @@
 <style>
   .detail-tabs {
     display: flex;
-    gap: 0.25rem;
-    margin-bottom: 1.25rem;
+    gap: var(--space-1);
+    margin-bottom: var(--space-5);
     border-bottom: 1px solid var(--border-color);
     padding-bottom: 0;
   }
@@ -222,7 +222,7 @@
     border: none;
     border-bottom: 2px solid transparent;
     border-radius: 0;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-secondary);
@@ -257,7 +257,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.625rem 0;
+    padding: var(--space-2-5) 0;
     border-bottom: 1px solid var(--border-color);
   }
 
@@ -268,8 +268,8 @@
   .detail-row-total {
     border-top: 2px solid var(--border-color);
     font-weight: 600;
-    margin-top: 0.25rem;
-    padding-top: 0.75rem;
+    margin-top: var(--space-1);
+    padding-top: var(--space-3);
   }
 
   .detail-label {
@@ -277,7 +277,7 @@
     color: var(--text-secondary);
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
   }
 
   .detail-sublabel {
@@ -304,20 +304,20 @@
 
   .model-detail-row {
     align-items: flex-start;
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .model-detail-info {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
     flex: 1;
   }
 
   .model-engine-row {
-    padding-left: 1rem;
-    padding-top: 0.375rem;
-    padding-bottom: 0.375rem;
+    padding-left: var(--space-4);
+    padding-top: var(--space-1-5);
+    padding-bottom: var(--space-1-5);
   }
 
   .model-engine-row .detail-label {
@@ -331,12 +331,12 @@
   .fallback-warning-row {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: rgba(var(--warning-color-rgb), 0.1);
     border: 1px solid var(--warning-color);
     border-radius: 6px;
-    padding: 0.5rem 0.625rem;
-    margin: 0.375rem 0;
+    padding: var(--space-2) var(--space-2-5);
+    margin: var(--space-1-5) 0;
   }
 
   .fallback-warning-icon {
@@ -365,12 +365,12 @@
     font-size: 0.8125rem;
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
-    margin: 1.25rem 0 0.5rem 0;
+    margin: var(--space-5) 0 var(--space-2) 0;
   }
 
   .empty-notice {
     text-align: center;
-    padding: 1.5rem;
+    padding: var(--space-6);
     color: var(--text-secondary);
     font-size: 0.8125rem;
     font-style: italic;
@@ -384,13 +384,13 @@
     .tab {
       white-space: nowrap;
       min-height: 44px;
-      padding: 0.5rem 0.625rem;
+      padding: var(--space-2) var(--space-2-5);
     }
 
     .detail-row {
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.25rem;
+      gap: var(--space-1);
     }
 
     .detail-value {

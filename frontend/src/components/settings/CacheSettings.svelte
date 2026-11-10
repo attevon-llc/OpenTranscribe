@@ -167,7 +167,7 @@
 
 <style>
   .cache-settings {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 
   .section-title {
@@ -180,14 +180,14 @@
   .section-desc {
     font-size: 0.8rem;
     color: var(--text-muted);
-    margin: 0.25rem 0 1rem 0;
+    margin: var(--space-1) 0 var(--space-4) 0;
     line-height: 1.4;
   }
 
 
   .status-block {
-    margin: 0 0 1rem 0;
-    padding: 0.6rem 0.75rem;
+    margin: 0 0 var(--space-4) 0;
+    padding: 0.6rem var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background-color: var(--background-secondary);
@@ -213,8 +213,8 @@
   .field-group {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 1rem;
+    gap: var(--space-1);
+    margin-bottom: var(--space-4);
   }
 
   .field-label {
@@ -237,12 +237,12 @@
   .hint {
     font-size: 0.75rem;
     color: var(--text-muted);
-    margin: 0.25rem 0 0 0;
+    margin: var(--space-1) 0 0 0;
     line-height: 1.4;
   }
 
   .form-input {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     font-size: 0.875rem;
   }
 
@@ -254,9 +254,9 @@
   .action-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .run-confirm-text {
@@ -266,9 +266,9 @@
 
   .button-row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     justify-content: flex-end;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .button-row .btn-secondary {
@@ -279,7 +279,7 @@
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    padding: 0.375rem 0.625rem;
+    padding: var(--space-1-5) var(--space-2-5);
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.8rem;

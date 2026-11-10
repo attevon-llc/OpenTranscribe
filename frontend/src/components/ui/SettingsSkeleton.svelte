@@ -70,8 +70,8 @@
   .settings-skeleton {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 0.25rem 0;
+    gap: var(--space-4);
+    padding: var(--space-1) 0;
   }
 
   .sk-field {
@@ -94,8 +94,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.5rem 0;
+    gap: var(--space-4);
+    padding: var(--space-2) 0;
   }
 
   .sk-toggle {
@@ -108,7 +108,7 @@
   .chips-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .sk-chip {
@@ -125,7 +125,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    padding: 1.25rem;
+    padding: var(--space-5);
     border: 1px solid var(--border-color);
     border-radius: 8px;
   }

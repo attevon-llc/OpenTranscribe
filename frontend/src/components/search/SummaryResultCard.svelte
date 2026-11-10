@@ -111,8 +111,8 @@
 
 <style>
   .summary-result-card {
-    padding: 0.875rem 1rem;
-    margin-bottom: 0.5rem;
+    padding: var(--space-3-5) var(--space-4);
+    margin-bottom: var(--space-2);
     border-radius: 10px;
     transition: background-color var(--duration-fast);
   }
@@ -139,12 +139,12 @@
 
   .media-type-icon {
     vertical-align: -2px;
-    margin-inline-end: 0.375rem;
+    margin-inline-end: var(--space-1-5);
     opacity: 0.7;
   }
 
   .summary-match-count {
-    margin: 0.25rem 0 0.5rem;
+    margin: var(--space-1) 0 var(--space-2);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
@@ -152,16 +152,16 @@
   .summary-match-list {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .summary-match-row {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
     width: 100%;
-    padding: 0.375rem 0.625rem;
+    padding: var(--space-1-5) var(--space-2-5);
     background: none;
     border: none;
     border-inline-start: 2px solid var(--border-color);
@@ -205,12 +205,12 @@
   .summary-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem 1rem;
-    margin-top: 0.5rem;
+    gap: var(--space-1) var(--space-4);
+    margin-top: var(--space-2);
   }
 
   .text-btn {
-    padding: 0.125rem 0;
+    padding: var(--space-0-5) 0;
     background: none;
     border: none;
     /* form-elements.css styles every bare <button> with a drop shadow and a hover
@@ -236,7 +236,7 @@
 
   @media (max-width: 768px) {
     .summary-result-card {
-      padding: 0.75rem 0.5rem;
+      padding: var(--space-3) var(--space-2);
     }
 
     .summary-result-title {

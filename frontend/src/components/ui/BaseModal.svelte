@@ -215,7 +215,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.5rem;
+    padding: var(--space-6);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
   }
@@ -232,15 +232,15 @@
     justify-content: space-between;
     flex: 1;
     min-width: 0;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .modal-header-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-inline-start: auto;
-    padding-inline-start: 1rem;
+    padding-inline-start: var(--space-4);
     flex-shrink: 0;
   }
 
@@ -249,8 +249,8 @@
     border: none;
     cursor: pointer;
     color: var(--text-secondary);
-    padding: 0.5rem;
-    margin-inline-start: 1rem;
+    padding: var(--space-2);
+    margin-inline-start: var(--space-4);
     border-radius: 6px;
     display: flex;
     align-items: center;
@@ -260,7 +260,7 @@
   }
 
   .modal-header-actions + .modal-close-button {
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   .modal-close-button:hover {
@@ -269,7 +269,7 @@
   }
 
   .modal-body {
-    padding: 1.5rem;
+    padding: var(--space-6);
     overflow-y: auto;
     flex: 1;
     overscroll-behavior: contain;
@@ -287,8 +287,8 @@
 
   .modal-footer {
     display: flex;
-    gap: 0.75rem;
-    padding: 1rem 1.5rem;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-6);
     justify-content: flex-end;
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
@@ -304,9 +304,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     min-height: 2.375rem;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 8px;
     font-size: 0.875rem;
     font-weight: 500;
@@ -366,7 +366,7 @@
     }
 
     .modal-header {
-      padding: 1rem;
+      padding: var(--space-4);
       padding-top: calc(1rem + env(safe-area-inset-top, 0px));
     }
 
@@ -375,11 +375,11 @@
     }
 
     .modal-body {
-      padding: 1rem;
+      padding: var(--space-4);
     }
 
     .modal-footer {
-      padding: 0.75rem 1rem;
+      padding: var(--space-3) var(--space-4);
       padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
       flex-wrap: wrap;
     }

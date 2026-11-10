@@ -43,7 +43,7 @@
 
 <style>
   .engine-intro {
-    padding: 0.875rem 1rem;
+    padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--background-color);
@@ -53,16 +53,16 @@
   }
 
   .engine-intro p {
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
   }
 
   .engine-intro p.summary {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     color: var(--text-color);
   }
 
   .engine-intro :global(.expandable) {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     border-bottom: none;
   }
 

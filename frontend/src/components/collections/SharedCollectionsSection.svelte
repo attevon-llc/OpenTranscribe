@@ -61,13 +61,13 @@
     background: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 16px;
+    padding: var(--space-4);
     cursor: pointer;
     transition: all var(--duration-base);
     display: flex;
     justify-content: space-between;
     align-items: start;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .collection-card:hover {
@@ -86,7 +86,7 @@
   }
 
   .collection-info h4 {
-    margin: 0 0 4px 0;
+    margin: 0 0 var(--space-1) 0;
     font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
@@ -96,7 +96,7 @@
   }
 
   .description {
-    margin: 0 0 8px 0;
+    margin: 0 0 var(--space-2) 0;
     font-size: 14px;
     color: var(--text-secondary);
     line-height: 1.4;
@@ -110,7 +110,7 @@
   .meta {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
     font-size: 13px;
     color: var(--text-secondary);
   }
@@ -120,7 +120,7 @@
   }
 
   .badge {
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 12px;
     font-size: 12px;
     font-weight: 500;
@@ -130,12 +130,12 @@
     font-size: 0.8rem;
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    padding: 4px 0;
+    padding: var(--space-1) 0;
   }
 
   .section-label.shared-label {
-    margin-top: 12px;
-    padding-top: 12px;
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border-color);
   }
 
@@ -155,7 +155,7 @@
   }
 
   .btn-add {
-    padding: 6px 12px;
+    padding: var(--space-1-5) var(--space-3);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -185,7 +185,7 @@
   @media (max-width: 768px) {
     .btn-add {
       min-height: 44px;
-      padding: 0.5rem 1rem;
+      padding: var(--space-2) var(--space-4);
     }
   }
 </style>

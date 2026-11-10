@@ -169,7 +169,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
+    padding: var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--border-color);
     background: var(--surface-color);
     border-radius: 12px 12px 0 0;
@@ -178,7 +178,7 @@
   .header-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .header-title {
@@ -193,7 +193,7 @@
     color: var(--text-on-solid);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
-    padding: 2px 6px;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 10px;
     min-width: 16px;
     height: 16px;
@@ -205,7 +205,7 @@
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .icon-btn {
@@ -214,7 +214,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    padding: 0.5rem;
+    padding: var(--space-2);
     border-radius: 4px;
     cursor: pointer;
     transition:
@@ -291,7 +291,7 @@
 
   @media (max-width: 480px) {
     .notifications-header {
-      padding: 14px 16px;
+      padding: var(--space-3-5) var(--space-4);
     }
 
     .header-title {
@@ -304,7 +304,7 @@
     }
 
     .header-actions {
-      gap: 6px;
+      gap: var(--space-1-5);
     }
   }
 

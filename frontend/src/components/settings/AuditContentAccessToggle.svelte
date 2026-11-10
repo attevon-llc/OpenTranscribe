@@ -96,9 +96,9 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-4);
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
     background: var(--color-bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -114,7 +114,7 @@
   }
 
   .help {
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     font-size: 0.75rem;
     line-height: 1.4;
     color: var(--text-secondary);

@@ -132,7 +132,7 @@
   .model-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.5rem 1rem;
+    gap: var(--space-2) var(--space-4);
     align-items: center;
     padding: 0.85rem 0;
     border-top: 1px solid var(--border-color);
@@ -147,7 +147,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .model-name {
     font-weight: var(--font-weight-semibold);
@@ -158,14 +158,14 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.15rem 0.9rem;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     justify-content: flex-end;
   }
   .progress,
@@ -175,7 +175,7 @@
   }
   .bytes {
     display: block;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     font-size: 0.75rem;
     color: var(--text-secondary);
   }

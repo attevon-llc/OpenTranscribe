@@ -85,7 +85,7 @@
   .export-confirm {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .modal-message {
@@ -98,8 +98,8 @@
   .export-options-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 1rem;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
   }
 
   .export-option-label {
@@ -130,8 +130,8 @@
   }
 
   .export-redaction-note {
-    margin-top: 1rem;
-    padding: 0.6rem 0.75rem;
+    margin-top: var(--space-4);
+    padding: 0.6rem var(--space-3);
     background: rgba(var(--warning-color-rgb), 0.12);
     border-radius: 6px;
     font-size: 0.85rem;
@@ -146,7 +146,7 @@
 
   .export-redaction-hint {
     display: block;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     color: var(--text-secondary);
   }
 </style>

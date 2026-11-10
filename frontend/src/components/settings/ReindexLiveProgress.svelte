@@ -71,8 +71,8 @@
 <style>
   /* Live reindex progress styles */
   .reindex-live-progress {
-    margin-bottom: 0.75rem;
-    padding: 0.75rem;
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
     background: var(--background-color);
     border-radius: 6px;
     border: 1px solid var(--border-color);
@@ -82,13 +82,13 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .reindex-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--primary-on-surface);
@@ -122,7 +122,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
@@ -140,7 +140,7 @@
   .reindex-actions {
     display: flex;
     justify-content: flex-end;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .btn-danger-outline {
@@ -159,15 +159,15 @@
   }
 
   .btn-sm {
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     font-size: 0.75rem;
   }
 
   .progress-container {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-2-5);
+    margin-bottom: var(--space-2);
   }
 
   .progress-bar {
@@ -194,8 +194,8 @@
   .indeterminate-row {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-2-5);
+    margin-bottom: var(--space-2);
   }
 
   .indeterminate-row .progress-bar-wrapper {

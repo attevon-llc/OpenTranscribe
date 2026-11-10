@@ -46,18 +46,18 @@
 
 <style>
   .open-file {
-    margin: 0.5rem 0 1rem 0;
+    margin: var(--space-2) 0 var(--space-4) 0;
   }
   label {
     display: block;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-color);
   }
   .row {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   input {
     flex: 1;

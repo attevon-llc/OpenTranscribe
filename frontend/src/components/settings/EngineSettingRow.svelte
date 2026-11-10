@@ -62,8 +62,8 @@
   .form-field {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
-    padding: 0.875rem 1rem;
+    gap: var(--space-1-5);
+    padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--card-bg);
@@ -72,7 +72,7 @@
   .field-label-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
 
@@ -88,7 +88,7 @@
   .source-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem 0.5rem;
+    padding: 0.15rem var(--space-2);
     border-radius: 4px;
     font-size: 0.675rem;
     font-weight: 600;
@@ -119,7 +119,7 @@
   .reset-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     padding: 0.2rem 0.6rem;
     border-radius: 4px;
     font-size: 0.7rem;
@@ -152,11 +152,11 @@
 
   @media (max-width: 768px) {
     .field-label-row {
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
 
     .form-field {
-      padding: 0.75rem;
+      padding: var(--space-3);
     }
   }
 </style>

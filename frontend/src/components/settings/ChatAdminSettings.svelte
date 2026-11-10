@@ -268,7 +268,7 @@
   .settings-section {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .section-description {
@@ -281,7 +281,7 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-    gap: 1rem;
+    gap: var(--space-4);
   }
 
   .field {
@@ -323,7 +323,7 @@
   }
 
   .checkbox-field {
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   input[type='number'] {
@@ -351,8 +351,8 @@
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    margin-top: 0.5rem;
-    padding-top: 1rem;
+    margin-top: var(--space-2);
+    padding-top: var(--space-4);
     border-top: 1px dashed var(--border-color);
   }
 

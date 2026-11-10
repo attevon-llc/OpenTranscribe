@@ -100,7 +100,7 @@
   .loading {
     display: flex;
     justify-content: center;
-    padding: 2rem 0;
+    padding: var(--space-8) 0;
   }
 
   .collection-filter {
@@ -120,7 +120,7 @@
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.5rem 0.4rem;
+    padding: var(--space-2) 0.4rem;
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.87rem;
@@ -169,7 +169,7 @@
   }
 
   .empty {
-    padding: 1.5rem 0.5rem;
+    padding: var(--space-6) var(--space-2);
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.85rem;

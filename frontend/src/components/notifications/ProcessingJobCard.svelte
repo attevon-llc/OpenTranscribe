@@ -210,7 +210,7 @@
 
 <style>
   .notification-title {
-    margin: 0 0 2px 0;
+    margin: 0 0 var(--space-0-5) 0;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-height-tight);
@@ -233,7 +233,7 @@
   .job-status {
     display: flex;
     flex-wrap: wrap;
-    gap: 0 6px;
+    gap: 0 var(--space-1-5);
     margin: 0;
     font-size: var(--font-size-sm);
     line-height: var(--line-height-snug);
@@ -257,14 +257,14 @@
   .job-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    margin: 8px 0 0;
+    gap: var(--space-1);
+    margin: var(--space-2) 0 0;
     padding: 0;
     list-style: none;
   }
 
   .task-chips {
-    margin-top: 4px;
+    margin-top: var(--space-1);
   }
 
   .task-chip {
@@ -279,8 +279,8 @@
   .job-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
+    gap: var(--space-1);
+    padding: var(--space-0-5) var(--space-2);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
     line-height: 1.4;
@@ -313,8 +313,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    margin-top: 8px;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .notification-time {
@@ -326,8 +326,8 @@
   .job-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 4px;
+    gap: var(--space-1);
+    padding: var(--space-0-5) var(--space-1);
     border: none;
     border-radius: 4px;
     background: transparent;

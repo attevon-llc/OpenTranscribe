@@ -226,8 +226,8 @@
 <style>
   .toolbar {
     display: flex;
-    gap: 12px;
-    margin-bottom: 16px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
     align-items: center;
     flex-wrap: wrap;
   }
@@ -250,7 +250,7 @@
     border: none;
     cursor: pointer;
     color: var(--text-secondary);
-    padding: 4px;
+    padding: var(--space-1);
     border-radius: 50%;
     transition: color var(--duration-fast), background var(--duration-fast);
   }
@@ -263,7 +263,7 @@
   .search-input {
     width: 100%;
     min-width: 0;
-    padding: 8px 32px 8px 12px;
+    padding: var(--space-2) var(--space-8) var(--space-2) var(--space-3);
     font-size: 14px;
     box-sizing: border-box;
   }
@@ -273,7 +273,7 @@
   }
 
   .btn-recluster {
-    padding: 8px 16px;
+    padding: var(--space-2) var(--space-4);
     border-radius: 8px;
     border: none;
     background: var(--primary-color);
@@ -313,7 +313,7 @@
   }
 
   .clustering-progress {
-    margin-top: 12px;
+    margin-top: var(--space-3);
   }
 
   .progress-bar {
@@ -342,7 +342,7 @@
 
   .progress-text {
     display: block;
-    margin-top: 4px;
+    margin-top: var(--space-1);
     font-size: 12px;
     color: var(--text-secondary);
   }
@@ -350,18 +350,18 @@
   .cluster-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .section-heading-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     font-size: 13px;
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    margin: 16px 0 4px;
-    padding: 4px 4px;
+    margin: var(--space-4) 0 var(--space-1);
+    padding: var(--space-1) var(--space-1);
     border: none;
     background: none;
     cursor: pointer;
@@ -404,14 +404,14 @@
   }
 
   .section-empty-note {
-    padding: 12px 24px;
+    padding: var(--space-3) var(--space-6);
     font-size: 13px;
     color: var(--text-secondary);
     font-style: italic;
   }
 
   .loading-members {
-    padding: 12px;
+    padding: var(--space-3);
     color: var(--text-secondary);
     font-size: 13px;
   }
@@ -420,14 +420,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 16px;
-    margin-top: 16px;
+    gap: var(--space-4);
+    margin-top: var(--space-4);
     font-size: 14px;
     color: var(--text-secondary);
   }
 
   .pagination button {
-    padding: 6px 14px;
+    padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-background);
@@ -452,12 +452,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 8px 16px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
     background: color-mix(in srgb, var(--primary-color) 10%, transparent);
     border: 1px solid var(--primary-color);
     border-radius: 6px;
-    margin-bottom: 12px;
+    margin-bottom: var(--space-3);
     font-size: 14px;
     color: var(--primary-on-surface);
   }
@@ -470,7 +470,7 @@
   }
 
   .btn-cancel-merge {
-    padding: 4px 12px;
+    padding: var(--space-1) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--card-background);
@@ -495,7 +495,7 @@
   @media (max-width: 768px) {
     .toolbar {
       flex-wrap: wrap;
-      gap: 8px;
+      gap: var(--space-2);
     }
 
     .search-input {
@@ -506,7 +506,7 @@
     .btn-recluster {
       flex: 1;
       min-width: 0;
-      padding: 8px 12px;
+      padding: var(--space-2) var(--space-3);
       font-size: 13px;
     }
 
@@ -518,7 +518,7 @@
 
     .merge-banner {
       flex-wrap: wrap;
-      padding: 8px 12px;
+      padding: var(--space-2) var(--space-3);
       font-size: 13px;
     }
 
@@ -529,16 +529,16 @@
 
     .section-heading-btn {
       font-size: 12px;
-      padding: 4px 2px;
+      padding: var(--space-1) var(--space-0-5);
     }
 
     .pagination {
-      gap: 8px;
+      gap: var(--space-2);
       font-size: 13px;
     }
 
     .pagination button {
-      padding: 6px 10px;
+      padding: var(--space-1-5) var(--space-2-5);
       font-size: 13px;
     }
   }

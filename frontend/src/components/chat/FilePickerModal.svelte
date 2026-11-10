@@ -194,7 +194,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: var(--space-3);
     padding-top: 0.85rem;
     border-top: 1px solid var(--border-color);
   }
@@ -240,7 +240,7 @@
 
   .footer-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-left: auto;
   }
 </style>

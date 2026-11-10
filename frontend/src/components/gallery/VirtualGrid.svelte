@@ -339,8 +339,8 @@
   .virtual-grid-container {
     overflow: visible;
     contain: layout style;
-    padding-top: 0.5rem;
-    margin-top: -0.5rem;
+    padding-top: var(--space-2);
+    margin-top: calc(-1 * var(--space-2));
   }
 
   /* Row wrappers exist for ARIA only; the cards still lay out in .file-grid. */
@@ -351,8 +351,8 @@
   .file-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 0.75rem;
-    padding: 0 2px 0.5rem;
+    gap: var(--space-3);
+    padding: 0 var(--space-0-5) var(--space-2);
   }
 
   /* --- Card --- */
@@ -584,7 +584,7 @@
     color: var(--text-on-solid);
     font-size: 0.6875rem;
     font-weight: 500;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 4px;
     line-height: 1.4;
     font-variant-numeric: tabular-nums;
@@ -603,10 +603,10 @@
   }
 
   .card-text {
-    padding: 8px 10px 10px;
+    padding: var(--space-2) var(--space-2-5) var(--space-2-5);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-0-5);
     flex: 1;
   }
 
@@ -634,7 +634,7 @@
   }
 
   .meta-dot {
-    margin: 0 4px;
+    margin: 0 var(--space-1);
     opacity: 0.5;
   }
 
@@ -682,7 +682,7 @@
   @media (max-width: 768px) {
     .file-grid {
       grid-template-columns: repeat(2, 1fr);
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .thumbnail-container {
@@ -690,7 +690,7 @@
     }
 
     .card-text {
-      padding: 6px 8px 8px;
+      padding: var(--space-1-5) var(--space-2) var(--space-2);
     }
 
     .file-name {
@@ -712,7 +712,7 @@
 
     .duration-badge {
       font-size: 0.6rem;
-      padding: 1px 4px;
+      padding: 1px var(--space-1);
     }
 
     .type-badge {

@@ -19,7 +19,7 @@
   .role-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.125rem 0.5rem;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 9999px;
     font-size: 0.75rem;
     font-weight: 500;

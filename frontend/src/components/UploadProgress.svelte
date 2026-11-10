@@ -174,8 +174,8 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 12px;
-    margin-bottom: 8px;
+    padding: var(--space-3);
+    margin-bottom: var(--space-2);
     font-size: 0.875rem;
   }
 
@@ -183,13 +183,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .upload-info {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2-5);
     flex: 1;
     min-width: 0;
   }
@@ -214,14 +214,14 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-bottom: 2px;
+    margin-bottom: var(--space-0-5);
   }
 
   .upload-meta {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 8px;
+    gap: var(--space-1) var(--space-2);
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
@@ -231,7 +231,7 @@
     font-weight: 500;
     background: var(--accent-color);
     color: var(--text-on-solid);
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     border-radius: 4px;
     font-size: 10px;
     white-space: nowrap;
@@ -241,18 +241,18 @@
   .upload-dedup-skipped {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     font-weight: 500;
     color: #b45309;
     background: rgba(245, 158, 11, 0.12);
     border-radius: 4px;
-    padding: 1px 6px;
+    padding: 1px var(--space-1-5);
     white-space: nowrap;
   }
 
   .upload-actions {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .upload-action-btn {
@@ -261,7 +261,7 @@
     justify-content: center;
     background: none;
     border: none;
-    padding: 4px 6px;
+    padding: var(--space-1) var(--space-1-5);
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
@@ -288,8 +288,8 @@
   .progress-container {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-top: 8px;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .progress-bar {
@@ -313,8 +313,8 @@
   }
 
   .error-message {
-    margin-top: 6px;
-    padding: 6px 8px;
+    margin-top: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-2);
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: 4px;

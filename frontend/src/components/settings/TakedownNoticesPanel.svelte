@@ -228,20 +228,20 @@
   .notices-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .filter {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: var(--font-size-sm);
     white-space: nowrap;
   }
@@ -255,8 +255,8 @@
   .record-form {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: 6px;
   }
@@ -264,8 +264,8 @@
   .state-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
+    gap: var(--space-2);
+    padding: var(--space-3);
     border-radius: 6px;
     background: var(--bg-secondary);
     font-size: var(--font-size-sm);
@@ -284,7 +284,7 @@
 
   .notices th,
   .notices td {
-    padding: 0.5rem;
+    padding: var(--space-2);
     border-bottom: 1px solid var(--border-color);
     text-align: start;
     vertical-align: top;

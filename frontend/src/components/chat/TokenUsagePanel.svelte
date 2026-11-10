@@ -68,7 +68,7 @@
 
 <style>
   .token-panel {
-    padding: 0.25rem 0;
+    padding: var(--space-1) 0;
   }
 
   .token-toggle {
@@ -146,7 +146,7 @@
   .token-breakdown {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 0.15rem 0.75rem;
+    gap: 0.15rem var(--space-3);
     margin: 0;
     font-size: 0.75rem;
   }

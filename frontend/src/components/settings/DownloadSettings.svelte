@@ -204,27 +204,27 @@
   .loading-state {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 1rem 0;
+    gap: var(--space-2);
+    padding: var(--space-4) 0;
     color: var(--text-secondary);
   }
 
   .settings-form {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--space-5);
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
   }
 
   .form-group-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .form-group-header label,
@@ -236,7 +236,7 @@
 
   .form-select {
     width: 100%;
-    padding-right: 2.5rem;
+    padding-right: var(--space-10);
     cursor: pointer;
   }
 
@@ -305,8 +305,8 @@
   .form-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
-    padding-top: 0.75rem;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border-color);
   }
 

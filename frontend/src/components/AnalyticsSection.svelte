@@ -111,7 +111,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
     transition: all var(--duration-base) ease;
   }
@@ -131,13 +131,13 @@
   .analytics-preview {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .analytics-chip {
     background: var(--primary-light);
     color: var(--primary-on-surface);
-    padding: 4px 8px;
+    padding: var(--space-1) var(--space-2);
     border-radius: 12px;
     font-size: 12px;
     font-weight: 500;
@@ -163,7 +163,7 @@
     border-top: none;
     border-radius: 0 0 8px 8px;
     background: var(--surface-color);
-    padding: 20px;
+    padding: var(--space-5);
   }
 
   .analytics-content p {
@@ -171,6 +171,6 @@
     color: var(--text-secondary);
     font-style: italic;
     text-align: center;
-    padding: 20px;
+    padding: var(--space-5);
   }
 </style>

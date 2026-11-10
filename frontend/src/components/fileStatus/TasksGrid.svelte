@@ -136,7 +136,7 @@
     border: none;
     cursor: pointer;
     color: var(--text-secondary-color);
-    padding: 6px;
+    padding: var(--space-1-5);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -156,11 +156,11 @@
   }
 
   .info-button.small {
-    padding: 4px;
+    padding: var(--space-1);
   }
 
   .status-badge {
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 500;
@@ -254,7 +254,7 @@
 
   .tasks-table thead th {
     text-align: left;
-    padding: 0.6rem 0.75rem;
+    padding: 0.6rem var(--space-3);
     font-weight: 600;
     font-size: 0.75rem;
     text-transform: uppercase;
@@ -271,7 +271,7 @@
   }
 
   .tasks-table tbody td {
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--border-color);
     vertical-align: middle;
     color: var(--text-color);
@@ -292,7 +292,7 @@
   .task-type-cell {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-weight: 500;
     white-space: nowrap;
   }
@@ -334,7 +334,7 @@
   .task-status-cell {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     white-space: nowrap;
   }
 
@@ -366,22 +366,22 @@
 
   .no-tasks {
     text-align: center;
-    padding: 2rem;
+    padding: var(--space-8);
     color: var(--text-secondary-color);
   }
 
   .loading {
     text-align: center;
-    padding: 2rem;
+    padding: var(--space-8);
     color: var(--text-light);
   }
 
   .error-message {
     background: var(--error-background);
     color: var(--error-color);
-    padding: 1rem;
+    padding: var(--space-4);
     border-radius: 4px;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     border: 1px solid var(--error-border);
   }
 

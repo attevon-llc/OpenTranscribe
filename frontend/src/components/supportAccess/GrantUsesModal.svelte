@@ -117,7 +117,7 @@
 
 <style>
   .state {
-    margin: 1rem 0;
+    margin: var(--space-4) 0;
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.875rem;
@@ -145,7 +145,7 @@
     white-space: nowrap;
   }
   td {
-    padding: 0.5rem 0.6rem;
+    padding: var(--space-2) 0.6rem;
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
     vertical-align: top;
@@ -163,6 +163,6 @@
   }
   .more {
     display: block;
-    margin: 1rem auto 0 auto;
+    margin: var(--space-4) auto 0 auto;
   }
 </style>

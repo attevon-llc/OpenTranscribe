@@ -919,7 +919,7 @@
 <style>
   .user-management {
     width: 100%;
-    margin-bottom: 2rem;
+    margin-bottom: var(--space-8);
   }
 
   .table-controls {
@@ -927,8 +927,8 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem 1rem;
-    margin-bottom: 1rem;
+    gap: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
   }
 
   .search-container {
@@ -937,7 +937,7 @@
 
   .search-container input {
     width: 100%;
-    padding: 0.5rem;
+    padding: var(--space-2);
     font-size: 0.8125rem;
   }
 
@@ -945,43 +945,43 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .add-user-form {
     background-color: var(--card-background);
-    padding: 1rem;
+    padding: var(--space-4);
     border-radius: 4px;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     border: 1px solid var(--border-color);
     color: var(--text-color);
   }
 
   .add-user-form h3 {
     font-size: 1.125rem;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .form-group {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .form-group label {
     display: block;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     font-size: 0.8125rem;
   }
 
   .form-group input, .form-group select {
     width: 100%;
-    padding: 0.5rem;
+    padding: var(--space-2);
     font-size: 0.8125rem;
   }
 
   .role-warning {
     display: block;
-    margin-top: 0.375rem;
-    padding: 0.5rem 0.625rem;
+    margin-top: var(--space-1-5);
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid rgba(245, 158, 11, 0.4);
     border-radius: 6px;
     background-color: rgba(245, 158, 11, 0.12);
@@ -999,7 +999,7 @@
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 500;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     transition: all var(--duration-base) ease;
     box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
   }
@@ -1033,7 +1033,7 @@
   }
 
   .users-table th, .users-table td {
-    padding: 0.75rem;
+    padding: var(--space-3);
     border-bottom: 1px solid var(--border-color);
     text-align: left;
     color: var(--text-color);
@@ -1051,7 +1051,7 @@
 
   .table-actions {
     display: flex;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     align-items: center;
   }
 
@@ -1159,12 +1159,12 @@
   .expiration-editor {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .expiration-editor input[type='date'] {
     height: 32px;
-    padding: 0 6px;
+    padding: 0 var(--space-1-5);
     font-size: 0.85rem;
   }
 
@@ -1295,8 +1295,8 @@
 
   .status-badge {
     display: inline-block;
-    margin-left: 0.375rem;
-    padding: 0.0625rem 0.375rem;
+    margin-left: var(--space-1-5);
+    padding: 0.0625rem var(--space-1-5);
     border-radius: 999px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -1351,29 +1351,29 @@
 
   .form-hint {
     display: block;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     color: var(--text-secondary);
     font-size: 0.75rem;
     line-height: 1.4;
   }
 
   .external-note {
-    margin: 0 0 0.5rem;
-    padding: 0.5rem 0.625rem;
+    margin: 0 0 var(--space-2);
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background-color: var(--background-color);
   }
 
   .invitations-section {
-    margin-top: 2rem;
+    margin-top: var(--space-8);
   }
 
   .invitations-section h3 {
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-color);
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .invite-name {
@@ -1394,11 +1394,11 @@
   }
 
   .loading-state {
-    padding: 2rem;
+    padding: var(--space-8);
     text-align: center;
     background-color: var(--card-background);
     border-radius: 4px;
-    margin-top: 1rem;
+    margin-top: var(--space-4);
     color: var(--text-color);
     font-size: 0.8125rem;
   }
@@ -1412,7 +1412,7 @@
     .table-controls {
       flex-direction: column;
       align-items: stretch;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .search-container input {
@@ -1448,7 +1448,7 @@
     .users-table th,
     .users-table td {
       white-space: nowrap;
-      padding: 0.5rem;
+      padding: var(--space-2);
       font-size: 0.75rem;
     }
 

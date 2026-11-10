@@ -546,8 +546,8 @@
 
 <style>
   .speaker-editor-container {
-    margin-top: 20px;
-    padding: 20px;
+    margin-top: var(--space-5);
+    padding: var(--space-5);
     background: var(--background-secondary);
     border-radius: 8px;
     border: 1px solid var(--border-color);
@@ -557,13 +557,13 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
   }
 
   .legend-info-container {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.9rem;
   }
 
@@ -582,7 +582,7 @@
     border: none;
     color: var(--primary-on-surface);
     cursor: pointer;
-    padding: 2px;
+    padding: var(--space-0-5);
     border-radius: 50%;
     transition: all var(--duration-base) ease;
   }
@@ -606,17 +606,17 @@
     border-radius: 6px;
     box-shadow: var(--shadow-lg);
     z-index: var(--z-dropdown);
-    padding: 0.75rem;
+    padding: var(--space-3);
     min-width: 200px;
-    margin-top: 4px;
+    margin-top: var(--space-1);
   }
 
   .legend-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     color: var(--text-color-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
     font-size: 0.8rem;
   }
 
@@ -641,15 +641,15 @@
   .speaker-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .speaker-item {
-    padding: 16px;
+    padding: var(--space-4);
     background: var(--surface-color);
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
     display: flex;
     flex-direction: column;
   }
@@ -657,15 +657,15 @@
   .speaker-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
 
   .speaker-timestamps {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 8px;
+    gap: var(--space-1-5);
+    margin-bottom: var(--space-2);
     flex-wrap: wrap;
   }
 
@@ -673,7 +673,7 @@
     font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
     font-size: 0.7rem;
     font-weight: 500;
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 10px;
     border: 1px solid var(--border-color);
     background: var(--surface-color);
@@ -707,7 +707,7 @@
   .speaker-original {
     font-size: 12px;
     font-weight: var(--font-weight-semibold);
-    padding: 2px 8px;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: 12px;
     white-space: nowrap;
     min-width: fit-content;
@@ -733,7 +733,7 @@
     min-width: 0; /* Allow flex shrinking */
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .speaker-item input {
@@ -776,11 +776,11 @@
     color: var(--text-on-solid);
     font-size: 0.6875rem;
     font-weight: 600;
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border-radius: 0.375rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     white-space: nowrap;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     flex-shrink: 0; /* Don't shrink the badge */
@@ -817,7 +817,7 @@
   }
 
   .save-speakers-button {
-    margin-top: 16px;
+    margin-top: var(--space-4);
     padding: 0.6rem 1.2rem;
     background: var(--primary-color);
     color: var(--text-on-solid);
@@ -854,15 +854,15 @@
   }
 
   .save-speakers-button .spinner {
-    margin-right: 0.5rem;
+    margin-right: var(--space-2);
   }
 
   .propagation-pending {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    margin-left: 0.75rem;
-    padding: 0.25rem 0.65rem;
+    margin-left: var(--space-3);
+    padding: var(--space-1) 0.65rem;
     border-radius: 999px;
     background-color: rgba(var(--primary-color-rgb), 0.1);
     color: var(--primary-on-surface);
@@ -890,7 +890,7 @@
     display: inline-flex;
     align-items: center;
     color: #f59e0b; /* Amber/yellow warning color */
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
     animation: pulse 2s infinite;
   }
 
@@ -906,7 +906,7 @@
   /* Compact cross-video UI styles */
   .cross-video-compact {
     margin-top: 0.3rem;
-    padding: 0.5rem;
+    padding: var(--space-2);
     background-color: var(--background-main);
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -930,7 +930,7 @@
   .compact-controls {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .info-btn-consistent, .dropdown-arrow {
@@ -959,8 +959,8 @@
   }
 
   .compact-dropdown {
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
     border-top: 1px solid var(--border-color-soft);
   }
 
@@ -1042,8 +1042,8 @@
     z-index: var(--z-dropdown);
     min-width: 250px;
     max-width: 350px;
-    padding: 0.5rem;
-    margin-top: 0.25rem;
+    padding: var(--space-2);
+    margin-top: var(--space-1);
   }
 
   .hover-container:hover .hover-popup {
@@ -1054,7 +1054,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.3rem 0.5rem;
+    padding: 0.3rem var(--space-2);
     border-radius: 4px;
     margin-bottom: 0.2rem;
     background: var(--surface-color);
@@ -1068,7 +1068,7 @@
     flex: 1;
     font-size: 0.75rem;
     color: var(--text-color);
-    margin-right: 0.5rem;
+    margin-right: var(--space-2);
   }
 
   .popup-match-confidence {
@@ -1113,7 +1113,7 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.3rem 0.5rem;
+    padding: 0.3rem var(--space-2);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -1164,13 +1164,13 @@
   .suggestion-chips-container {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .chip-row {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .chip-label {
@@ -1178,7 +1178,7 @@
     font-weight: 600;
     color: var(--text-secondary-color);
     min-width: 35px;
-    padding-top: 0.25rem;
+    padding-top: var(--space-1);
     flex-shrink: 0;
   }
 
@@ -1194,7 +1194,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border: none;
     border-radius: 16px;
     font-size: 0.7rem;
@@ -1248,7 +1248,7 @@
   .source-icon {
     width: 12px;
     height: 12px;
-    margin-right: 0.25rem;
+    margin-right: var(--space-1);
     opacity: 0.9;
     stroke: var(--text-on-solid);
     fill: none;
@@ -1329,12 +1329,12 @@
 
     .speaker-header {
       flex-wrap: wrap;
-      gap: 6px;
+      gap: var(--space-1-5);
     }
 
     .speaker-original {
       font-size: 11px;
-      padding: 2px 6px;
+      padding: var(--space-0-5) var(--space-1-5);
       min-width: auto;
     }
 

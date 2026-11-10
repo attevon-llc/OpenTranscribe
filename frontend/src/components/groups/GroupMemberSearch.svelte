@@ -158,7 +158,7 @@
   .member-search {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .search-header {
@@ -176,7 +176,7 @@
 
   .search-controls {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
     flex-wrap: wrap;
   }
@@ -199,7 +199,7 @@
   .search-input {
     width: 100%;
     min-width: 120px;
-    padding: 0.5rem 0.625rem 0.5rem 2rem;
+    padding: var(--space-2) var(--space-2-5) var(--space-2) var(--space-8);
     font-size: 0.8125rem;
   }
 
@@ -209,7 +209,7 @@
   }
 
   .role-picker {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     font-size: 0.8125rem;
     flex-shrink: 0;
     max-width: 120px;
@@ -217,7 +217,7 @@
 
   .search-results {
     list-style: none;
-    margin: 4px 0 0 0;
+    margin: var(--space-1) 0 0 0;
     padding: 0;
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -233,9 +233,9 @@
   .result-item {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: none;
     background: transparent;
     color: var(--text-color);
@@ -291,14 +291,14 @@
   }
 
   .no-results {
-    padding: 0.5rem;
+    padding: var(--space-2);
     font-size: 0.8125rem;
     color: var(--text-secondary);
     text-align: center;
   }
 
   .search-hint {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     font-size: 0.75rem;
     color: var(--text-secondary);
     text-align: center;

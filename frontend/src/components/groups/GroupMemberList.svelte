@@ -161,22 +161,22 @@
   .member-list {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .empty-state {
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.8125rem;
-    padding: 1.5rem 0;
+    padding: var(--space-6) 0;
     margin: 0;
   }
 
   .member-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
+    gap: var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border-radius: 8px;
     transition: background-color var(--duration-fast);
   }
@@ -235,7 +235,7 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 0.25rem;
+    gap: var(--space-1);
     flex-shrink: 0;
   }
 
@@ -248,12 +248,12 @@
   .member-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-shrink: 0;
   }
 
   .role-select {
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     font-size: 0.75rem;
     cursor: pointer;
   }
@@ -267,7 +267,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 0.25rem;
+    padding: var(--space-1);
     color: var(--text-secondary);
     border-radius: 4px;
     display: flex;
@@ -287,7 +287,7 @@
   }
 
   .btn-leave {
-    padding: 0.25rem 0.75rem;
+    padding: var(--space-1) var(--space-3);
     border: 1px solid var(--danger-color);
     border-radius: 6px;
     background: transparent;

@@ -93,14 +93,14 @@
 <style>
   .filters {
     background: var(--color-bg-secondary);
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border-radius: 6px;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .filter-row {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
     flex-wrap: wrap;
     align-items: flex-end;
   }
@@ -108,7 +108,7 @@
   .filter-row label {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
     font-size: 0.75rem;
   }
 
@@ -119,7 +119,7 @@
 
   .filter-row input,
   .filter-row select {
-    padding: 0.25rem 0.375rem;
+    padding: var(--space-1) var(--space-1-5);
     font-size: 0.75rem;
     height: 1.75rem;
   }
@@ -138,7 +138,7 @@
   }
 
   .btn-apply {
-    padding: 0.25rem 0.625rem;
+    padding: var(--space-1) var(--space-2-5);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.75rem;
@@ -169,7 +169,7 @@
   }
 
   .btn-clear {
-    padding: 0.25rem 0.625rem;
+    padding: var(--space-1) var(--space-2-5);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.75rem;
@@ -187,12 +187,12 @@
 
   .export-actions {
     display: flex;
-    gap: 0.25rem;
+    gap: var(--space-1);
     margin-inline-start: auto;
   }
 
   .btn-secondary {
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.75rem;
@@ -216,7 +216,7 @@
   @media (max-width: 768px) {
     .filter-row {
       flex-direction: column;
-      gap: 0.5rem;
+      gap: var(--space-2);
     }
 
     .filter-row label {

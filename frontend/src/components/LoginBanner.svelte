@@ -133,7 +133,7 @@
 
   .classification-header,
   .classification-footer {
-    padding: 8px;
+    padding: var(--space-2);
     text-align: center;
     font-weight: bold;
     color: var(--text-on-solid);
@@ -142,12 +142,12 @@
   }
 
   .banner-content {
-    padding: 24px;
+    padding: var(--space-6);
     color: #1f2937;
   }
 
   .banner-content h2 {
-    margin: 0 0 16px;
+    margin: 0 0 var(--space-4);
     font-size: 1.5rem;
   }
 
@@ -155,8 +155,8 @@
     white-space: pre-wrap;
     font-size: 14px;
     line-height: 1.6;
-    margin: 16px 0;
-    padding: 16px;
+    margin: var(--space-4) 0;
+    padding: var(--space-4);
     background: #f5f5f5;
     border-radius: 4px;
   }
@@ -170,8 +170,8 @@
   /* The card is deliberately light in both themes (a paper notice), so these
      two use fixed colours chosen for contrast on white rather than theme vars. */
   .notice-updated {
-    margin: 0 0 16px;
-    padding: 12px 16px;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b45309;
     border-radius: 4px;
     background: #fef3c7;
@@ -181,8 +181,8 @@
   }
 
   .banner-error {
-    margin: 16px 0 0;
-    padding: 12px 16px;
+    margin: var(--space-4) 0 0;
+    padding: var(--space-3) var(--space-4);
     border-left: 4px solid #b91c1c;
     border-radius: 4px;
     background: #fee2e2;
@@ -192,16 +192,16 @@
 
   .banner-actions {
     display: flex;
-    gap: 16px;
+    gap: var(--space-4);
     justify-content: center;
-    padding: 16px;
+    padding: var(--space-4);
     border-top: 1px solid #eee;
   }
 
   .btn-acknowledge {
     background: var(--color-primary);
     color: var(--text-on-solid);
-    padding: 12px 32px;
+    padding: var(--space-3) var(--space-8);
     border: none;
     border-radius: 4px;
     font-weight: bold;
@@ -211,7 +211,7 @@
   .btn-decline {
     background: #ddd;
     color: #666;
-    padding: 12px 32px;
+    padding: var(--space-3) var(--space-8);
     border: none;
     border-radius: 4px;
     cursor: pointer;

@@ -500,14 +500,14 @@
   .selection-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .action-separator {
     width: 1px;
     height: 24px;
     background-color: var(--border-color);
-    margin: 0 0.125rem;
+    margin: 0 var(--space-0-5);
     flex-shrink: 0;
   }
 
@@ -515,7 +515,7 @@
   .action-btn {
     color: var(--text-on-solid);
     border: none;
-    padding: 0.375rem 0.75rem;
+    padding: var(--space-1-5) var(--space-3);
     border-radius: 10px;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -625,7 +625,7 @@
   .cancel-btn {
     background-color: #6b7280;
     box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     align-self: stretch;
   }
 
@@ -647,15 +647,15 @@
     border-radius: 8px;
     box-shadow: var(--shadow-lg);
     min-width: 200px;
-    padding: 0.25rem 0;
+    padding: var(--space-1) 0;
   }
 
   .dropdown-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     border: none;
     background: none;
     color: var(--text-color);
@@ -684,7 +684,7 @@
   .dropdown-divider {
     height: 1px;
     background-color: var(--border-color);
-    margin: 0.25rem 0;
+    margin: var(--space-1) 0;
   }
 
   /* Matches .delete-btn's destructive red — this is also a takedown action.
@@ -703,7 +703,7 @@
   @media (max-width: 1200px) {
     .selection-actions {
       flex-wrap: wrap;
-      gap: 0.375rem;
+      gap: var(--space-1-5);
     }
 
     .action-btn {
@@ -725,7 +725,7 @@
     }
 
     .cancel-btn {
-      padding: 0.35rem 0.5rem;
+      padding: 0.35rem var(--space-2);
     }
 
     .action-separator {

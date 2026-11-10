@@ -428,40 +428,40 @@
   .loading-state {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 1rem 0;
+    gap: var(--space-2);
+    padding: var(--space-4) 0;
     color: var(--text-secondary);
   }
 
   .media-sources {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .empty-state {
     text-align: center;
-    padding: 2.5rem 2rem;
+    padding: var(--space-10) var(--space-8);
     border: 2px dashed var(--border-color);
     border-radius: 8px;
     background: var(--card-background);
   }
 
   .empty-icon {
-    margin-bottom: 0.875rem;
+    margin-bottom: var(--space-3-5);
     color: var(--text-secondary);
     opacity: 0.6;
   }
 
   .empty-state h4 {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--space-2);
     font-size: 1rem;
     font-weight: 500;
     color: var(--text-color);
   }
 
   .empty-state p {
-    margin: 0 0 1.25rem;
+    margin: 0 0 var(--space-5);
     font-size: 0.8125rem;
     color: var(--text-secondary);
     line-height: 1.5;
@@ -470,11 +470,11 @@
   .btn-add-first {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    padding: 0.5rem 1.1rem;
+    padding: var(--space-2) 1.1rem;
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.8125rem;
@@ -492,7 +492,7 @@
   .source-card {
     border: 1px solid var(--border-color);
     border-radius: 0.5rem;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     background: var(--card-background);
     transition: border-color var(--duration-fast);
   }
@@ -520,24 +520,24 @@
   .shared-section-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8rem;
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
   }
 
   .source-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .source-info {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
     min-width: 0;
   }
 
@@ -547,7 +547,7 @@
     color: var(--text-color);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     flex-wrap: wrap;
   }
 
@@ -603,7 +603,7 @@
 
   .source-meta {
     display: flex;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     flex-shrink: 0;
   }
 
@@ -656,9 +656,9 @@
   .source-actions {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
+    gap: var(--space-1-5);
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
     border-top: 1px solid var(--border-color);
     flex-wrap: wrap;
   }
@@ -674,7 +674,7 @@
   .delete-confirm {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
@@ -682,12 +682,12 @@
   .source-form {
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: var(--space-2-5);
   }
 
   .form-row {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
     align-items: flex-end;
   }
 
@@ -695,7 +695,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .form-field label {
@@ -706,14 +706,14 @@
 
   .form-input,
   .form-select {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     font-size: 0.8rem;
   }
 
   .toggle-row-inline {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     font-size: 0.8rem;
     color: var(--text-color);
     cursor: pointer;
@@ -728,12 +728,12 @@
   .form-actions-inline {
     display: flex;
     justify-content: flex-end;
-    gap: 0.5rem;
-    padding-top: 0.25rem;
+    gap: var(--space-2);
+    padding-top: var(--space-1);
   }
 
   .btn-sm {
-    padding: 0.25rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     font-size: 0.75rem;
     border-radius: 6px;
   }
@@ -781,8 +781,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-1-5);
+    padding: var(--space-2) var(--space-4);
     border: none;
     border-radius: 8px;
     background: var(--primary-color);
@@ -808,7 +808,7 @@
   .section-hint {
     font-size: 0.7rem;
     color: var(--text-secondary);
-    margin: 0.25rem 0 0;
+    margin: var(--space-1) 0 0;
     line-height: 1.4;
   }
 

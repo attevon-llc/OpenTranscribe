@@ -944,21 +944,21 @@
   .filter-sidebar {
     background-color: var(--surface-color);
     border-radius: 8px;
-    padding: 0.75rem;
+    padding: var(--space-3);
     box-shadow: var(--shadow-sm);
     display: flex;
     flex-direction: column;
     /* #750 items 3+4: more breathing room between sections, and a thinner,
        fully-opaque divider reads as more structure than the old thick faded
        one at less distance. */
-    gap: 1.5rem;
+    gap: var(--space-6);
   }
 
   .filter-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .filter-header h2 {
@@ -969,7 +969,7 @@
 
   .header-buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     align-items: center;
   }
 
@@ -997,12 +997,12 @@
   .filter-section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     position: relative;
   }
 
   .filter-section:not(:first-child) {
-    padding-top: 0.25rem;
+    padding-top: var(--space-1);
   }
 
   .filter-section:not(:first-child)::before {
@@ -1051,7 +1051,7 @@
   }
 
   .dropdown-section {
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
   }
 
   .loading-text,
@@ -1070,13 +1070,13 @@
     justify-content: space-between;
     font-size: 0.75rem;
     color: var(--text-secondary);
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
     font-variant-numeric: tabular-nums;
   }
 
   .slider-wrapper {
     direction: ltr;
-    padding: 0 0.25rem;
+    padding: 0 var(--space-1);
     font-size: 0.75rem;
   }
 
@@ -1117,20 +1117,20 @@
   .duration-chip-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
   }
 
   .duration-chip-list {
     margin-top: 0;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   /* Input help text */
   .input-help {
     font-size: 0.75rem;
     color: var(--text-secondary);
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     display: block;
     font-style: italic;
   }

@@ -182,7 +182,7 @@
   .audit-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .panel-description,
@@ -194,7 +194,7 @@
   }
 
   .panel-note {
-    padding: 0.5rem 0.625rem;
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--color-border);
     border-radius: 6px;
     background: var(--color-bg-secondary);
@@ -203,14 +203,14 @@
   .controls {
     display: flex;
     align-items: flex-end;
-    gap: 0.75rem;
+    gap: var(--space-3);
     flex-wrap: wrap;
   }
 
   .category-label {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--space-0-5);
   }
 
   .label-text {
@@ -219,14 +219,14 @@
   }
 
   select {
-    padding: 0.25rem 0.375rem;
+    padding: var(--space-1) var(--space-1-5);
     font-size: 0.75rem;
     min-width: 12rem;
     height: 1.75rem;
   }
 
   .btn-secondary {
-    padding: 0.25rem 0.625rem;
+    padding: var(--space-1) var(--space-2-5);
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.75rem;
@@ -263,7 +263,7 @@
 
   .audit-table th,
   .audit-table td {
-    padding: 0.375rem 0.5rem;
+    padding: var(--space-1-5) var(--space-2);
     text-align: left;
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text);
@@ -299,7 +299,7 @@
   }
 
   .change-type {
-    padding: 0.125rem 0.375rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: 3px;
     font-size: 0.625rem;
     font-weight: 600;

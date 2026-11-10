@@ -87,6 +87,7 @@ repos:
           - httpx==0.28.1
           - httpx2==2.16.0
           - huggingface-hub==1.17.0
+          - identify==2.6.19
           - joserfc==1.7.7
           - json-repair==0.64.2
           - limits==5.8.0

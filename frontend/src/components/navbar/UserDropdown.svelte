@@ -244,7 +244,7 @@
   }
 
   .user-button:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--button-hover);
   }
 
   .user-avatar {
@@ -291,7 +291,7 @@
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-xl);
     overflow-y: auto;
     padding: var(--space-2) 0;
     min-width: 200px;
@@ -451,7 +451,7 @@
   }
 
   .dropdown-item.logout:hover {
-    background-color: rgba(239, 68, 68, 0.1);
+    background-color: var(--error-bg);
     color: var(--error-text);
     padding-inline-start: calc(1rem + 2px);
   }

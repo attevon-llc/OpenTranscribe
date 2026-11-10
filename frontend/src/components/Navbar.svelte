@@ -714,7 +714,7 @@
       position: fixed;
       inset: 0;
       z-index: 1099;
-      background: rgba(0, 0, 0, 0.2);
+      background: var(--modal-backdrop);
     }
   }
 
@@ -932,29 +932,29 @@
 
   /* Studio-style recording status colors */
   .recording-indicator.recording-live {
-    background: rgba(220, 38, 38, 0.15);
-    border: 1px solid rgba(220, 38, 38, 0.4);
-    color: #dc2626;
+    background: rgba(var(--error-color-rgb), 0.15);
+    border: 1px solid rgba(var(--error-color-rgb), 0.4);
+    color: var(--error-text);
   }
 
   .recording-indicator.recording-live:hover {
-    background: rgba(220, 38, 38, 0.2);
-    border-color: rgba(220, 38, 38, 0.5);
+    background: rgba(var(--error-color-rgb), 0.2);
+    border-color: rgba(var(--error-color-rgb), 0.5);
     transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+    box-shadow: var(--shadow-danger-hover);
   }
 
   .recording-indicator.recording-standby {
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.4);
-    color: #10b981;
+    background: rgba(var(--success-color-rgb), 0.15);
+    border: 1px solid rgba(var(--success-color-rgb), 0.4);
+    color: var(--success-text);
   }
 
   .recording-indicator.recording-standby:hover {
-    background: rgba(16, 185, 129, 0.2);
-    border-color: rgba(16, 185, 129, 0.5);
+    background: rgba(var(--success-color-rgb), 0.2);
+    border-color: rgba(var(--success-color-rgb), 0.5);
     transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 4px 8px rgba(var(--success-color-rgb), 0.3);
   }
 
   .recording-pulse {
@@ -969,12 +969,12 @@
 
   /* Pulse colors for different recording states */
   .recording-pulse.recording-live {
-    background: var(--error-solid);
+    background: var(--error-color);
     animation: recording-pulse-live 1.5s infinite ease-in-out;
   }
 
   .recording-pulse.recording-standby {
-    background: #10b981;
+    background: var(--success-color);
     animation: none; /* No pulse for standby/paused/stopped */
     opacity: 1;
   }
@@ -1002,36 +1002,15 @@
     0%, 100% {
       opacity: 1;
       transform: scale(1);
-      box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+      box-shadow: 0 0 0 0 rgba(var(--error-color-rgb), 0.7);
     }
     50% {
       opacity: 0.6;
       transform: scale(1.2);
-      box-shadow: 0 0 0 8px rgba(220, 38, 38, 0);
+      box-shadow: 0 0 0 8px rgba(var(--error-color-rgb), 0);
     }
   }
 
-
-  /* Dark theme adjustments for recording status lights */
-  :global([data-theme='dark']) .recording-indicator.recording-live {
-    background: rgba(239, 68, 68, 0.2);
-    border-color: rgba(239, 68, 68, 0.5);
-    color: #ef4444;
-  }
-
-  :global([data-theme='dark']) .recording-indicator.recording-standby {
-    background: rgba(52, 211, 153, 0.2);
-    border-color: rgba(52, 211, 153, 0.5);
-    color: #34d399;
-  }
-
-  :global([data-theme='dark']) .recording-pulse.recording-live {
-    background: #ef4444;
-  }
-
-  :global([data-theme='dark']) .recording-pulse.recording-standby {
-    background: #34d399;
-  }
 
   /* Accessibility and reduced motion */
   @media (prefers-reduced-motion: reduce) {
@@ -1049,11 +1028,11 @@
   @media (prefers-contrast: more) {
     .recording-indicator {
       border-width: 2px;
-      background: rgba(239, 68, 68, 0.2);
+      background: rgba(var(--error-color-rgb), 0.2);
     }
 
     .recording-indicator:hover {
-      background: rgba(239, 68, 68, 0.3);
+      background: rgba(var(--error-color-rgb), 0.3);
     }
   }
 
@@ -1066,7 +1045,7 @@
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-xl);
     padding: var(--space-4);
     min-width: 200px;
     z-index: 1001;
@@ -1127,15 +1106,15 @@
   }
 
   .status-dot.paused {
-    background: #f59e0b;
+    background: var(--warning-color);
   }
 
   .status-dot.completed {
-    background: #10b981;
+    background: var(--success-color);
   }
 
   .status-dot.idle {
-    background: #6b7280;
+    background: var(--text-secondary);
   }
 
   .duration {
@@ -1178,26 +1157,26 @@
 
   .pause-btn:hover {
     background: rgba(var(--accent-rgb), 0.1);
-    border-color: #3b82f6;
+    border-color: var(--info-color);
     color: var(--primary-on-surface);
   }
 
   .stop-btn:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: #ef4444;
-    color: #ef4444;
+    background: var(--error-bg);
+    border-color: var(--error-color);
+    color: var(--error-text);
   }
 
   .upload-btn:hover {
-    background: rgba(16, 185, 129, 0.1);
-    border-color: #10b981;
-    color: #10b981;
+    background: var(--success-bg);
+    border-color: var(--success-color);
+    color: var(--success-text);
   }
 
   .delete-btn:hover {
-    background: rgba(153, 27, 27, 0.1);
-    border-color: #991b1b;
-    color: #991b1b;
+    background: var(--error-bg);
+    border-color: var(--error-dark);
+    color: var(--error-text);
   }
 
   .modal-btn:hover {
@@ -1210,26 +1189,6 @@
     color: var(--primary-on-surface);
     stroke: var(--primary-on-surface);
     opacity: 1;
-  }
-
-  /* Dark theme adjustments for popup */
-  :global([data-theme='dark']) .recording-controls-popup {
-    background: var(--background-color);
-    border-color: var(--border-color);
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-  }
-
-  :global([data-theme='dark']) .popup-header {
-    border-bottom-color: var(--border-color);
-  }
-
-  /* Dark theme adjustments for triangle */
-  :global([data-theme='dark']) .recording-controls-popup::before {
-    border-bottom-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .recording-controls-popup::after {
-    border-bottom-color: var(--background-color);
   }
 
   /* Responsive design */

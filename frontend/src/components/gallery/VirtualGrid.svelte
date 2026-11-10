@@ -382,8 +382,8 @@
   @keyframes new-file-glow {
     0% {
       transform: scale(1);
-      box-shadow: 0 0 15px rgba(var(--accent-rgb), 0.4);
-      border-color: #60a5fa;
+      box-shadow: 0 0 15px rgba(var(--info-color-rgb), 0.4);
+      border-color: var(--info-color);
     }
     100% {
       transform: scale(1);
@@ -392,24 +392,9 @@
     }
   }
 
-  :global([data-theme='dark']) .file-card.new-file {
-    animation: new-file-glow-dark 0.6s ease-out;
-  }
-
-  @keyframes new-file-glow-dark {
-    0% {
-      box-shadow: 0 0 15px rgba(96, 165, 250, 0.3);
-      border-color: #60a5fa;
-    }
-    100% {
-      box-shadow: none;
-      border-color: var(--border-color);
-    }
-  }
-
   .file-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--dropdown-shadow);
     border-color: var(--border-hover);
   }
 
@@ -425,15 +410,14 @@
   }
 
   .file-card.selected {
-    border: 2px solid #3b82f6;
-    background-color: rgba(var(--accent-rgb), 0.05);
-    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.15);
+    border: 2px solid var(--info-color);
+    background-color: rgba(var(--info-color-rgb), 0.05);
+    box-shadow: 0 4px 12px rgba(var(--info-color-rgb), 0.15);
   }
 
+  /* A blue tint needs more alpha on the dark surface to read as selected. */
   :global([data-theme='dark']) .file-card.selected {
-    background-color: rgba(var(--accent-rgb), 0.1);
-    border-color: #60a5fa;
-    box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
+    background-color: rgba(var(--info-color-rgb), 0.1);
   }
 
   .file-card.selecting-mode {
@@ -467,11 +451,7 @@
     width: 100%;
     height: 120px;
     overflow: hidden;
-    background-color: rgba(0, 0, 0, 0.03);
-  }
-
-  :global([data-theme='dark']) .thumbnail-container {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--surface-hover);
   }
 
   .placeholder {
@@ -493,7 +473,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--player-scrim);
     border-radius: var(--radius-sm);
     color: var(--text-on-solid);
     backdrop-filter: blur(4px);
@@ -509,7 +489,7 @@
     position: absolute;
     bottom: 6px;
     right: 6px;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--player-scrim);
     color: var(--text-on-solid);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
@@ -580,15 +560,6 @@
   }
 
   /* --- Dark mode --- */
-
-  :global([data-theme='dark']) .file-card {
-    background: var(--surface-color);
-    border-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .file-card:hover {
-    border-color: var(--border-hover);
-  }
 
   :global([data-theme='dark']) .file-name {
     color: var(--text-primary);

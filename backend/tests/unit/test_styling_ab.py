@@ -61,6 +61,18 @@ def test_validator_flags_a_duplicate_id_and_a_malformed_step() -> None:
     assert "malformed step 'teleport:.x'" in problems
 
 
+def test_validator_flags_a_non_positive_viewport() -> None:
+    problems = screens.validate((screens.Screen("v", "/", viewport=(0, 844)),))
+    assert any("viewport" in p for p in problems)
+
+
+def test_navbar_gallery_block_has_a_mobile_viewport_and_seeded_list_view() -> None:
+    by = screens.by_id()
+    assert by["gallery-mobile-nav"].viewport == (390, 844)
+    assert by["gallery-list"].storage == (("gallery-view-mode", "list"),)
+    assert by["gallery"].viewport is None and by["gallery"].storage == ()
+
+
 def test_all_four_variants_are_the_default() -> None:
     assert screens.VARIANTS == ("en-light", "en-dark", "ar-light", "ar-dark")
 

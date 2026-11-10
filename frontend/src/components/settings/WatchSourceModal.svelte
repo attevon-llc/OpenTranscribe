@@ -731,7 +731,7 @@
      neutralize the aggressive global button styling on its internal buttons. */
   .ms-wrap :global(.multiselect) {
     --sms-bg: var(--input-background);
-    --sms-border: 1px solid var(--input-border);
+    --sms-border: 1px solid var(--field-border);
     --sms-focus-border: 1px solid var(--primary-color);
     --sms-text-color: var(--text-color);
     --sms-placeholder-color: var(--text-secondary);

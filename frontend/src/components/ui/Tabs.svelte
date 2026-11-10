@@ -227,7 +227,7 @@
   /* Neutralize the global `button:hover/:focus { transform: scale; box-shadow }`
      so tabs never lift, round, or shadow on hover/focus. */
   .tab:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring-color);
     outline-offset: -2px;
     border-radius: 0;
   }

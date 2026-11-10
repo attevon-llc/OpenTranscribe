@@ -202,7 +202,7 @@
   }
 
   .picker-row:focus-within {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring-color);
     outline-offset: -2px;
   }
 

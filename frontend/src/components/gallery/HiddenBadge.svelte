@@ -84,7 +84,7 @@
   }
 
   .unhide-btn:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring-color);
     outline-offset: var(--space-0-5);
     border-radius: var(--radius-xs);
   }

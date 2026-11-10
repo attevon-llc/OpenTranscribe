@@ -218,7 +218,7 @@
   }
 
   .sort-button:focus {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--focus-ring-color);
     outline-offset: 2px;
   }
 

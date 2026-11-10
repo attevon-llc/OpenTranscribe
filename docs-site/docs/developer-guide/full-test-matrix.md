@@ -543,8 +543,8 @@ change, and don't add a leg to the dispatcher without a row here.
   only one job touches at a time — serialize, never fan out in parallel.
 - **No AWS-specific logic, credentials, registry names, or pipeline definitions belong in this
   repo.** The core is vendor-clean (see `backend/CLAUDE.md`'s note on the absence of
-  `app/services/cloud`). A future consumer — a downstream extension repo, or a CI job
-  — shells out to `scripts/test-matrix.sh <stage> --json --yes` and reads the exit code. That's
+  `app/services/cloud`). A future consumer, such as a separate deployment repo or a CI job,
+  shells out to `scripts/test-matrix.sh <stage> --json --yes` and reads the exit code. That's
   the entire contract surface this repo owns, in the same spirit
   `scripts/release/release-criteria.yaml` states for its own gates: "If a second consumer ever
   appears (a CI job, an AWS promotion job), add its stage here and wire it the same way —

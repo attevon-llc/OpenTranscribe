@@ -49,7 +49,7 @@ When adding new backend code, follow these module patterns:
 - **Exceptions**: Add to `app/core/exceptions.py` (inherit from `OpenTranscribeError`)
 - **Redis access**: Use `from app.core.redis import get_redis` (shared singleton)
 - **Notifications**: Use `app/services/notification_service.py` for WebSocket notifications
-- **Service interfaces**: Define Protocol classes in `app/services/interfaces.py`
+- **Service interfaces**: When a module needs a narrow seam for testing, define a small `Protocol` next to its consumer (for example `SearchClient` in `app/services/chat/aggregation_queries.py`)
 - **Progress tracking**: Use `app/services/progress_tracker.py` (EWMA-based ETA)
 - **Transcript formatting**: Use `app/utils/transcript_builders.py`
 

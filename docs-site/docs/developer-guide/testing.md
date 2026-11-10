@@ -163,6 +163,14 @@ gate failed, `2` misuse, `3` precondition unmet (e.g. the dev stack isn't up) â€
 NOT MEASURED (a phase verified nothing). It is `5`, not `4`, because `4` already means operator
 abort in the release contract.
 
+### Backend test run artifacts
+
+`./scripts/run-backend-tests.sh` writes its log, JUnit XML and metadata to
+`$OT_TEST_OUT_DIR/<checkout-hash>/` (default `/tmp/ot-backend-tests/<checkout-hash>/`), where the hash
+identifies the checkout. Runs from different git worktrees therefore never overwrite each other, and
+`--summary`, `--failures` and `--log` describe only the last run of the checkout you are in.
+The newest 10 runs per checkout are kept (`OT_TEST_KEEP_RUNS`).
+
 ### Summary evaluation concurrency
 
 `scripts/run-summary-eval.sh --concurrency N` (also `benchmark_summary.py run --concurrency N`) runs

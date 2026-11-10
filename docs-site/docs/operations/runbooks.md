@@ -813,7 +813,7 @@ services:
 
 ### Do not rotate `ENCRYPTION_KEY`
 
-`ENCRYPTION_KEY` decrypts every secret stored in the database (provider API keys, MFA secrets, backup and watch-source credentials). Changing it makes them permanently undecryptable; there is no re-encryption step. Keep it, and keep a copy with your backups (see [Backup Completeness Audit](./backup-audit.md#secrets-gap)).
+`ENCRYPTION_KEY` decrypts every secret stored in the database (provider API keys, MFA secrets, backup and watch-source credentials). Changing it makes them permanently undecryptable; there is no re-encryption step. A secret that can no longer be decrypted is reported, not skipped: the API answers `409` with code `stored_value_unreadable`, and you re-enter that credential in its settings page. Keep it, and keep a copy with your backups (see [Backup Completeness Audit](./backup-audit.md#secrets-gap)).
 
 **Prevention**:
 - Rotate credentials on a regular schedule (e.g., every 90 days)

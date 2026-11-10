@@ -18,7 +18,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException
-from starlette.requests import HTTPConnection
 from starlette.requests import Request
 
 from app.api.endpoints.auth import dependencies as deps_module
@@ -31,6 +30,7 @@ from app.auth.provider_registry import ExternalIdentity
 from app.auth.session import InMemoryStore
 from app.auth.token_service import TokenService
 from app.core.config import settings
+from app.core.request_scope import RequestScope
 from tests.jwt_compat import jwt
 
 
@@ -184,7 +184,7 @@ class TestRequiredAuthPassesItsRequestToTheTimeoutRefusal:
         from app.auth.provider_registry import unregister_verifier
 
         class _Verifier:
-            def verify(self, token: str, request: HTTPConnection) -> ExternalIdentity | None:
+            def verify(self, token: str, request: RequestScope) -> ExternalIdentity | None:
                 return ExternalIdentity(
                     provider="mutant-idp",
                     external_id="ext-mutant",

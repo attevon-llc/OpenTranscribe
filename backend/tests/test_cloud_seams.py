@@ -14,7 +14,6 @@ from typing import cast
 import pytest
 from fastapi import HTTPException
 from fastapi import Request
-from starlette.requests import HTTPConnection
 
 from app.auth.constants import CLOUD_SEAM_VERSION
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
@@ -27,6 +26,7 @@ from app.auth.provider_registry import unregister_verifier
 from app.auth.provider_registry import verify_external_token
 from app.core.auth_types import VALID_AUTH_TYPES
 from app.core.exceptions import ExternalIdentityLinkRefusedError
+from app.core.request_scope import RequestScope
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.usage_event import UsageEvent
@@ -50,13 +50,13 @@ class FakeVerifier:
         self.identity = identity
         self.calls = 0
 
-    def verify(self, token: str, request: HTTPConnection) -> ExternalIdentity | None:
+    def verify(self, token: str, request: RequestScope) -> ExternalIdentity | None:
         self.calls += 1
         return self.identity if token == self.accept_token else None
 
 
 class CrashingVerifier:
-    def verify(self, token: str, request: HTTPConnection):
+    def verify(self, token: str, request: RequestScope):
         raise RuntimeError("boom")
 
 

@@ -61,12 +61,10 @@ sudo apt install certbot  # Ubuntu/Debian
 
 # Generate certificates
 sudo certbot certonly --standalone -d transcribe.example.com
-
-# Link certificates
-mkdir -p nginx/ssl
-sudo ln -sf /etc/letsencrypt/live/transcribe.example.com/fullchain.pem nginx/ssl/server.crt
-sudo ln -sf /etc/letsencrypt/live/transcribe.example.com/privkey.pem nginx/ssl/server.key
 ```
+
+The compose overlay mounts whatever `NGINX_CERT_FILE` and `NGINX_CERT_KEY` point at, so no
+symlinks into `nginx/ssl/` are needed.
 
 ### Configure Environment
 
@@ -91,7 +89,7 @@ echo "0 0 1 * * certbot renew --quiet && docker restart opentranscribe-nginx" | 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NGINX_SERVER_NAME` | (none) | Hostname for NGINX. Setting this enables HTTPS. |
+| `NGINX_SERVER_NAME` | (none) | Hostname for NGINX. Setting it makes `./opentranscribe.sh` load the NGINX overlay, provided the certificate files exist (otherwise it warns and starts without NGINX). |
 | `NGINX_HTTP_PORT` | `80` | HTTP port (redirects to HTTPS) |
 | `NGINX_HTTPS_PORT` | `443` | HTTPS port. When it is not 443 the HTTP redirect includes it (`https://host:8443/`) |
 | `NGINX_CERT_FILE` | `./nginx/ssl/server.crt` | Path to SSL certificate |

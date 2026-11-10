@@ -110,11 +110,11 @@ For publicly accessible deployments, use Let's Encrypt:
 ```bash
 sudo apt install certbot
 sudo certbot certonly --standalone -d transcribe.example.com
-
-mkdir -p nginx/ssl
-sudo ln -sf /etc/letsencrypt/live/transcribe.example.com/fullchain.pem nginx/ssl/server.crt
-sudo ln -sf /etc/letsencrypt/live/transcribe.example.com/privkey.pem nginx/ssl/server.key
 ```
+
+Then point `NGINX_CERT_FILE` and `NGINX_CERT_KEY` in `.env` at the files under
+`/etc/letsencrypt/live/transcribe.example.com/` (`fullchain.pem` and `privkey.pem`); see
+[NGINX Setup](../configuration/nginx-setup.md).
 
 For internal deployments, generate self-signed certificates:
 
@@ -182,7 +182,7 @@ docker compose \
 
 ### Restart Policies
 
-All services in the base configuration use `restart: always`, which means containers restart automatically after crashes or host reboots. Docker's restart policy also applies after a system reboot if the Docker daemon is enabled as a systemd service:
+All long-running services in the base configuration use `restart: always` (the one-shot `migrate` service uses `restart: "no"` and exits when the schema is at head), which means containers restart automatically after crashes or host reboots. Docker's restart policy also applies after a system reboot if the Docker daemon is enabled as a systemd service:
 
 ```bash
 sudo systemctl enable docker
@@ -231,7 +231,7 @@ client_body_timeout 600s;
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NGINX_SERVER_NAME` | _(unset)_ | Hostname for the NGINX server block. Setting it is what adds `docker-compose.nginx.yml` to the stack (`./opentr.sh start prod` and `./opentranscribe.sh start` both do this, and refuse to start if the certificate files are missing) |
+| `NGINX_SERVER_NAME` | _(unset)_ | Hostname for the NGINX server block. Setting it is what adds `docker-compose.nginx.yml` to the stack. `./opentr.sh start prod` refuses to start if the certificate files are missing; `./opentranscribe.sh start` warns and continues without HTTPS |
 | `NGINX_HTTP_PORT` | `80` | HTTP port (redirects to HTTPS) |
 | `NGINX_HTTPS_PORT` | `443` | HTTPS port |
 | `NGINX_CERT_FILE` | `./nginx/ssl/server.crt` | Path to SSL certificate |
@@ -340,7 +340,7 @@ OpenTranscribe creates a private bucket on startup. Verify the bucket is not pub
 ```bash
 # From inside the backend container
 mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
-mc policy get local/opentranscribe
+mc anonymous get local/opentranscribe
 # Should show: "none" (private)
 ```
 
@@ -891,7 +891,7 @@ Every service in the stack has a Docker health check. These are used for startup
 | MinIO | `curl -f http://localhost:9000/minio/health/live` | 5s | Verifies S3 API is responsive |
 | Redis | `redis-cli ping` (with auth if configured) | 5s | Verifies Redis responds to PING |
 | OpenSearch | `curl -sS http://localhost:9200` | 5s | Verifies cluster status endpoint |
-| Backend | `curl -f http://localhost:8080/health` | 10s | Verifies API is serving requests |
+| Backend | `curl -sf http://localhost:8080/health/ready` | 10s | Verifies the API is serving and the database schema is at head |
 | Frontend (prod) | `wget --spider -q http://127.0.0.1:8080` | 10s | Verifies static assets are served |
 | Celery Workers | `python3 scripts/celery_pool_healthcheck.py <hostname>` | 30s | Verifies the worker answers control commands and its child pool is alive |
 | Celery Beat | Newest `/app/celerybeat-schedule*` file modified < 300s ago | 30s | Verifies scheduler is writing heartbeats |
@@ -1018,10 +1018,7 @@ PG_MAX_CONNECTIONS=200
 # === Model Cache ===
 MODEL_CACHE_DIR=./models
 
-# === Remove host port mappings in production ===
-# (services are accessed through NGINX only)
-# POSTGRES_PORT=
-# REDIS_PORT=
-# MINIO_PORT=
-# OPENSEARCH_PORT=
+# === Host ports ===
+# PostgreSQL, Redis, MinIO and OpenSearch publish on 127.0.0.1 only; unsetting the
+# *_PORT variables does not remove those mappings (see Restricting Exposed Ports).
 ```

@@ -342,6 +342,24 @@ The migration chain progresses through these versions:
 | `v447` | `content_hold` and `content_hold_file`: organization legal holds on files and collections (#1276) |
 | `v448` | `uq_task_active_per_file_type`: at most one active task row per file and step; marks superseded stale rows failed first and briefly locks the `task` table (writers wait) while it builds (#1185) |
 | `v449` | `speaker.identity_source` (whether a speaker's name and profile link came from a person or a voiceprint match) and its record: `identity_source_at`, `identity_source_user_id`, `identity_source_detail`, `suggestion_detail`; marks existing identities a voiceprint demonstrably wrote (#1280) |
+| `v450`-`v451` | `legal_acceptance`: acceptance context and profile interaction; records survive account deletion (pseudonymised) |
+| `v452` | `erasure_receipt`: a receipt for each completed erasure |
+| `v453`, `v457` | Audit-record immutability triggers and their follow-ups, see [Audit record integrity](./audit-integrity.md) |
+| `v454` | Per-file voiceprint consent on `media_file` |
+| `v455` | Self-service erasure requests |
+| `v456` | Unique object-key indexes (built without blocking startup) |
+| `v458` | Index on machine-assigned speaker identity |
+| `v459` | Audit outbox |
+| `v460` | LLM token budget |
+| `v461` | Pending privacy purge |
+| `v462` | Speaker identity event log |
+| `v463` | `media_file` trash |
+| `v464` | Erasure grace-period index generalised |
+| `v465` | Per-user hidden media |
+| `v467` | Content-hold authority |
+| `v468` | Organization owner |
+| `v469` | `media_file` audio streams (see [Upgrading to 0.7.0](./upgrading-to-0-7-0.md)) |
+| `v470` | `media_file.requested_source_language` (see [Upgrading to 0.7.0](./upgrading-to-0-7-0.md)) |
 
 What `v397` to `v449` mean for an existing install, including the few that change data, is
 spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md). For the later releases, see
@@ -610,14 +628,18 @@ docker compose up -d --force-recreate <service-name>
 
 ### Migration Lock Timeout
 
-If the backend hangs on startup waiting for a migration lock:
+If the `migrate` step exits with code `3` (or, on compose files from before 0.7.0, the backend hangs
+on startup), another session held the migration lock past `MIGRATION_LOCK_TIMEOUT_S` and its log
+names that process:
 
 ```bash
+docker compose logs migrate
+
 # Check for stuck advisory locks in PostgreSQL
 docker compose exec postgres psql -U postgres opentranscribe -c "SELECT * FROM pg_locks WHERE locktype = 'advisory';"
 
-# Restart the backend
-docker compose restart backend
+# Re-run the migrate step, then start the stack again
+./opentranscribe.sh start
 ```
 
 ### Model Compatibility

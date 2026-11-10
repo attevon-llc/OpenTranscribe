@@ -36,7 +36,7 @@ graph TB
     subgraph Data["Data Layer"]
         EAR[Encryption at Rest - AES-256-GCM]
         EIT[Encryption in Transit - TLS]
-        HASH[Password Hashing - PBKDF2-SHA256]
+        HASH[Password Hashing - bcrypt, PBKDF2-SHA256 in FIPS mode]
         BACKUP[Encrypted Backups]
     end
 

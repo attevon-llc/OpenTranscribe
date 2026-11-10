@@ -1,6 +1,6 @@
 /* Shared by the auth config panels (LDAP, OIDC, SAML, PKI, Proxy, Local), rooted at .auth-panel. */
 
-.auth-panel .settings-panel {
+.auth-panel.settings-panel {
   max-width: 800px;
 }
 

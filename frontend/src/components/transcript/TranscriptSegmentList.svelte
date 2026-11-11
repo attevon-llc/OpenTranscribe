@@ -244,14 +244,22 @@
   // match with nothing visibly marked. This resolves which speaker match (if any)
   // applies to a segment, so the speaker chip/label can carry the same
   // .search-match / .current-match treatment the transcript text already gets.
-  function speakerMatchState(segment: TranscriptSegment): { highlighted: boolean; isCurrent: boolean } {
-    if (!searchMatches.length) return { highlighted: false, isCurrent: false };
+  //
+  // `matches` and `currentIdx` are explicit parameters for the same reason as `segmentHighlight`
+  // above: read from closure, Svelte never saw them as inputs to the `{@const}` that calls this,
+  // so the chip kept its as-mounted (no-match) classes while the find bar counted speaker matches.
+  function speakerMatchState(
+    segment: TranscriptSegment,
+    matches: SearchMatch[],
+    currentIdx: number
+  ): { highlighted: boolean; isCurrent: boolean } {
+    if (!matches.length) return { highlighted: false, isCurrent: false };
     const originalIndex = getOriginalSegmentIndex(segment);
-    const matchIdx = searchMatches.findIndex(
+    const matchIdx = matches.findIndex(
       (m) => m.type === 'speaker' && m.segmentIndex === originalIndex
     );
     if (matchIdx === -1) return { highlighted: false, isCurrent: false };
-    return { highlighted: true, isCurrent: matchIdx === currentMatchIndex };
+    return { highlighted: true, isCurrent: matchIdx === currentIdx };
   }
 
   /**
@@ -321,7 +329,7 @@
       <div class="segment-edit-container">
         <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
         {#if !diarizationDisabled}
-        {@const speakerMatch = speakerMatchState(segment)}
+        {@const speakerMatch = speakerMatchState(segment, searchMatches, currentMatchIndex)}
         <div
           class="segment-speaker"
           class:search-match={speakerMatch.highlighted && !speakerMatch.isCurrent}
@@ -357,7 +365,7 @@
         >
           <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatClock(segment.start_time)}</div>
           {#if !diarizationDisabled}
-          {@const speakerMatch = speakerMatchState(segment)}
+          {@const speakerMatch = speakerMatchState(segment, searchMatches, currentMatchIndex)}
           <div
             class="segment-speaker-wrapper"
             role="button"

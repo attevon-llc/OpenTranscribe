@@ -138,6 +138,42 @@ describe('token parity: one tint blue (decision D2)', () => {
   });
 });
 
+describe('token parity: no stylesheet restates an elevation token', () => {
+  // A box-shadow written out with the value of a --shadow-* token, or with the
+  // --primary-color-rgb spelling of --shadow-primary(-hover), misses the dark elevation the
+  // token carries (decision D13) and drifts the next time the token moves.
+  const norm = (v: string) => v.trim().replace(/\s+/g, ' ');
+  const twins = new Map<string, string>();
+  for (const [name, value] of sets.root) {
+    if (!name.startsWith('--shadow-') || value === 'none') continue;
+    twins.set(norm(value), name);
+    twins.set(norm(value.replace(/--accent-rgb/g, '--primary-color-rgb')), name);
+  }
+
+  function restated(css: string): string[] {
+    const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    return [...text.matchAll(/box-shadow\s*:\s*([^;{}]+);/g)]
+      .map((m) => twins.get(norm(m[1])))
+      .filter((name): name is string => name !== undefined);
+  }
+
+  it('every box-shadow equal to a token uses the token', () => {
+    const offenders = walkSource(SRC, /\.(svelte|css)$/)
+      .filter((f) => path.basename(f) !== 'theme.css')
+      .flatMap((f) =>
+        restated(fs.readFileSync(f, 'utf8')).map((t) => `${path.relative(SRC, f)}: ${t}`)
+      );
+    expect(offenders).toEqual([]);
+  });
+
+  it('control: a primary-blue twin of --shadow-primary-hover is caught', () => {
+    expect(twins.size).toBeGreaterThan(10);
+    expect(
+      restated('.b:hover { box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25); }')
+    ).toEqual(['--shadow-primary-hover']);
+  });
+});
+
 /** All custom properties declared anywhere under src (stylesheets, templates, scripts). */
 describe('token parity: every var(--x) resolves', () => {
   const files = walkSource(SRC, /\.(svelte|css|ts|js|html)$/, {

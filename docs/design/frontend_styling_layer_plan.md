@@ -1084,7 +1084,10 @@ master merge (repo plan 0b point 10), so its conflict window is small.
 
 **3.0 Token flips.**
 - D2: `--accent-rgb: var(--primary-color-rgb)` in both blocks; then the 37
-  `rgba(var(--primary-color-rgb),…)` shadow twins → `--shadow-primary(-hover)`.
+  `rgba(var(--primary-color-rgb),…)` shadow twins → `--shadow-primary(-hover)`. (Done. The
+  Phase 2 button lanes had already removed 33 of the 37; the last 4 were in SettingsModal and
+  UserManagementTable. `token-parity.test.ts` now fails on any box-shadow that restates a
+  `--shadow-*` value, in either the accent or the primary spelling.)
 - D13: dark shadow values per 3.6; `--card-shadow: var(--shadow-sm)`.
 - All screens. Expected: blue tints shift by ΔE of about 1 to 2 (both themes); dark-mode shadows
   deepen.

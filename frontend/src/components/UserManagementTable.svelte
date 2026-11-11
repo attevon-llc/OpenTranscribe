@@ -1002,7 +1002,7 @@
     font-weight: var(--font-weight-medium);
     margin-top: var(--space-2);
     transition: all var(--duration-base) ease;
-    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.2);
+    box-shadow: var(--shadow-primary);
   }
 
   .create-button:disabled {
@@ -1016,7 +1016,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25);
+    box-shadow: var(--shadow-primary-hover);
     text-decoration: none;
   }
 

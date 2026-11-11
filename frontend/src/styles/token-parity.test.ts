@@ -16,7 +16,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { SRC, walkSource } from './sourceTree';
-import { loadThemeTokens, type TokenSets } from './themeTokens';
+import { loadThemeTokens, resolveToken, type Theme, type TokenSets } from './themeTokens';
 
 const sets = loadThemeTokens();
 
@@ -24,6 +24,8 @@ const sets = loadThemeTokens();
 const THEME_INVARIANT: Record<string, string> = {
   '--text-on-solid': 'white label on a solid fill: the fills are dark in both themes',
   '--text-on-warning': 'dark label on the amber fill, which is the same amber in both themes',
+  '--qr-surface':
+    'a QR code needs dark modules on a light quiet zone for a scanner, so it stays white in dark',
   '--media-letterbox':
     'the bars around a video picture are black in both themes, as the picture is',
   '--error-solid': 'solid danger fill, one value like --primary-color (white 4.83:1)',
@@ -32,7 +34,6 @@ const THEME_INVARIANT: Record<string, string> = {
   '--warning-solid-hover': 'hover of --warning-solid',
   '--success-solid': 'solid success fill carrying a white label (5.48:1)',
   '--success-solid-hover': 'hover of --success-solid',
-  '--accent-rgb': 'frozen tint blue until decision D2 points it at --primary-color-rgb',
   '--dark-border': 'named for dark mode and used inside dark-scoped rules',
   '--dark-input-bg': 'named for dark mode and used inside dark-scoped rules',
   '--dark-text': 'named for dark mode and used inside dark-scoped rules',
@@ -119,6 +120,90 @@ describe('token parity: elevation', () => {
     for (const n of [...sets.dark.keys()].filter((k) => k.startsWith('--shadow-'))) {
       expect(sets.root.has(n), `${n} missing from :root`).toBe(true);
     }
+  });
+
+  // Decision D13: on a dark surface a light-theme shadow all but vanishes, so every black
+  // shadow keeps its geometry and gets a stronger alpha in dark.
+  const blackAlphas = (theme: Theme, name: string) =>
+    [...resolveToken(sets, theme, name).matchAll(/rgba\(0, 0, 0, ([\d.]+)\)/g)].map((m) =>
+      Number(m[1])
+    );
+  const geometry = (theme: Theme, name: string) =>
+    resolveToken(sets, theme, name).replace(/rgba\([^)]*\)/g, 'c');
+  const blackShadows = [...sets.root.keys()].filter(
+    (n) => n.startsWith('--shadow-') && blackAlphas('light', n).length > 0
+  );
+
+  it('every black shadow is stronger in dark, with the same offsets and blur', () => {
+    expect(blackShadows.length).toBeGreaterThanOrEqual(7);
+    for (const n of blackShadows) {
+      expect(geometry('dark', n), n).toBe(geometry('light', n));
+      const light = blackAlphas('light', n);
+      const dark = blackAlphas('dark', n);
+      expect(dark.length, n).toBe(light.length);
+      dark.forEach((a, i) => expect(a, n).toBeGreaterThan(light[i]));
+    }
+  });
+
+  it('--card-shadow is the --shadow-sm step in both themes', () => {
+    for (const theme of ['light', 'dark'] as Theme[]) {
+      expect(resolveToken(sets, theme, '--card-shadow')).toBe(
+        resolveToken(sets, theme, '--shadow-sm')
+      );
+    }
+  });
+});
+
+describe('token parity: one tint blue (decision D2)', () => {
+  const channels = (theme: Theme, name: string) =>
+    resolveToken(sets, theme, name)
+      .split(',')
+      .map((n) => Number(n.trim()));
+
+  for (const theme of ['light', 'dark'] as Theme[]) {
+    it(`${theme}: --accent-rgb is the --primary-color-rgb blue`, () => {
+      expect(channels(theme, '--accent-rgb')).toEqual(channels(theme, '--primary-color-rgb'));
+    });
+  }
+
+  it('control: the frozen tint blue it replaced is a different colour', () => {
+    expect([59, 130, 246]).not.toEqual(channels('light', '--primary-color-rgb'));
+  });
+});
+
+describe('token parity: no stylesheet restates an elevation token', () => {
+  // A box-shadow written out with the value of a --shadow-* token, or with the
+  // --primary-color-rgb spelling of --shadow-primary(-hover), misses the dark elevation the
+  // token carries (decision D13) and drifts the next time the token moves.
+  const norm = (v: string) => v.trim().replace(/\s+/g, ' ');
+  const twins = new Map<string, string>();
+  for (const [name, value] of sets.root) {
+    if (!name.startsWith('--shadow-') || value === 'none') continue;
+    twins.set(norm(value), name);
+    twins.set(norm(value.replace(/--accent-rgb/g, '--primary-color-rgb')), name);
+  }
+
+  function restated(css: string): string[] {
+    const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    return [...text.matchAll(/box-shadow\s*:\s*([^;{}]+);/g)]
+      .map((m) => twins.get(norm(m[1])))
+      .filter((name): name is string => name !== undefined);
+  }
+
+  it('every box-shadow equal to a token uses the token', () => {
+    const offenders = walkSource(SRC, /\.(svelte|css)$/)
+      .filter((f) => path.basename(f) !== 'theme.css')
+      .flatMap((f) =>
+        restated(fs.readFileSync(f, 'utf8')).map((t) => `${path.relative(SRC, f)}: ${t}`)
+      );
+    expect(offenders).toEqual([]);
+  });
+
+  it('control: a primary-blue twin of --shadow-primary-hover is caught', () => {
+    expect(twins.size).toBeGreaterThan(10);
+    expect(
+      restated('.b:hover { box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.25); }')
+    ).toEqual(['--shadow-primary-hover']);
   });
 });
 

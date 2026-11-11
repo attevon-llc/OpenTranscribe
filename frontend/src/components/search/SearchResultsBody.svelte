@@ -313,14 +313,4 @@
     border-radius: var(--radius-lg);
     font-size: var(--font-size-sm);
   }
-
-  :global([data-theme='dark']) .no-keyword-notice {
-    background: rgba(245, 158, 11, 0.1);
-    color: #fbbf24;
-  }
-
-  :global([data-theme='dark']) .summary-unavailable-notice {
-    background: rgba(245, 158, 11, 0.1);
-    border-color: rgba(245, 158, 11, 0.35);
-  }
 </style>

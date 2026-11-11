@@ -383,22 +383,12 @@
     font-weight: var(--font-weight-medium);
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    background: rgba(245, 158, 11, 0.1);
-    color: #b45309;
+    background: rgba(var(--warning-color-rgb), 0.1);
+    color: var(--warning-text);
   }
 
   .occurrence-type-label.exact {
-    background: rgba(250, 204, 21, 0.15);
-    color: #a16207;
-  }
-
-  :global([data-theme='dark']) .occurrence-type-label {
-    background: rgba(251, 191, 36, 0.12);
-    color: #fcd34d;
-  }
-
-  :global([data-theme='dark']) .occurrence-type-label.exact {
-    color: #fbbf24;
+    background: color-mix(in srgb, var(--highlight-search) 18%, transparent);
   }
 
   .result-actions {

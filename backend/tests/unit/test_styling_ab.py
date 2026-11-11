@@ -12,6 +12,8 @@ under ``tests/e2e``'s own rootdir, so this loads them with that directory on ``s
 
 from __future__ import annotations
 
+import argparse
+import io
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +22,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from PIL import Image
 
 _E2E_DIR = Path(__file__).resolve().parents[1] / "e2e"
 
@@ -564,3 +567,29 @@ def test_url_path_drops_host_and_query() -> None:
 def test_settings_profile_masks_the_active_sessions_table() -> None:
     # Each capture logs in, so the table differs between any two captures of one server.
     assert ".sessions-table" in screens.by_id()["settings-profile"].masks
+
+
+def test_both_sides_log_in_before_either_side_captures(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A lazily created context logged side B in between the two captures, so B's Active
+    # Sessions list was one row longer than A's on the first screen of every variant.
+    events: list[str] = []
+
+    class Side:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def context(self, variant: str, authed: bool, fresh: bool = False) -> None:
+            events.append(f"login {self.name}")
+
+    def fake_capture(side: Any, screen: Any, variant: str, file_uuid: Any) -> dict[str, Any]:
+        events.append(f"capture {side.name}")
+        png = io.BytesIO()
+        Image.new("RGB", (2, 2)).save(png, format="PNG")
+        return {"png": png.getvalue(), "snapshot": {}, "has_btn": False, "failed": ()}
+
+    monkeypatch.setattr(ab, "capture", fake_capture)
+    args = argparse.Namespace(mode="zero", negative_control=False, out="unused")
+    screen = screens.by_id()["settings-profile"]
+    ab.measure(Side("a"), Side("b"), screen, "en-light", None, args, set())
+    assert events[:2] == ["login a", "login b"]
+    assert events.index("login b") < events.index("capture a")

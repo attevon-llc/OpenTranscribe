@@ -754,6 +754,13 @@ def measure(
     """
     retries = MAX_ATTEMPTS if args.mode == "zero" and not args.negative_control else 1
     reasons: list[str] = []
+    if not screen.isolated:
+        # Each side's cached context logs in when first used. Created lazily, side B's login
+        # lands between the two captures, so B's Active Sessions list held one more row than A's
+        # on the first screen of every variant (settings-profile: a retry on all four, every run).
+        # Log both sides in before either side photographs anything.
+        side_a.context(variant, screen.auth)
+        side_b.context(variant, screen.auth)
     for attempt in range(1, retries + 1):
         try:
             a = capture(side_a, screen, variant, file_uuid)

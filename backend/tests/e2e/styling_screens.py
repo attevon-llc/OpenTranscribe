@@ -668,6 +668,69 @@ _SPEAKER_STATES = (
     ),
 )
 
+# --- search-hit highlights and the media scrim (plan 3.2, "Media, highlights and washes") ------
+# Transcript find types into the toolbar's SearchBar one key at a time (`press:`), so the
+# highlights are the app's own for that query: "th" marks words in the text (the first match is
+# `.current`), "speaker" marks the segment speaker chips (#837 ring). The search screens query a
+# word of the seeded sample ("fragments"): the generic "the" of `search` returns only semantic
+# hits, which carry neither a `<mark>` nor a keyword mark.
+_FIND_OPEN = (
+    "click:.search-trigger-button",
+    "wait:.transcript-search .search-bar-input",
+    "click:.transcript-search .search-bar-input",
+)
+
+_HIGHLIGHT_STATES = (
+    Screen(
+        "file-detail-find-text",
+        "/files/{file_uuid}",
+        steps=(*_FIND_OPEN, "press:t", "press:h", "wait:.transcript-search-highlight.current"),
+        ready=".transcript-segment",
+        notes="transcript find: word marks and the current mark (--highlight-search)",
+    ),
+    Screen(
+        "file-detail-find-speaker",
+        "/files/{file_uuid}",
+        steps=(
+            *_FIND_OPEN,
+            *(f"press:{c}" for c in "speaker"),
+            "wait:.segment-speaker.current-match",
+        ),
+        ready=".transcript-segment",
+        notes="transcript find on a speaker name: the chip rings (--highlight-search/-current)",
+    ),
+    Screen(
+        "search-marks",
+        "/search?q=fragments",
+        steps=("wait:.search-page mark",),
+        ready=".search-page, main",
+        masks=(".result-summary",),
+        notes="result snippets with <mark> hits (--highlight-bg)",
+    ),
+    Screen(
+        "search-transcript-view",
+        "/search?q=fragments",
+        steps=("click:.view-transcript-btn", "wait:.search-keyword-match"),
+        ready=".search-page, main",
+        masks=(".result-summary",),
+        full_page=False,
+        notes="the search result's transcript view: keyword marks",
+    ),
+    Screen(
+        "speakers-profiles-avatar-hover",
+        "/speakers?tab=profiles",
+        steps=(
+            _PROFILES_FIXTURE,
+            "reload:page",
+            "wait:.profile-avatar-wrapper img",
+            "hover:.profile-avatar-wrapper",
+        ),
+        masks=_SPEAKER_MASKS,
+        ready=".speakers-page",
+        notes="the camera overlay on a profile picture (--media-scrim)",
+    ),
+)
+
 SCREENS: tuple[Screen, ...] = (
     *_LOGGED_OUT,
     *_APP,
@@ -675,6 +738,7 @@ SCREENS: tuple[Screen, ...] = (
     *_SETTINGS,
     *_FILE_DETAIL_STATES,
     *_SPEAKER_STATES,
+    *_HIGHLIGHT_STATES,
 )
 
 #: Screens the lane cards use as "control" (must pass the zero rule in intended mode).

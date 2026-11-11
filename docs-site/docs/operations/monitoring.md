@@ -362,7 +362,7 @@ Every service in OpenTranscribe has a Docker health check. These are defined in 
 | Redis | `opentranscribe-redis` | `redis-cli ping` (with auth if configured) | 5s | Cache/broker responds to PING |
 | OpenSearch | `opentranscribe-opensearch` | `curl -sS http://localhost:9200` | 5s | Search cluster is reachable |
 | Backend | `opentranscribe-backend` | `curl -f http://localhost:8080/health` | 10s | FastAPI app is serving requests |
-| GPU Worker | `opentranscribe-celery-worker` | `python3 scripts/celery_pool_healthcheck.py gpu-transcription@$HOSTNAME` | 30s | Worker answers `inspect ping` **and** its child pool is alive (not a dead pool or respawn storm, issue #631) |
+| GPU Worker | `opentranscribe-celery-worker` | `python3 scripts/celery_pool_healthcheck.py gpu-transcription@$HOSTNAME` | 30s | Worker answers `inspect stats` **and** its child pool is alive (not a dead pool or respawn storm, issue #631) |
 | Download Worker | `opentranscribe-celery-download-worker` | `python3 scripts/celery_pool_healthcheck.py media-downloader@$HOSTNAME` | 30s | Worker is connected and processing downloads |
 | CPU Worker | `opentranscribe-celery-cpu-worker` | `python3 scripts/celery_pool_healthcheck.py cpu-processor@$HOSTNAME` | 30s | Worker handles CPU-bound tasks |
 | NLP Worker | `opentranscribe-celery-nlp-worker` | `python3 scripts/celery_pool_healthcheck.py ai-nlp@$HOSTNAME` | 30s | Worker handles LLM/NLP tasks |

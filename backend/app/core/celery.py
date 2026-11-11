@@ -5,9 +5,7 @@ from app.core import privacy_env  # noqa: F401  # isort: skip
 # isort: split
 
 import logging
-import os
 import socket
-import ssl
 
 from celery.signals import before_task_publish
 from celery.signals import setup_logging
@@ -20,6 +18,7 @@ from celery.signals import worker_shutting_down
 
 from app.core import celery_worker_lifecycle
 from app.core import worker_metrics
+from app.core.broker_connection import redis_ssl_options
 from app.core.celery_beat import BEAT_SCHEDULE
 from app.core.celery_routing import CELERY_QUEUES
 from app.core.celery_routing import INTENTIONALLY_UNROUTED_TASKS
@@ -103,26 +102,10 @@ if not _SKIP_CELERY:
     # Note: WhisperX 3.8.1 has native PyAnnote v4 support — no patches needed
 
 
-# kombu refuses to connect over `rediss://` unless an SSL context is supplied — it does
-# NOT fall back to a default. config.py builds a rediss:// URL whenever REDIS_USE_TLS is
-# set, so without this every worker dies at startup on a TLS Redis (issue #284 A1.17).
-# CERT_REQUIRED (the default) verifies the server certificate; set
-# CELERY_REDIS_SSL_CERT_REQS=optional|none only for a self-signed broker you control.
-_REDIS_SSL_MODES = {
-    "required": ssl.CERT_REQUIRED,
-    "optional": ssl.CERT_OPTIONAL,
-    "none": ssl.CERT_NONE,
-}
-_redis_uses_tls = str(settings.CELERY_BROKER_URL).startswith("rediss://")
-_redis_ssl_options = (
-    {
-        "ssl_cert_reqs": _REDIS_SSL_MODES.get(
-            os.getenv("CELERY_REDIS_SSL_CERT_REQS", "required").lower(), ssl.CERT_REQUIRED
-        )
-    }
-    if _redis_uses_tls
-    else None
-)
+# kombu refuses `rediss://` without an SSL context (issue #284 A1.17); the options live in
+# app.core.broker_connection so the worker healthcheck derives the same ones without
+# importing this module.
+_redis_ssl_options = redis_ssl_options(str(settings.CELERY_BROKER_URL))
 
 # Dead-connection detection for every Redis socket (broker AND result backend) — issue #1144.
 #

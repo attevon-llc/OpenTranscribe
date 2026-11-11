@@ -16,6 +16,7 @@ from pydantic_settings import SettingsConfigDict
 from app.core.auth_settings_checks import validate_ldap_settings
 from app.core.auth_settings_checks import validate_oidc_settings
 from app.core.auth_settings_checks import validate_pki_settings
+from app.core.broker_connection import assemble_redis_url
 from app.core.constants import AUDIT_RETENTION_FLOOR_DAYS
 from app.core.env import env_bool
 from app.core.settings_capacity import CapacitySettings
@@ -407,9 +408,12 @@ class Settings(
         # this validator runs before or after them.
         self._resolve_database_urls()
         if not self.REDIS_URL:
-            scheme = "rediss" if self.REDIS_USE_TLS else "redis"
-            auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
-            self.REDIS_URL = f"{scheme}://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/0"
+            self.REDIS_URL = assemble_redis_url(
+                use_tls=self.REDIS_USE_TLS,
+                host=self.REDIS_HOST,
+                port=self.REDIS_PORT,
+                password=self.REDIS_PASSWORD,
+            )
         if not self.CELERY_BROKER_URL:
             self.CELERY_BROKER_URL = self.REDIS_URL
         if not self.CELERY_RESULT_BACKEND:

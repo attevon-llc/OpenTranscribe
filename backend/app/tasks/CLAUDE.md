@@ -264,6 +264,12 @@ indexing → WebSocket notification.
   accepted-task counter — that pair is the storm signature, and it is why "the child list is
   non-empty" was not enough (billiard appends a child to the pool *before* `start()`, so a
   pool killing children faster than they can signal UP always has pids to report).
+  **Keep the probe cheap**: it runs every 30 s in every worker container. It talks to the
+  broker in-process through a bare `Celery` client built by `app/core/broker_connection.py`
+  and must not import `app.core.celery`, `app.core.config` or the `celery` CLI — the old
+  `celery -A app.core.celery inspect` subprocess cost ~2.2 s CPU per probe against ~1.1 s now
+  (`TestTheProbeStaysCheap` fails on any of those imports; a broker setting added to
+  `core/celery.py` that the control exchange depends on belongs in `broker_connection.py`).
   ⚠️ Nothing in the compose set acts on `unhealthy`: there is no autoheal/watchtower container
   and `restart: always` fires only when the **main** process exits. The check makes the wedge
   visible; it does not recover from it.

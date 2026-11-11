@@ -43,7 +43,7 @@ Normally unnecessary: backend startup creates the bucket and indexes.
 |--------|---------|
 | `create_minio_bucket.py` | Creates the media bucket (`MEDIA_BUCKET_NAME`) through the application's own storage client, so it honours `MINIO_HOST`/`MINIO_PORT`/`MINIO_SECURE` and the S3 backend settings. No public policy is set; media is served by presigned URL. Run inside the backend container. |
 | `create_opensearch_indexes.py` | Calls the same bootstrap as backend startup (`ensure_indices_exist`, `ensure_v4_index_exists`, `ensure_chunks_index_exists`), so it creates `transcripts`, the versioned `speakers_v*` indexes with their `speakers` alias, and `transcript_chunks`. Run inside the backend container. |
-| `celery_pool_healthcheck.py` | Docker healthcheck for the GPU transcription worker (wired in `docker-compose.yml`): fails when the Celery prefork pool is dead or in a respawn storm. |
+| `celery_pool_healthcheck.py` | Docker healthcheck for every Celery worker (wired in `docker-compose.yml`, `docker-compose.gpu-scale.yml`, `docker-compose.blackwell.yml`): asks the node for `inspect stats` in-process (no app import) and fails when it does not answer, or its prefork pool is dead or in a respawn storm. |
 | `blackwell_patches.py` | Applies Blackwell (SM_121) compatibility patches at Docker build time for `Dockerfile.blackwell`. |
 
 ## Tests run from inside the stack

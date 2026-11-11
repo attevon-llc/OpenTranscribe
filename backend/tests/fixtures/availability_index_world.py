@@ -172,6 +172,10 @@ def index_file(client, db_session, media_file: MediaFile) -> None:
         organization_id=None,
         availability=availability,
     )
+    # index_transcript does not refresh. A stamp right after this (update_by_query) only sees
+    # searchable documents, so without the refresh it raced the 1 s refresh interval and
+    # intermittently left the transcript reading its old availability.
+    client.indices.refresh(index=settings.OPENSEARCH_TRANSCRIPT_INDEX)
     # A digest document, cloned from the chunk so the digest leg has a deterministic target
     # (the extractive digest needs far more text than this fixture holds).
     chunk = docs_of(

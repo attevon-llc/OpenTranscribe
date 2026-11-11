@@ -16,13 +16,13 @@ overrides that with the empty string, so the stage name resolves to the literal
 That failed the entire lite-mode rehearsal scenario on 2026-09-07 — the image never built,
 so nothing downstream of it was measured.
 
-⚠️ **This module BUILDS, it does not read.** A static "is the ARG line absent?" assertion
-would be a rule nobody can check the truth of; the two Dockerfiles are near-identical text
-whose behaviour differs entirely, and the broken form is the one that *looks* correct. The
-build is tiny (two `alpine` stages, no RUN), so it costs a second and proves the mechanism.
+Whether the bare ARG still breaks depends on the BuildKit release (it did on the v0.5.0
+rehearsal builder; BuildKit 0.34 builds it and selects correctly), so this static rule stays:
+the images are built by whatever BuildKit an operator or the remote builder runs.
 
-The two real docker builds that prove the hazard live in
-``tests/integration/test_dockerfile_targetarch_build.py``; they need a docker daemon.
+The real docker builds, which check that each target platform gets its own stage on the
+Docker running them, live in ``tests/integration/test_dockerfile_targetarch_build.py``; they
+need a docker daemon.
 """
 
 from __future__ import annotations

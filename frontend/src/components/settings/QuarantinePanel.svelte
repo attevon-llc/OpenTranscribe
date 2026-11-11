@@ -346,7 +346,7 @@
   }
 
   .settings-state-row.error {
-    color: #dc2626;
+    color: var(--error-text);
     justify-content: space-between;
   }
 
@@ -429,33 +429,18 @@
   }
 
   .badge-hold {
-    background: rgba(217, 119, 6, 0.15);
-    color: #b45309;
-  }
-
-  :global([data-theme='dark']) .badge-hold {
-    background: rgba(217, 119, 6, 0.25);
-    color: #fbbf24;
+    background: rgba(var(--warning-color-rgb), 0.15);
+    color: var(--warning-text);
   }
 
   .badge-origin {
-    background: rgba(37, 99, 235, 0.12);
-    color: #1d4ed8;
+    background: rgba(var(--info-color-rgb), 0.12);
+    color: var(--info-text);
   }
 
   .badge-operator {
-    background: rgba(100, 116, 139, 0.16);
-    color: #475569;
-  }
-
-  :global([data-theme='dark']) .badge-origin {
-    background: rgba(96, 165, 250, 0.22);
-    color: #93c5fd;
-  }
-
-  :global([data-theme='dark']) .badge-operator {
-    background: rgba(148, 163, 184, 0.24);
-    color: #cbd5e1;
+    background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+    color: var(--text-on-tint);
   }
 
   .action-disabled {

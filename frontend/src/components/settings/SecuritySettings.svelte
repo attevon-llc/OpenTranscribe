@@ -422,7 +422,7 @@
 
   .mfa-status-card.enabled {
     border-color: var(--success-color);
-    background-color: rgba(16, 185, 129, 0.05);
+    background-color: rgba(var(--success-color-rgb), 0.05);
   }
 
   .status-icon {
@@ -438,7 +438,7 @@
   }
 
   .status-icon.enabled {
-    background-color: rgba(16, 185, 129, 0.1);
+    background-color: rgba(var(--success-color-rgb), 0.1);
     color: var(--success-text);
   }
 
@@ -563,8 +563,8 @@
   }
 
   .backup-codes-section {
-    background-color: rgba(245, 158, 11, 0.05);
-    border-color: rgba(245, 158, 11, 0.3);
+    background-color: rgba(var(--warning-color-rgb), 0.05);
+    border-color: rgba(var(--warning-color-rgb), 0.3);
   }
 
   .backup-header {

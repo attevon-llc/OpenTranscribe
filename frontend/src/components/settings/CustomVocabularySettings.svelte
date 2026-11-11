@@ -424,7 +424,7 @@
 
   .system-badge {
     padding: 0.1rem 0.4rem;
-    background: rgba(107, 114, 128, 0.15);
+    background: color-mix(in srgb, var(--text-secondary) 15%, transparent);
     color: var(--text-muted);
     border-radius: var(--radius-sm);
     font-size: 0.7rem;

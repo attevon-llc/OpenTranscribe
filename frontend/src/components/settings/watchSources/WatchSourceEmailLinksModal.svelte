@@ -349,7 +349,7 @@
     padding: var(--space-1-5) var(--space-2-5);
     border-radius: var(--radius-md);
     border-left: 3px solid var(--warning-color);
-    background: rgba(234, 179, 8, 0.1);
+    background: rgba(var(--warning-color-rgb), 0.1);
     font-size: 0.8rem;
     color: var(--text-secondary);
   }

@@ -127,32 +127,20 @@
   }
 
   .warning-banner {
-    background: rgba(234, 179, 8, 0.15);
-    color: #ca8a04;
+    background: rgba(var(--warning-color-rgb), 0.15);
+    color: var(--warning-text);
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-md);
     margin-bottom: var(--space-4);
     font-weight: var(--font-weight-medium);
     font-size: var(--font-size-sm);
-    border: 1px solid rgba(234, 179, 8, 0.3);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.3);
   }
 
   .warning-banner.expired {
-    background: rgba(239, 68, 68, 0.15);
-    color: #dc2626;
-    border-color: rgba(239, 68, 68, 0.3);
-  }
-
-  :global([data-theme='dark']) .warning-banner {
-    background: rgba(234, 179, 8, 0.2);
-    color: #fbbf24;
-    border-color: rgba(234, 179, 8, 0.4);
-  }
-
-  :global([data-theme='dark']) .warning-banner.expired {
-    background: rgba(239, 68, 68, 0.2);
-    color: #f87171;
-    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(var(--error-color-rgb), 0.15);
+    color: var(--error-text);
+    border-color: rgba(var(--error-color-rgb), 0.3);
   }
 
   .cert-grid {
@@ -205,12 +193,8 @@
   }
 
   .expired {
-    color: #dc2626;
+    color: var(--error-text);
     font-weight: var(--font-weight-semibold);
-  }
-
-  :global([data-theme='dark']) .expired {
-    color: #f87171;
   }
 
   @media (max-width: 640px) {

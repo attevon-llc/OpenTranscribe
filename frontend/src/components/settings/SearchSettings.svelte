@@ -651,12 +651,6 @@
 
 <style>
 
-
-
-
-
-
-
   .subsection-header {
     display: flex;
     align-items: center;
@@ -701,8 +695,6 @@
     color: var(--text-secondary);
     white-space: nowrap;
   }
-
-
 
   :global(.form-field.embedding-model-field) {
     margin-bottom: var(--space-3);
@@ -855,8 +847,8 @@
   }
 
   .stats-mode.gpu {
-    background: rgba(16, 185, 129, 0.12);
-    color: #10b981;
+    background: rgba(var(--success-color-rgb), 0.12);
+    color: var(--success-text);
   }
 
   .stats-mode.cpu {

@@ -381,9 +381,9 @@
   .warning-banner {
     margin: 0 0 var(--space-6) 0;
     padding: var(--space-3) var(--space-4);
-    border: 1px solid rgba(245, 158, 11, 0.45);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
-    background: rgba(245, 158, 11, 0.12);
+    background: rgba(var(--warning-color-rgb), 0.12);
     color: var(--color-text);
     font-size: var(--font-size-sm);
     line-height: 1.45;

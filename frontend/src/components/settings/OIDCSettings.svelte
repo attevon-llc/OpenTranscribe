@@ -564,9 +564,9 @@
   .admission-warning {
     margin: var(--space-2) 0 0 0;
     padding: 0.6rem var(--space-3);
-    border: 1px solid rgba(245, 158, 11, 0.45);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
-    background: rgba(245, 158, 11, 0.12);
+    background: rgba(var(--warning-color-rgb), 0.12);
     color: var(--color-text);
     font-size: var(--font-size-xs);
     line-height: 1.5;
@@ -593,16 +593,16 @@
     margin: var(--space-2) 0 0 0;
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
-    background: rgba(16, 185, 129, 0.12);
-    border: 1px solid rgba(16, 185, 129, 0.4);
+    background: rgba(var(--success-color-rgb), 0.12);
+    border: 1px solid rgba(var(--success-color-rgb), 0.4);
     color: var(--color-text);
     font-size: var(--font-size-sm);
     line-height: 1.5;
   }
 
   .roles-claim-status.status-no {
-    background: rgba(245, 158, 11, 0.12);
-    border-color: rgba(245, 158, 11, 0.45);
+    background: rgba(var(--warning-color-rgb), 0.12);
+    border-color: rgba(var(--warning-color-rgb), 0.45);
   }
 
   .section :global(.form-field.indented) {

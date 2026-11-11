@@ -143,9 +143,9 @@
   .approvals {
     margin-bottom: var(--space-6);
     padding: var(--space-4);
-    border: 1px solid rgba(245, 158, 11, 0.4);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.4);
     border-radius: var(--radius-lg);
-    background: rgba(245, 158, 11, 0.08);
+    background: rgba(var(--warning-color-rgb), 0.08);
   }
 
   .approvals-head {

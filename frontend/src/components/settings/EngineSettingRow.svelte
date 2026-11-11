@@ -102,18 +102,10 @@
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
   }
-  :global([data-theme='dark']) .source-db {
-    background: rgba(var(--primary-color-rgb), 0.2);
-    color: #60a5fa;
-  }
 
   .source-env {
-    background: rgba(245, 158, 11, 0.12);
-    color: #d97706;
-  }
-  :global([data-theme='dark']) .source-env {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
+    background: rgba(var(--warning-color-rgb), 0.12);
+    color: var(--warning-text);
   }
 
   .field-hint {

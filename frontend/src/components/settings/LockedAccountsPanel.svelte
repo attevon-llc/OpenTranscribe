@@ -201,7 +201,7 @@
   }
 
   .settings-state-row.error {
-    color: #dc2626;
+    color: var(--error-text);
     justify-content: space-between;
   }
 
@@ -213,14 +213,9 @@
     padding: var(--space-2) var(--space-3);
     margin-bottom: var(--space-3);
     border-radius: var(--radius-md);
-    background: rgba(217, 119, 6, 0.12);
-    color: #b45309;
+    background: rgba(var(--warning-color-rgb), 0.12);
+    color: var(--warning-text);
     font-size: var(--font-size-sm);
-  }
-
-  :global([data-theme='dark']) .degraded-banner {
-    background: rgba(217, 119, 6, 0.2);
-    color: #fbbf24;
   }
 
   .locked-accounts-table {

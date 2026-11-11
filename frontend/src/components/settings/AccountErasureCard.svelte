@@ -330,15 +330,9 @@
     padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-sm);
     border-radius: var(--radius-md);
-    background: #fef3c7;
-    color: #78350f;
-    border: 1px solid #f59e0b;
-  }
-
-  :global([data-theme='dark']) .notice {
-    background: #422006;
-    color: #fde68a;
-    border-color: #b45309;
+    background: var(--warning-bg);
+    color: var(--text-color);
+    border: 1px solid var(--warning-color);
   }
 
   .error {

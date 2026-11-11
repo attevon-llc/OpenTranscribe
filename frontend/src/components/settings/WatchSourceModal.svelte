@@ -821,11 +821,11 @@
     font-size: 0.85rem;
   }
   .test-result.success {
-    background: rgba(34, 197, 94, 0.12);
+    background: rgba(var(--success-color-rgb), 0.12);
     color: var(--success-text);
   }
   .test-result.failure {
-    background: rgba(239, 68, 68, 0.12);
+    background: rgba(var(--error-color-rgb), 0.12);
     color: var(--error-text);
   }
   .footer-row {

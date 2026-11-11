@@ -168,11 +168,11 @@
   }
 
   .audit-table tr.failure {
-    background: rgba(239, 68, 68, 0.08);
+    background: rgba(var(--error-color-rgb), 0.08);
   }
 
   .audit-table tr.failure:hover {
-    background: rgba(239, 68, 68, 0.12);
+    background: rgba(var(--error-color-rgb), 0.12);
   }
 
   .audit-table td:first-child {
@@ -210,23 +210,13 @@
   }
 
   .outcome.success {
-    background: rgba(34, 197, 94, 0.15);
-    color: rgb(22, 163, 74);
-  }
-
-  :global([data-theme='dark']) .outcome.success {
-    background: rgba(34, 197, 94, 0.2);
-    color: rgb(74, 222, 128);
+    background: rgba(var(--success-color-rgb), 0.15);
+    color: var(--success-text);
   }
 
   .outcome.failure {
-    background: rgba(239, 68, 68, 0.15);
-    color: rgb(220, 38, 38);
-  }
-
-  :global([data-theme='dark']) .outcome.failure {
-    background: rgba(239, 68, 68, 0.2);
-    color: rgb(248, 113, 113);
+    background: rgba(var(--error-color-rgb), 0.15);
+    color: var(--error-text);
   }
 
   .no-logs {

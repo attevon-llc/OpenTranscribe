@@ -339,15 +339,9 @@
     font-size: 0.85rem;
     margin-bottom: var(--space-3);
     padding: var(--space-2) var(--space-3);
-    background: rgba(81, 207, 102, 0.1);
+    background: rgba(var(--success-color-rgb), 0.1);
     border-radius: var(--radius-md);
   }
-
-
-
-
-
-
 
   @media (max-width: 768px) {
     .setting-row.sub-setting {

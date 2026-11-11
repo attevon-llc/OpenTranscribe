@@ -21,8 +21,9 @@ from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.ingest_artifacts import index_mapping as digest_mapping
+from tests.run_identity import RUN_TOKEN
 
-MARK = uuid_pkg.uuid4().hex[:8]
+MARK = RUN_TOKEN[:8]
 SPEAKER = f"Zzyzx-{MARK}"
 TAG = f"zzyzx-tag-{MARK}"
 PHRASE = "quarterly budget review"
@@ -31,7 +32,7 @@ SUMMARY = {"bluf": f"The {PHRASE} cuts travel costs by twenty percent ({MARK})."
 
 @pytest.fixture
 def availability_indices(monkeypatch, db_session):
-    """Throwaway chunks, transcripts and speaker availability_indices, and ``session_scope`` bridged.
+    """Throwaway chunks, transcripts and speaker indices, and ``session_scope`` bridged.
 
     The services open their own sessions; under the savepoint harness a separate connection
     cannot see this test's rows, so without the bridge the stamp would read no rows and the
@@ -43,8 +44,8 @@ def availability_indices(monkeypatch, db_session):
     from app.core.embedding_models import get_speaker_index
     from app.core.embedding_models import get_speaker_index_v3
     from app.core.embedding_models import get_speaker_index_v4
-    from app.services.opensearch_service import availability_indices as os_indices
     from app.services.opensearch_service import get_opensearch_client
+    from app.services.opensearch_service import indices as os_indices
     from app.services.opensearch_service.aliases import invalidate_active_speaker_index_cache
     from app.services.search import index_admin
     from app.services.search import pipelines
@@ -171,6 +172,10 @@ def index_file(client, db_session, media_file: MediaFile) -> None:
         organization_id=None,
         availability=availability,
     )
+    # index_transcript does not refresh. A stamp right after this (update_by_query) only sees
+    # searchable documents, so without the refresh it raced the 1 s refresh interval and
+    # intermittently left the transcript reading its old availability.
+    client.indices.refresh(index=settings.OPENSEARCH_TRANSCRIPT_INDEX)
     # A digest document, cloned from the chunk so the digest leg has a deterministic target
     # (the extractive digest needs far more text than this fixture holds).
     chunk = docs_of(

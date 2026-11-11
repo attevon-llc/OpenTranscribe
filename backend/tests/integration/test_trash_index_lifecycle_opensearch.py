@@ -200,7 +200,7 @@ def test_the_orphan_sweep_keeps_a_trashed_files_documents(availability_indices, 
     trash_service.trash_files(db_session, [media_file], actor=user, request=None, bypass=None)
 
     # The sweep's own core, for real (dry_run=False), scoped to this test's throwaway index:
-    # the full run_orphan_cleanup would also scan availability_indices this test does not own.
+    # the full run_orphan_cleanup would also scan indices this test does not own.
     stats = integrity._cleanup_index_by_field(
         availability_indices,
         settings.OPENSEARCH_CHUNKS_INDEX,
@@ -257,6 +257,8 @@ def test_search_still_answers_with_10001_trashed_files(
     the search answers 200 and finds the live file."""
     live = make_media_file(db_session, normal_user)
     index_file(availability_indices, db_session, live)
+    # The search request closes the shared session (7ead5d8f2), detaching ``live``.
+    live_uuid = str(live.uuid)
     now = datetime.now(UTC)
     db_session.execute(
         insert(MediaFile),
@@ -285,4 +287,4 @@ def test_search_still_answers_with_10001_trashed_files(
     )
 
     assert response.status_code == 200, response.text
-    assert str(live.uuid) in [r["file_uuid"] for r in response.json()["results"]]
+    assert live_uuid in [r["file_uuid"] for r in response.json()["results"]]

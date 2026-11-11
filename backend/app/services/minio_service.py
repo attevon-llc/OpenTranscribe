@@ -318,8 +318,10 @@ def delete_file(object_name: str) -> RemovalResult:
         be read, so whether old versions remain is unknown (an erasure records that partial).
 
     Raises:
-        StorageError: Some version survived (a legal hold or retention, a refused call); the
-            message names what remains. ``StorageUnavailableError`` when the store gave no answer.
+        StorageError: Some version survived (a legal hold or retention, a refused call). The
+            message is fixed text; ``__cause__`` is the ``StorageDeleteIncompleteError`` whose
+            ``remaining`` names each surviving ``key@version``, and it is logged here.
+            ``StorageUnavailableError`` when the store gave no answer.
     """
     from app.services.storage_versions import StorageDeleteIncompleteError
     from app.services.storage_versions import remove_completely

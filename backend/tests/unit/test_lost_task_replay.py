@@ -69,7 +69,7 @@ class _Sent:
 
 def _die(fake: FakeRedis, task_id: str, *, seconds_ago: float = 600) -> None:
     """The worker running ``task_id`` was killed ``seconds_ago``: no beat, no postrun."""
-    fake.expire(tr.HEARTBEAT_KEY.format(task_id=task_id))
+    fake.lapse(tr.HEARTBEAT_KEY.format(task_id=task_id))
     record = json.loads(fake.hget(tr.REPLAY_HASH, task_id) or "{}")
     record["recorded_at"] = time.time() - seconds_ago
     fake.hset(tr.REPLAY_HASH, task_id, json.dumps(record))
@@ -87,7 +87,7 @@ def test_a_replayable_task_is_recorded_and_heartbeats(fake_redis):
     assert (record["queue"], record["priority"], record["attempt"]) == ("cpu", 4, 0)
     assert fake_redis.get(tr.HEARTBEAT_KEY.format(task_id="t-1")) is not None
 
-    fake_redis.expire(tr.HEARTBEAT_KEY.format(task_id="t-1"))
+    fake_redis.lapse(tr.HEARTBEAT_KEY.format(task_id="t-1"))
     tr._beat_all()
     assert fake_redis.get(tr.HEARTBEAT_KEY.format(task_id="t-1")) is not None, (
         "the heartbeat loop did not refresh a running task"
@@ -197,7 +197,7 @@ def test_a_poison_task_stops_after_the_attempt_limit(fake_redis, monkeypatch):
     for _ in range(3):  # the task OOMs its worker every time
         tr.on_task_start(task, "poison", ["f", 1], {})
         _die(fake_redis, "poison")
-        fake_redis.expire(tr.CLAIM_KEY.format(task_id="poison"))
+        fake_redis.lapse(tr.CLAIM_KEY.format(task_id="poison"))
         tr.reclaim_lost_tasks(send_task=sent)
 
     assert len(sent.calls) == 2
@@ -282,7 +282,7 @@ def test_the_sweep_moves_the_lost_row_back_to_pending_then_fails_it_when_exhaust
     tr.on_task_start(task, task_id, ["f", normal_user.id], {})
     _mark_in_progress(db_session, task_id)
     _die(fake_redis, task_id)
-    fake_redis.expire(tr.CLAIM_KEY.format(task_id=task_id))
+    fake_redis.lapse(tr.CLAIM_KEY.format(task_id=task_id))
     tr.reclaim_lost_tasks(send_task=_Sent())
     db_session.expire_all()
     row = db_session.get(Task, task_id)

@@ -90,9 +90,10 @@ def bump_corpus_version() -> None:
     the next query would miss, run against the still-stale index, get the
     revoked chunks anyway, and re-cache them under the new version for a fresh
     TTL. Bumping only after the write is visible closes that window instead of
-    widening it. Never raises — indexing must not fail because a chat cache
-    marker could not be written (the cost of that failure is a stale cache
-    entry for at most the TTL, not a broken pipeline).
+    widening it. A Redis failure (``RedisError``) is logged and swallowed:
+    indexing must not fail because a chat cache marker could not be written
+    (the cost of that failure is a stale cache entry for at most the TTL, not a
+    broken pipeline). Anything else is a programming error and propagates.
     """
     try:
         from app.core.redis import get_request_redis

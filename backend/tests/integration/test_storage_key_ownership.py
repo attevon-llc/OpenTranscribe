@@ -15,6 +15,7 @@ import os
 import threading
 import uuid as uuid_pkg
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 import pytest
 import requests
@@ -199,8 +200,25 @@ def _upload_avatar(client, headers, profile, content_type: str, name: str):
     )
 
 
+@dataclass(frozen=True)
+class ProfileRef:
+    """A profile by id and uuid: the avatar endpoints close the request session
+    (e9014ce2a), which detaches any ORM instance the test shares with it."""
+
+    id: int
+    uuid: str
+
+
+def _avatar_path(db_session, profile: ProfileRef) -> str | None:
+    """The profile's ``avatar_path`` as committed, read fresh after a request."""
+    row = db_session.get(SpeakerProfile, profile.id, populate_existing=True)
+    assert row is not None
+    avatar_path: str | None = row.avatar_path
+    return avatar_path
+
+
 @pytest.fixture
-def avatar_profile(db_session, normal_user) -> Iterator[SpeakerProfile]:
+def avatar_profile(db_session, normal_user) -> Iterator[ProfileRef]:
     """A profile whose avatar objects (every version) are removed afterwards.
 
     Uses the stack's real media bucket: avatar URLs are presigned by an identity scoped to it.
@@ -213,13 +231,14 @@ def avatar_profile(db_session, normal_user) -> Iterator[SpeakerProfile]:
     profile = SpeakerProfile(user_id=normal_user.id, name=f"Avatar {uuid_pkg.uuid4().hex[:6]}")
     db_session.add(profile)
     db_session.commit()
-    db_session.refresh(profile)
+    ref = ProfileRef(id=int(profile.id), uuid=str(profile.uuid))
+    owner_id = int(normal_user.id)
     try:
-        yield profile
+        yield ref
     finally:
         found = minio_client.list_objects(
             settings.MEDIA_BUCKET_NAME,
-            f"avatars/{normal_user.id}/{profile.uuid}",
+            f"avatars/{owner_id}/{ref.uuid}",
             recursive=True,
             include_version=True,
         )
@@ -265,10 +284,10 @@ def test_a_racing_avatar_upload_leaves_exactly_one_referenced_object(
     assert first.status_code == status.HTTP_200_OK
     assert state["raced"], "the race window was never opened"
 
-    db_session.refresh(profile)
-    assert profile.avatar_path
-    assert _exists(bucket, str(profile.avatar_path)), "the profile points at a missing object"
-    assert _keys(bucket, prefix) == [profile.avatar_path], "a superseded avatar object leaked"
+    avatar_path = _avatar_path(db_session, profile)
+    assert avatar_path
+    assert _exists(bucket, avatar_path), "the profile points at a missing object"
+    assert _keys(bucket, prefix) == [avatar_path], "a superseded avatar object leaked"
 
 
 def test_replacing_an_avatar_deletes_only_the_key_it_replaced(
@@ -280,8 +299,7 @@ def test_replacing_an_avatar_deletes_only_the_key_it_replaced(
     prefix = f"avatars/{normal_user.id}/{profile.uuid}"
     for ctype, name in (("image/jpeg", "a.jpg"), ("image/png", "b.png"), ("image/jpeg", "c.jpg")):
         assert _upload_avatar(client, user_token_headers, profile, ctype, name).status_code == 200
-        db_session.refresh(profile)
-        assert _keys(settings.MEDIA_BUCKET_NAME, prefix) == [profile.avatar_path]
+        assert _keys(settings.MEDIA_BUCKET_NAME, prefix) == [_avatar_path(db_session, profile)]
 
     resp = client.delete(
         f"/api/speaker-profiles/profiles/{profile.uuid}/avatar", headers=user_token_headers

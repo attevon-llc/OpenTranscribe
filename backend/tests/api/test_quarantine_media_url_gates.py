@@ -29,7 +29,7 @@ APP = pathlib.Path(__file__).resolve().parents[2] / "app"
 def stub_thumbnail(monkeypatch):
     """Serve a fixed body instead of reading storage; the authorization is what is tested."""
     monkeypatch.setattr(
-        "app.api.endpoints.files.get_thumbnail_streaming_response",
+        "app.api.endpoints.files.media_delivery.get_thumbnail_streaming_response",
         lambda _file: Response(content=b"thumb", media_type="image/jpeg"),
     )
 

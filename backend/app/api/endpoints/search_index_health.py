@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from opensearchpy import OpenSearch
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -133,16 +134,15 @@ def _scope_doc_counts_to_caller(client: Any, health: dict[str, Any], ctx: Reques
             entry["error"] = "Document count is unavailable"
 
 
-def _probe_index_health(indices: list[str]) -> dict[str, str]:
+def _probe_index_health(opensearch_client: OpenSearch, indices: list[str]) -> dict[str, str]:
     """Classify each index as ``healthy`` / ``missing`` / ``unhealthy``.
 
     Two OpenSearch round trips **per index**, so it runs with **no DB session
     held** — hence a plain list in, a plain dict out, and no ``db`` parameter.
     An exception from either probe means "unhealthy": that is the repair trigger,
     and an ``exists`` call that raises is exactly as broken as a failing search.
+    The caller has already refused a missing client.
     """
-    from app.services.opensearch_service import opensearch_client
-
     health: dict[str, str] = {}
     for idx in indices:
         try:
@@ -201,7 +201,7 @@ def repair_indices(
     db.close()
 
     # Phase 1 — probe every index, with no Postgres transaction held.
-    health = _probe_index_health(indices)
+    health = _probe_index_health(opensearch_client, indices)
     results: dict[str, str] = {idx: state for idx, state in health.items() if state != "unhealthy"}
     speakers_indexed = 0
 

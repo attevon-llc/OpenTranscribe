@@ -34,12 +34,14 @@ from app.models.organization import OrganizationMembership
 from app.models.support_access import SupportAccessGrant
 from app.models.user import User
 from tests.audit_maintenance import audit_maintenance
+from tests.run_identity import RUN_TOKEN
 from tests.state_resets import reset_tenancy_mode_cache
 
 GRANT_HEADER = "X-Support-Access-Grant"
 #: Random per process: these accounts exist only inside a rolled-back transaction, and a
-#: literal credential in the tree is something secret scanners rightly flag.
-PASSWORD = uuid.uuid4().hex
+#: literal credential in the tree is something secret scanners rightly flag. Drawn from
+#: ``tests.run_identity`` so the plugin and a ``tests.fixtures.support_world`` import agree.
+PASSWORD = RUN_TOKEN
 
 
 def make_user(db, *, role: str, label: str) -> User:
@@ -197,6 +199,10 @@ def support_world(
         OrganizationMembership(organization_id=org.id, user_id=other_user.id, role="org:admin")
     )
     org.owner_user_id = other_user.id  # the org admin owns the org (v468)
+    # Every world account signs in with PASSWORD, the org admin too: an org erasure re-checks
+    # the acting admin's password (180de9add). The admin's token was issued before this and
+    # stays valid; re-authentication reads the stored hash.
+    other_user.hashed_password = get_password_hash(PASSWORD)
     db_session.commit()
 
     world = SupportWorld(

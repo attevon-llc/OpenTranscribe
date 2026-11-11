@@ -252,6 +252,16 @@ A flapping backend and similar stack faults mimic a flaky test (the runner only 
   `tests/conftest.py` at `backend/`, `backend/tests` would never reach `sys.path`, and
   `pytest_plugins = ["fixtures.mock_llm", ...]` dies with `No module named 'fixtures'` — the
   same reason `--import-mode=importlib` is unusable here.
+- **A fixture plugin is loaded twice** (`fixtures.<module>` by conftest, `tests.fixtures.<module>`
+  by tests), so a top-level random value differs between the copies. Draw per-run values from
+  `tests.run_identity.RUN_TOKEN` (enforced by `unit/test_fixture_plugins_share_run_state.py`).
+- **Many endpoints `db.close()` the request session** before slow work (`rg 'db\.close\(\)'
+  app/api`); `client` shares `db_session`, so held ORM rows detach. Capture ids before the
+  request, or re-read with `db_session.get(Model, id, populate_existing=True)`.
+- **The shared `unit/_fake_liveness_redis.FakeRedis` must answer every command** the app sends
+  via `get_redis()`/`get_request_redis()`: `unit/test_fake_redis_covers_app_calls.py`.
+- **Patch a name where it is looked up**, not on a package re-export the route never reads
+  (`unit/test_patch_targets_reach_their_lookup.py`).
 - **`tests/integration/` is a directory name, not a marker.** Its contents split three ways:
   `integration`-marked (need the live stack), `gpu`-marked (boundary/diarization regression,
   lifecycle, perf gates), and three deliberately service-free tests in

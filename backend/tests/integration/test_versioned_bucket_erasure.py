@@ -180,10 +180,16 @@ def locked_media_bucket(monkeypatch) -> Iterator[str]:
 
 
 def test_a_version_under_legal_hold_fails_the_delete_and_is_named(locked_media_bucket):
-    """Partial failure reports failure: the held version survives and the error names it."""
+    """Partial failure reports failure: the held version survives and the error names it.
+
+    The name is on ``__cause__``, never in the raised message (343c40a4a: no object name in a
+    StorageError's text), so it reaches the log without reaching an API response.
+    """
+    from app.core.exceptions import StorageError
     from app.services.file_cleanup_service import delete_file_storage_artifacts
     from app.services.minio_service import delete_file
     from app.services.minio_service import minio_client
+    from app.services.storage_versions import StorageDeleteIncompleteError
 
     key = "user_1/file_999999902/held.wav"
     _put_versions(locked_media_bucket, key, versions=1)
@@ -192,8 +198,11 @@ def test_a_version_under_legal_hold_fails_the_delete_and_is_named(locked_media_b
     minio_client.enable_object_legal_hold(locked_media_bucket, key, held)
     _put_versions(locked_media_bucket, key, versions=1)  # a second, unheld version
 
-    with pytest.raises(Exception, match=held) as raised:
+    with pytest.raises(StorageError) as raised:
         delete_file(key)
-    assert key in str(raised.value)
+    assert key not in str(raised.value) and held not in str(raised.value)
+    cause = raised.value.__cause__
+    assert isinstance(cause, StorageDeleteIncompleteError), repr(cause)
+    assert f"{key}@{held}" in cause.remaining
     assert delete_file_storage_artifacts(999999902, {"storage_path": key}) is False
     assert _all_versions(locked_media_bucket) == [f"{key}@{held}"], "only the held one survives"

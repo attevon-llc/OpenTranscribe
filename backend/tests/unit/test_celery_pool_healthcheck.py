@@ -23,23 +23,25 @@ actually had:
   current one exits 1 on the second probe. Nothing was killed by hand; every
   SIGKILL was celery's own `asynpool.verify_process_alive`.
 
-These tests mock `subprocess.run` to feed the exact JSON shapes involved,
-including the live-captured storm shape above.
+These tests replace the broker client (`_probe_app`) with a fake whose
+`control.inspect(...).stats()` returns the exact reply shapes involved, including
+the live-captured storm shape above; `_inspect_stats` and its deadline run for real.
 """
 
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import tempfile
 import time
+from contextlib import AbstractContextManager
 from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
 import yaml
+from kombu.exceptions import OperationalError
 
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
 if str(_BACKEND_DIR) not in sys.path:
@@ -78,9 +80,19 @@ def _stats_json(worker: str, pids: list[int], total: dict | None = None) -> str:
     )
 
 
-def _completed(stdout: str = "", stderr: str = "", returncode: int = 0):
-    return subprocess.CompletedProcess(
-        args=["celery"], returncode=returncode, stdout=stdout, stderr=stderr
+def _fake_app(stats_reply=None, *, stats_side_effect=None) -> MagicMock:
+    """A stand-in for the bare Celery client; `stats()` answers like the real one."""
+    app = MagicMock()
+    stats = app.control.inspect.return_value.stats
+    stats.return_value = stats_reply
+    stats.side_effect = stats_side_effect
+    return app
+
+
+def _broker_replies(stats_json: str) -> AbstractContextManager[MagicMock]:
+    """Make the broker answer `inspect stats` with *stats_json* (the `--json` shape)."""
+    return patch.object(
+        celery_pool_healthcheck, "_probe_app", return_value=_fake_app(json.loads(stats_json))
     )
 
 
@@ -95,7 +107,7 @@ def _isolated_sample_dir(monkeypatch, tmp_path):
 @pytest.mark.unit
 class TestCheckPoolHasLiveProcesses:
     def test_healthy_when_pool_reports_live_processes(self):
-        with patch("subprocess.run", return_value=_completed(stdout=HEALTHY_STATS_JSON)):
+        with _broker_replies(HEALTHY_STATS_JSON):
             healthy, reason = check_pool_has_live_processes("cpu-processor@abc123")
 
         assert healthy is True
@@ -105,50 +117,54 @@ class TestCheckPoolHasLiveProcesses:
         """THE regression this script exists for: MainProcess answers, but
         with an empty child-process list — the exact live incident shape.
         """
-        with patch("subprocess.run", return_value=_completed(stdout=WEDGED_STATS_JSON)):
+        with _broker_replies(WEDGED_STATS_JSON):
             healthy, reason = check_pool_has_live_processes("cpu-processor@abc123")
 
         assert healthy is False
         assert "no live child processes" in reason
 
     def test_unhealthy_when_no_worker_replies(self):
-        """Live-verified shape: `celery inspect stats -d <nonexistent>` exits
-        69 with empty stdout and 'Error: No nodes replied...' on stderr.
+        """Live-verified shape: `inspect(destination=[<nonexistent>]).stats()` returns
+        None once the reply window closes (the CLI turned this into exit 69).
         """
-        with patch(
-            "subprocess.run",
-            return_value=_completed(
-                stdout="", stderr="Error: No nodes replied within time constraint", returncode=69
-            ),
-        ):
+        with patch.object(celery_pool_healthcheck, "_probe_app", return_value=_fake_app(None)):
             healthy, reason = check_pool_has_live_processes("cpu-processor@nonexistent")
 
         assert healthy is False
-        assert "rc=69" in reason
+        assert "no worker replied" in reason
 
-    def test_unhealthy_when_stdout_is_not_valid_json(self):
-        with patch("subprocess.run", return_value=_completed(stdout="not json at all")):
+    def test_unhealthy_when_the_broker_is_unreachable(self):
+        """Live-verified: a refused broker surfaces as kombu's OperationalError."""
+        app = _fake_app(stats_side_effect=OperationalError("Error 111 connecting. Refused."))
+        with patch.object(celery_pool_healthcheck, "_probe_app", return_value=app):
             healthy, reason = check_pool_has_live_processes("cpu-processor@abc123")
 
         assert healthy is False
-        assert "could not parse" in reason
+        assert "OperationalError" in reason
+        assert "Refused" in reason
 
     def test_unhealthy_when_payload_is_an_empty_object(self):
-        with patch("subprocess.run", return_value=_completed(stdout="{}")):
+        with _broker_replies("{}"):
             healthy, reason = check_pool_has_live_processes("cpu-processor@abc123")
 
         assert healthy is False
         assert "no worker replied" in reason
 
-    def test_unhealthy_when_the_command_itself_times_out(self):
-        with patch(
-            "subprocess.run",
-            side_effect=subprocess.TimeoutExpired(cmd="celery", timeout=15),
-        ):
+    def test_unhealthy_when_the_broker_exchange_outlives_the_deadline(self, monkeypatch):
+        """kombu publishes control messages with `retry=True`, so a blackholed broker
+        blocks rather than failing. The deadline must interrupt it and say so, before
+        Docker's own timeout SIGKILLs the probe with no reason recorded.
+        """
+        monkeypatch.setattr(celery_pool_healthcheck, "INSPECT_TIMEOUT_S", 0.2)
+        app = _fake_app(stats_side_effect=lambda: time.sleep(5))
+        started = time.monotonic()
+        with patch.object(celery_pool_healthcheck, "_probe_app", return_value=app):
             healthy, reason = check_pool_has_live_processes("cpu-processor@abc123")
 
+        assert time.monotonic() - started < 2, "the deadline did not interrupt the wait"
         assert healthy is False
-        assert "timed out" in reason
+        assert "no answer within" in reason
+        app.close.assert_called_once()
 
     def test_pool_key_missing_entirely_is_unhealthy_not_a_crash(self):
         """A future celery version could drop or rename `pool` — this must
@@ -156,10 +172,7 @@ class TestCheckPoolHasLiveProcesses:
         false-unhealthy that could flap a fine worker, but MUST NOT silently
         report healthy on data it cannot interpret).
         """
-        with patch(
-            "subprocess.run",
-            return_value=_completed(stdout='{"cpu-processor@abc123": {}}'),
-        ):
+        with _broker_replies('{"cpu-processor@abc123": {}}'):
             healthy, reason = check_pool_has_live_processes("cpu-processor@abc123")
 
         assert healthy is False
@@ -168,60 +181,118 @@ class TestCheckPoolHasLiveProcesses:
 @pytest.mark.unit
 class TestMainExitCode:
     def test_exit_zero_when_healthy(self):
-        with patch("subprocess.run", return_value=_completed(stdout=HEALTHY_STATS_JSON)):
+        with _broker_replies(HEALTHY_STATS_JSON):
             assert main(["celery_pool_healthcheck.py", "cpu-processor@abc123"]) == 0
 
     def test_exit_one_when_unhealthy(self):
-        with patch("subprocess.run", return_value=_completed(stdout=WEDGED_STATS_JSON)):
+        with _broker_replies(WEDGED_STATS_JSON):
             assert main(["celery_pool_healthcheck.py", "cpu-processor@abc123"]) == 1
 
     def test_exit_two_on_bad_usage(self):
         assert main(["celery_pool_healthcheck.py"]) == 2
 
-    def test_invokes_the_real_celery_inspect_stats_command_shape(self):
-        """Pin the exact command line against celery's real CLI contract, so a
-        typo (`--json` misspelled, `-d` dropped) is caught here instead of at
-        3 AM when Docker reports every prefork worker unhealthy at once.
+    def test_asks_only_the_named_node_through_the_documented_inspect_api(self):
+        """Pin the request: `app.control.inspect(destination=[node]).stats()`. Without
+        the destination every worker on the broker answers and the first reply, not
+        necessarily this container's, would be judged.
         """
-        mock_run = MagicMock(return_value=_completed(stdout=HEALTHY_STATS_JSON))
-        with patch("subprocess.run", mock_run):
-            check_pool_has_live_processes("cpu-processor@myhost")
+        app = _fake_app(json.loads(HEALTHY_STATS_JSON))
+        with patch.object(celery_pool_healthcheck, "_probe_app", return_value=app):
+            healthy, reason = check_pool_has_live_processes("cpu-processor@myhost")
 
-        args, kwargs = mock_run.call_args
-        command = args[0]
-        assert command[:4] == ["celery", "-A", "app.core.celery", "inspect"]
-        assert "stats" in command
-        assert "-d" in command
-        assert "cpu-processor@myhost" in command
-        assert "--json" in command
-        assert kwargs.get("timeout") is not None
+        assert app.control.inspect.call_args.kwargs["destination"] == ["cpu-processor@myhost"]
+        app.control.inspect.return_value.stats.assert_called_once_with()
+        app.close.assert_called_once()
+        assert healthy is True, "the reply to that request is what the verdict is built from"
+        assert "3 live child process" in reason
 
     def test_asks_for_a_reply_window_wider_than_celerys_one_second_default(self):
         """`inspect stats` is answered by the MainProcess event loop; celery's own
-        1.0s default (`celery/bin/control.py`) misses it on a busy worker and flips
+        1.0s default (`Inspect(timeout=1.0)`) misses it on a busy worker and flips
         the container unhealthy for a reason unrelated to pool health.
         """
-        mock_run = MagicMock(return_value=_completed(stdout=HEALTHY_STATS_JSON))
-        with patch("subprocess.run", mock_run):
+        app = _fake_app(json.loads(HEALTHY_STATS_JSON))
+        with patch.object(celery_pool_healthcheck, "_probe_app", return_value=app):
             check_pool_has_live_processes("cpu-processor@myhost")
 
-        command = mock_run.call_args[0][0]
-        assert "--timeout" in command
-        reply_window = float(command[command.index("--timeout") + 1])
+        reply_window = app.control.inspect.call_args.kwargs["timeout"]
         assert reply_window > 1.0
+        assert reply_window < celery_pool_healthcheck.INSPECT_TIMEOUT_S
 
-    def test_the_probe_skips_the_ml_preamble_it_has_no_use_for(self):
-        """The probe broadcasts and reads a reply; it never runs a task. Importing
-        torch for that cost 7.0-7.7s of a 10s compose healthcheck timeout, measured
-        on a live worker, five containers deep, every 30s.
-        """
-        mock_run = MagicMock(return_value=_completed(stdout=HEALTHY_STATS_JSON))
-        with patch("subprocess.run", mock_run):
-            check_pool_has_live_processes("cpu-processor@myhost")
 
-        env = mock_run.call_args.kwargs.get("env") or {}
-        assert env.get("SKIP_CELERY") == "true"
-        assert "PATH" in env, "the child must inherit the environment, not replace it"
+@pytest.mark.unit
+class TestTheProbeStaysCheap:
+    """It runs every 30s in every worker container on the host. Shelling out to
+    `celery -A app.core.celery inspect stats` cost ~2.4s of CPU per probe (measured
+    in a live cpu-processor container): the click CLI with its flower / click-repl /
+    prompt_toolkit plugins, then the app and pydantic-settings, for a broker round
+    trip under 0.1s.
+    """
+
+    _IMPORTED = (
+        "import sys;"
+        "from scripts.celery_pool_healthcheck import _probe_app;"
+        "app = _probe_app();"
+        "heavy = ('app.core.celery', 'app.core.config', 'pydantic_settings', 'torch',"
+        " 'celery.bin.celery', 'flower', 'prompt_toolkit');"
+        "print(sorted(m for m in heavy if m in sys.modules) or 'none')"
+    )
+
+    def test_building_the_client_imports_neither_the_app_nor_the_cli(self, run_in_clean_process):
+        assert run_in_clean_process(self._IMPORTED, SKIP_CELERY="false") == "none"
+
+    def test_no_subprocess_is_spawned_for_the_probe(self):
+        app = _fake_app(json.loads(HEALTHY_STATS_JSON))
+        with (
+            patch.object(celery_pool_healthcheck, "_probe_app", return_value=app),
+            patch("subprocess.run") as run,
+            patch("subprocess.Popen") as popen,
+        ):
+            healthy, _ = check_pool_has_live_processes("cpu-processor@myhost")
+
+        assert healthy is True
+        run.assert_not_called()
+        popen.assert_not_called()
+
+
+@pytest.mark.unit
+class TestProbeClientMatchesTheWorkersBroker:
+    """The bare client must reach the same broker, over the same TLS, as the app."""
+
+    _PROBE = (
+        "from scripts.celery_pool_healthcheck import _probe_app;"
+        "app = _probe_app();"
+        "print(app.conf.broker_url, app.conf.broker_use_ssl, sep='|')"
+    )
+    _APP = (
+        "from app.core.celery import celery_app;"
+        "print(celery_app.conf.broker_url, celery_app.conf.broker_use_ssl, sep='|')"
+    )
+    _UNSET = ("CELERY_BROKER_URL", "REDIS_URL", "REDIS_PASSWORD", "REDIS_USE_TLS")
+
+    @pytest.mark.parametrize(
+        "env",
+        [
+            {"REDIS_HOST": "redis", "REDIS_PORT": "6379"},
+            {"REDIS_HOST": "cache.internal", "REDIS_PORT": "6380", "REDIS_PASSWORD": "pw"},
+            {"REDIS_HOST": "redis", "REDIS_PORT": "6379", "REDIS_USE_TLS": "true"},
+            {
+                "REDIS_HOST": "redis",
+                "REDIS_USE_TLS": "true",
+                "CELERY_REDIS_SSL_CERT_REQS": "none",
+            },
+            {"REDIS_HOST": "ignored", "REDIS_URL": "redis://from-redis-url:1/0"},
+            {"REDIS_URL": "redis://a:1/0", "CELERY_BROKER_URL": "rediss://explicit:2/0"},
+            {"REDIS_HOST": "redis", "REDIS_URL": "", "CELERY_BROKER_URL": ""},
+        ],
+        ids=["plain", "password", "tls", "tls-no-verify", "redis-url", "broker-url", "empty-urls"],
+    )
+    def test_same_broker_url_and_tls_options_as_the_app(self, run_in_clean_process, env):
+        probe = run_in_clean_process(self._PROBE, unset=self._UNSET, **env)
+        app = run_in_clean_process(self._APP, unset=self._UNSET, **env)
+
+        assert probe == app
+        assert probe.split("|")[0], "an empty broker URL would fall back to amqp://"
 
 
 @pytest.mark.unit
@@ -233,9 +304,9 @@ class TestRespawnStormDetection:
         `total` frozen. The pre-fix script exits 0 on both of these payloads.
         """
         worker = "cpu-processor@storm"
-        with patch("subprocess.run", return_value=_completed(stdout=_stats_json(worker, [11, 12]))):
+        with _broker_replies(_stats_json(worker, [11, 12])):
             first_healthy, _ = check_pool_has_live_processes(worker)
-        with patch("subprocess.run", return_value=_completed(stdout=_stats_json(worker, [98, 99]))):
+        with _broker_replies(_stats_json(worker, [98, 99])):
             second_healthy, reason = check_pool_has_live_processes(worker)
 
         assert first_healthy is True, "the first probe has nothing to compare against"
@@ -249,15 +320,9 @@ class TestRespawnStormDetection:
         load would be reported as a storm.
         """
         worker = "cpu-processor@busy"
-        with patch(
-            "subprocess.run",
-            return_value=_completed(stdout=_stats_json(worker, [11, 12], {"work": 40})),
-        ):
+        with _broker_replies(_stats_json(worker, [11, 12], {"work": 40})):
             check_pool_has_live_processes(worker)
-        with patch(
-            "subprocess.run",
-            return_value=_completed(stdout=_stats_json(worker, [98, 99], {"work": 81})),
-        ):
+        with _broker_replies(_stats_json(worker, [98, 99], {"work": 81})):
             healthy, reason = check_pool_has_live_processes(worker)
 
         assert healthy is True
@@ -265,13 +330,9 @@ class TestRespawnStormDetection:
 
     def test_a_pool_that_keeps_any_child_across_probes_is_healthy(self):
         worker = "cpu-processor@steady"
-        with patch(
-            "subprocess.run", return_value=_completed(stdout=_stats_json(worker, [11, 12, 13]))
-        ):
+        with _broker_replies(_stats_json(worker, [11, 12, 13])):
             check_pool_has_live_processes(worker)
-        with patch(
-            "subprocess.run", return_value=_completed(stdout=_stats_json(worker, [11, 12, 99]))
-        ):
+        with _broker_replies(_stats_json(worker, [11, 12, 99])):
             healthy, reason = check_pool_has_live_processes(worker)
 
         assert healthy is True
@@ -279,7 +340,7 @@ class TestRespawnStormDetection:
 
     def test_the_first_probe_after_a_restart_defers_rather_than_guesses(self):
         worker = "cpu-processor@fresh"
-        with patch("subprocess.run", return_value=_completed(stdout=_stats_json(worker, [11, 12]))):
+        with _broker_replies(_stats_json(worker, [11, 12])):
             healthy, reason = check_pool_has_live_processes(worker)
 
         assert healthy is True
@@ -290,12 +351,12 @@ class TestRespawnStormDetection:
         Judging on it would flag a worker that was merely restarted.
         """
         worker = "cpu-processor@gap"
-        with patch("subprocess.run", return_value=_completed(stdout=_stats_json(worker, [11, 12]))):
+        with _broker_replies(_stats_json(worker, [11, 12])):
             check_pool_has_live_processes(worker)
 
         stale = time.time() + celery_pool_healthcheck.SAMPLE_STALE_AFTER_S + 1
         monkeypatch.setattr(time, "time", lambda: stale)
-        with patch("subprocess.run", return_value=_completed(stdout=_stats_json(worker, [98, 99]))):
+        with _broker_replies(_stats_json(worker, [98, 99])):
             healthy, reason = check_pool_has_live_processes(worker)
 
         assert healthy is True
@@ -303,9 +364,9 @@ class TestRespawnStormDetection:
 
     def test_two_workers_do_not_share_a_sample(self):
         """One state file per node name — five prefork containers can each run this."""
-        with patch("subprocess.run", return_value=_completed(stdout=_stats_json("a@h", [11, 12]))):
+        with _broker_replies(_stats_json("a@h", [11, 12])):
             check_pool_has_live_processes("a@h")
-        with patch("subprocess.run", return_value=_completed(stdout=_stats_json("b@h", [98, 99]))):
+        with _broker_replies(_stats_json("b@h", [98, 99])):
             healthy, reason = check_pool_has_live_processes("b@h")
 
         assert healthy is True, "worker b's first probe must not be judged against worker a's"
@@ -316,7 +377,7 @@ class TestRespawnStormDetection:
         the acceptable degradation; taking the container down is not.
         """
         monkeypatch.setattr(tempfile, "tempdir", "/proc/nonexistent-and-unwritable")
-        with patch("subprocess.run", return_value=_completed(stdout=_stats_json("c@h", [11, 12]))):
+        with _broker_replies(_stats_json("c@h", [11, 12])):
             healthy, reason = check_pool_has_live_processes("c@h")
 
         assert healthy is True
@@ -336,7 +397,7 @@ class TestNonPreforkPools:
         """Live shape, captured from `celery-redaction`: no `processes` key at all.
         Requiring one would fail a perfectly healthy worker.
         """
-        with patch("subprocess.run", return_value=_completed(stdout=self.THREADS_STATS_JSON)):
+        with _broker_replies(self.THREADS_STATS_JSON):
             healthy, reason = check_pool_has_live_processes("redaction@abc123")
 
         assert healthy is True
@@ -345,16 +406,13 @@ class TestNonPreforkPools:
     def test_a_threads_pool_is_not_run_through_the_storm_check(self):
         """Its "pid set" is empty every probe; a storm verdict there would be noise."""
         for _ in range(3):
-            with patch("subprocess.run", return_value=_completed(stdout=self.THREADS_STATS_JSON)):
+            with _broker_replies(self.THREADS_STATS_JSON):
                 healthy, _ = check_pool_has_live_processes("redaction@abc123")
             assert healthy is True
 
     def test_an_uninterpretable_pool_section_fails_closed(self):
         """Reporting healthy on data it could not read is precisely the old bug."""
-        with patch(
-            "subprocess.run",
-            return_value=_completed(stdout='{"w@h": {"pool": {"max-concurrency": 2}}}'),
-        ):
+        with _broker_replies('{"w@h": {"pool": {"max-concurrency": 2}}}'):
             healthy, reason = check_pool_has_live_processes("w@h")
 
         assert healthy is False
@@ -414,10 +472,10 @@ class TestEveryCeleryWorkerUsesThePoolAwareCheck:
 
 @pytest.mark.unit
 class TestProbeBudgetsMatchCompose:
-    def test_the_subprocess_bound_sits_below_the_compose_healthcheck_timeout(self):
-        """Otherwise Docker kills the probe first and the TimeoutExpired branch —
-        the one that reports *why* the probe gave up — can never run. It could not,
-        before this: the bound was 15s against a 10s compose timeout.
+    def test_the_probe_deadline_sits_below_the_compose_healthcheck_timeout(self):
+        """Otherwise Docker kills the probe first and the deadline branch — the one
+        that reports *why* the probe gave up — can never run. It could not, once
+        before: the bound was 15s against a 10s compose timeout.
         """
         compose = yaml.safe_load((_BACKEND_DIR.parent / "docker-compose.yml").read_text())
         timeouts = {

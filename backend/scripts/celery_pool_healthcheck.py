@@ -47,30 +47,50 @@ use this script too — three of them (``GPU_WORKER_POOL``,
 ``REDACTION_WORKER_POOL``, ``GPU_SCALE_POOL``) are prefork-*capable* by env var,
 and ``core/celery.py`` explicitly recommends flipping the first one, which under
 the old wiring silently downgraded them to the blind check.
+
+**Cheap by construction.** This runs every 30 s in every worker container, so the
+request is sent in-process through a bare ``Celery`` client built from the broker
+URL (``app.core.broker_connection``), the documented ``app.control.inspect()`` API.
+It used to shell out to ``celery -A app.core.celery inspect stats``: a second
+interpreter that loaded the click CLI and its plugins (flower, click-repl and
+prompt_toolkit, an entry-point scan) plus the whole app and pydantic-settings, about
+2.4 s of CPU per probe for a broker round trip of under 0.1 s. The request and the
+reply are the same ones the CLI sent and printed with ``--json``.
 """
 
 from __future__ import annotations
 
 import contextlib
 import json
-import os
 import re
-import subprocess
+import signal
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
-# Reply window handed to `celery inspect`. Celery's own default is 1.0s
-# (`celery/bin/control.py`), which `inspect stats` — answered by the MainProcess
-# event loop — routinely misses on a busy worker, producing a false unhealthy
-# that has nothing to do with pool health.
+from celery import Celery
+from kombu.exceptions import OperationalError
+
+from app.core.broker_connection import broker_url_from_env
+from app.core.broker_connection import redis_ssl_options
+
+# Reply window handed to `inspect()`. Celery's own default is 1.0s (`Inspect`'s
+# `timeout=1.0`), which `inspect stats` — answered by the MainProcess event loop —
+# routinely misses on a busy worker, producing a false unhealthy that has nothing to
+# do with pool health. The wait ends as soon as the one named node replies (kombu
+# limits a destination-addressed broadcast to `len(destination)` replies).
 INSPECT_REPLY_TIMEOUT_S = 5.0
 
-# Wall-clock bound on the whole `celery` invocation. MUST stay below the
-# `healthcheck.timeout` in docker-compose.yml (10s) or Docker kills the probe
-# first and the TimeoutExpired branch below can never run.
-INSPECT_TIMEOUT_S = 8
+# Wall-clock bound on the broker exchange. Together with the imports before it
+# (about 1s cold) it MUST stay below the `healthcheck.timeout` in docker-compose.yml
+# (10s), or Docker SIGKILLs the probe first and the deadline branch below, the one
+# that says WHY it gave up, can never run (a blackholed broker measured 8.75s end to
+# end with this at 8). A bound is needed beyond the reply window: kombu publishes
+# control messages with `retry=True`, so an unreachable broker is retried, not failed.
+INSPECT_TIMEOUT_S = 7
 
 # A prior sample older than this is not compared against — the probe interval is
 # 30s, so this tolerates four missed probes before falling back to "cannot judge".
@@ -123,6 +143,58 @@ def _accepted_task_count(stats: dict) -> int:
     return 0
 
 
+class ProbeDeadlineError(Exception):
+    """The broker exchange outlived :data:`INSPECT_TIMEOUT_S`."""
+
+
+@contextlib.contextmanager
+def _deadline(seconds: float) -> Iterator[None]:
+    """Raise :class:`ProbeDeadlineError` in this (main) thread after *seconds*.
+
+    ``SIGALRM`` is used because the blocking work is inside kombu/redis-py socket calls
+    with no overall timeout of their own; a handler that raises interrupts them
+    (PEP 475 retries an interrupted call only when the handler returns).
+    """
+
+    def _expired(signum: int, frame: object) -> None:
+        raise ProbeDeadlineError
+
+    previous = signal.signal(signal.SIGALRM, _expired)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def _probe_app() -> Celery:
+    """A broker-only Celery client: no task modules, no ML preamble, no settings import.
+
+    Only what the control exchange depends on is configured — the broker URL and its TLS
+    options. ``core/celery.py`` overrides no ``control_*`` setting and keeps celery's
+    default ``json`` accept list, so the defaults here address the same pidbox.
+    """
+    url = broker_url_from_env()
+    app = Celery("celery-pool-healthcheck", broker=url, set_as_current=False)
+    app.conf.broker_use_ssl = redis_ssl_options(url)
+    return app
+
+
+def _inspect_stats(worker_name: str) -> dict[str, Any] | None:
+    """``inspect stats`` for one node: ``{node: stats}``, or None when nobody replied."""
+    app = _probe_app()
+    try:
+        with _deadline(INSPECT_TIMEOUT_S):
+            inspector = app.control.inspect(
+                destination=[worker_name], timeout=INSPECT_REPLY_TIMEOUT_S
+            )
+            reply: dict[str, Any] | None = inspector.stats()
+            return reply
+    finally:
+        app.close()
+
+
 def check_pool_has_live_processes(worker_name: str) -> tuple[bool, str]:
     """Return ``(healthy, reason)`` for the named worker's prefork pool.
 
@@ -130,46 +202,14 @@ def check_pool_has_live_processes(worker_name: str) -> tuple[bool, str]:
         worker_name: Full Celery node name, e.g. ``cpu-processor@somehost``.
     """
     try:
-        proc = subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603
-            # Fixed argv, no shell; `worker_name` is a Docker healthcheck's own
-            # `$$HOSTNAME`-derived node name, not external/user input. `celery`
-            # is resolved via PATH deliberately — same convention as every other
-            # subprocess call in this codebase that shells out to a tool
-            # installed into the image's venv rather than an absolute path.
-            [  # noqa: S607 - tool resolved from PATH inside the image
-                "celery",
-                "-A",
-                "app.core.celery",
-                "inspect",
-                "--timeout",
-                str(INSPECT_REPLY_TIMEOUT_S),
-                "stats",
-                "-d",
-                worker_name,
-                "--json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=INSPECT_TIMEOUT_S,
-            # The probe is a CLI *client*: it broadcasts and reads a reply, it never
-            # runs a task. `SKIP_CELERY` skips only `core/celery.py`'s ML preamble
-            # (the torch import and its `torch.load` patch), leaving the app, broker
-            # and queue config identical. Measured on a live worker: 7.0-7.7s -> 2.8s
-            # per probe. That matters because the pre-existing 7.3s ran against a 10s
-            # compose `healthcheck.timeout`, five containers deep, every 30s — close
-            # enough that ordinary load could flap a healthy worker.
-            env={**os.environ, "SKIP_CELERY": "true"},
-        )
-    except subprocess.TimeoutExpired:
-        return False, "celery inspect stats timed out"
-
-    if proc.returncode != 0 or not proc.stdout.strip():
-        return False, f"celery inspect stats failed (rc={proc.returncode}): {proc.stderr.strip()}"
-
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        return False, f"could not parse inspect stats output: {exc}"
+        payload = _inspect_stats(worker_name)
+    except ProbeDeadlineError:
+        return False, f"inspect stats gave no answer within {INSPECT_TIMEOUT_S}s"
+    except (OperationalError, OSError) as exc:
+        # Broker unreachable / refused / TLS failure (kombu re-raises redis-py connection
+        # errors as OperationalError). Anything unforeseen propagates and exits 1, which
+        # Docker reads as unhealthy too, so no exception can turn into a healthy verdict.
+        return False, f"inspect stats failed: {type(exc).__name__}: {exc}"
 
     if not payload:
         return False, "no worker replied to inspect stats"

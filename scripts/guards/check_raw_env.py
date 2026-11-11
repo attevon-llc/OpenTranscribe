@@ -62,7 +62,8 @@ _HANDOFF = 'process-env-handoff'
 _CLI = 'cli-script'
 EXEMPT.update(
     {
-        'backend/app/core/celery.py': f'{_BOOTSTRAP}: broker TLS and pool mode are read while the Celery app is built',
+        'backend/app/core/celery.py': f'{_BOOTSTRAP}: pool mode is read while the Celery app is built',
+        'backend/app/core/broker_connection.py': f'{_BOOTSTRAP}: broker URL and TLS mode for the worker healthcheck, which must not pay for importing Settings',
         'backend/app/core/celery_worker_lifecycle.py': f'{_HANDOFF}: pins OMP/torch thread env at worker boot before torch loads',
         'backend/app/core/privacy_env.py': f'{_BOOTSTRAP}: setdefault of telemetry opt-outs before any import can read them',
         'backend/app/core/legacy_auth_env.py': f'{_BOOTSTRAP}: the OIDC env-name compat reader that Settings itself calls',

@@ -28,6 +28,10 @@ def test_held_file_ids_plans_as_a_semi_join_without_a_subplan(gov):
         dialect=gov.db.get_bind().dialect, compile_kwargs={"literal_binds": True}
     )
 
+    # With a handful of rows the planner may legitimately pick a Nested Loop over the
+    # de-duplicated union. Forbid it (transaction-local) so the join, when there is no
+    # SubPlan, is always a named Join node regardless of table statistics.
+    gov.db.execute(text("SELECT set_config('enable_nestloop', 'off', true)"))
     plan = "\n".join(r[0] for r in gov.db.execute(text(f"EXPLAIN {compiled}")))
 
     # A semi-join, or a join against the de-duplicated union (the planner's choice of the two).

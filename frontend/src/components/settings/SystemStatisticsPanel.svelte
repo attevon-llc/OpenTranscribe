@@ -721,10 +721,6 @@
     color: var(--warning-text);
   }
 
-  :global([data-theme='dark']) .stat-detail-warning {
-    color: #fbbf24;
-  }
-
   .stat-detail-active {
     color: var(--primary-on-surface);
     font-weight: var(--font-weight-medium);
@@ -745,11 +741,11 @@
   }
 
   .search-health-dot.healthy {
-    background: #22c55e;
+    background: var(--success-color);
   }
 
   .search-health-dot.error {
-    background: #ef4444;
+    background: var(--error-color);
   }
 
   .search-health-label {
@@ -909,12 +905,6 @@
     border-radius: var(--radius-xl);
     padding: var(--space-0-5) var(--space-2);
     cursor: help;
-  }
-
-  :global([data-theme='dark']) .model-fallback-badge {
-    color: #fbbf24;
-    background: rgba(251, 191, 36, 0.12);
-    border-color: #fbbf24;
   }
 
   /* Responsive Design */

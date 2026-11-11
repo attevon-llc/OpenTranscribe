@@ -1,0 +1,52 @@
+{
+  "sources": [
+    {
+      "uuid": "5a1c0000-0000-4000-8000-0000000000b1",
+      "hostname": "media.example.org",
+      "provider_type": "mediacms",
+      "username": "me",
+      "has_credentials": true,
+      "verify_ssl": true,
+      "label": "Archive",
+      "is_active": true,
+      "is_shared": true,
+      "shared_at": "2026-11-01T12:00:00",
+      "is_own": true,
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00"
+    },
+    {
+      "uuid": "5a1c0000-0000-4000-8000-0000000000b2",
+      "hostname": "open.example.org",
+      "provider_type": "mediacms",
+      "username": "",
+      "has_credentials": false,
+      "verify_ssl": false,
+      "label": "Public",
+      "is_active": true,
+      "is_shared": false,
+      "is_own": true,
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00"
+    }
+  ],
+  "shared_sources": [
+    {
+      "uuid": "5a1c0000-0000-4000-8000-0000000000b3",
+      "hostname": "shared.example.org",
+      "provider_type": "mediacms",
+      "username": "svc",
+      "has_credentials": true,
+      "verify_ssl": true,
+      "label": "Shared",
+      "is_active": true,
+      "is_shared": true,
+      "shared_at": "2026-11-01T12:00:00",
+      "owner_name": "Pat Admin",
+      "owner_role": "admin",
+      "is_own": false,
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00"
+    }
+  ]
+}

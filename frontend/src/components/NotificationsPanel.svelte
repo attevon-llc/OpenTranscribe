@@ -102,21 +102,11 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
-    box-shadow:
-      0 20px 25px -5px rgba(0, 0, 0, 0.1),
-      0 10px 10px -5px rgba(0, 0, 0, 0.04),
-      0 0 0 1px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-xl);
     z-index: var(--z-dropdown);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-  }
-
-  :global([data-theme='dark']) .notifications-panel {
-    box-shadow:
-      0 20px 25px -5px rgba(0, 0, 0, 0.4),
-      0 10px 10px -5px rgba(0, 0, 0, 0.2),
-      0 0 0 1px rgba(255, 255, 255, 0.05);
   }
 
   @media (max-width: 480px) {

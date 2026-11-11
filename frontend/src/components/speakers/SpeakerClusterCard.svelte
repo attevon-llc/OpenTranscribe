@@ -368,7 +368,7 @@
     border-color: var(--primary-color);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   /* Split — blue outline → solid blue (matches primary action palette) */
@@ -382,7 +382,7 @@
     border-color: var(--primary-hover);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   /* Promote — blue outline → solid blue */
@@ -396,7 +396,7 @@
     border-color: var(--primary-color);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(var(--accent-rgb), 0.3);
+    box-shadow: var(--shadow-primary-hover);
   }
 
   /* Unassign — amber outline → solid amber */
@@ -410,7 +410,7 @@
     border-color: var(--warning-solid-hover);
     color: var(--text-on-warning);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(var(--warning-color-rgb), 0.3);
+    box-shadow: var(--shadow-hover);
   }
 
   /* Delete — red outline → solid red */
@@ -424,7 +424,7 @@
     border-color: var(--error-solid);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(var(--error-color-rgb), 0.3);
+    box-shadow: var(--shadow-danger-hover);
   }
 
   /* Confirm Unassign — solid red (irreversible action, stays solid) */
@@ -439,7 +439,7 @@
     border-color: var(--error-solid);
     color: var(--text-on-solid);
     transform: scale(1.02);
-    box-shadow: 0 3px 8px rgba(var(--error-color-rgb), 0.3);
+    box-shadow: var(--shadow-danger-hover);
   }
 
 

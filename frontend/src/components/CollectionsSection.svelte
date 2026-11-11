@@ -140,14 +140,4 @@
     text-align: center;
     padding: var(--space-5);
   }
-
-  /* Dark mode support */
-  :global([data-theme='dark']) .collection-chip {
-    background: rgba(var(--accent-rgb), 0.2);
-    color: #93bbfc;
-  }
-
-  :global([data-theme='dark']) .collection-chip.more {
-    background: rgba(255, 255, 255, 0.1);
-  }
 </style>

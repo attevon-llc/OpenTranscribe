@@ -102,15 +102,9 @@
     gap: var(--space-3);
     padding: var(--space-1-5) var(--space-4);
     font-size: var(--font-size-sm);
-    background: #fef3c7;
-    color: #78350f;
-    border-bottom: 1px solid #f59e0b;
-  }
-
-  :global([data-theme='dark']) .erasure-banner {
-    background: #422006;
-    color: #fde68a;
-    border-bottom-color: #b45309;
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    border-bottom: 1px solid var(--warning-color);
   }
 
   .manage {

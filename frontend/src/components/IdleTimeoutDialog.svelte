@@ -167,7 +167,7 @@
   }
 
   .session-backdrop {
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--modal-backdrop);
   }
 
   /* Opaque on purpose: a locked session must conceal what was on screen (AC-11). */
@@ -183,7 +183,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     padding: var(--space-6);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-xl);
   }
 
   .session-dialog h2 {

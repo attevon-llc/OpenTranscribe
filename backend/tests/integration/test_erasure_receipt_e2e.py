@@ -8,9 +8,13 @@ no code with the measurers: a direct ``list_objects(include_version=True)``, a d
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
+import sys
 import uuid as uuid_pkg
+from pathlib import Path
+from types import ModuleType
 
 import pytest
 from sqlalchemy import text
@@ -30,6 +34,51 @@ pytestmark = [
         reason="needs the live MinIO and OpenSearch",
     ),
 ]
+
+
+#: This module's own unclassified index (see the allow-list test). Never ignored here.
+_OWN_STRAY_PREFIX = "test_erasure_receipt_stray_"
+
+
+def _test_index_registry() -> ModuleType:
+    """``scripts/lib/test_artifact_sweep.py``: the registered shape of every test index."""
+    path = Path(__file__).resolve().parents[3] / "scripts" / "lib" / "test_artifact_sweep.py"
+    spec = importlib.util.spec_from_file_location("test_artifact_sweep", path)
+    assert spec is not None and spec.loader is not None, f"cannot load {path}"
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(autouse=True)
+def _other_tests_indexes_are_not_unclassified(monkeypatch):
+    """Ignore the throwaway indexes OTHER test modules hold on the shared cluster.
+
+    The receipt lists every index in the cluster and refuses to verify while one is
+    unclassified (``os.unclassified``). The gate runs this module beside ~30 others that each
+    create a registered ``test_*`` index for a few seconds, so whether a receipt here came out
+    ``verified`` depended on what another xdist worker happened to hold at that moment. Only
+    names that FULLY match a registered test-index shape are ignored, and never this
+    module's own stray, so a production index, an unregistered index, or this module's
+    deliberate stray still blocks verification exactly as in production.
+    """
+    from app.services.erasure_receipt import stores_external
+
+    registry = _test_index_registry()
+    configured = stores_external.ignored_indices
+
+    def _ignored() -> set[str]:
+        names = [r["index"] for r in stores_external._os_client().cat.indices(format="json")]
+        others = {
+            n
+            for n in names
+            if registry.match_spec(n, registry.TEST_INDEX_SPECS) is not None
+            and not n.startswith(_OWN_STRAY_PREFIX)
+        }
+        return configured() | others
+
+    monkeypatch.setattr(stores_external, "ignored_indices", _ignored)
 
 
 @pytest.fixture()
@@ -233,7 +282,7 @@ def test_unclassified_index_blocks_verification_until_allow_listed(world):
 
     w = world()
     w2 = world("allow")
-    stray = f"test_erasure_receipt_stray_{uuid_pkg.uuid4().hex[:12]}"
+    stray = f"{_OWN_STRAY_PREFIX}{uuid_pkg.uuid4().hex[:12]}"
     try:
         create_test_index(opensearch_client, stray)
         summary = _erase_user(w.user_id)

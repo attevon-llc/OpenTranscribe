@@ -592,7 +592,7 @@
 
   .stat-card-clickable:hover {
     border-color: var(--primary-color);
-    box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.1);
+    box-shadow: var(--shadow-md);
   }
 
   .stat-card-with-bar {

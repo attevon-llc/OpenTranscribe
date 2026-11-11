@@ -92,7 +92,7 @@
     max-height: 900px;
     background-color: var(--surface-color);
     border-radius: var(--radius-2xl);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-xl);
     overflow: hidden;
     animation: slide-up 0.3s ease-out;
     display: flex;

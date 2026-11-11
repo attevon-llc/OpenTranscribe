@@ -926,8 +926,8 @@
     position: fixed;
     left: var(--tooltip-left, 50%);
     top: var(--tooltip-top, 50%);
-    background: #1a1a1a;
-    color: var(--text-on-solid);
+    background: var(--tooltip-bg);
+    color: var(--tooltip-text);
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
@@ -936,7 +936,7 @@
     white-space: normal;
     z-index: var(--z-toast);
     line-height: 1.4;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-lg);
     text-align: left;
     pointer-events: none;
     transform: translate(-50%, 8px);

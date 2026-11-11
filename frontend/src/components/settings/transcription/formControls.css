@@ -23,7 +23,7 @@
 .tx-form .form-select:focus {
   outline: none;
   border-color: var(--focus-ring-color);
-  box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
+  box-shadow: var(--focus-ring);
 }
 
 .tx-form .input-hint {
@@ -50,7 +50,7 @@
 .tx-form .form-input:focus {
   outline: none;
   border-color: var(--focus-ring-color);
-  box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
+  box-shadow: var(--focus-ring);
 }
 
 .tx-form .form-input:disabled {

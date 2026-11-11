@@ -625,7 +625,7 @@
     top: 0;
     width: 5px;
     height: 9px;
-    border: 2px solid white;
+    border: 2px solid var(--text-on-solid);
     border-top: none;
     border-left: none;
     transform: rotate(45deg);

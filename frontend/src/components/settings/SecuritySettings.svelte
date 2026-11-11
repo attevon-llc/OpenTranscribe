@@ -495,7 +495,7 @@
 
   .qr-code {
     padding: var(--space-4);
-    background-color: white;
+    background-color: var(--qr-surface);
     border-radius: var(--radius-lg);
   }
 

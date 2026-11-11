@@ -912,6 +912,7 @@
     background: rgba(var(--accent-rgb), 0.08);
   }
 
+  /* Dark: a stronger accent alpha, because the same tint is fainter over the dark surface. */
   :global([data-theme='dark']) .step-item:not(:disabled):hover {
     background: rgba(var(--accent-rgb), 0.12);
   }
@@ -1074,15 +1075,15 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2-5) var(--space-3);
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background: rgba(var(--error-color-rgb), 0.08);
+    border: 1px solid rgba(var(--error-color-rgb), 0.2);
     border-radius: var(--radius-lg);
     color: var(--text-primary);
     font-size: var(--font-size-sm);
     margin-bottom: var(--space-3);
   }
 
-  .error-msg svg { flex-shrink: 0; color: #ef4444; }
+  .error-msg svg { flex-shrink: 0; color: var(--error-text); }
 
   /* ── Background Recording ── */
   .bg-recording {
@@ -1091,16 +1092,16 @@
     gap: var(--space-2);
     padding: var(--space-1-5) var(--space-3);
     margin-top: var(--space-2);
-    background: rgba(220, 38, 38, 0.08);
-    border: 1px solid rgba(220, 38, 38, 0.2);
+    background: rgba(var(--error-color-rgb), 0.08);
+    border: 1px solid rgba(var(--error-color-rgb), 0.2);
     border-radius: var(--radius-md);
     cursor: pointer;
     font-size: var(--font-size-xs);
-    color: #dc2626;
+    color: var(--error-text);
     width: 100%;
   }
 
-  .bg-recording:hover { background: rgba(220, 38, 38, 0.12); }
+  .bg-recording:hover { background: rgba(var(--error-color-rgb), 0.12); }
 
   .rec-pulse {
     width: 8px;
@@ -1175,6 +1176,7 @@
     transform: translateY(-1px);
   }
 
+  /* Dark: stronger accent alphas than light, for the same visibility over the dark surface. */
   :global([data-theme='dark']) .nav-review-defaults {
     background: rgba(var(--accent-rgb), 0.12);
   }
@@ -1185,7 +1187,7 @@
 
   .nav-next, .nav-submit {
     background: var(--primary-color);
-    border: 1px solid #3b82f6;
+    border: 1px solid var(--primary-color);
     color: var(--text-on-solid);
     box-shadow: var(--shadow-primary);
   }

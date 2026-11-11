@@ -189,6 +189,9 @@
      `--text-on-solid` (or `--text-on-warning` on the amber fill).
      --------------------------------------------------------------------- */
   --text-on-solid: #ffffff; /* label on --primary-color, any --*-solid fill, or media */
+  /* Button wash on a --primary-color bar; dark so the white label stays >= 4.5:1. */
+  --on-solid-wash: rgba(0, 0, 0, 0.2);
+  --on-solid-wash-hover: rgba(0, 0, 0, 0.3);
   --text-on-warning: #1e293b; /* label on the amber warning fill: 6.81:1 (white is 2.15:1) */
   --media-letterbox: #000000; /* behind a video picture and its controls: black in both themes, like the picture */
 
@@ -525,6 +528,9 @@
   --color-error-text: #fca5a5;
   --color-info-text: #93c5fd;
   --text-on-tint: var(--text-secondary);
+  /* Button wash on a --primary-color bar; dark so the white label stays >= 4.5:1. */
+  --on-solid-wash: rgba(0, 0, 0, 0.2);
+  --on-solid-wash-hover: rgba(0, 0, 0, 0.3);
   --color-info-bg: rgba(96, 165, 250, 0.15);
   --color-info-border: rgba(96, 165, 250, 0.3);
   --color-info: var(--info-color);

@@ -75,15 +75,11 @@
   border: 1px solid var(--primary-border);
 }
 
+/* Translucent tint over the dark surface instead of the solid navy --primary-bg; the label stays
+   --primary-on-surface (the base rule), since --primary-color text on this tint is about 2:1. */
 :global([data-theme='dark']) .chip {
   background: rgba(var(--accent-rgb), 0.15);
   border-color: rgba(var(--accent-rgb), 0.3);
-  /* --primary-color stays the same blue in both themes (see theme.css), but
-     composited over the dark surface that background resolves to ~#223657 —
-     #2563eb text on it is ~2.0:1, far under WCAG AA. --primary-on-surface is
-     the token this codebase already uses for "text on a dark surface must be
-     light" (see .tag-chip below, via --tag-color -> --primary-dark ->
-     --primary-on-surface); use it here too. */
   color: var(--primary-on-surface);
 }
 
@@ -91,11 +87,6 @@
   background: var(--tag-bg);
   color: var(--tag-color);
   border-color: var(--tag-border);
-}
-
-:global([data-theme='dark']) .tag-chip {
-  background: rgba(22, 163, 74, 0.15);
-  border-color: rgba(22, 163, 74, 0.3);
 }
 
 .chip-remove {
@@ -117,11 +108,7 @@
 
 .chip-remove:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.1);
-}
-
-:global([data-theme='dark']) .chip-remove:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--button-hover);
 }
 
 /* ── Empty state ── */
@@ -153,13 +140,7 @@
 
 .create-input:focus {
   border-color: var(--focus-ring-color);
-  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.1);
-}
-
-:global([data-theme='dark']) .create-input {
-  background: var(--dark-input-bg);
-  border-color: var(--dark-border);
-  color: var(--dark-text);
+  box-shadow: var(--focus-ring);
 }
 
 .create-btn {

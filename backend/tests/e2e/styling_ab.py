@@ -360,6 +360,39 @@ def _patch_route(page: Any, pattern: str, fields: dict[str, Any]) -> None:
     page.route(re.compile(pattern), handler)
 
 
+SAMPLE_WAV_NAME = "styling-sample.wav"
+
+
+def sample_wav() -> bytes:
+    """A fixed 0.1 s mono 8 kHz silent WAV: the same bytes (so the same hash) on every run."""
+    import struct
+
+    frames = 800
+    data = b"\x00\x00" * frames
+    header = b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt "
+    header += struct.pack("<IHHIIHH", 16, 1, 1, 8000, 16000, 2, 16) + b"data"
+    return header + struct.pack("<I", len(data)) + data
+
+
+def _mock_route(page: Any, glob: str, status: int) -> None:
+    """Answer ``glob`` with a fixed JSON error (``status`` > 0), or never (``status`` 0).
+
+    Never answering holds the request open, which freezes a client in its in-flight state
+    (an upload on "preparing") so the photograph does not depend on server timing.
+    """
+    if status == 0:
+        page.route(glob, lambda route: None)
+        return
+    page.route(
+        glob,
+        lambda route: route.fulfill(
+            status=status,
+            content_type="application/json",
+            body='{"detail": "Simulated upload failure"}',
+        ),
+    )
+
+
 def run_step(page: Any, step: str) -> None:
     """Execute one manifest step (vocabulary in ``styling_screens``)."""
     kind, arg = split_step(step)
@@ -408,8 +441,22 @@ def run_step(page: Any, step: str) -> None:
                 ".observe(el, { attributes: true, attributeFilter: ['class'] }); }",
                 cls,
             )
+        elif kind == "local":
+            key, _, value = arg.partition("=")
+            page.evaluate("([k, v]) => localStorage.setItem(k, v)", [key, value])
+        elif kind == "file":
+            page.locator(arg).first.set_input_files(
+                {"name": SAMPLE_WAV_NAME, "mimeType": "audio/wav", "buffer": sample_wav()}
+            )
+        elif kind == "route":
+            glob, _, status = arg.rpartition("|")
+            _mock_route(page, glob, int(status))
         elif kind == "reload":  # arg ignored: the manifest validator wants kind:arg
-            page.reload(wait_until="networkidle")
+            # "load", not "networkidle": a held route (upload-active) never goes idle;
+            # stabilize() waits for idle afterwards on screens that can reach it.
+            page.reload(wait_until="load")
+        elif kind == "pause":
+            page.wait_for_timeout(int(arg))
         else:
             raise StepError(f"unknown step kind in {step!r}")
     except (StepError, ScreenUnavailableError):
@@ -438,21 +485,30 @@ class Session:
         self.creds, self.inject_css = creds, inject_css
         self._ctx: dict[tuple[str, bool], Any] = {}
 
-    def context(self, variant: str, authed: bool) -> Any:
-        """A context for this variant; logged in once if ``authed``."""
+    def context(self, variant: str, authed: bool, fresh: bool = False) -> Any:
+        """A context for this variant; logged in once if ``authed``.
+
+        ``fresh`` returns a new uncached one: the caller closes it, so state the screen leaves
+        behind (a persisted upload queue) cannot reach the next screen.
+        """
+        key = (variant, authed)
+        if fresh:
+            return self._new_context(variant, authed)
+        if key not in self._ctx:
+            self._ctx[key] = self._new_context(variant, authed)
+        return self._ctx[key]
+
+    def _new_context(self, variant: str, authed: bool) -> Any:
         from _visual_capture import login
         from _visual_capture import make_context
 
-        key = (variant, authed)
-        if key not in self._ctx:
-            locale, theme = parse_variant(variant)
-            ctx = make_context(self.browser, theme, locale)
-            if authed:
-                page = ctx.new_page()
-                login(page, self.base, *self.creds)
-                page.close()
-            self._ctx[key] = ctx
-        return self._ctx[key]
+        locale, theme = parse_variant(variant)
+        ctx = make_context(self.browser, theme, locale)
+        if authed:
+            page = ctx.new_page()
+            login(page, self.base, *self.creds)
+            page.close()
+        return ctx
 
     def close(self) -> None:
         for ctx in self._ctx.values():
@@ -472,7 +528,7 @@ def capture(
                 "no completed file on this stack (seed it: --seed-benchmark)"
             )
         path = path.replace("{file_uuid}", file_uuid)
-    ctx = session.context(variant, screen.auth)
+    ctx = session.context(variant, screen.auth, fresh=screen.isolated)
     page = ctx.new_page()
     try:
         if screen.viewport:
@@ -496,7 +552,7 @@ def capture(
             # sits there differs run to run depending on timing.
             page.mouse.move(0, 0)
         page.add_style_tag(content=TRANSIENT_HIDE_CSS)
-        stabilize(page)
+        stabilize(page, network_idle=screen.network_idle)
         # The settings sidebar list scrolls the active row into view; how far it ended up
         # depends on layout timing (rows above it fill in as counts arrive), not on styling.
         # Park it at the top on both sides so the photograph is deterministic.
@@ -520,6 +576,8 @@ def capture(
                 [k for k, _ in screen.storage],
             )
         page.close()
+        if screen.isolated:
+            ctx.close()
 
 
 def _api_token_and_file(backend: str, creds: tuple[str, str]) -> tuple[str, str | None]:

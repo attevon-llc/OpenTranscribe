@@ -52,9 +52,14 @@ def make_context(browser: Any, theme: str, locale: str | None = None) -> Any:
     return context
 
 
-def stabilize(page: Any) -> None:
-    """Quiet the page before capture: network idle, no animations, no caret."""
-    page.wait_for_load_state("networkidle")
+def stabilize(page: Any, *, network_idle: bool = True) -> None:
+    """Quiet the page before capture: network idle, no animations, no caret.
+
+    ``network_idle=False`` is for a screen that deliberately holds a request open (an upload
+    frozen on "preparing"): that request is in flight forever, so ``networkidle`` never fires.
+    """
+    if network_idle:
+        page.wait_for_load_state("networkidle")
     # Disable animations/transitions and pause media to remove non-determinism.
     page.add_style_tag(
         content=(

@@ -13,6 +13,7 @@ under ``tests/e2e``'s own rootdir, so this loads them with that directory on ``s
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -285,3 +286,68 @@ def test_addclass_step_splits_selector_from_class_and_evaluates_on_the_first_mat
     assert calls[0][0] == ".a .b"
     assert calls[0][2] == "active-segment"
     assert "classList.add" in calls[0][1]
+
+
+# --- upload-state screens ---------------------------------------------------------------
+def test_sample_wav_is_a_fixed_decodable_file() -> None:
+    import io
+    import wave
+
+    first = ab.sample_wav()
+    assert first == ab.sample_wav()
+    with wave.open(io.BytesIO(first)) as w:
+        assert (w.getnchannels(), w.getframerate(), w.getnframes()) == (1, 8000, 800)
+
+
+def test_upload_screens_are_in_the_manifest_and_well_formed() -> None:
+    by_id = screens.by_id()
+    for sid in ("upload-tags", "upload-record", "upload-failed", "upload-active"):
+        assert sid in by_id
+        assert screens.validate((by_id[sid],)) == []
+
+
+def test_only_screens_that_hold_a_request_skip_network_idle() -> None:
+    # A held request keeps `networkidle` from firing, so exactly those screens opt out.
+    held = {s.id for s in screens.SCREENS if any(st.endswith("|0") for st in s.steps)}
+    skipping = {s.id for s in screens.SCREENS if not s.network_idle}
+    assert held == skipping == {"upload-active"}
+
+
+def test_screens_that_queue_an_upload_run_in_their_own_context() -> None:
+    # The upload queue persists in the browser profile; a shared context restores it (and the
+    # tray badge) into whichever screen is photographed next.
+    queues = {s.id for s in screens.SCREENS if "click:.nav-submit" in s.steps}
+    assert (
+        queues
+        == {s.id for s in screens.SCREENS if s.isolated}
+        == {"upload-failed", "upload-active"}
+    )
+
+
+def test_new_step_kinds_are_rejected_when_malformed() -> None:
+    bad = (screens.Screen("x", "/", steps=("pause", "route:")),)
+    problems = "\n".join(screens.validate(bad))
+    assert "malformed step 'pause'" in problems
+    assert "malformed step 'route:'" in problems
+
+
+def test_mock_route_zero_holds_the_request_and_other_status_answers_it() -> None:
+    registered: list[Callable[[Any], Any]] = []
+
+    class FakePage:
+        def route(self, glob: str, handler: Callable[[Any], Any]) -> None:
+            registered.append(handler)
+
+    class FakeRoute:
+        fulfilled: dict[str, object] | None = None
+
+        def fulfill(self, **kw: object) -> None:
+            self.fulfilled = kw
+
+    ab._mock_route(FakePage(), "**/x", 0)
+    ab._mock_route(FakePage(), "**/x", 500)
+    held, failing = registered
+    route = FakeRoute()
+    assert held(route) is None and route.fulfilled is None
+    failing(route)
+    assert route.fulfilled is not None and route.fulfilled["status"] == 500

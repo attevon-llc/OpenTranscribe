@@ -245,8 +245,8 @@
     align-items: center;
     gap: var(--space-1);
     font-weight: var(--font-weight-medium);
-    color: #b45309;
-    background: rgba(245, 158, 11, 0.12);
+    color: var(--warning-text);
+    background: var(--warning-bg);
     border-radius: var(--radius-sm);
     padding: 1px var(--space-1-5);
     white-space: nowrap;
@@ -277,14 +277,14 @@
   }
 
   .upload-retry-btn:hover {
-    color: #10b981;
-    background: rgba(16, 185, 129, 0.1);
+    color: var(--success-text);
+    background: var(--success-bg);
   }
 
   .upload-cancel-btn:hover,
   .upload-remove-btn:hover {
-    color: #ef4444;
-    background: rgba(239, 68, 68, 0.1);
+    color: var(--error-text);
+    background: var(--error-bg);
   }
 
   .progress-container {
@@ -308,44 +308,11 @@
   .error-message {
     margin-top: var(--space-1-5);
     padding: var(--space-1-5) var(--space-2);
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
     border-radius: var(--radius-sm);
-    color: #ef4444;
+    color: var(--error-text);
     font-size: var(--font-size-xs);
     line-height: 1.3;
-  }
-
-  /* Dark mode adjustments */
-  :global([data-theme='dark']) .upload-item {
-    background: var(--surface-color);
-    border-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .upload-name {
-    color: var(--text-primary);
-  }
-
-  :global([data-theme='dark']) .upload-meta {
-    color: var(--text-secondary);
-  }
-
-  :global([data-theme='dark']) .upload-dedup-skipped {
-    color: #fcd34d;
-    background: rgba(245, 158, 11, 0.18);
-  }
-
-  :global([data-theme='dark']) .upload-action-btn {
-    color: var(--text-secondary);
-  }
-
-  :global([data-theme='dark']) .upload-action-btn:hover {
-    background: var(--hover-color);
-  }
-
-  :global([data-theme='dark']) .error-message {
-    background: rgba(239, 68, 68, 0.15);
-    border-color: rgba(239, 68, 68, 0.3);
-    color: #fca5a5;
   }
 </style>

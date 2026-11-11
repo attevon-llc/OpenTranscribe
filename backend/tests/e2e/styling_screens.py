@@ -36,6 +36,10 @@ STEP_KINDS = frozenset(
         "patch",
         "reload",
         "addclass",
+        "local",
+        "file",
+        "route",
+        "pause",
     }
 )
 
@@ -75,6 +79,12 @@ class Screen:
     #: localStorage seeds applied before the app loads and removed again afterwards, because
     #: the browser context is shared by every later screen of the same variant.
     storage: tuple[tuple[str, str], ...] = ()
+    #: False for a screen that holds a request open on purpose (``route:...|0``), which would
+    #: keep ``networkidle`` from ever firing.
+    network_idle: bool = True
+    #: True for a screen that queues an upload: the queue persists in the browser profile, and a
+    #: shared context would restore it (badge and all) into the next screen captured.
+    isolated: bool = False
     notes: str = field(default="", compare=False)
 
 
@@ -107,6 +117,12 @@ _LOGGED_OUT = tuple(
 
 _GALLERY_MASKS = (".count-chip", ".meta-line")
 
+_UPLOAD_OPEN = ("click:.upload-btn", "wait:.tab-button")
+_UPLOAD_FILE = (*_UPLOAD_OPEN, "file:.drop-zone input[type=file]", "wait:.file-name")
+#: Submit with the review-with-defaults shortcut; the mocked route decides what the queue shows.
+_UPLOAD_SUBMIT = ("click:.nav-next", "click:.nav-review-defaults", "click:.nav-submit")
+_UPLOAD_PREPARE = "route:**/api/files/prepare|"
+
 _APP = (
     Screen("gallery", "/", masks=_GALLERY_MASKS, ready=".gallery-action-buttons"),
     Screen(
@@ -130,6 +146,72 @@ _APP = (
         masks=_GALLERY_MASKS,
         full_page=False,
         ready=".upload-btn",
+    ),
+    Screen(
+        "upload-tags",
+        "/",
+        # Remembered tags from the last submit restore as chips on the Tags step.
+        steps=(
+            'local:opentr:uploadPreviousValues={"tagNames":["interview","q4-review"],'
+            '"collectionIds":[],"skippedSteps":[],"timestamp":1}',
+            *_UPLOAD_FILE,
+            "click:.nav-next",
+            "wait:.selected-chips .chip",
+            # The wizard auto-focuses a different control per run; pin the focus ring here.
+            "focus:.create-input",
+        ),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".upload-btn",
+        notes="chip + previous-values banner, both themes",
+    ),
+    Screen(
+        "upload-record",
+        "/",
+        steps=(*_UPLOAD_OPEN, "click:.tab-button >> nth=2", "wait:.start-button, .unsupported-msg"),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".upload-btn",
+        notes="idle recorder only: no microphone in the capture browser, so the level bars and "
+        "paused dot are not reachable",
+    ),
+    Screen(
+        "upload-failed",
+        "/",
+        steps=(
+            _UPLOAD_PREPARE + "500",
+            *_UPLOAD_FILE,
+            *_UPLOAD_SUBMIT,
+            # 3 retries with 1-2 s, 2-4 s and 4-8 s backoff: after 16 s the row stays failed.
+            "pause:16000",
+            "wait:.error-message",
+        ),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".upload-btn",
+        isolated=True,
+        notes="UploadManager panel with a failed row and its error message",
+    ),
+    Screen(
+        "upload-active",
+        "/",
+        steps=(
+            # The tray stays minimised (and shows its activity dot) when the visitor collapsed it
+            # before; the store reads that flag once at load, hence the reload.
+            "local:upload-tray-user-collapsed=1",
+            "reload:page",
+            "wait:.upload-btn",
+            _UPLOAD_PREPARE + "0",
+            *_UPLOAD_FILE,
+            *_UPLOAD_SUBMIT,
+            "wait:.activity-indicator",
+        ),
+        masks=_GALLERY_MASKS,
+        full_page=False,
+        ready=".upload-btn",
+        network_idle=False,
+        isolated=True,
+        notes="minimised badge with the activity dot while a request is held in flight",
     ),
     Screen("file-detail", "/files/{file_uuid}", ready=".transcript-segment"),
     Screen(

@@ -135,13 +135,20 @@ function opaque(theme: Theme, token: string): Rgb {
   return c.rgb;
 }
 
+/** Tints that are never painted on the page surface: the fill they sit on instead. */
+const BACKDROP = new Map<string, string>([
+  ['--on-solid-wash', '--primary-color'],
+  ['--on-solid-wash-hover', '--primary-color'],
+]);
+
 /** Composited background colours a use is checked against; null when it cannot be resolved. */
 function backgrounds(theme: Theme, bg: Bg | null): Rgb[] | null {
   const surface = opaque(theme, '--surface-color');
   if (bg === null) return [surface, opaque(theme, '--background-color')];
   if ('token' in bg) {
     const c = tryColour(theme, bg.token);
-    return c ? [compositeOver(c, surface)] : null;
+    const under = BACKDROP.get(bg.token);
+    return c ? [compositeOver(c, under ? opaque(theme, under) : surface)] : null;
   }
   let channels: string;
   try {

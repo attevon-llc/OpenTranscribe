@@ -1,0 +1,62 @@
+{
+  "items": [
+    {
+      "speaker_uuid": "5a1c0000-0000-4000-8000-0000000000c1",
+      "speaker_name": "SPEAKER_00",
+      "display_name": null,
+      "suggested_name": "Alex Rivera",
+      "suggestion_source": "voice_match",
+      "confidence": 0.91,
+      "media_file_uuid": null,
+      "media_file_title": "Weekly sync",
+      "media_file_duration": 1800.0,
+      "cluster_uuid": "5a1c0000-0000-4000-8000-000000000001",
+      "cluster_label": "Alex Rivera",
+      "cluster_member_count": 3,
+      "verified": false,
+      "predicted_gender": null,
+      "predicted_age_range": null,
+      "created_at": "2026-11-01T12:00:00"
+    },
+    {
+      "speaker_uuid": "5a1c0000-0000-4000-8000-0000000000c2",
+      "speaker_name": "SPEAKER_01",
+      "display_name": null,
+      "suggested_name": "Jordan Lee",
+      "suggestion_source": "profile_match",
+      "confidence": 0.62,
+      "media_file_uuid": null,
+      "media_file_title": "Planning review",
+      "media_file_duration": 2400.0,
+      "cluster_uuid": null,
+      "cluster_label": null,
+      "cluster_member_count": 0,
+      "verified": false,
+      "predicted_gender": null,
+      "predicted_age_range": null,
+      "created_at": "2026-11-01T12:00:00"
+    },
+    {
+      "speaker_uuid": "5a1c0000-0000-4000-8000-0000000000c3",
+      "speaker_name": "SPEAKER_02",
+      "display_name": null,
+      "suggested_name": "Sam Patel",
+      "suggestion_source": "llm_analysis",
+      "confidence": 0.31,
+      "media_file_uuid": null,
+      "media_file_title": "Customer call",
+      "media_file_duration": 900.0,
+      "cluster_uuid": null,
+      "cluster_label": null,
+      "cluster_member_count": 0,
+      "verified": false,
+      "predicted_gender": null,
+      "predicted_age_range": null,
+      "created_at": "2026-11-01T12:00:00"
+    }
+  ],
+  "total": 3,
+  "page": 1,
+  "per_page": 20,
+  "pages": 1
+}

@@ -8,15 +8,20 @@ Steps vocabulary (see ``styling_ab.run_step``): ``click:<css>``, ``hover:<css>``
 ``focus:<css>``, ``wait:<css>``, ``press:<key>``, ``settings:<section-id>``, ``tab:<id>``
 (``#tab-<id>``, the id ``ui/Tabs`` renders), ``scroll:<css>``, ``patch:<url regex>|<json fields>``
 (merge fields into the real GET answer, see ``styling_ab._patch_route``) and ``reload:page`` and
-``addclass:<css>|<class>`` (put a class the app sets from live playback on an element, so its rule renders).
+``addclass:<css>|<class>`` (put a class the app sets from live playback on an element, so its rule renders)
+and ``fixture:<url regex>|<file>`` (answer every matching GET with a whole JSON file from
+``styling_fixtures/``, for a state the stack has no data for at all; see ``fixture_problem``).
 
 Paths may contain ``{file_uuid}``, resolved at run time to the newest completed file.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from dataclasses import field
+from pathlib import Path
 
 THEMES = ("light", "dark")
 LOCALES = ("en", "ar")
@@ -40,8 +45,43 @@ STEP_KINDS = frozenset(
         "file",
         "route",
         "pause",
+        "fixture",
     }
 )
+
+#: Whole JSON answers for ``fixture:`` steps. Each file copies the shape of the endpoint's real
+#: serializer (named in the screen that uses it), so the page renders what the backend would send.
+FIXTURE_DIR = Path(__file__).resolve().parent / "styling_fixtures"
+
+
+def load_fixture(name: str) -> object:
+    """The parsed JSON of ``styling_fixtures/<name>``."""
+    return json.loads((FIXTURE_DIR / name).read_text(encoding="utf-8"))
+
+
+def fixture_problem(arg: str) -> str | None:
+    """Why ``fixture:<arg>`` cannot run, or ``None``.
+
+    The argument is ``<url regex>|<file>``: a regex that compiles, and a bare ``.json`` file name
+    (no directory part) that exists in ``FIXTURE_DIR`` and parses.
+    """
+    pattern, sep, name = arg.rpartition("|")
+    if not sep or not pattern or not name:
+        return "needs <url regex>|<file>"
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        return f"url regex {pattern!r} does not compile ({exc})"
+    if Path(name).name != name or not name.endswith(".json"):
+        return f"{name!r} must be a bare .json file name in styling_fixtures/"
+    try:
+        load_fixture(name)
+    except FileNotFoundError:
+        return f"no fixture file styling_fixtures/{name}"
+    except ValueError as exc:
+        return f"styling_fixtures/{name} is not valid JSON ({exc})"
+    return None
+
 
 #: Masked on every screen: the navbar bell renders an unread-count pill that exists in one
 #: notification state and not the other (same reasoning as test_visual_regression.py).
@@ -544,12 +584,76 @@ _FILE_DETAIL_STATES = (
     ),
 )
 
+# --- speakers states (styling row 3.1) -------------------------------------------------------
+# The seeded stack has no speaker clusters, shared profiles or inbox suggestions, so `.cluster-card`,
+# `.shared-badge` and `.confidence` never render from its data. These screens answer the list
+# endpoints with whole fixture files instead of mutating the stack. Each file copies the shape of
+# its serializer (the endpoints declare `response_model=dict[str, Any]`, so the serializer IS the
+# schema): `speaker_clusters_page.json` = services/clustering/queries.py `list_clusters`,
+# `speaker_cluster_detail.json` = `get_cluster_detail` (gender_composition from
+# clustering/gender.py `compute_gender_composition`), `speaker_inbox_page.json` =
+# clustering/verification.py `get_unverified_speakers`, `speaker_profiles.json` =
+# api/endpoints/speaker_profiles.py `_profile_list_entry`. The three quality scores and the three
+# inbox confidences fall in the success / warning / error bands of SpeakerClusterCard and
+# SpeakerInboxItem; one profile is shared by another user and one has an image avatar.
+_SPEAKER_MASKS = (".last-clustered-chip", ".member-count", ".speakers-page .badge")
+_CLUSTERS_FIXTURES = (
+    r"fixture:/api/speaker-clusters\?|speaker_clusters_page.json",
+    r"fixture:/api/speaker-clusters/[0-9a-f-]{36}$|speaker_cluster_detail.json",
+)
+_PROFILES_FIXTURE = r"fixture:/api/speaker-profiles/profiles(\?.*)?$|speaker_profiles.json"
+_INBOX_FIXTURE = r"fixture:/api/speaker-clusters/unverified/inbox|speaker_inbox_page.json"
+_CLUSTER_EXPANDED = (
+    *_CLUSTERS_FIXTURES,
+    "reload:page",
+    "click:.cluster-card .card-header",
+    "wait:.cluster-card .card-actions",
+    "wait:.member-row",
+)
+
+_SPEAKER_STATES = (
+    Screen(
+        "speakers-clusters-expanded",
+        "/speakers?tab=clusters",
+        steps=_CLUSTER_EXPANDED,
+        masks=_SPEAKER_MASKS,
+        ready=".speakers-page",
+        notes="first card expanded: promote/merge/split/unassign/delete outlines; quality badge in "
+        "the success, warning and error text colours on the three cards",
+    ),
+    Screen(
+        "speakers-clusters-unassign-hover",
+        "/speakers?tab=clusters",
+        steps=(*_CLUSTER_EXPANDED, "hover:.action-btn.unassign"),
+        masks=_SPEAKER_MASKS,
+        ready=".speakers-page",
+        notes="the Unassign button hovered: amber fill with the dark --text-on-warning label",
+    ),
+    Screen(
+        "speakers-profiles-shared",
+        "/speakers?tab=profiles",
+        steps=(_PROFILES_FIXTURE, "reload:page", "wait:.shared-badge"),
+        masks=_SPEAKER_MASKS,
+        ready=".speakers-page",
+        notes="a profile shared by another user carries the Shared badge (both themes)",
+    ),
+    Screen(
+        "speakers-inbox-confidence",
+        "/speakers?tab=inbox",
+        steps=(_INBOX_FIXTURE, "reload:page", "wait:.inbox-item .confidence"),
+        masks=_SPEAKER_MASKS,
+        ready=".speakers-page",
+        notes="three suggestions whose confidence text is in the success, warning and error bands",
+    ),
+)
+
 SCREENS: tuple[Screen, ...] = (
     *_LOGGED_OUT,
     *_APP,
     *_NAVBAR_GALLERY,
     *_SETTINGS,
     *_FILE_DETAIL_STATES,
+    *_SPEAKER_STATES,
 )
 
 #: Screens the lane cards use as "control" (must pass the zero rule in intended mode).
@@ -577,6 +681,8 @@ def validate(screens: tuple[Screen, ...] = SCREENS) -> list[str]:
             kind, sep, arg = step.partition(":")
             if kind not in STEP_KINDS or not sep or not arg:
                 problems.append(f"{s.id}: malformed step {step!r}")
+            elif kind == "fixture" and (why := fixture_problem(arg)):
+                problems.append(f"{s.id}: malformed step {step!r}: {why}")
         if s.viewport is not None and not all(n > 0 for n in s.viewport):
             problems.append(f"{s.id}: viewport {s.viewport!r} must be positive")
         if s.skip_reason is not None and not s.skip_reason.strip():

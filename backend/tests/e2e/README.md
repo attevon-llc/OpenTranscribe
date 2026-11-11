@@ -156,7 +156,16 @@ are interleaved (A then B per screen). The EXIT trap `kill -TERM`s only the PIDs
 
 Requirements: `settings-*` screens need `data-section={item.id}` on the SettingsModal `.nav-item`
 (the translated label cannot be selected in `ar`); without it those screens report ERROR with that
-message. `chat` is skipped until a provider is configured. Unit tests for the pure parts:
+message. `chat` is skipped until a provider is configured.
+
+States the seeded stack cannot show are reached by answering the page's own requests, never by
+writing to the stack: `patch:<url regex>|<json>` merges fields into the real GET answer (a file that
+is "shared", a speaker with suggestions), and `fixture:<url regex>|<file>` answers every matching
+GET with a whole JSON file from `styling_fixtures/` when there is no row to merge into (speaker
+clusters, a shared profile, inbox suggestions). Both register a Playwright `page.route`, so follow
+them with `reload:page`: the page fetched before the route existed. A fixture file copies its
+endpoint's serializer key for key; `test_speaker_fixtures_have_exactly_the_keys_their_serializers_send`
+fails when the serializer gains or loses a key. Unit tests for the pure parts:
 `backend/tests/unit/test_styling_ab.py`. The axe surface for the shared-component fixture
 (`/a11y-fixtures/ui-kit`, surfaces `ui-kit` and `ui-kit-ar`) is in `test_a11y.py`.
 

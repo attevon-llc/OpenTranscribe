@@ -48,6 +48,7 @@ from styling_screens import SCREENS
 from styling_screens import TRANSIENT_HIDE_CSS
 from styling_screens import VARIANTS
 from styling_screens import Screen
+from styling_screens import load_fixture
 
 #: The acceptance threshold for ``zero`` mode (plan 6.4). Never widened.
 ZERO_PIXEL_FRACTION = 0.0001
@@ -360,6 +361,25 @@ def _patch_route(page: Any, pattern: str, fields: dict[str, Any]) -> None:
     page.route(re.compile(pattern), handler)
 
 
+def _fixture_route(page: Any, pattern: str, data: object) -> None:
+    """Answer every GET whose URL matches ``pattern`` with ``data``; other methods pass through.
+
+    Unlike ``_patch_route`` the backend is never asked: this is for a state the stack has no
+    rows for at all (speaker clusters, a shared profile, inbox suggestions), where there is no
+    real answer to merge into. ``route.fulfill(json=...)`` serialises it and sets the JSON
+    content type (Playwright ``Route.fulfill``).
+    """
+    import re
+
+    def handler(route: Any) -> None:
+        if route.request.method != "GET":
+            route.continue_()
+            return
+        route.fulfill(json=data)
+
+    page.route(re.compile(pattern), handler)
+
+
 SAMPLE_WAV_NAME = "styling-sample.wav"
 
 
@@ -457,6 +477,9 @@ def run_step(page: Any, step: str) -> None:
             page.reload(wait_until="load")
         elif kind == "pause":
             page.wait_for_timeout(int(arg))
+        elif kind == "fixture":
+            pattern, _, name = arg.rpartition("|")
+            _fixture_route(page, pattern, load_fixture(name))
         else:
             raise StepError(f"unknown step kind in {step!r}")
     except (StepError, ScreenUnavailableError):

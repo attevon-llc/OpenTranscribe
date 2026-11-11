@@ -82,10 +82,9 @@ class SeededFile:
     collection_id: int | None = None
     watch_source_id: int | None = None
     usage_event_id: str | None = None
-    # Records that outlive or sit beside the file rather than depending on it: the
-    # organization and released hold behind ``content_hold_file``, and the takedown notice
-    # behind ``takedown_notice_file``. The delete leaves them; teardown removes them.
-    organization_id: int | None = None
+    # Records that outlive or sit beside the file rather than depending on it: the released
+    # platform hold behind ``content_hold_file``, and the takedown notice behind
+    # ``takedown_notice_file``. The delete leaves them; teardown removes them.
     content_hold_id: int | None = None
     takedown_notice_id: int | None = None
     takedown_link_id: int | None = None
@@ -544,25 +543,30 @@ def seed_complete_file(  # one linear recipe; splitting it hides the inventory
 
 
 def _seed_hold_and_takedown_records(db: Session, seeded: SeededFile) -> None:
-    """A released organization hold and a closed takedown notice, both naming the file.
+    """A released platform hold and a closed takedown notice, both naming the file.
 
     ``content_hold_file`` cascades with the file and ``takedown_notice_file`` is set null
     (the notice outlives the file as a record), so the two tables take opposite paths on
     delete. The hold is RELEASED because an active hold refuses the delete this fixture
     exists to run, and the notice link is ``released`` with the file's legal hold
-    cleared for the same reason. The organization is created here and not shared, so a
-    teardown that removes it takes the hold with it.
+    cleared for the same reason.
+
+    No organization is created. The seed commits (the delete runs in another session or
+    process), and one committed organization row turns the whole shared database
+    multi-tenant for as long as it exists: while this module ran, single-tenant tests in
+    other lanes (support access, trash permissions, org-admin GDPR, admin search over
+    quarantine) failed. A ``platform`` hold has no organization (``ck_content_hold_authority_org``)
+    and the link's organization columns are nullable, as for any personal file.
     """
     tag = seeded.tag
     row = db.execute(
         text(
             """
-            WITH o AS (INSERT INTO organization (uuid, name, is_active)
-                       VALUES (gen_random_uuid(), :name, true) RETURNING id, uuid),
-                 h AS (INSERT INTO content_hold (uuid, organization_id, scope, reason,
+            WITH h AS (INSERT INTO content_hold (uuid, authority, scope, reason,
                                                  released_at, release_reason)
-                       SELECT gen_random_uuid(), o.id, 'file', 'Seeded for the residue test',
-                              now(), 'Seeded release' FROM o RETURNING id),
+                       VALUES (gen_random_uuid(), 'platform', 'file',
+                               'Seeded for the residue test', now(), 'Seeded release')
+                       RETURNING id),
                  hf AS (INSERT INTO content_hold_file (hold_id, media_file_id)
                         SELECT h.id, :fid FROM h),
                  n AS (INSERT INTO takedown_notice (uuid, notice_type, received_at,
@@ -571,14 +575,13 @@ def _seed_hold_and_takedown_records(db: Session, seeded: SeededFile) -> None:
                        VALUES (gen_random_uuid(), 'other', now(), :name,
                                'Seeded for the residue test', 'platform') RETURNING id),
                  l AS (INSERT INTO takedown_notice_file (uuid, notice_id, file_id, file_uuid,
-                                                         owner_user_uuid, organization_id,
-                                                         organization_uuid, owner_reason,
+                                                         owner_user_uuid, owner_reason,
                                                          status, quarantined_at, outcome_at)
                        SELECT gen_random_uuid(), n.id, :fid, CAST(:fuuid AS uuid),
-                              (SELECT uuid FROM "user" WHERE id = :uid), o.id, o.uuid,
+                              (SELECT uuid FROM "user" WHERE id = :uid),
                               'Seeded for the residue test', 'released', now(), now()
-                       FROM n, o RETURNING id)
-            SELECT (SELECT id FROM o), (SELECT id FROM h), (SELECT id FROM n), (SELECT id FROM l)
+                       FROM n RETURNING id)
+            SELECT (SELECT id FROM h), (SELECT id FROM n), (SELECT id FROM l)
             """
         ),
         {
@@ -588,8 +591,8 @@ def _seed_hold_and_takedown_records(db: Session, seeded: SeededFile) -> None:
             "uid": seeded.owner_id,
         },
     ).one()
-    seeded.organization_id, seeded.content_hold_id = int(row[0]), int(row[1])
-    seeded.takedown_notice_id, seeded.takedown_link_id = int(row[2]), int(row[3])
+    seeded.content_hold_id = int(row[0])
+    seeded.takedown_notice_id, seeded.takedown_link_id = int(row[1]), int(row[2])
 
 
 def seed_citing_chat(db: Session, owner_id: int, cited: list[SeededFile]) -> SeededChat:

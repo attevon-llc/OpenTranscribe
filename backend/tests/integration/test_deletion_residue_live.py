@@ -416,6 +416,31 @@ def _assert_trashed_not_destroyed(engine, sf: SeededFile) -> None:
 # --------------------------------------------------------------------------- per-file routes
 
 
+def test_the_seed_commits_no_organization(engine, admin_id, created):
+    """The seed commits, and a committed organization makes the shared database multi-tenant.
+
+    While this module seeded an organization per file, single-tenant suites elsewhere failed
+    for as long as the rows existed. The hold is a ``platform`` hold and the takedown link a
+    personal file's, so neither needs one; this pins it on the seeded rows themselves, which
+    another process creating organizations cannot disturb.
+    """
+    sf = _seed(engine, created, admin_id)
+    with engine.connect() as conn:
+        hold_org = conn.execute(
+            text("SELECT organization_id FROM content_hold WHERE id = :h"),
+            {"h": sf.content_hold_id},
+        ).scalar_one()
+        link_org = conn.execute(
+            text("SELECT organization_id FROM takedown_notice_file WHERE id = :l"),
+            {"l": sf.takedown_link_id},
+        ).scalar_one()
+        named = conn.execute(
+            text("SELECT count(*) FROM organization WHERE name LIKE :p"),
+            {"p": f"{DELRES_PREFIX}%"},
+        ).scalar_one()
+    assert (hold_org, link_org, named) == (None, None, 0)
+
+
 def test_single_delete_leaves_no_residue(api, engine, admin_id, created):
     sf = _seed(engine, created, admin_id)
     chat = _chat(engine, created, admin_id, [sf])

@@ -522,7 +522,7 @@ class _Teardown:
             "ws": sf.watch_source_id,
             "ue": sf.usage_event_id,
             "notice": sf.takedown_notice_id,
-            "org": sf.organization_id,
+            "hold": sf.content_hold_id,
         }
         self.sql(
             [
@@ -538,11 +538,10 @@ class _Teardown:
                 ("DELETE FROM watch_source_file WHERE watch_source_id = :ws", ids),
                 ("DELETE FROM watch_source WHERE id = :ws", ids),
                 ("DELETE FROM usage_event WHERE id = CAST(:ue AS uuid)", ids),
-                # The notice record outlives the file by design, so the delete under test
-                # never removes it; its links go with it. The organization takes the
-                # seeded hold (and its file rows) with it.
+                # The notice record and the released hold outlive the file by design, so the
+                # delete under test never removes them; their file links go with them.
                 ("DELETE FROM takedown_notice WHERE id = :notice", ids),
-                ("DELETE FROM organization WHERE id = :org", ids),
+                ("DELETE FROM content_hold WHERE id = :hold", ids),
             ]
         )
 

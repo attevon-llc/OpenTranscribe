@@ -53,7 +53,10 @@ call these functions, not `axios` directly.
 
 ## Conventions / patterns
 
-- Use the shared `axiosInstance` from `$lib/axios` (handles CSRF + 401 refresh + cancellation).
+- Use the shared `axiosInstance` from `$lib/axios` (handles CSRF + 401 refresh + cancellation,
+  one replay of a GET/HEAD/OPTIONS after a 503 with Retry-After (`$lib/utils/busyRetry`) or after
+  a failure with no response at all (`$lib/utils/networkRetry`: Chromium cancels queued requests
+  with `ERR_NETWORK_CHANGED` when the host's interfaces change). Writes are never replayed.
   Never create a separate axios instance or hardcode the API base URL (`$lib/axios` sets
   `baseURL: '/api'`; the dev proxy and nginx route it).
 - Error handling: surface backend errors via `$lib/utils/apiError` (`handleApiError`/`withAsync`)

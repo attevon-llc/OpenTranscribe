@@ -62,6 +62,8 @@ and domain formatting belong in the backend (thin-frontend rule).
 ## How it connects
 
 - `apiError.ts` composes with `$lib/axios` (`isRequestCancelled`) and `$stores/toast`.
+- `busyRetry.ts` and `networkRetry.ts` are called from `$lib/axios`'s response interceptor; each
+  replays a safe-method request once (503 + Retry-After, and no response at all respectively).
 - Backend already sends pre-formatted display fields (`formatted_duration`, `display_status`,
   `resolved_speaker_name`, …) — prefer rendering those over recomputing here.
 

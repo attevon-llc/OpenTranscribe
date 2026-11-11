@@ -6,7 +6,7 @@
   import DateRangePicker from '$components/ui/DateRangePicker.svelte';
   import FilterChipButton from '$components/ui/FilterChipButton.svelte';
   import {
-    describeError,
+    latestFacetLoad,
     loadLibraryMetadata,
     loadOwners,
     loadSpeakers,
@@ -222,17 +222,25 @@
   $: applyLanguageChange(selectedLanguage, isInitialized);
   $: applyCollectionChange(selectedCollectionId, isInitialized);
 
+  // Each facet keeps only its newest load's outcome (`latestFacetLoad`): a superseded load
+  // leaves the section to the newer one, and a cancelled one is not an error.
+  const tagsLoad = latestFacetLoad(loadTags);
+  const ownersLoad = latestFacetLoad(loadOwners);
+  const speakersLoad = latestFacetLoad(loadSpeakers);
+  const metadataLoad = latestFacetLoad(loadLibraryMetadata);
+
   async function fetchTags() {
     loadingTags = true;
     errorTags = null;
-    try {
-      allTags = await loadTags();
-    } catch (err) {
-      console.error('[FilterSidebar] Error fetching tags:', err);
+    const outcome = await tagsLoad();
+    if (outcome.kind === 'superseded') return;
+    loadingTags = false;
+    if (outcome.kind === 'ok') {
+      allTags = outcome.value;
+    } else if (outcome.kind === 'error') {
+      console.error('[FilterSidebar] Error fetching tags:', outcome.cause);
       allTags = [];
-      errorTags = describeError(err);
-    } finally {
-      loadingTags = false;
+      errorTags = outcome.message;
     }
   }
 
@@ -240,14 +248,15 @@
     if (!showOwnerFilter) return;
     loadingOwners = true;
     errorOwners = null;
-    try {
-      allOwners = await loadOwners();
-    } catch (err) {
-      console.error('[FilterSidebar] Error fetching owners:', err);
+    const outcome = await ownersLoad();
+    if (outcome.kind === 'superseded') return;
+    loadingOwners = false;
+    if (outcome.kind === 'ok') {
+      allOwners = outcome.value;
+    } else if (outcome.kind === 'error') {
+      console.error('[FilterSidebar] Error fetching owners:', outcome.cause);
       allOwners = [];
-      errorOwners = describeError(err);
-    } finally {
-      loadingOwners = false;
+      errorOwners = outcome.message;
     }
   }
 
@@ -256,17 +265,17 @@
   async function fetchSpeakers(q = '') {
     loadingSpeakers = true;
     errorSpeakers = null;
-    try {
-      const result = await loadSpeakers(q);
-      speakersTruncated = result.truncated;
-      allSpeakers = result.speakers;
-    } catch (err) {
-      console.error('Error fetching speakers:', err);
+    const outcome = await speakersLoad(q);
+    if (outcome.kind === 'superseded') return;
+    loadingSpeakers = false;
+    if (outcome.kind === 'ok') {
+      speakersTruncated = outcome.value.truncated;
+      allSpeakers = outcome.value.speakers;
+    } else if (outcome.kind === 'error') {
+      console.error('Error fetching speakers:', outcome.cause);
       allSpeakers = [];
       speakersTruncated = false;
-      errorSpeakers = describeError(err);
-    } finally {
-      loadingSpeakers = false;
+      errorSpeakers = outcome.message;
     }
   }
 
@@ -413,8 +422,9 @@
 
   async function fetchMediaMetadata() {
     errorMetadata = null;
-    try {
-      const data = await loadLibraryMetadata();
+    const outcome = await metadataLoad();
+    if (outcome.kind === 'ok') {
+      const data = outcome.value;
       if (data.durationBounds) {
         durationBounds = data.durationBounds;
         // Only reset slider if user hasn't set a filter
@@ -424,12 +434,12 @@
       }
       availableLanguages = data.languages;
       metadataLoaded = true;
-    } catch (error) {
-      console.error('Error fetching media metadata:', error);
+    } else if (outcome.kind === 'error') {
+      console.error('Error fetching media metadata:', outcome.cause);
       // Deliberately NOT `metadataLoaded = true` (#744): sliders drawn against the seed bounds
       // silently match every file. Show the failure and offer a retry instead.
       metadataLoaded = false;
-      errorMetadata = describeError(error);
+      errorMetadata = outcome.message;
     }
   }
 
@@ -1090,8 +1100,9 @@
   }
 
   /* Retry control for a facet whose fetch failed — an empty facet must never
-     be the way an outage looks (#743a). */
-  .retry-button {
+     be the way an outage looks (#743a). Global inside the sidebar so the child
+     facets (CollectionsFilter) render the same control. */
+  .filter-sidebar :global(.retry-button) {
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
@@ -1102,7 +1113,7 @@
     transition: all var(--duration-base) ease;
   }
 
-  .retry-button:hover {
+  .filter-sidebar :global(.retry-button:hover) {
     background-color: var(--hover-color);
     border-color: var(--primary-color);
   }

@@ -12,6 +12,8 @@ under ``tests/e2e``'s own rootdir, so this loads them with that directory on ``s
 
 from __future__ import annotations
 
+import argparse
+import io
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +22,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from PIL import Image
 
 _E2E_DIR = Path(__file__).resolve().parents[1] / "e2e"
 
@@ -524,6 +527,69 @@ def test_retry_reason_names_the_pixel_share_and_what_moved() -> None:
     assert line == "pixel 0.0000%, 1 computed (color on span:3)"
 
 
+def test_retry_reason_names_the_root_of_a_renumbered_subtree_not_its_leaves() -> None:
+    # An earlier sibling div appearing shifts the modal from div:3 to div:4: every element in
+    # it changes key. The old leaf-only reason said "aside:1", which read as "the aside vanished".
+    def gone(key: str) -> Any:
+        return ab.Change(key, "<element>", "present", "absent")
+
+    def new(key: str) -> Any:
+        return ab.Change(key, "<element>", "absent", "present")
+
+    changes = [
+        gone("body:1>div:3"),
+        gone("body:1>div:3>aside:1"),
+        gone("body:1>div:3>aside:1>button:1"),
+        new("body:1>div:4"),
+        new("body:1>div:4>aside:1"),
+    ]
+    assert ab.subtree_roots(changes) == ["body:1>div:3", "body:1>div:4"]
+    line = ab.retry_reason(0.0164, changes)
+    assert "aside:1" not in line
+    assert "subtree body:1>div:3 (before only)" in line
+    assert "subtree body:1>div:4 (after only)" in line
+
+
+def test_retry_reason_names_the_requests_the_browser_saw_fail() -> None:
+    line = ab.retry_reason(
+        0.0139,
+        [ab.Change("body:1>div:2>a:1", "color", "x", "y")],
+        ("GET /api/speakers net::ERR_NETWORK_CHANGED",),
+    )
+    assert line.endswith("; requests failed: GET /api/speakers net::ERR_NETWORK_CHANGED")
+    assert "requests failed" not in ab.retry_reason(0.0, [], ())
+
+
+def test_url_path_drops_host_and_query() -> None:
+    assert ab._url_path("http://localhost:5391/api/speakers?for_filter=true") == "/api/speakers"
+
+
 def test_settings_profile_masks_the_active_sessions_table() -> None:
     # Each capture logs in, so the table differs between any two captures of one server.
     assert ".sessions-table" in screens.by_id()["settings-profile"].masks
+
+
+def test_both_sides_log_in_before_either_side_captures(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A lazily created context logged side B in between the two captures, so B's Active
+    # Sessions list was one row longer than A's on the first screen of every variant.
+    events: list[str] = []
+
+    class Side:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def context(self, variant: str, authed: bool, fresh: bool = False) -> None:
+            events.append(f"login {self.name}")
+
+    def fake_capture(side: Any, screen: Any, variant: str, file_uuid: Any) -> dict[str, Any]:
+        events.append(f"capture {side.name}")
+        png = io.BytesIO()
+        Image.new("RGB", (2, 2)).save(png, format="PNG")
+        return {"png": png.getvalue(), "snapshot": {}, "has_btn": False, "failed": ()}
+
+    monkeypatch.setattr(ab, "capture", fake_capture)
+    args = argparse.Namespace(mode="zero", negative_control=False, out="unused")
+    screen = screens.by_id()["settings-profile"]
+    ab.measure(Side("a"), Side("b"), screen, "en-light", None, args, set())
+    assert events[:2] == ["login a", "login b"]
+    assert events.index("login b") < events.index("capture a")

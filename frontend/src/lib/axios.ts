@@ -7,6 +7,7 @@ import {
   supportGrantErrorCode,
 } from '$lib/supportAccess/errors';
 import { SUPPORT_GRANT_HEADER, getSupportAccessHeaders } from '$lib/supportAccess/headers';
+import { replayAfterTransportFailure } from '$lib/utils/networkRetry';
 
 // Create axios instance with consistent base URL for all environments
 // This ensures the same behavior in development and production with nginx
@@ -375,6 +376,10 @@ axiosInstance.interceptors.response.use(
     if (isRequestCancelled(error)) {
       return Promise.reject(error);
     }
+
+    // No response at all on a safe method: replayed once (see $lib/utils/networkRetry).
+    const replayed = replayAfterTransportFailure(error, (config) => axiosInstance(config));
+    if (replayed) return replayed;
 
     await handleSupportGrantError(error);
     await reportDemoReadOnlyRefusal(error);

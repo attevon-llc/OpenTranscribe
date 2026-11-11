@@ -1,10 +1,10 @@
 <script lang="ts">
   import { focusOnMount } from '$lib/actions/focusOnMount';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, tick } from 'svelte';
   import type { SpeakerCluster } from '$lib/types/speakerCluster';
   import { t } from '$stores/locale';
-  import GenderBadge from './GenderBadge.svelte';
+  import ClusterHeaderChips from './ClusterHeaderChips.svelte';
 
   export let cluster: SpeakerCluster;
   export let expanded = false;
@@ -15,17 +15,17 @@
   export let unassignTotalCount = 0;
   export let unassignBlacklist = true;
 
-  // Compute gender mismatch count directly from cluster data (no API call)
-  $: genderMismatchCount = (() => {
-    const gc = cluster.gender_composition;
-    if (!gc || !gc.has_gender_conflict || gc.total_with_gender < 2) return 0;
-    return gc.total_with_gender - Math.max(gc.male_count, gc.female_count);
-  })();
-
   const dispatch = createEventDispatcher();
+
+  $: bodyId = `cluster-body-${cluster.uuid}`;
 
   let editingLabel = false;
   let labelInput = cluster.label || '';
+  // An edit opened from the keyboard and ended with Enter or Escape hands focus back to the edit
+  // control, so the keyboard user is not dropped onto <body>. A double-click edit, or one ended
+  // by clicking elsewhere (blur), leaves focus where the user put it.
+  let editFromKeyboard = false;
+  let editButton: HTMLButtonElement | undefined;
 
   function toggleExpand() {
     expanded = !expanded;
@@ -34,130 +34,115 @@
     }
   }
 
-  function startEdit() {
+  function startEdit(fromKeyboard = false) {
     labelInput = cluster.label || '';
+    editFromKeyboard = fromKeyboard;
     editingLabel = true;
   }
 
-  function startEditOnKey(event: KeyboardEvent) {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    startEdit();
+  /** Double-clicking the cluster's name edits it, as before; a double-click elsewhere on the row does not. */
+  function editOnLabelDblclick(event: MouseEvent) {
+    if ((event.target as Element | null)?.closest('.cluster-label')) startEdit();
   }
 
-  function saveLabel() {
+  async function endEdit(byKey: boolean) {
     editingLabel = false;
+    const restoreFocus = byKey && editFromKeyboard;
+    editFromKeyboard = false;
+    if (!restoreFocus) return;
+    await tick();
+    editButton?.focus();
+  }
+
+  function saveLabel(byKey = false) {
+    if (!editingLabel) return;
     const normalizedLabel = labelInput.trim() || null;
     if (normalizedLabel !== cluster.label) {
       dispatch('update', { uuid: cluster.uuid, label: normalizedLabel });
     }
+    void endEdit(byKey);
   }
 
   function cancelEdit() {
-    editingLabel = false;
     labelInput = cluster.label || '';
+    void endEdit(true);
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') saveLabel();
+    if (e.key === 'Enter') saveLabel(true);
     if (e.key === 'Escape') cancelEdit();
-  }
-
-  /**
-   * Returns a TEXT colour, so it must use the text-weight status tokens rather than the
-   * fill ones. `--success-color` (#10b981) on the badge's own success tint measures
-   * 2.27:1 — less than half of WCAG AA's 4.5:1 — and the amber and red fills fail the
-   * same way. The `--color-*-text` variants exist for exactly this distinction.
-   */
-  function qualityColor(score: number | null): string {
-    if (score === null) return 'var(--text-on-tint)';
-    if (score >= 0.8) return 'var(--success-text)';
-    if (score >= 0.6) return 'var(--warning-text)';
-    return 'var(--error-text)';
   }
 </script>
 
 <div class="cluster-card" class:expanded>
-  <div class="card-header" on:click={toggleExpand} on:keydown={toggleExpand} role="button" tabindex="0" aria-expanded={expanded} title={$t('speakers.tooltip.expandCluster')}>
-    <div class="header-left">
-      <span class="expand-icon" aria-hidden="true"><MenuIcon name={expanded ? 'chevron-down' : 'chevron-right'} size="xs" /></span>
-      {#if cluster.promoted_to_profile_avatar_url}
-        <img
-          class="cluster-avatar"
-          src={cluster.promoted_to_profile_avatar_url}
-          alt=""
-          loading="lazy"
-          decoding="async"
-        />
-      {/if}
-      {#if editingLabel}
-        <input
-          class="label-input"
-          bind:value={labelInput}
-          on:blur={saveLabel}
-          on:keydown={handleKeydown}
-          on:click|stopPropagation
-          use:focusOnMount
-          maxlength="200"
-          placeholder={$t('speakers.cluster.editLabel')}
-        />
-      {:else}
-        {#if cluster.label || cluster.promoted_to_profile_name}
-          <span class="cluster-label" role="button" tabindex="0" on:dblclick|stopPropagation={startEdit} on:keydown={startEditOnKey} title={$t('speakers.tooltip.editLabel')}>
-            {cluster.label || cluster.promoted_to_profile_name}
-          </span>
-        {:else if cluster.suggested_name}
-          <span class="cluster-label suggested" role="button" tabindex="0" on:dblclick|stopPropagation={startEdit} on:keydown={startEditOnKey} title={$t('speakers.tooltip.suggestedName')}>
-            {cluster.suggested_name}
-          </span>
-          <span class="suggested-badge" title={$t('speakers.tooltip.suggestedName')}>{$t('speakers.cluster.suggested')}</span>
-        {:else}
-          <span class="cluster-label" role="button" tabindex="0" on:dblclick|stopPropagation={startEdit} on:keydown={startEditOnKey} title={$t('speakers.tooltip.editLabel')}>
-            {$t('speakers.cluster.unlabeled')}
-          </span>
-        {/if}
-      {/if}
-    </div>
-    <div class="header-right">
-      {#if genderMismatchCount > 0}
-        <span class="outlier-chip" title={$t('speakers.cluster.outliersDetected', { count: genderMismatchCount })}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-          {genderMismatchCount}
+  <!--
+    WAI-ARIA APG disclosure pattern: the row is a real <button aria-expanded> (Enter and Space
+    toggle it natively). It holds only text, because a button's children are presentational
+    (axe nested-interactive): the label editor is a separate control beside it, never inside.
+  -->
+  <div class="card-header">
+    {#if editingLabel}
+      <div class="header-row">
+        <span class="header-left">
+          <span class="expand-icon" aria-hidden="true"><MenuIcon name={expanded ? 'chevron-down' : 'chevron-right'} size="xs" /></span>
+          {#if cluster.promoted_to_profile_avatar_url}
+            <img class="cluster-avatar" src={cluster.promoted_to_profile_avatar_url} alt="" loading="lazy" decoding="async" />
+          {/if}
+          <input
+            class="label-input"
+            bind:value={labelInput}
+            on:blur={() => saveLabel()}
+            on:keydown={handleKeydown}
+            use:focusOnMount
+            maxlength="200"
+            placeholder={$t('speakers.cluster.editLabel')}
+            aria-label={$t('speakers.cluster.editLabel')}
+          />
         </span>
-      {/if}
-      {#if cluster.quality_score != null && !isNaN(cluster.quality_score)}
-        <span class="quality-badge" style="color: {qualityColor(cluster.quality_score)}" title={$t('speakers.tooltip.qualityScore')}>
-          {$t('speakers.cluster.matchPercent', { score: (cluster.quality_score * 100).toFixed(0) })}
+        <ClusterHeaderChips {cluster} />
+      </div>
+    {:else}
+      <button
+        type="button"
+        class="header-row card-toggle"
+        aria-expanded={expanded}
+        aria-controls={expanded ? bodyId : undefined}
+        title={$t('speakers.tooltip.expandCluster')}
+        on:click={toggleExpand}
+        on:dblclick={editOnLabelDblclick}
+      >
+        <span class="header-left">
+          <span class="expand-icon" aria-hidden="true"><MenuIcon name={expanded ? 'chevron-down' : 'chevron-right'} size="xs" /></span>
+          {#if cluster.promoted_to_profile_avatar_url}
+            <img class="cluster-avatar" src={cluster.promoted_to_profile_avatar_url} alt="" loading="lazy" decoding="async" />
+          {/if}
+          {#if cluster.label || cluster.promoted_to_profile_name}
+            <span class="cluster-label" title={$t('speakers.tooltip.editLabel')}>
+              {cluster.label || cluster.promoted_to_profile_name}
+            </span>
+          {:else if cluster.suggested_name}
+            <span class="cluster-label suggested" title={$t('speakers.tooltip.suggestedName')}>
+              {cluster.suggested_name}
+            </span>
+            <span class="suggested-badge" title={$t('speakers.tooltip.suggestedName')}>{$t('speakers.cluster.suggested')}</span>
+          {:else}
+            <span class="cluster-label" title={$t('speakers.tooltip.editLabel')}>
+              {$t('speakers.cluster.unlabeled')}
+            </span>
+          {/if}
         </span>
-      {/if}
-      {#if cluster.gender_composition && cluster.gender_composition.total_with_gender > 0 && (cluster.gender_composition.dominant_gender === 'male' || cluster.gender_composition.dominant_gender === 'female')}
-        <span
-          class="gender-chip"
-          class:gender-coherent={!cluster.gender_composition.has_gender_conflict}
-          class:gender-conflict={cluster.gender_composition.has_gender_conflict}
-          title={cluster.gender_composition.has_gender_conflict ? $t('speakers.cluster.genderConflict') : $t('speakers.cluster.genderCoherent')}
-        >
-          <!--
-            Composed from the structured `dominant_gender`/`has_gender_conflict` fields
-            rather than the backend's `gender_label` string (issue #756) — that string is
-            untranslated English ("mostly male") which no locale can render, and the
-            backend already sends the structured data this chip needs.
-          -->
-          <GenderBadge gender={cluster.gender_composition.dominant_gender} />
-        </span>
-      {/if}
-      <span class="member-count" title={$t('speakers.tooltip.memberCount')}>{$t('speakers.cluster.memberCount', { count: cluster.member_count })}</span>
-      {#if cluster.promoted_to_profile_name}
-        <span class="promoted-badge">{$t('speakers.cluster.profile', { name: cluster.promoted_to_profile_name })}</span>
-      {/if}
-    </div>
+        <ClusterHeaderChips {cluster} />
+      </button>
+      <!-- Hidden until focused, like a skip link: the keyboard's way into the label editor
+           (the double-click on the name is the pointer's). -->
+      <button type="button" class="sr-only edit-label-btn" bind:this={editButton} on:click={() => startEdit(true)}>
+        {$t('speakers.cluster.editLabelButton')}
+      </button>
+    {/if}
   </div>
 
   {#if expanded}
-    <div class="card-body">
+    <div class="card-body" id={bodyId}>
       {#if loading}
         <div class="skeleton-members">
           {#each Array(Math.min(cluster.member_count, 3)) as _, i (i)}
@@ -225,17 +210,55 @@
 
   .card-header {
     display: flex;
+    min-width: 0;
+  }
+
+  /* The disclosure button and the label-editing row share one layout. */
+  .header-row {
+    display: flex;
+    flex: 1;
     align-items: center;
     justify-content: space-between;
     padding: var(--space-3) var(--space-4);
-    cursor: pointer;
-    user-select: none;
     gap: var(--space-2);
     min-width: 0;
   }
 
-  .card-header:hover {
+  /* Undo the global <button> look (form-elements.css): the row looks like the card, not a button. */
+  .card-toggle {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    user-select: none;
+    transition: none;
+  }
+
+  .card-toggle:hover {
     background: var(--hover-color);
+    box-shadow: none;
+  }
+
+  .card-toggle:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /* `.sr-only` until it has focus; then a small text button at the end of the row. */
+  .edit-label-btn:focus {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: auto var(--space-2);
+    padding: var(--space-0-5) var(--space-2);
+    overflow: visible;
+    clip-path: none;
+    font-size: var(--font-size-sm);
+    box-shadow: none;
   }
 
   .header-left {
@@ -287,65 +310,12 @@
     box-sizing: border-box;
   }
 
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-shrink: 0;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
 
-  .quality-badge {
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-semibold);
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-xl);
-    background: currentcolor;
-    background: color-mix(in srgb, currentcolor 12%, transparent);
-    white-space: nowrap;
-  }
 
-  .gender-chip {
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-semibold);
-    padding: 3px var(--space-2);
-    border-radius: var(--radius-xl);
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    line-height: 1;
-    vertical-align: middle;
-  }
 
-  .gender-coherent {
-    background: color-mix(in srgb, var(--success-color) 12%, transparent);
-    color: var(--success-text);
-  }
 
-  .gender-conflict {
-    background: color-mix(in srgb, var(--warning-color) 12%, transparent);
-    color: var(--warning-text);
-  }
 
-  .member-count {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
 
-  .promoted-badge {
-    font-size: var(--font-size-2xs);
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-xl);
-    background: color-mix(in srgb, var(--success-color) 15%, transparent);
-    color: var(--success-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 150px;
-  }
 
   .card-body {
     border-top: 1px solid var(--border-color);
@@ -472,18 +442,6 @@
     box-shadow: 0 3px 8px rgba(var(--error-color-rgb), 0.3);
   }
 
-  .outlier-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-0-5) var(--space-2);
-    border-radius: var(--radius-xl);
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-semibold);
-    background: color-mix(in srgb, var(--warning-color) 12%, transparent);
-    color: var(--warning-text);
-    white-space: nowrap;
-  }
 
   .selection-chip {
     font-size: var(--font-size-xs);
@@ -555,7 +513,7 @@
   }
 
   @media (max-width: 768px) {
-    .card-header {
+    .header-row {
       padding: var(--space-2-5) var(--space-3);
       flex-wrap: wrap;
     }
@@ -565,31 +523,8 @@
       min-width: 0;
     }
 
-    .header-right {
-      flex-shrink: 1;
-      min-width: 0;
-      gap: var(--space-1-5);
-    }
-
     .cluster-label {
       font-size: var(--font-size-md);
-    }
-
-    .quality-badge,
-    .gender-chip,
-    .outlier-chip {
-      font-size: 10px;
-      padding: 1px var(--space-1-5);
-    }
-
-    .member-count {
-      font-size: var(--font-size-xs);
-    }
-
-    .promoted-badge {
-      max-width: 100px;
-      font-size: 10px;
-      padding: 1px var(--space-1-5);
     }
 
     .card-body {
@@ -613,18 +548,6 @@
 
     .blacklist-toggle {
       font-size: var(--font-size-2xs);
-    }
-  }
-
-  @media (max-width: 480px) {
-    .header-right {
-      flex-basis: 100%;
-      justify-content: flex-start;
-      margin-top: var(--space-1);
-    }
-
-    .promoted-badge {
-      max-width: 140px;
     }
   }
 </style>

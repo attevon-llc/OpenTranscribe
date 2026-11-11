@@ -654,6 +654,33 @@ _SPEAKER_STATES = (
         notes="the Unassign button hovered: amber fill with the dark --text-on-warning label",
     ),
     Screen(
+        "speakers-clusters-header-hover",
+        "/speakers?tab=clusters",
+        steps=(
+            *_CLUSTERS_FIXTURES,
+            "reload:page",
+            "wait:.cluster-card",
+            "hover:.cluster-card .card-header",
+        ),
+        masks=_SPEAKER_MASKS,
+        ready=".speakers-page",
+        notes="a collapsed card's header row hovered: the --hover-color wash and no button chrome",
+    ),
+    Screen(
+        "speakers-clusters-header-focus",
+        "/speakers?tab=clusters",
+        # `[aria-expanded]` is the disclosure control on both sides of a change to the card.
+        steps=(
+            *_CLUSTERS_FIXTURES,
+            "reload:page",
+            "wait:.cluster-card",
+            "focus:.cluster-card [aria-expanded]",
+        ),
+        masks=_SPEAKER_MASKS,
+        ready=".speakers-page",
+        notes="the header's keyboard focus ring",
+    ),
+    Screen(
         "speakers-profiles-shared",
         "/speakers?tab=profiles",
         steps=(_PROFILES_FIXTURE, "reload:page", "wait:.shared-badge"),

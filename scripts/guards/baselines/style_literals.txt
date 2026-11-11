@@ -262,10 +262,11 @@ font-size::frontend/src/components/sharing/PermissionLevelSelect.svelte	1	stylin
 font-size::frontend/src/components/sharing/ShareCollectionModal.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/sharing/ShareTargetSearch.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/sharing/SharedByAttribution.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/speakers/ClusterHeaderChips.svelte	2	styling layer: pre-migration literal, moved with the cluster header chips out of SpeakerClusterCard.svelte (net 0), burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/speakers/ClusterMemberList.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/speakers/ClustersTab.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/speakers/ProfilesTab.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/speakers/SpeakerClusterCard.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/speakers/SpeakerClusterCard.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/tags/TagShareModal.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/transcript/SpeakerEditorPanel.svelte	21	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/transcript/TranscriptSegmentList.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -609,10 +610,10 @@ spacing::frontend/src/components/sharing/CurrentSharesList.svelte	2	styling laye
 spacing::frontend/src/components/sharing/PermissionLevelSelect.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/sharing/ShareCollectionModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/sharing/ShareTargetSearch.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+spacing::frontend/src/components/speakers/ClusterHeaderChips.svelte	2	styling layer: pre-migration literal, moved with the cluster header chips out of SpeakerClusterCard.svelte (net 0), burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/speakers/ClusterMemberList.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/speakers/ClustersTab.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/speakers/ProfilesTab.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-spacing::frontend/src/components/speakers/SpeakerClusterCard.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/speakers/SpeakerInboxItem.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/supportAccess/ApproveGrantModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/supportAccess/BreakGlassModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

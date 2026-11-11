@@ -37,6 +37,7 @@ from dataclasses import asdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import numpy as np
 from _visual_diff import CHANNEL_NOISE_THRESHOLD
@@ -312,13 +313,39 @@ def split_step(step: str) -> tuple[str, str]:
     return kind, arg
 
 
-def retry_reason(fraction: float, changes: list[Change]) -> str:
-    """One line saying why a failing attempt was discarded: pixel share and what moved."""
+def subtree_roots(changes: list[Change]) -> list[str]:
+    """The keys of elements present on one side only whose parent is NOT also such an element.
+
+    A whole subtree that appears, vanishes or is re-keyed (an earlier sibling of the same tag
+    shifts every index below it) is hundreds of ``<element>`` changes; its root is the one that
+    says where it happened. Leaves alone ("aside:1") read as "the aside vanished" when it may
+    only have been renumbered.
+    """
+    keys = {c.key for c in changes if c.prop == "<element>"}
+    return sorted(k for k in keys if k.rpartition(">")[0] not in keys)
+
+
+def retry_reason(
+    fraction: float, changes: list[Change], failed_requests: tuple[str, ...] = ()
+) -> str:
+    """One line saying why a failing attempt was discarded: pixel share, what moved, and which
+    requests the browser saw fail (a failed fetch renders an error state on that side only)."""
     props = sorted({c.prop for c in changes})
-    where = sorted({c.key.rsplit(">", 1)[-1] for c in changes})
-    return f"pixel {fraction * 100:.4f}%, {len(changes)} computed" + (
-        f" ({', '.join(props[:4])} on {', '.join(where[:3])})" if changes else ""
-    )
+    where = sorted({c.key.rsplit(">", 1)[-1] for c in changes if c.prop != "<element>"})
+    roots = subtree_roots(changes)
+    line = f"pixel {fraction * 100:.4f}%, {len(changes)} computed"
+    if changes:
+        place = [*where[:3], *(f"subtree {r} ({_side(changes, r)})" for r in roots[:2])]
+        line += f" ({', '.join(props[:4])} on {', '.join(place)})"
+    if failed_requests:
+        line += f"; requests failed: {', '.join(failed_requests[:4])}"
+    return line
+
+
+def _side(changes: list[Change], key: str) -> str:
+    """``before only`` / ``after only`` for an ``<element>`` change at ``key``."""
+    change = next(c for c in changes if c.key == key and c.prop == "<element>")
+    return "before only" if change.before == "present" else "after only"
 
 
 def last_wait(steps: tuple[str, ...]) -> str | None:
@@ -586,6 +613,14 @@ def capture(
         path = path.replace("{file_uuid}", file_uuid)
     ctx = session.context(variant, screen.auth, fresh=screen.isolated)
     page = ctx.new_page()
+    # Playwright `requestfailed`: the request got no response at all (Request.failure gives the
+    # net:: error). A page whose fetch failed shows that panel's error state; naming the request
+    # turns a retry-only pass into an attributable one.
+    failed: list[str] = []
+    page.on(
+        "requestfailed",
+        lambda req: failed.append(f"{req.method} {_url_path(req.url)} {req.failure}"),
+    )
     try:
         if screen.viewport:
             page.set_viewport_size({"width": screen.viewport[0], "height": screen.viewport[1]})
@@ -624,7 +659,7 @@ def capture(
         check_state_survived_capture(page, screen.steps)
         snapshot = page.evaluate(_SNAPSHOT_JS, [masks, list(SNAPSHOT_PROPS)])
         has_btn = bool(page.evaluate("() => !!document.querySelector('.btn')"))
-        return {"png": png, "snapshot": snapshot, "has_btn": has_btn}
+        return {"png": png, "snapshot": snapshot, "has_btn": has_btn, "failed": tuple(failed)}
     finally:
         if screen.storage:
             # The context is shared with later screens: leave no seeded key behind.
@@ -635,6 +670,20 @@ def capture(
         page.close()
         if screen.isolated:
             ctx.close()
+
+
+def _url_path(url: str) -> str:
+    """``http://host:port/api/x?q=1`` -> ``/api/x`` (the query is noise in a one-line reason)."""
+    return urlsplit(url).path
+
+
+def _save_attempt(out: Path, key: str, attempt: int, a: dict[str, Any], b: dict[str, Any]) -> None:
+    """Keep a discarded attempt's photographs and snapshots, so its flake can be inspected."""
+    folder = out / "attempts"
+    folder.mkdir(parents=True, exist_ok=True)
+    for side, cap in (("before", a), ("after", b)):
+        (folder / f"{key}__{attempt}__{side}.png").write_bytes(cap["png"])
+        (folder / f"{key}__{attempt}__{side}.json").write_text(json.dumps(cap["snapshot"]))
 
 
 def _api_token_and_file(backend: str, creds: tuple[str, str]) -> tuple[str, str | None]:
@@ -705,6 +754,13 @@ def measure(
     """
     retries = MAX_ATTEMPTS if args.mode == "zero" and not args.negative_control else 1
     reasons: list[str] = []
+    if not screen.isolated:
+        # Each side's cached context logs in when first used. Created lazily, side B's login
+        # lands between the two captures, so B's Active Sessions list held one more row than A's
+        # on the first screen of every variant (settings-profile: a retry on all four, every run).
+        # Log both sides in before either side photographs anything.
+        side_a.context(variant, screen.auth)
+        side_b.context(variant, screen.auth)
     for attempt in range(1, retries + 1):
         try:
             a = capture(side_a, screen, variant, file_uuid)
@@ -722,7 +778,8 @@ def measure(
         changes = diff_snapshots(a["snapshot"], b["snapshot"])
         if verdict(args.mode, fraction, len(changes), is_control=screen.id in controls) != "FAIL":
             break
-        reasons.append(retry_reason(fraction, changes))
+        reasons.append(retry_reason(fraction, changes, a["failed"] + b["failed"]))
+        _save_attempt(Path(args.out).expanduser(), f"{screen.id}__{variant}", attempt, a, b)
     return arr_a, arr_b, fraction, changes, b, reasons
 
 

@@ -14,7 +14,7 @@ export const NETWORK_RETRY_JITTER_MS = 200;
  * made but no response was received", https://axios.rest/pages/advanced/error-handling).
  * A cancellation (`ERR_CANCELED`) and a timeout (`ECONNABORTED`) are different codes.
  */
-export function isTransportFailure(error: AxiosError): boolean {
+function isTransportFailure(error: AxiosError): boolean {
   return !error.response && error.code === 'ERR_NETWORK';
 }
 

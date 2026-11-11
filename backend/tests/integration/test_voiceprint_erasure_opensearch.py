@@ -211,38 +211,57 @@ def test_the_legacy_v3_backup_copy_is_erased_too(speaker_indices):
 
 @pytest.fixture
 def db_state(monkeypatch):
-    """Stand in for Postgres: which speaker / profile rows exist.
+    """Stand in for Postgres: which speaker / profile / cluster rows exist.
 
-    The sweep's own DB reads are two single-column queries; the part worth a real
+    The sweep's own DB reads are three single-column queries; the part worth a real
     cluster is everything after them.
     """
     from app.services import voiceprint_orphan_sweep as sweep
 
-    state = SimpleNamespace(speakers=set(), profiles=set())
-    monkeypatch.setattr(sweep, "_db_speaker_uuids", lambda: set(state.speakers))
-    monkeypatch.setattr(sweep, "_db_profile_uuids", lambda: set(state.profiles))
+    state = SimpleNamespace(speakers=set(), profiles=set(), clusters=set())
+    readers = {
+        "_db_speaker_uuids": lambda: set(state.speakers),
+        "_db_profile_uuids": lambda: set(state.profiles),
+        "_db_cluster_uuids": lambda: set(state.clusters),
+    }
+    # A DB reader this fixture does not stand in for would read the shared database and skew
+    # every count below (a cluster reader added in 5ce6f345c did exactly that).
+    unstubbed = {name for name in vars(sweep) if name.startswith("_db_")} - set(readers)
+    assert not unstubbed, f"stand in for the sweep's new DB reader(s) too: {sorted(unstubbed)}"
+    for name, reader in readers.items():
+        monkeypatch.setattr(sweep, name, reader)
     return state
 
 
 def _seed(ns: SimpleNamespace, db_state: SimpleNamespace) -> dict[str, Any]:
     live_spk, dead_spk, dead_v3, dead_bak = (str(uuid_pkg.uuid4()) for _ in range(4))
     live_prof, dead_prof = str(uuid_pkg.uuid4()), str(uuid_pkg.uuid4())
+    live_cluster, dead_cluster = str(uuid_pkg.uuid4()), str(uuid_pkg.uuid4())
     _put(ns, ns.v4, live_spk, _speaker_doc(live_spk))
     _put(ns, ns.v4, dead_spk, _speaker_doc(dead_spk))
     _put(ns, ns.v3, dead_v3, _speaker_doc(dead_v3, PYANNOTE_EMBEDDING_DIMENSION_V3))
     _put(ns, ns.backup, dead_bak, _speaker_doc(dead_bak, PYANNOTE_EMBEDDING_DIMENSION_V3))
     _put(ns, ns.v4, f"profile_{live_prof}", _profile_doc(live_prof))
     _put(ns, ns.v4, f"profile_{dead_prof}", _profile_doc(dead_prof))
-    # A cluster centroid is neither a speaker nor a profile; the sweep must leave it be.
-    _put(ns, ns.v4, "cluster_x", {"document_type": "cluster", "user_id": 7})
+    # A cluster centroid is judged against the speaker_cluster rows (5ce6f345c): one with a
+    # row stays, one without is an orphan like any other voiceprint.
+    for cluster in (live_cluster, dead_cluster):
+        _put(
+            ns,
+            ns.v4,
+            f"cluster_{cluster}",
+            {"document_type": "cluster", "cluster_uuid": cluster, "user_id": 7},
+        )
     for idx in (ns.v3, ns.v4, ns.backup):
         ns.client.indices.refresh(index=idx)
     db_state.speakers = {live_spk}
     db_state.profiles = {live_prof}
+    db_state.clusters = {live_cluster}
     return {
-        "live": [live_spk, f"profile_{live_prof}", "cluster_x"],
+        "live": [live_spk, f"profile_{live_prof}", f"cluster_{live_cluster}"],
+        "live_cluster": f"cluster_{live_cluster}",
         "dead": {
-            ns.v4: [dead_spk, f"profile_{dead_prof}"],
+            ns.v4: [dead_spk, f"profile_{dead_prof}", f"cluster_{dead_cluster}"],
             ns.v3: [dead_v3],
             ns.backup: [dead_bak],
         },
@@ -258,10 +277,11 @@ def test_sweep_is_a_dry_run_by_default_and_counts_every_orphan(speaker_indices, 
     report = sweep_orphan_voiceprints()
 
     assert report["dry_run"] is True
-    assert report["orphans_found"] == 4
+    assert report["orphans_found"] == 5
     assert report["deleted"] == 0
     assert report["indices"][ns.v4]["orphan_speaker_docs"] == 1
     assert report["indices"][ns.v4]["orphan_profile_docs"] == 1
+    assert report["indices"][ns.v4]["orphan_cluster_docs"] == 1
     assert report["indices"][ns.v3]["orphan_speaker_docs"] == 1
     assert report["indices"][ns.backup]["orphan_speaker_docs"] == 1
     for idx, ids in seeded["dead"].items():
@@ -276,7 +296,7 @@ def test_sweep_apply_removes_only_orphans_and_is_idempotent(speaker_indices, db_
 
     report = sweep_orphan_voiceprints(dry_run=False)
 
-    assert report["deleted"] == 4
+    assert report["deleted"] == 5
     assert report["surviving_orphans"] == 0
     for idx, ids in seeded["dead"].items():
         assert _visible(ns, idx, ids) == 0
@@ -299,12 +319,13 @@ def test_sweep_refuses_an_empty_database_unless_forced(speaker_indices, db_state
     refused = sweep_orphan_voiceprints(dry_run=False)
     assert refused["refused"] == "empty_database"
     assert refused["deleted"] == 0
-    assert _visible(ns, ns.v4, seeded["dead"][ns.v4]) == 2
+    assert _visible(ns, ns.v4, seeded["dead"][ns.v4]) == 3
 
     forced = sweep_orphan_voiceprints(dry_run=False, force=True)
     assert forced["refused"] is None
-    assert forced["deleted"] == 6  # every speaker + profile doc; the cluster doc stays
-    assert _visible(ns, ns.v4, ["cluster_x"]) == 1
+    # Every speaker and profile doc, and the cluster without a row; the one with a row stays.
+    assert forced["deleted"] == 7
+    assert _visible(ns, ns.v4, [seeded["live_cluster"]]) == 1
 
 
 def test_profile_left_without_speakers_loses_its_voiceprint(speaker_indices):

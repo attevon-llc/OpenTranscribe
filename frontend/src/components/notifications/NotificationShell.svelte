@@ -136,14 +136,14 @@
   }
 
   .status-success .notification-icon {
-    background: rgba(16, 185, 129, 0.1);
-    border-color: rgba(16, 185, 129, 0.2);
+    background: var(--success-bg);
+    border-color: rgba(var(--success-color-rgb), 0.2);
     color: var(--success-text);
   }
 
   .status-error .notification-icon {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.2);
+    background: var(--error-bg);
+    border-color: rgba(var(--error-color-rgb), 0.2);
     color: var(--error-text);
   }
 
@@ -154,8 +154,8 @@
   }
 
   .status-warning .notification-icon {
-    background: rgba(245, 158, 11, 0.1);
-    border-color: rgba(245, 158, 11, 0.2);
+    background: var(--warning-bg);
+    border-color: rgba(var(--warning-color-rgb), 0.2);
     color: var(--warning-text);
   }
 

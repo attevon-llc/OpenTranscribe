@@ -259,9 +259,9 @@
 
   .enroll-lead {
     padding: var(--space-3);
-    border: 1px solid rgba(245, 158, 11, 0.4);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.4);
     border-radius: var(--radius-md);
-    background-color: rgba(245, 158, 11, 0.12);
+    background-color: rgba(var(--warning-color-rgb), 0.12);
     color: var(--text-color);
   }
 
@@ -333,9 +333,9 @@
   .codes-warning {
     margin: 0;
     padding: var(--space-3);
-    border: 1px solid rgba(245, 158, 11, 0.45);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
-    background-color: rgba(245, 158, 11, 0.12);
+    background-color: rgba(var(--warning-color-rgb), 0.12);
     color: var(--text-color);
     font-size: 0.85rem;
   }

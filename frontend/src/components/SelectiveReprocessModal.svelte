@@ -890,7 +890,7 @@
 
   .stage-disabled-hint {
     font-size: 0.7rem;
-    color: #f59e0b;
+    color: var(--warning-text);
     font-style: italic;
     line-height: 1.3;
   }
@@ -1003,23 +1003,23 @@
   }
 
   .warning-destructive {
-    background-color: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background-color: rgba(var(--error-color-rgb), 0.08);
+    border: 1px solid rgba(var(--error-color-rgb), 0.2);
     color: var(--text-secondary);
   }
 
   .warning-destructive :global(svg) {
-    color: #ef4444;
+    color: var(--error-text);
   }
 
   .warning-caution {
-    background-color: rgba(245, 158, 11, 0.08);
-    border: 1px solid rgba(245, 158, 11, 0.2);
+    background-color: rgba(var(--warning-color-rgb), 0.08);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.2);
     color: var(--text-secondary);
   }
 
   .warning-caution :global(svg) {
-    color: #f59e0b;
+    color: var(--warning-text);
   }
 
   .warning-info {
@@ -1080,20 +1080,15 @@
 
   .validation-error {
     padding: 0.4rem 0.6rem;
-    background-color: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background-color: var(--error-bg);
+    border: 1px solid var(--error-border);
     border-radius: var(--radius-md);
-    color: #dc2626;
+    color: var(--error-text);
     font-size: var(--font-size-xs);
     margin-top: var(--space-2);
   }
 
   /* Dark mode */
-  :global([data-theme='dark']) .validation-error {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
   :global([data-theme='dark']) .stage-pill {
     background: rgba(var(--accent-rgb), 0.15);
   }

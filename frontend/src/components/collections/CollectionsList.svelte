@@ -128,8 +128,8 @@
   }
 
   .badge.public {
-    background: rgba(34, 197, 94, 0.1);
-    color: rgb(34, 197, 94);
+    background: var(--success-bg);
+    color: var(--success-text);
   }
 
   .badge.prompt {
@@ -147,21 +147,6 @@
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     padding: var(--space-1) 0;
-  }
-
-  :global([data-theme='dark']) .collection-card {
-    background: var(--card-background);
-    border-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .badge.public {
-    background: rgba(34, 197, 94, 0.2);
-    color: #4ade80;
-  }
-
-  :global([data-theme='dark']) .badge.prompt {
-    background: rgba(var(--accent-rgb), 0.2);
-    color: #60a5fa;
   }
 
   /* Mobile: tap-friendly buttons */

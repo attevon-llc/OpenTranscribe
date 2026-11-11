@@ -494,13 +494,13 @@ button.primary:hover:not(:disabled) {
   background-color: var(--warning-solid);
   color: var(--text-on-warning);
   border: none;
-  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 2px 4px rgba(var(--warning-color-rgb), 0.2);
 }
 .btn-warning:hover:not(:disabled) {
   background-color: var(--warning-solid-hover);
   color: var(--text-on-warning);
   transform: scale(1.02);
-  box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3);
+  box-shadow: 0 4px 8px rgba(var(--warning-color-rgb), 0.3);
 }
 .btn-warning:active:not(:disabled) {
   transform: scale(1) !important;

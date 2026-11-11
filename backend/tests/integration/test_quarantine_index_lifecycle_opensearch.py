@@ -8,9 +8,9 @@ reader excludes it inside the query itself, except under the quarantine review e
 
 The readers are called at the SERVICE level, below the Postgres post-filter
 (``file_availability.unavailable_among``): with the post-filter in front, a broken index filter
-would still pass. Every test creates its own users, files and throwaway availability_indices (random names,
+would still pass. Every test creates its own users, files and throwaway indices (random names,
 deleted in teardown) and never touches dev data or the real ``transcript_chunks`` /
-``transcripts`` / ``speakers*`` availability_indices. Point it at an isolated stack, never the shared dev one::
+``transcripts`` / ``speakers*`` indices. Point it at an isolated stack, never the shared dev one::
 
     OPENSEARCH_PORT=5280 POSTGRES_PORT=5276 \\
         pytest backend/tests/integration/test_quarantine_index_lifecycle_opensearch.py -m integration

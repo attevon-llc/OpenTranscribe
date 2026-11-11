@@ -200,7 +200,7 @@ def test_the_orphan_sweep_keeps_a_trashed_files_documents(availability_indices, 
     trash_service.trash_files(db_session, [media_file], actor=user, request=None, bypass=None)
 
     # The sweep's own core, for real (dry_run=False), scoped to this test's throwaway index:
-    # the full run_orphan_cleanup would also scan availability_indices this test does not own.
+    # the full run_orphan_cleanup would also scan indices this test does not own.
     stats = integrity._cleanup_index_by_field(
         availability_indices,
         settings.OPENSEARCH_CHUNKS_INDEX,

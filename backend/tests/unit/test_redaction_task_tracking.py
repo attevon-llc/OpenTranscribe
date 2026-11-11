@@ -197,6 +197,31 @@ def test_final_failure_after_retries_exhausted_creates_failed_task_row(
     assert task.completed_at is not None
 
 
+def test_exhausted_retries_record_a_database_error_by_class_name(
+    db_session, normal_user, redaction_env, monkeypatch
+):
+    """A database error's text quotes the SQL and its parameters; the Task row shows users."""
+    from sqlalchemy.exc import OperationalError
+
+    marker = "SELECT secret_column FROM transcript_segment"
+    media_file = _make_completed_file_with_segments(db_session, normal_user)
+
+    def boom(db, file_id):
+        raise OperationalError(marker, {"text": "private words"}, Exception("reset"))
+
+    monkeypatch.setattr("app.services.redaction.service.RedactionService.detect_and_store", boom)
+
+    result = redaction_detect_task.apply(
+        args=[media_file.id], kwargs={"user_id": normal_user.id}, retries=2
+    ).get()
+
+    assert result["error"] == "OperationalError"
+    task = _task_row_for(db_session, media_file.id)
+    assert task is not None
+    assert task.error_message == "OperationalError"
+    assert marker not in str(result)
+
+
 def test_same_task_id_across_two_sessions_does_not_duplicate_task_row():
     """A retry keeps Celery's task_id stable across attempts — it re-runs the
     SAME task id after its countdown, on a fresh session, rather than

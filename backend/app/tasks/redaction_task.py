@@ -29,6 +29,7 @@ from app.core.queues import RedactionPriority
 from app.core.redaction_defaults import REDACTION_MODEL_VERSION
 from app.services.post_processing_status import tracks_post_processing
 from app.utils import benchmark_timing
+from app.utils.task_utils import task_error_text
 
 logger = logging.getLogger(__name__)
 
@@ -182,8 +183,9 @@ def redaction_detect_task(
             # in_progress rather than marking it failed for a run that is
             # about to happen again.
             raise self.retry(exc=exc, countdown=30 * (2**self.request.retries)) from exc
-        _mark_redaction_task(task_id, "failed", error_message=str(exc))
-        return {"status": "failed", "file_id": file_id, "error": str(exc)}
+        error_text = task_error_text(exc)
+        _mark_redaction_task(task_id, "failed", error_message=error_text)
+        return {"status": "failed", "file_id": file_id, "error": error_text}
 
 
 @celery_app.task(

@@ -20,6 +20,8 @@ source ./scripts/lib/fresh-prod.sh
 source ./scripts/lib/lite-demo-overlay.sh
 # shellcheck source=scripts/lib/model-cache-dir.sh
 source ./scripts/lib/model-cache-dir.sh
+# shellcheck source=scripts/lib/gpu-device.sh
+source ./scripts/lib/gpu-device.sh
 
 # .env is gitignored, so a git worktree (e.g. .claude/worktrees/<name>) does not
 # get one automatically -- only the main checkout does. Left alone, every
@@ -57,6 +59,7 @@ fi
 
 # Load environment variables from .env if present
 if [ -f ".env" ]; then
+  snapshot_gpu_device_exports # before .env can overwrite them (warn_ignored_gpu_device_exports)
   set -a
   # shellcheck source=.env
   source ./.env
@@ -121,10 +124,6 @@ require_env_file_or_die() {
 # test_stop_grace_period_wiring.py enforces (opentr.sh's defaults block, common.sh's
 # assignment, and the compose `${OT_STOP_GRACE_GPU:-Ns}` default must all agree on 30).
 : "${OT_STOP_GRACE_GPU:=30}"
-# Snapshot of the .env value, taken before any `--gpu-device` override replaces
-# it. The containers read GPU_DEVICE_ID from `env_file: .env` (not from this
-# shell), so the override has to be able to say which value they will still see.
-GPU_DEVICE_ID_FROM_ENV="${GPU_DEVICE_ID}"
 # ENVIRONMENT is assigned only inside opentr.sh's own subcommand functions
 # (`ENVIRONMENT=${1:-dev}`), so any path reaching a common.sh helper without going
 # through start/reset first aborted before it could print anything. `dev` matches the
@@ -622,100 +621,6 @@ add_gpu_overlay() {
   elif [ -f "docker-compose.gpu.yml" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
     echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
-  fi
-}
-
-# GPU device-id variables that docker compose INTERPOLATES to pick the physical
-# card for one of OpenTranscribe's own AI workers. One list, so `--gpu-device`
-# and the test that guards it cannot disagree about the membership.
-GPU_DEVICE_VARS=(
-  GPU_DEVICE_ID             # default GPU worker          (docker-compose.gpu.yml / .blackwell.yml)
-  REDACTION_GPU_DEVICE_ID   # redaction worker            (docker-compose.gpu.yml)
-  GPU_SCALE_DEVICE_ID       # --gpu-scale workers         (docker-compose.gpu-scale.yml)
-  GPU_TRANSCRIBE_DEVICE_ID  # --with-gpu-split transcribe (docker-compose.gpu-split.yml)
-  GPU_DIARIZE_DEVICE_ID     # --with-gpu-split diarize    (docker-compose.gpu-split.yml)
-  DIAR_NATIVE_GPU           # diar-native sidecar         (docker-compose.diar-native.yml)
-)
-
-# `--gpu-device N` — retarget every GPU this stack's workers reserve, applied
-# AFTER .env has been sourced.
-#
-# WHY IT EXISTS: opentr.sh does `set -a; source ./.env` near the top, so
-# `GPU_DEVICE_ID=2 ./opentr.sh start dev` is silently overwritten by whatever
-# .env says — a pre-export cannot win. The only remaining way to move a worker
-# onto another card was to EDIT .env, which is shared with the live stack (and in
-# a git worktree is often a copy of, or a symlink to, the same file). That has
-# already happened here: a worktree .env edit moved the LIVE stack's GPU.
-#
-# WHY IT MOVES ALL FIVE: a flag that repoints one worker and leaves four behind
-# is worse than no flag — it looks like it worked, and then two stacks fight over
-# one card. `--gpu-device N` therefore means "this whole stack runs its AI work on
-# host GPU N", and sets every variable in GPU_DEVICE_VARS.
-#
-# WHAT IT DELIBERATELY DOES NOT MOVE:
-#   * LLM_TEST_GPU_DEVICE_ID (--with-llm-test) hosts a multi-GB LLM and is pinned
-#     to a DIFFERENT card on purpose so it never contends with transcription.
-#     Folding it in would co-locate them — the exact OOM that separation avoids.
-#     Move it explicitly with `LLM_TEST_GPU_DEVICE_ID=N ./opentr.sh ...` (it is
-#     absent from .env.example, so a pre-export survives unless your .env sets it).
-#   * The container-side copy of GPU_DEVICE_ID is read INSIDE the container from
-#     `env_file: .env` rather than interpolated by compose, so no shell export can
-#     reach it. Warned about below.
-apply_gpu_device_override() {
-  local requested="$1"
-  local var
-
-  if ! [[ "$requested" =~ ^[0-9]+$ ]]; then
-    echo "❌ --gpu-device must be a non-negative integer GPU index (got '$requested')"
-    exit 1
-  fi
-
-  # Catch the typo now rather than as an opaque "could not select device driver"
-  # from the daemon several minutes into a build. Skipped when nvidia-smi is
-  # absent (macOS, CPU-only host, CI) — the flag is a no-op there anyway.
-  if command -v nvidia-smi &> /dev/null; then
-    local gpu_count
-    gpu_count=$(nvidia-smi -L 2>/dev/null | grep -c '^GPU ' || true)
-    if [ -n "$gpu_count" ] && [ "$gpu_count" -gt 0 ] && [ "$requested" -ge "$gpu_count" ]; then
-      echo "❌ --gpu-device $requested: this host has $gpu_count GPU(s) (valid indices 0-$((gpu_count - 1)))"
-      nvidia-smi -L 2>/dev/null | sed 's/^/   /'
-      exit 1
-    fi
-  fi
-
-  for var in "${GPU_DEVICE_VARS[@]}"; do
-    export "$var=$requested"
-  done
-
-  echo "🎯 --gpu-device $requested: pinning this stack's AI workers to host GPU $requested (overrides .env)"
-  echo "   Set: ${GPU_DEVICE_VARS[*]} = $requested"
-  echo "   NOT set: LLM_TEST_GPU_DEVICE_ID (--with-llm-test keeps its own card on purpose)"
-
-  # The container-side copy of GPU_DEVICE_ID comes from `env_file: .env`, which no
-  # shell export can override. It is only read for host GPU-stats display
-  # (nvidia-smi -i), never for placement — placement is the reservation above —
-  # but the admin GPU panel will keep naming the .env card until .env is edited.
-  if [ -n "${GPU_DEVICE_ID_FROM_ENV:-}" ] && [ "${GPU_DEVICE_ID_FROM_ENV}" != "$requested" ]; then
-    echo "   ℹ️  In-container GPU_DEVICE_ID stays ${GPU_DEVICE_ID_FROM_ENV} (from env_file: .env) — that value"
-    echo "      only labels the admin GPU-stats panel; the reserved card is $requested."
-  fi
-
-}
-
-# Flag combinations that make --gpu-device mean less than it looks like it means.
-# Separate from apply_gpu_device_override so the override itself stays a pure
-# "set these vars" step that the other flags' parse order cannot affect.
-warn_gpu_device_override_conflicts() {
-  local requested="$1"
-
-  if [ -n "${CPU_FLAG:-}" ] || [ -n "${LITE_FLAG:-}" ]; then
-    echo "   ⚠️  --cpu/--lite loads no GPU overlay, so --gpu-device $requested reserves nothing."
-  fi
-
-  if [ -n "${GPU_SPLIT_FLAG:-}" ]; then
-    echo "   ⚠️  --with-gpu-split exists to put transcribe and diarize on DIFFERENT cards;"
-    echo "      --gpu-device $requested collapses both onto GPU $requested. Drop one of the two flags,"
-    echo "      or set GPU_TRANSCRIBE_DEVICE_ID / GPU_DIARIZE_DEVICE_ID in .env instead."
   fi
 }
 
@@ -2730,6 +2635,7 @@ start_app() {
     export DIAR_NATIVE_GPU="$DIAR_NATIVE_GPU_OVERRIDE"
     echo "🎯 --diar-native-gpu $DIAR_NATIVE_GPU_OVERRIDE: pinning the diar-native sidecar to host GPU $DIAR_NATIVE_GPU_OVERRIDE (overrides .env)"
   fi
+  warn_ignored_gpu_device_exports
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "🎯 Multi-GPU scaling enabled"
@@ -3149,13 +3055,7 @@ start_app() {
     # only under --gpu-device) so a dry run answers "which card does this stack
     # actually take?" without reading .env and five overlay files.
     echo "   GPU device reservations (as compose will interpolate them):"
-    # Iterates GPU_DEVICE_VARS so a device var added to the list (and to compose)
-    # shows up here without a second edit; the guard test parses this block.
-    _resv="  "
-    for _var in "${GPU_DEVICE_VARS[@]}"; do
-      _resv="${_resv} ${_var}=${!_var:-${GPU_DEVICE_ID:-0}}"
-    done
-    echo "   ${_resv} LLM_TEST_GPU_DEVICE_ID=${LLM_TEST_GPU_DEVICE_ID:-2}"
+    echo "     $(gpu_device_reservations) LLM_TEST_GPU_DEVICE_ID=${LLM_TEST_GPU_DEVICE_ID:-2}"
     echo "   Command that WOULD run:"
     echo "     docker compose $COMPOSE_FILES up -d $BUILD_CMD $RECREATE_CMD"
     [ -n "$FRESH_FLAG" ] && echo "   (fresh mode: NAS overlay omitted by design; real data untouched)"
@@ -3489,6 +3389,7 @@ reset_and_init() {
     export DIAR_NATIVE_GPU="$DIAR_NATIVE_GPU_OVERRIDE"
     echo "🎯 --diar-native-gpu $DIAR_NATIVE_GPU_OVERRIDE: pinning the diar-native sidecar to host GPU $DIAR_NATIVE_GPU_OVERRIDE (overrides .env)"
   fi
+  warn_ignored_gpu_device_exports
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "🎯 Multi-GPU scaling enabled"

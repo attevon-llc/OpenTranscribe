@@ -48,7 +48,20 @@ JSON_REFERENCE_EXEMPT: dict[tuple[str, str], str] = {
     # dangling UUID simply matches nothing.
     ("chat_conversation", "context"): "scope pointer; emptying it widens retrieval",
     ("chat_project", "scope"): "scope pointer; emptying it widens retrieval",
+    # The governance audit trail on its way to ``audit-logs-*`` (exempt below for the same
+    # reason): the delete itself stages ``file.trash`` / ``file.purge.requested`` /
+    # ``file.purge`` in the same transaction (transactional outbox, b83522131; trash and
+    # purge, fdbd8836c). A sent row is kept for AUDIT_OUTBOX_SENT_RETENTION_DAYS and then
+    # removed by ``audit_outbox.prune_sent``; the sink copy is the record that outlives it.
+    ("audit_outbox", "payload"): "audit trail in transit; must outlive the data it records",
 }
+
+#: Per-request timeout for the scan's own OpenSearch calls, all idempotent reads. The scan
+#: refreshes EVERY non-exempt index before it searches, and under a loaded host that refresh
+#: alone outlasted the client's 10 s default (P3 fix-lane run: two residue tests errored with
+#: ``ConnectionTimeout`` in ``opensearch_residue`` while the deletes under test had worked).
+#: Stated per call (opensearch-py's ``request_timeout``) so the client default is untouched.
+SCAN_REQUEST_TIMEOUT_S = 120
 
 #: Index name prefixes the residue scan skips, with the reason.
 INDEX_EXEMPT_PREFIXES: dict[str, str] = {
@@ -215,7 +228,7 @@ def scannable_indices(client: Any) -> list[str]:
     """Every index the residue scan covers: all of them minus :data:`INDEX_EXEMPT_PREFIXES`."""
     return [
         row["index"]
-        for row in client.cat.indices(format="json")
+        for row in client.cat.indices(format="json", request_timeout=SCAN_REQUEST_TIMEOUT_S)
         if not any(row["index"].startswith(p) for p in INDEX_EXEMPT_PREFIXES)
     ]
 
@@ -255,7 +268,9 @@ def opensearch_residue(sf: SeededFile, *, include_owner: bool) -> list[str]:
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
     indices = scannable_indices(client)
-    client.indices.refresh(index=",".join(indices), ignore_unavailable=True)
+    client.indices.refresh(
+        index=",".join(indices), ignore_unavailable=True, request_timeout=SCAN_REQUEST_TIMEOUT_S
+    )
     resp = client.search(
         index=",".join(indices),
         body={
@@ -263,7 +278,7 @@ def opensearch_residue(sf: SeededFile, *, include_owner: bool) -> list[str]:
             "query": residue_query(sf, include_owner=include_owner),
             "aggs": {"idx": {"terms": {"field": "_index", "size": 100}}},
         },
-        params={"ignore_unavailable": "true"},
+        params={"ignore_unavailable": "true", "request_timeout": SCAN_REQUEST_TIMEOUT_S},
     )
     return [
         f"opensearch: {b['doc_count']} doc(s) in {b['key']}"
@@ -285,6 +300,7 @@ def opensearch_planes(file_uuid: str) -> dict[str, int]:
             "query": {"term": {"file_uuid": file_uuid}},
             "aggs": {"t": {"terms": {"field": "doc_type", "missing": "chunk", "size": 10}}},
         },
+        request_timeout=SCAN_REQUEST_TIMEOUT_S,
     )
     return {b["key"]: b["doc_count"] for b in resp["aggregations"]["t"]["buckets"]}
 
@@ -506,7 +522,7 @@ class _Teardown:
             "ws": sf.watch_source_id,
             "ue": sf.usage_event_id,
             "notice": sf.takedown_notice_id,
-            "org": sf.organization_id,
+            "hold": sf.content_hold_id,
         }
         self.sql(
             [
@@ -522,11 +538,10 @@ class _Teardown:
                 ("DELETE FROM watch_source_file WHERE watch_source_id = :ws", ids),
                 ("DELETE FROM watch_source WHERE id = :ws", ids),
                 ("DELETE FROM usage_event WHERE id = CAST(:ue AS uuid)", ids),
-                # The notice record outlives the file by design, so the delete under test
-                # never removes it; its links go with it. The organization takes the
-                # seeded hold (and its file rows) with it.
+                # The notice record and the released hold outlive the file by design, so the
+                # delete under test never removes them; their file links go with them.
                 ("DELETE FROM takedown_notice WHERE id = :notice", ids),
-                ("DELETE FROM organization WHERE id = :org", ids),
+                ("DELETE FROM content_hold WHERE id = :hold", ids),
             ]
         )
 

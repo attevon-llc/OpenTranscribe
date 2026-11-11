@@ -19,6 +19,25 @@ def _clean_env(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_stored_policy(db_session):
+    """Start every test from "nothing stored", whatever the database already holds.
+
+    The suite shares the stack's database, which legitimately carries ``youtube.*`` rows: the
+    backend's startup copies a deployment's legacy ``YOUTUBE_*`` variables into them once
+    (``initial_data._seed_deprecated_env_settings``), and an admin may have saved the form.
+    The DELETE runs inside this test's savepoint, so the request sees an empty policy and
+    the rollback puts the real rows back untouched.
+    """
+    from app.models.system_settings import SystemSettings
+
+    keys = [key for key, _env, _desc in youtube_policy.POLICY_KEYS.values()]
+    db_session.query(SystemSettings).filter(SystemSettings.key.in_(keys)).delete(
+        synchronize_session=False
+    )
+    db_session.flush()
+
+
 def test_defaults_when_nothing_is_stored(client, admin_token_headers):
     body = client.get(URL, headers=admin_token_headers).json()
     assert body["user_rate_limit_per_hour"] == DEFAULT_YOUTUBE_USER_RATE_LIMIT_PER_HOUR

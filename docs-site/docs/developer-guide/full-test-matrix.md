@@ -264,7 +264,10 @@ an unrelated container).
 
 `opentr.sh` gained a `--diar-native-gpu N` flag for this (applied *after* `--gpu-device`, so
 the two can differ — `--gpu-device` alone pins every `GPU_DEVICE_VARS` entry, including
-`DIAR_NATIVE_GPU`, to the same value):
+`DIAR_NATIVE_GPU`, to the same value). Use the flags, not exports: `opentr.sh` sources `.env`
+after your environment, so `GPU_SCALE_DEVICE_ID=2 ./opentr.sh start ...` starts the scaled
+workers on whatever card `.env` names. It now prints a warning for each exported device id that
+lost and the flag that does what you meant:
 
 ```bash
 ./opentr.sh start dev --fresh xcard711 --gpu-scale --port-offset 300 \

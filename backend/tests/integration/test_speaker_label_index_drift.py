@@ -61,6 +61,8 @@ from sqlalchemy.orm import Session
 
 from app.models.speaker import Speaker
 from app.utils.speaker_labels import canonical_speaker_label_for_row
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -146,12 +148,12 @@ def isolated_chunk_index(monkeypatch):
     )
 
     name = f"test_label_drift_{uuid.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
+        create_test_index(client, name, index_admin._get_index_body_with_dimension(384))
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         yield client, name
     finally:
-        client.indices.delete(index=name, ignore=[404])
+        delete_test_index(client, name)
 
 
 @pytest.fixture

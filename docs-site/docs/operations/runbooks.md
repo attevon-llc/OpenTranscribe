@@ -242,7 +242,9 @@ watch -n 5 'docker compose exec celery-worker nvidia-smi'
 *Step 4: Pin the worker to a dedicated GPU (advanced)*
 
 Docker cannot cap GPU memory, but you can keep the worker off a card shared with other workloads
-(`GPU_DEVICE_ID` in `.env`, or `--gpu-device N` on `./opentr.sh start`). The reservation in
+(`GPU_DEVICE_ID` in `.env`, or `--gpu-device N` on `./opentr.sh start`; exporting
+`GPU_DEVICE_ID` in your shell does not work, because `.env` is read after it, and `opentr.sh`
+warns when that happens). The reservation in
 `docker-compose.yml` looks like:
 ```yaml
 deploy:

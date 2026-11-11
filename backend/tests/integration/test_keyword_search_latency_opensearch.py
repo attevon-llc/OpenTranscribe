@@ -39,6 +39,9 @@ from typing import Any
 
 import pytest
 
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
+
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
 pytestmark = [
@@ -91,8 +94,8 @@ def keyword_index():
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
 
     name = f"test_kw_latency_{uuid.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
+        create_test_index(client, name, index_admin._get_index_body_with_dimension(384))
         rng = random.Random(1064)  # noqa: S311 — deterministic test corpus, not crypto
         vocab = _vocabulary(rng, 6000)
         actions: list[dict[str, Any]] = []
@@ -128,7 +131,7 @@ def keyword_index():
         assert client.count(index=name)["count"] == N_FILES * CHUNKS_PER_FILE
         yield client, name
     finally:
-        client.indices.delete(index=name, ignore_unavailable=True)
+        delete_test_index(client, name)
 
 
 @pytest.fixture

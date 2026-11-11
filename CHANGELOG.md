@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Security: a stored secret that cannot be decrypted (rotated or wrong `ENCRYPTION_KEY`, corrupt or tampered ciphertext) now raises `SecretDecryptionError` instead of returning `None`, which callers could not tell from "no secret stored". Provider and ASR credentials, SMTP/Exchange/M365 and watch-source S3/SMB secrets, scheduled-job S3 secrets and Bedrock credentials now fail visibly rather than connecting without credentials or overwriting the stored value; the API answers `409` with code `stored_value_unreadable` and a fixed message; the media-source resolver skips an undecryptable source; the admin Statistics queue view reports "unavailable" on a broker outage instead of zeros.
 
+- `./opentr.sh start` and `reset` now warn when a GPU device id you exported (for example `GPU_SCALE_DEVICE_ID=2`) is replaced by `.env` or by a flag, and name `--gpu-device` or `--diar-native-gpu`. Before, the workers silently started on the `.env` card.
+- `scripts/run-integration-tests.sh` gives the stack's Redis host, port and password to the GPU and e2e smoke phases as well as the integration phase, fills in only the values you did not export (a shell with just `REDIS_PORT` set no longer gets a port with no password), and runs the unit and FIPS phases with every `REDIS_*` variable unset.
+
 ### Changed
 
 - Pydantic schemas in `auth_config`, `download_settings` and `transcription_settings` use `model_config = ConfigDict(...)` instead of the deprecated class-based `Config`; generated JSON schemas are unchanged. `backend/tests/unit/test_no_pydantic_v1_deprecations.py` fails on any `PydanticDeprecatedSince20` at import of `app.schemas` / `app.models`.

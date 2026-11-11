@@ -86,14 +86,18 @@ what it appears to. A green one from the wrong schema is worse.
     have meant something. Raising the ceiling to "make room" reopens exactly that hole for the
     next unrelated skip.
 
-    **Redis for the integration phase.** The gate resolves the compose project's Redis host port and
-    password (from the stack's own containers) and hands `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`
-    to the **Integration-marked tests** phase only; you no longer export them by hand. They are
-    deliberately NOT given to the unit phase: they flip about ten memory-path unit tests onto the
-    Redis path and fail them. A bare `pytest tests/integration` outside the gate still needs the
-    three variables set yourself, or the Redis-backed tests fall back to `localhost:5177` with no
-    password and fail on a healthy stack. (Needs the `run-integration-tests.sh` change from commit
-    `326f3ae06`.)
+    **Redis per phase.** The gate's `stack-redis-env` block resolves the compose project's Redis
+    host port and password (from the stack's own containers) and hands `REDIS_HOST`/`REDIS_PORT`/
+    `REDIS_PASSWORD` to the **integration, GPU and e2e smoke** phases; you no longer export them by
+    hand. A variable you DID export wins on its own and only the missing ones are resolved, so a
+    shell that exported just `REDIS_PORT` for a `--fresh` stack still gets the password (the e2e
+    phase used to get neither, and its fixtures hit `AuthenticationError`). The unit and FIPS
+    phases run under `UNIT_ENV`, which UNSETS all of them even if your shell exported them: they
+    flip about ten memory-path unit tests onto the Redis path and fail them. Separately,
+    `tests/unit/conftest.py` clears `STACK_POINTER_VARS` (`COMPOSE_*`, `REDIS_*`,
+    `CELERY_BROKER_URL`) for every unit test, so a test that builds `Settings(...)` or runs an
+    `opentr.sh` snippet sees the same environment in your shell as in CI. A bare
+    `pytest tests/integration` outside the gate still needs the three variables set yourself.
 
     **Why the ceiling is 0** (it was 7 until 2026-10-30): the seven were 4 skips in
     `test_fusion_strategy_switch.py` and 3 in `test_rag_eval_harness.py`, tests that asserted on
@@ -231,30 +235,8 @@ E2E and integration tests must never persist changes to dev data; the rules are 
 A flapping backend and similar stack faults mimic a flaky test (the runner only checked that ports were open); the session preflight and what it catches: `backend/tests/e2e/CLAUDE.md`.
 ## Gotchas
 
-- **Subdirectory-conftest fixtures vanish from a mixed file selection (issue #454, pytest 9.1).**
-  `pytest tests/unit/a.py tests/b.py tests/unit/c.py` used to give
-  `fixture 'run_in_clean_process' not found` — **3 setup ERRORS, not failures**, so the
-  fail-closed-environment and Celery-reliability guards silently stopped running. Mechanism:
-  pytest ≥ 9.1 matches a conftest's fixtures to tests by **collector-node object identity**
-  (`FixtureManager._matchfactories`) and registers each conftest exactly once (`pop` from
-  `_pending_conftests`), while `Session.collect` **rebuilds a directory's children** whenever an
-  argument ends at a file inside it (`handle_dupes=False`). Leaving a subdirectory and returning
-  therefore hangs the later file off a second, unregistered collector.
-  **The `__init__.py` asymmetry is NOT the cause** — a minimal repro errors identically with
-  both, neither, or either present, and `tests/api/` (no `__init__.py`) breaks the same way.
-  Bisected: 8.4.2 and 9.0.3 clean, 9.1.0/9.1.1 broken, 9.1.1 is newest. Worked around by
-  `fixtures/dir_collector_memo.py` (memoises directory collectors; registered from the root
-  conftest's `pytest_plugins`) and pinned by `unit/test_conftest_fixture_visibility.py`, whose
-  must-fire control **skips with removal instructions** once upstream fixes it. Confirmed
-  victims were `run_in_clean_process` + `revisions_at_or_after` (`unit/conftest.py`) and
-  `org_context` + `organizations_capability_on` (`api/conftest.py`).
-- **`tests/` must never gain an `__init__.py`.** Prepend import mode would then root
-  `tests/conftest.py` at `backend/`, `backend/tests` would never reach `sys.path`, and
-  `pytest_plugins = ["fixtures.mock_llm", ...]` dies with `No module named 'fixtures'` — the
-  same reason `--import-mode=importlib` is unusable here.
-- **A fixture plugin is loaded twice** (`fixtures.<module>` by conftest, `tests.fixtures.<module>`
-  by tests), so a top-level random value differs between the copies. Draw per-run values from
-  `tests.run_identity.RUN_TOKEN` (enforced by `unit/test_fixture_plugins_share_run_state.py`).
+- **How fixture plugins load** (the pytest 9.1 conftest-visibility workaround, why `tests/` has
+  no `__init__.py`, and per-run values from `tests.run_identity`): `fixtures/CLAUDE.md`.
 - **Many endpoints `db.close()` the request session** before slow work (`rg 'db\.close\(\)'
   app/api`); `client` shares `db_session`, so held ORM rows detach. Capture ids before the
   request, or re-read with `db_session.get(Model, id, populate_existing=True)`.

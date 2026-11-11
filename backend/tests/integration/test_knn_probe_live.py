@@ -29,6 +29,8 @@ import pytest
 
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import probe_knn_health
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 pytestmark = pytest.mark.integration
 
@@ -92,12 +94,12 @@ def client():
 def ann_index(client):
     """A real ANN index of our own, removed however the test ends."""
     index = _unique_index()
-    client.indices.create(index=index, body=_ann_index_body())
     try:
+        create_test_index(client, index, _ann_index_body())
         yield index
     finally:
         client.indices.open(index=index, ignore=[400, 404])
-        client.indices.delete(index=index, ignore=[404])
+        delete_test_index(client, index)
 
 
 def test_an_empty_ann_index_reports_empty_not_corrupt(ann_index):
@@ -177,8 +179,8 @@ def test_a_method_less_knn_vector_field_reports_unsupported(client):
     would delete and re-embed an intact index on every tick.
     """
     index = _unique_index("_non_ann")
-    client.indices.create(index=index, body=_non_ann_index_body())
     try:
+        create_test_index(client, index, _non_ann_index_body())
         client.index(
             index=index,
             id="1",
@@ -191,7 +193,7 @@ def test_a_method_less_knn_vector_field_reports_unsupported(client):
         assert result.is_corrupt is False
         assert result.is_serviceable is True
     finally:
-        client.indices.delete(index=index, ignore=[404])
+        delete_test_index(client, index)
 
 
 def test_the_probe_is_cheap_enough_to_run_on_a_health_tick(client, ann_index):

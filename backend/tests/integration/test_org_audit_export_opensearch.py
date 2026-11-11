@@ -22,6 +22,8 @@ import pytest
 from app.api.endpoints.org_admin import org_audit_query
 from app.auth.audit_query import query_audit_logs
 from app.services.request_context import RequestContext
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -42,17 +44,18 @@ def audit_index():
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
     name = f"test_audit_org_scope_{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(
-        index=name,
-        body={
-            "mappings": {"properties": _AUDIT_PROPERTIES},
-            "settings": {"number_of_shards": 1, "number_of_replicas": 0},
-        },
-    )
     try:
+        create_test_index(
+            client,
+            name,
+            {
+                "mappings": {"properties": _AUDIT_PROPERTIES},
+                "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+            },
+        )
         yield client, name
     finally:
-        client.indices.delete(index=name, ignore=[404])
+        delete_test_index(client, name)
 
 
 def _event(label: str, **fields) -> dict:

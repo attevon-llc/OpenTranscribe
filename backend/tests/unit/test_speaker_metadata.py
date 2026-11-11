@@ -24,6 +24,8 @@ from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.services.opensearch_service import speaker_metadata
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -104,9 +106,10 @@ def indices(monkeypatch):
                 "cluster error (issue #486)"
             )
         client.indices.put_alias(index=v4, name=alias)
-        client.indices.create(
-            index=transcript_index,
-            body={
+        create_test_index(
+            client,
+            transcript_index,
+            {
                 "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 0}},
                 "mappings": {
                     "properties": {
@@ -125,7 +128,7 @@ def indices(monkeypatch):
         )
     finally:
         for idx in (v3, v4, transcript_index):
-            client.indices.delete(index=idx, ignore=[404])
+            delete_test_index(client, idx)
 
 
 # --------------------------------------------------------------------------- #

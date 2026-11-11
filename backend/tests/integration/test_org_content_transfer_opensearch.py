@@ -17,6 +17,8 @@ import pytest
 from app.services.org_content_transfer import restamp_documents
 from app.services.search.availability_field import AVAILABILITY_FIELD
 from app.services.search.availability_field import exclude_unavailable_clause
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 pytestmark = [
     pytest.mark.integration,
@@ -54,7 +56,7 @@ def indices(monkeypatch):
     monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", transcripts)
     try:
         for name in (chunks, transcripts):
-            client.indices.create(index=name, body=MAPPING)
+            create_test_index(client, name, MAPPING)
         for file_id, availability in (
             (LIVE, "available"),
             (HELD, "available"),
@@ -74,7 +76,7 @@ def indices(monkeypatch):
         yield client, chunks, transcripts
     finally:
         for name in (chunks, transcripts):
-            client.indices.delete(index=name, ignore_unavailable=True)
+            delete_test_index(client, name)
 
 
 def _owners(client, index: str) -> dict[int, int]:

@@ -15,6 +15,8 @@ from dataclasses import field
 
 from sqlalchemy import text
 
+from tests.fixtures.opensearch_test_index import TEST_INDEX_REQUEST_TIMEOUT_S
+
 SPEAKER_INDEX = "speakers_v4"
 
 
@@ -60,6 +62,7 @@ def _ensure_chunks_index() -> None:
         opensearch_client.indices.create(
             index=settings.OPENSEARCH_CHUNKS_INDEX,
             body={"mappings": {"properties": {"file_uuid": {"type": "keyword"}}}},
+            request_timeout=TEST_INDEX_REQUEST_TIMEOUT_S,
         )
 
 

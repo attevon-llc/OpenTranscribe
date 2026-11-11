@@ -34,6 +34,8 @@ from app.services.privacy.purge_voiceprints import VoiceprintTargets
 from app.services.privacy.purge_voiceprints import org_stamp_clause
 from app.services.privacy.purge_voiceprints import purge_voiceprint_docs
 from app.services.search.reindex_dispatch import ReindexDispatch
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 from tests.fixtures.privacy_switches import set_instance_switch
 from tests.fixtures.speaker_cleanup_seams import make_file
 from tests.fixtures.speaker_cleanup_seams import make_speaker
@@ -70,11 +72,11 @@ def chunk_index(client, monkeypatch) -> Iterator[str]:
 
     name = f"test_priv_chunks_{uuid.uuid4().hex[:12]}"
     try:
-        client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+        create_test_index(client, name, svc._get_index_body_with_dimension(384))
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         yield name
     finally:
-        client.indices.delete(index=name, ignore=[404])
+        delete_test_index(client, name)
 
 
 _SPEAKER_MAPPING = {
@@ -102,12 +104,12 @@ def speaker_indices(client, monkeypatch) -> Iterator[dict[str, str]]:
     names = {"alias": base, "v3": f"{base}_v3", "v4": f"{base}_v4", "backup": f"{base}_v3_backup"}
     try:
         for key in ("v3", "v4", "backup"):
-            client.indices.create(index=names[key], body=_SPEAKER_MAPPING)
+            create_test_index(client, names[key], _SPEAKER_MAPPING)
         client.indices.put_alias(index=names["v4"], name=names["alias"])
         yield names
     finally:
         for key in ("v3", "v4", "backup"):
-            client.indices.delete(index=names[key], ignore=[404])
+            delete_test_index(client, names[key])
 
 
 def _put(client, index: str, doc_id: str, **fields: Any) -> None:

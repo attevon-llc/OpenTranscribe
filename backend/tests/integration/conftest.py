@@ -59,7 +59,16 @@ from collections.abc import Iterator
 
 import pytest
 
+from tests.integration import organization_count_guard
 from tests.integration import throwaway_pg
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    organization_count_guard.record_before(session)
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    organization_count_guard.check_after(session)
 
 
 @pytest.fixture(scope="session")

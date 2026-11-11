@@ -50,6 +50,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OPENTR = REPO_ROOT / "opentr.sh"
 COMMON = REPO_ROOT / "scripts" / "common.sh"
+#: Where GPU_DEVICE_VARS and the --gpu-device functions live (sourced by opentr.sh).
+GPU_DEVICE_LIB = REPO_ROOT / "scripts" / "lib" / "gpu-device.sh"
 
 # Device ids that exist for something other than an OpenTranscribe AI worker, and
 # so must NOT follow --gpu-device. Each maps to the reason the flag documents.
@@ -58,7 +60,7 @@ EXCLUDED_DEVICE_VARS = {
 }
 
 pytestmark = pytest.mark.skipif(
-    not OPENTR.exists() or not COMMON.exists(),
+    not OPENTR.exists() or not COMMON.exists() or not GPU_DEVICE_LIB.exists(),
     reason="opentr.sh / scripts/common.sh not present in this checkout",
 )
 
@@ -80,8 +82,9 @@ def _show_help() -> str:
 
 def _declared_device_vars() -> list[str]:
     """The GPU_DEVICE_VARS array `--gpu-device` iterates over."""
-    match = re.search(r"^GPU_DEVICE_VARS=\((.*?)^\)", _script(), re.S | re.M)
-    assert match, "opentr.sh no longer declares a GPU_DEVICE_VARS array"
+    lib = GPU_DEVICE_LIB.read_text(encoding="utf-8")
+    match = re.search(r"^GPU_DEVICE_VARS=\((.*?)^\)", lib, re.S | re.M)
+    assert match, "scripts/lib/gpu-device.sh no longer declares a GPU_DEVICE_VARS array"
     return re.findall(r"^\s*([A-Z][A-Z0-9_]*)", match.group(1), re.M)
 
 
@@ -144,7 +147,7 @@ def test_every_worker_device_id_compose_interpolates_is_moved():
         "compose files interpolate.\n"
         f"  reserved by compose but NOT moved: {sorted(expected - declared)}\n"
         f"  moved but read by no compose file: {sorted(declared - expected)}\n"
-        "Add it to GPU_DEVICE_VARS in opentr.sh, or — if it must stay put — add it "
+        "Add it to GPU_DEVICE_VARS in scripts/lib/gpu-device.sh, or — if it must stay put — add it "
         "to EXCLUDED_DEVICE_VARS here WITH the reason, and say so in show_help()."
     )
 
@@ -216,6 +219,10 @@ def sandbox(tmp_path):
     (checkout / "scripts").mkdir(parents=True)
     (checkout / "opentr.sh").write_text(_script())
     (checkout / "scripts" / "common.sh").write_text(COMMON.read_text(encoding="utf-8"))
+    (checkout / "scripts" / "lib").mkdir()
+    (checkout / "scripts" / "lib" / "gpu-device.sh").write_text(
+        GPU_DEVICE_LIB.read_text(encoding="utf-8")
+    )
     (checkout / "VERSION").write_text("0.0.0-test\n")
     # Only the overlays start_app probes with `[ -f ... ]` need to exist.
     (checkout / "docker-compose.yml").write_text("services: {}\n")
@@ -346,3 +353,84 @@ def test_gpu_split_is_warned_about_rather_than_silently_collapsed(sandbox):
     )
     assert proc.returncode == 0, output
     assert "collapses both onto GPU 1" in output, output
+
+
+# ---------------------------------------------------------------------------
+# A pre-exported device id that .env (or a flag) overrides is named, loudly.
+# ---------------------------------------------------------------------------
+
+
+def test_a_pre_exported_device_id_that_dotenv_overwrites_is_warned_about_with_the_flag(sandbox):
+    """The P3.2 gate case: GPU_SCALE_DEVICE_ID=2 exported, .env says 1, workers start on 1.
+
+    The value still loses (that ordering is the control test above); what changes is that
+    the operator is told, with the flag that does what they meant.
+    """
+    with (sandbox.checkout / ".env").open("a") as env_file:
+        env_file.write("GPU_SCALE_DEVICE_ID=1\n")
+    proc, output = _run(
+        sandbox,
+        "start",
+        "dev",
+        "--no-nas",
+        "--dry-run",
+        extra_env={"GPU_SCALE_DEVICE_ID": "2"},
+    )
+    assert proc.returncode == 0, output
+    assert "GPU_SCALE_DEVICE_ID=2 was exported, but this stack will use GPU_SCALE_DEVICE_ID=1" in (
+        output
+    ), output
+    assert "--gpu-device 2" in output, output
+
+
+def test_a_pre_export_dotenv_does_not_set_survives_and_is_not_warned_about(sandbox):
+    """Control: .env names no GPU_SCALE_DEVICE_ID, so the export is what compose sees."""
+    proc, output = _run(
+        sandbox,
+        "start",
+        "dev",
+        "--no-nas",
+        "--dry-run",
+        extra_env={"GPU_SCALE_DEVICE_ID": "2"},
+    )
+    assert proc.returncode == 0, output
+    assert "was exported, but" not in output, output
+
+
+def test_a_pre_export_the_flag_agrees_with_is_not_warned_about(sandbox):
+    proc, output = _run(
+        sandbox,
+        "start",
+        "dev",
+        "--no-nas",
+        "--dry-run",
+        "--gpu-device",
+        "1",
+        extra_env={"GPU_DEVICE_ID": "1"},
+    )
+    assert proc.returncode == 0, output
+    assert "was exported, but" not in output, output
+
+
+def test_a_diar_native_export_the_flag_overrides_names_the_sidecar_flag(sandbox):
+    proc, output = _run(
+        sandbox,
+        "start",
+        "dev",
+        "--no-nas",
+        "--dry-run",
+        "--gpu-device",
+        "1",
+        extra_env={"DIAR_NATIVE_GPU": "2"},
+    )
+    assert proc.returncode == 0, output
+    assert "DIAR_NATIVE_GPU=2 was exported, but this stack will use DIAR_NATIVE_GPU=1" in output
+    assert "--diar-native-gpu 2" in output, output
+
+
+@pytest.mark.parametrize("function_name", ["start_app", "reset_and_init"])
+def test_start_and_reset_both_warn_about_overridden_exports(function_name):
+    body = _function_body(_script(), function_name)
+    assert "warn_ignored_gpu_device_exports" in body, (
+        f"{function_name} applies the GPU overrides but never reports an export that lost"
+    )

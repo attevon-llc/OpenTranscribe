@@ -41,6 +41,8 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 from tests.integration.deletion_residue import CENTROID_MATCH_COSINE
 from tests.integration.deletion_residue import LEGAL_SEED_IP
 from tests.integration.deletion_residue import LEGAL_SEED_UA
@@ -343,6 +345,62 @@ def _purge_from_trash(api: Api, sf: SeededFile) -> None:
     resp = api.delete(f"/api/files/{sf.file_uuid}/purge")
     assert resp.status_code in (202, 404), resp.text
     purge_due(file_ids=[sf.file_id])
+    if resp.status_code == 202:
+        _wait_for_the_purge_pass(sf)
+
+
+#: Both steps of a purge pass that can still be running after the in-process ``purge_due``
+#: returns: the SUCCESSFUL ``file.purge`` event (``trash_purge.purge_one`` stages it only after
+#: ``purge_media_file`` returned, centroid and member-count refresh included), and the
+#: chat-citation scrub, which ``purge_due`` runs in its ``finally`` AFTER that event and
+#: which records nothing of its own, so its effect is the only thing to observe. Only
+#: ``outcome = success`` counts: when the two passes overlap, the one that finds the row gone
+#: in its last phase records ``file.purge`` with outcome ``partial`` (``aborted_after_destroy``)
+#: at once, while the winner may still be refreshing.
+_PURGE_PASS_STEPS = (
+    (
+        "the file.purge event",
+        "SELECT NOT EXISTS (SELECT 1 FROM audit_outbox WHERE event_type = 'file.purge' "
+        "AND payload ->> 'outcome' = 'success' "
+        "AND (payload -> 'details' ->> 'file_id')::int = :f)",
+    ),
+    (
+        "the chat-citation scrub",
+        "SELECT EXISTS (SELECT 1 FROM chat_message WHERE citations::text LIKE '%' || :u || '%')",
+    ),
+)
+
+
+def _wait_for_the_purge_pass(sf: SeededFile, *, timeout: float = 60.0) -> None:
+    """Wait until whichever purge pass won the file has finished every step.
+
+    Against the live stack the queued destroy runs on the stack's worker too. Both runs lock
+    the row, so one destroys the file and the other skips; but when the WORKER wins, the
+    in-process ``purge_due`` returns at once while the worker is still working through the
+    steps in :data:`_PURGE_PASS_STEPS`. Seen in the P3 gate as a ``member_count`` of 2 after a
+    rebuilt centroid (the OpenSearch write lands before the Postgres commit) and as a citation
+    still naming the file. A step that never completes fails here, by name, after ``timeout``.
+    """
+    from app.core.config import settings
+
+    deadline = time.monotonic() + timeout
+    eng = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    try:
+        with eng.connect() as conn:
+            for step, sql in _PURGE_PASS_STEPS:
+                while True:
+                    pending = conn.execute(
+                        text(sql), {"f": sf.file_id, "u": sf.file_uuid}
+                    ).scalar_one()
+                    if not pending:
+                        break
+                    assert time.monotonic() < deadline, (
+                        f"purging {sf.file_uuid}: {step} did not happen within {timeout}s"
+                    )
+                    conn.rollback()
+                    time.sleep(0.5)
+    finally:
+        eng.dispose()
 
 
 def _assert_trashed_not_destroyed(engine, sf: SeededFile) -> None:
@@ -356,6 +414,31 @@ def _assert_trashed_not_destroyed(engine, sf: SeededFile) -> None:
 
 
 # --------------------------------------------------------------------------- per-file routes
+
+
+def test_the_seed_commits_no_organization(engine, admin_id, created):
+    """The seed commits, and a committed organization makes the shared database multi-tenant.
+
+    While this module seeded an organization per file, single-tenant suites elsewhere failed
+    for as long as the rows existed. The hold is a ``platform`` hold and the takedown link a
+    personal file's, so neither needs one; this pins it on the seeded rows themselves, which
+    another process creating organizations cannot disturb.
+    """
+    sf = _seed(engine, created, admin_id)
+    with engine.connect() as conn:
+        hold_org = conn.execute(
+            text("SELECT organization_id FROM content_hold WHERE id = :h"),
+            {"h": sf.content_hold_id},
+        ).scalar_one()
+        link_org = conn.execute(
+            text("SELECT organization_id FROM takedown_notice_file WHERE id = :l"),
+            {"l": sf.takedown_link_id},
+        ).scalar_one()
+        named = conn.execute(
+            text("SELECT count(*) FROM organization WHERE name LIKE :p"),
+            {"p": f"{DELRES_PREFIX}%"},
+        ).scalar_one()
+    assert (hold_org, link_org, named) == (None, None, 0)
 
 
 def test_single_delete_leaves_no_residue(api, engine, admin_id, created):
@@ -1112,14 +1195,14 @@ def test_the_scan_covers_an_index_it_was_never_told_about(engine, admin_id, crea
         tag="negctl",
     )
     index = f"delres-negctl-{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(
-        index=index, body={"mappings": {"properties": {"file_uuid": {"type": "keyword"}}}}
-    )
     try:
+        create_test_index(
+            client, index, {"mappings": {"properties": {"file_uuid": {"type": "keyword"}}}}
+        )
         assert opensearch_residue(sf, include_owner=False) == []
         client.index(index=index, body={"file_uuid": sf.file_uuid}, refresh=True)
         assert opensearch_residue(sf, include_owner=False) == [f"opensearch: 1 doc(s) in {index}"]
     finally:
-        client.indices.delete(index=index, ignore=[404])
+        delete_test_index(client, index)
     assert minio_residue(sf, include_owner=False) == []
     assert not redis_client(1).exists(f"cache:files:{admin_id}:{sf.tag}")

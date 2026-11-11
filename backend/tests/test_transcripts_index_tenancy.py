@@ -26,6 +26,8 @@ from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.services.opensearch_service import transcripts as transcripts_module
 from app.services.search.tenant_scope import org_filter_clauses
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 SCOPES = ("org_a", "org_b", "personal")
 WORD = "zylofenix"
@@ -122,8 +124,8 @@ def world(db_session, normal_user, monkeypatch):
     index_name = f"test_transcripts_tenancy_{uuid_pkg.uuid4().hex[:10]}"
     monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", index_name)
     speaker_indices = _repoint_speaker_indices(monkeypatch)
-    client.indices.create(index=index_name, body=transcript_index_body())
     try:
+        create_test_index(client, index_name, transcript_index_body())
         org_a = Organization(name="tenant-a", slug=f"tenant-a-{uuid_pkg.uuid4().hex[:8]}")
         org_b = Organization(name="tenant-b", slug=f"tenant-b-{uuid_pkg.uuid4().hex[:8]}")
         db_session.add_all([org_a, org_b])
@@ -157,7 +159,7 @@ def world(db_session, normal_user, monkeypatch):
         )
     finally:
         for name in (index_name, *speaker_indices):
-            client.indices.delete(index=name, ignore=[404])
+            delete_test_index(client, name)
 
 
 def _write_through_the_writer(world, scopes=SCOPES) -> None:
@@ -303,8 +305,8 @@ def test_a_pre_tenant_index_gets_the_field_on_bootstrap_and_the_gate_then_holds(
     speaker_indices = _repoint_speaker_indices(monkeypatch)
     monkeypatch.setattr(indices, "_tenant_mapping_checked", set())
     ensure_transcript_tenant_mapping = indices.ensure_transcript_tenant_mapping
-    client.indices.create(index=index_name, body=_pre_tenant_body())
     try:
+        create_test_index(client, index_name, _pre_tenant_body())
         indices.ensure_indices_exist()
         mapping = client.indices.get_mapping(index=index_name)[index_name]["mappings"]
         assert mapping["properties"]["organization_id"] == {"type": "integer"}
@@ -336,4 +338,4 @@ def test_a_pre_tenant_index_gets_the_field_on_bootstrap_and_the_gate_then_holds(
         assert hits(None) == {"personal-doc"}
     finally:
         for name in (index_name, *speaker_indices):
-            client.indices.delete(index=name, ignore=[404])
+            delete_test_index(client, name)

@@ -130,25 +130,52 @@ def test_settings_level_pool_floor_validator_fires():
     assert _make(DB_POOL_SIZE=-9).DB_POOL_SIZE == 1
 
 
-def test_model_validator_resolves_cross_mixin_defaults():
-    s = _make(
-        ENVIRONMENT="development",
-        POSTGRES_HOST="h",
-        POSTGRES_PORT="5432",
-        POSTGRES_DB="opentranscribe",
-        POSTGRES_APP_USER="",
-        DATABASE_URL="",
-        MIGRATION_DATABASE_URL="",
-        REDIS_HOST="r",
-        REDIS_URL="",
-        CELERY_BROKER_URL="",
-    )
-    assert s.DATABASE_URL.endswith("@h:5432/opentranscribe")
-    assert s.REDIS_URL.endswith("@r:6379/0") or s.REDIS_URL.endswith("//r:6379/0")
-    assert s.CELERY_BROKER_URL == s.REDIS_URL
-    assert s.MFA_REQUIRE_REDIS is False and s.DEBUG is True
-    assert s.LDAP_USER_SEARCH_FILTER == "(sAMAccountName={username})"
-    assert s.S3_REGION and s.BEDROCK_REGION is not None
+_CROSS_MIXIN_CODE = """
+import json
+from app.core.config import Settings
+s = Settings(
+    ENVIRONMENT="development",
+    POSTGRES_HOST="h",
+    POSTGRES_PORT="5432",
+    POSTGRES_DB="opentranscribe",
+    POSTGRES_APP_USER="",
+    DATABASE_URL="",
+    MIGRATION_DATABASE_URL="",
+    REDIS_HOST="r",
+    REDIS_URL="",
+    CELERY_BROKER_URL="",
+)
+print(json.dumps({
+    "database_at": s.DATABASE_URL.rsplit("@", 1)[-1],
+    "redis_at": s.REDIS_URL.rsplit("@", 1)[-1].rsplit("//", 1)[-1],
+    "broker_is_redis": s.CELERY_BROKER_URL == s.REDIS_URL,
+    "mfa_require_redis": s.MFA_REQUIRE_REDIS,
+    "debug": s.DEBUG,
+    "ldap_filter": s.LDAP_USER_SEARCH_FILTER,
+    "regions": bool(s.S3_REGION) and s.BEDROCK_REGION is not None,
+}))
+"""
+
+
+def test_model_validator_resolves_cross_mixin_defaults(run_in_clean_process):
+    """In a child process: ``REDIS_PORT``'s default is bound from ``os.getenv`` when the class
+    body runs (``settings_storage.py``), so an in-process ``Settings`` inherits whatever port the
+    shell exported before ``app`` was imported. The P3.2 gate's shell had exported a ``--fresh``
+    stack's ``REDIS_PORT=5577``, and this test read ``r:5577`` instead of the coded ``6379``.
+    The child inherits the unit fixture's environment, which clears every stack-pointer variable
+    (``tests/fixtures/stack_pointer_env.py``). URLs are compared after the ``@`` so no
+    credential is ever printed.
+    """
+    out = json.loads(run_in_clean_process(_CROSS_MIXIN_CODE))
+    assert out == {
+        "database_at": "h:5432/opentranscribe",
+        "redis_at": "r:6379/0",
+        "broker_is_redis": True,
+        "mfa_require_redis": False,
+        "debug": True,
+        "ldap_filter": "(sAMAccountName={username})",
+        "regions": True,
+    }
 
 
 def test_audit_retention_floor_still_rejected():

@@ -526,6 +526,9 @@ def _store_arg(call: ast.Call) -> tuple[str, ast.AST | None]:
         owner = func.value
         if isinstance(owner, ast.Attribute) and owner.attr == "indices":
             return "index", kwargs.get("index") or first
+    if fname == "create_test_index":
+        # fixtures/opensearch_test_index.create_test_index(client, name, body=None)
+        return "index", kwargs.get("name") or (call.args[1] if len(call.args) > 1 else None)
     if fname == "put_pipeline":
         return "pipeline", kwargs.get("id") or first
     if fname == "make_bucket":
@@ -568,7 +571,7 @@ def minted_store_names(source: str) -> list[tuple[str, str, int]]:
 
 #: Cheap pre-filter: a module that names none of these cannot mint a store.
 _PREFILTER = re.compile(
-    r"indices\.create|put_pipeline|make_bucket|prefix=|OPENSEARCH_SPEAKER_INDEX"
+    r"indices\.create|create_test_index|put_pipeline|make_bucket|prefix=|OPENSEARCH_SPEAKER_INDEX"
 )
 
 
@@ -651,6 +654,17 @@ def test_the_registration_scanner_fires_on_each_plane() -> None:
     )
     assert [(p, _registered(p, s)) for p, s, _ in minted_store_names(registered)] == [
         ("index", True)
+    ]
+
+    via_helper = (
+        "import uuid\n"
+        "def h(client):\n"
+        "    create_test_index(client, f'brand_new_{uuid.uuid4().hex[:12]}', {})\n"
+        "    create_test_index(client, f'test_summary_api_{uuid.uuid4().hex[:12]}')\n"
+    )
+    assert [(p, _registered(p, s)) for p, s, _ in minted_store_names(via_helper)] == [
+        ("index", False),
+        ("index", True),
     ]
 
 

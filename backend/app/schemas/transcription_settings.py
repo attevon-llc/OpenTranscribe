@@ -9,6 +9,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import Field
 
 from app.core.constants import DEFAULT_DIARIZATION_SOURCE
@@ -132,8 +133,8 @@ class TranscriptionSettings(BaseModel):
         description="The saved ASR configuration used for speakers when the source is asr_config",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "min_speakers": 1,
                 "max_speakers": 20,
@@ -152,6 +153,7 @@ class TranscriptionSettings(BaseModel):
                 "diarization_source": "provider",
             }
         }
+    )
 
 
 class TranscriptionSettingsUpdate(BaseModel):
@@ -232,8 +234,8 @@ class TranscriptionSettingsUpdate(BaseModel):
         description="The saved ASR configuration to use for speakers with source asr_config",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "min_speakers": 2,
                 "max_speakers": 10,
@@ -248,6 +250,7 @@ class TranscriptionSettingsUpdate(BaseModel):
                 "diarization_source": "provider",
             }
         }
+    )
 
 
 class TranscriptionSystemDefaults(BaseModel):
@@ -304,8 +307,8 @@ class TranscriptionSystemDefaults(BaseModel):
         description="Valid diarization source options",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "min_speakers": 1,
                 "max_speakers": 20,
@@ -321,3 +324,4 @@ class TranscriptionSystemDefaults(BaseModel):
                 "common_languages": ["auto", "en", "es", "fr", "de"],
             }
         }
+    )

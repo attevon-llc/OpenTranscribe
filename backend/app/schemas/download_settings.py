@@ -6,6 +6,7 @@ preferences including video quality, audio-only mode, and audio bitrate.
 """
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import Field
 
 from app.core.constants import AUDIO_QUALITY_OPTIONS
@@ -31,14 +32,15 @@ class DownloadSettings(BaseModel):
         description="Audio bitrate preference for audio-only downloads",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "video_quality": "best",
                 "audio_only": False,
                 "audio_quality": "best",
             }
         }
+    )
 
 
 class DownloadSettingsUpdate(BaseModel):
@@ -66,18 +68,16 @@ class DownloadSettingsUpdate(BaseModel):
         description="Audio bitrate preference for audio-only downloads",
     )
 
-    class Config:
-        # Set here rather than as a `model_config` dict: pydantic raises
-        # `config-both` if a class-based `Config` and `model_config` are both present,
-        # and this module uses the class-based style throughout.
-        extra = "forbid"
-        json_schema_extra = {
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
             "example": {
                 "video_quality": "1080p",
                 "audio_only": False,
                 "audio_quality": "best",
             }
-        }
+        },
+    )
 
 
 class DownloadSystemDefaults(BaseModel):
@@ -104,8 +104,8 @@ class DownloadSystemDefaults(BaseModel):
         description="Available audio quality options (key -> display label)",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "video_quality": "best",
                 "audio_only": False,
@@ -122,3 +122,4 @@ class DownloadSystemDefaults(BaseModel):
                 },
             }
         }
+    )

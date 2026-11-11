@@ -57,10 +57,7 @@ class AuthConfigResponse(AuthConfigBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        """Pydantic configuration."""
-
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuthConfigAuditResponse(BaseModel):
@@ -81,10 +78,7 @@ class AuthConfigAuditResponse(BaseModel):
     ip_address: str | None = None
     created_at: datetime
 
-    class Config:
-        """Pydantic configuration."""
-
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Category-specific configuration schemas

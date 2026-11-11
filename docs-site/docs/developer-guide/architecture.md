@@ -52,7 +52,7 @@ flowchart TB
 - Progressive Web App with TypeScript
 - Responsive design with light/dark mode
 - Real-time WebSocket updates
-- Shared UI component library (`src/components/ui/`): BaseModal, Spinner, ProgressBar, SkeletonLoader
+- Shared UI component library (`src/components/ui/`): BaseModal, Button, FormField, Toggle, Banner, Badge, EmptyState, Spinner, ProgressBar, SkeletonLoader
 
 ### Backend (FastAPI)
 - Async Python with RESTful API

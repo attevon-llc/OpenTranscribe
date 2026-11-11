@@ -8,7 +8,6 @@ traceback reached the log.
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -104,33 +103,25 @@ def test_ground_truth_status_outage_raises_instead_of_not_stalled(monkeypatch):
         embedding_migration._compute_ground_truth_status(db)
 
 
-def test_index_health_probe_marks_unhealthy_and_logs_traceback(monkeypatch, caplog):
+def test_index_health_probe_marks_unhealthy_and_logs_traceback(caplog):
     from opensearchpy.exceptions import ConnectionError as OSConnectionError
 
-    import app.services.opensearch_service as os_service
     from app.api.endpoints import search_index_health
 
-    def _exists(index):
-        raise OSConnectionError("N/A", "down", Exception("down"))
-
-    client = SimpleNamespace(indices=SimpleNamespace(exists=_exists))
-    monkeypatch.setattr(os_service, "opensearch_client", client)
+    client = MagicMock()
+    client.indices.exists.side_effect = OSConnectionError("N/A", "down", Exception("down"))
     with caplog.at_level(logging.WARNING, logger=search_index_health.__name__):
-        assert search_index_health._probe_index_health(["idx"]) == {"idx": "unhealthy"}
+        assert search_index_health._probe_index_health(client, ["idx"]) == {"idx": "unhealthy"}
     assert _traceback_logged(caplog, search_index_health.__name__)
 
 
-def test_index_health_probe_bug_propagates(monkeypatch):
-    import app.services.opensearch_service as os_service
+def test_index_health_probe_bug_propagates():
     from app.api.endpoints import search_index_health
 
-    def _exists(index):
-        raise AttributeError("bug")
-
-    client = SimpleNamespace(indices=SimpleNamespace(exists=_exists))
-    monkeypatch.setattr(os_service, "opensearch_client", client)
+    client = MagicMock()
+    client.indices.exists.side_effect = AttributeError("bug")
     with pytest.raises(AttributeError):
-        search_index_health._probe_index_health(["idx"])
+        search_index_health._probe_index_health(client, ["idx"])
 
 
 def test_document_export_guard_redis_outage_logs_traceback_and_proceeds(monkeypatch, caplog):

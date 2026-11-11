@@ -22,6 +22,7 @@ Where things live:
    ``(1 + raw_cosine) / 2`` — see :mod:`app.utils.cosine_space` (issue #674).
 """
 
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.config import settings
@@ -86,20 +87,29 @@ from app.services.opensearch_service.speaker_write import bulk_add_speaker_embed
 from app.services.opensearch_service.transcripts import index_transcript
 from app.services.opensearch_service.transcripts import update_transcript_title
 
+if TYPE_CHECKING:
+    # The one name the runtime ``__getattr__`` below serves. Declared for the type checker
+    # only: a module-level ``__getattr__`` makes mypy resolve EVERY unknown name on this
+    # package as its return type, so a misspelt ``from app.services.opensearch_service
+    # import <name>`` type-checked clean and failed only when the line ran.
+    from opensearchpy import OpenSearch
 
-def __getattr__(name: str) -> Any:
-    """Forward the mutable module globals to the module that owns them.
+    opensearch_client: OpenSearch | None
+else:
 
-    ``opensearch_client`` is rebound at runtime by
-    :func:`client.get_opensearch_client` when the eager construction at import
-    time failed. A plain re-export would freeze the value seen at package
-    import, so it is resolved on every attribute access instead.
-    """
-    if name == "opensearch_client":
-        from app.services.opensearch_service import client
+    def __getattr__(name: str) -> Any:
+        """Forward the mutable module globals to the module that owns them.
 
-        return client.opensearch_client
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        ``opensearch_client`` is rebound at runtime by
+        :func:`client.get_opensearch_client` when the eager construction at import
+        time failed. A plain re-export would freeze the value seen at package
+        import, so it is resolved on every attribute access instead.
+        """
+        if name == "opensearch_client":
+            from app.services.opensearch_service import client
+
+            return client.opensearch_client
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [

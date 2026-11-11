@@ -109,7 +109,10 @@ def _object_versions(bucket: str, prefix: str) -> int:
 
 
 def _os_count(index: str, query: dict) -> int:
-    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service import get_opensearch_client
+
+    opensearch_client = get_opensearch_client()
+    assert opensearch_client is not None
 
     opensearch_client.indices.refresh(index=index)
     return int(opensearch_client.count(index=index, body={"query": query})["count"])
@@ -226,8 +229,11 @@ def test_unmeasurable_store_is_unverified_not_zero(world, monkeypatch):
 
 
 def test_unclassified_index_blocks_verification_until_allow_listed(world):
-    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service import get_opensearch_client
     from app.services.system_settings_service import set_setting
+
+    opensearch_client = get_opensearch_client()
+    assert opensearch_client is not None
 
     w = world()
     w2 = world("allow")
@@ -257,8 +263,11 @@ def test_delayed_reverify_catches_a_racing_write(world):
     from app.services.erasure_receipt.flow import reverify_payload
     from app.services.erasure_receipt.types import Captured
     from app.services.erasure_receipt.types import ErasureScope
-    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service import get_opensearch_client
     from app.tasks.erasure_receipt_reverify import erasure_receipt_reverify
+
+    opensearch_client = get_opensearch_client()
+    assert opensearch_client is not None
 
     w = world()
     summary = _erase_user(w.user_id)
@@ -376,7 +385,10 @@ def test_uploaders_erasure_spares_objects_of_files_handed_to_another_owner(world
     """
     from app.core.config import settings
     from app.models.organization import Organization
-    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service import get_opensearch_client
+
+    opensearch_client = get_opensearch_client()
+    assert opensearch_client is not None
 
     db = _session()
     try:

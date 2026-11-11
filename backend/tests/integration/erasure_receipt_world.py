@@ -51,7 +51,10 @@ def _put(bucket: str, key: str, world: World) -> None:
 
 def _ensure_chunks_index() -> None:
     from app.core.config import settings
-    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service import get_opensearch_client
+
+    opensearch_client = get_opensearch_client()
+    assert opensearch_client is not None
 
     if not opensearch_client.indices.exists(index=settings.OPENSEARCH_CHUNKS_INDEX):
         opensearch_client.indices.create(
@@ -71,8 +74,11 @@ def build_world(label: str = "user", *, org_id: int | None = None, files: int = 
     from app.models.speaker import Speaker
     from app.models.speaker import SpeakerProfile
     from app.models.user import User
-    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service import get_opensearch_client
     from app.utils.filename import get_safe_storage_filename
+
+    opensearch_client = get_opensearch_client()
+    assert opensearch_client is not None
 
     db = _db()
     try:
@@ -177,30 +183,33 @@ def cleanup(world: World) -> None:
     """Remove whatever the erasure left (best effort, every store). Never raises."""
     from app.core.config import settings
     from app.services.minio_service import minio_client
-    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service import get_opensearch_client
 
+    opensearch_client = get_opensearch_client()
     for bucket, key in world.objects:
         with contextlib.suppress(Exception):
             minio_client.remove_object(bucket, key)
-    for name in world.stray_indices:
+    # No client, no OpenSearch residue to remove; the database cleanup below still runs.
+    if opensearch_client is not None:
+        for name in world.stray_indices:
+            with contextlib.suppress(Exception):
+                opensearch_client.indices.delete(index=name, ignore_unavailable=True)
         with contextlib.suppress(Exception):
-            opensearch_client.indices.delete(index=name, ignore_unavailable=True)
-    with contextlib.suppress(Exception):
-        for index in (settings.OPENSEARCH_TRANSCRIPT_INDEX, settings.OPENSEARCH_CHUNKS_INDEX):
-            opensearch_client.delete_by_query(
-                index=index,
-                body={
-                    "query": {
-                        "bool": {
-                            "should": [
-                                {"ids": {"values": world.file_uuids}},
-                                {"terms": {"file_uuid": world.file_uuids}},
-                            ]
+            for index in (settings.OPENSEARCH_TRANSCRIPT_INDEX, settings.OPENSEARCH_CHUNKS_INDEX):
+                opensearch_client.delete_by_query(
+                    index=index,
+                    body={
+                        "query": {
+                            "bool": {
+                                "should": [
+                                    {"ids": {"values": world.file_uuids}},
+                                    {"terms": {"file_uuid": world.file_uuids}},
+                                ]
+                            }
                         }
-                    }
-                },
-                conflicts="proceed",
-            )
+                    },
+                    conflicts="proceed",
+                )
     ids = [world.user_id, world.other_user_id]
     db = _db()
     try:

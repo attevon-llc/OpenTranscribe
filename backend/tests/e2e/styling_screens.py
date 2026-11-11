@@ -696,6 +696,25 @@ _SPEAKER_STATES = (
         ready=".speakers-page",
         notes="three suggestions whose confidence text is in the success, warning and error bands",
     ),
+    Screen(
+        "speakers-rename-propagation",
+        "/speakers?tab=inbox",
+        # Accepting a suggestion renames a speaker, which makes the page count a rename in flight
+        # (renamePropagation.ts `begin`). The batch-verify POST is answered 200 with no counters,
+        # which the page reads as success; no completion event ever arrives, so the header
+        # indicator stays up for the capture.
+        steps=(
+            _INBOX_FIXTURE,
+            "route:**/api/speaker-clusters/batch-verify|200",
+            "reload:page",
+            "wait:.inbox-item .action-btn.accept",
+            "click:.inbox-item .action-btn.accept",
+            "wait:[data-testid=rename-propagation-indicator]",
+        ),
+        masks=(*_SPEAKER_MASKS, ".rename-propagation-spinner"),
+        ready=".speakers-page",
+        notes="the header's rename-in-progress pill (accent tint, inline-start margin; ar mirrors it)",
+    ),
 )
 
 # --- search-hit highlights and the media scrim (plan 3.2, "Media, highlights and washes") ------

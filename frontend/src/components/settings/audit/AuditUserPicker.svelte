@@ -77,12 +77,12 @@
       on:input={onInput}
     />
     {#if results.length > 0 || searching}
-      <ul class="results" role="listbox" use:anchoredPanel={{ anchor: inputElement ?? null, width: 'anchor', minWidth: 224 }}>
+      <ul class="results" use:anchoredPanel={{ anchor: inputElement ?? null, width: 'anchor', minWidth: 224 }}>
         {#if searching}
           <li class="hint">{$t('settings.auditLog.loadingShort')}</li>
         {/if}
         {#each results as user (user.uuid)}
-          <li role="option" aria-selected="false">
+          <li>
             <button type="button" on:click={() => pick(user)}>
               <span>{user.full_name || user.masked_email}</span>
               {#if user.full_name}<span class="sub" dir="ltr">{user.masked_email}</span>{/if}

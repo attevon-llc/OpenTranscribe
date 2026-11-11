@@ -360,8 +360,7 @@
           {@const speakerMatch = speakerMatchState(segment)}
           <div
             class="segment-speaker-wrapper"
-            role="button"
-            tabindex="0"
+            role="presentation"
             on:click|stopPropagation
             on:keydown={(e) => e.key === 'Enter' && e.stopPropagation()}
           >

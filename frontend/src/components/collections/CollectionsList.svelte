@@ -37,14 +37,10 @@
   <div
     class="collection-card"
     class:selected={selectedCollectionId === collection.uuid}
-    role="button"
-    tabindex="0"
-    on:click={() => dispatch('select', collection)}
-    on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && dispatch('select', collection)}
     transition:slide
   >
     <div class="collection-info">
-      <h4>{collection.name}</h4>
+      <h4><button type="button" class="collection-select" on:click={() => dispatch('select', collection)}>{collection.name}</button></h4>
       {#if collection.description}
         <p class="description">{collection.description}</p>
       {/if}

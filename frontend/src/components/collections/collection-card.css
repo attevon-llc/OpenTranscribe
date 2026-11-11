@@ -12,6 +12,7 @@
   justify-content: space-between;
   align-items: start;
   gap: var(--space-3);
+  position: relative;
 }
 
 .collection-card:hover {
@@ -68,4 +69,43 @@
   border-radius: var(--radius-2xl);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
+}
+
+/* The card is not itself a control (axe nested-interactive: it holds action buttons). The
+   name is the real button; its ::after stretches over the card so the whole card still
+   selects on click, and the other controls sit above it. */
+.collection-card .collection-select {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.collection-card .collection-select::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+}
+
+.collection-card .collection-select:focus-visible {
+  outline: none;
+}
+
+.collection-card .collection-select:focus-visible::after {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+.collection-card :is(button, a):not(.collection-select) {
+  position: relative;
+  z-index: var(--z-base);
 }

@@ -26,14 +26,10 @@
     <div
       class="collection-card shared-card"
       class:selected={selectedCollectionId === shared.uuid}
-      role="button"
-      tabindex="0"
-      on:click={() => dispatch('select', shared)}
-      on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && dispatch('select', shared)}
       transition:slide
     >
       <div class="collection-info">
-        <h4>{shared.name}</h4>
+        <h4><button type="button" class="collection-select" on:click={() => dispatch('select', shared)}>{shared.name}</button></h4>
         {#if shared.description}
           <p class="description">{shared.description}</p>
         {/if}

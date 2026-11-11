@@ -429,7 +429,7 @@
             <!-- Cross-video speaker detection - Below text input -->
             {#if hasCrossVideoMatches(speaker)}
               <div class="cross-video-compact">
-                <div class="compact-header" role="button" tabindex="0" on:click={() => speaker.showMatches = !speaker.showMatches} on:keydown={(e) => e.key === 'Enter' && (speaker.showMatches = !speaker.showMatches)}>
+                <div class="compact-header" role="presentation" on:click={() => speaker.showMatches = !speaker.showMatches}>
                   <span class="compact-text">
                     {speaker.cross_video_matches.length !== 1 ? $t('transcript.speakerAppearsInVideosPlural', { name: speaker.display_name, count: speaker.cross_video_matches.length }) : $t('transcript.speakerAppearsInVideos', { name: speaker.display_name, count: speaker.cross_video_matches.length })}
                   </span>

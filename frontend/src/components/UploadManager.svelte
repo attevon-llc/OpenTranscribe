@@ -54,14 +54,6 @@
   }
 
   // Handle header keyboard interactions
-  function handleHeaderKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      // For keyboard users, just toggle expand/collapse
-      handleToggle();
-      event.preventDefault();
-    }
-  }
-
   // Handle drag move
   function handleDragMove(event: MouseEvent) {
     if (!isDragging) return;
@@ -183,7 +175,7 @@
     {#if $isExpanded}
       <div class="upload-panel">
         <!-- Header -->
-        <div class="panel-header" role="button" tabindex="0" on:mousedown={handleDragStart} on:keydown={handleHeaderKeydown}>
+        <div class="panel-header" role="presentation" on:mousedown={handleDragStart}>
           <div class="header-content">
             <h3>{$t('upload.uploads')}</h3>
             <div class="header-stats">

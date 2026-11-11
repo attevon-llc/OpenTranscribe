@@ -67,20 +67,6 @@
     dispatch('openDetails', section);
   }
 
-  /** A click on an info icon inside a clickable card explains; it must not also open the details. */
-  // Enter/Space on the card itself only: a key pressed on a focused tooltip inside it is not ours.
-  function openOnKey(event: KeyboardEvent, section: string) {
-    if (event.target !== event.currentTarget) return;
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    openProcessingDetails(section);
-  }
-
-  function openDetailsUnlessTip(event: MouseEvent, section: string) {
-    if ((event.target as Element | null)?.closest('.tip')) return;
-    openProcessingDetails(section);
-  }
-
   // Narrow screens show a status glyph (named for screen readers) instead of the word.
   const isMobileView = typeof window !== 'undefined' && window.innerWidth < 768;
 
@@ -181,18 +167,18 @@
       </div>
 
       <!-- Performance Stats -->
-      <div class="stat-card stat-card-clickable" role="button" tabindex="0" on:click={() => openProcessingDetails('performance')} on:keydown={(event) => openOnKey(event, 'performance')}>
+      <div class="stat-card stat-card-clickable">
         <h4>{$t('settings.statistics.performance')}</h4>
         <div class="stat-detail">{$t('settings.statistics.avgProcessTime')}: {formatElapsed(stats.tasks?.avg_processing_time || 0)}</div>
         <div class="stat-detail">{$t('settings.statistics.fileTimingAvg')}: {formatElapsed(stats.file_timing?.avg_secs || 0)}</div>
         <div class="stat-detail">{$t('settings.statistics.fileTimingMin')}: {formatElapsed(stats.file_timing?.min_secs || 0)}</div>
         <div class="stat-detail">{$t('settings.statistics.fileTimingMax')}: {formatElapsed(stats.file_timing?.max_secs || 0)}</div>
         <div class="stat-detail">{$t('settings.statistics.speakers')}: {stats.speakers?.total_is_estimate ? '≈' : ''}{stats.speakers?.total || 0}</div>
-        <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
+        <button type="button" class="stat-detail stat-detail-hint stat-card-open" on:click={() => openProcessingDetails('performance')}>{$t('settings.statistics.viewDetails')}</button>
       </div>
 
       <!-- Throughput & ETA -->
-      <div class="stat-card stat-card-clickable" role="button" tabindex="0" on:click={() => openProcessingDetails('throughput')} on:keydown={(event) => openOnKey(event, 'throughput')}>
+      <div class="stat-card stat-card-clickable">
         <h4>{$t('settings.statistics.throughput')}</h4>
         <div class="stat-value">{stats.throughput?.rate_1h || 0} <span class="stat-unit">{$t('settings.statistics.filesPerHour')}</span></div>
         <div class="stat-detail">{$t('settings.statistics.avgRate3h')}: {stats.throughput?.rate_3h || 0} {$t('settings.statistics.filesPerHour')}</div>
@@ -204,11 +190,11 @@
         {:else}
           <div class="stat-detail">{$t('settings.statistics.noActiveProcessing')}</div>
         {/if}
-        <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
+        <button type="button" class="stat-detail stat-detail-hint stat-card-open" on:click={() => openProcessingDetails('throughput')}>{$t('settings.statistics.viewDetails')}</button>
       </div>
 
       <!-- Queue Depths -->
-      <div class="stat-card stat-card-clickable" role="button" tabindex="0" on:click={() => openProcessingDetails('queues')} on:keydown={(event) => openOnKey(event, 'queues')}>
+      <div class="stat-card stat-card-clickable">
         <h4>{$t('settings.statistics.queueDepths')}</h4>
         <div class="stat-value">{stats.queues_available === false ? '—' : stats.queues?.total || 0} <span class="stat-unit">{$t('settings.statistics.queueTotal')}</span></div>
         {#if (stats.queues?.total ?? 0) > 0}
@@ -226,11 +212,11 @@
             {/each}
           </div>
         {/if}
-        <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
+        <button type="button" class="stat-detail stat-detail-hint stat-card-open" on:click={() => openProcessingDetails('queues')}>{$t('settings.statistics.viewDetails')}</button>
       </div>
 
       <!-- AI Models -->
-      <div class="stat-card model-card stat-card-clickable" role="button" tabindex="0" on:click={(event) => openDetailsUnlessTip(event, 'models')} on:keydown={(event) => openOnKey(event, 'models')}>
+      <div class="stat-card model-card stat-card-clickable">
         <h4>{$t('settings.statistics.aiModels')}</h4>
         {#if stats.models}
           <div class="model-info">
@@ -280,7 +266,7 @@
         {:else}
           <div class="stat-detail">{$t('settings.statistics.modelNotAvailable')}</div>
         {/if}
-        <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
+        <button type="button" class="stat-detail stat-detail-hint stat-card-open" on:click={() => openProcessingDetails('models')}>{$t('settings.statistics.viewDetails')}</button>
       </div>
 
       <!-- Search Index Status -->
@@ -595,7 +581,11 @@
     padding: var(--space-4);
   }
 
+  /* The card is not itself a control (axe nested-interactive: it holds InfoTip buttons).
+     The "view details" button's ::after stretches over the card so the whole card still
+     opens the details on click; interactive children sit above it via z-index. */
   .stat-card-clickable {
+    position: relative;
     cursor: pointer;
     transition: border-color var(--duration-base), box-shadow var(--duration-base);
   }
@@ -681,6 +671,37 @@
   .stat-detail span {
     display: block;
     margin-bottom: var(--space-0-5);
+  }
+
+  .stat-card-open {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .stat-card-open::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-lg);
+  }
+
+  .stat-card-open:focus-visible {
+    outline: none;
+  }
+
+  .stat-card-open:focus-visible::after {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 2px;
+  }
+
+  .stat-card-clickable :global(.tip) {
+    z-index: var(--z-base);
   }
 
   .stat-detail-hint {

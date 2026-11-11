@@ -350,14 +350,18 @@ def _purge_from_trash(api: Api, sf: SeededFile) -> None:
 
 
 #: Both steps of a purge pass that can still be running after the in-process ``purge_due``
-#: returns: the ``file.purge`` event (``trash_purge.purge_one`` stages it only after
+#: returns: the SUCCESSFUL ``file.purge`` event (``trash_purge.purge_one`` stages it only after
 #: ``purge_media_file`` returned, centroid and member-count refresh included), and the
 #: chat-citation scrub, which ``purge_due`` runs in its ``finally`` AFTER that event and
-#: which records nothing of its own, so its effect is the only thing to observe.
+#: which records nothing of its own, so its effect is the only thing to observe. Only
+#: ``outcome = success`` counts: when the two passes overlap, the one that finds the row gone
+#: in its last phase records ``file.purge`` with outcome ``partial`` (``aborted_after_destroy``)
+#: at once, while the winner may still be refreshing.
 _PURGE_PASS_STEPS = (
     (
         "the file.purge event",
         "SELECT NOT EXISTS (SELECT 1 FROM audit_outbox WHERE event_type = 'file.purge' "
+        "AND payload ->> 'outcome' = 'success' "
         "AND (payload -> 'details' ->> 'file_id')::int = :f)",
     ),
     (

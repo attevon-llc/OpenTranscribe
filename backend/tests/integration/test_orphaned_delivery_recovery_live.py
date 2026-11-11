@@ -50,6 +50,7 @@ from app.core.queues import CPUPriority
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from tests.fixtures.redis_accessors import route_redis_accessors
 
 pytestmark = [
     pytest.mark.integration,
@@ -102,8 +103,9 @@ def broker(monkeypatch):
     # xdist_group, so anything found here is a leftover, not a concurrent run's state.
     _delete_owned_keys(client)
     monkeypatch.setenv("ORPHAN_TEST_BROKER_URL", _redis_url())
-    # Every lease read/write in THIS process goes to the test Redis too.
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: client)
+    # Every lease read/write in THIS process goes to the test Redis too -- through EVERY
+    # accessor: the lease and replay reads use get_request_redis(), not get_redis().
+    route_redis_accessors(monkeypatch, client)
     try:
         yield client
     finally:

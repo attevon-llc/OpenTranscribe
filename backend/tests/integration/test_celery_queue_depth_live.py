@@ -30,6 +30,7 @@ from kombu import Queue
 
 from app.core.celery_metrics import queue_snapshot
 from app.utils.stats_helpers import get_queue_depths
+from tests.fixtures.redis_accessors import route_redis_accessors
 
 # ``xdist_group`` is the ONLY isolation available here, and it is required.
 #
@@ -199,8 +200,9 @@ def test_a_real_reservation_with_no_worker_is_counted_as_reserved(
         assert snapshot[queue_name]["reserved"] == 1
 
         # get_queue_depths() defaults to the real broker (db 0); point it at
-        # THIS test's db 15 client instead of measuring live production traffic.
-        monkeypatch.setattr("app.core.redis.get_redis", lambda: raw_client)
+        # THIS test's db 15 client instead of measuring live production traffic. Every
+        # accessor, not just get_redis(): celery_metrics reads through get_request_redis().
+        route_redis_accessors(monkeypatch, raw_client)
         depths = get_queue_depths()
         assert depths is not None
         assert depths[queue_name] == 1

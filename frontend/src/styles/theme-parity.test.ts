@@ -93,6 +93,43 @@ describe('dark-mode selector convention', () => {
 });
 
 /**
+ * `:global(...)` is Svelte syntax: only a component `<style>` block is compiled, so in a plain `.css`
+ * file it ships verbatim, the selector is invalid, and the browser drops the WHOLE rule. Two dark
+ * overrides in `components/upload/upload-shared.css` were dead this way (proved by fetching the
+ * served module from the Vite dev server) while a test pinned one of them as the chip's dark style.
+ * Comments are stripped first: a note may quote the syntax.
+ */
+function plainCssUsingGlobal(dir: string): string[] {
+  return themeScannableFiles(dir)
+    .filter((f) => f.endsWith('.css'))
+    .filter((f) =>
+      fs
+        .readFileSync(f, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .includes(':global(')
+    );
+}
+
+describe('plain .css files carry no :global(), which only a .svelte <style> compiles', () => {
+  it('finds none under src', () => {
+    expect(plainCssUsingGlobal(SRC).map((f) => path.relative(SRC, f))).toEqual([]);
+  });
+
+  it('control: a :global rule in a plain .css fixture is found, one in a comment is not', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plain-css-global-'));
+    try {
+      const dead = path.join(dir, 'dead.css');
+      fs.writeFileSync(dead, ":global([data-theme='dark']) .chip { color: red; }\n");
+      fs.writeFileSync(path.join(dir, 'note.css'), '/* never write :global(x) here */\n');
+      fs.writeFileSync(path.join(dir, 'ok.svelte'), '<style>:global(.x) { color: red; }</style>\n');
+      expect(plainCssUsingGlobal(dir)).toEqual([dead]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
  * Regression fixture for issue #827: the scan used to walk `.svelte` files only, so a dead
  * `:global(.dark)` rule sitting in a plain, unscoped `.css` file (exactly the shape
  * `components/upload/upload-shared.css` had) was structurally invisible to it — not merely

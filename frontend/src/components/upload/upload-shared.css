@@ -1,5 +1,8 @@
 /* Shared CSS for upload step components (Tags, Collections, Model, Speakers). The pickers themselves are
-   SearchableMultiSelect, which carries its own scoped styles. */
+   SearchableMultiSelect, which carries its own scoped styles.
+   A plain stylesheet imported by script: Svelte never processes it, so `:global(...)` would ship
+   verbatim and the browser drops the whole rule as an invalid selector. Dark mode comes from the
+   tokens here (`.chip` is --primary-on-surface on --primary-bg in both themes). */
 
 /* ── Step containers ── */
 .step-tags,
@@ -28,11 +31,6 @@
   border: 1px solid rgba(var(--accent-rgb), 0.15);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
-}
-
-:global([data-theme='dark']) .previous-banner {
-  background: rgba(var(--accent-rgb), 0.08);
-  border-color: rgba(var(--accent-rgb), 0.2);
 }
 
 .previous-banner-text {
@@ -73,14 +71,6 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   border: 1px solid var(--primary-border);
-}
-
-/* Translucent tint over the dark surface instead of the solid navy --primary-bg; the label stays
-   --primary-on-surface (the base rule), since --primary-color text on this tint is about 2:1. */
-:global([data-theme='dark']) .chip {
-  background: rgba(var(--accent-rgb), 0.15);
-  border-color: rgba(var(--accent-rgb), 0.3);
-  color: var(--primary-on-surface);
 }
 
 .tag-chip {

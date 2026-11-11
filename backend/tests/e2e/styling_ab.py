@@ -48,6 +48,7 @@ from styling_screens import SCREENS
 from styling_screens import TRANSIENT_HIDE_CSS
 from styling_screens import VARIANTS
 from styling_screens import Screen
+from styling_screens import load_fixture
 
 #: The acceptance threshold for ``zero`` mode (plan 6.4). Never widened.
 ZERO_PIXEL_FRACTION = 0.0001
@@ -311,11 +312,44 @@ def split_step(step: str) -> tuple[str, str]:
     return kind, arg
 
 
+def retry_reason(fraction: float, changes: list[Change]) -> str:
+    """One line saying why a failing attempt was discarded: pixel share and what moved."""
+    props = sorted({c.prop for c in changes})
+    where = sorted({c.key.rsplit(">", 1)[-1] for c in changes})
+    return f"pixel {fraction * 100:.4f}%, {len(changes)} computed" + (
+        f" ({', '.join(props[:4])} on {', '.join(where[:3])})" if changes else ""
+    )
+
+
+def last_wait(steps: tuple[str, ...]) -> str | None:
+    """The selector of a screen's last ``wait:`` step: the state the photograph is meant to show."""
+    waits = [arg for kind, arg in map(split_step, steps) if kind == "wait"]
+    return waits[-1] if waits else None
+
+
 # ---------------------------------------------------------------------------
 # Browser parts
 # ---------------------------------------------------------------------------
 class StepError(RuntimeError):
     """A step could not run; the screen is reported ERROR with this message."""
+
+
+def check_state_survived_capture(page: Any, steps: tuple[str, ...]) -> None:
+    """Fail when the state the steps waited for is gone after the photograph.
+
+    A full-page screenshot makes Chromium lay the page out at its full height for the capture,
+    which fires ``resize``; a menu that closes on resize (the body-portal speaker menu does) is
+    then absent from the PNG while the ``wait:`` before it passed, and the screen compares two
+    menu-less pages as "no difference". Called after the screenshot, so a state that was gone
+    before it is caught too.
+    """
+    held = last_wait(steps)
+    if held and page.locator(held).count() == 0:
+        raise StepError(
+            f"{held!r} was waited for but is gone after the capture, so the PNG does not show it. "
+            "A full-page capture fires a resize, which closes menus that listen for one: give "
+            "the screen full_page=False."
+        )
 
 
 class ScreenUnavailableError(RuntimeError):
@@ -356,6 +390,25 @@ def _patch_route(page: Any, pattern: str, fields: dict[str, Any]) -> None:
                 if isinstance(item, dict):
                     item.update(fields)
         route.fulfill(response=response, json=data)
+
+    page.route(re.compile(pattern), handler)
+
+
+def _fixture_route(page: Any, pattern: str, data: object) -> None:
+    """Answer every GET whose URL matches ``pattern`` with ``data``; other methods pass through.
+
+    Unlike ``_patch_route`` the backend is never asked: this is for a state the stack has no
+    rows for at all (speaker clusters, a shared profile, inbox suggestions), where there is no
+    real answer to merge into. ``route.fulfill(json=...)`` serialises it and sets the JSON
+    content type (Playwright ``Route.fulfill``).
+    """
+    import re
+
+    def handler(route: Any) -> None:
+        if route.request.method != "GET":
+            route.continue_()
+            return
+        route.fulfill(json=data)
 
     page.route(re.compile(pattern), handler)
 
@@ -457,6 +510,9 @@ def run_step(page: Any, step: str) -> None:
             page.reload(wait_until="load")
         elif kind == "pause":
             page.wait_for_timeout(int(arg))
+        elif kind == "fixture":
+            pattern, _, name = arg.rpartition("|")
+            _fixture_route(page, pattern, load_fixture(name))
         else:
             raise StepError(f"unknown step kind in {step!r}")
     except (StepError, ScreenUnavailableError):
@@ -565,6 +621,7 @@ def capture(
             mask=[page.locator(m) for m in masks],
             mask_color="#ff00ff",
         )
+        check_state_survived_capture(page, screen.steps)
         snapshot = page.evaluate(_SNAPSHOT_JS, [masks, list(SNAPSHOT_PROPS)])
         has_btn = bool(page.evaluate("() => !!document.querySelector('.btn')"))
         return {"png": png, "snapshot": snapshot, "has_btn": has_btn}
@@ -637,31 +694,36 @@ def measure(
     file_uuid: str | None,
     args: argparse.Namespace,
     controls: set[str],
-) -> tuple[np.ndarray, np.ndarray, float, list[Change], dict[str, Any], int]:
+) -> tuple[np.ndarray, np.ndarray, float, list[Change], dict[str, Any], list[str]]:
     """Capture both sides; in zero mode re-capture a failing screen before calling it FAIL.
 
     A difference caused by a real style change shows on every attempt, while a timing flake
     (a transient overlay, a late repaint) does not, so only a screen that fails all
     ``MAX_ATTEMPTS`` attempts is reported as FAIL (a capture that errors is retried the same way). Negative controls are never retried.
+    The last element is why each discarded attempt was discarded (``retry_reason``), so a
+    retry-only pass names its flake instead of hiding it.
     """
     retries = MAX_ATTEMPTS if args.mode == "zero" and not args.negative_control else 1
+    reasons: list[str] = []
     for attempt in range(1, retries + 1):
         try:
             a = capture(side_a, screen, variant, file_uuid)
             b = capture(side_b, screen, variant, file_uuid)
         except ScreenUnavailableError:
             raise
-        except Exception:
+        except Exception as exc:
             # A page that never became ready under load is the same flake as a diff.
             if attempt == retries:
                 raise
+            reasons.append(f"error: {str(exc).splitlines()[0][:160] if str(exc) else repr(exc)}")
             continue
         arr_a, arr_b = _png_to_array(a["png"]), _png_to_array(b["png"])
         fraction = diff_fraction(arr_b, arr_a)
         changes = diff_snapshots(a["snapshot"], b["snapshot"])
         if verdict(args.mode, fraction, len(changes), is_control=screen.id in controls) != "FAIL":
             break
-    return arr_a, arr_b, fraction, changes, b, attempt
+        reasons.append(retry_reason(fraction, changes))
+    return arr_a, arr_b, fraction, changes, b, reasons
 
 
 def run(args: argparse.Namespace) -> int:
@@ -714,7 +776,8 @@ def run(args: argparse.Namespace) -> int:
                         row["verdict"] = verdict(args.mode, 0, 0, error=row["error"])
                         print(f"  {key}: ERROR {row['error']}", flush=True)
                         continue
-                    arr_a, arr_b, fraction, changes, b, attempts = measured
+                    arr_a, arr_b, fraction, changes, b, reasons = measured
+                    attempts = len(reasons) + 1
                     per_screen_changes[key] = changes
                     _save_png(out / "before" / f"{key}.png", arr_a)
                     _save_png(out / "after" / f"{key}.png", arr_b)
@@ -731,7 +794,12 @@ def run(args: argparse.Namespace) -> int:
                     )
                     if attempts > 1 and row["verdict"] != "FAIL":
                         row["flaky"] = True
-                    flaky = f" (flaky, passed on attempt {attempts})" if row.get("flaky") else ""
+                        row["retry_reasons"] = reasons
+                    flaky = (
+                        f" (flaky, passed on attempt {attempts}; {' | '.join(reasons)})"
+                        if row.get("flaky")
+                        else ""
+                    )
                     print(f"  {key}: {row['verdict']}{flaky}", flush=True)
         finally:
             side_a.close()

@@ -170,7 +170,24 @@ const PAIRS: Pair[] = [
     themes: BOTH,
     reason: 'the caption speaker name inside the caption box',
   },
+  // A search-hit mark keeps the text colour on top of it (styles/search.css, the default <mark>).
+  {
+    fg: '--text-primary',
+    bg: { tint: '--highlight-bg', over: '--surface-color' },
+    min: TEXT,
+    themes: BOTH,
+    reason: 'text on a search-hit mark',
+  },
   // non-text
+  // The avatar overlay's camera icon over a picture. The scrim is one value in both themes and
+  // the light card is white, the brightest picture it can sit on, so that row is the worst case.
+  {
+    fg: '--text-on-solid',
+    bg: { tint: '--media-scrim', over: '--surface-color' },
+    min: NON_TEXT,
+    themes: ['light'],
+    reason: 'white icon on the media scrim over a white picture (SC 1.4.11)',
+  },
   ...['--focus-ring-color', '--control-border'].flatMap((fg) =>
     ['--surface-color', '--background-color'].map((bg) => ({
       fg,

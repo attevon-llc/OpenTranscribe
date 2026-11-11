@@ -194,6 +194,6 @@ frontend/src/styles/consistency.test.ts	4	test files follow in a later lane: ind
 frontend/src/styles/contrast-usage.test.ts	5	test files follow in a later lane: index access in tests is converted to checked access, then noUncheckedIndexedAccess moves into the main tsconfig
 frontend/src/styles/formFields.test.ts	7	test files follow in a later lane: index access in tests is converted to checked access, then noUncheckedIndexedAccess moves into the main tsconfig
 frontend/src/styles/noPurple.test.ts	11	test files follow in a later lane: index access in tests is converted to checked access, then noUncheckedIndexedAccess moves into the main tsconfig
-frontend/src/styles/primary-contrast.test.ts	7	test files follow in a later lane: index access in tests is converted to checked access, then noUncheckedIndexedAccess moves into the main tsconfig
+frontend/src/styles/primary-contrast.test.ts	6	test files follow in a later lane: index access in tests is converted to checked access, then noUncheckedIndexedAccess moves into the main tsconfig
 frontend/src/styles/token-parity.test.ts	5	test files follow in a later lane: index access in tests is converted to checked access, then noUncheckedIndexedAccess moves into the main tsconfig
 frontend/src/styles/typography.test.ts	3	test files follow in a later lane: index access in tests is converted to checked access, then noUncheckedIndexedAccess moves into the main tsconfig

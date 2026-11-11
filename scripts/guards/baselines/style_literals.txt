@@ -8,7 +8,6 @@ colour::frontend/src/components/IdleTimeoutDialog.svelte	2	styling layer: pre-mi
 colour::frontend/src/components/LinkIdentityModal.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/LoginBanner.svelte	15	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/NotificationsPanel.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/components/SegmentSpeakerDropdown.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/SelectiveReprocessModal.svelte	12	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/SettingsModal.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/SpeakerStats.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -82,7 +81,6 @@ colour::frontend/src/components/settings/watchSources/WatchSourceCard.svelte	4	s
 colour::frontend/src/components/settings/watchSources/WatchSourceEmailLinksModal.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/sharing/ShareBadge.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/sharing/ShareCollectionModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/components/speakers/ProfilesTab.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/supportAccess/StatusChip.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/ui/BaseModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/ui/CardGridSkeleton.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -107,7 +105,6 @@ colour::frontend/src/routes/login/+page.svelte	7	styling layer: pre-migration li
 colour::frontend/src/routes/search/+page.svelte	13	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/styles/form-elements.css	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/styles/range-slider.css	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/styles/search.css	14	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/FileUploader.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/SelectiveReprocessModal.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/UserFileStatus.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

@@ -216,6 +216,27 @@ describe('TranscriptDisplay', () => {
       expect(highlights.length).toBeGreaterThan(0);
       expect(highlights).toHaveLength(2);
     });
+
+    it('rings the speaker chips once the query matches a speaker label (issue #837)', async () => {
+      render(TranscriptDisplay, { props: { ...baseProps, file: makeFile() } });
+      expect(document.querySelectorAll('.segment-speaker.current-match')).toHaveLength(0);
+
+      await fireEvent.click(document.querySelector('.search-trigger-button')!);
+      await tick();
+      const input = document.querySelector('.transcript-search input') as HTMLInputElement;
+      await fireEvent.input(input, { target: { value: 'speaker' } });
+      await tick();
+      await tick();
+      await tick();
+
+      // Both segments are SPEAKER_01, so both chips match; the first is the current match.
+      // Fails against speakerMatchState(segment) reading the matches from closure: the find
+      // bar counted "1 of 2" while both chips kept their as-mounted, unmarked classes.
+      const chipOf = (uuid: string) =>
+        document.querySelector(`[data-segment-id="${uuid}"] .segment-speaker`) as HTMLElement;
+      expect(chipOf('a').classList.contains('current-match')).toBe(true);
+      expect(chipOf('b').classList.contains('search-match')).toBe(true);
+    });
   });
 
   it('"Jump to current" scrolls to the nearest segment when the playhead is in a gap', async () => {

@@ -351,3 +351,179 @@ def test_mock_route_zero_holds_the_request_and_other_status_answers_it() -> None
     assert held(route) is None and route.fulfilled is None
     failing(route)
     assert route.fulfilled is not None and route.fulfilled["status"] == 500
+
+
+# --- fixture step (whole JSON answers for states the stack has no rows for) ---------------
+def test_fixture_step_answers_get_with_the_file_and_passes_other_methods_through() -> None:
+    page = _FakePage()
+    ab.run_step(page, r"fixture:/api/speaker-profiles/profiles(\?.*)?$|speaker_profiles.json")
+    pattern: Any
+    handler: Any
+    pattern, handler = page.routes[0]
+    assert pattern.search("/api/speaker-profiles/profiles?collection_uuid=x")
+    assert not pattern.search("/api/speaker-profiles/profiles/abc/avatar")
+
+    class Route:
+        def __init__(self, method: str) -> None:
+            self.request = type("R", (), {"method": method})()
+            self.fulfilled: dict[str, object] | None = None
+            self.continued = False
+
+        def fulfill(self, **kw: object) -> None:
+            self.fulfilled = kw
+
+        def continue_(self) -> None:
+            self.continued = True
+
+    get = Route("GET")
+    handler(get)
+    assert get.fulfilled == {"json": screens.load_fixture("speaker_profiles.json")}
+    post = Route("POST")
+    handler(post)
+    assert post.continued and post.fulfilled is None
+
+
+def test_validator_flags_every_malformed_fixture_argument(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "ok.json").write_text("{}")
+    (tmp_path / "broken.json").write_text("{not json")
+    monkeypatch.setattr(screens, "FIXTURE_DIR", tmp_path)
+    cases = {
+        "fixture:ok.json": "needs <url regex>|<file>",
+        "fixture:/api/x|": "needs <url regex>|<file>",
+        "fixture:/api/(x|ok.json": "does not compile",
+        "fixture:/api/x|../ok.json": "bare .json file name",
+        "fixture:/api/x|ok.txt": "bare .json file name",
+        "fixture:/api/x|missing.json": "no fixture file",
+        "fixture:/api/x|broken.json": "not valid JSON",
+    }
+    for step, why in cases.items():
+        problems = screens.validate((screens.Screen("f", "/", steps=(step,)),))
+        assert len(problems) == 1 and why in problems[0], (step, problems)
+    assert screens.validate((screens.Screen("f", "/", steps=("fixture:/api/x$|ok.json",)),)) == []
+
+
+_APP_DIR = Path(__file__).resolve().parents[2] / "app"
+
+
+def _serializer_keys(rel: str, func: str, marker: str) -> set[str]:
+    """String keys of the dict literal inside ``func`` (in ``app/<rel>``) that has ``marker``."""
+    import ast
+
+    tree = ast.parse((_APP_DIR / rel).read_text(encoding="utf-8"))
+    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == func)
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Dict):
+            keys = {k.value for k in node.keys if isinstance(k, ast.Constant)}
+            if marker in keys:
+                return {str(k) for k in keys}
+    raise AssertionError(f"no dict with {marker!r} in {rel}:{func}")
+
+
+def test_speaker_fixtures_have_exactly_the_keys_their_serializers_send() -> None:
+    """A fixture that drifts from the real answer would photograph a page no user sees."""
+    q = "services/clustering/queries.py"
+    page = screens.load_fixture("speaker_clusters_page.json")
+    detail = screens.load_fixture("speaker_cluster_detail.json")
+    inbox = screens.load_fixture("speaker_inbox_page.json")
+    profiles = screens.load_fixture("speaker_profiles.json")
+    assert isinstance(page, dict) and isinstance(detail, dict)
+    assert isinstance(inbox, dict) and isinstance(profiles, list)
+    gender = _serializer_keys(
+        "services/clustering/gender.py", "compute_gender_composition", "has_gender_conflict"
+    )
+    expected: list[tuple[set[str], list[dict[str, Any]]]] = [
+        (_serializer_keys(q, "list_clusters", "labeled_count"), [page]),
+        (_serializer_keys(q, "list_clusters", "promoted_to_profile_avatar_url"), page["items"]),
+        (_serializer_keys(q, "get_cluster_detail", "members"), [detail]),
+        (_serializer_keys(q, "get_cluster_detail", "has_audio_clip"), detail["members"]),
+        (gender, [c["gender_composition"] for c in [*page["items"], detail]]),
+        (
+            _serializer_keys(
+                "services/clustering/verification.py", "get_unverified_speakers", "pages"
+            ),
+            [inbox],
+        ),
+        (
+            _serializer_keys(
+                "services/clustering/verification.py",
+                "get_unverified_speakers",
+                "suggestion_source",
+            ),
+            inbox["items"],
+        ),
+        (
+            _serializer_keys(
+                "api/endpoints/speaker_profiles.py", "_profile_list_entry", "is_shared"
+            ),
+            profiles,
+        ),
+    ]
+    for keys, rows in expected:
+        assert rows
+        for row in rows:
+            assert set(row) == keys
+
+
+def test_speaker_state_screens_reach_their_states_through_fixtures() -> None:
+    by = screens.by_id()
+    for sid, waits_for in (
+        ("speakers-clusters-expanded", "wait:.cluster-card .card-actions"),
+        ("speakers-clusters-unassign-hover", "wait:.cluster-card .card-actions"),
+        ("speakers-profiles-shared", "wait:.shared-badge"),
+        ("speakers-inbox-confidence", "wait:.inbox-item .confidence"),
+    ):
+        steps = by[sid].steps
+        assert any(s.startswith("fixture:") for s in steps), sid
+        # The page fetched on load, before the route existed: the reload is what uses it.
+        assert steps.index("reload:page") > max(
+            i for i, s in enumerate(steps) if s.startswith("fixture:")
+        )
+        assert waits_for in steps
+
+
+# --- the photographed state must still be there after the photograph ---------------------
+def test_last_wait_is_the_final_wait_step_or_none() -> None:
+    assert ab.last_wait(("wait:.a", "click:.b", "wait:.c > .d", "hover:.e")) == ".c > .d"
+    assert ab.last_wait(("click:.b",)) is None
+
+
+def test_a_state_gone_after_the_capture_is_an_error_not_a_pass() -> None:
+    present = {".menu": 1}
+
+    class Page:
+        def locator(self, sel: str) -> Any:
+            return type("L", (), {"count": lambda _s: present.get(sel, 0)})()
+
+    ab.check_state_survived_capture(Page(), ("click:.x", "wait:.menu"))
+    ab.check_state_survived_capture(Page(), ("click:.x",))
+    present.clear()
+    with pytest.raises(ab.StepError, match="full_page=False"):
+        ab.check_state_survived_capture(Page(), ("click:.x", "wait:.menu"))
+
+
+def test_the_speaker_menu_screen_is_a_viewport_capture() -> None:
+    screen = screens.by_id()["file-detail-speaker-dropdown"]
+    assert ab.last_wait(screen.steps) == ".speaker-dropdown-portal .dropdown-menu"
+    assert screen.full_page is False
+
+
+def test_settings_screens_open_the_modal_only_after_the_gallery_has_loaded() -> None:
+    settings = [s for s in screens.SCREENS if s.id.startswith("settings-")]
+    assert len(settings) > 30
+    assert {s.ready for s in settings} == {screens.GALLERY_READY}
+    assert '[data-testid="gallery-files-loaded"]' in screens.GALLERY_READY
+
+
+def test_retry_reason_names_the_pixel_share_and_what_moved() -> None:
+    assert ab.retry_reason(0.0005, []) == "pixel 0.0500%, 0 computed"
+    line = ab.retry_reason(
+        0.0, [ab.Change("body:1>div:2>span:3", "color", "rgb(0, 0, 0)", "rgb(1, 1, 1)")]
+    )
+    assert line == "pixel 0.0000%, 1 computed (color on span:3)"
+
+
+def test_settings_profile_masks_the_active_sessions_table() -> None:
+    # Each capture logs in, so the table differs between any two captures of one server.
+    assert ".sessions-table" in screens.by_id()["settings-profile"].masks

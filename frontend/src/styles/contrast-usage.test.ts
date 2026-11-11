@@ -160,7 +160,11 @@ function backgrounds(theme: Theme, bg: Bg | null): Rgb[] | null {
 }
 
 /** Pairs that are not text on that background, each with the reason. Key as in `collectUses`. */
-const NOT_TEXT_ON_BG: Record<string, string> = {};
+const NOT_TEXT_ON_BG: Record<string, string> = {
+  '--text-on-solid on --media-scrim':
+    'ProfilesTab .avatar-overlay carries only a camera icon (non-text, SC 1.4.11 3:1) over an ' +
+    'avatar picture, not the card; contrast-pairs.test.ts holds it at 3:1 over a white picture',
+};
 
 interface Result {
   key: string;

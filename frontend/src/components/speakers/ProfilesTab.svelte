@@ -222,7 +222,7 @@
     position: absolute;
     inset: 0;
     border-radius: var(--radius-round);
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--media-scrim);
     display: flex;
     align-items: center;
     justify-content: center;

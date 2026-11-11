@@ -1,0 +1,41 @@
+[
+  {
+    "uuid": "5a1c0000-0000-4000-8000-0000000000d1",
+    "name": "Alex Rivera",
+    "description": null,
+    "created_at": "2026-11-01T12:00:00",
+    "updated_at": "2026-11-01T12:00:00",
+    "instance_count": 4,
+    "media_count": 3,
+    "predicted_gender": "male",
+    "avatar_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFUlEQVR42mP0qr7AgA0wMeAAg1MCAD/PAaXbuIY/AAAAAElFTkSuQmCC",
+    "is_shared": false,
+    "owner_name": null
+  },
+  {
+    "uuid": "5a1c0000-0000-4000-8000-0000000000d2",
+    "name": "Jordan Lee",
+    "description": null,
+    "created_at": "2026-11-01T12:00:00",
+    "updated_at": "2026-11-01T12:00:00",
+    "instance_count": 2,
+    "media_count": 2,
+    "predicted_gender": null,
+    "avatar_url": null,
+    "is_shared": false,
+    "owner_name": null
+  },
+  {
+    "uuid": "5a1c0000-0000-4000-8000-0000000000d3",
+    "name": "Morgan Chen",
+    "description": null,
+    "created_at": "2026-11-01T12:00:00",
+    "updated_at": "2026-11-01T12:00:00",
+    "instance_count": 1,
+    "media_count": 1,
+    "predicted_gender": null,
+    "avatar_url": null,
+    "is_shared": true,
+    "owner_name": "Riley Admin"
+  }
+]

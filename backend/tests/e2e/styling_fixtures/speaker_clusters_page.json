@@ -1,0 +1,92 @@
+{
+  "items": [
+    {
+      "uuid": "5a1c0000-0000-4000-8000-000000000001",
+      "label": "Alex Rivera",
+      "description": null,
+      "user_id": 1,
+      "member_count": 3,
+      "promoted_to_profile_id": null,
+      "promoted_to_profile_uuid": null,
+      "promoted_to_profile_name": null,
+      "promoted_to_profile_avatar_url": null,
+      "suggested_name": null,
+      "quality_score": 0.92,
+      "min_similarity": 0.81,
+      "separation_score": 0.34,
+      "gender_composition": {
+        "male_count": 3,
+        "female_count": 0,
+        "unknown_count": 0,
+        "total_with_gender": 3,
+        "dominant_gender": "male",
+        "gender_coherence": 1.0,
+        "gender_label": "100% Male",
+        "has_gender_conflict": false
+      },
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00"
+    },
+    {
+      "uuid": "5a1c0000-0000-4000-8000-000000000002",
+      "label": null,
+      "description": null,
+      "user_id": 1,
+      "member_count": 2,
+      "promoted_to_profile_id": null,
+      "promoted_to_profile_uuid": null,
+      "promoted_to_profile_name": null,
+      "promoted_to_profile_avatar_url": null,
+      "suggested_name": "Jordan Lee",
+      "quality_score": 0.68,
+      "min_similarity": 0.62,
+      "separation_score": 0.18,
+      "gender_composition": {
+        "male_count": 0,
+        "female_count": 0,
+        "unknown_count": 2,
+        "total_with_gender": 0,
+        "dominant_gender": null,
+        "gender_coherence": null,
+        "gender_label": null,
+        "has_gender_conflict": false
+      },
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00"
+    },
+    {
+      "uuid": "5a1c0000-0000-4000-8000-000000000003",
+      "label": null,
+      "description": null,
+      "user_id": 1,
+      "member_count": 2,
+      "promoted_to_profile_id": null,
+      "promoted_to_profile_uuid": null,
+      "promoted_to_profile_name": null,
+      "promoted_to_profile_avatar_url": null,
+      "suggested_name": null,
+      "quality_score": 0.41,
+      "min_similarity": 0.38,
+      "separation_score": 0.05,
+      "gender_composition": {
+        "male_count": 0,
+        "female_count": 0,
+        "unknown_count": 2,
+        "total_with_gender": 0,
+        "dominant_gender": null,
+        "gender_coherence": null,
+        "gender_label": null,
+        "has_gender_conflict": false
+      },
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00"
+    }
+  ],
+  "total": 3,
+  "page": 1,
+  "per_page": 20,
+  "pages": 1,
+  "labeled_count": 1,
+  "unlabeled_count": 2,
+  "last_clustered_at": "2026-11-01T12:00:00"
+}

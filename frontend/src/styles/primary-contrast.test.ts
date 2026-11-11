@@ -18,7 +18,6 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import {
-  compositeOver,
   contrastRatio as contrast,
   declared,
   hexToRgb,
@@ -96,29 +95,13 @@ describe('primary blue carries white text at AA contrast', () => {
 });
 
 /**
- * `.chip` in `components/upload/upload-shared.css` (rendered live by
- * UploadStepCollections.svelte) is a second, independent contrast finding
- * from the same #835 investigation that produced the block above:
- * `:global([data-theme='dark']) .chip` sets a semi-transparent
- * `background: rgba(59, 130, 246, 0.15)` over the app's dark `--surface-color`
- * (#1e293b), which composites to ~#223657. `--primary-color` (#2563eb, the
- * SAME blue in both themes — see the block above) as text on that background
- * is ~2.0:1, under WCAG AA's 4.5:1 floor for normal text. The fix reuses
- * `--primary-on-surface`, the token this codebase already keys "light text on
- * a dark surface" off of (`.tag-chip` gets it for free via
- * `--tag-color -> --primary-dark -> --primary-on-surface`).
+ * `.chip` in `components/upload/upload-shared.css` (rendered live by UploadStepCollections.svelte)
+ * was a second contrast finding of the #835 investigation: `--primary-color` text on a dark chip is
+ * about 2:1. That file is a plain stylesheet imported by script, so the `:global([data-theme='dark'])
+ * .chip` override this test used to pin shipped verbatim and the browser dropped it as an invalid
+ * selector: it never applied. The rule that styles the chip in dark is the base rule, through the
+ * dark values of its tokens (`--primary-on-surface` on `--primary-bg`), so that is what is pinned.
  */
-function rgbaWithAlpha(value: string): { rgb: [number, number, number]; alpha: number } {
-  // The chip tint is `rgba(var(--accent-rgb), α)`: resolve the channel token for the dark theme.
-  value = value.replace(/var\((--[\w-]+)\)/g, (_, name) => resolveToken(sets, 'dark', name));
-  const m = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)/);
-  if (!m) throw new Error(`could not parse rgba value: ${value}`);
-  return {
-    rgb: [Number(m[1]), Number(m[2]), Number(m[3])],
-    alpha: m[4] !== undefined ? Number(m[4]) : 1,
-  };
-}
-
 /**
  * `UploadProgress.svelte`'s per-file progress-bar fill (#752 gap 2) is a
  * NON-text UI component, so WCAG 2.1 SC 1.4.11 applies (3:1), not the 4.5:1
@@ -175,32 +158,30 @@ describe('.chip (upload-shared.css) clears AA contrast in dark mode', () => {
     'utf8'
   );
 
-  function chipDarkRuleBody(): string {
-    const start = chipCss.indexOf(":global([data-theme='dark']) .chip {");
-    if (start === -1) throw new Error('dark-mode .chip rule not found in upload-shared.css');
-    const end = chipCss.indexOf('}', start);
-    return chipCss.slice(start, end);
+  function chipRuleBody(): string {
+    const start = chipCss.search(/^\.chip \{/m);
+    if (start === -1) throw new Error('.chip rule not found in upload-shared.css');
+    return chipCss.slice(start, chipCss.indexOf('}', start));
   }
 
-  const darkSurface = hexToRgb(token("[data-theme='dark']", '--surface-color'));
-  const chipBgMatch = chipDarkRuleBody().match(/background:\s*(rgba?\((?:[^()]|\([^()]*\))*\))/);
-  if (!chipBgMatch) throw new Error('.chip dark-mode background declaration not found');
-  const compositedChipBg = compositeOver(rgbaWithAlpha(chipBgMatch[1]), darkSurface);
+  const dark = "[data-theme='dark']";
+  const chipBg = hexToRgb(token(dark, '--primary-bg'));
 
-  it('sets an explicit dark-mode text color rather than inheriting --primary-color', () => {
-    expect(chipDarkRuleBody()).toMatch(/color:\s*var\(--primary-on-surface/);
+  it('colours its label and fill from tokens, so dark mode needs no override', () => {
+    expect(chipRuleBody()).toMatch(/color:\s*var\(--primary-on-surface\)/);
+    expect(chipRuleBody()).toMatch(/background:\s*var\(--primary-bg\)/);
+    expect(chipCss).not.toMatch(/\.chip\s*\{[^}]*\}[\s\S]*\.chip\s*\{/);
   });
 
-  it('--primary-on-surface on the composited chip background clears AA', () => {
-    const text = hexToRgb(token("[data-theme='dark']", '--primary-on-surface'));
-    expect(contrast(text, compositedChipBg)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  it('--primary-on-surface on the dark --primary-bg clears AA', () => {
+    const text = hexToRgb(token(dark, '--primary-on-surface'));
+    expect(contrast(text, chipBg)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
   });
 
-  it('control: the OLD --primary-color text on that same background fails AA', () => {
-    // Proves the fix (not just the background) is what clears the gate above —
-    // this is the ~2.0:1 the #835 investigation measured.
-    const oldText = hexToRgb(token("[data-theme='dark']", '--primary-color'));
-    expect(contrast(oldText, compositedChipBg)).toBeLessThan(AA_NORMAL_TEXT);
+  it('control: --primary-color text on that same fill fails AA', () => {
+    // Proves the label token (not just the fill) is what clears the gate above.
+    const oldText = hexToRgb(token(dark, '--primary-color'));
+    expect(contrast(oldText, chipBg)).toBeLessThan(AA_NORMAL_TEXT);
   });
 });
 

@@ -1,0 +1,50 @@
+{
+  "prompts": [
+    {
+      "uuid": "5a1c0000-0000-4000-8000-0000000000f1",
+      "name": "Meeting digest",
+      "description": "Own prompt, shared",
+      "prompt_text": "Summarise the meeting.",
+      "is_system_default": false,
+      "user_id": "5a1c0000-0000-4000-8000-0000000000a1",
+      "content_type": null,
+      "is_active": true,
+      "is_shared": true,
+      "shared_at": "2026-11-01T12:00:00",
+      "tags": ["meeting"],
+      "usage_count": 2,
+      "author_name": "Me",
+      "author_role": "user",
+      "is_owner": true,
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00",
+      "linked_collections": [{"uuid": "5a1c0000-0000-4000-8000-0000000000c1", "name": "Weekly"}]
+    },
+    {
+      "uuid": "5a1c0000-0000-4000-8000-0000000000f2",
+      "name": "Interview notes",
+      "description": "Shared by an admin",
+      "prompt_text": "List the key points.",
+      "is_system_default": false,
+      "user_id": "5a1c0000-0000-4000-8000-0000000000a2",
+      "content_type": null,
+      "is_active": true,
+      "is_shared": true,
+      "shared_at": "2026-11-01T12:00:00",
+      "shared_by": "5a1c0000-0000-4000-8000-0000000000a2",
+      "shared_by_name": "Pat Admin",
+      "tags": ["interview"],
+      "usage_count": 5,
+      "author_name": "Pat Admin",
+      "author_role": "admin",
+      "is_owner": false,
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00"
+    }
+  ],
+  "total": 2,
+  "page": 1,
+  "size": 100,
+  "has_next": false,
+  "has_prev": false
+}

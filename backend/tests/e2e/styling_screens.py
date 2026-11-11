@@ -527,6 +527,76 @@ _SETTINGS = (
     *(_settings("speaker-identification", f"tab:{t}") for t in ("spk-attributes", "spk-engine")),
 )
 
+
+# --- settings I states (styling row 3.5) ----------------------------------------------------------
+# The seeded stack has no shared LLM config, shared prompt, media source, search-index probe or
+# diarization fallback, so the share / admin badges, the credential badges and the health dots never
+# render. Whole fixture files, shaped by the real serializers (frontend `UserLLMConfigurationsList`,
+# `SummaryPromptList`, `MediaSourcesResponse`, `SystemStats`, `SearchIndexStatus`,
+# `SearchHealthStatus`), answer the list endpoints. `reload:page` comes first so the modal opens
+# against the fixtures.
+_SETTINGS_I_STATES = (
+    Screen(
+        "settings-llm-provider-shared",
+        "/",
+        steps=(
+            r"fixture:/api/llm-settings(\?.*)?$|llm_configurations.json",
+            "reload:page",
+            "settings:llm-provider",
+            "wait:.config-item.shared .admin-badge",
+        ),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes="own shared config (share badge), admin-shared config (admin badge, shared tint)",
+    ),
+    Screen(
+        "settings-ai-prompts-shared",
+        "/",
+        steps=(
+            r"fixture:/api/prompts(\?.*)?$|prompts_list.json",
+            "reload:page",
+            "settings:ai-prompts",
+            "wait:.config-item.shared .admin-badge",
+        ),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes="own shared prompt (share badge, collection tag), admin-shared prompt in the shared section",
+    ),
+    Screen(
+        "settings-media-sources-badges",
+        "/",
+        steps=(
+            r"fixture:/api/user-settings/media-sources$|media_sources.json",
+            "reload:page",
+            "settings:media-sources",
+            "wait:.source-card.shared .admin-badge",
+        ),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes="credentials / no-credentials / SSL-off meta badges, shared badge, admin-shared card",
+    ),
+    Screen(
+        "settings-system-statistics-health",
+        "/",
+        steps=(
+            r"fixture:/api/system/stats$|system_stats.json",
+            r"fixture:/api/search/reindex/status$|search_reindex_status.json",
+            r"fixture:/api/search/index-health$|search_index_health.json",
+            "reload:page",
+            "settings:system-statistics",
+            "wait:.search-health-dot.error",
+            "wait:.model-fallback-badge",
+        ),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes="green and red index-health dots, pending-reindex warning, diarization fallback badge",
+    ),
+)
+
 # --- S34 transcript states (lane s34: rendering of changes the base screens never reached) ------
 _FILE_DETAIL_STATES = (
     # Patched-data states: a state the seeded data lacks is added by patching the real answer
@@ -768,6 +838,7 @@ SCREENS: tuple[Screen, ...] = (
     *_SETTINGS,
     *_FILE_DETAIL_STATES,
     *_SPEAKER_STATES,
+    *_SETTINGS_I_STATES,
     *_HIGHLIGHT_STATES,
 )
 

@@ -78,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pydantic schemas in `auth_config`, `download_settings` and `transcription_settings` use `model_config = ConfigDict(...)` instead of the deprecated class-based `Config`; generated JSON schemas are unchanged. `backend/tests/unit/test_no_pydantic_v1_deprecations.py` fails on any `PydanticDeprecatedSince20` at import of `app.schemas` / `app.models`.
 - The backend coverage floor (`fail_under` in `backend/pyproject.toml`) rises from 37 to 86. The full suite measured 87.49% line+branch coverage on 2026-11-10, and the floor sits at that value rounded down, minus one, so a drop in coverage fails the run.
 - Keyboard focus rings now use `--focus-ring-color` (blue-400 in dark, 5.75:1 on the card, was 2.83:1) on buttons, text buttons, range sliders and focused fields, and text-field borders use `--control-border` (3.28:1 light, 4.18:1 dark, was 1.47:1), so inputs are identifiable at WCAG 1.4.11. Danger and warning buttons already used `--error-solid` and dark `--text-on-warning` labels; the support-access `sa-danger` workaround for the old red is removed.
 

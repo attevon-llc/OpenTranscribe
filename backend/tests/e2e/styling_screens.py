@@ -128,6 +128,15 @@ class Screen:
     notes: str = field(default="", compare=False)
 
 
+#: The gallery has finished its first load: real content (``GalleryGrid``'s readiness oracle, the
+#: one ``conftest.py``'s ``gallery_page`` fixture waits for), or its empty or error state. Its
+#: skeleton swapping for cards behind an open modal changes pixels, so a screen that opens a
+#: modal over the gallery waits for this first.
+GALLERY_READY = (
+    '[data-testid="gallery-files-loaded"], .content-area .empty-state, .content-area .error-state'
+)
+
+
 def _settings(section: str, *extra: str, masks: tuple[str, ...] = ()) -> Screen:
     """A settings section, optionally followed by more steps (usually ``tab:<id>``)."""
     suffix = "-".join(s.split(":", 1)[1] for s in extra) if extra else ""
@@ -139,7 +148,7 @@ def _settings(section: str, *extra: str, masks: tuple[str, ...] = ()) -> Screen:
         masks=(".count-chip", ".meta-line", *masks),
         # The modal is a fixed-position overlay: a viewport capture is what a user sees.
         full_page=False,
-        ready=".gallery-action-buttons",
+        ready=GALLERY_READY,
     )
 
 

@@ -171,6 +171,12 @@ A screen's last `wait:` target must still be on the page AFTER the screenshot, o
 not PASS. A full-page capture lays the page out at its full height, which fires `resize`, and a menu
 that closes on resize (SegmentSpeakerDropdown's body portal) was absent from the PNG while its `wait:`
 had passed: two menu-less pages compared as "no difference". Give such a screen `full_page=False`.
+
+`settings-*` screens wait for the gallery's own first load (`GALLERY_READY`: GalleryGrid's
+`gallery-files-loaded` oracle, or its empty or error state) before opening the modal, so the skeleton
+never swaps for cards behind the backdrop mid-capture. In `zero` mode a screen that passes only on a
+retry is printed as flaky WITH the reason each discarded attempt failed (`retry_reasons` in
+`summary.json`: the error, or the pixel share and which properties moved on which elements).
 Unit tests for the pure parts:
 `backend/tests/unit/test_styling_ab.py`. The axe surface for the shared-component fixture
 (`/a11y-fixtures/ui-kit`, surfaces `ui-kit` and `ui-kit-ar`) is in `test_a11y.py`.

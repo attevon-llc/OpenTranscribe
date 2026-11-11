@@ -507,3 +507,18 @@ def test_the_speaker_menu_screen_is_a_viewport_capture() -> None:
     screen = screens.by_id()["file-detail-speaker-dropdown"]
     assert ab.last_wait(screen.steps) == ".speaker-dropdown-portal .dropdown-menu"
     assert screen.full_page is False
+
+
+def test_settings_screens_open_the_modal_only_after_the_gallery_has_loaded() -> None:
+    settings = [s for s in screens.SCREENS if s.id.startswith("settings-")]
+    assert len(settings) > 30
+    assert {s.ready for s in settings} == {screens.GALLERY_READY}
+    assert '[data-testid="gallery-files-loaded"]' in screens.GALLERY_READY
+
+
+def test_retry_reason_names_the_pixel_share_and_what_moved() -> None:
+    assert ab.retry_reason(0.0005, []) == "pixel 0.0500%, 0 computed"
+    line = ab.retry_reason(
+        0.0, [ab.Change("body:1>div:2>span:3", "color", "rgb(0, 0, 0)", "rgb(1, 1, 1)")]
+    )
+    assert line == "pixel 0.0000%, 1 computed (color on span:3)"

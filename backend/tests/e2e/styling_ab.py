@@ -312,6 +312,15 @@ def split_step(step: str) -> tuple[str, str]:
     return kind, arg
 
 
+def retry_reason(fraction: float, changes: list[Change]) -> str:
+    """One line saying why a failing attempt was discarded: pixel share and what moved."""
+    props = sorted({c.prop for c in changes})
+    where = sorted({c.key.rsplit(">", 1)[-1] for c in changes})
+    return f"pixel {fraction * 100:.4f}%, {len(changes)} computed" + (
+        f" ({', '.join(props[:4])} on {', '.join(where[:3])})" if changes else ""
+    )
+
+
 def last_wait(steps: tuple[str, ...]) -> str | None:
     """The selector of a screen's last ``wait:`` step: the state the photograph is meant to show."""
     waits = [arg for kind, arg in map(split_step, steps) if kind == "wait"]
@@ -685,31 +694,36 @@ def measure(
     file_uuid: str | None,
     args: argparse.Namespace,
     controls: set[str],
-) -> tuple[np.ndarray, np.ndarray, float, list[Change], dict[str, Any], int]:
+) -> tuple[np.ndarray, np.ndarray, float, list[Change], dict[str, Any], list[str]]:
     """Capture both sides; in zero mode re-capture a failing screen before calling it FAIL.
 
     A difference caused by a real style change shows on every attempt, while a timing flake
     (a transient overlay, a late repaint) does not, so only a screen that fails all
     ``MAX_ATTEMPTS`` attempts is reported as FAIL (a capture that errors is retried the same way). Negative controls are never retried.
+    The last element is why each discarded attempt was discarded (``retry_reason``), so a
+    retry-only pass names its flake instead of hiding it.
     """
     retries = MAX_ATTEMPTS if args.mode == "zero" and not args.negative_control else 1
+    reasons: list[str] = []
     for attempt in range(1, retries + 1):
         try:
             a = capture(side_a, screen, variant, file_uuid)
             b = capture(side_b, screen, variant, file_uuid)
         except ScreenUnavailableError:
             raise
-        except Exception:
+        except Exception as exc:
             # A page that never became ready under load is the same flake as a diff.
             if attempt == retries:
                 raise
+            reasons.append(f"error: {str(exc).splitlines()[0][:160] if str(exc) else repr(exc)}")
             continue
         arr_a, arr_b = _png_to_array(a["png"]), _png_to_array(b["png"])
         fraction = diff_fraction(arr_b, arr_a)
         changes = diff_snapshots(a["snapshot"], b["snapshot"])
         if verdict(args.mode, fraction, len(changes), is_control=screen.id in controls) != "FAIL":
             break
-    return arr_a, arr_b, fraction, changes, b, attempt
+        reasons.append(retry_reason(fraction, changes))
+    return arr_a, arr_b, fraction, changes, b, reasons
 
 
 def run(args: argparse.Namespace) -> int:
@@ -762,7 +776,8 @@ def run(args: argparse.Namespace) -> int:
                         row["verdict"] = verdict(args.mode, 0, 0, error=row["error"])
                         print(f"  {key}: ERROR {row['error']}", flush=True)
                         continue
-                    arr_a, arr_b, fraction, changes, b, attempts = measured
+                    arr_a, arr_b, fraction, changes, b, reasons = measured
+                    attempts = len(reasons) + 1
                     per_screen_changes[key] = changes
                     _save_png(out / "before" / f"{key}.png", arr_a)
                     _save_png(out / "after" / f"{key}.png", arr_b)
@@ -779,7 +794,12 @@ def run(args: argparse.Namespace) -> int:
                     )
                     if attempts > 1 and row["verdict"] != "FAIL":
                         row["flaky"] = True
-                    flaky = f" (flaky, passed on attempt {attempts})" if row.get("flaky") else ""
+                        row["retry_reasons"] = reasons
+                    flaky = (
+                        f" (flaky, passed on attempt {attempts}; {' | '.join(reasons)})"
+                        if row.get("flaky")
+                        else ""
+                    )
                     print(f"  {key}: {row['verdict']}{flaky}", flush=True)
         finally:
             side_a.close()

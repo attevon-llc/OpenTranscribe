@@ -353,7 +353,6 @@ physical::frontend/src/routes/chat/[[conversationId]]/+page.svelte	4	styling lay
 physical::frontend/src/routes/login/+page.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/routes/register/+page.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/routes/search/+page.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-physical::frontend/src/routes/speakers/+page.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/styles/form-elements.css	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/styles/tables.css	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 radius::frontend/src/components/CollectionsPanel.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

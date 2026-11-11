@@ -41,6 +41,8 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 from tests.integration.deletion_residue import CENTROID_MATCH_COSINE
 from tests.integration.deletion_residue import LEGAL_SEED_IP
 from tests.integration.deletion_residue import LEGAL_SEED_UA
@@ -1112,14 +1114,14 @@ def test_the_scan_covers_an_index_it_was_never_told_about(engine, admin_id, crea
         tag="negctl",
     )
     index = f"delres-negctl-{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(
-        index=index, body={"mappings": {"properties": {"file_uuid": {"type": "keyword"}}}}
-    )
     try:
+        create_test_index(
+            client, index, {"mappings": {"properties": {"file_uuid": {"type": "keyword"}}}}
+        )
         assert opensearch_residue(sf, include_owner=False) == []
         client.index(index=index, body={"file_uuid": sf.file_uuid}, refresh=True)
         assert opensearch_residue(sf, include_owner=False) == [f"opensearch: 1 doc(s) in {index}"]
     finally:
-        client.indices.delete(index=index, ignore=[404])
+        delete_test_index(client, index)
     assert minio_residue(sf, include_owner=False) == []
     assert not redis_client(1).exists(f"cache:files:{admin_id}:{sf.tag}")

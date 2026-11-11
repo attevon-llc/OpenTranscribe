@@ -27,6 +27,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy import text
 
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 from tests.integration.deletion_seed import DELRES_PREFIX
 from tests.integration.deletion_seed import new_tag
 
@@ -113,13 +115,13 @@ def sandbox(monkeypatch) -> Iterator[tuple[object, str]]:
     monkeypatch.setattr(settings, "OPENSEARCH_SUMMARY_INDEX", f"delres-absent-s-{tag}")
     monkeypatch.setattr(sweeper, "get_speaker_index", lambda: f"delres-absent-sp-{tag}")
     monkeypatch.setattr(sweeper, "get_speaker_index_v4", lambda: f"delres-absent-v4-{tag}")
-    client.indices.create(
-        index=chunks, body={"mappings": {"properties": {"file_uuid": {"type": "keyword"}}}}
-    )
     try:
+        create_test_index(
+            client, chunks, {"mappings": {"properties": {"file_uuid": {"type": "keyword"}}}}
+        )
         yield client, chunks
     finally:
-        client.indices.delete(index=chunks, ignore=[404])
+        delete_test_index(client, chunks)
 
 
 def _index_docs(client, index: str, file_uuid: str, n: int) -> None:

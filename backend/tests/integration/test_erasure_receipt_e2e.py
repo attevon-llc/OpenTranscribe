@@ -15,6 +15,8 @@ import uuid as uuid_pkg
 import pytest
 from sqlalchemy import text
 
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 from tests.integration.erasure_receipt_world import SPEAKER_INDEX
 from tests.integration.erasure_receipt_world import World
 from tests.integration.erasure_receipt_world import build_world
@@ -232,8 +234,8 @@ def test_unclassified_index_blocks_verification_until_allow_listed(world):
     w = world()
     w2 = world("allow")
     stray = f"test_erasure_receipt_stray_{uuid_pkg.uuid4().hex[:12]}"
-    opensearch_client.indices.create(index=stray)
     try:
+        create_test_index(opensearch_client, stray)
         summary = _erase_user(w.user_id)
         receipt = _receipts(summary["ledger_uuid"])[1]
         assert receipt.outcome == "unverified"
@@ -249,7 +251,7 @@ def test_unclassified_index_blocks_verification_until_allow_listed(world):
             db.close()
         assert receipt2.outcome == "verified", receipt2.unverified
     finally:
-        opensearch_client.indices.delete(index=stray, ignore_unavailable=True)
+        delete_test_index(opensearch_client, stray)
 
 
 def test_delayed_reverify_catches_a_racing_write(world):

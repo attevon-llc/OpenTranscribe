@@ -21,6 +21,9 @@ import uuid as uuid_pkg
 
 import pytest
 
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
+
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
 pytestmark = [
@@ -53,14 +56,14 @@ def chunk_index(monkeypatch, gov):
     monkeypatch.setattr("app.db.session_utils.session_scope", _test_session)
 
     name = f"test_org_collection_retrieval_{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
+        create_test_index(client, name, index_admin._get_index_body_with_dimension(384))
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
         pipelines.reset_neural_pipeline_state()
         yield client, name
     finally:
-        client.indices.delete(index=name, ignore=[404])
+        delete_test_index(client, name)
         pipelines.reset_neural_pipeline_state()
 
 

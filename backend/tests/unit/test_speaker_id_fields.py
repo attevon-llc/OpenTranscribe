@@ -37,6 +37,8 @@ from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.search.chunking_service import chunk_transcript_by_speaker_turns
 from app.tasks import reindex_task
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 _INDEX = settings.OPENSEARCH_CHUNKS_INDEX
 
@@ -589,11 +591,11 @@ def seeded_chunk_index():
     )
 
     name = f"test_speaker_id_fields_{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
     try:
+        create_test_index(client, name, svc._get_index_body_with_dimension(384))
         yield client, name
     finally:
-        client.indices.delete(index=name, ignore=[404])
+        delete_test_index(client, name)
 
 
 @_needs_opensearch

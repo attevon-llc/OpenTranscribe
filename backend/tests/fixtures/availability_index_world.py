@@ -21,6 +21,8 @@ from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.ingest_artifacts import index_mapping as digest_mapping
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 MARK = uuid_pkg.uuid4().hex[:8]
 SPEAKER = f"Zzyzx-{MARK}"
@@ -69,8 +71,8 @@ def availability_indices(monkeypatch, db_session):
     v3, v4, alias = get_speaker_index_v3(), get_speaker_index_v4(), get_speaker_index()
     created = [chunks, transcripts, v3, v4]
     try:
-        client.indices.create(index=chunks, body=index_admin._get_index_body_with_dimension(384))
-        client.indices.create(index=transcripts, body=os_indices.transcript_index_body())
+        create_test_index(client, chunks, index_admin._get_index_body_with_dimension(384))
+        create_test_index(client, transcripts, os_indices.transcript_index_body())
         os_indices._ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
         os_indices._ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
         client.indices.put_alias(index=v4, name=alias)
@@ -79,7 +81,7 @@ def availability_indices(monkeypatch, db_session):
         yield client
     finally:
         for name in created:
-            client.indices.delete(index=name, ignore=[404])
+            delete_test_index(client, name)
         invalidate_active_speaker_index_cache()
         pipelines.reset_neural_pipeline_state()
 

@@ -31,6 +31,7 @@ from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
 from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.models.media import MediaFile
 from app.services.opensearch_service import speaker_maintenance
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -83,7 +84,7 @@ def speaker_indices(monkeypatch):
         yield SimpleNamespace(client=client, v3=v3, v4=v4, alias=alias)
     finally:
         for idx in (v3, v4):
-            client.indices.delete(index=idx, ignore=[404])
+            delete_test_index(client, idx)
 
 
 @pytest.fixture
@@ -119,7 +120,7 @@ def speaker_indices_alias_v3(monkeypatch):
         yield SimpleNamespace(client=client, v3=v3, v4=v4, alias=alias)
     finally:
         for idx in (v3, v4):
-            client.indices.delete(index=idx, ignore=[404])
+            delete_test_index(client, idx)
 
 
 def _doc(speaker_uuid: str, user_id: int, **overrides) -> dict:

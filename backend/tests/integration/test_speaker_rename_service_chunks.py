@@ -32,6 +32,8 @@ from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -82,12 +84,12 @@ def chunk_index(monkeypatch):
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
 
     name = f"test_rename_sites_{uuid_mod.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
+        create_test_index(client, name, index_admin._get_index_body_with_dimension(384))
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         yield client
     finally:
-        client.indices.delete(index=name, ignore=[404])
+        delete_test_index(client, name)
 
 
 @pytest.fixture

@@ -20,6 +20,9 @@ import uuid as uuid_pkg
 
 import pytest
 
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
+
 
 @pytest.fixture(scope="session")
 def _summary_plane_index():
@@ -49,16 +52,12 @@ def _summary_plane_index():
     # A single-node cluster creates indices one at a time (~1 s each), and every xdist worker
     # asks for one at the same moment, so the last in the queue waits for all the others. The
     # client's default 10 s read timeout is shorter than that wait; the call is not slow, it is
-    # queued.
-    client.indices.create(
-        index=name,
-        body=index_admin._get_index_body_with_dimension(384),
-        params={"request_timeout": 180},
-    )
+    # queued. create_test_index carries the per-request timeout for that queue.
     try:
+        create_test_index(client, name, index_admin._get_index_body_with_dimension(384))
         yield name
     finally:
-        client.indices.delete(index=name, ignore=[404])
+        delete_test_index(client, name)
 
 
 @pytest.fixture

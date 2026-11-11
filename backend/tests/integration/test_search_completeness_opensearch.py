@@ -39,6 +39,10 @@ from typing import Any
 
 import pytest
 
+from tests.fixtures.opensearch_test_index import TEST_INDEX_REQUEST_TIMEOUT_S
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
+
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 _MODEL_ID = os.environ.get("OPENSEARCH_TEST_MODEL_ID", "")
 
@@ -223,8 +227,9 @@ def corpus():
                         }
                     ]
                 },
+                request_timeout=TEST_INDEX_REQUEST_TIMEOUT_S,
             )
-        client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
+        create_test_index(client, name, index_admin._get_index_body_with_dimension(384))
         rng = random.Random(1078)  # noqa: S311 — deterministic test corpus, not crypto
         docs = [d for f in range(N_FILES) for d in _file_docs(f, rng)]
         marker_base = {
@@ -262,7 +267,7 @@ def corpus():
         client.indices.refresh(index=name)
         yield client, name, rng
     finally:
-        client.indices.delete(index=name, ignore_unavailable=True)
+        delete_test_index(client, name)
         if _MODEL_ID:
             client.ingest.delete_pipeline(id=PIPELINE, ignore=[404])
 

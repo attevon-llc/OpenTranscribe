@@ -10,7 +10,8 @@ The rule, per creation call, within the function that makes it:
 * the creation sits inside a ``try`` whose ``finally`` removes that kind of artifact, or
 * the creation is the statement IMMEDIATELY before such a ``try`` (nothing that can fail in
   between: an index created and then bulk-seeded before the ``try`` leaks on a failed seed,
-  and that shape was in eight suites), or
+  and that shape was in eight suites) -- EXCEPT for an OpenSearch index or ingest pipeline,
+  whose creation must sit INSIDE the ``try`` (see ``REMOTE_KINDS``), or
 * the removal is registered up front (``addfinalizer`` / ``ExitStack.callback`` /
   ``atexit.register``) in the same function.
 
@@ -37,6 +38,20 @@ _TESTS_ROOT = Path(__file__).resolve().parents[1]
 _REPO_ROOT = _TESTS_ROOT.parents[1]
 
 KINDS = ("index", "pipeline", "bucket", "database", "docker", "tmp")
+
+#: Kinds whose creation is an HTTP request with a SHORT client-side read timeout. The request
+#: can time out in the client AFTER the cluster has created the artifact, so the creating call
+#: raises while the artifact exists: a ``try`` that opens after the call never runs its
+#: ``finally``. Index creation is a cluster-state update the cluster applies one at a time, so
+#: under parallel workers it waits past opensearch-py's 10 s default; that leaked
+#: ``test_digest_plane_*`` indexes, which then made every later erasure receipt report
+#: ``os.unclassified`` (P3.2 gate, A1). For these kinds the creation must be inside the
+#: ``try``, and the removal must tolerate a missing artifact (``ignore=[404]``).
+#:
+#: A MinIO bucket is not listed: minio-py (7.2.x, ``Minio.__init__``) gives its pool a
+#: 5-minute connect and read timeout, so "timed out in the client, created on the server" is
+#: not a realistic path there, and the immediately-before shape stays acceptable.
+REMOTE_KINDS = frozenset({"index", "pipeline"})
 
 #: ``<path relative to repo>::<function>::<kind>`` -> reason. Empty is the goal.
 _ALLOWED: dict[str, str] = {}
@@ -334,7 +349,8 @@ class _Analyzer:
                 kind = self.creates(call)
                 if kind is None or kind in registered:
                     continue
-                if kind in self.finally_removes(enclosing_tries + following):
+                protecting = enclosing_tries + ([] if kind in REMOTE_KINDS else following)
+                if kind in self.finally_removes(protecting):
                     continue
                 out.append((kind, call.lineno))
             for field, child in ast.iter_fields(stmt):
@@ -484,8 +500,8 @@ def test_every_persistent_artifact_a_test_creates_is_removed_in_a_finally() -> N
     )
     assert not offenders, (
         "a test/fixture creates a persistent artifact with no removal on its failure path "
-        "(put the creation inside, or immediately before, a try whose finally removes it):\n"
-        + "\n".join(offenders)
+        "(put the creation inside a try whose finally removes it; a database, container or "
+        "temp path may instead sit immediately before that try):\n" + "\n".join(offenders)
     )
 
 
@@ -551,6 +567,35 @@ def test_x(engine):
     finally:
         conn.execute('DROP DATABASE "d"')
 """,
+    "index-created-immediately-before-try": """
+import pytest
+@pytest.fixture
+def idx(client):
+    client.indices.create(index="x")
+    try:
+        yield "x"
+    finally:
+        client.indices.delete(index="x", ignore=[404])
+""",
+    "pipeline-created-immediately-before-try": """
+def test_x(client):
+    client.ingest.put_pipeline(id="p", body={})
+    try:
+        pass
+    finally:
+        client.ingest.delete_pipeline(id="p", ignore=[404])
+""",
+    "helper-creates-index-caller-protects-after": """
+def _make(client):
+    client.indices.create(index="x")
+    return "x"
+def test_x(client):
+    name = _make(client)
+    try:
+        assert name
+    finally:
+        client.indices.delete(index=name, ignore=[404])
+""",
     "pipeline-no-finally": """
 def test_x(client):
     client.ingest.put_pipeline(id="p", body={})
@@ -605,16 +650,25 @@ def test_x(client):
     finally:
         client.indices.delete(index="x", ignore=[404])
 """,
-    "create-immediately-before-try-yield": """
+    "create-inside-try-yield": """
 import pytest
 @pytest.fixture
 def idx(client):
-    client.indices.create(index="x")
     try:
+        client.indices.create(index="x")
         client.bulk(body=[])
         yield "x"
     finally:
-        client.indices.delete(index="x")
+        client.indices.delete(index="x", ignore=[404])
+""",
+    "tmp-created-immediately-before-try": """
+import shutil, tempfile
+def test_x():
+    d = tempfile.mkdtemp()
+    try:
+        assert d
+    finally:
+        shutil.rmtree(d)
 """,
     "removal-through-local-helper": """
 def _drop(minio, b):
@@ -641,11 +695,11 @@ def _make(client):
     client.indices.create(index="x")
     return "x"
 def test_x(client):
-    name = _make(client)
     try:
+        name = _make(client)
         assert name
     finally:
-        client.indices.delete(index=name)
+        client.indices.delete(index="x", ignore=[404])
 """,
     "created-at-the-end-of-a-with-before-try": """
 def test_x(engine):
@@ -698,3 +752,70 @@ def test_the_guard_stays_clean(case: str) -> None:
 def test_every_kind_has_a_must_fire_case() -> None:
     fired = {f.kind for src in _FIRES.values() for f in scan({"case.py": src})}
     assert fired == set(KINDS), f"kinds with no must-fire case: {set(KINDS) - fired}"
+
+
+# ---------------------------------------------------------------------------------------------
+# A test's index or pipeline creation states its own per-request timeout
+# ---------------------------------------------------------------------------------------------
+
+
+def _is_remote_creation(call: ast.Call) -> bool:
+    name = _call_name(call)
+    return (name == "create" and _owner_attr(call) == "indices") or name == "put_pipeline"
+
+
+def _states_request_timeout(call: ast.Call) -> bool:
+    for kw in call.keywords:
+        if kw.arg == "request_timeout":
+            return True
+        if kw.arg == "params" and isinstance(kw.value, ast.Dict):
+            if any(
+                isinstance(k, ast.Constant) and k.value == "request_timeout" for k in kw.value.keys
+            ):
+                return True
+    return False
+
+
+def unbounded_remote_creations(sources: dict[str, str]) -> list[str]:
+    """``path:line`` of every index/pipeline creation that leaves the client's 10 s default.
+
+    That default is right for a search and wrong for a cluster-state update queued behind
+    every other worker's (see ``REMOTE_KINDS``). ``tests/fixtures/opensearch_test_index.py``
+    is the shared way to state it; a direct call passes ``request_timeout`` itself.
+    """
+    out: list[str] = []
+    for path, src in sources.items():
+        if "indices.create" not in src and "put_pipeline" not in src:
+            continue
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.Call) and _is_remote_creation(node):
+                if not _states_request_timeout(node):
+                    out.append(f"{path}:{node.lineno}")
+    return sorted(out)
+
+
+@pytest.mark.unit
+def test_every_index_and_pipeline_creation_states_its_request_timeout() -> None:
+    offenders = unbounded_remote_creations(_tree_sources())
+    assert not offenders, (
+        "an OpenSearch index/pipeline creation in the tests uses the client's 10 s default "
+        "read timeout, which a queued cluster-state update outlasts under load; use "
+        "tests/fixtures/opensearch_test_index.create_test_index or pass request_timeout:\n"
+        + "\n".join(offenders)
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("source", "fires"),
+    [
+        ('client.indices.create(index="x")', True),
+        ('client.ingest.put_pipeline(id="p", body={})', True),
+        ('client.indices.create(index="x", request_timeout=180)', False),
+        ('client.indices.create(index="x", params={"request_timeout": 180})', False),
+        ('client.ingest.put_pipeline(id="p", body={}, request_timeout=180)', False),
+        ('client.indices.delete(index="x")', False),
+    ],
+)
+def test_the_timeout_check_fires_and_stays_clean(source: str, fires: bool) -> None:
+    assert bool(unbounded_remote_creations({"case.py": source})) is fires, source

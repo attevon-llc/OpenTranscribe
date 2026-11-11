@@ -58,6 +58,9 @@ from typing import Any
 
 import pytest
 
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
+
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
 pytestmark = [
@@ -116,14 +119,14 @@ def chunk_index(monkeypatch):
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
 
     name = f"test_chunk_prune_{uuid.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
+        create_test_index(client, name, index_admin._get_index_body_with_dimension(384))
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
         pipelines.reset_neural_pipeline_state()
         yield client
     finally:
-        client.indices.delete(index=name, ignore=[404])
+        delete_test_index(client, name)
         pipelines.reset_neural_pipeline_state()
 
 

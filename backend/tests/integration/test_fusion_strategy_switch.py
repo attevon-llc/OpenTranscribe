@@ -46,6 +46,9 @@ from app.services.search.fusion import search_pipeline_id
 from app.services.search.hybrid_search_service import HybridSearchService
 from app.services.search.index_admin import _get_index_body_with_dimension
 from app.services.search.pipelines import ensure_search_pipeline_exists
+from tests.fixtures.opensearch_test_index import TEST_INDEX_REQUEST_TIMEOUT_S
+from tests.fixtures.opensearch_test_index import create_test_index
+from tests.fixtures.opensearch_test_index import delete_test_index
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -188,22 +191,23 @@ def client() -> Any:
     model_id = _resolve_model_id()
     index = f"test_fusion_{uuid.uuid4().hex[:12]}"
     pipeline = f"test-fusion-ingest-{uuid.uuid4().hex[:8]}"
-    os_client.ingest.put_pipeline(
-        id=pipeline,
-        body={
-            "processors": [
-                {
-                    "text_embedding": {
-                        "model_id": model_id,
-                        "field_map": {"embedding_text": "embedding"},
-                    }
-                }
-            ]
-        },
-    )
     try:
-        os_client.indices.create(index=index, body=_get_index_body_with_dimension(384))
+        os_client.ingest.put_pipeline(
+            id=pipeline,
+            body={
+                "processors": [
+                    {
+                        "text_embedding": {
+                            "model_id": model_id,
+                            "field_map": {"embedding_text": "embedding"},
+                        }
+                    }
+                ]
+            },
+            request_timeout=TEST_INDEX_REQUEST_TIMEOUT_S,
+        )
         try:
+            create_test_index(os_client, index, _get_index_body_with_dimension(384))
             actions: list[dict[str, Any]] = []
             for doc_id, doc in _seed_docs():
                 actions += [{"index": {"_index": index, "_id": doc_id, "pipeline": pipeline}}, doc]
@@ -216,7 +220,7 @@ def client() -> Any:
                 mp.setattr(HybridSearchService, "_get_neural_model_id", lambda self: model_id)
                 yield os_client
         finally:
-            os_client.indices.delete(index=index, ignore_unavailable=True)
+            delete_test_index(os_client, index)
     finally:
         os_client.ingest.delete_pipeline(id=pipeline, ignore=[404])
 

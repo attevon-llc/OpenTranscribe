@@ -27,6 +27,8 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.fixtures.opensearch_test_index import delete_test_index
+
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
 pytestmark = [
@@ -69,8 +71,8 @@ def throwaway_indices(monkeypatch):
     try:
         yield client
     finally:
-        client.indices.delete(index=chunks_name, ignore=[404])
-        client.indices.delete(index=transcripts_name, ignore=[404])
+        delete_test_index(client, chunks_name)
+        delete_test_index(client, transcripts_name)
         pipelines.reset_neural_pipeline_state()
         reset_search_infrastructure_state()
 

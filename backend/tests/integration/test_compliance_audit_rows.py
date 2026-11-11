@@ -102,25 +102,43 @@ def audit_index() -> Iterator[str]:
 
 @pytest.fixture
 def audited(audit_index, monkeypatch, db_session):
-    """The real audit writer pointed at the throwaway index, content auditing switched on."""
+    """The real audit writer pointed at the throwaway index, content auditing switched on.
+
+    Governance events go through the audit outbox (b83522131): the change commits its outbox
+    row and ``deliver_staged`` relays it in sessions of its own. A separate connection cannot
+    see this test's savepoint transaction, so the relay found nothing and the event never
+    reached the index; its sessions join the test's connection instead, as production's
+    sessions see the committed row.
+    """
     from app.auth import audit
     from app.core.capabilities import COMMUNITY_CAPABILITIES
     from app.core.capabilities import reset_capability_resolver
     from app.core.capabilities import set_capability_resolver
     from app.core.config import settings
     from app.core.constants import AUDIT_CONTENT_ACCESS_SETTING_KEY
+    from app.db.base import SessionLocal
+    from app.services import audit_outbox
     from app.services import content_audit
     from app.services.system_settings_service import set_setting
 
     monkeypatch.setattr(settings, "AUDIT_LOG_ENABLED", True)
     monkeypatch.setattr(settings, "AUDIT_LOG_TO_OPENSEARCH", True)
     monkeypatch.setattr(settings, "AUDIT_LOG_FALLBACK_ENABLED", False)
-    monkeypatch.setattr(audit, "_audit_index_name", lambda: audit_index)
+    # Takes the event time like the real one: the outbox relay names the index by the event's
+    # own month, and a zero-argument stand-in raised there, read as "sink unavailable".
+    monkeypatch.setattr(audit, "_audit_index_name", lambda at=None: audit_index)
     # The fixture already ran the production ``_ensure_index``; the writer need not repeat it.
     monkeypatch.setattr(audit.audit_logger, "_known_indices", {audit_index})
     if WRITE_TIMEOUT_OVERRIDE:
         monkeypatch.setattr(audit, "_AUDIT_WRITE_TIMEOUT_SECONDS", int(WRITE_TIMEOUT_OVERRIDE))
     monkeypatch.setattr(content_audit, "capability_enabled", lambda key, request=None: True)
+    monkeypatch.setattr(
+        audit_outbox,
+        "_default_session_factory",
+        lambda: SessionLocal(
+            bind=db_session.connection(), join_transaction_mode="create_savepoint"
+        ),
+    )
     set_capability_resolver(lambda _r: {**COMMUNITY_CAPABILITIES, **ALL_ON})
     set_setting(db_session, AUDIT_CONTENT_ACCESS_SETTING_KEY, True)
     try:

@@ -55,7 +55,8 @@ When adding new backend code, follow these module patterns:
 
 ### Frontend Component Conventions
 
-- Shared UI components go in `src/components/ui/` (BaseModal, Spinner, ProgressBar, SkeletonLoader)
+- Shared UI components go in `src/components/ui/` (BaseModal, Button, FormField, Toggle, Banner, Badge, EmptyState, Spinner, ProgressBar, LiveProgressCard, SkeletonLoader; the catalog is `frontend/src/components/ui/CLAUDE.md`)
+- Buttons are the global `.btn` classes (`btn-primary`, `btn-sm`, `btn-ghost`, `btn-icon-only`, ...), not per-component button CSS; form fields go through `ui/FormField`, switches through `ui/Toggle`, confirm dialogs through `createConfirmDialog`
 - Use the shared components instead of creating ad-hoc implementations
 - Component IDs are centralized in `src/lib/utils/ids.ts`
 
@@ -88,6 +89,10 @@ OpenTranscribe enforces code quality through a multi-tool pre-commit pipeline. E
 | **frontend-check** | TypeScript/Svelte | Commit stage: eslint, i18n key parity, svelte-check (`--threshold warning`), vitest and the frontend test auditor. |
 | **frontend-build** | Frontend | Push stage: the same checks plus the production `vite build`. Catches import errors and build-time failures that would not surface during development. |
 | **docs-build** | Docs | Push stage: `docusaurus build` of `docs-site/` (broken links and anchors fail it). |
+| **eslint-typed** | Frontend | Push stage: type-aware typescript-eslint (unhandled promises, non-exhaustive switches). Split from the commit-stage eslint because building the TypeScript program takes minutes. |
+| **guard-stylelint**, **guard-stylelint-staged**, **guard-unused-css**, **guard-nuia**, **guard-knip** | Frontend | Ratcheted Stylelint, unused global CSS classes, `noUncheckedIndexedAccess`, and dead files/exports/import cycles. See [Testing](testing.md#frontend-static-checks). |
+| **guard-deptry**, **guard-doc-references** | Python, docs | Declared vs imported backend packages, and living docs that name a path that no longer exists. |
+| **i18n-parity** | Frontend | Locale key parity, also on commits that touch only locale JSON. |
 | **prettier** | Frontend | Consistent formatting for TypeScript, Svelte, CSS, and JSON files. |
 | **shellcheck** | Bash | Validates shell scripts for common pitfalls (unquoted variables, missing error handling). |
 | **hadolint** | Docker | Lints Dockerfiles for best practices, via its pinned Docker image (Docker must be available). |

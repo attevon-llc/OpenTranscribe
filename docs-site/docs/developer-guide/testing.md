@@ -688,6 +688,17 @@ a stale entry fails, and `--tighten` never edits an allowlist.
   (`baselines/type_ignore.txt`), and `check_hidden_mypy.py` (push stage, whole-tree, about three
   minutes) strips every ignore from a temporary copy of `backend/`, runs the pinned mypy and
   ratchets the errors they hide (`baselines/hidden_mypy.txt`). One ignore can hide many errors.
+- **Declared vs imported dependencies**: the `guard-deptry` hook (push stage) runs
+  `deptry app alembic --config deptry.toml` from `backend/` and fails on an unused, missing,
+  transitive or dev-only Python dependency, comparing the imports under `backend/app` and
+  `backend/alembic` with `backend/requirements.txt` and `requirements-nodeps.txt`. It is not a
+  ratchet: there is no baseline, and every ignore and package-to-module mapping in
+  `backend/deptry.toml` carries its reason.
+- **Living-doc references**: `check_doc_references.py` (`guard-doc-references`) fails when a
+  `CLAUDE.md`, a page under `docs-site/docs/`, a `README*` or a `docs/*.md` names a repo path or
+  dotted module path that no longer exists. An intentional mention of a removed path goes in
+  `scripts/guards/allowlists/doc_references.txt` with a reason. Rename a file and this hook names
+  every doc that still points at the old path.
 - **`scripts/` tooling** (guards, lib, audit_tests) is type-checked by `check_scripts_mypy.py`
   against `baselines/scripts_mypy.txt`.
 - The mypy plugin `pydantic.mypy` is enabled in the root config.
@@ -706,6 +717,27 @@ cannot drift; a renamed hook makes it exit 2. It is not pre-commit, so it never 
 worktree and is safe to run beside other writers. `--only`, `--skip` and `--list` select guards.
 It runs no build, no `bandit -r` and no test suite: it is the pre-report check, not the gate.
 
+### Redis in the integration gate
+
+`scripts/run-integration-tests.sh` resolves the live stack's Redis host port and password from the
+stack's own containers and hands `REDIS_HOST`, `REDIS_PORT` and `REDIS_PASSWORD` to the
+integration, GPU and e2e-smoke phases. A variable you exported yourself wins, and only the missing
+ones are filled in, so a shell that exported just `REDIS_PORT` for a `--fresh` stack still gets the
+password. The unit and FIPS phases run with every `REDIS_*` variable and `CELERY_BROKER_URL`
+unset, even if your shell exported them: with them set, about ten memory-path unit tests switch to
+the Redis path and fail. A bare `pytest tests/integration` outside the gate still needs the three
+variables set by hand.
+
+### Before/after screenshots of a styling change
+
+`scripts/e2e/styling-ab.sh` builds a BEFORE and an AFTER copy of `frontend/` from git refs (or the
+working tree), serves each with its own Vite dev server against one shared isolated backend, and
+compares screenshots and computed styles for every screen in English and Arabic, light and dark.
+It refuses to run unless the named `--fresh` stack has a non-zero port offset and answers
+`/health`, so it can never be pointed at the live stack. A tree whose `package-lock.json` differs
+from the checkout's gets its own `npm ci`. Usage and exit codes are in the header of the script;
+the capture code is `backend/tests/e2e/styling_ab.py`.
+
 ## Frontend static checks
 
 Run in `frontend/`. Each one fails the gate; none of them is report-only.
@@ -719,6 +751,23 @@ Run in `frontend/`. Each one fails the gate; none of them is report-only.
 | `npm run test:coverage` | vitest plus the coverage floors in `vitest.config.ts` | commit stage, CI |
 | `python3 scripts/guards/check_nuia_ratchet.py` | `noUncheckedIndexedAccess` (`frontend/tsconfig.nuia.json`): array and record lookups must handle the missing case; production code at zero, test files baselined per file (`scripts/guards/baselines/nuia.txt`) | push stage (`guard-nuia`), CI |
 | `python3 scripts/guards/check_knip.py` | knip (dead files, exports, dependencies) and madge (import cycles), ratcheted | push stage (`guard-knip`), CI |
+
+Two frontend conventions are enforced by tests rather than by a linter:
+
+- **No interactive control inside another one.** `components/nestedInteractive.convention.test.ts`
+  walks the compiled AST of every component and fails when an element whose role presents its
+  children as flat text (`button`, `link`, `tab`, `checkbox`, `switch`, `radio`, `option`, the
+  `menuitem` roles) contains a focusable control (axe rule `nested-interactive`). The fix is the
+  stretched-link pattern: the card is a plain element, its real `<button>` has an `::after` that
+  covers the card, and the inner controls sit above it. A component that renders a button
+  internally is not resolved by the walk; the e2e axe scan (`backend/tests/e2e/test_a11y.py`,
+  accepted findings in `backend/tests/e2e/a11y-allowlist.txt`) catches that case.
+- **Colours come from role tokens.** `check_style_literals.py` (`guard-style-literals`) ratchets
+  colour and length literals that belong in design tokens, per file against
+  `scripts/guards/baselines/style_literals.txt`; the token roles (text, surface, status, focus
+  ring, highlight, media scrim, on-solid wash) are listed in `frontend/src/styles/CLAUDE.md`.
+  Field borders use `--control-border` and focus rings `--focus-ring-color`, so both meet 3:1
+  against their surface in each theme.
 
 The typed lint is split from `npm run lint` because building the TypeScript program takes
 minutes; editors and the commit stage keep the fast config. The coverage floors only go up:

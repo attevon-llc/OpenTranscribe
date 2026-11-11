@@ -110,7 +110,9 @@ only exists in a git clone of the repository. This page previously said
 `./opentr.sh update`, which no installed deployment can run.
 :::
 
-`update` pulls images and restarts in phases, polling the backend's own `/health`
+`update` pulls the new images before it takes the running stack down, so a failed pull
+(offline registry, wrong tag) leaves the old version serving and `.env` untouched. It
+then restarts in phases, polling the backend's own `/health`
 rather than letting Compose decide when the backend is ready. That matters on an
 upgrade: running the migration chain on a populated database can take minutes,
 and Compose's dependency resolver would otherwise give up and terminate the

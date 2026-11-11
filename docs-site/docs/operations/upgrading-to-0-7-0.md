@@ -593,13 +593,18 @@ come back empty; it now fails visibly and can be retried.
 | `GET /api/admin/timing/{task_id}` while Redis is down | `503` (was `404` "no timing data") |
 | ASR local-model restart while the task broker is unreachable | `503` `worker_broker_unavailable` (was `409`) |
 | `POST /embedding-migration/start` when the migration lock cannot be read | `503`; an unreadable lock counts as held, so a second migration never starts |
+| An OpenSearch outage reached a speaker, voiceprint, cluster or index lookup | `503` with a fixed message (it never quotes the cluster's error text); was `500` |
+| A sign-in through OpenID Connect whose ID token has no `sub` claim | Refused as an invalid token (the claim is now required); was an internal error |
+| A Microsoft 365 email source whose token request is refused | Reported as a failed send or connection test; was an unhandled error |
 
 Two response bodies gained fields: the three migration `stop` endpoints add
 `"warnings": ["batch_task_revocation_failed"]` to a `stopped` answer when in-flight batch tasks
 could not be revoked, and the embedding-migration status adds `stalled_check_failed: true` when
 the stalled check could not read the database or OpenSearch. The web app retries a read answered
 `503` with `Retry-After` once and shows "The server is busy" for writes; it never signs the user
-out for a `503`.
+out for a `503`. It also replays a read once when the request got no response at all (the
+browser reports a network error when the host's network interfaces change while a request is
+queued); writes are never replayed, so an upload or an edit is never sent twice.
 
 `GET /api/admin/engine-settings/metrics` now answers `{"metrics_collected": false, "workers": {}}`
 with an explanation instead of an unexplained `{}`; live worker metrics are the Prometheus
@@ -611,7 +616,10 @@ Development and operator scripting only. `./opentr.sh` now exits with the status
 it ran (it used to end in `exit 0`, so `healthcheck-all` always looked healthy). An unknown flag
 to `start` or `reset` is an error rather than being ignored (a mistyped `--fresh` used to run
 against the live stack), `rebuild-frontend` and `rebuild-backend` refuse options they do not
-implement, and a declined `reset`, `remove` or `purge` confirmation exits `1`. `--dry-run` writes
+implement, and a declined `reset`, `remove` or `purge` confirmation exits `1`. `start` and `reset`
+warn when a GPU device id you exported in your shell (for example `GPU_SCALE_DEVICE_ID=2`) is
+replaced by `.env` or by a flag, and name `--gpu-device` and `--diar-native-gpu`; before, the
+workers started silently on the card `.env` named. `--dry-run` writes
 nothing, including with `--with-pki`, and does not build or pull images.
 
 ## Extensions that import OpenTranscribe modules

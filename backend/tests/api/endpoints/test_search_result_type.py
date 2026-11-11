@@ -491,6 +491,7 @@ class TestPermissionMatrixT5:
         blocked = _make_file(
             db_session, other_user, summary={"bluf": "The confidential merger term-sheet."}
         )
+        blocked_uuid = str(blocked.uuid)
         visible = _make_file(db_session, other_user, summary={"bluf": "The public roadmap update."})
         _share_with(db_session, other_user, normal_user, visible)
 
@@ -503,7 +504,7 @@ class TestPermissionMatrixT5:
         body = response.json()
         assert body["summary_total"] == 0
         assert body["summary_results"] == []
-        assert str(blocked.uuid) not in [h["file_uuid"] for h in body["summary_results"]]
+        assert blocked_uuid not in [h["file_uuid"] for h in body["summary_results"]]
 
     def test_shared_visibility_a_real_share_makes_the_summary_reachable(
         self,
@@ -515,6 +516,7 @@ class TestPermissionMatrixT5:
         transcript_search_must_not_be_called,
     ):
         shared = _make_file(db_session, other_user, summary={"bluf": "The public roadmap update."})
+        shared_uuid = str(shared.uuid)
         _share_with(db_session, other_user, normal_user, shared)
 
         response = client.get(
@@ -525,7 +527,7 @@ class TestPermissionMatrixT5:
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["summary_total"] == 1
-        assert [h["file_uuid"] for h in body["summary_results"]] == [str(shared.uuid)]
+        assert [h["file_uuid"] for h in body["summary_results"]] == [shared_uuid]
         assert body["summary_results"][0]["matches"], "a shared-visibility hit must carry its match"
 
 
@@ -566,6 +568,7 @@ class TestQuarantinedSummaryHitsAreDropped:
         transcript_search_must_not_be_called,
     ):
         media_file = _make_file(db_session, admin_user, summary={"bluf": "roadmap review"})
+        media_file_uuid = str(media_file.uuid)
         media_file.is_quarantined = True
         db_session.commit()
         # The takedown restamps the plane (#1253); rewriting it from the row does the same.
@@ -577,7 +580,7 @@ class TestQuarantinedSummaryHitsAreDropped:
             headers=admin_token_headers,
         ).json()
         assert body["summary_total"] == 1
-        assert [h["file_uuid"] for h in body["summary_results"]] == [str(media_file.uuid)]
+        assert [h["file_uuid"] for h in body["summary_results"]] == [media_file_uuid]
 
 
 # --------------------------------------------------------------------------- #
@@ -606,6 +609,7 @@ class TestSummaryLegHonoursTheDateRange:
             summary={"bluf": "roadmap review"},
             upload_time=datetime(2026, 3, 10, tzinfo=UTC),
         )
+        inside_uuid = str(inside.uuid)
         _make_file(
             db_session,
             normal_user,
@@ -616,7 +620,7 @@ class TestSummaryLegHonoursTheDateRange:
         total, uuids = _summary_search(
             client, user_token_headers, "roadmap", date_from="2026-03-01", date_to="2026-03-31"
         )
-        assert uuids == [str(inside.uuid)]
+        assert uuids == [inside_uuid]
         assert total == 1
 
     def test_a_date_only_upper_bound_covers_the_whole_day(
@@ -639,6 +643,7 @@ class TestSummaryLegHonoursTheDateRange:
             summary={"bluf": "roadmap review"},
             upload_time=datetime(2026, 3, 10, 14, 0, tzinfo=UTC),
         )
+        afternoon_uuid = str(afternoon.uuid)
         # The next morning — outside the bound, so the bound is proved to be
         # applied at all rather than merely generous.
         _make_file(
@@ -649,7 +654,7 @@ class TestSummaryLegHonoursTheDateRange:
         )
 
         total, uuids = _summary_search(client, user_token_headers, "roadmap", date_to="2026-03-10")
-        assert uuids == [str(afternoon.uuid)]
+        assert uuids == [afternoon_uuid]
         assert total == 1
 
     def test_the_range_reads_creation_date_ahead_of_upload_time(
@@ -673,6 +678,7 @@ class TestSummaryLegHonoursTheDateRange:
             upload_time=datetime(2026, 5, 10, tzinfo=UTC),
             creation_date=datetime(2026, 3, 10, tzinfo=UTC),
         )
+        recorded_in_march_uuid = str(recorded_in_march.uuid)
         # The mirror image: uploaded inside the range, RECORDED outside it. If
         # the predicate read `upload_time` this file would be kept and the one
         # above dropped — the two assertions below then fail in opposite
@@ -688,7 +694,7 @@ class TestSummaryLegHonoursTheDateRange:
         total, uuids = _summary_search(
             client, user_token_headers, "roadmap", date_from="2026-03-01", date_to="2026-03-31"
         )
-        assert uuids == [str(recorded_in_march.uuid)]
+        assert uuids == [recorded_in_march_uuid]
         assert total == 1
 
     @pytest.mark.parametrize("param", ["date_from", "date_to"])
@@ -727,11 +733,12 @@ class TestSummaryLegHonoursTagsAndCollections:
         transcript_search_must_not_be_called,
     ):
         tagged = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        tagged_uuid = str(tagged.uuid)
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
         _tag_file(db_session, normal_user, tagged, "quarterly")
 
         total, uuids = _summary_search(client, user_token_headers, "roadmap", tags=["quarterly"])
-        assert uuids == [str(tagged.uuid)]
+        assert uuids == [tagged_uuid]
         assert total == 1
 
     def test_several_tags_match_any_of_them_like_the_transcript_leg(
@@ -748,7 +755,9 @@ class TestSummaryLegHonoursTagsAndCollections:
         while the Transcripts tab returned both files.
         """
         one = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        one_uuid = str(one.uuid)
         two = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        two_uuid = str(two.uuid)
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
         _tag_file(db_session, normal_user, one, "quarterly")
         _tag_file(db_session, normal_user, two, "retro")
@@ -757,7 +766,7 @@ class TestSummaryLegHonoursTagsAndCollections:
             client, user_token_headers, "roadmap", tags=["quarterly", "retro"]
         )
         assert total == 2
-        assert set(uuids) == {str(one.uuid), str(two.uuid)}
+        assert set(uuids) == {one_uuid, two_uuid}
 
     def test_a_summary_outside_the_collection_is_excluded(
         self,
@@ -768,13 +777,14 @@ class TestSummaryLegHonoursTagsAndCollections:
         transcript_search_must_not_be_called,
     ):
         member = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        member_uuid = str(member.uuid)
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
         collection = _collect_file(db_session, normal_user, member, "Q1 planning")
 
         total, uuids = _summary_search(
             client, user_token_headers, "roadmap", collection_id=collection.id
         )
-        assert uuids == [str(member.uuid)]
+        assert uuids == [member_uuid]
         assert total == 1
 
 
@@ -788,12 +798,13 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         transcript_search_must_not_be_called,
     ):
         with_dana = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        with_dana_uuid = str(with_dana.uuid)
         without_dana = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
         _add_speaker(db_session, normal_user, with_dana, name="SPEAKER_00", display_name="Dana")
         _add_speaker(db_session, normal_user, without_dana, name="SPEAKER_00", display_name="Rui")
 
         total, uuids = _summary_search(client, user_token_headers, "roadmap", speakers=["Dana"])
-        assert uuids == [str(with_dana.uuid)]
+        assert uuids == [with_dana_uuid]
         assert total == 1
 
     def test_a_renamed_speaker_is_found_under_the_new_name_after_rename_propagation(
@@ -811,16 +822,22 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         from app.tasks.rename_digest_task import regenerate_rename_digests
 
         file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        file_uuid = str(file.uuid)
         speaker = _add_speaker(
             db_session, normal_user, file, name="SPEAKER_00", display_name="Alice"
         )
+        speaker_id = int(speaker.id)
         _, before = _summary_search(client, user_token_headers, "roadmap", speakers=["Alice"])
-        assert before == [str(file.uuid)]
+        assert before == [file_uuid]
 
-        speaker.display_name = "Bob"
+        # The search request closed the shared session, detaching ``speaker``: a change to the
+        # detached instance would never be flushed, so re-read the row to rename it.
+        renamed = db_session.get(Speaker, speaker_id)
+        assert renamed is not None
+        renamed.display_name = "Bob"
         db_session.commit()
         db_session.expire_all()
-        regenerate_rename_digests.run(file_uuids=[str(file.uuid)], new_name="Bob", speaker_id=None)
+        regenerate_rename_digests.run(file_uuids=[file_uuid], new_name="Bob", speaker_id=None)
         db_session.expire_all()
         # The task writes with refresh=false (production is eventually consistent); make the
         # write searchable so the assertions below do not race the index's refresh interval.
@@ -828,7 +845,7 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
 
         _, as_bob = _summary_search(client, user_token_headers, "roadmap", speakers=["Bob"])
         _, as_alice = _summary_search(client, user_token_headers, "roadmap", speakers=["Alice"])
-        assert as_bob == [str(file.uuid)]
+        assert as_bob == [file_uuid]
         assert as_alice == []
 
     def test_the_file_type_filter_matches_the_mime_family_not_the_literal_word(
@@ -847,12 +864,13 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         video = _make_file(
             db_session, normal_user, summary={"bluf": "roadmap review"}, content_type="video/mp4"
         )
+        video_uuid = str(video.uuid)
         _make_file(
             db_session, normal_user, summary={"bluf": "roadmap review"}, content_type="audio/wav"
         )
 
         total, uuids = _summary_search(client, user_token_headers, "roadmap", file_type=["video"])
-        assert uuids == [str(video.uuid)]
+        assert uuids == [video_uuid]
         assert total == 1
 
     def test_a_summary_in_another_language_is_excluded(
@@ -866,10 +884,11 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         spanish = _make_file(
             db_session, normal_user, summary={"bluf": "roadmap review"}, language="es"
         )
+        spanish_uuid = str(spanish.uuid)
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"}, language="en")
 
         total, uuids = _summary_search(client, user_token_headers, "roadmap", language="es")
-        assert uuids == [str(spanish.uuid)]
+        assert uuids == [spanish_uuid]
         assert total == 1
 
     def test_a_file_with_no_detected_language_still_answers_to_en(
@@ -886,10 +905,11 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         the summary leg only.
         """
         undetected = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        undetected_uuid = str(undetected.uuid)
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"}, language="es")
 
         total, uuids = _summary_search(client, user_token_headers, "roadmap", language="en")
-        assert uuids == [str(undetected.uuid)]
+        assert uuids == [undetected_uuid]
         assert total == 1
 
     def test_the_title_filter_excludes_a_non_matching_title(
@@ -906,13 +926,14 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
             summary={"bluf": "roadmap review"},
             title="Quarterly planning",
         )
+        planning_uuid = str(planning.uuid)
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"}, title="Ad hoc sync")
 
         # Lower-cased on purpose: the index's wildcard is case-insensitive.
         total, uuids = _summary_search(
             client, user_token_headers, "roadmap", title_filter="quarterly"
         )
-        assert uuids == [str(planning.uuid)]
+        assert uuids == [planning_uuid]
         assert total == 1
 
     def test_a_too_short_recording_is_excluded_by_the_duration_range(
@@ -926,10 +947,11 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         long_file = _make_file(
             db_session, normal_user, summary={"bluf": "roadmap review"}, duration=600.0
         )
+        long_file_uuid = str(long_file.uuid)
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"}, duration=60.0)
 
         total, uuids = _summary_search(client, user_token_headers, "roadmap", min_duration=300)
-        assert uuids == [str(long_file.uuid)]
+        assert uuids == [long_file_uuid]
         assert total == 1
 
     def test_the_file_size_range_is_in_bytes_like_the_rest_of_this_endpoint(
@@ -951,6 +973,7 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
             summary={"bluf": "roadmap review"},
             file_size=50 * 1024 * 1024,
         )
+        big_uuid = str(big.uuid)
         _make_file(
             db_session,
             normal_user,
@@ -961,7 +984,7 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         total, uuids = _summary_search(
             client, user_token_headers, "roadmap", min_file_size=10 * 1024 * 1024
         )
-        assert uuids == [str(big.uuid)]
+        assert uuids == [big_uuid]
         assert total == 1
 
 
@@ -975,12 +998,11 @@ class TestSummaryLegHonoursTheSingleFileScope:
         transcript_search_must_not_be_called,
     ):
         wanted = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        wanted_uuid = str(wanted.uuid)
         _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
 
-        total, uuids = _summary_search(
-            client, user_token_headers, "roadmap", file_uuid=str(wanted.uuid)
-        )
-        assert uuids == [str(wanted.uuid)]
+        total, uuids = _summary_search(client, user_token_headers, "roadmap", file_uuid=wanted_uuid)
+        assert uuids == [wanted_uuid]
         assert total == 1
 
     def test_an_unparseable_file_uuid_matches_nothing_rather_than_erroring(
@@ -1031,15 +1053,17 @@ class TestSummaryLegRanksByRelevance:
                 "brief_summary": "The budget review walked every budget line item.",
             },
         )
+        relevant_uuid = str(relevant.uuid)
         marginal = _make_file(
             db_session,
             normal_user,
             summary={"bluf": "Mostly unrelated chatter, with one passing budget aside."},
         )
+        marginal_uuid = str(marginal.uuid)
 
         total, uuids = _summary_search(client, user_token_headers, "budget")
         assert total == 2
-        assert uuids == [str(relevant.uuid), str(marginal.uuid)]
+        assert uuids == [relevant_uuid, marginal_uuid]
 
     def test_equally_relevant_summaries_keep_a_stable_newest_first_order(
         self,
@@ -1067,6 +1091,7 @@ class TestSummaryLegRanksByRelevance:
             summary={"bluf": "roadmap review"},
             upload_time=datetime(2026, 3, 1, tzinfo=UTC),
         )
+        older_uuid = str(older.uuid)
         newer = _make_file(
             db_session,
             normal_user,
@@ -1074,6 +1099,7 @@ class TestSummaryLegRanksByRelevance:
             summary={"bluf": "roadmap review"},
             upload_time=datetime(2026, 3, 2, tzinfo=UTC),
         )
+        newer_uuid = str(newer.uuid)
 
         response = client.get(
             SEARCH_PATH,
@@ -1085,8 +1111,8 @@ class TestSummaryLegRanksByRelevance:
         uuids = [hit["file_uuid"] for hit in body["summary_results"]]
         scores = [(h["file_uuid"][:8], h["matches"][0]["score"]) for h in body["summary_results"]]
         assert body["summary_total"] == 2, scores
-        assert uuids == [str(newer.uuid), str(older.uuid)], (
-            f"newer={str(newer.uuid)[:8]} older={str(older.uuid)[:8]} got={scores}"
+        assert uuids == [newer_uuid, older_uuid], (
+            f"newer={newer_uuid[:8]} older={older_uuid[:8]} got={scores}"
         )
 
 
@@ -1111,8 +1137,11 @@ class TestFilteredCountMatchesWhatPagingReturns:
         ``total_pages`` promises a page that comes back empty.
         """
         kept_one = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        kept_one_uuid = str(kept_one.uuid)
         kept_two = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        kept_two_uuid = str(kept_two.uuid)
         excluded = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
+        excluded_uuid = str(excluded.uuid)
         _tag_file(db_session, normal_user, kept_one, "quarterly")
         _tag_file(db_session, normal_user, kept_two, "quarterly")
 
@@ -1130,9 +1159,9 @@ class TestFilteredCountMatchesWhatPagingReturns:
             assert len(uuids) == 1
             collected.extend(uuids)
 
-        assert set(collected) == {str(kept_one.uuid), str(kept_two.uuid)}
+        assert set(collected) == {kept_one_uuid, kept_two_uuid}
         assert len(collected) == len(set(collected)), "a hit was served on two different pages"
-        assert str(excluded.uuid) not in collected
+        assert excluded_uuid not in collected
 
         # The page AFTER the last one the count promises is empty, and the count
         # does not move.

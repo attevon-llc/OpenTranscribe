@@ -69,6 +69,7 @@ def test_summary_total_does_not_disclose_an_off_page_taken_down_file(
     # Created FIRST -> lower id -> sorts onto page 2 under `MediaFile.id.desc()`.
     quarantined = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
     clean = _make_file(db_session, normal_user, summary={"bluf": "roadmap review too"})
+    clean_uuid = str(clean.uuid)
     quarantined.is_quarantined = True
     db_session.commit()
     sync_summary_plane(quarantined)
@@ -81,7 +82,7 @@ def test_summary_total_does_not_disclose_an_off_page_taken_down_file(
 
     assert body["summary_total"] == 1, body
     assert body["total_pages"] == 1, body
-    assert [h["file_uuid"] for h in body["summary_results"]] == [str(clean.uuid)]
+    assert [h["file_uuid"] for h in body["summary_results"]] == [clean_uuid]
 
 
 def test_a_visible_summary_is_still_returned_with_its_snippet(
@@ -95,6 +96,7 @@ def test_a_visible_summary_is_still_returned_with_its_snippet(
     media_file = _make_file(
         db_session, normal_user, summary={"bluf": "a distinctive roadmap update"}
     )
+    media_file_uuid = str(media_file.uuid)
 
     body = client.get(
         SEARCH_PATH,
@@ -105,7 +107,7 @@ def test_a_visible_summary_is_still_returned_with_its_snippet(
     assert body["summary_total"] == 1, body
     assert len(body["summary_results"]) == 1
     hit = body["summary_results"][0]
-    assert hit["file_uuid"] == str(media_file.uuid)
+    assert hit["file_uuid"] == media_file_uuid
     assert hit["matches"], "a matching summary must carry at least one snippet"
 
 
@@ -117,7 +119,9 @@ def test_an_admin_still_sees_both(
     transcript_search_must_not_be_called,
 ):
     clean = _make_file(db_session, admin_user, summary={"bluf": "roadmap review"})
+    clean_uuid = str(clean.uuid)
     quarantined = _make_file(db_session, admin_user, summary={"bluf": "roadmap review too"})
+    quarantined_uuid = str(quarantined.uuid)
     quarantined.is_quarantined = True
     db_session.commit()
     sync_summary_plane(quarantined)
@@ -130,4 +134,4 @@ def test_an_admin_still_sees_both(
 
     assert body["summary_total"] == 2, body
     uuids = {h["file_uuid"] for h in body["summary_results"]}
-    assert uuids == {str(clean.uuid), str(quarantined.uuid)}
+    assert uuids == {clean_uuid, quarantined_uuid}

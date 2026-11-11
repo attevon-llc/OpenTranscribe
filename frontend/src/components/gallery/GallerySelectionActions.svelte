@@ -515,7 +515,7 @@
     padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-xl);
     font-size: var(--font-size-sm);
-    gap: 0.35rem;
+    gap: var(--space-1-5);
     flex-shrink: 0;
   }
 
@@ -611,8 +611,8 @@
     }
 
     .action-btn {
-      padding: 0.35rem 0.65rem;
-      font-size: 0.8rem;
+      padding: var(--space-1-5) var(--space-2-5);
+      font-size: var(--font-size-sm);
     }
   }
 
@@ -629,7 +629,7 @@
     }
 
     .cancel-btn {
-      padding: 0.35rem var(--space-2);
+      padding: var(--space-1-5) var(--space-2);
     }
 
     .action-separator {
@@ -639,7 +639,7 @@
 
   @media (max-width: 480px) {
     .action-btn {
-      padding: 0.35rem 0.6rem;
+      padding: var(--space-1-5) var(--space-2-5);
       font-size: var(--font-size-xs);
     }
 

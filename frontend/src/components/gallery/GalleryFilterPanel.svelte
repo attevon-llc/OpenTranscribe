@@ -94,8 +94,8 @@
     display: none;
     position: fixed;
     inset: var(--content-top) 0 0 0;
-    background: rgba(0, 0, 0, 0.4);
-    z-index: 999;
+    background: var(--modal-backdrop);
+    z-index: calc(var(--z-dropdown) - 1);
   }
 
   /* Narrower filter sidebar on tablet to give more room to content */
@@ -120,7 +120,7 @@
       transition: left var(--duration-slow) ease;
       border-right: 1px solid var(--border-color);
       border-top: 1px solid var(--border-color);
-      box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--shadow-lg);
     }
 
     .filter-rail.show {

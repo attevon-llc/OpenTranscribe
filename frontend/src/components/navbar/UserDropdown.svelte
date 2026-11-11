@@ -302,7 +302,7 @@
   .dropdown-header {
     padding: var(--space-3) var(--space-4);
     color: var(--text-color-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     line-height: 1.4;
     white-space: normal;
   }
@@ -353,7 +353,7 @@
     color: var(--primary-on-surface) !important;
     text-decoration: none !important;
     background-color: var(--hover-color) !important;
-    padding-inline-start: calc(1rem + 2px) !important;
+    padding-inline-start: calc(var(--space-4) + 2px) !important;
   }
 
   /* Entries contributed by child components (e.g. UserMenuExtras) live in their
@@ -428,7 +428,7 @@
   .dropdown-item:hover {
     background-color: var(--hover-color);
     color: var(--primary-on-surface);
-    padding-inline-start: calc(1rem + 2px);
+    padding-inline-start: calc(var(--space-4) + 2px);
   }
 
   .dropdown-item:hover svg {
@@ -453,7 +453,7 @@
   .dropdown-item.logout:hover {
     background-color: var(--error-bg);
     color: var(--error-text);
-    padding-inline-start: calc(1rem + 2px);
+    padding-inline-start: calc(var(--space-4) + 2px);
   }
 
   .dropdown-item.logout:hover svg {
@@ -463,7 +463,7 @@
 
   /* Active state for dropdown items */
   .dropdown-item:active {
-    padding-inline-start: calc(1rem + 1px);
+    padding-inline-start: calc(var(--space-4) + 1px);
     background-color: var(--primary-color-light);
   }
 

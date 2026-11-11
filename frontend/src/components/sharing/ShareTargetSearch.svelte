@@ -183,7 +183,7 @@
 
   .search-input {
     width: 100%;
-    padding: 0.6rem var(--space-3) 0.6rem var(--space-8);
+    padding: var(--space-2-5) var(--space-3) var(--space-2-5) var(--space-8);
     font-size: var(--font-size-md);
   }
 
@@ -192,7 +192,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
@@ -258,7 +258,7 @@
 
   .no-results {
     padding: var(--space-2);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     text-align: center;
   }

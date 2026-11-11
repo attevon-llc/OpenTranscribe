@@ -269,7 +269,7 @@
     align-self: center;
     padding: var(--space-4);
     /* The QR must stay dark-on-white in both themes to remain scannable. */
-    background-color: #ffffff;
+    background-color: var(--qr-surface);
     border-radius: var(--radius-lg);
   }
 
@@ -285,7 +285,7 @@
     background: none;
     border: none;
     color: var(--primary-on-surface);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     text-decoration: underline;
     cursor: pointer;
   }
@@ -318,7 +318,7 @@
   }
 
   .verify-form label {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
@@ -337,7 +337,7 @@
     border-radius: var(--radius-md);
     background-color: rgba(var(--warning-color-rgb), 0.12);
     color: var(--text-color);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .codes-grid {
@@ -353,7 +353,7 @@
     background-color: var(--background-color);
     color: var(--text-color);
     font-family: monospace;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .codes-actions {
@@ -370,13 +370,13 @@
     align-items: flex-start;
     gap: var(--space-2);
     text-align: left;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
     cursor: pointer;
   }
 
   .ack-label input {
-    margin-top: 0.15rem;
+    margin-top: var(--space-0-5);
     flex-shrink: 0;
   }
 

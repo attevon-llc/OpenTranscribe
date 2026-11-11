@@ -639,7 +639,7 @@
     }
 
     .nav-link {
-      padding: 0.4rem 0.8rem;
+      padding: var(--space-1-5) var(--space-3);
       font-size: 0.9rem;
     }
 
@@ -713,7 +713,7 @@
       display: block;
       position: fixed;
       inset: 0;
-      z-index: 1099;
+      z-index: calc(var(--z-dropdown) + 99);
       background: var(--modal-backdrop);
     }
   }
@@ -764,7 +764,7 @@
     }
 
     .nav-link {
-      padding: 0.4rem 0.6rem;
+      padding: var(--space-1-5) var(--space-2-5);
       font-size: var(--font-size-md);
     }
 
@@ -796,7 +796,7 @@
       background: var(--navbar-bg);
       border-bottom: 1px solid var(--border-color);
       padding: var(--space-3) var(--space-4);
-      z-index: 1100;
+      z-index: calc(var(--z-dropdown) + 100);
       box-shadow: var(--shadow-lg);
       max-height: calc(100vh - 60px - env(safe-area-inset-top, 0px));
       max-height: calc(100dvh - 60px - env(safe-area-inset-top, 0px));
@@ -902,7 +902,7 @@
     }
 
     .recording-indicator {
-      padding: 0.4rem var(--space-2);
+      padding: var(--space-1-5) var(--space-2);
     }
 
     .theme-toggle-container {
@@ -924,7 +924,7 @@
     align-items: center;
     gap: var(--space-2);
     font-family: inherit;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     transition: all var(--duration-slow) ease;
     overflow: hidden;
@@ -989,7 +989,7 @@
     font-family: system-ui, -apple-system, sans-serif;
     font-variant-numeric: tabular-nums;
     font-weight: var(--font-weight-semibold);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.5px;
     min-width: 60px; /* Reserve space for HH:MM:SS */
     text-align: center;
@@ -1048,7 +1048,7 @@
     box-shadow: var(--shadow-xl);
     padding: var(--space-4);
     min-width: 200px;
-    z-index: 1001;
+    z-index: calc(var(--z-dropdown) + 1);
     animation: slide-in 0.2s ease-out;
   }
 
@@ -1121,7 +1121,7 @@
     color: var(--text-secondary);
     font-family: system-ui, -apple-system, sans-serif;
     font-variant-numeric: tabular-nums;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     margin-left: auto;
     min-width: 64px; /* Reserve space for HH:MM:SS */
@@ -1199,7 +1199,7 @@
     }
 
     .control-btn {
-      padding: 0.4rem;
+      padding: var(--space-1-5);
     }
 
     /* Adjust triangle for smaller screens */

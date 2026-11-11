@@ -185,7 +185,7 @@
   .review-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 
   .review-chip {
-    display: inline-block; padding: var(--space-0-5) 0.4375rem;
+    display: inline-block; padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-pill); font-size: var(--font-size-2xs); font-weight: var(--font-weight-medium);
   }
 
@@ -194,7 +194,7 @@
     border: 1px solid var(--tag-border);
   }
 
-  :global([data-theme='dark']) .review-chip.tag { background: rgba(22, 163, 74, 0.15); border-color: rgba(22, 163, 74, 0.3); }
+  :global([data-theme='dark']) .review-chip.tag { background: rgba(var(--success-color-rgb), 0.15); border-color: rgba(var(--success-color-rgb), 0.3); }
 
   .review-chip.collection {
     background: var(--primary-bg); color: var(--primary-on-surface);
@@ -204,7 +204,7 @@
   :global([data-theme='dark']) .review-chip.collection { background: rgba(var(--accent-rgb), 0.15); border-color: rgba(var(--accent-rgb), 0.3); }
 
   .review-chip.extract {
-    background: rgba(16, 185, 129, 0.12); color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.25);
+    background: rgba(var(--success-color-rgb), 0.12); color: var(--success-text);
+    border: 1px solid rgba(var(--success-color-rgb), 0.25);
   }
 </style>

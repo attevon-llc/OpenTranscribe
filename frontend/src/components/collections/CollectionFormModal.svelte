@@ -162,9 +162,9 @@
 
   .visibility-option {
     display: flex;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
     align-items: flex-start;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     margin-bottom: var(--space-2);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
@@ -178,7 +178,7 @@
   }
 
   .visibility-option input {
-    margin-top: 0.2rem;
+    margin-top: var(--space-1);
   }
 
   .visibility-text {
@@ -190,14 +190,14 @@
   .visibility-title {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
     color: var(--text-color);
   }
 
   .form-hint {
     display: block;
-    margin-top: 0.35rem;
-    font-size: 0.8rem;
+    margin-top: var(--space-1-5);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     font-style: italic;
   }

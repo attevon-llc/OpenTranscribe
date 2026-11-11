@@ -92,26 +92,14 @@
   .view-toggle {
     display: inline-flex;
     align-items: center;
-    background: var(--surface-color);
+    background: color-mix(in srgb, var(--surface-color) 90%, transparent);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-xl);
     padding: 0.1875rem;
     height: 30px;
     box-sizing: border-box;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-md);
     backdrop-filter: blur(8px);
-  }
-
-  :global([data-theme='light']) .view-toggle,
-  :global(:not([data-theme='dark'])) .view-toggle {
-    background: rgba(255, 255, 255, 0.9);
-    border-color: rgba(0, 0, 0, 0.08);
-  }
-
-  :global([data-theme='dark']) .view-toggle {
-    background: rgba(30, 41, 59, 0.95);
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .toggle-btn {
@@ -127,15 +115,6 @@
     cursor: pointer;
     transition: all var(--duration-fast) ease;
     color: var(--text-secondary);
-  }
-
-  :global([data-theme='light']) .toggle-btn,
-  :global(:not([data-theme='dark'])) .toggle-btn {
-    color: #6b7280;
-  }
-
-  :global([data-theme='dark']) .toggle-btn {
-    color: #cbd5e1;
   }
 
   .toggle-btn:focus {
@@ -155,17 +134,6 @@
 
   .toggle-btn:focus:not(:focus-visible) {
     outline: none;
-  }
-
-  :global([data-theme='light']) .toggle-btn:hover:not(.active),
-  :global(:not([data-theme='dark'])) .toggle-btn:hover:not(.active) {
-    background: rgba(0, 0, 0, 0.05);
-    color: #1f2937;
-  }
-
-  :global([data-theme='dark']) .toggle-btn:hover:not(.active) {
-    background: rgba(255, 255, 255, 0.1);
-    color: #f9fafb;
   }
 
   .toggle-btn.active {

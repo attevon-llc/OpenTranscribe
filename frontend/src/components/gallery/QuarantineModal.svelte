@@ -288,7 +288,7 @@
      size; it only needs to refuse to shrink or grow inside the flex row. */
   .legal-hold-field input {
     flex: 0 0 auto;
-    margin: 0.15rem 0 0;
+    margin: var(--space-0-5) 0 0;
   }
 
   .legal-hold-field span {

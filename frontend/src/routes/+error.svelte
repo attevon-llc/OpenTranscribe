@@ -51,14 +51,14 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-xl);
     padding: var(--space-10) var(--space-8);
     color: var(--text-color);
   }
 
   .error-status {
     margin: 0 0 var(--space-3);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -73,7 +73,7 @@
   }
 
   .error-body {
-    margin: 0 0 1.75rem;
+    margin: 0 0 var(--space-8);
     font-size: var(--font-size-base);
     line-height: 1.5;
     color: var(--text-secondary);
@@ -94,7 +94,7 @@
     align-items: center;
     justify-content: center;
     min-height: 44px;
-    padding: 0.6rem var(--space-6);
+    padding: var(--space-2-5) var(--space-6);
     border-radius: var(--radius-lg);
     font-weight: var(--font-weight-semibold);
     font-size: var(--font-size-base);

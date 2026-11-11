@@ -271,14 +271,14 @@
     align-items: flex-start;
     gap: var(--space-3);
     padding: var(--space-3);
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background: rgba(var(--error-color-rgb), 0.08);
+    border: 1px solid rgba(var(--error-color-rgb), 0.2);
     border-radius: var(--radius-lg);
     font-size: var(--font-size-sm);
     color: var(--text-primary);
   }
 
-  .offline-banner svg { flex-shrink: 0; color: #ef4444; margin-top: var(--space-0-5); }
+  .offline-banner svg { flex-shrink: 0; color: var(--error-text); margin-top: var(--space-0-5); }
 
   .url-input-section {
     display: flex;
@@ -400,7 +400,7 @@
   .download-option-row label { font-size: var(--font-size-sm); color: var(--text-primary); }
 
   .download-select {
-    padding: 0.3125rem var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
     font-size: var(--font-size-sm);
     min-width: 120px;
   }
@@ -414,7 +414,7 @@
     position: absolute;
     inset: 0;
     background-color: var(--border-color);
-    border-radius: 20px;
+    border-radius: var(--radius-pill);
     transition: background var(--duration-base) ease;
   }
 
@@ -425,7 +425,7 @@
     height: 16px;
     left: 2px;
     bottom: 2px;
-    background: white;
+    background: var(--text-on-solid);
     border-radius: var(--radius-round);
     transition: transform var(--duration-base) ease;
   }
@@ -454,7 +454,7 @@
     align-items: baseline;
     gap: var(--space-1-5);
     margin: 0;
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     line-height: 1.4;
     color: var(--text-tertiary);
   }

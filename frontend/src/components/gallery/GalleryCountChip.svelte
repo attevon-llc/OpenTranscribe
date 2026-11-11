@@ -30,31 +30,20 @@
 
 <style>
   .count-chip {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    background: color-mix(in srgb, var(--surface-color) 90%, transparent);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-md);
     backdrop-filter: blur(8px);
     transition: all var(--duration-base) ease;
     user-select: none;
   }
 
-  :global([data-theme='light']) .count-chip,
-  :global(:not([data-theme='dark'])) .count-chip {
-    background: rgba(255, 255, 255, 0.9);
-    border-color: rgba(0, 0, 0, 0.08);
-    color: #6b7280;
-  }
-
-  :global([data-theme='dark']) .count-chip {
-    background: rgba(30, 41, 59, 0.95);
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    color: #cbd5e1;
-  }
-
   @media (max-width: 768px) {
     .count-chip {
       font-size: var(--font-size-xs);
-      padding: 0.3rem var(--space-2-5);
-      gap: 0.3rem;
+      padding: var(--space-1) var(--space-2-5);
+      gap: var(--space-1);
     }
 
     .count-chip span {

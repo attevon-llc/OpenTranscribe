@@ -146,7 +146,7 @@
 
 
   .stacked-field input[type="number"] {
-    padding: 0.4375rem var(--space-2); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    padding: var(--space-2); border: 1px solid var(--border-color); border-radius: var(--radius-md);
   }
   .stacked-field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background); }
   .stacked-field input::placeholder { color: var(--text-light); }
@@ -157,15 +157,14 @@
     border: 1px solid var(--border-color); border-radius: var(--radius-md);
     background: var(--surface-color);
   }
-  .consent-row input[type='checkbox'] { margin-top: 0.1875rem; flex-shrink: 0; }
+  .consent-row input[type='checkbox'] { margin-top: var(--space-1); flex-shrink: 0; }
   .consent-text { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); }
 
   .validation-error {
     display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2);
-    background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: var(--radius-md); color: #dc2626; font-size: var(--font-size-sm);
+    background: var(--error-bg); border: 1px solid var(--error-border);
+    border-radius: var(--radius-md); color: var(--error-text); font-size: var(--font-size-sm);
   }
-  :global([data-theme='dark']) .validation-error { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #f87171; }
 
   @media (max-width: 480px) { .settings-row { grid-template-columns: 1fr; } }
 </style>

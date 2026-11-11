@@ -467,12 +467,12 @@
     display: flex;
     align-items: center;
     gap: var(--space-1-5);
-    padding: 0.6rem var(--space-4);
+    padding: var(--space-2-5) var(--space-4);
     background: transparent;
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     transition:
       background var(--duration-fast) ease,

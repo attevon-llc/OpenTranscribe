@@ -262,7 +262,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     flex-shrink: 0;
   }

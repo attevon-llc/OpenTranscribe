@@ -348,6 +348,6 @@
 
   .file-remove:hover {
     background: var(--button-hover);
-    color: #ef4444;
+    color: var(--error-text);
   }
 </style>

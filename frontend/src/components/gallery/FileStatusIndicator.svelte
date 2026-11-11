@@ -146,28 +146,28 @@
   .status-downloading,
   .status-processing,
   .status-cancelling {
-    color: #f59e0b;
+    color: var(--warning-text);
   }
 
   .status-completed {
-    color: #10b981;
+    color: var(--success-text);
   }
 
   .status-error {
-    color: #ef4444;
+    color: var(--error-text);
   }
 
   .status-cancelled {
-    color: #6b7280;
+    color: var(--text-secondary);
   }
 
   .status-orphaned {
-    color: #dc2626;
+    color: var(--error-text);
   }
 
   /* Abuse / DMCA takedown hold — amber, distinct from the red error states. */
   .status-quarantined {
-    color: #d97706;
+    color: var(--warning-text);
   }
 
   @keyframes status-pulse {

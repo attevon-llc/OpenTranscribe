@@ -365,7 +365,7 @@
 
   .group-card:hover:not(:disabled) {
     border-color: var(--primary-color);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--shadow-xs);
   }
 
   .card-header {

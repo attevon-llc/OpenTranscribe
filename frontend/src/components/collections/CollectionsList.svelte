@@ -143,7 +143,7 @@
   }
 
   .section-label {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     padding: var(--space-1) 0;

@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- LLM speaker identification, when redaction cannot be awaited and the follow-up itself fails on a database error, records the failure by class name; the SQL text and bound parameters no longer reach the Tasks UI.
 - Redaction scans record a failed run caused by a database error by its class name; the SQL text and bound parameters no longer reach the Tasks UI.
 - AI provider settings: testing a connection or listing models with a saved API key now answers a retryable 503 when the settings database cannot be read, instead of dialling the provider with no key and reporting an authentication failure.
 - Gallery filters: a request that failed without reaching the server (Chromium cancels requests queued for a connection with `net::ERR_NETWORK_CHANGED` whenever the machine's network interfaces change: Wi-Fi roaming, a VPN connecting, Docker adding a bridge) now gets one quick replay when it is a read, so the speakers, tags and other facets no longer show "Couldn't load" while the server is fine; a failure that persists still shows the error and retry. Writes are never replayed. The same failure on the Settings modal's first loads raised an error toast.

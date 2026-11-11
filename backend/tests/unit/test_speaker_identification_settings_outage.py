@@ -51,3 +51,32 @@ def test_a_settings_outage_marks_speaker_identification_failed(
     assert task_row.status == "failed"
     assert task_row.error_message == "OperationalError"
     assert LEAK_MARKER not in str(result)
+
+
+def test_a_failed_redaction_deferral_records_a_database_error_by_class_name(
+    db_session, normal_user, identification_task, monkeypatch
+):
+    """The not-ready branch re-reports whatever the deferral raised; SQL text must not leak."""
+    from app.tasks import speaker_identification_task as sid
+
+    media_file, _ = make_transcribed_file(db_session, normal_user)
+
+    def _not_ready(*_a, **_kw):
+        from app.services.redaction.llm_guard import RedactionNotReadyError
+
+        raise RedactionNotReadyError("spans not cached", retryable=True)
+
+    def _defer_fails(task, exc, **kw):
+        raise OperationalError(LEAK_MARKER, {}, Exception("connection reset"))
+
+    monkeypatch.setattr(sid, "_load_identification_inputs", _not_ready)
+    monkeypatch.setattr(sid, "defer_for_redaction", _defer_fails)
+    recorded: list[str] = []
+    monkeypatch.setattr(sid, "_mark_identification_failed", lambda tid, msg: recorded.append(msg))
+
+    result = identification_task.apply(args=[str(media_file.uuid)]).get()
+
+    assert result["status"] == "error", result
+    assert result["message"] == "OperationalError"
+    assert recorded == ["OperationalError"]
+    assert LEAK_MARKER not in str(result)

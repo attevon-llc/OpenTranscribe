@@ -345,6 +345,58 @@ def _purge_from_trash(api: Api, sf: SeededFile) -> None:
     resp = api.delete(f"/api/files/{sf.file_uuid}/purge")
     assert resp.status_code in (202, 404), resp.text
     purge_due(file_ids=[sf.file_id])
+    if resp.status_code == 202:
+        _wait_for_the_purge_pass(sf)
+
+
+#: Both steps of a purge pass that can still be running after the in-process ``purge_due``
+#: returns: the ``file.purge`` event (``trash_purge.purge_one`` stages it only after
+#: ``purge_media_file`` returned, centroid and member-count refresh included), and the
+#: chat-citation scrub, which ``purge_due`` runs in its ``finally`` AFTER that event and
+#: which records nothing of its own, so its effect is the only thing to observe.
+_PURGE_PASS_STEPS = (
+    (
+        "the file.purge event",
+        "SELECT NOT EXISTS (SELECT 1 FROM audit_outbox WHERE event_type = 'file.purge' "
+        "AND (payload -> 'details' ->> 'file_id')::int = :f)",
+    ),
+    (
+        "the chat-citation scrub",
+        "SELECT EXISTS (SELECT 1 FROM chat_message WHERE citations::text LIKE '%' || :u || '%')",
+    ),
+)
+
+
+def _wait_for_the_purge_pass(sf: SeededFile, *, timeout: float = 60.0) -> None:
+    """Wait until whichever purge pass won the file has finished every step.
+
+    Against the live stack the queued destroy runs on the stack's worker too. Both runs lock
+    the row, so one destroys the file and the other skips; but when the WORKER wins, the
+    in-process ``purge_due`` returns at once while the worker is still working through the
+    steps in :data:`_PURGE_PASS_STEPS`. Seen in the P3 gate as a ``member_count`` of 2 after a
+    rebuilt centroid (the OpenSearch write lands before the Postgres commit) and as a citation
+    still naming the file. A step that never completes fails here, by name, after ``timeout``.
+    """
+    from app.core.config import settings
+
+    deadline = time.monotonic() + timeout
+    eng = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    try:
+        with eng.connect() as conn:
+            for step, sql in _PURGE_PASS_STEPS:
+                while True:
+                    pending = conn.execute(
+                        text(sql), {"f": sf.file_id, "u": sf.file_uuid}
+                    ).scalar_one()
+                    if not pending:
+                        break
+                    assert time.monotonic() < deadline, (
+                        f"purging {sf.file_uuid}: {step} did not happen within {timeout}s"
+                    )
+                    conn.rollback()
+                    time.sleep(0.5)
+    finally:
+        eng.dispose()
 
 
 def _assert_trashed_not_destroyed(engine, sf: SeededFile) -> None:

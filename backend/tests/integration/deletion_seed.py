@@ -435,6 +435,30 @@ def seed_complete_file(  # one linear recipe; splitting it hides the inventory
         ),
         params,
     )
+    # The owner hid the file from their own gallery (v465): a per-user view preference
+    # that must go with the file.
+    db.execute(
+        text("INSERT INTO user_hidden_media (user_id, media_file_id) VALUES (:uid, :fid)"),
+        params,
+    )
+    # One identity-history row per speaker (v462), the shape a user rename records. The
+    # table is append-only: its guard lets a row go only with its speaker's cascade, so
+    # this also proves the file delete takes that path rather than a refused direct DELETE.
+    for sid, label in ((s1, "SPEAKER_00"), (s2, "SPEAKER_01")):
+        db.execute(
+            text(
+                "INSERT INTO speaker_identity_event (uuid, speaker_id, kind, actor_kind, "
+                "actor_user_id, origin, before_value, after_value) "
+                "VALUES (gen_random_uuid(), :sid, 'rename', 'user', :uid, 'manual', "
+                "CAST(:before AS jsonb), CAST(:after AS jsonb))"
+            ),
+            {
+                **params,
+                "sid": sid,
+                "before": json.dumps({"name": label}),
+                "after": json.dumps({"name": f"{DELRES_PREFIX}{tag}-{label}"}),
+            },
+        )
     seeded.usage_event_id = str(
         db.execute(
             text(

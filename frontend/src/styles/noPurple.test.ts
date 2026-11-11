@@ -87,10 +87,8 @@ export function purpleLiterals(text: string): string[] {
 const ALLOW: Record<string, string> = {
   'lib/utils/speakerColors.ts':
     'speaker identity palette (data visualisation): twenty-odd distinguishable swatches, a violet among them keeps neighbouring speakers apart. Flagged for the owner, not changed here.',
-  'components/LoginBanner.svelte':
-    'CUI classification marking colour (NARA/ISOO standard marking), a regulatory colour, not app chrome',
-  'lib/components/ClassificationBanner.svelte':
-    'CUI classification banner colour (NARA/ISOO standard marking), a regulatory colour, not app chrome',
+  'lib/utils/classificationColors.ts':
+    'CUI classification marking colour (NARA/ISOO standard marking), a regulatory colour, not app chrome; the one palette ClassificationBanner and LoginBanner share',
 };
 
 describe('the app has no purple', () => {

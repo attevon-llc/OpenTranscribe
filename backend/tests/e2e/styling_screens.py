@@ -164,6 +164,23 @@ _LOGGED_OUT = tuple(
     )
 )
 
+#: The consent modal LoginBanner draws, with the CUI header and footer in the shared
+#: classification palette. Both answers are whole copies of the serializers (`AuthMethodsResponse`,
+#: `LoginBannerResponse` in app/schemas/user.py).
+_LOGIN_BANNER = Screen(
+    id="login-banner",
+    path="/login",
+    auth=False,
+    steps=(
+        r"fixture:/api/auth/methods|auth_methods_banner_on.json",
+        r"fixture:/api/auth/banner$|auth_banner_cui.json",
+        "reload:page",
+        "wait:.banner-overlay",
+    ),
+    ready="main, form, .auth-container, body",
+    notes="LoginBanner modal over the login page, themed card and classification header",
+)
+
 _GALLERY_MASKS = (".count-chip", ".meta-line")
 
 _UPLOAD_OPEN = ("click:.upload-btn", "wait:.tab-button")
@@ -349,6 +366,29 @@ _APP = (
         masks=_GALLERY_MASKS,
         full_page=False,
         ready=".gallery-action-buttons",
+    ),
+    Screen(
+        "file-detail-ai-chips",
+        "/files/{file_uuid}",
+        steps=(
+            r"fixture:/api/files/[0-9a-f-]{36}/suggestions$|file_suggestions_confidence.json",
+            "reload:page",
+            "wait:.tags-dropdown-section .section-toggle",
+            "click:.tags-dropdown-section .section-toggle",
+            "wait:.ai-suggestions-header",
+            "click:.ai-suggestions-header",
+            "wait:.suggestion-chip.confidence-low",
+        ),
+        ready=".transcript-segment",
+        full_page=False,
+        notes="AI tag chips at high, medium and low confidence (success / warning / error tones)",
+    ),
+    Screen(
+        "ui-kit-toasts",
+        "/a11y-fixtures/ui-kit",
+        steps=("wait:[data-kit-section='toasts'] .toast",),
+        ready='[data-kit-section="buttons"]',
+        notes="Toast of each type with an action, rendered inline (the live container is masked)",
     ),
     Screen("ui-kit", "/a11y-fixtures/ui-kit", ready='[data-kit-section="buttons"]'),
     Screen(
@@ -833,6 +873,7 @@ _HIGHLIGHT_STATES = (
 
 SCREENS: tuple[Screen, ...] = (
     *_LOGGED_OUT,
+    _LOGIN_BANNER,
     *_APP,
     *_NAVBAR_GALLERY,
     *_SETTINGS,

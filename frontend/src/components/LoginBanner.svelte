@@ -2,6 +2,7 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
   import axiosInstance from '$lib/axios';
+  import { colorsFor } from '$lib/utils/classificationColors';
 
   /**
    * The acknowledgment is being recorded server-side
@@ -28,15 +29,8 @@
   };
   let loading = true;
 
-  const classificationColors: Record<string, string> = {
-    'UNCLASSIFIED': '#4ade80',
-    'CUI': '#a855f7',
-    'FOUO': '#3b82f6',
-    'CONFIDENTIAL': '#3b82f6',
-    'SECRET': '#ef4444',
-    'TOP SECRET': '#f97316',
-    'TOP SECRET//SCI': '#eab308'
-  };
+  $: colors = colorsFor(banner.classification);
+
 
   onMount(async () => {
     try {
@@ -67,7 +61,7 @@
     <div class="banner-modal">
       <div
         class="classification-header"
-        style="background-color: {classificationColors[banner.classification] || '#4ade80'}"
+        style="background-color: {colors.bg}; color: {colors.text};"
       >
         {banner.classification}
       </div>
@@ -103,7 +97,7 @@
 
       <div
         class="classification-footer"
-        style="background-color: {classificationColors[banner.classification] || '#4ade80'}"
+        style="background-color: {colors.bg}; color: {colors.text};"
       >
         {banner.classification}
       </div>
@@ -115,7 +109,7 @@
   .banner-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.8);
+    background: var(--modal-backdrop);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -123,12 +117,12 @@
   }
 
   .banner-modal {
-    background: white;
+    background: var(--surface-color);
     max-width: 800px;
     max-height: 90vh;
     overflow-y: auto;
     border-radius: var(--radius-lg);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-xl);
   }
 
   .classification-header,
@@ -136,14 +130,13 @@
     padding: var(--space-2);
     text-align: center;
     font-weight: bold;
-    color: var(--text-on-solid);
     text-transform: uppercase;
     letter-spacing: 2px;
   }
 
   .banner-content {
     padding: var(--space-6);
-    color: #1f2937;
+    color: var(--text-primary);
   }
 
   .banner-content h2 {
@@ -157,25 +150,23 @@
     line-height: 1.6;
     margin: var(--space-4) 0;
     padding: var(--space-4);
-    background: #f5f5f5;
+    background: var(--surface-secondary);
     border-radius: var(--radius-sm);
   }
 
   .legal-notice {
     font-size: var(--font-size-md);
-    color: #6b7280;
+    color: var(--text-secondary);
     font-style: italic;
   }
 
-  /* The card is deliberately light in both themes (a paper notice), so these
-     two use fixed colours chosen for contrast on white rather than theme vars. */
   .notice-updated {
     margin: 0 0 var(--space-4);
     padding: var(--space-3) var(--space-4);
-    border-left: 4px solid #b45309;
+    border-left: 4px solid var(--warning-text);
     border-radius: var(--radius-sm);
-    background: #fef3c7;
-    color: #7c2d12;
+    background: var(--warning-bg);
+    color: var(--warning-text);
     font-size: 0.9rem;
     font-weight: var(--font-weight-semibold);
   }
@@ -183,10 +174,10 @@
   .banner-error {
     margin: var(--space-4) 0 0;
     padding: var(--space-3) var(--space-4);
-    border-left: 4px solid #b91c1c;
+    border-left: 4px solid var(--error-text);
     border-radius: var(--radius-sm);
-    background: #fee2e2;
-    color: #7f1d1d;
+    background: var(--error-bg);
+    color: var(--error-text);
     font-size: var(--font-size-md);
   }
 
@@ -195,7 +186,7 @@
     gap: var(--space-4);
     justify-content: center;
     padding: var(--space-4);
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--border-color);
   }
 
   .btn-acknowledge {
@@ -209,8 +200,8 @@
   }
 
   .btn-decline {
-    background: #ddd;
-    color: #666;
+    background: var(--button-secondary-bg-hover);
+    color: var(--text-secondary);
     padding: var(--space-3) var(--space-8);
     border: none;
     border-radius: var(--radius-sm);

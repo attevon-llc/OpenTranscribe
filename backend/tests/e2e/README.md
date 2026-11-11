@@ -177,6 +177,14 @@ had passed: two menu-less pages compared as "no difference". Give such a screen 
 never swaps for cards behind the backdrop mid-capture. In `zero` mode a screen that passes only on a
 retry is printed as flaky WITH the reason each discarded attempt failed (`retry_reasons` in
 `summary.json`: the error, or the pixel share and which properties moved on which elements).
+The reason also names:
+- the root of any subtree present on one side only (`subtree body:1>div:1>div:9 (after only)`):
+  an element inserted before a same-tag sibling renumbers that sibling's whole subtree, so a
+  toast shown on one side once read as "the settings `aside` vanished" when nothing had moved;
+- every request Playwright saw fail (`requests failed: GET /api/... net::ERR_...`), because a
+  failed fetch puts that panel's error state on one side only.
+
+Each discarded attempt's PNGs and snapshots are kept in `<out>/attempts/` for inspection.
 Unit tests for the pure parts:
 `backend/tests/unit/test_styling_ab.py`. The axe surface for the shared-component fixture
 (`/a11y-fixtures/ui-kit`, surfaces `ui-kit` and `ui-kit-ar`) is in `test_a11y.py`.

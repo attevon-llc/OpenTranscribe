@@ -524,6 +524,43 @@ def test_retry_reason_names_the_pixel_share_and_what_moved() -> None:
     assert line == "pixel 0.0000%, 1 computed (color on span:3)"
 
 
+def test_retry_reason_names_the_root_of_a_renumbered_subtree_not_its_leaves() -> None:
+    # An earlier sibling div appearing shifts the modal from div:3 to div:4: every element in
+    # it changes key. The old leaf-only reason said "aside:1", which read as "the aside vanished".
+    def gone(key: str) -> Any:
+        return ab.Change(key, "<element>", "present", "absent")
+
+    def new(key: str) -> Any:
+        return ab.Change(key, "<element>", "absent", "present")
+
+    changes = [
+        gone("body:1>div:3"),
+        gone("body:1>div:3>aside:1"),
+        gone("body:1>div:3>aside:1>button:1"),
+        new("body:1>div:4"),
+        new("body:1>div:4>aside:1"),
+    ]
+    assert ab.subtree_roots(changes) == ["body:1>div:3", "body:1>div:4"]
+    line = ab.retry_reason(0.0164, changes)
+    assert "aside:1" not in line
+    assert "subtree body:1>div:3 (before only)" in line
+    assert "subtree body:1>div:4 (after only)" in line
+
+
+def test_retry_reason_names_the_requests_the_browser_saw_fail() -> None:
+    line = ab.retry_reason(
+        0.0139,
+        [ab.Change("body:1>div:2>a:1", "color", "x", "y")],
+        ("GET /api/speakers net::ERR_NETWORK_CHANGED",),
+    )
+    assert line.endswith("; requests failed: GET /api/speakers net::ERR_NETWORK_CHANGED")
+    assert "requests failed" not in ab.retry_reason(0.0, [], ())
+
+
+def test_url_path_drops_host_and_query() -> None:
+    assert ab._url_path("http://localhost:5391/api/speakers?for_filter=true") == "/api/speakers"
+
+
 def test_settings_profile_masks_the_active_sessions_table() -> None:
     # Each capture logs in, so the table differs between any two captures of one server.
     assert ".sessions-table" in screens.by_id()["settings-profile"].masks

@@ -327,12 +327,6 @@
     border: 1px solid var(--warning-border);
   }
 
-  :global([data-theme='dark']) .warning {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
-    border-color: rgba(245, 158, 11, 0.3);
-  }
-
   .retry-section {
     text-align: center;
     margin: var(--space-4) 0;

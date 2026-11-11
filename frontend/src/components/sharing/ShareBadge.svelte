@@ -34,11 +34,6 @@
     white-space: nowrap;
   }
 
-  :global([data-theme='dark']) .share-badge {
-    background: rgba(var(--accent-rgb), 0.2);
-    color: #60a5fa;
-  }
-
   .count, .label {
     line-height: 1;
   }

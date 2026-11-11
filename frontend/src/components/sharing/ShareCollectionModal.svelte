@@ -363,9 +363,9 @@
   }
 
   .permission-badge.viewer {
-    background: rgba(100, 116, 139, 0.12);
+    background: var(--surface-secondary);
     color: var(--text-secondary);
-    border: 1px solid rgba(100, 116, 139, 0.25);
+    border: 1px solid var(--border-color);
   }
 
   .permission-badge.editor {
@@ -488,8 +488,9 @@
     justify-content: center;
   }
 
+  /* The modal surface and --surface-color are the same dark slate, so the row needs a lift. */
   :global([data-theme='dark']) .pending-item {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--surface-hover);
   }
 
   @media (max-width: 768px) {

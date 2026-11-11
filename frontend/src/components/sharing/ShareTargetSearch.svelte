@@ -263,10 +263,6 @@
     text-align: center;
   }
 
-  :global([data-theme='dark']) .search-results {
-    background: var(--surface-color);
-  }
-
   .search-hint {
     padding: var(--space-1-5) var(--space-2);
     font-size: var(--font-size-xs);

@@ -322,12 +322,18 @@ def test_a_hold_placed_while_the_purge_destroys_storage_keeps_the_row_and_the_ho
         return []
 
     monkeypatch.setattr(file_cleanup_service, "_purge_external_copies", destroy_then_hold)
+    recorded: list[dict] = []
+    monkeypatch.setattr(trash_purge, "_record_purge", recorded.append)
     try:
         outcome, _residual = trash_purge.purge_one(world["file"], trigger="due")
 
         assert "hold" in placed, "the destroy phase never ran"
         assert outcome == "failed"
         assert _row(world["file"]) is not None, "the purge deleted a file held mid-destroy"
+        assert len(recorded) == 1
+        assert recorded[0]["outcome"] == "partial"
+        assert recorded[0]["details"]["kept_by"] == "legal_hold"
+        assert recorded[0]["details"]["aborted_after_destroy"] is True
         with engine.connect() as conn:
             linked = conn.execute(
                 text("SELECT count(*) FROM content_hold_file WHERE hold_id = :h"),

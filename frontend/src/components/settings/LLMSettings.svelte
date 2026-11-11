@@ -889,7 +889,6 @@
 
   :global([data-theme='dark']) .share-badge {
     background: rgba(var(--primary-color-rgb), 0.2);
-    color: #60a5fa;
   }
 
   .admin-badge {
@@ -901,15 +900,14 @@
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    background: rgba(245, 158, 11, 0.12);
-    color: #d97706;
+    background: rgba(var(--warning-color-rgb), 0.12);
+    color: var(--warning-text);
     margin-left: var(--space-2);
     vertical-align: middle;
   }
 
   :global([data-theme='dark']) .admin-badge {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
+    background: rgba(var(--warning-color-rgb), 0.2);
   }
 
   .shared-by {
@@ -951,12 +949,12 @@
 
   .summary-toggle-row.admin-toggle {
     border-color: var(--warning-color);
-    background: rgba(245, 158, 11, 0.04);
+    background: rgba(var(--warning-color-rgb), 0.04);
     margin-top: var(--space-4);
   }
 
   :global([data-theme='dark']) .summary-toggle-row.admin-toggle {
-    background: rgba(245, 158, 11, 0.08);
+    background: rgba(var(--warning-color-rgb), 0.08);
   }
 
   .toggle-info {
@@ -991,7 +989,7 @@
 
   .summary-hint.warning {
     color: var(--warning-text);
-    background: rgba(245, 158, 11, 0.08);
+    background: rgba(var(--warning-color-rgb), 0.08);
     border-left: 3px solid var(--warning-color);
   }
 

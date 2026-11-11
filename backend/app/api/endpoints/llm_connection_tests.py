@@ -13,7 +13,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app import models
@@ -25,6 +24,7 @@ from app.api.endpoints.llm_endpoint_safety import _assert_safe_llm_endpoint
 from app.api.rate_limit import get_llm_outbound_rate_limit
 from app.api.rate_limit import limiter
 from app.api.rate_limit import user_or_ip_key
+from app.core.exceptions import ServiceUnavailableError
 from app.db.base import get_db
 from app.services import llm_context_window
 from app.services import llm_reasoning
@@ -34,6 +34,7 @@ from app.services.bedrock_settings import merge_stored
 from app.services.llm_config_queries import find_own_llm_config_by_uuid
 from app.services.llm_config_queries import find_visible_llm_config
 from app.services.llm_service import LLMService
+from app.services.llm_settings_outage import llm_settings_outage_as_503
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider as ServiceLLMProvider
 from app.services.request_context import RequestContext
@@ -110,7 +111,10 @@ def _run_connection_test(
         effective_api_key = test_request.api_key
         if not effective_api_key and test_request.config_id:
             try:
-                config = find_own_llm_config_by_uuid(db, test_request.config_id, current_user.id)
+                with llm_settings_outage_as_503():
+                    config = find_own_llm_config_by_uuid(
+                        db, test_request.config_id, current_user.id
+                    )
                 if config and config.api_key and str(config.provider) != "bedrock":
                     # Decrypt the stored API key
                     effective_api_key = decrypt_api_key(str(config.api_key))
@@ -121,7 +125,7 @@ def _run_connection_test(
                     message="The stored API key cannot be decrypted. Re-enter it.",
                     response_time_ms=int((time.time() - start_time) * 1000),
                 )
-            except (SQLAlchemyError, ValueError) as e:
+            except ValueError as e:
                 logger.warning(
                     f"Could not retrieve stored API key for config {test_request.config_id}: {e}",
                     exc_info=True,
@@ -167,6 +171,9 @@ def _run_connection_test(
         finally:
             llm_service.close()
 
+    except ServiceUnavailableError:
+        # A settings outage is the caller's 503, not a failed connection test.
+        raise
     except Exception:
         # This broad handler wraps config load + key decryption + service
         # construction, not just the connection dial — so the caught exception can

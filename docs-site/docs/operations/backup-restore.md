@@ -98,6 +98,18 @@ only exists in a git clone of the repository; it shares the exact same `backup`/
 identically for either script — only the leading command name differs.
 :::
 
+### Backing up or restoring a `--fresh` stack (developers)
+
+In a git clone, `./opentr.sh backup` and `./opentr.sh restore` accept `--fresh <name>` and then address only that
+isolated `otfresh-<name>` project, never the default one:
+
+```bash
+./opentr.sh backup --fresh test1
+./opentr.sh restore --fresh test1 backups/<file>.sql
+```
+
+An unknown deployment name or an unknown flag is refused. To delete a fresh deployment use `./opentr.sh fresh-destroy <name>`; `remove` and `purge` act on the default stack only and refuse `--fresh`. Without `--fresh` they act on the default stack.
+
 ### Encrypted Backup
 
 :::warning

@@ -120,6 +120,50 @@ fi
 # --- END stack-probe ---
 echo ""
 
+# The integration, GPU and e2e phases talk to the stack's Redis (deletion seeds, orphan sweep,
+# chat cache, and the e2e fixtures that seed through app code). Without REDIS_* they fell back
+# to localhost:5177 with no password (or the in-network name `redis`) and ~90 integration
+# tests failed on a perfectly healthy stack. The e2e phase was left out when this was first
+# fixed, so its fixtures hit AuthenticationError against the P3.2 gate's stack.
+#
+# Each variable an operator exported wins on its own; the ones missing are resolved from the
+# compose project's own containers. That matters because an operator pointing a shell at a
+# --fresh stack exports the PORT and not the password: the old "resolve only when REDIS_HOST is
+# unset" rule then handed every phase a port with no password.
+#
+# The unit and FIPS phases get the opposite, NO Redis variables at all (see UNIT_ENV): the
+# suite's memory-path tests assume no Redis, and exporting it to them flips ~10 of those to the
+# Redis path and fails them (measured 2026-10-28: 63 failures instead of 54).
+# --- BEGIN stack-redis-env ---
+REDIS_ENV=()
+_proj="${COMPOSE_PROJECT_NAME:-}"
+_label=(--filter "label=com.docker.compose.service=backend")
+[ -n "$_proj" ] && _label+=(--filter "label=com.docker.compose.project=$_proj")
+_backend=""
+if command -v docker >/dev/null 2>&1; then
+    _backend="$(docker ps "${_label[@]}" --format '{{.Names}}' 2>/dev/null | head -1)"
+fi
+_redis_port="${REDIS_PORT:-}"
+_redis_pw="${REDIS_PASSWORD:-}"
+if command -v docker >/dev/null 2>&1; then
+    if [ -z "$_redis_port" ]; then
+        _redis_port="$(docker ps "${_label[@]/backend/redis}" --format '{{.Ports}}' 2>/dev/null \
+            | grep -oE '(127\.0\.0\.1|0\.0\.0\.0):[0-9]+->6379' | head -1 | sed -E 's/.*:([0-9]+)->6379/\1/')"
+    fi
+    if [ -z "$_redis_pw" ] && [ -n "$_backend" ]; then
+        _redis_pw="$(docker exec "$_backend" printenv REDIS_PASSWORD 2>/dev/null)" || _redis_pw=""
+    fi
+fi
+if [ -n "$_redis_port" ]; then
+    REDIS_ENV=(env "REDIS_HOST=${REDIS_HOST:-localhost}" "REDIS_PORT=$_redis_port" "REDIS_PASSWORD=$_redis_pw")
+else
+    echo -e "${YELLOW}⚠ could not resolve the stack's Redis host port; tests needing Redis will fail${NC}"
+fi
+# Every phase that must NOT see the stack's Redis runs under this, so an operator's export
+# cannot reach it either.
+UNIT_ENV=(env -u REDIS_HOST -u REDIS_PORT -u REDIS_PASSWORD -u REDIS_URL -u CELERY_BROKER_URL)
+# --- END stack-redis-env ---
+
 cd "$PROJECT_ROOT/backend"
 
 COV_ARGS=()
@@ -426,7 +470,7 @@ fi
 # printed `✓ Unit/API suite passed` and exited 0. It is also the phase whose `-rs` output is the
 # only attribution any of those skips has.
 run_phase_watching_skips "Unit/API suite" "$UNIT_SKIP_CEILING" \
-    "$VENV_PY" -m pytest tests/ "${COV_ARGS[@]}" "${SKIP_REASONS[@]}" \
+    "${UNIT_ENV[@]}" "$VENV_PY" -m pytest tests/ "${COV_ARGS[@]}" "${SKIP_REASONS[@]}" \
     --junitxml="$GATE_ARTIFACT_DIR/unit.xml"
 
 # 2. The security suites again, this time under FIPS_MODE=true.
@@ -437,7 +481,7 @@ run_phase_watching_skips "Unit/API suite" "$UNIT_SKIP_CEILING" \
 # that used to sit here re-executed 394 tests phase 1 had already run (proved by node-id diff of
 # the two junit artifacts: 0 of 394 absent from unit.xml) under `env` variables no test reads.
 run_phase_watching_skips "Security suites (FIPS_MODE=true)" "$FIPS_SKIP_CEILING" \
-    env FIPS_MODE=true "$VENV_PY" -m pytest "${FIPS_MODE_SUITES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short \
+    "${UNIT_ENV[@]}" FIPS_MODE=true "$VENV_PY" -m pytest "${FIPS_MODE_SUITES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short \
     "${SKIP_REASONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/gated-fips-on.xml"
 
 # 3. Integration-marked tests (need the live stack)
@@ -536,32 +580,8 @@ else
     # used to be the dispatcher's silent fallback. An implicit ceiling is invisible at the
     # call site, and "no prefix means the integration number" is exactly the coupling that had
     # to be broken the moment the GPU phase needed a different one.
-    # The integration phase talks to the stack's Redis (deletion seeds, orphan sweep, chat cache).
-    # Nothing exports REDIS_*, so the tests fell back to localhost:5177 with no password (or the
-    # in-network name `redis`) and ~90 of them failed or errored on a perfectly healthy stack.
-    # Resolve host port + password from the compose project's own containers and hand them to
-    # THIS phase only: exporting them to the unit phase flips ~10 memory-path tests to the Redis
-    # path and fails them (measured 2026-10-28: 63 failures instead of 54).
     # --- BEGIN integration-env ---
-    REDIS_ENV=()
     INTEGRATION_ENV=()
-    _proj="${COMPOSE_PROJECT_NAME:-}"
-    _label=(--filter "label=com.docker.compose.service=backend")
-    [ -n "$_proj" ] && _label+=(--filter "label=com.docker.compose.project=$_proj")
-    _backend=""
-    if command -v docker >/dev/null 2>&1; then
-        _backend="$(docker ps "${_label[@]}" --format '{{.Names}}' 2>/dev/null | head -1)"
-    fi
-    if [ -z "${REDIS_HOST:-}" ] && command -v docker >/dev/null 2>&1; then
-        _redis_port="$(docker ps "${_label[@]/backend/redis}" --format '{{.Ports}}' 2>/dev/null \
-            | grep -oE '(127\.0\.0\.1|0\.0\.0\.0):[0-9]+->6379' | head -1 | sed -E 's/.*:([0-9]+)->6379/\1/')"
-        _redis_pw="$([ -n "$_backend" ] && docker exec "$_backend" printenv REDIS_PASSWORD 2>/dev/null)"
-        if [ -n "$_redis_port" ]; then
-            REDIS_ENV=(env REDIS_HOST=localhost "REDIS_PORT=$_redis_port" "REDIS_PASSWORD=$_redis_pw")
-        else
-            echo -e "${YELLOW}⚠ could not resolve the stack's Redis host port; integration tests needing Redis will fail${NC}"
-        fi
-    fi
     # The 4 hybrid completeness tests (test_search_completeness_opensearch.py) need a DEPLOYED
     # 384-dimension text-embedding model and skip without OPENSEARCH_TEST_MODEL_ID. Nothing set
     # it, so they skipped on every gate run since they landed. Resolve the id from the stack's own
@@ -645,7 +665,7 @@ if $RUN_GPU; then
     # these paths, so one added elsewhere cannot go silently unrun the way `gpu` itself did
     # before #297.
     run_phase_watching_skips "GPU-marked tests" "$GPU_SKIP_CEILING" \
-        "$VENV_PY" -m pytest tests/integration/ tests/unit/test_cuda_device_guard.py \
+        "${REDIS_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/unit/test_cuda_device_guard.py \
         -o addopts="" -m "$GPU_SELECTION" -q --tb=short --strict-markers \
         --timeout="${GPU_TEST_TIMEOUT:-1800}" \
         "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/gpu.xml"
@@ -808,7 +828,7 @@ fi
 # `visual` test, exits 5, and only resolve_phase forgives that) — see run-e2e.sh's comment.
 # Running the smoke the way a developer runs it is the point of a smoke phase.
 if $E2E_SMOKE; then
-    run_phase "E2E smoke (browser)" "$SCRIPT_DIR/e2e/run-e2e-smoke.sh"
+    run_phase "E2E smoke (browser)" "${REDIS_ENV[@]}" "$SCRIPT_DIR/e2e/run-e2e-smoke.sh"
 fi
 
 # 10. Optional: orphaned test-user report (dry run — pass --execute manually to apply)

@@ -86,14 +86,18 @@ what it appears to. A green one from the wrong schema is worse.
     have meant something. Raising the ceiling to "make room" reopens exactly that hole for the
     next unrelated skip.
 
-    **Redis for the integration phase.** The gate resolves the compose project's Redis host port and
-    password (from the stack's own containers) and hands `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`
-    to the **Integration-marked tests** phase only; you no longer export them by hand. They are
-    deliberately NOT given to the unit phase: they flip about ten memory-path unit tests onto the
-    Redis path and fail them. A bare `pytest tests/integration` outside the gate still needs the
-    three variables set yourself, or the Redis-backed tests fall back to `localhost:5177` with no
-    password and fail on a healthy stack. (Needs the `run-integration-tests.sh` change from commit
-    `326f3ae06`.)
+    **Redis per phase.** The gate's `stack-redis-env` block resolves the compose project's Redis
+    host port and password (from the stack's own containers) and hands `REDIS_HOST`/`REDIS_PORT`/
+    `REDIS_PASSWORD` to the **integration, GPU and e2e smoke** phases; you no longer export them by
+    hand. A variable you DID export wins on its own and only the missing ones are resolved, so a
+    shell that exported just `REDIS_PORT` for a `--fresh` stack still gets the password (the e2e
+    phase used to get neither, and its fixtures hit `AuthenticationError`). The unit and FIPS
+    phases run under `UNIT_ENV`, which UNSETS all of them even if your shell exported them: they
+    flip about ten memory-path unit tests onto the Redis path and fail them. Separately,
+    `tests/unit/conftest.py` clears `STACK_POINTER_VARS` (`COMPOSE_*`, `REDIS_*`,
+    `CELERY_BROKER_URL`) for every unit test, so a test that builds `Settings(...)` or runs an
+    `opentr.sh` snippet sees the same environment in your shell as in CI. A bare
+    `pytest tests/integration` outside the gate still needs the three variables set yourself.
 
     **Why the ceiling is 0** (it was 7 until 2026-10-30): the seven were 4 skips in
     `test_fusion_strategy_switch.py` and 3 in `test_rag_eval_harness.py`, tests that asserted on

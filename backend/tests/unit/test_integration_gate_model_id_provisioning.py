@@ -28,11 +28,16 @@ GATE = REPO_ROOT / "scripts" / "run-integration-tests.sh"
 MODEL_ID = "abc123XYZ"
 
 
-def _extract_block() -> str:
+def _block(name: str) -> str:
     text = GATE.read_text(encoding="utf-8")
-    start = text.index("# --- BEGIN integration-env ---")
-    end = text.index("# --- END integration-env ---", start)
+    start = text.index(f"# --- BEGIN {name} ---")
+    end = text.index(f"# --- END {name} ---", start)
     return text[start : text.index("\n", end) + 1]
+
+
+def _extract_block() -> str:
+    """The integration-env block, preceded by the stack block that finds the backend."""
+    return _block("stack-redis-env") + _block("integration-env")
 
 
 def _write_exec(path: Path, body: str) -> None:

@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Gallery filters: a request that failed without reaching the server (Chromium cancels requests queued for a connection with `net::ERR_NETWORK_CHANGED` whenever the machine's network interfaces change: Wi-Fi roaming, a VPN connecting, Docker adding a bridge) now gets one quick replay when it is a read, so the speakers, tags and other facets no longer show "Couldn't load" while the server is fine; a failure that persists still shows the error and retry. Writes are never replayed. The same failure on the Settings modal's first loads raised an error toast.
 - A trash purge that lost a race to an overlapping purge of the same file no longer audits a `file.purge` event as `partial`; the row was already gone, so nothing was kept and the winning run holds the only record.
 - Transcript find: a query that matches a speaker name now rings that segment's speaker chip. The find bar counted the speaker matches ("1 of 2") but the chip never re-rendered with the highlight (#837).
 - Upload wizard: two dark-mode rules in `upload-shared.css` (tag chip and "previous values" banner) were written in Svelte's `:global()` syntax in a plain stylesheet, so the browser discarded them; they are removed (no visual change) and a test now fails on `:global(` in any plain `.css` file.

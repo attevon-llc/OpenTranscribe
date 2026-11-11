@@ -97,7 +97,7 @@
   --warning-color: #f59e0b;
   --info-color: #3b82f6;
   --card-background: #ffffff;
-  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --card-shadow: var(--shadow-sm); /* follows the theme, like --shadow-sm (decision D13) */
   /* Navbar surface (#754). NOT an alias of --surface-color: that token also
      backs cards, modals and dropdowns, and darkening it globally would
      repaint all of those for a change the issue scoped to the nav bar.
@@ -444,8 +444,7 @@
   --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Elevation. Declared in BOTH blocks because elevation reads differently on dark
-     surfaces. Until the dark-elevation flip (decision D13) the dark values equal these, so
-     adopting a token is pixel-identical in both themes. */
+     surfaces: the dark block carries stronger values (decision D13). */
   --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.05);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
   --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -483,7 +482,6 @@
   --warning-color: #fbbf24;
   --info-color: #60a5fa;
   --card-background: #1e293b;
-  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   /* Navbar surface (#754), dark mode. Value held at the unchanged
      --surface-color (#1e293b) deliberately — the bar is already lighter
      than the page here, so "darker" (a light-mode-only observation, §4.2
@@ -577,15 +575,16 @@
   --focus-ring-color: #60a5fa; /* 5.75:1 on the dark card */
   --info-color-rgb: 96, 165, 250; /* #60a5fa */
 
-  /* Elevation: same values as light until decision D13 raises them. Declared here so the
-     token exists in both themes and the flip is a value edit, not a structural change. */
-  --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
-  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.1);
-  --shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.15);
-  --shadow-xl: 0 4px 20px rgba(0, 0, 0, 0.15);
-  --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.2);
+  /* Elevation, dark (decision D13): the same offsets and blurs with a stronger black. A
+     shadow is darker than the surface it falls on, and the dark surfaces leave little room
+     below them, so the light alphas all but vanished here (--card-shadow was already .3). */
+  --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 4px 20px rgba(0, 0, 0, 0.45);
+  --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-primary: 0 2px 4px rgba(var(--accent-rgb), 0.2);
   --shadow-primary-hover: 0 4px 8px rgba(var(--accent-rgb), 0.25);
   --shadow-danger: 0 2px 4px rgba(var(--error-color-rgb), 0.2);

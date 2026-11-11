@@ -272,7 +272,8 @@ Phase 4 snaps (D8): 0.8rem → `sm`, 0.85rem → `md`, 0.9rem → `md`, 0.95rem 
 ### 3.6 Elevation (new; both themes)
 
 Values were chosen to equal the most frequent literals exactly (section 3.11), so Phase 1 is
-pixel-identical. The proposed dark values are applied in lane 3.0 (D13).
+pixel-identical. The dark values were applied in lane 3.0 (D13); `token-parity.test.ts` holds
+every black shadow stronger in dark with the same geometry.
 
 | Token | Light (= Phase 1 dark) | Dark after D13 | Replaces exactly | Uses |
 |---|---|---|---|---|
@@ -1088,7 +1089,9 @@ master merge (repo plan 0b point 10), so its conflict window is small.
   Phase 2 button lanes had already removed 33 of the 37; the last 4 were in SettingsModal and
   UserManagementTable. `token-parity.test.ts` now fails on any box-shadow that restates a
   `--shadow-*` value, in either the accent or the primary spelling.)
-- D13: dark shadow values per 3.6; `--card-shadow: var(--shadow-sm)`.
+- D13: dark shadow values per 3.6; `--card-shadow: var(--shadow-sm)`. (Done: the dark block
+  carries the "Dark after D13" column, `--card-shadow` is one `var(--shadow-sm)` on `:root`, and
+  the dark `.status-card` rule in UserFileStatus, now equal to the token, is deleted.)
 - All screens. Expected: blue tints shift by ΔE of about 1 to 2 (both themes); dark-mode shadows
   deepen.
 - Opus reviewer.

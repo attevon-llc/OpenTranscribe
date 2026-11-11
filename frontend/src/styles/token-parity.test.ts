@@ -119,6 +119,37 @@ describe('token parity: elevation', () => {
       expect(sets.root.has(n), `${n} missing from :root`).toBe(true);
     }
   });
+
+  // Decision D13: on a dark surface a light-theme shadow all but vanishes, so every black
+  // shadow keeps its geometry and gets a stronger alpha in dark.
+  const blackAlphas = (theme: Theme, name: string) =>
+    [...resolveToken(sets, theme, name).matchAll(/rgba\(0, 0, 0, ([\d.]+)\)/g)].map((m) =>
+      Number(m[1])
+    );
+  const geometry = (theme: Theme, name: string) =>
+    resolveToken(sets, theme, name).replace(/rgba\([^)]*\)/g, 'c');
+  const blackShadows = [...sets.root.keys()].filter(
+    (n) => n.startsWith('--shadow-') && blackAlphas('light', n).length > 0
+  );
+
+  it('every black shadow is stronger in dark, with the same offsets and blur', () => {
+    expect(blackShadows.length).toBeGreaterThanOrEqual(7);
+    for (const n of blackShadows) {
+      expect(geometry('dark', n), n).toBe(geometry('light', n));
+      const light = blackAlphas('light', n);
+      const dark = blackAlphas('dark', n);
+      expect(dark.length, n).toBe(light.length);
+      dark.forEach((a, i) => expect(a, n).toBeGreaterThan(light[i]));
+    }
+  });
+
+  it('--card-shadow is the --shadow-sm step in both themes', () => {
+    for (const theme of ['light', 'dark'] as Theme[]) {
+      expect(resolveToken(sets, theme, '--card-shadow')).toBe(
+        resolveToken(sets, theme, '--shadow-sm')
+      );
+    }
+  });
 });
 
 describe('token parity: one tint blue (decision D2)', () => {

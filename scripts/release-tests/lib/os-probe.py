@@ -69,11 +69,12 @@ def _drift(file_uuid: str) -> dict:
 
 
 def _client():
-    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service.client import get_opensearch_client
 
-    if opensearch_client is None:
+    client = get_opensearch_client()
+    if client is None:
         raise RuntimeError('OpenSearch client unavailable')
-    return opensearch_client
+    return client
 
 
 def _concrete_speaker_indices(client) -> list[str]:

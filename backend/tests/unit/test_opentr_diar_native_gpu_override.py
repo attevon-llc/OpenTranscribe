@@ -25,6 +25,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OPENTR_SH = REPO_ROOT / "opentr.sh"
+GPU_DEVICE_LIB = REPO_ROOT / "scripts" / "lib" / "gpu-device.sh"
 
 
 def _source() -> str:
@@ -76,8 +77,9 @@ def test_diar_native_gpu_override_only_touches_diar_native_gpu() -> None:
     """--diar-native-gpu must NOT be folded into GPU_DEVICE_VARS (that would make it
     behave like --gpu-device and defeat the point: two different cards, expressible)."""
     source = _source()
-    match = re.search(r"GPU_DEVICE_VARS=\((.*?)^\)", source, re.DOTALL | re.MULTILINE)
-    assert match, "GPU_DEVICE_VARS array not found in opentr.sh"
+    lib = GPU_DEVICE_LIB.read_text(encoding="utf-8")
+    match = re.search(r"GPU_DEVICE_VARS=\((.*?)^\)", lib, re.DOTALL | re.MULTILINE)
+    assert match, "GPU_DEVICE_VARS array not found in scripts/lib/gpu-device.sh"
     gpu_device_vars = match.group(1)
 
     body = _start_app_body(source)

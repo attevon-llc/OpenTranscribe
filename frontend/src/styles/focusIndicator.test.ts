@@ -34,7 +34,7 @@ function walk(dir: string, out: string[] = []): string[] {
 function styleText(file: string): string {
   let text = fs.readFileSync(file, 'utf8');
   if (file.endsWith('.svelte')) {
-    text = [...text.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
+    text = [...text.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1] ?? '').join('\n');
   }
   return text.replace(/\/\*[\s\S]*?\*\//g, '');
 }
@@ -49,8 +49,8 @@ export function findOffenders(files: string[]): string[] {
   for (const file of files) {
     const rel = path.relative(SRC, file).split(path.sep).join('/');
     for (const m of styleText(file).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-      const selector = m[1].trim().replace(/\s+/g, ' ');
-      const body = m[2];
+      const selector = (m[1] ?? '').trim().replace(/\s+/g, ' ');
+      const body = m[2] ?? '';
       const hit =
         (FOCUS_SELECTOR.test(selector) && BORDER_OR_OUTLINE.test(body)) || FOCUS_VAR.test(body);
       const key = `${rel}::${selector}`;

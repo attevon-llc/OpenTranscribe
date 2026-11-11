@@ -141,7 +141,8 @@ describe('token parity: elevation', () => {
       const light = blackAlphas('light', n);
       const dark = blackAlphas('dark', n);
       expect(dark.length, n).toBe(light.length);
-      dark.forEach((a, i) => expect(a, n).toBeGreaterThan(light[i]));
+      // A light alpha that is missing compares as Infinity, so the check fails rather than passes.
+      dark.forEach((a, i) => expect(a, n).toBeGreaterThan(light[i] ?? Infinity));
     }
   });
 
@@ -186,7 +187,7 @@ describe('token parity: no stylesheet restates an elevation token', () => {
   function restated(css: string): string[] {
     const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
     return [...text.matchAll(/box-shadow\s*:\s*([^;{}]+);/g)]
-      .map((m) => twins.get(norm(m[1])))
+      .map(([, value = '']) => twins.get(norm(value)))
       .filter((name): name is string => name !== undefined);
   }
 

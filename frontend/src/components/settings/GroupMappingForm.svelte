@@ -175,8 +175,6 @@
     gap: var(--space-4);
   }
 
-
-
   .form-control {
     padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-sm);
@@ -196,9 +194,9 @@
   .warning-banner {
     margin: 0;
     padding: 0.6rem var(--space-3);
-    border: 1px solid rgba(245, 158, 11, 0.45);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
-    background: rgba(245, 158, 11, 0.12);
+    background: rgba(var(--warning-color-rgb), 0.12);
     color: var(--text-color);
     font-size: var(--font-size-sm);
     line-height: 1.45;

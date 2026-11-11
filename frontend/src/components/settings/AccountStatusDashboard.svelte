@@ -97,16 +97,16 @@
   }
 
   .chip.success {
-    border-color: rgba(34, 197, 94, 0.3);
-    background: rgba(34, 197, 94, 0.08);
+    border-color: rgba(var(--success-color-rgb), 0.3);
+    background: rgba(var(--success-color-rgb), 0.08);
   }
-  .chip.success .chip-value { color: rgb(34, 197, 94); }
+  .chip.success .chip-value { color: var(--success-text); }
 
   .chip.warning {
-    border-color: rgba(234, 179, 8, 0.3);
-    background: rgba(234, 179, 8, 0.08);
+    border-color: rgba(var(--warning-color-rgb), 0.3);
+    background: rgba(var(--warning-color-rgb), 0.08);
   }
-  .chip.warning .chip-value { color: rgb(234, 179, 8); }
+  .chip.warning .chip-value { color: var(--warning-text); }
 
   .chip.info {
     border-color: rgba(var(--accent-rgb), 0.3);
@@ -115,11 +115,9 @@
   .chip.info .chip-value { color: rgb(var(--accent-rgb)); }
 
   .chip.danger {
-    border-color: rgba(239, 68, 68, 0.3);
-    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(var(--error-color-rgb), 0.3);
+    background: rgba(var(--error-color-rgb), 0.08);
   }
-  .chip.danger .chip-value { color: rgb(239, 68, 68); }
-
-
+  .chip.danger .chip-value { color: var(--error-text); }
 
 </style>

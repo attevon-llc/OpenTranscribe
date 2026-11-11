@@ -409,8 +409,8 @@
   }
 
   .notice-warn {
-    background: rgba(251, 191, 36, 0.12);
-    border: 1px solid rgba(217, 119, 6, 0.5);
+    background: rgba(var(--warning-color-rgb), 0.12);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.5);
   }
 
   .orphans-actions {

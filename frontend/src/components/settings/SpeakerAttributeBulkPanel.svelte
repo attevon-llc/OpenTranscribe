@@ -263,8 +263,8 @@
     font-size: 0.85rem;
     color: var(--success-text);
     padding: var(--space-2-5) var(--space-3-5);
-    background: rgba(81, 207, 102, 0.08);
-    border: 1px solid rgba(81, 207, 102, 0.2);
+    background: rgba(var(--success-color-rgb), 0.08);
+    border: 1px solid rgba(var(--success-color-rgb), 0.2);
     border-radius: var(--radius-md);
   }
 
@@ -280,8 +280,8 @@
 
   .reextract-confirm {
     padding: var(--space-3-5);
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background: rgba(var(--error-color-rgb), 0.08);
+    border: 1px solid rgba(var(--error-color-rgb), 0.2);
     border-radius: var(--radius-md);
   }
 

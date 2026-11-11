@@ -627,8 +627,8 @@
   }
 
   .migration-box.complete {
-    background: rgba(34, 197, 94, 0.1);
-    border: 1px solid rgba(34, 197, 94, 0.3);
+    background: rgba(var(--success-color-rgb), 0.1);
+    border: 1px solid rgba(var(--success-color-rgb), 0.3);
   }
 
   .migration-icon {
@@ -647,8 +647,8 @@
   }
 
   .migration-box.complete .migration-icon {
-    background: rgba(34, 197, 94, 0.2);
-    color: #22c55e;
+    background: rgba(var(--success-color-rgb), 0.2);
+    color: var(--success-text);
   }
 
   .migration-content {
@@ -737,11 +737,11 @@
     gap: var(--space-2);
     margin-top: var(--space-3);
     padding: var(--space-2) var(--space-3);
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: rgba(var(--error-color-rgb), 0.1);
+    border: 1px solid rgba(var(--error-color-rgb), 0.3);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-xs);
-    color: #ef4444;
+    color: var(--error-text);
   }
 
   .failed-icon {
@@ -751,8 +751,8 @@
 
   .stalled-section {
     padding: var(--space-4);
-    background: rgba(251, 191, 36, 0.08);
-    border: 1px solid rgba(251, 191, 36, 0.3);
+    background: rgba(var(--warning-color-rgb), 0.08);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.3);
     border-radius: var(--radius-lg);
     margin-top: var(--space-3);
   }
@@ -768,7 +768,7 @@
   }
 
   .stalled-header svg {
-    color: #f59e0b;
+    color: var(--warning-text);
     flex-shrink: 0;
   }
 
@@ -783,8 +783,8 @@
     flex: 1;
     min-width: 200px;
     padding: var(--space-3);
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: rgba(var(--error-color-rgb), 0.08);
+    border: 1px solid rgba(var(--error-color-rgb), 0.3);
     border-radius: var(--radius-md);
   }
 

@@ -487,8 +487,8 @@
   }
 
   .list-status.missing {
-    border-color: rgba(245, 158, 11, 0.45);
-    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(var(--warning-color-rgb), 0.45);
+    background: rgba(var(--warning-color-rgb), 0.12);
     color: var(--color-text);
   }
 

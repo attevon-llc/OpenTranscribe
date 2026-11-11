@@ -5417,6 +5417,7 @@
   "filter.facetLoadFailedHelp": "Não foi possível carregar este filtro, por isso podem faltar opções.",
   "filter.speakersLoadFailed": "Não foi possível carregar os falantes",
   "filter.tagsLoadFailed": "Não foi possível carregar as etiquetas",
+  "filter.collectionsLoadFailed": "Não foi possível carregar as coleções",
   "filter.noNamedSpeakers": "Nenhum falante recebeu nome ainda",
   "filter.unlabeledSpeakers": "Falantes sem nome",
   "filter.unlabeledSpeakersTooltip": "Mostrar ficheiros que ainda contêm falantes sem nome",

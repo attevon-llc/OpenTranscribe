@@ -5346,6 +5346,7 @@
   "filter.facetLoadFailedHelp": "Dieser Filter konnte nicht geladen werden, daher fehlen möglicherweise Optionen.",
   "filter.speakersLoadFailed": "Sprecher konnten nicht geladen werden",
   "filter.tagsLoadFailed": "Tags konnten nicht geladen werden",
+  "filter.collectionsLoadFailed": "Sammlungen konnten nicht geladen werden",
   "filter.noNamedSpeakers": "Noch wurden keine Sprecher benannt",
   "filter.unlabeledSpeakers": "Unbenannte Sprecher",
   "filter.unlabeledSpeakersTooltip": "Dateien anzeigen, die noch Sprecher ohne Namen enthalten",

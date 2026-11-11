@@ -5417,6 +5417,7 @@
   "filter.facetLoadFailedHelp": "Ce filtre n'a pas pu être chargé ; des options peuvent donc manquer.",
   "filter.speakersLoadFailed": "Impossible de charger les intervenants",
   "filter.tagsLoadFailed": "Impossible de charger les étiquettes",
+  "filter.collectionsLoadFailed": "Impossible de charger les collections",
   "filter.noNamedSpeakers": "Aucun intervenant n'a encore été nommé",
   "filter.unlabeledSpeakers": "Intervenants sans nom",
   "filter.unlabeledSpeakersTooltip": "Afficher les fichiers contenant encore des intervenants sans nom",

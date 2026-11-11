@@ -5417,6 +5417,7 @@
   "filter.facetLoadFailedHelp": "Non è stato possibile caricare questo filtro, quindi alcune opzioni potrebbero mancare.",
   "filter.speakersLoadFailed": "Impossibile caricare i relatori",
   "filter.tagsLoadFailed": "Impossibile caricare i tag",
+  "filter.collectionsLoadFailed": "Impossibile caricare le raccolte",
   "filter.noNamedSpeakers": "Nessun relatore è ancora stato nominato",
   "filter.unlabeledSpeakers": "Relatori senza nome",
   "filter.unlabeledSpeakersTooltip": "Mostra i file che contengono ancora relatori senza nome",

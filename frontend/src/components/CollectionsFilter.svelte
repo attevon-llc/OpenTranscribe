@@ -3,13 +3,16 @@
   import { onMount } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
+  import { latestFacetLoad } from '$lib/gallery/filterData';
   import { t } from '$stores/locale';
+  import EmptyState from '$components/ui/EmptyState.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
   export let selectedCollectionId: string | null = null;
 
   let collections: Collection[] = [];
   let loading = false;
+  let error: string | null = null;
   /** The option shape SearchableMultiSelect expects (its own `Option` type is component-local). */
   type MultiSelectOption = { id: string; name: string; count: number };
   // Reactive: Prepare dropdown collections with proper format
@@ -22,25 +25,37 @@
   // Reactive: Convert selected collection ID to array for multiselect (single selection mode)
   $: selectedCollectionIds = selectedCollectionId ? [selectedCollectionId] : [];
 
+  const collectionsLoad = latestFacetLoad(() =>
+    apiCache.getOrFetch(
+      cacheKey.collections(),
+      async (): Promise<Collection[]> => {
+        const response = await axiosInstance.get('/collections', { params: { ownership: 'all' } });
+        // Sort collections by media_count descending (most used first)
+        return (response.data || []).sort((a: Collection, b: Collection) => {
+          return (b.media_count || 0) - (a.media_count || 0);
+        });
+      },
+      CacheTTL.COLLECTIONS
+    )
+  );
+
+  /**
+   * A failed load shows an error with a retry. It used to fall through to "no collections
+   * created", which a user cannot tell apart from having none (the #743a pattern the other
+   * facets already fixed).
+   */
   export async function fetchCollections() {
     loading = true;
-    try {
-      const data = await apiCache.getOrFetch(
-        cacheKey.collections(),
-        async () => {
-          const response = await axiosInstance.get('/collections', { params: { ownership: 'all' } });
-          // Sort collections by media_count descending (most used first)
-          return (response.data || []).sort((a: Collection, b: Collection) => {
-            return (b.media_count || 0) - (a.media_count || 0);
-          });
-        },
-        CacheTTL.COLLECTIONS
-      );
-      collections = data;
-    } catch (err) {
-      console.error('Error fetching collections:', err);
-    } finally {
-      loading = false;
+    error = null;
+    const outcome = await collectionsLoad();
+    if (outcome.kind === 'superseded') return;
+    loading = false;
+    if (outcome.kind === 'ok') {
+      collections = outcome.value;
+    } else if (outcome.kind === 'error') {
+      console.error('Error fetching collections:', outcome.cause);
+      collections = [];
+      error = outcome.message;
     }
   }
 
@@ -75,6 +90,17 @@
 <div class="collections-filter">
   {#if loading}
     <p class="loading-text">{$t('collections.loadingCollections')}</p>
+  {:else if error}
+    <EmptyState
+      icon="warning"
+      title={$t('filter.collectionsLoadFailed')}
+      description={$t('filter.facetLoadFailedHelp')}
+      padding="12px 0"
+    >
+      <button class="retry-button" data-testid="collections-retry" on:click={fetchCollections}
+        >{$t('filter.retry')}</button
+      >
+    </EmptyState>
   {:else if collections.length === 0}
     <p class="empty-text">{$t('collections.noCollectionsCreated')}</p>
   {:else}

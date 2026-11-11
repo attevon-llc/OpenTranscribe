@@ -43,7 +43,11 @@ const mockListTags = vi.hoisted(() => vi.fn());
 vi.mock('$lib/api/tags', () => ({ listTags: mockListTags }));
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock('../lib/axios', () => ({ default: mockAxios }));
+// The real `isRequestCancelled`, so a cancelled request is classified the way the app does it.
+vi.mock('../lib/axios', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/axios')>()),
+  default: mockAxios,
+}));
 
 // Bypass the real cache (a module-level singleton that would otherwise leak
 // state across tests) — just call straight through to the fetcher.
@@ -251,6 +255,85 @@ describe('FilterSidebar — speaker fetch failures are visible (#743a)', () => {
     await fireEvent.click(retry);
 
     await waitFor(() => expect(container.querySelectorAll('.speaker-button').length).toBe(1));
+  });
+});
+
+/**
+ * The speakers section showed "could not load speakers" while every `/speakers` call the
+ * backend saw returned 200. Loads overlap (mount, push invalidation, search) and settle in
+ * either order, and only the newest may decide what the section shows; a request cancelled at
+ * sign-out is not a failure either.
+ */
+describe('FilterSidebar — only the newest speaker load decides the section', () => {
+  type Pending = { resolve: (v: unknown) => void; reject: (e: unknown) => void };
+
+  function holdSpeakerRequests(): Pending[] {
+    const pending: Pending[] = [];
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/speakers') {
+        return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+      }
+      if (url === '/files/metadata-filters') return Promise.resolve({ data: METADATA });
+      return Promise.resolve({ data: [] });
+    });
+    return pending;
+  }
+
+  function invalidateSpeakers() {
+    window.dispatchEvent(new CustomEvent('cache-invalidated', { detail: { scope: 'speakers' } }));
+  }
+
+  it('an older load failing after a newer one succeeded does not replace the list with an error', async () => {
+    const pending = holdSpeakerRequests();
+    const { container } = render(FilterSidebarTestHost);
+    await waitFor(() => expect(pending).toHaveLength(1));
+    invalidateSpeakers();
+    await waitFor(() => expect(pending).toHaveLength(2));
+
+    pending[1]!.resolve({ data: [speaker('Priya Patel')] });
+    await waitFor(() => expect(container.querySelectorAll('.speaker-button').length).toBe(1));
+    pending[0]!.reject(new Error('Network Error'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(container.querySelector('[data-testid="speakers-retry"]')).toBeNull();
+    expect(container.querySelectorAll('.speaker-button').length).toBe(1);
+  });
+
+  it('an older load succeeding last does not overwrite the newer list', async () => {
+    const pending = holdSpeakerRequests();
+    const { container } = render(FilterSidebarTestHost);
+    await waitFor(() => expect(pending).toHaveLength(1));
+    invalidateSpeakers();
+    await waitFor(() => expect(pending).toHaveLength(2));
+
+    pending[1]!.resolve({ data: [speaker('New Name')] });
+    await waitFor(() => expect(container.textContent).toContain('New Name'));
+    pending[0]!.resolve({ data: [speaker('Stale Name')] });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(container.textContent).toContain('New Name');
+    expect(container.textContent).not.toContain('Stale Name');
+  });
+
+  it('a request cancelled at sign-out shows no error state', async () => {
+    const pending = holdSpeakerRequests();
+    const { container } = render(FilterSidebarTestHost);
+    await waitFor(() => expect(pending).toHaveLength(1));
+    pending[0]!.reject(
+      Object.assign(new Error('canceled'), { code: 'ERR_CANCELED', name: 'CanceledError' })
+    );
+    await waitFor(() => expect(container.textContent).not.toContain('filter.loadingSpeakers'));
+    expect(container.querySelector('[data-testid="speakers-retry"]')).toBeNull();
+  });
+
+  it('a real failure of the newest load still shows the error and retry', async () => {
+    const pending = holdSpeakerRequests();
+    const { container } = render(FilterSidebarTestHost);
+    await waitFor(() => expect(pending).toHaveLength(1));
+    pending[0]!.reject(new Error('Network Error'));
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="speakers-retry"]')).not.toBeNull()
+    );
   });
 });
 

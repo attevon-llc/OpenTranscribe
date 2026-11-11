@@ -5481,6 +5481,7 @@
   "filter.facetLoadFailedHelp": "Не удалось загрузить этот фильтр, поэтому часть вариантов может отсутствовать.",
   "filter.speakersLoadFailed": "Не удалось загрузить спикеров",
   "filter.tagsLoadFailed": "Не удалось загрузить теги",
+  "filter.collectionsLoadFailed": "Не удалось загрузить коллекции",
   "filter.noNamedSpeakers": "Именованных спикеров пока нет",
   "filter.unlabeledSpeakers": "Спикеры без имени",
   "filter.unlabeledSpeakersTooltip": "Показать файлы, в которых есть спикеры без имени",

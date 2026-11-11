@@ -5346,6 +5346,7 @@
   "filter.facetLoadFailedHelp": "This filter could not be loaded, so options may be missing.",
   "filter.speakersLoadFailed": "Couldn't load speakers",
   "filter.tagsLoadFailed": "Couldn't load tags",
+  "filter.collectionsLoadFailed": "Couldn't load collections",
   "filter.noNamedSpeakers": "No speakers have been named yet",
   "filter.unlabeledSpeakers": "Unlabeled speakers",
   "filter.unlabeledSpeakersTooltip": "Show files that still contain speakers nobody has named",

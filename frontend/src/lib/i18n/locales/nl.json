@@ -5346,6 +5346,7 @@
   "filter.facetLoadFailedHelp": "Dit filter kon niet worden geladen, dus er ontbreken mogelijk opties.",
   "filter.speakersLoadFailed": "Sprekers konden niet worden geladen",
   "filter.tagsLoadFailed": "Tags konden niet worden geladen",
+  "filter.collectionsLoadFailed": "Collecties konden niet worden geladen",
   "filter.noNamedSpeakers": "Er is nog geen spreker een naam gegeven",
   "filter.unlabeledSpeakers": "Naamloze sprekers",
   "filter.unlabeledSpeakersTooltip": "Toon bestanden die nog sprekers zonder naam bevatten",

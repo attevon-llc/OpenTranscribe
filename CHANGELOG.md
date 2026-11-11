@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Gallery filters: only the newest load of a facet decides what it shows. An older speakers, tags, owners or ranges load that settled last could replace a fresh list with a stale one or put the error state over a list that had loaded, and a request cancelled at sign-out showed "Couldn't load". The collections facet showed "no collections created" when its load failed; it now shows an error with a retry like the others.
 - Gallery filters: a request that failed without reaching the server (Chromium cancels requests queued for a connection with `net::ERR_NETWORK_CHANGED` whenever the machine's network interfaces change: Wi-Fi roaming, a VPN connecting, Docker adding a bridge) now gets one quick replay when it is a read, so the speakers, tags and other facets no longer show "Couldn't load" while the server is fine; a failure that persists still shows the error and retry. Writes are never replayed. The same failure on the Settings modal's first loads raised an error toast.
 - A trash purge that lost a race to an overlapping purge of the same file no longer audits a `file.purge` event as `partial`; the row was already gone, so nothing was kept and the winning run holds the only record.
 - Transcript find: a query that matches a speaker name now rings that segment's speaker chip. The find bar counted the speaker matches ("1 of 2") but the chip never re-rendered with the highlight (#837).

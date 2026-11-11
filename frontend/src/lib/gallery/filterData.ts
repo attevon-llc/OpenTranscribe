@@ -6,7 +6,7 @@
  * render as a normal, empty filter with no error and no way to retry (#743a). The component
  * owns the loading/error state; these own the request shapes.
  */
-import axiosInstance from '$lib/axios';
+import axiosInstance, { isRequestCancelled } from '$lib/axios';
 import { listTags } from '$lib/api/tags';
 import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
 import { fetchMetadataFilters } from '$lib/api/metadataFilters';
@@ -18,6 +18,40 @@ export type OwnerOption = { uuid: string; full_name: string | null; masked_email
 /** Turn a caught value into something renderable, without swallowing it. */
 export function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** What one facet load means for the section that started it. */
+export type FacetOutcome<T> =
+  | { kind: 'ok'; value: T }
+  | { kind: 'error'; message: string; cause: unknown }
+  /** Cancelled (sign-out): not a failure, and there is nothing new to show. */
+  | { kind: 'cancelled' }
+  /** A newer load of the same facet started after this one: it owns the section's state. */
+  | { kind: 'superseded' };
+
+/**
+ * Wrap a facet loader so only its NEWEST call decides what the section shows.
+ *
+ * A facet reloads on mount, on a push invalidation and on every search, so two loads overlap,
+ * and they can settle in either order. Without this, an older load that settled last replaced
+ * the newer list with stale rows, or put the error state over a list that had just loaded, and a
+ * request cancelled at sign-out rendered as "could not load".
+ */
+export function latestFacetLoad<A extends unknown[], T>(
+  load: (...args: A) => Promise<T>
+): (...args: A) => Promise<FacetOutcome<T>> {
+  let generation = 0;
+  return async (...args: A) => {
+    const mine = ++generation;
+    try {
+      const value = await load(...args);
+      return mine === generation ? { kind: 'ok', value } : { kind: 'superseded' };
+    } catch (err) {
+      if (mine !== generation) return { kind: 'superseded' };
+      if (isRequestCancelled(err)) return { kind: 'cancelled' };
+      return { kind: 'error', message: describeError(err), cause: err };
+    }
+  };
 }
 
 /** Prefer the display name; fall back to the masked email, never a raw one. */

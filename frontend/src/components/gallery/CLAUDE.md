@@ -20,7 +20,10 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   `SearchableMultiSelect` (hidden on `/search` via `showOwnerFilter={false}`). There is **no
   file-size filter** in the UI (owner decision 2026-10-11); `min_file_size`/`max_file_size`
   stay on the backend API only, so don't re-add a `fileSizeRange` to the stores or the
-  `filter` event.
+  `filter` event. Every facet load (tags, speakers, owners, ranges, and `CollectionsFilter`) goes
+  through `latestFacetLoad` (`$lib/gallery/filterData`): loads overlap (mount, push invalidation,
+  search), so only the newest one's outcome lands, a cancelled request is not an error, and a
+  real failure shows the facet's error state with a retry, never an empty list.
 - `GalleryGrid.svelte` — switches between `VirtualGrid`/`VirtualList`; empty/skeleton/loading
   states. Its empty state takes a `filtersActive` prop so a filtered-to-zero result set reads
   "no files match", not "your library is empty" (#747).

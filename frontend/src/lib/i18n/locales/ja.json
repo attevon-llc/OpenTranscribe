@@ -5275,6 +5275,7 @@
   "filter.facetLoadFailedHelp": "このフィルターを読み込めなかったため、選択肢が欠けている可能性があります。",
   "filter.speakersLoadFailed": "話者を読み込めませんでした",
   "filter.tagsLoadFailed": "タグを読み込めませんでした",
+  "filter.collectionsLoadFailed": "コレクションを読み込めませんでした",
   "filter.noNamedSpeakers": "まだ名前が付けられた話者はありません",
   "filter.unlabeledSpeakers": "名前のない話者",
   "filter.unlabeledSpeakersTooltip": "名前が付いていない話者を含むファイルを表示します",

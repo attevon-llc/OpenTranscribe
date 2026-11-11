@@ -210,10 +210,11 @@
   /* The soft halo that accompanies the outline. */
   --focus-ring: 0 0 0 3px rgba(var(--primary-color-rgb), 0.25);
 
-  /* Frozen tint blue: equals the 188 rgba(59,130,246,a) literals it replaces, so migrating
-     them stays pixel-identical. Pointed at --primary-color-rgb in one reviewed edit later
-     (decision D2). */
-  --accent-rgb: 59, 130, 246;
+  /* The tint blue: one blue for every translucent wash, so a tint and the button it sits
+     beside are the same hue (decision D2; it was a frozen 59,130,246 until the migration
+     finished). An alias declared once here follows the theme: data-theme sits on <html>,
+     the same element, so var() resolves against the dark value there. */
+  --accent-rgb: var(--primary-color-rgb);
 
   /* Status families: the six roles each (error, warning, success, info). The pre-existing
      names stay; these fill the gaps. */

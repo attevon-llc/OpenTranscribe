@@ -175,7 +175,7 @@ Canonical names were chosen by measured usage (`--text-secondary` 712 uses, `--b
 | `--primary-on-surface` | #1d4ed8 | #93c5fd | exists (blue text/icon on a surface) |
 | `--primary-light` | #dbeafe | #1e3a8a | exists (selected-row fill) |
 | `--primary-color-rgb` | 37, 99, 235 | 37, 99, 235 | exists |
-| `--accent-rgb` | 59, 130, 246 | 59, 130, 246 | **new**, frozen. Lane 3.0 (D2) changes it to `var(--primary-color-rgb)` in both blocks. |
+| `--accent-rgb` | `var(--primary-color-rgb)` (37, 99, 235) | same (follows the theme) | **flipped** in lane 3.0 (D2). Declared once on `:root`, like the other `var()` aliases: `data-theme` is on `<html>`, so it resolves to the dark value there. It was frozen at 59, 130, 246 through Phases 1 and 2. |
 
 **Status families.** Each family has the same six roles. Add the missing ones as new tokens and
 leave the existing ones in place.

@@ -16,7 +16,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { SRC, walkSource } from './sourceTree';
-import { loadThemeTokens, type TokenSets } from './themeTokens';
+import { loadThemeTokens, resolveToken, type Theme, type TokenSets } from './themeTokens';
 
 const sets = loadThemeTokens();
 
@@ -32,7 +32,6 @@ const THEME_INVARIANT: Record<string, string> = {
   '--warning-solid-hover': 'hover of --warning-solid',
   '--success-solid': 'solid success fill carrying a white label (5.48:1)',
   '--success-solid-hover': 'hover of --success-solid',
-  '--accent-rgb': 'frozen tint blue until decision D2 points it at --primary-color-rgb',
   '--dark-border': 'named for dark mode and used inside dark-scoped rules',
   '--dark-input-bg': 'named for dark mode and used inside dark-scoped rules',
   '--dark-text': 'named for dark mode and used inside dark-scoped rules',
@@ -119,6 +118,23 @@ describe('token parity: elevation', () => {
     for (const n of [...sets.dark.keys()].filter((k) => k.startsWith('--shadow-'))) {
       expect(sets.root.has(n), `${n} missing from :root`).toBe(true);
     }
+  });
+});
+
+describe('token parity: one tint blue (decision D2)', () => {
+  const channels = (theme: Theme, name: string) =>
+    resolveToken(sets, theme, name)
+      .split(',')
+      .map((n) => Number(n.trim()));
+
+  for (const theme of ['light', 'dark'] as Theme[]) {
+    it(`${theme}: --accent-rgb is the --primary-color-rgb blue`, () => {
+      expect(channels(theme, '--accent-rgb')).toEqual(channels(theme, '--primary-color-rgb'));
+    });
+  }
+
+  it('control: the frozen tint blue it replaced is a different colour', () => {
+    expect([59, 130, 246]).not.toEqual(channels('light', '--primary-color-rgb'));
   });
 });
 

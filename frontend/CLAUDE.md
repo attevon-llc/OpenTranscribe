@@ -28,6 +28,12 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
 ## Commands (run in `frontend/`)
 
 - `npm run dev` — Vite dev server (:5173, HMR). Prefer the whole stack via `./opentr.sh start dev`.
+- `npm test` / `npm run test:coverage` — vitest; `maxWorkers: '50%'` from `vitest.config.ts`
+  (CI and interactive runs). The **pre-commit hook** (`scripts/frontend-check.sh`) overrides it
+  with the CLI `--maxWorkers=${OT_HOOK_VITEST_WORKERS:-8}` (number or `N%`), because every
+  concurrent commit otherwise spawns 24 workers (issue #77; five at once reached load 153 and
+  timed out healthy tests). Coverage floors are unchanged. Tests must not depend on first-use
+  latency: do one-off heavy loads at collection time (top-level `await`), not in the first test.
 - `npm run build` — production build (catches Vite-only issues svelte-check misses).
 - `npm run check` — `svelte-check --tsconfig ./tsconfig.json`. This **enforces type-checking
   only**: svelte-check exits non-zero on type errors, and its default `--threshold warning`

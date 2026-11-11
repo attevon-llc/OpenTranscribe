@@ -3125,6 +3125,7 @@
   "speakers.cluster.promoted": "Groupe promu en profil",
   "speakers.cluster.deleted": "Groupe supprimé",
   "speakers.cluster.editLabel": "Entrez un libellé...",
+  "speakers.cluster.editLabelButton": "Modifier le libellé",
   "speakers.cluster.unlabeled": "Groupe sans libellé",
   "speakers.cluster.suggested": "Suggéré",
   "speakers.cluster.memberCount": "{{count}} locuteurs",

@@ -3074,6 +3074,7 @@
   "speakers.cluster.promoted": "Gruppe zu Profil befördert",
   "speakers.cluster.deleted": "Gruppe gelöscht",
   "speakers.cluster.editLabel": "Bezeichnung eingeben...",
+  "speakers.cluster.editLabelButton": "Bezeichnung bearbeiten",
   "speakers.cluster.unlabeled": "Unbenannte Gruppe",
   "speakers.cluster.suggested": "Vorgeschlagen",
   "speakers.cluster.memberCount": "{{count}} Sprecher",

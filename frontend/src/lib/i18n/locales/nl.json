@@ -3123,6 +3123,7 @@
   "modal.delete": "Verwijderen",
   "modal.close": "Sluiten",
   "speakers.cluster.editLabel": "Voer label in...",
+  "speakers.cluster.editLabelButton": "Label bewerken",
   "speakers.cluster.memberCount": "{{count}} sprekers",
   "speakers.cluster.deleteBtn": "Verwijderen",
   "speakers.audioClip.play": "Stemvoorbeeld afspelen",

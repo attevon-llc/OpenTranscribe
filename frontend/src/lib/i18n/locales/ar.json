@@ -3327,6 +3327,7 @@
   "modal.delete": "حذف",
   "modal.close": "إغلاق",
   "speakers.cluster.editLabel": "أدخل تسمية...",
+  "speakers.cluster.editLabelButton": "تعديل التسمية",
   "speakers.cluster.memberCount": "{{count}} متحدث",
   "speakers.cluster.deleteBtn": "حذف",
   "speakers.audioClip.play": "تشغيل عينة صوتية",

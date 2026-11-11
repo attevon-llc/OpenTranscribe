@@ -3225,6 +3225,7 @@
   "modal.delete": "Удалить",
   "modal.close": "Закрыть",
   "speakers.cluster.editLabel": "Введите метку...",
+  "speakers.cluster.editLabelButton": "Изменить метку",
   "speakers.cluster.memberCount": "Спикеров: {{count}}",
   "speakers.cluster.deleteBtn": "Удалить",
   "speakers.audioClip.play": "Воспроизвести образец голоса",

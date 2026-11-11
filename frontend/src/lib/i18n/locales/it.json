@@ -3174,6 +3174,7 @@
   "modal.delete": "Elimina",
   "modal.close": "Chiudi",
   "speakers.cluster.editLabel": "Inserisci l'etichetta...",
+  "speakers.cluster.editLabelButton": "Modifica etichetta",
   "speakers.cluster.memberCount": "{{count}} parlanti",
   "speakers.cluster.deleteBtn": "Elimina",
   "speakers.audioClip.play": "Riproduci campione vocale",

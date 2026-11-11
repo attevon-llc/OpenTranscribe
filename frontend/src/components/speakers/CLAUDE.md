@@ -14,7 +14,12 @@ that page. They render the cluster / profile / inbox management UI for cross-fil
   profile loading). `SpeakerPromoteModal.svelte` — the inline-name promote dialog. Their rules are
   in `$lib/speakers/` (see `src/lib/speakers/CLAUDE.md`).
 - `ClustersTab.svelte` — clusters view (identified/unidentified split); hosts cards + members.
-- `SpeakerClusterCard.svelte` — one cluster card (expand, gender-conflict badge, actions).
+- `SpeakerClusterCard.svelte` — one cluster card (expand, label edit, actions). Its header row is a
+  real `<button aria-expanded>` (WAI-ARIA APG disclosure) holding only text, so nothing focusable
+  may go inside it (axe `nested-interactive`, guarded by `nestedInteractive.convention.test.ts`):
+  the label `<input>` replaces the button while editing, and the keyboard's way into the editor is
+  a sibling "Edit label" button that is `.sr-only` until focused (double-click on the name stays
+  the pointer's way). `ClusterHeaderChips.svelte` renders the row's chips in both shapes.
 - `ClusterMemberList.svelte` — members of a cluster; outlier analysis, split/unassign selection.
 - `ProfilesTab.svelte` — saved speaker profiles (avatar upload, rename, gender confirm).
 - `InboxTab.svelte` / `SpeakerInboxItem.svelte` — suggestion inbox with confidence coloring.
@@ -64,9 +69,9 @@ that page. They render the cluster / profile / inbox management UI for cross-fil
   value are both still `'inbox'`** (issue #756). `/speakers?tab=inbox` is a real bookmarkable
   URL; renaming the union value would silently drop it to the Clusters tab.
 - **E2E-guarded selectors owned here** (`backend/tests/e2e/test_speaker_gender_clusters.py`):
-  `.cluster-card` and `.card-header` (click to expand a cluster) in `SpeakerClusterCard.svelte`,
-  which also renders `.gender-chip` (`.gender-chip.gender-coherent` /
-  `.gender-chip.gender-conflict`). `.member-row` (`.member-row.gender-outlier`) and
+  `.cluster-card` and `.card-header` (click to expand a cluster) in `SpeakerClusterCard.svelte`;
+  `.gender-chip` (`.gender-chip.gender-coherent` / `.gender-chip.gender-conflict`) is rendered
+  by its `ClusterHeaderChips.svelte`. `.member-row` (`.member-row.gender-outlier`) and
   `.gender-icon` are `ClusterMemberList.svelte` — the test clicks `.card-header` first, since
   members don't exist in the DOM until the cluster is expanded. `.profile-card` and
   `.gender-toggle-btn` (`.gender-toggle-btn.active` once confirmed) are `ProfilesTab.svelte` —

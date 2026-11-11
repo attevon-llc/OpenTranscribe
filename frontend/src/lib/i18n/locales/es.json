@@ -3125,6 +3125,7 @@
   "speakers.cluster.promoted": "Grupo promovido a perfil",
   "speakers.cluster.deleted": "Grupo eliminado",
   "speakers.cluster.editLabel": "Ingrese etiqueta...",
+  "speakers.cluster.editLabelButton": "Editar etiqueta",
   "speakers.cluster.unlabeled": "Grupo sin etiqueta",
   "speakers.cluster.suggested": "Sugerido",
   "speakers.cluster.memberCount": "{{count}} hablantes",

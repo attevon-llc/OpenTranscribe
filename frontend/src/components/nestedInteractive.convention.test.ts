@@ -37,9 +37,6 @@ const FLAT_ROLES = new Set([
   'meter',
 ]);
 
-/** Subtrees skipped, with the reason. Not an a11y allowlist: the owning lane is mid-edit. */
-const PENDING_OWNER = ['components/speakers/'];
-
 type Node = {
   type: string;
   name?: string;
@@ -154,7 +151,6 @@ describe('nested interactive controls (axe nested-interactive)', () => {
     const problems: string[] = [];
     for (const file of walk(SRC)) {
       const rel = relative(SRC, file);
-      if (PENDING_OWNER.some((p) => rel.startsWith(p))) continue;
       let ast;
       try {
         ast = parse(readFileSync(file, 'utf8'), { modern: true }) as unknown as {

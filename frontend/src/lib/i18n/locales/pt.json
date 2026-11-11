@@ -3143,6 +3143,7 @@
   "modal.delete": "Excluir",
   "modal.close": "Fechar",
   "speakers.cluster.editLabel": "Digite um rótulo...",
+  "speakers.cluster.editLabelButton": "Editar rótulo",
   "speakers.cluster.memberCount": "{{count}} locutores",
   "speakers.cluster.deleteBtn": "Excluir",
   "speakers.audioClip.play": "Reproduzir amostra de voz",

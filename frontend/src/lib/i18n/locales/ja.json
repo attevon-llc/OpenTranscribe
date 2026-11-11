@@ -3041,6 +3041,7 @@
   "modal.delete": "削除",
   "modal.close": "閉じる",
   "speakers.cluster.editLabel": "ラベルを入力...",
+  "speakers.cluster.editLabelButton": "ラベルを編集",
   "speakers.cluster.memberCount": "{{count}} スピーカー",
   "speakers.cluster.deleteBtn": "削除",
   "speakers.audioClip.play": "音声サンプルを再生",

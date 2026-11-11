@@ -3072,6 +3072,7 @@
   "modal.delete": "삭제",
   "modal.close": "닫기",
   "speakers.cluster.editLabel": "라벨 입력...",
+  "speakers.cluster.editLabelButton": "라벨 편집",
   "speakers.cluster.memberCount": "화자 {{count}}명",
   "speakers.cluster.deleteBtn": "삭제",
   "speakers.audioClip.play": "음성 샘플 재생",

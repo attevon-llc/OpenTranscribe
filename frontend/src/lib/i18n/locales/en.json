@@ -3123,6 +3123,7 @@
   "modal.delete": "Delete",
   "modal.close": "Close",
   "speakers.cluster.editLabel": "Enter label...",
+  "speakers.cluster.editLabelButton": "Edit label",
   "speakers.cluster.memberCount": "{{count}} speakers",
   "speakers.cluster.deleteBtn": "Delete",
   "speakers.audioClip.play": "Play voice sample",

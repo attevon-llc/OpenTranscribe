@@ -159,7 +159,7 @@
   legend,
   .label {
     display: block;
-    margin-bottom: 0.35rem;
+    margin-bottom: var(--space-1-5);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
@@ -167,7 +167,7 @@
   .radio {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     margin-inline-end: var(--space-5);
     font-size: var(--font-size-md);
     color: var(--text-color);
@@ -209,7 +209,7 @@
     overflow-wrap: anywhere;
   }
   .btn-row {
-    padding: 0.3rem 0.7rem;
+    padding: var(--space-1) var(--space-3);
     font-size: var(--font-size-xs);
   }
 </style>

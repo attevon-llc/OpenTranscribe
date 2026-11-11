@@ -235,7 +235,7 @@
     color: var(--text-on-solid);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-sm);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     white-space: nowrap;
     flex-shrink: 0;
   }

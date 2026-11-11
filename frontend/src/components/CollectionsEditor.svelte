@@ -378,9 +378,9 @@
   .collection {
     background-color: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
-    padding: 0.35rem var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     display: flex;
     align-items: center;
     gap: var(--space-1);
@@ -413,8 +413,8 @@
     background: transparent;
     border: none;
     border-bottom: 1px dashed var(--border-color);
-    padding: 0.35rem 0;
-    font-size: 0.8rem;
+    padding: var(--space-1-5) 0;
+    font-size: var(--font-size-sm);
     width: 100px;
     color: var(--text-color);
   }
@@ -425,7 +425,7 @@
     border: none;
     border-radius: var(--radius-sm);
     padding: var(--space-1) var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     margin-left: var(--space-2);
   }
@@ -440,7 +440,7 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     align-items: center;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .suggested-label {
@@ -452,7 +452,7 @@
     border: 1px dashed var(--border-color);
     border-radius: var(--radius-sm);
     padding: var(--space-1) var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     color: var(--text-light);
   }
@@ -470,7 +470,7 @@
 
   .no-collections {
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-style: italic;
     padding: var(--space-2) 0;
   }
@@ -493,7 +493,7 @@
 
   .dropdown-label {
     color: var(--text-light);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .ai-collection {

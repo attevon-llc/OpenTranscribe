@@ -170,7 +170,7 @@
     justify-content: space-between;
     gap: var(--space-2) var(--space-4);
     min-height: 40px;
-    padding: 0.35rem var(--space-4);
+    padding: var(--space-1-5) var(--space-4);
     box-sizing: border-box;
     background: var(--warning-bg);
     border-bottom: 2px solid var(--warning-color);
@@ -185,7 +185,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-1) 0.6rem;
+    gap: var(--space-1) var(--space-2-5);
     min-width: 0;
   }
   .what {
@@ -197,7 +197,7 @@
     gap: var(--space-2);
   }
   .buttons .btn {
-    padding: var(--space-1) 0.7rem;
+    padding: var(--space-1) var(--space-3);
     font-size: var(--font-size-xs);
   }
   @media (max-width: 768px) {

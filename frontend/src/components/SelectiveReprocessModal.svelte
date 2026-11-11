@@ -657,7 +657,7 @@
     background: var(--background-color);
     color: var(--text-secondary);
     cursor: default;
-    transition: all 0.25s ease;
+    transition: all var(--duration-base) ease;
     flex-shrink: 0;
     padding: 0;
   }
@@ -688,10 +688,10 @@
   }
 
   .step-label {
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    margin-left: 0.35rem;
+    margin-left: var(--space-1-5);
     white-space: nowrap;
     transition: color var(--duration-base) ease;
   }
@@ -712,7 +712,7 @@
     margin: 0 var(--space-2);
     min-width: 20px;
     max-width: 60px;
-    transition: background 0.25s ease;
+    transition: background var(--duration-base) ease;
   }
 
   .step-line.completed {
@@ -741,7 +741,7 @@
 
   .step-instruction {
     margin: 0 0 var(--space-3);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
@@ -754,7 +754,7 @@
     border: 1px solid var(--border-color);
     color: var(--primary-on-surface);
     font-size: var(--font-size-xs);
-    padding: var(--space-1) 0.6rem;
+    padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-sm);
     cursor: pointer;
     white-space: nowrap;
@@ -800,7 +800,7 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border-radius: var(--radius-lg);
     cursor: pointer;
     transition: background-color var(--duration-fast) ease;
@@ -871,7 +871,7 @@
   .stage-info {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: var(--space-0-5);
     min-width: 0;
   }
 
@@ -889,7 +889,7 @@
   }
 
   .stage-disabled-hint {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     color: var(--warning-text);
     font-style: italic;
     line-height: 1.3;
@@ -901,7 +901,7 @@
   }
 
   .review-label {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     display: block;
@@ -911,15 +911,15 @@
   .review-pills {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
   }
 
   .stage-pill {
     display: inline-flex;
     align-items: center;
-    padding: 0.3rem 0.7rem;
-    border-radius: 20px;
-    font-size: 0.78rem;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
@@ -933,7 +933,7 @@
   }
 
   .review-setting {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
   }
 
@@ -955,8 +955,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 0.6rem var(--space-3);
-    font-size: 0.8rem;
+    padding: var(--space-2-5) var(--space-3);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(var(--accent-rgb), 0.06);
@@ -968,14 +968,14 @@
   }
 
   .v4-path {
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: var(--space-1);
   }
 
   .v4-path strong {
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--text-primary);
   }
 
@@ -990,9 +990,9 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-2);
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border-radius: var(--radius-md);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     line-height: 1.45;
     margin-top: var(--space-3);
   }
@@ -1047,11 +1047,11 @@
   .setting-field {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
   }
 
   .setting-field label {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
@@ -1059,7 +1059,7 @@
   .setting-field .hint {
     font-weight: var(--font-weight-regular);
     color: var(--text-secondary);
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
   }
 
   .setting-field input:disabled {
@@ -1072,14 +1072,14 @@
   }
 
   .model-hint-text {
-    margin: 0.35rem 0 0;
-    font-size: 0.78rem;
+    margin: var(--space-1-5) 0 0;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.4;
   }
 
   .validation-error {
-    padding: 0.4rem 0.6rem;
+    padding: var(--space-1-5) var(--space-2-5);
     background-color: var(--error-bg);
     border: 1px solid var(--error-border);
     border-radius: var(--radius-md);

@@ -543,7 +543,7 @@
     flex-shrink: 0;
     border-top: 1px solid var(--border-color);
     padding: var(--space-3) var(--space-6);
-    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
     background: var(--bg-primary);
   }
 
@@ -594,13 +594,13 @@
   .reprocess-button-header {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background-color: var(--bg-primary);
     color: var(--text-primary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -648,7 +648,7 @@
 
   @media (max-width: 768px) {
     .modal-title {
-      font-size: 1.1rem;
+      font-size: var(--font-size-xl);
     }
 
     .header-actions {
@@ -660,7 +660,7 @@
     .reprocess-button-header {
       min-height: 44px;
       padding: var(--space-2) var(--space-2-5);
-      font-size: 0.8rem;
+      font-size: var(--font-size-sm);
     }
 
     .summary-scroll-area {
@@ -669,7 +669,7 @@
 
     .summary-actions-fixed {
       padding: var(--space-2) var(--space-3);
-      padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
     }
   }
 

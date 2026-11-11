@@ -28,11 +28,11 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 0.4rem 0.9rem;
+    padding: var(--space-1-5) var(--space-3-5);
     border-radius: var(--radius-pill);
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
   }
   .redaction-pending-chip .chip-dot {
@@ -48,7 +48,7 @@
   }
   .redaction-pending-msg {
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     max-width: 360px;
   }
 </style>

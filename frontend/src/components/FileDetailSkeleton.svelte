@@ -200,7 +200,7 @@
   .skeleton-transcript-list {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: var(--space-5);
     padding: var(--space-3) 0;
   }
 

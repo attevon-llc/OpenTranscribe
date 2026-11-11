@@ -139,18 +139,18 @@
   .editor {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
 
   .source-badge {
-    margin-left: 0.4rem;
-    padding: 0.05rem 0.4rem;
+    margin-left: var(--space-1-5);
+    padding: 0.05rem var(--space-1-5);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
     background: var(--surface-color);
     color: var(--text-secondary);
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 
@@ -172,31 +172,31 @@
   }
 
   .edit-link {
-    margin-left: 0.4rem;
+    margin-left: var(--space-1-5);
     border: none;
     background: none;
     padding: 0;
     color: var(--primary-on-surface);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     text-decoration: underline;
   }
 
   .details {
     border-left: 2px solid var(--border-color);
-    margin-left: 0.2rem;
-    padding-left: 0.6rem;
+    margin-left: var(--space-1);
+    padding-left: var(--space-2-5);
     color: var(--text-secondary);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
   }
 
   .details ul {
-    margin: 0.2rem 0;
+    margin: var(--space-1) 0;
     padding-left: var(--space-4);
   }
 
   .conflict-note {
-    margin: 0.2rem 0;
+    margin: var(--space-1) 0;
     color: var(--warning-text);
   }
 </style>

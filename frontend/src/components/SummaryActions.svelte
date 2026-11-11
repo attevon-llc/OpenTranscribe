@@ -229,7 +229,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     padding: var(--space-2) var(--space-4);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .action-button.regenerate:hover:not(:disabled) {
@@ -262,7 +262,7 @@
     gap: var(--space-2);
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-md);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-muted);
     background: var(--surface-color);
@@ -270,7 +270,7 @@
   }
 
   .admin-hint {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     font-style: italic;
   }
@@ -280,7 +280,7 @@
     border: none;
     padding: 0;
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--primary-on-surface);
     text-decoration: underline;
     cursor: pointer;

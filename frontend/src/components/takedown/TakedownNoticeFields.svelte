@@ -87,7 +87,7 @@
   .field input,
   .field select,
   .field textarea {
-    padding: 0.4rem var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-regular);
   }

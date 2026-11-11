@@ -92,7 +92,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 1.1rem;
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin: 0 0 var(--space-2) 0;
@@ -120,7 +120,7 @@
   .topic-meta {
     margin-bottom: var(--space-3);
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   .topic-points {

@@ -150,7 +150,7 @@
     margin: 0;
     color: var(--text-secondary);
     line-height: 1.6;
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
   }
 
   .file-list-container {
@@ -257,7 +257,7 @@
   }
 
   .comparison-value {
-    font-size: 1.1rem;
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     padding: var(--space-2);
     border-radius: var(--radius-md);

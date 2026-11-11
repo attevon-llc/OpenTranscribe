@@ -96,6 +96,6 @@
     margin: 0;
     color: var(--text-secondary);
     line-height: 1.5;
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
   }
 </style>

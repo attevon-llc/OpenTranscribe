@@ -158,7 +158,7 @@
   }
   .grant-table th {
     text-align: start;
-    padding: 0.4rem 0.6rem;
+    padding: var(--space-1-5) var(--space-2-5);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
@@ -168,7 +168,7 @@
     white-space: nowrap;
   }
   .grant-table td {
-    padding: 0.55rem 0.6rem;
+    padding: var(--space-2) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
     vertical-align: top;
@@ -208,10 +208,10 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
   }
   .btn-row {
-    padding: 0.3rem 0.7rem;
+    padding: var(--space-1) var(--space-3);
     font-size: var(--font-size-xs);
   }
   @media (max-width: 768px) {

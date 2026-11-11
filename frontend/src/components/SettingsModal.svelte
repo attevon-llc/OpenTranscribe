@@ -1310,7 +1310,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.4375rem var(--space-3);
+    padding: var(--space-2) var(--space-3);
     margin: 0 var(--space-2);
     border: none;
     border-radius: var(--radius-md);
@@ -1370,7 +1370,7 @@
   .nav-badge {
     flex-shrink: 0;
     min-width: 1.25rem;
-    padding: 0 0.35rem;
+    padding: 0 var(--space-1-5);
     border-radius: var(--radius-pill);
     background: rgba(var(--warning-color-rgb), 0.18);
     color: var(--warning-text);
@@ -1411,7 +1411,7 @@
   }
 
   .section-title {
-    font-size: 1.125rem;
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
@@ -1481,7 +1481,7 @@
   }
 
   .btn {
-    padding: 0.6rem 1.2rem;
+    padding: var(--space-2-5) var(--space-5);
     border-radius: var(--radius-xl);
     border: none;
     font-size: var(--font-size-sm);

@@ -496,7 +496,7 @@
   }
 
   .recovery-btn, .flower-btn {
-    padding: 0.6rem 1.2rem;
+    padding: var(--space-2-5) var(--space-5);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -507,7 +507,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     box-shadow: var(--shadow-primary);
   }
 
@@ -565,8 +565,8 @@
     white-space: nowrap;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.08s ease;
-    z-index: 20;
+    transition: opacity var(--duration-fast) ease;
+    z-index: calc(var(--z-sticky) + 10);
     line-height: 1.3;
   }
 
@@ -613,7 +613,7 @@
     /* These labels sit on per-status tinted cards; on the error tint --text-light
      * (an alias of --text-secondary) measures 4.16:1, under WCAG AA. */
     color: var(--text-on-tint);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
   }
 
@@ -636,7 +636,7 @@
     }
 
     .status-card {
-      padding: 0.6rem;
+      padding: var(--space-2-5);
     }
 
     .status-number {
@@ -644,7 +644,7 @@
     }
 
     .status-label {
-      font-size: 0.7rem;
+      font-size: var(--font-size-xs);
     }
   }
 

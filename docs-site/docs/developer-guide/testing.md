@@ -696,7 +696,7 @@ a stale entry fails, and `--tighten` never edits an allowlist.
   `backend/deptry.toml` carries its reason.
 - **Living-doc references**: `check_doc_references.py` (`guard-doc-references`) fails when a
   `CLAUDE.md`, a page under `docs-site/docs/`, a `README*` or a `docs/*.md` names a repo path or
-  `app.x.y` module that no longer exists. An intentional mention of a removed path goes in
+  dotted module path that no longer exists. An intentional mention of a removed path goes in
   `scripts/guards/allowlists/doc_references.txt` with a reason. Rename a file and this hook names
   every doc that still points at the old path.
 - **`scripts/` tooling** (guards, lib, audit_tests) is type-checked by `check_scripts_mypy.py`

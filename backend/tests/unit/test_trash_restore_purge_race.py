@@ -364,3 +364,27 @@ def test_a_quarantine_placed_while_the_trash_purge_destroys_storage_keeps_the_ro
     assert _row(world["file"]) is not None
     assert [r["details"]["kept_by"] for r in recorded] == ["selection"]
     assert recorded[0]["outcome"] == "partial"
+
+
+def test_a_purge_that_loses_to_an_overlapping_purge_records_no_partial(world, monkeypatch):
+    """Two purges of one file both destroy the external copies; the loser finds the row gone at
+    phase 3. Nothing was kept, so it must not audit ``partial``/``kept_by`` (the winner audits
+    the success)."""
+    _set_purge_after(world["file"], "interval '-1 second'")
+
+    def other_purge_finishes_the_row(plan):
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM media_file WHERE id = :f"), {"f": world["file"]})
+        return []
+
+    monkeypatch.setattr(
+        file_cleanup_service, "_purge_external_copies", other_purge_finishes_the_row
+    )
+    recorded: list[dict] = []
+    monkeypatch.setattr(trash_purge, "_record_purge", recorded.append)
+
+    outcome, _residual = trash_purge.purge_one(world["file"], trigger="due")
+
+    assert outcome == "skipped"
+    assert _row(world["file"]) is None
+    assert recorded == []

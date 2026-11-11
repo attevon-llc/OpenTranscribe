@@ -593,6 +593,12 @@ def _stopped(
     """The ``purge_media_file`` result for a file one of its row-locked checks kept."""
     reason, hold = stop
     result: dict[str, Any] = {"deleted": False, "file_uuid": file_uuid, "residual_errors": residual}
+    if reason == "gone":
+        # Another purge of the same file finished it: nothing was kept, so this is neither
+        # a refusal nor a partial purge (``aborted_after_destroy`` means "the row survived").
+        logger.warning(f"purge_media_file: file {file_uuid} was already deleted")
+        result.update(error="File already deleted", already_deleted=True)
+        return result
     if after_destroy:
         result["aborted_after_destroy"] = True
     if reason == "held":
@@ -606,9 +612,6 @@ def _stopped(
             )
         )
         result.update(error=LEGAL_HOLD_REFUSAL, refused_legal_hold=True, hold_state=hold)
-    elif reason == "gone":
-        logger.warning(f"purge_media_file: file {file_uuid} was already deleted")
-        result["error"] = "File already deleted"
     else:
         logger.error(f"purge_media_file: file {file_uuid} no longer matches the purge selection")
         result["error"] = PURGE_ABORTED_AFTER_DESTROY if after_destroy else "File not eligible"

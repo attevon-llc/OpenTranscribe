@@ -143,6 +143,10 @@ def purge_one(
         result = purge_media_file(
             db, media_file, defer_citation_scrub=defer_citation_scrub, eligible=_due()
         )
+    if result.get("already_deleted"):
+        # An overlapping purge finished this file first and audited it; the row is gone, so
+        # nothing was kept and there is no partial purge to record.
+        return "skipped", []
     if not result.get("deleted"):
         logger.error("trash purge: file %s not purged: %s", file_id, result.get("error"))
         if result.get("aborted_after_destroy"):

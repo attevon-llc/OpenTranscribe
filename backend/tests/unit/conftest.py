@@ -23,8 +23,17 @@ from pathlib import Path
 
 import pytest
 
+from tests.fixtures.stack_pointer_env import STACK_POINTER_VARS
+
 #: backend/ — the import root, and the cwd the CI job uses.
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _unit_tests_ignore_the_operators_stack_pointer(monkeypatch):
+    """Clear :data:`STACK_POINTER_VARS` for every unit test; a test that needs one sets it."""
+    for name in STACK_POINTER_VARS:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture

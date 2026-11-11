@@ -173,13 +173,10 @@
   }
 
   .skeleton-player-icon {
-    color: rgba(100, 116, 139, 0.35);
+    color: var(--text-secondary);
+    opacity: 0.35;
     position: relative;
     z-index: var(--z-base);
-  }
-
-  :global([data-theme='dark']) .skeleton-player-icon {
-    color: rgba(148, 163, 184, 0.35);
   }
 
   /* ── Chips row (tags) ── */
@@ -245,10 +242,6 @@
     position: relative;
     overflow: hidden;
     background: var(--skeleton-base);
-  }
-
-  :global([data-theme='dark']) .shimmer {
-    background: rgba(148, 163, 184, 0.1);
   }
 
   .shimmer::after {

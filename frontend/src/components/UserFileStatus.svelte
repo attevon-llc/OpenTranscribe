@@ -556,8 +556,8 @@
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    background: rgba(0, 0, 0, 0.85);
-    color: var(--text-on-solid);
+    background: var(--tooltip-bg);
+    color: var(--tooltip-text);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-regular);
     padding: var(--space-1-5) var(--space-2-5);
@@ -572,11 +572,6 @@
 
   .live-status-icon:hover::after {
     opacity: 1;
-  }
-
-  :global([data-theme='dark']) .live-status-icon::after {
-    background: rgba(255, 255, 255, 0.92);
-    color: #111;
   }
 
   .status-cards {
@@ -599,16 +594,12 @@
 
   .status-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-hover);
   }
 
   .status-card.error {
     border-color: var(--error-color);
     background: var(--error-background);
-  }
-
-  :global([data-theme='dark']) .status-card:hover {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
   }
 
   .status-number {

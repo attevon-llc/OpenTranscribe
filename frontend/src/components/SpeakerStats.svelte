@@ -466,7 +466,7 @@
     height: 24px;
     border-radius: var(--radius-2xl);
     overflow: hidden;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
     margin: var(--space-3) 0 var(--space-4) 0;
     border: 1px solid var(--border-color);
   }
@@ -499,7 +499,7 @@
 
   .speaker-chip:hover {
     border-color: var(--primary-color);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
     transform: scale(1.02);
   }
 

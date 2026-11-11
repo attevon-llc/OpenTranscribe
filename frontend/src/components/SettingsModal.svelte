@@ -1366,25 +1366,19 @@
   }
 
   /* Pending-work count (currently the account-approval queue). Amber rather than
-     the primary colour so it reads as "needs attention", and it uses explicit
-     light/dark values because the amber tokens are not defined in both themes. */
+     the primary colour so it reads as "needs attention". */
   .nav-badge {
     flex-shrink: 0;
     min-width: 1.25rem;
     padding: 0 0.35rem;
     border-radius: var(--radius-pill);
-    background: rgba(245, 158, 11, 0.18);
-    color: #b45309;
-    border: 1px solid rgba(245, 158, 11, 0.45);
+    background: rgba(var(--warning-color-rgb), 0.18);
+    color: var(--warning-text);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     text-align: center;
-  }
-
-  :global([data-theme='dark']) .nav-badge {
-    background: rgba(245, 158, 11, 0.22);
-    color: #fbbf24;
   }
 
 

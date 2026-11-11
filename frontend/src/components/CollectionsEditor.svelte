@@ -506,9 +506,4 @@
     display: flex;
     align-items: center;
   }
-
-  :global([data-theme='dark']) .ai-collection {
-    background-color: rgba(96, 165, 250, 0.12);
-    border-color: rgba(96, 165, 250, 0.3);
-  }
 </style>

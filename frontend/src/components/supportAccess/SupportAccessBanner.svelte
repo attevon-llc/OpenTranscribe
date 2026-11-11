@@ -162,7 +162,7 @@
   .banner {
     position: fixed;
     inset-inline: 0;
-    top: calc(var(--banner-offset, 0px) + var(--navbar-height));
+    top: calc(var(--banner-offset) + var(--navbar-height));
     z-index: calc(var(--z-navbar) - 1);
     display: flex;
     flex-wrap: wrap;

@@ -57,23 +57,38 @@ def _receipt(db, entry, attempt, outcome, generated_at):
 
 
 def test_list_ledger_page_filters_pages_and_reports_latest_outcome(db_session):
-    now = datetime.now(UTC)
-    old = _entry(db_session, status="failed", requested_at=now - timedelta(days=2))
-    new = _entry(db_session, status="complete", requested_at=now - timedelta(days=1))
-    _receipt(db_session, new, 1, "residual", now - timedelta(hours=2))
-    _receipt(db_session, new, 2, "verified", now - timedelta(hours=1))
+    # The ledger is shared with every other row in a used database, so nothing here assumes an
+    # empty table: counts are deltas against a baseline read first, and the two rows are dated
+    # far ahead of any real request so they head the newest-first ordering.
+    base_all = read_queries.list_ledger_page(db_session, status=None, page=1, per_page=1)[1]
+    base_complete = read_queries.list_ledger_page(
+        db_session, status="complete", page=1, per_page=1
+    )[1]
+    base_failed = read_queries.list_ledger_page(db_session, status="failed", page=1, per_page=1)[1]
+
+    ahead = datetime.now(UTC) + timedelta(days=3650)
+    old = _entry(db_session, status="failed", requested_at=ahead - timedelta(days=2))
+    new = _entry(db_session, status="complete", requested_at=ahead - timedelta(days=1))
+    _receipt(db_session, new, 1, "residual", ahead - timedelta(hours=2))
+    _receipt(db_session, new, 2, "verified", ahead - timedelta(hours=1))
 
     entries, total, latest = read_queries.list_ledger_page(
-        db_session, status="complete", page=1, per_page=50
+        db_session, status="complete", page=1, per_page=1
     )
     assert [e.id for e in entries] == [new.id]
-    assert total == 1
+    assert total == base_complete + 1
     assert latest == {new.id: "verified"}
+
+    failed, failed_total, _ = read_queries.list_ledger_page(
+        db_session, status="failed", page=1, per_page=1
+    )
+    assert [e.id for e in failed] == [old.id]
+    assert failed_total == base_failed + 1
 
     second_page, total, _ = read_queries.list_ledger_page(
         db_session, status=None, page=2, per_page=1
     )
-    assert total == 2
+    assert total == base_all + 2
     assert [e.id for e in second_page] == [old.id]
 
 

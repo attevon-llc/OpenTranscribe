@@ -58,6 +58,7 @@ function fgRgb(theme: Theme, name: string, onto: Rgb): Rgb {
 
 const SURFACES = ['--surface-color', '--background-color', '--hover-color', '--surface-secondary'];
 const STATUS = ['error', 'warning', 'success', 'info'];
+const SYNTAX = ['keyword', 'string', 'number', 'title', 'comment', 'meta', 'deletion', 'addition'];
 
 const PAIRS: Pair[] = [
   // text on surfaces
@@ -180,6 +181,22 @@ const PAIRS: Pair[] = [
     themes: BOTH,
     reason: 'text on a search-hit mark',
   },
+  // Hover tooltip chip (LLMConfigModal, PromptSettings).
+  {
+    fg: '--tooltip-text',
+    bg: '--tooltip-bg',
+    min: TEXT,
+    themes: BOTH,
+    reason: 'tooltip text on its chip',
+  },
+  // Code syntax colours on the code block, whose background is --surface-color (ChatMarkdown).
+  ...SYNTAX.map((role) => ({
+    fg: `--syntax-${role}`,
+    bg: '--surface-color',
+    min: TEXT,
+    themes: BOTH,
+    reason: 'code syntax colour on the code block',
+  })),
   // non-text
   // The avatar overlay's camera icon over a picture. The scrim is one value in both themes and
   // the light card is white, the brightest picture it can sit on, so that row is the worst case.

@@ -204,6 +204,28 @@ found literals that had no role. The first lane that uses one adds it to both `t
 | `--on-solid-wash` | rgba(0,0,0,.2) | same | **new** | translucent button background on a `--primary-color` or `-solid` header (UploadManager header buttons). A darkening wash: white text on the white .2 wash over #2563eb was 3.7:1 (fails AA); on black .2 it is about 7:1 |
 | `--on-solid-wash-hover` | rgba(0,0,0,.3) | same | **new** | the hover state of the above |
 
+**Tooltip, code syntax and QR.** Added by the lead on 2026-11-11 for lanes 3.5 to 3.8 (LLMConfigModal,
+PromptSettings, ChatMarkdown, MfaEnrollment), defined in lane 3.0; those lanes switch to them.
+
+| Token | Light | Dark | Status | Use |
+|---|---|---|---|---|
+| `--tooltip-bg` | #1a1a1a | #475569 | **new** | hover tooltip chip (`.info-tooltip::after`). Dark is a step lighter than the card, as a raised surface is in a dark theme; #1a1a1a was darker than the dark card. The tooltip shadow is not a token: Phase 4 snaps it |
+| `--tooltip-text` | `var(--text-on-solid)` | same | **new** | tooltip text: 17.4:1 light, 7.58:1 dark |
+| `--syntax-keyword` | #0550ae | #79b8ff | **new** | highlight.js keyword, selector tag, type |
+| `--syntax-string` | #116329 | #85e89d | **new** | string, regexp, template tag, symbol |
+| `--syntax-number` | #953800 | #ffab70 | **new** | number, literal, variable, built-in |
+| `--syntax-title` | #0e6e7a | #56d4dd | **new** | title, section, name, attribute |
+| `--syntax-comment` | #57606a | #959da5 | **new** | comment, quote |
+| `--syntax-meta` | #6e5600 | #e3c26b | **new** | meta, tag, substitution, params |
+| `--syntax-deletion` | #b42318 | #fd8c73 | **new** | diff deletion |
+| `--syntax-addition` | #116329 | #85e89d | **new** | diff addition |
+| `--qr-surface` | #ffffff | #ffffff | **new**, theme-invariant on purpose | QR code background (MfaEnrollment): a scanner needs dark modules on a light quiet zone, so it stays white in dark like the regulatory ClassificationBanner |
+
+The `--syntax-*` family is a code palette, a separate role from UI colour (the values are
+ChatMarkdown's former local `--hl-*`, unchanged). Every one clears 4.5:1 on `--surface-color`,
+the code-block background, in both themes (lowest: comment 6.39:1 light, 5.32:1 dark), pinned in
+`contrast-pairs.test.ts` with the tooltip pair.
+
 ### 3.3 Spacing (new; theme-independent; rem, 4 px base)
 
 | Token | Value | px @16 | Replaces exactly (rem / px) | Measured uses |

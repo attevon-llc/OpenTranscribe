@@ -206,6 +206,23 @@
   --media-scrim: rgba(0, 0, 0, 0.45);
   --text-on-warning: #1e293b; /* label on the amber warning fill: 6.81:1 (white is 2.15:1) */
   --media-letterbox: #000000; /* behind a video picture and its controls: black in both themes, like the picture */
+  /* A QR code needs dark modules on a light quiet zone for a scanner to read it, so its
+     surface is white in BOTH themes on purpose, like the regulatory ClassificationBanner. */
+  --qr-surface: #ffffff;
+  /* Hover tooltip (an info icon's explanation): dark chip, white text, 17.4:1. */
+  --tooltip-bg: #1a1a1a;
+  --tooltip-text: var(--text-on-solid);
+  /* Code syntax palette (highlight.js classes in chat markdown). A code palette is its own
+     role, apart from the UI colours: blue / green / orange / teal / grey, no purple. Each is
+     >= 4.5:1 on --surface-color, the code block background (contrast-pairs.test.ts). */
+  --syntax-keyword: #0550ae;
+  --syntax-string: #116329;
+  --syntax-number: #953800;
+  --syntax-title: #0e6e7a;
+  --syntax-comment: #57606a;
+  --syntax-meta: #6e5600;
+  --syntax-deletion: #b42318;
+  --syntax-addition: #116329;
 
   /* Boundary of an input, select, switch off-track or checkbox: 3:1 against the surface
      (SC 1.4.11). --border-color is decorative and stays lighter. 3.28:1 on white. */
@@ -549,6 +566,20 @@
   --highlight-search-ring: #facc15;
   --highlight-current-ring: #f97316;
   --media-scrim: rgba(0, 0, 0, 0.45);
+  --qr-surface: #ffffff; /* white in both themes on purpose, see :root */
+  /* Tooltip, dark: a step lighter than the card, as a raised surface is in a dark theme
+     (white text 7.58:1). The light chip's #1a1a1a was darker than the dark card. */
+  --tooltip-bg: #475569;
+  --tooltip-text: var(--text-on-solid);
+  /* Code syntax palette, dark: lighter tones, each >= 4.5:1 on the dark --surface-color. */
+  --syntax-keyword: #79b8ff;
+  --syntax-string: #85e89d;
+  --syntax-number: #ffab70;
+  --syntax-title: #56d4dd;
+  --syntax-comment: #959da5;
+  --syntax-meta: #e3c26b;
+  --syntax-deletion: #fd8c73;
+  --syntax-addition: #85e89d;
   --color-info-bg: rgba(96, 165, 250, 0.15);
   --color-info-border: rgba(96, 165, 250, 0.3);
   --color-info: var(--info-color);

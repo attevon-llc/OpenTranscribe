@@ -24,6 +24,8 @@ const sets = loadThemeTokens();
 const THEME_INVARIANT: Record<string, string> = {
   '--text-on-solid': 'white label on a solid fill: the fills are dark in both themes',
   '--text-on-warning': 'dark label on the amber fill, which is the same amber in both themes',
+  '--qr-surface':
+    'a QR code needs dark modules on a light quiet zone for a scanner, so it stays white in dark',
   '--media-letterbox':
     'the bars around a video picture are black in both themes, as the picture is',
   '--error-solid': 'solid danger fill, one value like --primary-color (white 4.83:1)',

@@ -355,15 +355,6 @@
     font-weight: var(--font-weight-medium);
   }
 
-  :global([data-theme='dark']) .fallback-warning-row {
-    background: rgba(251, 191, 36, 0.12);
-    border-color: #fbbf24;
-  }
-
-  :global([data-theme='dark']) .fallback-warning-icon {
-    color: #fbbf24;
-  }
-
   .subsection-title {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);

@@ -164,6 +164,23 @@ _LOGGED_OUT = tuple(
     )
 )
 
+#: The consent modal LoginBanner draws, with the CUI header and footer in the shared
+#: classification palette. Both answers are whole copies of the serializers (`AuthMethodsResponse`,
+#: `LoginBannerResponse` in app/schemas/user.py).
+_LOGIN_BANNER = Screen(
+    id="login-banner",
+    path="/login",
+    auth=False,
+    steps=(
+        r"fixture:/api/auth/methods|auth_methods_banner_on.json",
+        r"fixture:/api/auth/banner$|auth_banner_cui.json",
+        "reload:page",
+        "wait:.banner-overlay",
+    ),
+    ready="main, form, .auth-container, body",
+    notes="LoginBanner modal over the login page, themed card and classification header",
+)
+
 _GALLERY_MASKS = (".count-chip", ".meta-line")
 
 _UPLOAD_OPEN = ("click:.upload-btn", "wait:.tab-button")
@@ -350,6 +367,29 @@ _APP = (
         full_page=False,
         ready=".gallery-action-buttons",
     ),
+    Screen(
+        "file-detail-ai-chips",
+        "/files/{file_uuid}",
+        steps=(
+            r"fixture:/api/files/[0-9a-f-]{36}/suggestions$|file_suggestions_confidence.json",
+            "reload:page",
+            "wait:.tags-dropdown-section .section-toggle",
+            "click:.tags-dropdown-section .section-toggle",
+            "wait:.ai-suggestions-header",
+            "click:.ai-suggestions-header",
+            "wait:.suggestion-chip.confidence-low",
+        ),
+        ready=".transcript-segment",
+        full_page=False,
+        notes="AI tag chips at high, medium and low confidence (success / warning / error tones)",
+    ),
+    Screen(
+        "ui-kit-toasts",
+        "/a11y-fixtures/ui-kit",
+        steps=("wait:[data-kit-section='toasts'] .toast",),
+        ready='[data-kit-section="buttons"]',
+        notes="Toast of each type with an action, rendered inline (the live container is masked)",
+    ),
     Screen("ui-kit", "/a11y-fixtures/ui-kit", ready='[data-kit-section="buttons"]'),
     Screen(
         "ui-kit-focus",
@@ -527,6 +567,76 @@ _SETTINGS = (
     *(_settings("speaker-identification", f"tab:{t}") for t in ("spk-attributes", "spk-engine")),
 )
 
+
+# --- settings I states (styling row 3.5) ----------------------------------------------------------
+# The seeded stack has no shared LLM config, shared prompt, media source, search-index probe or
+# diarization fallback, so the share / admin badges, the credential badges and the health dots never
+# render. Whole fixture files, shaped by the real serializers (frontend `UserLLMConfigurationsList`,
+# `SummaryPromptList`, `MediaSourcesResponse`, `SystemStats`, `SearchIndexStatus`,
+# `SearchHealthStatus`), answer the list endpoints. `reload:page` comes first so the modal opens
+# against the fixtures.
+_SETTINGS_I_STATES = (
+    Screen(
+        "settings-llm-provider-shared",
+        "/",
+        steps=(
+            r"fixture:/api/llm-settings(\?.*)?$|llm_configurations.json",
+            "reload:page",
+            "settings:llm-provider",
+            "wait:.config-item.shared .admin-badge",
+        ),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes="own shared config (share badge), admin-shared config (admin badge, shared tint)",
+    ),
+    Screen(
+        "settings-ai-prompts-shared",
+        "/",
+        steps=(
+            r"fixture:/api/prompts(\?.*)?$|prompts_list.json",
+            "reload:page",
+            "settings:ai-prompts",
+            "wait:.config-item.shared .admin-badge",
+        ),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes="own shared prompt (share badge, collection tag), admin-shared prompt in the shared section",
+    ),
+    Screen(
+        "settings-media-sources-badges",
+        "/",
+        steps=(
+            r"fixture:/api/user-settings/media-sources$|media_sources.json",
+            "reload:page",
+            "settings:media-sources",
+            "wait:.source-card.shared .admin-badge",
+        ),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes="credentials / no-credentials / SSL-off meta badges, shared badge, admin-shared card",
+    ),
+    Screen(
+        "settings-system-statistics-health",
+        "/",
+        steps=(
+            r"fixture:/api/system/stats$|system_stats.json",
+            r"fixture:/api/search/reindex/status$|search_reindex_status.json",
+            r"fixture:/api/search/index-health$|search_index_health.json",
+            "reload:page",
+            "settings:system-statistics",
+            "wait:.search-health-dot.error",
+            "wait:.model-fallback-badge",
+        ),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes="green and red index-health dots, pending-reindex warning, diarization fallback badge",
+    ),
+)
+
 # --- S34 transcript states (lane s34: rendering of changes the base screens never reached) ------
 _FILE_DETAIL_STATES = (
     # Patched-data states: a state the seeded data lacks is added by patching the real answer
@@ -696,6 +806,25 @@ _SPEAKER_STATES = (
         ready=".speakers-page",
         notes="three suggestions whose confidence text is in the success, warning and error bands",
     ),
+    Screen(
+        "speakers-rename-propagation",
+        "/speakers?tab=inbox",
+        # Accepting a suggestion renames a speaker, which makes the page count a rename in flight
+        # (renamePropagation.ts `begin`). The batch-verify POST is answered 200 with no counters,
+        # which the page reads as success; no completion event ever arrives, so the header
+        # indicator stays up for the capture.
+        steps=(
+            _INBOX_FIXTURE,
+            "route:**/api/speaker-clusters/batch-verify|200",
+            "reload:page",
+            "wait:.inbox-item .action-btn.accept",
+            "click:.inbox-item .action-btn.accept",
+            "wait:[data-testid=rename-propagation-indicator]",
+        ),
+        masks=(*_SPEAKER_MASKS, ".rename-propagation-spinner"),
+        ready=".speakers-page",
+        notes="the header's rename-in-progress pill (accent tint, inline-start margin; ar mirrors it)",
+    ),
 )
 
 # --- search-hit highlights and the media scrim (plan 3.2, "Media, highlights and washes") ------
@@ -761,13 +890,93 @@ _HIGHLIGHT_STATES = (
     ),
 )
 
+# The seeded stack has one admin and no other account, and a row never shows actions for the viewer's
+# own account, so the action buttons never render from its data. `admin_users.json` copies the shape
+# of `GET /api/admin/users` (a list of user rows): row one is an OIDC account with local fallback
+# ON (the active fallback toggle) and an expiry set (the active expiration button), row two a
+# local admin (lock, unlock, force-logout, MFA reset, link identity, expiry editor).
+_ADMIN_USERS = (
+    r"fixture:/api/admin/users$|admin_users.json",
+    "settings:admin-users",
+    "wait:.users-table .icon-button",
+)
+
+
+def _admin_users(sid: str, *steps: str, notes: str) -> Screen:
+    return Screen(
+        id=f"admin-users-{sid}",
+        path="/",
+        steps=(*_ADMIN_USERS, *steps),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes=notes,
+    )
+
+
+_ADMIN_USER_STATES = (
+    _admin_users(
+        "actions",
+        notes="row buttons at rest: delete, recover, fallback toggle active (amber fill), "
+        "expiration active (blue fill), lock, unlock, force-logout, MFA reset, link identity",
+    ),
+    *(
+        _admin_users(
+            f"{name}-hover",
+            f"hover:.users-table tr:nth-child(2) .{name}-button",
+            notes=f"hover fill of the {name} action",
+        )
+        for name in (
+            "lock",
+            "unlock",
+            "mfa-reset",
+            "force-logout",
+            "link-identity",
+            "recover",
+            "delete",
+        )
+    ),
+    _admin_users(
+        "fallback-active-hover",
+        "hover:.users-table tr:nth-child(1) .fallback-toggle-button",
+        notes="the active fallback toggle on hover (warning-solid-hover, dark label)",
+    ),
+    _admin_users(
+        "expiration-editor",
+        "click:.users-table tr:nth-child(2) .expiration-button",
+        "wait:.expiration-editor",
+        notes="the date field with the save (success) and cancel (neutral) buttons",
+    ),
+    _admin_users(
+        "expiration-cancel-hover",
+        "click:.users-table tr:nth-child(2) .expiration-button",
+        "wait:.expiration-editor",
+        "hover:.expiration-cancel-button",
+        notes="neutral cancel hover fill",
+    ),
+    _admin_users(
+        "role-warning",
+        "click:.table-actions .btn-secondary",
+        "wait:#role",
+        "focus:#role",
+        "press:ArrowDown",
+        "press:ArrowDown",
+        "wait:.role-warning",
+        notes="super_admin chosen in the create form (needs a super_admin viewer; the seeded "
+        "admin is one)",
+    ),
+)
+
 SCREENS: tuple[Screen, ...] = (
     *_LOGGED_OUT,
+    _LOGIN_BANNER,
     *_APP,
     *_NAVBAR_GALLERY,
     *_SETTINGS,
     *_FILE_DETAIL_STATES,
     *_SPEAKER_STATES,
+    *_SETTINGS_I_STATES,
+    *_ADMIN_USER_STATES,
     *_HIGHLIGHT_STATES,
 )
 

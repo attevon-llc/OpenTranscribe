@@ -1,0 +1,44 @@
+{
+  "configurations": [
+    {
+      "uuid": "5a1c0000-0000-4000-8000-0000000000e1",
+      "user_id": "5a1c0000-0000-4000-8000-0000000000a1",
+      "name": "Team vLLM",
+      "provider": "vllm",
+      "model_name": "qwen-32b",
+      "base_url": "http://vllm:8000/v1",
+      "max_tokens": 8192,
+      "temperature": "0.3",
+      "is_active": true,
+      "test_status": "success",
+      "has_api_key": false,
+      "is_shared": true,
+      "shared_at": "2026-11-01T12:00:00",
+      "is_own": true,
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00"
+    }
+  ],
+  "shared_configurations": [
+    {
+      "uuid": "5a1c0000-0000-4000-8000-0000000000e2",
+      "user_id": "5a1c0000-0000-4000-8000-0000000000a2",
+      "name": "Shared OpenAI",
+      "provider": "openai",
+      "model_name": "gpt-4o",
+      "max_tokens": 4096,
+      "temperature": "0.3",
+      "is_active": false,
+      "has_api_key": true,
+      "is_shared": true,
+      "shared_at": "2026-11-01T12:00:00",
+      "owner_name": "Pat Admin",
+      "owner_role": "admin",
+      "is_own": false,
+      "created_at": "2026-11-01T12:00:00",
+      "updated_at": "2026-11-01T12:00:00"
+    }
+  ],
+  "active_configuration_id": "5a1c0000-0000-4000-8000-0000000000e1",
+  "total": 2
+}

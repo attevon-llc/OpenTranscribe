@@ -461,7 +461,7 @@
   }
 
   :global([data-theme='dark']) .source-card.shared {
-    background: rgba(96, 165, 250, 0.06);
+    background: rgba(var(--info-color-rgb), 0.06);
   }
 
   .shared-section-header {
@@ -514,16 +514,15 @@
     font-size: 0.6rem;
     text-transform: uppercase;
     font-weight: var(--font-weight-semibold);
-    background: rgba(34, 197, 94, 0.15);
-    color: #16a34a;
+    background: rgba(var(--success-color-rgb), 0.15);
+    color: var(--success-text);
     padding: 0.1rem 0.35rem;
     border-radius: var(--radius-sm);
     letter-spacing: 0.02em;
   }
 
   :global([data-theme='dark']) .shared-badge {
-    background: rgba(34, 197, 94, 0.2);
-    color: #4ade80;
+    background: rgba(var(--success-color-rgb), 0.2);
   }
 
   .admin-badge {
@@ -563,18 +562,18 @@
   }
 
   .meta-badge.creds {
-    background: rgba(34, 197, 94, 0.15);
-    color: #16a34a;
+    background: rgba(var(--success-color-rgb), 0.15);
+    color: var(--success-text);
   }
 
   .meta-badge.no-creds {
-    background: rgba(234, 179, 8, 0.15);
-    color: #ca8a04;
+    background: rgba(var(--warning-color-rgb), 0.15);
+    color: var(--warning-text);
   }
 
   .meta-badge.ssl-off {
-    background: rgba(239, 68, 68, 0.15);
-    color: #dc2626;
+    background: rgba(var(--error-color-rgb), 0.15);
+    color: var(--error-text);
   }
 
   .meta-badge.http-plain {

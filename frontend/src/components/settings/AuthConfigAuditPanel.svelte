@@ -284,32 +284,17 @@
     text-transform: uppercase;
     letter-spacing: 0.025em;
     background: rgba(var(--accent-rgb), 0.15);
-    color: rgb(37, 99, 235);
+    color: var(--info-text);
   }
 
   .change-type.create {
-    background: rgba(34, 197, 94, 0.15);
-    color: rgb(22, 163, 74);
+    background: rgba(var(--success-color-rgb), 0.15);
+    color: var(--success-text);
   }
 
   .change-type.delete {
-    background: rgba(239, 68, 68, 0.15);
-    color: rgb(220, 38, 38);
-  }
-
-  :global([data-theme='dark']) .change-type {
-    background: rgba(var(--accent-rgb), 0.2);
-    color: rgb(96, 165, 250);
-  }
-
-  :global([data-theme='dark']) .change-type.create {
-    background: rgba(34, 197, 94, 0.2);
-    color: rgb(74, 222, 128);
-  }
-
-  :global([data-theme='dark']) .change-type.delete {
-    background: rgba(239, 68, 68, 0.2);
-    color: rgb(248, 113, 113);
+    background: rgba(var(--error-color-rgb), 0.15);
+    color: var(--error-text);
   }
 
   .more-actions {

@@ -175,7 +175,7 @@ Canonical names were chosen by measured usage (`--text-secondary` 712 uses, `--b
 | `--primary-on-surface` | #1d4ed8 | #93c5fd | exists (blue text/icon on a surface) |
 | `--primary-light` | #dbeafe | #1e3a8a | exists (selected-row fill) |
 | `--primary-color-rgb` | 37, 99, 235 | 37, 99, 235 | exists |
-| `--accent-rgb` | 59, 130, 246 | 59, 130, 246 | **new**, frozen. Lane 3.0 (D2) changes it to `var(--primary-color-rgb)` in both blocks. |
+| `--accent-rgb` | `var(--primary-color-rgb)` (37, 99, 235) | same (follows the theme) | **flipped** in lane 3.0 (D2). Declared once on `:root`, like the other `var()` aliases: `data-theme` is on `<html>`, so it resolves to the dark value there. It was frozen at 59, 130, 246 through Phases 1 and 2. |
 
 **Status families.** Each family has the same six roles. Add the missing ones as new tokens and
 leave the existing ones in place.
@@ -198,9 +198,33 @@ found literals that had no role. The first lane that uses one adds it to both `t
 |---|---|---|---|---|
 | `--highlight-search` | rgba(250,204,21,.85) | same | **new** | search-hit ring or mark in the transcript and segment speaker dropdown (`styles/search.css`, SegmentSpeakerDropdown) |
 | `--highlight-current` | rgba(249,115,22,.9) | same | **new** | the current search hit |
+| `--highlight-search-ring` | #a16207 | #facc15 | **new** (lane 3.0) | the ring around a search hit: the speaker-chip ring and the current transcript hit's border. 4.92:1 on white, 9.55:1 on the dark card. A fill is not a ring: the yellow fill as a ring was 1.44:1 on white (SC 1.4.11) |
+| `--highlight-current-ring` | #c2410c | #f97316 | **new** (lane 3.0) | the ring around the current hit (`.current-match`, speaker chip). 5.18:1 on white, 5.22:1 on the dark card (the fill as a ring was 2.55:1 light, 2.93:1 dark) |
 | `--media-scrim` | rgba(0,0,0,.45) | same | **new** | overlay on an image or avatar so white text or icons over it stay legible. It is not a modal backdrop: `--modal-backdrop` is .5 in light and .7 in dark |
 | `--on-solid-wash` | rgba(0,0,0,.2) | same | **new** | translucent button background on a `--primary-color` or `-solid` header (UploadManager header buttons). A darkening wash: white text on the white .2 wash over #2563eb was 3.7:1 (fails AA); on black .2 it is about 7:1 |
 | `--on-solid-wash-hover` | rgba(0,0,0,.3) | same | **new** | the hover state of the above |
+
+**Tooltip, code syntax and QR.** Added by the lead on 2026-11-11 for lanes 3.5 to 3.8 (LLMConfigModal,
+PromptSettings, ChatMarkdown, MfaEnrollment), defined in lane 3.0; those lanes switch to them.
+
+| Token | Light | Dark | Status | Use |
+|---|---|---|---|---|
+| `--tooltip-bg` | #1a1a1a | #475569 | **new** | hover tooltip chip (`.info-tooltip::after`). Dark is a step lighter than the card, as a raised surface is in a dark theme; #1a1a1a was darker than the dark card. The tooltip shadow is not a token: Phase 4 snaps it |
+| `--tooltip-text` | `var(--text-on-solid)` | same | **new** | tooltip text: 17.4:1 light, 7.58:1 dark |
+| `--syntax-keyword` | #0550ae | #79b8ff | **new** | highlight.js keyword, selector tag, type |
+| `--syntax-string` | #116329 | #85e89d | **new** | string, regexp, template tag, symbol |
+| `--syntax-number` | #953800 | #ffab70 | **new** | number, literal, variable, built-in |
+| `--syntax-title` | #0e6e7a | #56d4dd | **new** | title, section, name, attribute |
+| `--syntax-comment` | #57606a | #959da5 | **new** | comment, quote |
+| `--syntax-meta` | #6e5600 | #e3c26b | **new** | meta, tag, substitution, params |
+| `--syntax-deletion` | #b42318 | #fd8c73 | **new** | diff deletion |
+| `--syntax-addition` | #116329 | #85e89d | **new** | diff addition |
+| `--qr-surface` | #ffffff | #ffffff | **new**, theme-invariant on purpose | QR code background (MfaEnrollment): a scanner needs dark modules on a light quiet zone, so it stays white in dark like the regulatory ClassificationBanner |
+
+The `--syntax-*` family is a code palette, a separate role from UI colour (the values are
+ChatMarkdown's former local `--hl-*`, unchanged). Every one clears 4.5:1 on `--surface-color`,
+the code-block background, in both themes (lowest: comment 6.39:1 light, 5.32:1 dark), pinned in
+`contrast-pairs.test.ts` with the tooltip pair.
 
 ### 3.3 Spacing (new; theme-independent; rem, 4 px base)
 
@@ -272,7 +296,8 @@ Phase 4 snaps (D8): 0.8rem → `sm`, 0.85rem → `md`, 0.9rem → `md`, 0.95rem 
 ### 3.6 Elevation (new; both themes)
 
 Values were chosen to equal the most frequent literals exactly (section 3.11), so Phase 1 is
-pixel-identical. The proposed dark values are applied in lane 3.0 (D13).
+pixel-identical. The dark values were applied in lane 3.0 (D13); `token-parity.test.ts` holds
+every black shadow stronger in dark with the same geometry.
 
 | Token | Light (= Phase 1 dark) | Dark after D13 | Replaces exactly | Uses |
 |---|---|---|---|---|
@@ -1084,8 +1109,19 @@ master merge (repo plan 0b point 10), so its conflict window is small.
 
 **3.0 Token flips.**
 - D2: `--accent-rgb: var(--primary-color-rgb)` in both blocks; then the 37
-  `rgba(var(--primary-color-rgb),…)` shadow twins → `--shadow-primary(-hover)`.
-- D13: dark shadow values per 3.6; `--card-shadow: var(--shadow-sm)`.
+  `rgba(var(--primary-color-rgb),…)` shadow twins → `--shadow-primary(-hover)`. (Done. The
+  Phase 2 button lanes had already removed 33 of the 37; the last 4 were in SettingsModal and
+  UserManagementTable. `token-parity.test.ts` now fails on any box-shadow that restates a
+  `--shadow-*` value, in either the accent or the primary spelling.)
+- D13: dark shadow values per 3.6; `--card-shadow: var(--shadow-sm)`. (Done: the dark block
+  carries the "Dark after D13" column, `--card-shadow` is one `var(--shadow-sm)` on `:root`, and
+  the dark `.status-card` rule in UserFileStatus, now equal to the token, is deleted.)
+- Find-mark contrast (added 2026-11-11): the light find rings were 1.44:1 and 2.55:1 on white (the fill
+  tokens drawn as rings) and the dark current transcript mark carried its text at 4.03:1. A fill and a
+  ring are separate roles now: rings use `--highlight-search-ring` / `--highlight-current-ring` (3.2) in
+  `search.css` and SegmentSpeakerDropdown, the fills keep their values, and the dark current mark is
+  50% of the fill (4.87:1), not 59%. `contrast-pairs.test.ts` reads every mark (4.5:1 for
+  `--text-primary`) and ring (3:1) in both files and fails a ring drawn with a fill token.
 - All screens. Expected: blue tints shift by ΔE of about 1 to 2 (both themes); dark-mode shadows
   deepen.
 - Opus reviewer.

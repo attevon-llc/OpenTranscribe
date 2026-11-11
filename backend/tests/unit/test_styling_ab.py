@@ -593,3 +593,34 @@ def test_both_sides_log_in_before_either_side_captures(monkeypatch: pytest.Monke
     ab.measure(Side("a"), Side("b"), screen, "en-light", None, args, set())
     assert events[:2] == ["login a", "login b"]
     assert events.index("login b") < events.index("capture a")
+
+
+def test_ai_suggestions_fixture_has_exactly_the_keys_the_response_model_sends() -> None:
+    """The fixture copies `TopicSuggestionResponse` (+ `uuid` from UUIDBaseSchema)."""
+    import ast
+
+    tree = ast.parse((_APP_DIR / "schemas/topic.py").read_text(encoding="utf-8"))
+    cls = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ClassDef) and n.name == "TopicSuggestionResponse"
+    )
+    fields = {
+        n.target.id
+        for n in cls.body
+        if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)
+    }
+    fixture = screens.load_fixture("file_suggestions_confidence.json")
+    assert isinstance(fixture, dict)
+    assert set(fixture) == fields | {"uuid"}
+    for kind in ("suggested_tags", "suggested_collections"):
+        assert {row["name"] for row in fixture[kind]}
+        assert {"high", "medium", "low"} == {
+            "high" if r["confidence"] >= 0.7 else "medium" if r["confidence"] >= 0.5 else "low"
+            for r in fixture[kind]
+        } or kind == "suggested_collections"
+    assert screens.validate() == []
+    steps = screens.by_id()["file-detail-ai-chips"].steps
+    assert steps.index("reload:page") > max(
+        i for i, st in enumerate(steps) if st.startswith("fixture:")
+    )

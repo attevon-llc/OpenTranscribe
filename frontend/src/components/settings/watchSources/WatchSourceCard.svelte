@@ -175,16 +175,16 @@
     color: var(--primary-on-surface);
   }
   .badge-success {
-    background: rgba(34, 197, 94, 0.15);
+    background: rgba(var(--success-color-rgb), 0.15);
     color: var(--success-text);
   }
   .badge-error {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(var(--error-color-rgb), 0.15);
     color: var(--error-text);
   }
   .badge-running {
-    background: rgba(234, 179, 8, 0.15);
-    color: #ca8a04;
+    background: rgba(var(--warning-color-rgb), 0.15);
+    color: var(--warning-text);
   }
   .badge-idle {
     background: var(--button-hover);

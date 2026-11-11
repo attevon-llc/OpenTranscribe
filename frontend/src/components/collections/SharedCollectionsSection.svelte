@@ -77,16 +77,6 @@
     text-transform: capitalize;
   }
 
-  :global([data-theme='dark']) .badge.shared-permission {
-    background: rgba(var(--accent-rgb), 0.15);
-    color: #93c5fd;
-  }
-
-  :global([data-theme='dark']) .collection-card {
-    background: var(--card-background);
-    border-color: var(--border-color);
-  }
-
   /* Mobile: tap-friendly buttons */
   @media (max-width: 768px) {
     .btn-add {

@@ -1213,25 +1213,25 @@
   }
 
   .oidc-button {
-    border-color: #4d4d4d;
+    border-color: var(--control-border);
   }
 
   .oidc-button:hover:not(:disabled) {
-    border-color: #666;
-    background-color: rgba(77, 77, 77, 0.05);
+    border-color: var(--text-secondary);
+    background-color: var(--button-hover);
   }
 
   .pki-button {
-    border-color: #059669;
+    border-color: var(--success-solid);
   }
 
   .pki-button:hover:not(:disabled) {
-    border-color: #10b981;
-    background-color: rgba(5, 150, 105, 0.05);
+    border-color: var(--success-color);
+    background-color: rgba(var(--success-color-rgb), 0.05);
   }
 
   .pki-button svg {
-    color: #059669;
+    color: var(--success-text);
   }
 
   /* Banner offset for classification banner */

@@ -162,11 +162,11 @@
     color: var(--text-secondary);
   }
   .badge-success {
-    background: rgba(34, 197, 94, 0.15);
+    background: rgba(var(--success-color-rgb), 0.15);
     color: var(--success-text);
   }
   .badge-error {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(var(--error-color-rgb), 0.15);
     color: var(--error-text);
   }
   .linked-badge {

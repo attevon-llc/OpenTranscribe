@@ -480,13 +480,8 @@
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    background: rgba(245, 158, 11, 0.12);
-    color: #d97706;
-  }
-
-  :global([data-theme='dark']) .admin-badge {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
+    background: rgba(var(--warning-color-rgb), 0.12);
+    color: var(--warning-text);
   }
 
   .active-badge {
@@ -498,8 +493,8 @@
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    background: rgba(16, 185, 129, 0.12);
-    color: #10b981;
+    background: rgba(var(--success-color-rgb), 0.12);
+    color: var(--success-text);
   }
 
   .shared-card-preview {

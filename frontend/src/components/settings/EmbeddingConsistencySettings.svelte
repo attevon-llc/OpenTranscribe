@@ -415,8 +415,8 @@
     gap: var(--space-4);
     padding: var(--space-4);
     border-radius: var(--radius-lg);
-    background: rgba(34, 197, 94, 0.08);
-    border: 1px solid rgba(34, 197, 94, 0.3);
+    background: rgba(var(--success-color-rgb), 0.08);
+    border: 1px solid rgba(var(--success-color-rgb), 0.3);
     margin-bottom: var(--space-4);
   }
 
@@ -433,8 +433,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
+    background: rgba(var(--success-color-rgb), 0.15);
+    color: var(--success-text);
   }
 
   .action-box.running .action-icon {

@@ -23,24 +23,24 @@
     <div class="icon sun-icon">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none">
         <!-- Sun center circle -->
-        <circle cx="12" cy="12" r="4" fill="#FFD700" stroke="#FFD700" stroke-width="2"/>
+        <circle cx="12" cy="12" r="4" fill="currentColor" stroke="currentColor" stroke-width="2"/>
 
         <!-- Perfectly symmetrical rays -->
         <!-- Vertical rays -->
-        <line x1="12" y1="2" x2="12" y2="4" stroke="#FFD700" stroke-width="2" stroke-linecap="round"/>
-        <line x1="12" y1="20" x2="12" y2="22" stroke="#FFD700" stroke-width="2" stroke-linecap="round"/>
+        <line x1="12" y1="2" x2="12" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <line x1="12" y1="20" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 
         <!-- Horizontal rays -->
-        <line x1="2" y1="12" x2="4" y2="12" stroke="#FFD700" stroke-width="2" stroke-linecap="round"/>
-        <line x1="20" y1="12" x2="22" y2="12" stroke="#FFD700" stroke-width="2" stroke-linecap="round"/>
+        <line x1="2" y1="12" x2="4" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <line x1="20" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 
         <!-- Diagonal rays - top left to bottom right -->
-        <line x1="6.34" y1="6.34" x2="4.93" y2="4.93" stroke="#FFD700" stroke-width="2" stroke-linecap="round"/>
-        <line x1="19.07" y1="19.07" x2="17.66" y2="17.66" stroke="#FFD700" stroke-width="2" stroke-linecap="round"/>
+        <line x1="6.34" y1="6.34" x2="4.93" y2="4.93" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <line x1="19.07" y1="19.07" x2="17.66" y2="17.66" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 
         <!-- Diagonal rays - top right to bottom left -->
-        <line x1="6.34" y1="17.66" x2="4.93" y2="19.07" stroke="#FFD700" stroke-width="2" stroke-linecap="round"/>
-        <line x1="19.07" y1="4.93" x2="17.66" y2="6.34" stroke="#FFD700" stroke-width="2" stroke-linecap="round"/>
+        <line x1="6.34" y1="17.66" x2="4.93" y2="19.07" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <line x1="19.07" y1="4.93" x2="17.66" y2="6.34" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
       </svg>
     </div>
 
@@ -48,7 +48,7 @@
     <div class="icon moon-icon">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none">
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
-          fill="#4B5563" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </div>
 
@@ -81,21 +81,14 @@
     cursor: pointer;
     width: 100%;
     height: 100%;
-    background-color: #f1f5f9; /* Light mode track */
+    background-color: var(--surface-secondary);
     border-radius: 34px;
     transition: all var(--duration-slow) ease;
     /* Ensure strong outline is visible in both modes */
-    border: 2px solid #cbd5e1;
-    box-shadow: 0 0 3px rgba(0, 0, 0, 0.1);
+    border: 2px solid var(--control-border);
+    box-shadow: var(--shadow-sm);
     display: flex;
     align-items: center;
-  }
-
-  /* The checked state for the track */
-  input:checked + .toggle-track {
-    background-color: #1e293b; /* Dark mode track */
-    border-color: #64748b; /* Visible border in dark mode */
-    box-shadow: 0 0 4px rgba(255, 255, 255, 0.2);
   }
 
   /* Icons container and positioning */
@@ -114,6 +107,7 @@
 
   /* Position sun on left side */
   .sun-icon {
+    color: var(--warning-solid);
     left: 7px;
     opacity: 1;
     transition: opacity var(--duration-slow) ease;
@@ -121,6 +115,7 @@
 
   /* Position moon on right side */
   .moon-icon {
+    color: var(--text-secondary);
     right: 7px;
     opacity: 1;
     transition: opacity var(--duration-slow) ease;
@@ -134,9 +129,9 @@
     width: 22px;
     height: 22px;
     border-radius: var(--radius-round);
-    background-color: white;
+    background-color: var(--text-on-solid);
     transition: transform var(--duration-slow) ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-md);
     z-index: 2;
     transform: translateY(-50%); /* Perfect vertical centering */
   }

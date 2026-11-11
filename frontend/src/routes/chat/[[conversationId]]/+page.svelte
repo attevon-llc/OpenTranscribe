@@ -857,7 +857,7 @@
       inset: var(--navbar-height) 0 0 0;
       z-index: 29;
       border: none;
-      background-color: rgba(0, 0, 0, 0.4);
+      background-color: var(--modal-backdrop);
       cursor: pointer;
     }
 

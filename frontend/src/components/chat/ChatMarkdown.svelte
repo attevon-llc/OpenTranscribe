@@ -170,8 +170,8 @@
     --hl-title: #0e6e7a;
     --hl-comment: #57606a;
     --hl-meta: #6e5600;
-    --hl-deletion: #b42318;
-    --hl-addition: #116329;
+    --hl-deletion: var(--error-text);
+    --hl-addition: var(--success-text);
   }
 
   :global([data-theme='dark']) .chat-markdown {
@@ -181,8 +181,6 @@
     --hl-title: #56d4dd;
     --hl-comment: #959da5;
     --hl-meta: #e3c26b;
-    --hl-deletion: #fd8c73;
-    --hl-addition: #85e89d;
   }
 
   .chat-markdown :global(p) {

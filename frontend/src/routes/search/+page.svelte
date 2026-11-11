@@ -1119,27 +1119,15 @@
   }
 
   .neural-status.active {
-    background: rgba(16, 185, 129, 0.08);
-    border-color: rgba(16, 185, 129, 0.25);
-    color: #059669;
-  }
-
-  :global([data-theme='dark']) .neural-status.active {
-    background: rgba(16, 185, 129, 0.1);
-    border-color: rgba(16, 185, 129, 0.3);
-    color: #34d399;
+    background: rgba(var(--success-color-rgb), 0.08);
+    border-color: rgba(var(--success-color-rgb), 0.25);
+    color: var(--success-text);
   }
 
   .neural-status:not(.active) {
-    background: rgba(245, 158, 11, 0.08);
-    border-color: rgba(245, 158, 11, 0.25);
-    color: #d97706;
-  }
-
-  :global([data-theme='dark']) .neural-status:not(.active) {
-    background: rgba(245, 158, 11, 0.1);
-    border-color: rgba(245, 158, 11, 0.3);
-    color: #fbbf24;
+    background: rgba(var(--warning-color-rgb), 0.08);
+    border-color: rgba(var(--warning-color-rgb), 0.25);
+    color: var(--warning-text);
   }
 
   .neural-dot {

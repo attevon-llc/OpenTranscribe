@@ -28,32 +28,17 @@
   }
 
   .role-owner {
-    background-color: rgba(251, 191, 36, 0.15);
-    color: #92400e;
+    background-color: rgba(var(--warning-color-rgb), 0.15);
+    color: var(--warning-text);
   }
 
   .role-admin {
     background-color: rgba(var(--accent-rgb), 0.12);
-    color: #1e40af;
+    color: var(--primary-on-surface);
   }
 
   .role-member {
     background-color: var(--background-color);
     color: var(--text-secondary);
-  }
-
-  :global([data-theme='dark']) .role-owner {
-    background-color: rgba(251, 191, 36, 0.15);
-    color: #fcd34d;
-  }
-
-  :global([data-theme='dark']) .role-admin {
-    background-color: rgba(var(--accent-rgb), 0.15);
-    color: #93c5fd;
-  }
-
-  :global([data-theme='dark']) .role-member {
-    background-color: rgba(107, 114, 128, 0.2);
-    color: #d1d5db;
   }
 </style>

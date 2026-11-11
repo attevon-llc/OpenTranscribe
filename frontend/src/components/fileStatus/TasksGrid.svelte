@@ -153,13 +153,9 @@
   }
 
   .info-button:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--button-hover);
     color: var(--primary-on-surface);
     transform: scale(1.1);
-  }
-
-  :global([data-theme='dark']) .info-button:hover {
-    background-color: rgba(255, 255, 255, 0.1);
   }
 
   .info-button.small {
@@ -211,10 +207,6 @@
 
   .tasks-table tbody tr:hover {
     background: var(--table-row-hover);
-  }
-
-  :global([data-theme='dark']) .tasks-table tbody tr:hover {
-    background: rgba(255, 255, 255, 0.03);
   }
 
   .task-type-cell {

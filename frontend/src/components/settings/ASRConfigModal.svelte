@@ -528,8 +528,6 @@
     flex-shrink: 0;
   }
 
-
-
   .form-input, .form-select {
     padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-sm);
@@ -583,8 +581,8 @@
     gap: var(--space-2);
     padding: 0.6rem 0.8rem;
     margin: var(--space-2) 0;
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background: rgba(var(--warning-color-rgb), 0.1);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.3);
     border-radius: var(--radius-md);
     font-size: 0.8rem;
     color: var(--warning-text);
@@ -633,15 +631,15 @@
   }
 
   .test-result.success {
-    background: rgba(16, 185, 129, 0.1);
-    color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    background: rgba(var(--success-color-rgb), 0.1);
+    color: var(--success-text);
+    border: 1px solid rgba(var(--success-color-rgb), 0.2);
   }
 
   .test-result.failure {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background: rgba(var(--error-color-rgb), 0.1);
+    color: var(--error-text);
+    border: 1px solid rgba(var(--error-color-rgb), 0.2);
   }
 
   .share-toggle-row {
@@ -672,7 +670,6 @@
     display: flex;
     gap: var(--space-3);
   }
-
 
   button:disabled {
     opacity: 0.6;

@@ -378,10 +378,10 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    margin-left: var(--space-2);
+    margin-inline-start: var(--space-2);
     padding: var(--space-1) 0.65rem;
     border-radius: var(--radius-pill);
-    background-color: rgba(var(--primary-color-rgb), 0.1);
+    background-color: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     font-size: 0.78rem;
     font-weight: var(--font-weight-medium);
@@ -390,7 +390,7 @@
   .rename-propagation-spinner {
     width: 0.8rem;
     height: 0.8rem;
-    border: 2px solid rgba(var(--primary-color-rgb), 0.3);
+    border: 2px solid rgba(var(--accent-rgb), 0.3);
     border-top-color: var(--primary-color);
     border-radius: var(--radius-round);
     animation: rename-propagation-spin 0.7s linear infinite;

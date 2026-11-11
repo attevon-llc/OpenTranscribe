@@ -886,7 +886,7 @@
   }
 
   .experimental-badge {
-    background: rgba(245, 158, 11, 0.12);
+    background: rgba(var(--warning-color-rgb), 0.12);
     color: var(--warning-text);
   }
 
@@ -898,8 +898,8 @@
 
   .test-badge { display: inline-flex; align-items: center; gap: var(--space-1); font-size: 0.7rem; }
   .cap-mark { display: inline-flex; margin-inline-end: var(--space-1); }
-  .test-badge.test-success { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-  .test-badge.test-failed { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+  .test-badge.test-success { background: rgba(var(--success-color-rgb), 0.1); color: var(--success-text); }
+  .test-badge.test-failed { background: rgba(var(--error-color-rgb), 0.1); color: var(--error-text); }
 
   .config-name {
     font-weight: var(--font-weight-medium);
@@ -931,7 +931,7 @@
     border-left: 3px solid var(--info-color);
     background: rgba(var(--primary-color-rgb), 0.04);
   }
-  :global([data-theme='dark']) .config-card.shared { background: rgba(96, 165, 250, 0.06); }
+  :global([data-theme='dark']) .config-card.shared { background: rgba(var(--info-color-rgb), 0.06); }
 
   .share-badge {
     display: inline-flex; align-items: center;
@@ -941,12 +941,12 @@
     background: rgba(var(--primary-color-rgb), 0.12); color: var(--primary-on-surface);
     margin-left: var(--space-2); vertical-align: middle;
   }
-  :global([data-theme='dark']) .share-badge { background: rgba(var(--primary-color-rgb), 0.2); color: #60a5fa; }
+  :global([data-theme='dark']) .share-badge { background: rgba(var(--primary-color-rgb), 0.2); }
 
   .admin-badge {
-    background: rgba(245, 158, 11, 0.12); color: #d97706;
+    background: rgba(var(--warning-color-rgb), 0.12); color: var(--warning-text);
   }
-  :global([data-theme='dark']) .admin-badge { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+  :global([data-theme='dark']) .admin-badge { background: rgba(var(--warning-color-rgb), 0.2); }
 
   .shared-by {
     font-size: 0.725rem; color: var(--text-muted);
@@ -1020,7 +1020,7 @@
   }
 
   .cap-no {
-    background: rgba(239, 68, 68, 0.08);
+    background: rgba(var(--error-color-rgb), 0.08);
     color: var(--error-text);
   }
 
@@ -1055,12 +1055,11 @@
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    background: rgba(245, 158, 11, 0.12);
-    color: #d97706;
+    background: rgba(var(--warning-color-rgb), 0.12);
+    color: var(--warning-text);
   }
   :global([data-theme='dark']) .admin-badge-tag {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
+    background: rgba(var(--warning-color-rgb), 0.2);
   }
 
   @media (max-width: 768px) {

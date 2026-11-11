@@ -998,7 +998,6 @@
 
   :global([data-theme='dark']) .collection-tag {
     background: rgba(var(--primary-color-rgb), 0.2);
-    color: #60a5fa;
   }
 
   .prompt-text-header {
@@ -1126,7 +1125,7 @@
   }
 
   :global([data-theme='dark']) .config-item.shared {
-    background: rgba(96, 165, 250, 0.06);
+    background: rgba(var(--info-color-rgb), 0.06);
   }
 
   .share-badge {
@@ -1143,8 +1142,7 @@
   }
 
   :global([data-theme='dark']) .share-badge {
-    background: rgba(96, 165, 250, 0.15);
-    color: #60a5fa;
+    background: rgba(var(--info-color-rgb), 0.15);
   }
 
   .admin-badge {
@@ -1154,15 +1152,14 @@
     border-radius: var(--radius-xl);
     font-size: 0.625rem;
     font-weight: var(--font-weight-semibold);
-    background: rgba(245, 158, 11, 0.12);
-    color: #d97706;
+    background: rgba(var(--warning-color-rgb), 0.12);
+    color: var(--warning-text);
     text-transform: uppercase;
     letter-spacing: 0.02em;
   }
 
   :global([data-theme='dark']) .admin-badge {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
+    background: rgba(var(--warning-color-rgb), 0.2);
   }
 
   .shared-by {
@@ -1176,10 +1173,6 @@
     color: var(--primary-on-surface);
   }
 
-  :global([data-theme='dark']) .shared-section-header h4 {
-    color: #60a5fa;
-  }
-
   /* Tag pills */
   .tag-pills {
     display: flex;
@@ -1190,7 +1183,6 @@
 
   :global([data-theme='dark']) .tag-pill {
     background: rgba(var(--primary-color-rgb), 0.2);
-    color: #60a5fa;
   }
 
   .toggle-label {

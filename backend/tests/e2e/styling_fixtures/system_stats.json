@@ -1,0 +1,31 @@
+{
+  "users": {"total": 3, "new": 0},
+  "files": {"total": 10, "new": 1, "total_duration": 3600, "segments": 120},
+  "tasks": {"total": 10, "pending": 0, "running": 0, "completed": 9, "failed": 1, "success_rate": 90, "avg_processing_time": 42, "recent": []},
+  "speakers": {"total": 4, "avg_per_file": 1.5},
+  "models": {
+    "whisper": {"name": "large-v3", "description": "Whisper large-v3", "purpose": "Transcription"},
+    "diarization": {
+      "name": "pyannote",
+      "description": "PyAnnote 3.1",
+      "purpose": "Diarization",
+      "configured_backend": "diar-native",
+      "configured_description": "Native diarizer",
+      "effective_backend": "pyannote",
+      "using_fallback": true
+    }
+  },
+  "system": {
+    "cpu": {"total_percent": "10%", "per_cpu": [10, 10], "logical_cores": 2, "physical_cores": 2},
+    "memory": {"total": "16 GB", "available": "8 GB", "used": "8 GB", "percent": "50%"},
+    "disk": {"total": "500 GB", "used": "100 GB", "free": "400 GB", "percent": "20%"},
+    "gpus": [{"available": false, "name": "N/A", "memory_total": "N/A", "memory_used": "N/A", "memory_free": "N/A", "memory_percent": "N/A", "utilization_percent": "N/A", "temperature_celsius": null}],
+    "uptime": "1 day",
+    "platform": "Linux",
+    "python_version": "3.13"
+  },
+  "throughput": {"total_completed": 9, "last_1h": 1, "last_3h": 2, "rate_1h": 1, "rate_3h": 0.7},
+  "eta": {"remaining": 0, "files_per_hour": 1, "hours_remaining": null, "est_completion": null},
+  "file_timing": {"files": 9, "avg_secs": 42, "min_secs": 10, "max_secs": 90, "avg_mins": 0.7},
+  "queues": {"gpu": 0, "download": 0, "nlp": 0, "embedding": 0, "cpu": 0, "utility": 0, "total": 0}
+}

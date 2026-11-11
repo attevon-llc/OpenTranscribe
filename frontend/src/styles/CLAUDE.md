@@ -45,9 +45,14 @@ tokens (`--field-*`, `--slider-*`) stay beside their stylesheet and are defined 
 
 Families: colour roles (light on `:root`, dark on `[data-theme='dark']`; status families `error|warning|success|info`
 with `-color`, `-solid`, `-text`, `-bg`, `-border`), `--space-*` (rem, 4px base), `--radius-*` (px), `--font-size-*`,
-`--shadow-*` (both themes), `--duration-*`, `--z-*`. Search hits use `--highlight-search` / `--highlight-current`
-(the ring; a translucent mark is `color-mix(in srgb, var(--highlight-search) N%, transparent)`, N% of the token's
-alpha), and an overlay on a picture or avatar uses `--media-scrim` (not `--modal-backdrop`). Scales are theme-independent and are not redeclared in dark
+`--shadow-*` (both themes), `--duration-*`, `--z-*`. Search hits have two roles: a FILL mixed down from
+`--highlight-search` / `--highlight-current` (`color-mix(in srgb, var(--highlight-search) N%, transparent)`, N% of the
+token's alpha; text sits on it) and a RING (border, box-shadow) in `--highlight-search-ring` / `--highlight-current-ring`,
+which reach 3:1 against the surface (SC 1.4.11). Never draw a ring with a fill token or fill with a ring token:
+`contrast-pairs.test.ts` reads every mark and ring in `search.css` and SegmentSpeakerDropdown and checks both roles.
+An overlay on a picture or avatar uses `--media-scrim` (not `--modal-backdrop`).
+A tooltip chip uses `--tooltip-bg` / `--tooltip-text`; code highlighting uses the `--syntax-*` palette (a code palette
+is its own role, never a UI colour); a QR code sits on `--qr-surface`, white in both themes on purpose. Scales are theme-independent and are not redeclared in dark
 (`token-parity.test.ts`); `contrast-pairs.test.ts` checks AA for every text and control pair.
 
 Rules for a component `<style>`:

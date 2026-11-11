@@ -95,29 +95,20 @@
   }
 
   .snippet :global(mark.semantic) {
-    background: rgba(245, 158, 11, 0.2);
+    background: rgba(var(--warning-color-rgb), 0.2);
     color: inherit;
     padding: 0.05em 0.15em;
     border-radius: var(--radius-xs);
     font-weight: var(--font-weight-medium);
   }
 
-  :global([data-theme='dark']) .snippet :global(mark.semantic) {
-    background: rgba(251, 191, 36, 0.25);
-  }
-
   .snippet.semantic-snippet {
-    background: rgba(245, 158, 11, 0.08);
-    border-inline-start: 3px solid rgba(245, 158, 11, 0.4);
+    background: rgba(var(--warning-color-rgb), 0.08);
+    border-inline-start: 3px solid rgba(var(--warning-color-rgb), 0.4);
     padding: var(--space-1) var(--space-2);
     border-start-start-radius: 0;
     border-end-start-radius: 0;
     border-start-end-radius: var(--radius-sm);
     border-end-end-radius: var(--radius-sm);
-  }
-
-  :global([data-theme='dark']) .snippet.semantic-snippet {
-    background: rgba(251, 191, 36, 0.1);
-    border-inline-start-color: rgba(251, 191, 36, 0.35);
   }
 </style>

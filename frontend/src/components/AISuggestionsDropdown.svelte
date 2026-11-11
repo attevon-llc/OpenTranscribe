@@ -21,16 +21,10 @@
     isExpanded = !isExpanded;
   }
 
-  function getConfidenceColor(confidence: number): string {
-    if (confidence >= 0.7) return '#10b981'; // Green
-    if (confidence >= 0.5) return '#f59e0b'; // Yellow/Orange
-    return '#ef4444'; // Red
-  }
-
-  function getConfidenceBackground(confidence: number): string {
-    if (confidence >= 0.7) return 'rgba(16, 185, 129, 0.1)'; // Light green
-    if (confidence >= 0.5) return 'rgba(245, 158, 11, 0.1)'; // Light yellow
-    return 'rgba(239, 68, 68, 0.1)'; // Light red
+  function getConfidenceLevel(confidence: number): 'high' | 'medium' | 'low' {
+    if (confidence >= 0.7) return 'high';
+    if (confidence >= 0.5) return 'medium';
+    return 'low';
   }
 
   function handleAccept(suggestion: Suggestion) {
@@ -130,11 +124,7 @@
           <div class="suggestions-chips">
             {#each suggestions as suggestion, i (i)}
               <div
-                class="suggestion-chip"
-                style="
-                  background: {getConfidenceBackground(suggestion.confidence)};
-                  border-color: {getConfidenceColor(suggestion.confidence)};
-                "
+                class="suggestion-chip confidence-{getConfidenceLevel(suggestion.confidence)}"
                 title={suggestion.rationale || `${Math.round(suggestion.confidence * 100)}%`}
               >
                 <button
@@ -320,19 +310,19 @@
     background: var(--text-secondary);
     color: var(--surface-color);
     border: 1px solid var(--text-secondary);
-    box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
+    box-shadow: var(--shadow-md);
   }
 
   .btn-cancel:hover {
     background: var(--text-color);
     border: 1px solid var(--text-color);
     transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
+    box-shadow: var(--shadow-lg);
   }
 
   .btn-cancel:active {
     transform: scale(1);
-    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
+    box-shadow: var(--shadow-md);
   }
 
   /* Chips Layout */
@@ -343,13 +333,29 @@
     gap: var(--space-1-5);
   }
 
+  .confidence-high {
+    --chip-border: var(--success-solid);
+    --chip-bg: var(--success-bg);
+  }
+
+  .confidence-medium {
+    --chip-border: var(--warning-solid);
+    --chip-bg: var(--warning-bg);
+  }
+
+  .confidence-low {
+    --chip-border: var(--error-solid);
+    --chip-bg: var(--error-bg);
+  }
+
   .suggestion-chip {
+    background: var(--chip-bg);
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-1) var(--space-1-5) var(--space-1) var(--space-1);
     border-radius: var(--radius-3xl);
-    border: 1px solid;
+    border: 1px solid var(--chip-border);
     transition: all var(--duration-base);
   }
 
@@ -389,19 +395,13 @@
   }
 
   .chip-add:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.1);
+    background: var(--surface-hover);
     color: var(--primary-on-surface);
   }
 
   .chip-edit:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.1);
+    background: var(--surface-hover);
     color: var(--text-primary);
-  }
-
-  /* Dark mode adjustments */
-  :global([data-theme='dark']) .chip-add:hover:not(:disabled),
-  :global([data-theme='dark']) .chip-edit:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.1);
   }
 
   .auto-applied-banner {

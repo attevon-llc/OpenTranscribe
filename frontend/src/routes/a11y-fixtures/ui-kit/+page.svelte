@@ -6,6 +6,7 @@
   import LiveProgressCard from '$components/ui/LiveProgressCard.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import Banner from '$components/ui/Banner.svelte';
+  import Toast from '$components/Toast.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import PrivacySwitchCard from '$components/privacy/PrivacySwitchCard.svelte';
   import { t } from '$stores/locale';
@@ -24,6 +25,7 @@
   // `a11y-fixtures/status-badges`.
   const noop = () => {};
   const buttonVariants = ['btn-primary', 'btn-secondary', 'btn-danger', 'btn-warning'] as const;
+  const toastTypes = ['success', 'error', 'warning', 'info'] as const;
   const bannerTones = ['info', 'success', 'warning', 'error', 'neutral'] as const;
   const badgeVariants = ['default', 'success', 'warning', 'error', 'info'] as const;
   const tintFamilies = [
@@ -206,6 +208,18 @@
           <button type="button" class="btn btn-primary btn-sm" on:click={noop}>{$t('common.save')}</button>
         </svelte:fragment>
       </Banner>
+    {/each}
+  </section>
+
+  <section data-kit-section="toasts" aria-labelledby="kit-toasts">
+    <h2 id="kit-toasts">{$t('common.status')}</h2>
+    {#each toastTypes as tone (tone)}
+      <Toast
+        type={tone}
+        duration={0}
+        message={$t('common.moreInformation')}
+        action={{ label: $t('common.cancel'), onClick: noop }}
+      />
     {/each}
   </section>
 

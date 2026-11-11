@@ -32,11 +32,12 @@
   // Waveform colors - using CSS custom properties for theming
   const getWaveformColors = () => {
     const computedStyle = getComputedStyle(document.documentElement);
+    const token = (name: string) => computedStyle.getPropertyValue(name).trim();
     return {
-      background: computedStyle.getPropertyValue('--surface-color').trim() || '#f8fafc',
-      waveform: computedStyle.getPropertyValue('--text-secondary').trim() || '#64748b',
-      progress: computedStyle.getPropertyValue('--primary-color').trim() || 'var(--primary-color)',
-      playhead: computedStyle.getPropertyValue('--primary-color').trim() || '#3b82f6'
+      background: token('--surface-color'),
+      waveform: token('--text-secondary'),
+      progress: token('--primary-color'),
+      playhead: token('--primary-color')
     };
   };
 
@@ -451,16 +452,6 @@
 
   .retry-button:active {
     transform: translateY(1px);
-  }
-
-  /* Dark mode support using theme attribute */
-  :global([data-theme='dark']) .waveform-container {
-    background-color: var(--surface-color);
-    border-color: var(--border-color);
-  }
-
-  :global([data-theme='dark']) .waveform-canvas:hover {
-    background-color: var(--background-color);
   }
 
   /* Responsive adjustments */

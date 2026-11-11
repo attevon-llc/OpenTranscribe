@@ -16,6 +16,7 @@
 
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import { colorsFor } from '$lib/utils/classificationColors';
 
   export let classification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
   export let bannerText: string = '';
@@ -38,18 +39,6 @@
 
   const dispatch = createEventDispatcher();
 
-  // Classification color mapping per DoD standards
-  const unclassifiedColors = { bg: '#007a33', text: '#ffffff' };
-  const classificationColors: Record<string, { bg: string; text: string }> = {
-    'UNCLASSIFIED': unclassifiedColors,
-    'CUI': { bg: '#502b85', text: '#ffffff' },  // Purple for CUI per NARA standards
-    'FOUO': { bg: '#ffc72c', text: '#000000' },
-    'CONFIDENTIAL': { bg: '#0033a0', text: '#ffffff' },
-    'SECRET': { bg: '#c8102e', text: '#ffffff' },
-    'TOP SECRET': { bg: '#ff671f', text: '#000000' },
-    'TOP SECRET//SCI': { bg: '#fce300', text: '#000000' },
-  };
-
   // Default consent banner text (DoD standard)
   const defaultBannerText = `You are accessing a U.S. Government (USG) Information System (IS) that is provided for USG-authorized use only.
 
@@ -65,7 +54,7 @@ By using this IS (which includes any device attached to this IS), you consent to
 
 - Notwithstanding the above, using this IS does not constitute consent to PM, LE or CI investigative searching or monitoring of the content of privileged communications, or work product, related to personal representation or services by attorneys, psychotherapists, or clergy, and their assistants. Such communications and work product are private and confidential. See User Agreement for details.`;
 
-  $: colors = classificationColors[classification] ?? unclassifiedColors;
+  $: colors = colorsFor(classification);
   $: displayText = bannerText || defaultBannerText;
 
   function handleAcknowledge() {

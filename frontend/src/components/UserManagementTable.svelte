@@ -1179,8 +1179,8 @@
   }
 
   .expiration-cancel-button:hover:not(:disabled) {
-    background-color: #6b7280;
-    color: var(--text-on-solid);
+    background-color: var(--button-secondary-bg-hover);
+    color: var(--text-color);
   }
 
   /* Reset password button - brand blue */
@@ -1201,13 +1201,13 @@
 
   /* Lock account - orange */
   .lock-button {
-    background-color: rgba(249, 115, 22, 0.1);
-    color: #f97316;
+    background-color: var(--warning-bg);
+    color: var(--warning-text);
   }
 
   .lock-button:hover:not(:disabled) {
-    background-color: #f97316;
-    color: var(--text-on-solid);
+    background-color: var(--warning-solid);
+    color: var(--text-on-warning);
     transform: scale(1.05);
   }
 
@@ -1217,12 +1217,12 @@
 
   /* Clear login lockout - sky */
   .unlock-button {
-    background-color: rgba(14, 165, 233, 0.1);
-    color: #0ea5e9;
+    background-color: var(--info-bg);
+    color: var(--info-text);
   }
 
   .unlock-button:hover:not(:disabled) {
-    background-color: #0ea5e9;
+    background-color: var(--info-solid);
     color: var(--text-on-solid);
     transform: scale(1.05);
   }
@@ -1233,13 +1233,13 @@
 
   /* Force logout - slate */
   .force-logout-button {
-    background-color: rgba(100, 116, 139, 0.15);
+    background-color: var(--button-hover);
     color: var(--text-on-tint);
   }
 
   .force-logout-button:hover:not(:disabled) {
-    background-color: #475569;
-    color: var(--text-on-solid);
+    background-color: var(--button-secondary-bg-hover);
+    color: var(--text-color);
     transform: scale(1.05);
   }
 
@@ -1247,19 +1247,14 @@
     transform: scale(0.95);
   }
 
-  :global([data-theme='dark']) .force-logout-button:hover:not(:disabled) {
-    background-color: #64748b;
-    color: var(--text-on-solid);
-  }
-
   /* MFA reset - teal */
   .mfa-reset-button {
-    background-color: rgba(13, 148, 136, 0.1);
-    color: #0f766e;
+    background-color: var(--info-bg);
+    color: var(--info-text);
   }
 
   .mfa-reset-button:hover:not(:disabled) {
-    background-color: #0f766e;
+    background-color: var(--info-solid);
     color: var(--text-on-solid);
     transform: scale(1.05);
   }
@@ -1270,12 +1265,12 @@
 
   /* Link external identity - teal */
   .link-identity-button {
-    background-color: rgba(20, 184, 166, 0.1);
-    color: #14b8a6;
+    background-color: var(--info-bg);
+    color: var(--info-text);
   }
 
   .link-identity-button:hover:not(:disabled) {
-    background-color: #14b8a6;
+    background-color: var(--info-solid);
     color: var(--text-on-solid);
     transform: scale(1.05);
   }

@@ -871,6 +871,83 @@ _HIGHLIGHT_STATES = (
     ),
 )
 
+# The seeded stack has one admin and no other account, and a row never shows actions for the viewer's
+# own account, so the action buttons never render from its data. `admin_users.json` copies the shape
+# of `GET /api/admin/users` (a list of user rows): row one is an OIDC account with local fallback
+# ON (the active fallback toggle) and an expiry set (the active expiration button), row two a
+# local admin (lock, unlock, force-logout, MFA reset, link identity, expiry editor).
+_ADMIN_USERS = (
+    r"fixture:/api/admin/users$|admin_users.json",
+    "settings:admin-users",
+    "wait:.users-table .icon-button",
+)
+
+
+def _admin_users(sid: str, *steps: str, notes: str) -> Screen:
+    return Screen(
+        id=f"admin-users-{sid}",
+        path="/",
+        steps=(*_ADMIN_USERS, *steps),
+        masks=(".count-chip", ".meta-line"),
+        full_page=False,
+        ready=GALLERY_READY,
+        notes=notes,
+    )
+
+
+_ADMIN_USER_STATES = (
+    _admin_users(
+        "actions",
+        notes="row buttons at rest: delete, recover, fallback toggle active (amber fill), "
+        "expiration active (blue fill), lock, unlock, force-logout, MFA reset, link identity",
+    ),
+    *(
+        _admin_users(
+            f"{name}-hover",
+            f"hover:.users-table tr:nth-child(2) .{name}-button",
+            notes=f"hover fill of the {name} action",
+        )
+        for name in (
+            "lock",
+            "unlock",
+            "mfa-reset",
+            "force-logout",
+            "link-identity",
+            "recover",
+            "delete",
+        )
+    ),
+    _admin_users(
+        "fallback-active-hover",
+        "hover:.users-table tr:nth-child(1) .fallback-toggle-button",
+        notes="the active fallback toggle on hover (warning-solid-hover, dark label)",
+    ),
+    _admin_users(
+        "expiration-editor",
+        "click:.users-table tr:nth-child(2) .expiration-button",
+        "wait:.expiration-editor",
+        notes="the date field with the save (success) and cancel (neutral) buttons",
+    ),
+    _admin_users(
+        "expiration-cancel-hover",
+        "click:.users-table tr:nth-child(2) .expiration-button",
+        "wait:.expiration-editor",
+        "hover:.expiration-cancel-button",
+        notes="neutral cancel hover fill",
+    ),
+    _admin_users(
+        "role-warning",
+        "click:.table-actions .btn-secondary",
+        "wait:#role",
+        "focus:#role",
+        "press:ArrowDown",
+        "press:ArrowDown",
+        "wait:.role-warning",
+        notes="super_admin chosen in the create form (needs a super_admin viewer; the seeded "
+        "admin is one)",
+    ),
+)
+
 SCREENS: tuple[Screen, ...] = (
     *_LOGGED_OUT,
     _LOGIN_BANNER,
@@ -880,6 +957,7 @@ SCREENS: tuple[Screen, ...] = (
     *_FILE_DETAIL_STATES,
     *_SPEAKER_STATES,
     *_SETTINGS_I_STATES,
+    *_ADMIN_USER_STATES,
     *_HIGHLIGHT_STATES,
 )
 

@@ -983,9 +983,9 @@
     display: block;
     margin-top: var(--space-1-5);
     padding: var(--space-2) var(--space-2-5);
-    border: 1px solid rgba(245, 158, 11, 0.4);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.4);
     border-radius: var(--radius-md);
-    background-color: rgba(245, 158, 11, 0.12);
+    background-color: rgba(var(--warning-color-rgb), 0.12);
     color: var(--text-color);
     font-size: var(--font-size-xs);
     line-height: 1.4;
@@ -1036,7 +1036,7 @@
   .users-table th, .users-table td {
     padding: var(--space-3);
     border-bottom: 1px solid var(--border-color);
-    text-align: left;
+    text-align: start;
     color: var(--text-color);
     font-size: var(--font-size-sm);
   }
@@ -1075,12 +1075,12 @@
 
   /* Delete button - red */
   .delete-button {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    background-color: var(--error-bg);
+    color: var(--error-text);
   }
 
   .delete-button:hover:not(:disabled) {
-    background-color: #ef4444;
+    background-color: var(--error-solid);
     color: var(--text-on-solid);
     transform: scale(1.05);
   }
@@ -1091,12 +1091,12 @@
 
   /* Recover button - green */
   .recover-button {
-    background-color: rgba(16, 185, 129, 0.1);
-    color: #10b981;
+    background-color: var(--success-bg);
+    color: var(--success-text);
   }
 
   .recover-button:hover:not(:disabled) {
-    background-color: #10b981;
+    background-color: var(--success-solid);
     color: var(--text-on-solid);
     transform: scale(1.05);
   }
@@ -1107,13 +1107,13 @@
 
   /* Fallback toggle button - amber/orange */
   .fallback-toggle-button {
-    background-color: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
+    background-color: var(--warning-bg);
+    color: var(--warning-text);
   }
 
   .fallback-toggle-button:hover:not(:disabled) {
-    background-color: #f59e0b;
-    color: var(--text-on-solid);
+    background-color: var(--warning-solid);
+    color: var(--text-on-warning);
     transform: scale(1.05);
   }
 
@@ -1122,12 +1122,12 @@
   }
 
   .fallback-toggle-button.active {
-    background-color: #f59e0b;
-    color: var(--text-on-solid);
+    background-color: var(--warning-solid);
+    color: var(--text-on-warning);
   }
 
   .fallback-toggle-button.active:hover:not(:disabled) {
-    background-color: #d97706;
+    background-color: var(--warning-solid-hover);
   }
 
   /* Expiration button - blue */
@@ -1164,23 +1164,23 @@
   }
 
   .expiration-save-button {
-    background-color: rgba(16, 185, 129, 0.1);
-    color: #10b981;
+    background-color: var(--success-bg);
+    color: var(--success-text);
   }
 
   .expiration-save-button:hover:not(:disabled) {
-    background-color: #10b981;
+    background-color: var(--success-solid);
     color: var(--text-on-solid);
   }
 
   .expiration-cancel-button {
-    background-color: rgba(107, 114, 128, 0.1);
-    color: #6b7280;
+    background-color: var(--button-hover);
+    color: var(--text-secondary);
   }
 
   .expiration-cancel-button:hover:not(:disabled) {
-    background-color: #6b7280;
-    color: var(--text-on-solid);
+    background-color: var(--button-secondary-bg-hover);
+    color: var(--text-color);
   }
 
   /* Reset password button - brand blue */
@@ -1201,13 +1201,13 @@
 
   /* Lock account - orange */
   .lock-button {
-    background-color: rgba(249, 115, 22, 0.1);
-    color: #f97316;
+    background-color: var(--warning-bg);
+    color: var(--warning-text);
   }
 
   .lock-button:hover:not(:disabled) {
-    background-color: #f97316;
-    color: var(--text-on-solid);
+    background-color: var(--warning-solid);
+    color: var(--text-on-warning);
     transform: scale(1.05);
   }
 
@@ -1217,12 +1217,12 @@
 
   /* Clear login lockout - sky */
   .unlock-button {
-    background-color: rgba(14, 165, 233, 0.1);
-    color: #0ea5e9;
+    background-color: var(--info-bg);
+    color: var(--info-text);
   }
 
   .unlock-button:hover:not(:disabled) {
-    background-color: #0ea5e9;
+    background-color: var(--info-solid);
     color: var(--text-on-solid);
     transform: scale(1.05);
   }
@@ -1233,17 +1233,13 @@
 
   /* Force logout - slate */
   .force-logout-button {
-    background-color: rgba(100, 116, 139, 0.15);
-    color: #475569;
-  }
-
-  :global([data-theme='dark']) .force-logout-button {
-    color: #cbd5e1;
+    background-color: var(--button-hover);
+    color: var(--text-on-tint);
   }
 
   .force-logout-button:hover:not(:disabled) {
-    background-color: #475569;
-    color: var(--text-on-solid);
+    background-color: var(--button-secondary-bg-hover);
+    color: var(--text-color);
     transform: scale(1.05);
   }
 
@@ -1251,19 +1247,14 @@
     transform: scale(0.95);
   }
 
-  :global([data-theme='dark']) .force-logout-button:hover:not(:disabled) {
-    background-color: #64748b;
-    color: var(--text-on-solid);
-  }
-
   /* MFA reset - teal */
   .mfa-reset-button {
-    background-color: rgba(13, 148, 136, 0.1);
-    color: #0f766e;
+    background-color: var(--info-bg);
+    color: var(--info-text);
   }
 
   .mfa-reset-button:hover:not(:disabled) {
-    background-color: #0f766e;
+    background-color: var(--info-solid);
     color: var(--text-on-solid);
     transform: scale(1.05);
   }
@@ -1274,12 +1265,12 @@
 
   /* Link external identity - teal */
   .link-identity-button {
-    background-color: rgba(20, 184, 166, 0.1);
-    color: #14b8a6;
+    background-color: var(--info-bg);
+    color: var(--info-text);
   }
 
   .link-identity-button:hover:not(:disabled) {
-    background-color: #14b8a6;
+    background-color: var(--info-solid);
     color: var(--text-on-solid);
     transform: scale(1.05);
   }

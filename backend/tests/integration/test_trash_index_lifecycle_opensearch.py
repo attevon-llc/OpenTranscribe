@@ -257,6 +257,8 @@ def test_search_still_answers_with_10001_trashed_files(
     the search answers 200 and finds the live file."""
     live = make_media_file(db_session, normal_user)
     index_file(availability_indices, db_session, live)
+    # The search request closes the shared session (7ead5d8f2), detaching ``live``.
+    live_uuid = str(live.uuid)
     now = datetime.now(UTC)
     db_session.execute(
         insert(MediaFile),
@@ -285,4 +287,4 @@ def test_search_still_answers_with_10001_trashed_files(
     )
 
     assert response.status_code == 200, response.text
-    assert str(live.uuid) in [r["file_uuid"] for r in response.json()["results"]]
+    assert live_uuid in [r["file_uuid"] for r in response.json()["results"]]

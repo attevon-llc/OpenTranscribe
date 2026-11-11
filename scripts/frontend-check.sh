@@ -12,6 +12,10 @@
 #   --verbose        Show full output from checks
 #   -h, --help       Show this help message
 #
+# Environment:
+#   OT_HOOK_VITEST_WORKERS  vitest --maxWorkers for the coverage run (default 8; number or N%).
+#                           Caps per-commit CPU when many agents commit concurrently (issue #77).
+#
 # ⚠️ vitest is INSIDE --check-only, deliberately.
 #
 # 189 test files and ~1,750 tests ran in NO local gate at all: `npm run test`,
@@ -266,7 +270,14 @@ run_all_checks() {
     # `test:coverage`, not `test`: the coverage floors in vitest.config.ts are ratchets, and a
     # floor only this script and CI evaluate is the one a commit can see fail. vitest exits
     # non-zero when a threshold is missed, and that line names the metric.
-    run_step "vitest (with coverage floors)" "Tests +[0-9]+ failed|Test Files +[0-9]+ failed|Coverage for [a-z]+ .* does not meet" npm run test:coverage
+    # Worker cap (issue #77): vitest's own default is maxWorkers '50%' (24 on this 48-core host)
+    # PER COMMIT, and several lanes commit at once. Five concurrent hooks drove load to 153 and
+    # timed out tests whose code was fine. The hook therefore passes an explicit
+    # `--maxWorkers=N` (vitest CLI option, overrides vitest.config.ts); default 8, override with
+    # OT_HOOK_VITEST_WORKERS (a number or a percentage like 25%). Only this hook is capped:
+    # CI and a bare `npm test` keep the config's '50%'. Coverage floors are unchanged.
+    local vitest_workers="${OT_HOOK_VITEST_WORKERS:-8}"
+    run_step "vitest (with coverage floors, ${vitest_workers} workers)" "Tests +[0-9]+ failed|Test Files +[0-9]+ failed|Coverage for [a-z]+ .* does not meet" npm run test:coverage -- "--maxWorkers=${vitest_workers}"
     run_step "frontend test-auditor self-test" "" npm run test:audit:selftest
     run_step "frontend test-quality audit" "" npm run test:audit
 

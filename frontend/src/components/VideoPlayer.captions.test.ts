@@ -7,7 +7,7 @@
  * server's WebVTT, that the page's redacted/original toggle reaches the request, and that
  * a refused request empties the track instead of falling back to the segments.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
@@ -54,6 +54,17 @@ const file = {
     },
   ],
 };
+
+// The first render in a worker pays for the media-element/Video.js first-use setup, which on a
+// loaded host (seconds) landed inside the first test's 5 s budget. Pay it here, under the
+// hook's own budget; later tests then wait only on their own behaviour.
+beforeAll(async () => {
+  const { unmount } = render(VideoPlayer, {
+    props: { videoUrl: 'blob:warm-up', file: { content_type: 'video/mp4' } },
+  } as never);
+  await tick();
+  unmount();
+});
 
 let blobs: Blob[] = [];
 

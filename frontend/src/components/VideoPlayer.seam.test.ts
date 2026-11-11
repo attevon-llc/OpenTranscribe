@@ -6,7 +6,7 @@
  * swapped without changing what the page receives: `loadedmetadata` once the controls are
  * built, `timeupdate` with the element's clock, and `play`/`pause`/`ended`.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
@@ -21,6 +21,17 @@ vi.mock('$stores/locale', async () => {
 
 import VideoPlayer from './VideoPlayer.svelte';
 import { fakePlayers } from '$lib/player/fakePlayer';
+
+// The first render in a worker pays for the media-element/Video.js first-use setup, which on a
+// loaded host (seconds) landed inside the first test's 5 s budget. Pay it here, under the
+// hook's own budget; later tests then wait only on their own behaviour.
+beforeAll(async () => {
+  const { unmount } = render(VideoPlayer, {
+    props: { videoUrl: 'blob:warm-up', file: { content_type: 'video/mp4' } },
+  } as never);
+  await tick();
+  unmount();
+});
 
 beforeEach(() => {
   fakePlayers.length = 0;

@@ -19,7 +19,13 @@ import { join } from 'node:path';
 import { writable, get } from 'svelte/store';
 import type { Notification, NotificationType } from '$stores/websocket';
 import { resetProgressFloor } from '$lib/notifications/progressFloor';
+import { resetReconcileThrottle } from '$lib/notifications/reconcile';
 
+// The open panel asks the server for post-processing state once its wall clock (a real
+// setInterval feeding Date.now()) drifts past a fixture's fixed NOW, which happens only when
+// the host is slow. That GET reached the real network and failed the test. A request that
+// never settles keeps the card on its pushed state, whatever the timing.
+vi.mock('$lib/axios', () => ({ default: { get: vi.fn(() => new Promise(() => {})) } }));
 vi.mock('../stores/auth', () => ({ token: writable(null) }));
 
 vi.mock('$stores/locale', () => ({
@@ -128,6 +134,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   resetProgressFloor();
+  resetReconcileThrottle();
   setNotifications([]);
   llmAvailable.set(false);
   showNotificationsPanel.set(true);

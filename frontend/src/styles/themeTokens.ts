@@ -158,9 +158,10 @@ export function parseColour(value: string): Colour {
   const v = value.trim().toLowerCase();
   if (v === 'white') return { rgb: [255, 255, 255], alpha: 1 };
   const mix = v.match(/^color-mix\(\s*in srgb\s*,\s*(.+?)\s+([\d.]+)%\s*,\s*transparent\s*\)$/);
-  if (mix) {
-    const base = parseColour(mix[1]);
-    return { rgb: base.rgb, alpha: (base.alpha * Number(mix[2])) / 100 };
+  const [, mixed, percent] = mix ?? [];
+  if (mixed !== undefined && percent !== undefined) {
+    const base = parseColour(mixed);
+    return { rgb: base.rgb, alpha: (base.alpha * Number(percent)) / 100 };
   }
   const digits = v.match(/^#([0-9a-f]{3,8})$/)?.[1];
   if (digits !== undefined) {

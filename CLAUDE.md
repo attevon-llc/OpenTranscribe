@@ -90,7 +90,7 @@ Run `./opentr.sh` with no arguments for full usage. The ones you'll reach for:
 ./opentr.sh stop | status              # stop all services / service health
 ./opentr.sh logs|shell [service]       # backend|frontend|postgres|celery-worker
 ./opentr.sh restart-backend|-frontend  # restart one service
-./opentr.sh backup | restore backups/<file>.sql
+./opentr.sh backup | restore [--fresh <name>] backups/<file>.sql   # --fresh targets that fresh project only
 ./opentr.sh reset dev                  # ⚠️ DELETES DATA, runs full migration chain
 ```
 

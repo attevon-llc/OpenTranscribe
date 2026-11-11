@@ -12,6 +12,8 @@ set -uo pipefail
 # Source common functions
 # shellcheck source=scripts/common.sh
 source ./scripts/common.sh
+# shellcheck source=scripts/opentr-targets.sh
+source ./scripts/opentr-targets.sh
 # shellcheck source=scripts/lib/ldap-test-overlay.sh
 source ./scripts/lib/ldap-test-overlay.sh
 # shellcheck source=scripts/lib/fresh-prod.sh
@@ -4167,14 +4169,8 @@ case "$1" in
     ;;
 
   logs)
-    SERVICE=${2:-}
-    if [ -z "$SERVICE" ]; then
-      echo "📋 Showing logs for all services... (press Ctrl+C to exit)"
-      docker compose logs -f
-    else
-      echo "📋 Showing logs for $SERVICE... (press Ctrl+C to exit)"
-      docker compose logs -f "$SERVICE"
-    fi
+    shift
+    service_cmd_run logs "$@"
     ;;
 
   status)
@@ -4213,26 +4209,18 @@ case "$1" in
     ;;
 
   shell)
-    SERVICE=${2:-backend}
-    echo "🔧 Opening shell in $SERVICE container..."
-    # Pick the shell first: `bash || sh` also started sh whenever the user left bash
-    # with a non-zero status (the last command they ran failed).
-    if docker compose exec -T "$SERVICE" sh -c 'command -v bash' >/dev/null 2>&1; then
-      docker compose exec "$SERVICE" /bin/bash
-    else
-      docker compose exec "$SERVICE" /bin/sh
-    fi
+    shift
+    service_cmd_run shell "$@"
     ;;
 
   backup)
-    # "" = bare `docker compose`, which in a repo clone auto-loads
-    # docker-compose.override.yml — byte-identical behaviour to before the move (issue #613).
-    backup_database "" "./opentr.sh" "${2:-}"
+    shift
+    backup_restore_run backup "$@"
     ;;
 
   restore)
-    shift  # Remove 'restore' command
-    restore_database "" "./opentr.sh" "$@"  # Pass all remaining arguments (flags + file)
+    shift
+    backup_restore_run restore "$@"
     ;;
 
   restart-backend)
@@ -4376,6 +4364,8 @@ case "$1" in
     ;;
 
   remove)
+    shift
+    reject_args remove -- "$@" || exit $?
     echo "⚠️ Warning: This will remove all data volumes! Continue? (y/n)"
     read -r confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
@@ -4387,6 +4377,8 @@ case "$1" in
     ;;
 
   purge)
+    shift
+    reject_args purge -- "$@" || exit $?
     echo "⚠️ WARNING: This will remove EVERYTHING including images! Continue? (y/n)"
     read -r confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
@@ -4398,16 +4390,22 @@ case "$1" in
     ;;
 
   health)
+    shift
+    reject_args health -- "$@" || exit $?
     check_health
     ;;
 
   healthcheck-all)
     # Same probes as `health`, but exits non-zero on any failure so scripts and
     # CI can gate on it. `health` stays a human-readable status dump.
-    healthcheck_all "${2:-}"
+    shift
+    reject_args healthcheck-all --json -- "$@" || exit $?
+    healthcheck_all "${1:-}"
     ;;
 
   build)
+    shift
+    reject_args build -- "$@" || exit $?
     echo "🔨 Rebuilding containers..."
     detect_and_configure_hardware
 

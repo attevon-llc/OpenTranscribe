@@ -468,10 +468,13 @@ _NAVBAR_GALLERY = (
 #: (``lib/settings/*Tabs.ts``, ``AuthenticationSettings.svelte``). Password policy lives
 #: inside the ``local`` authentication tab (there is no tab of its own).
 _SETTINGS = (
+    # The active-sessions table gains a row for every capture's own login, and its auto-layout
+    # column widths move with that content (3,000+ computed width diffs between two captures of
+    # one server): machine state, like .free-space, so it is masked.
+    _settings("profile", masks=(".sessions-table",)),
     *(
         _settings(s)
         for s in (
-            "profile",
             "groups",
             "processing-pipeline",
             "transcription",

@@ -522,3 +522,8 @@ def test_retry_reason_names_the_pixel_share_and_what_moved() -> None:
         0.0, [ab.Change("body:1>div:2>span:3", "color", "rgb(0, 0, 0)", "rgb(1, 1, 1)")]
     )
     assert line == "pixel 0.0000%, 1 computed (color on span:3)"
+
+
+def test_settings_profile_masks_the_active_sessions_table() -> None:
+    # Each capture logs in, so the table differs between any two captures of one server.
+    assert ".sessions-table" in screens.by_id()["settings-profile"].masks

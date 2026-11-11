@@ -365,7 +365,7 @@
   }
 
   .card-title {
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-3) 0;
     color: var(--text-color);

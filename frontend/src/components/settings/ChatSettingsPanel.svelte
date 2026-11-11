@@ -84,11 +84,11 @@
 
   .tab-intro {
     margin: 0 0 var(--space-5);
-    padding: 0.7rem 0.85rem;
+    padding: var(--space-3) var(--space-3-5);
     border-left: 3px solid var(--primary-color);
     border-radius: 0 var(--radius-md) var(--radius-md) 0;
     background-color: rgba(var(--primary-color-rgb), 0.08);
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     line-height: 1.5;
     color: var(--text-secondary);
   }

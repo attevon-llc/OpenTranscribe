@@ -829,7 +829,7 @@
   }
 
   .config-provider {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin-bottom: var(--space-1);
   }
@@ -854,7 +854,7 @@
     gap: var(--space-2);
     padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-sm);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     width: fit-content;
   }
@@ -877,7 +877,7 @@
     align-items: center;
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -896,7 +896,7 @@
     align-items: center;
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;

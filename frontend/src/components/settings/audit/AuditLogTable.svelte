@@ -203,7 +203,7 @@
   .outcome {
     padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-sm);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
@@ -249,7 +249,7 @@
   .loading-more {
     text-align: center;
     padding: var(--space-3);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 

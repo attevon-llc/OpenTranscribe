@@ -563,7 +563,7 @@
 
   .admission-warning {
     margin: var(--space-2) 0 0 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
     background: rgba(var(--warning-color-rgb), 0.12);
@@ -575,12 +575,12 @@
   .claim-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     margin: var(--space-2) 0;
   }
 
   .claim-tag {
-    padding: 0.2rem 0.6rem;
+    padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-pill);
     background: var(--color-bg-tertiary);
     border: 1px solid var(--color-border);

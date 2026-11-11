@@ -304,7 +304,7 @@
     background: var(--card-background);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
@@ -317,7 +317,7 @@
   }
 
   .domain-tab {
-    padding: 0.35rem var(--space-3);
+    padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
     cursor: pointer;
@@ -351,14 +351,14 @@
   .term-input {
     flex: 2;
     min-width: 140px;
-    padding: 0.45rem var(--space-2-5);
+    padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-sm);
   }
 
   .domain-select, .category-input {
     flex: 1;
     min-width: 110px;
-    padding: 0.45rem var(--space-2-5);
+    padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-sm);
   }
 
@@ -410,11 +410,11 @@
   }
 
   .domain-badge {
-    padding: 0.1rem 0.4rem;
+    padding: var(--space-0-5) var(--space-1-5);
     background: rgba(var(--primary-color-rgb), 0.1);
     color: var(--primary-on-surface);
     border-radius: var(--radius-sm);
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
   }
 
   .category-text {
@@ -423,11 +423,11 @@
   }
 
   .system-badge {
-    padding: 0.1rem 0.4rem;
+    padding: var(--space-0-5) var(--space-1-5);
     background: color-mix(in srgb, var(--text-secondary) 15%, transparent);
     color: var(--text-muted);
     border-radius: var(--radius-sm);
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
   }
 
   .term-actions {

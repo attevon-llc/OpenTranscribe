@@ -615,14 +615,14 @@
 
 <style>
   .section-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
 
   .subsection-title {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     margin: var(--space-5) 0 var(--space-1) 0;
     color: var(--text-color);
@@ -630,7 +630,7 @@
 
   .section-desc,
   .subsection-desc {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
@@ -652,11 +652,11 @@
   }
 
   .opensearch-hint {
-    margin-left: 2.75rem;
+    margin-left: var(--space-12);
   }
 
   .opensearch-status {
-    margin: var(--space-1) 0 var(--space-1) 2.75rem;
+    margin: var(--space-1) 0 var(--space-1) var(--space-12);
   }
 
   .fields-grid {
@@ -682,27 +682,27 @@
   }
 
   .field-label {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     font-weight: var(--font-weight-medium);
   }
 
   .field-hint {
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .mount-ok {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-1);
     color: var(--success-text);
   }
 
   .mount-bad {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-1);
     color: var(--warning-text);
   }
 
@@ -728,29 +728,29 @@
   .status-block {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
     margin: var(--space-4) 0 var(--space-3) 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background-color: var(--background-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .status-item {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
 
   .run-confirm-text {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .empty-note {
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-3) 0;
   }
@@ -766,7 +766,7 @@
   .preview-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
   }
 
   .preview-table th {
@@ -774,13 +774,13 @@
     color: var(--text-muted);
     font-weight: var(--font-weight-semibold);
     text-align: left;
-    padding: 0.35rem 0.6rem;
+    padding: var(--space-1-5) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
   }
 
   .preview-table td {
-    padding: 0.3rem 0.6rem;
+    padding: var(--space-1) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
     vertical-align: middle;

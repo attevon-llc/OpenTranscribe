@@ -130,7 +130,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--space-2) var(--space-4);
     align-items: center;
-    padding: 0.85rem 0;
+    padding: var(--space-3-5) 0;
     border-top: 1px solid var(--border-color);
   }
   .model-row:first-child {
@@ -153,9 +153,9 @@
   .facts {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.15rem 0.9rem;
+    gap: var(--space-0-5) var(--space-3-5);
     margin-top: var(--space-1);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
   .actions {
@@ -176,7 +176,7 @@
     color: var(--text-secondary);
   }
   .row-error {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--error-text);
   }
   :global([data-theme='dark']) .row-error {

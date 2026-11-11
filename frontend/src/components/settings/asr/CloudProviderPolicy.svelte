@@ -139,7 +139,7 @@
   .muted,
   .locked-hint {
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     margin: 0;
   }
   .locked-hint {
@@ -162,7 +162,7 @@
   .own-keys {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
     margin-top: var(--space-4);
     padding-top: var(--space-4);
     border-top: 1px solid var(--border-color);

@@ -468,7 +468,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     margin-top: var(--space-2);
@@ -499,24 +499,24 @@
   }
 
   .hostname-badge {
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     font-weight: var(--font-weight-semibold);
     background: var(--primary-color);
     color: var(--text-on-solid);
-    padding: 0.1rem 0.35rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-sm);
     letter-spacing: 0.02em;
     flex-shrink: 0;
   }
 
   .shared-badge {
-    font-size: 0.6rem;
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     font-weight: var(--font-weight-semibold);
     background: rgba(var(--success-color-rgb), 0.15);
     color: var(--success-text);
-    padding: 0.1rem 0.35rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-sm);
     letter-spacing: 0.02em;
   }
@@ -526,12 +526,12 @@
   }
 
   .admin-badge {
-    font-size: 0.6rem;
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     font-weight: var(--font-weight-semibold);
     background: rgba(var(--primary-color-rgb), 0.12);
     color: var(--primary-on-surface);
-    padding: 0.1rem 0.35rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-sm);
     letter-spacing: 0.02em;
   }
@@ -542,7 +542,7 @@
   }
 
   .shared-by {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-style: italic;
   }
@@ -554,8 +554,8 @@
   }
 
   .meta-badge {
-    font-size: 0.65rem;
-    padding: 0.15rem 0.4rem;
+    font-size: var(--font-size-2xs);
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-sm);
     font-weight: var(--font-weight-medium);
     white-space: nowrap;
@@ -653,14 +653,14 @@
   .form-input,
   .form-select {
     padding: var(--space-1-5) var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .toggle-row-inline {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
     cursor: pointer;
   }
@@ -685,7 +685,7 @@
   /* Destructive solid — red confirm */
 
   .section-hint {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin: var(--space-1) 0 0;
     line-height: 1.4;

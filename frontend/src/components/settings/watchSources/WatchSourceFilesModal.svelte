@@ -372,7 +372,7 @@
     margin-bottom: var(--space-2-5);
     border-radius: var(--radius-md);
     background: var(--button-hover);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
   .files-loading {
     display: flex;

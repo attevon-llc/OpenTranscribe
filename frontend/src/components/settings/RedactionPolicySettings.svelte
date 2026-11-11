@@ -84,7 +84,7 @@
         </div>
         <p class="field-desc">{$t('settings.redactionPolicy.forcePiiHelp')}</p>
 
-        <div class="setting-row" style="margin-top: 0.75rem;">
+        <div class="setting-row" style="margin-top: var(--space-3);">
           <div class="toggle-label">
             <Toggle id="redactionpolicysettings-toggle-2" checked={policy.force_toxicity} onchange={(v) => { if (policy) policy.force_toxicity = v; }} />
             <label class="toggle-text" for="redactionpolicysettings-toggle-2">{$t('settings.redactionPolicy.forceToxicity')}</label>
@@ -103,7 +103,7 @@
           </div>
         {/if}
 
-        <div class="setting-row" style="margin-top: 0.75rem;">
+        <div class="setting-row" style="margin-top: var(--space-3);">
           <div class="toggle-label">
             <Toggle id="redactionpolicysettings-toggle-3" checked={policy.force_profanity} onchange={(v) => { if (policy) policy.force_profanity = v; }} />
             <label class="toggle-text" for="redactionpolicysettings-toggle-3">{$t('settings.redactionPolicy.forceProfanity')}</label>
@@ -122,7 +122,7 @@
         </div>
         <p class="field-desc">{$t('settings.redactionPolicy.forceExportRedactedHelp')}</p>
 
-        <div class="setting-row" style="margin-top: 0.75rem;">
+        <div class="setting-row" style="margin-top: var(--space-3);">
           <div class="toggle-label">
             <Toggle id="redactionpolicysettings-toggle-5" checked={policy.force_redact_before_llm} onchange={(v) => { if (policy) policy.force_redact_before_llm = v; }} />
             <label class="toggle-text" for="redactionpolicysettings-toggle-5">{$t('settings.redactionPolicy.forceRedactBeforeLlm')}</label>
@@ -164,19 +164,19 @@
     padding: var(--space-2) 0;
   }
   .intro-desc {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
     margin: 0;
     line-height: 1.5;
   }
   .section-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
   .section-desc {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: 0 0 var(--space-4) 0;
   }

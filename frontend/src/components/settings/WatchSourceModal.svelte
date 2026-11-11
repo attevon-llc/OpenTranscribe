@@ -631,7 +631,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     border: 2px solid var(--border-color);
     background: var(--surface-color);
@@ -692,7 +692,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     cursor: pointer;
   }
   /* Override the global `input { width:100% }` base so checkboxes stay square. */
@@ -717,12 +717,12 @@
     flex: 1;
   }
   .field-hint {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: var(--space-0-5) 0 0;
   }
   .step-hint {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     margin: 0;
     line-height: 1.5;
@@ -741,7 +741,7 @@
     --sms-selected-text-color: var(--text-color);
     border-radius: var(--radius-sm);
     min-height: 40px;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
   .ms-wrap :global(.multiselect button) {
     background: transparent;
@@ -761,7 +761,7 @@
     min-height: 0;
   }
   .warning-text {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--warning-text);
     margin: 0;
   }
@@ -782,7 +782,7 @@
   }
   .fb-current {
     font-family: monospace;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
   .fb-entry {
     display: flex;
@@ -796,7 +796,7 @@
     padding: var(--space-1-5) var(--space-2-5);
     cursor: pointer;
     color: var(--text-color);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
   .fb-icon {
     flex: none;
@@ -810,7 +810,7 @@
   .fb-empty {
     padding: var(--space-2) var(--space-2-5);
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
   .test-result {
     display: flex;
@@ -818,7 +818,7 @@
     gap: var(--space-1-5);
     padding: var(--space-2) var(--space-2-5);
     border-radius: var(--radius-md);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
   .test-result.success {
     background: rgba(var(--success-color-rgb), 0.12);

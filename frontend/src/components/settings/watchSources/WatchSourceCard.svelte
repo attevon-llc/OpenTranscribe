@@ -161,7 +161,7 @@
     flex-wrap: wrap;
   }
   .badge {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
     font-weight: var(--font-weight-semibold);
@@ -192,10 +192,10 @@
   }
   .source-name {
     font-weight: var(--font-weight-semibold);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
   }
   .source-meta {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
   .scan-msg {

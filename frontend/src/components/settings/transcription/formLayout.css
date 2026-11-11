@@ -28,14 +28,14 @@
 }
 
 .tx-form .section-title {
-  font-size: 0.95rem;
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
   margin: 0;
   color: var(--text-color);
 }
 
 .tx-form .section-desc {
-  font-size: 0.8rem;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   margin: var(--space-1) 0 var(--space-4) 0;
 }

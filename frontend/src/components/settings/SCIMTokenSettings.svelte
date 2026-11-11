@@ -263,7 +263,7 @@
 
   .token-table th {
     text-align: left;
-    padding: var(--space-2) 0.6rem;
+    padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
@@ -274,7 +274,7 @@
   }
 
   .token-table td {
-    padding: 0.6rem;
+    padding: var(--space-2-5);
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text);
     vertical-align: top;
@@ -286,7 +286,7 @@
   }
 
   .btn-row {
-    padding: 0.3rem 0.65rem;
+    padding: var(--space-1) var(--space-2-5);
     font-size: var(--font-size-xs);
   }
 
@@ -311,7 +311,7 @@
     background: var(--color-bg-secondary);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    padding: 0.6rem;
+    padding: var(--space-2-5);
     margin-bottom: var(--space-4);
   }
 

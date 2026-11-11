@@ -144,7 +144,7 @@
 }
 
 .tx-form .input-label {
-  font-size: 0.8rem;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
@@ -179,10 +179,10 @@
 }
 
 .tx-form .capability-warning {
-  font-size: 0.8rem;
+  font-size: var(--font-size-sm);
   color: var(--warning-text);
   margin-top: var(--space-1);
-  padding: 0.4rem 0.6rem;
+  padding: var(--space-1-5) var(--space-2-5);
   background: var(--warning-bg);
   border-radius: var(--radius-sm);
   border-left: 3px solid var(--warning-color);

@@ -243,7 +243,7 @@
   }
   /* .form-input / .form-select inherit the global input/select styling. */
   .provider-help {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
     margin: 0;
@@ -255,7 +255,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     cursor: pointer;
   }
   /* Override the global `input { width:100% }` base so checkboxes stay square. */

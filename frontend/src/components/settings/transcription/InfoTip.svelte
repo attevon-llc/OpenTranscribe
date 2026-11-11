@@ -240,7 +240,7 @@
 
   .panel :global(ul) {
     margin: var(--space-1-5) 0 0;
-    padding-inline-start: 1.125rem;
+    padding-inline-start: var(--space-5);
   }
 
   .panel :global(li + li) {

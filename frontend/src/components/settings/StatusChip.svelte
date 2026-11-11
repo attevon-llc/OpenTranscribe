@@ -15,7 +15,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1-5);
-    padding: 0.3rem var(--space-2-5);
+    padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-3xl);
     font-size: var(--font-size-xs);
     border: 1px solid var(--border-color);

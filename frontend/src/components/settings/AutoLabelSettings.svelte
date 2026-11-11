@@ -327,19 +327,19 @@
   }
 
   .setting-label {
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     color: var(--text-primary);
   }
 
   .setting-help {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.3;
   }
 
   .setting-note {
-    font-size: 0.775rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     line-height: 1.3;
   }

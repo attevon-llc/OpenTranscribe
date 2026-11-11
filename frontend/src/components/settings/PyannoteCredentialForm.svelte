@@ -251,7 +251,7 @@
 
   .credential-title {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }

@@ -476,7 +476,7 @@
     align-items: center;
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -489,7 +489,7 @@
     align-items: center;
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;

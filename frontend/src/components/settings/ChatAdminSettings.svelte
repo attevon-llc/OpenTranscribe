@@ -273,7 +273,7 @@
 
   .section-description {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -287,16 +287,16 @@
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .field.indented {
-    margin-left: 1.75rem;
+    margin-left: var(--space-8);
     max-width: 13rem;
   }
 
   label {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
@@ -304,7 +304,7 @@
   .checkbox-row {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
     cursor: pointer;
     font-weight: var(--font-weight-medium);
   }
@@ -337,7 +337,7 @@
   }
 
   .hint {
-    font-size: 0.76rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.45;
   }
@@ -350,7 +350,7 @@
   .experimental-subsection {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     margin-top: var(--space-2);
     padding-top: var(--space-4);
     border-top: 1px dashed var(--border-color);
@@ -358,7 +358,7 @@
 
   .experimental-title {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }

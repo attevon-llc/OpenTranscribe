@@ -80,7 +80,7 @@
     gap: var(--space-1-5);
     padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-pill);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     color: var(--text-color);
@@ -88,7 +88,7 @@
 
   .chip-value {
     font-weight: var(--font-weight-semibold);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .chip-label {

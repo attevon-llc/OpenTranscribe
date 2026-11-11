@@ -292,7 +292,7 @@
   .restart-badge {
     display: inline-block;
     margin-left: var(--space-2);
-    padding: 0.1rem 0.45rem;
+    padding: var(--space-0-5) var(--space-2);
     border: 1px solid var(--color-warning-border);
     border-radius: var(--radius-pill);
     background: var(--color-warning-bg);

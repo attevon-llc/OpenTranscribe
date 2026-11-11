@@ -344,7 +344,7 @@
 
   .fallback-warning-icon {
     display: inline-flex;
-    margin-top: 0.1rem;
+    margin-top: var(--space-0-5);
     color: var(--warning-text);
     flex-shrink: 0;
   }

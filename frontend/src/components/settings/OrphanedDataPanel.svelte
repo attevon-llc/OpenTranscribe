@@ -317,14 +317,14 @@
 
   .orphans-title {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .orphans-desc {
     margin: var(--space-1) 0 var(--space-3);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -332,13 +332,13 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .orphans-error {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--error-text);
   }
 
@@ -353,7 +353,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -371,7 +371,7 @@
   }
 
   .orphan-row.sub {
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
@@ -400,7 +400,7 @@
     margin-top: var(--space-3);
     padding: var(--space-3);
     border-radius: var(--radius-md);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 

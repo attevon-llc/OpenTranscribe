@@ -756,7 +756,7 @@
     border: 1px solid rgba(var(--primary-color-rgb), 0.3);
     background: rgba(var(--primary-color-rgb), 0.08);
     color: var(--text-color);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     line-height: 1.45;
   }
 
@@ -874,9 +874,9 @@
   .badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem var(--space-2);
+    padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
   }
 
@@ -896,7 +896,7 @@
     border: 1px solid var(--success-border);
   }
 
-  .test-badge { display: inline-flex; align-items: center; gap: var(--space-1); font-size: 0.7rem; }
+  .test-badge { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--font-size-xs); }
   .cap-mark { display: inline-flex; margin-inline-end: var(--space-1); }
   .test-badge.test-success { background: rgba(var(--success-color-rgb), 0.1); color: var(--success-text); }
   .test-badge.test-failed { background: rgba(var(--error-color-rgb), 0.1); color: var(--error-text); }
@@ -908,9 +908,9 @@
   }
 
   .config-model {
-    font-size: 0.775rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
-    margin-top: 0.1rem;
+    margin-top: var(--space-0-5);
   }
 
   .config-actions {
@@ -936,7 +936,7 @@
   .share-badge {
     display: inline-flex; align-items: center;
     padding: 1px var(--space-1-5); border-radius: var(--radius-xl);
-    font-size: 0.625rem; font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-2xs); font-weight: var(--font-weight-semibold);
     text-transform: uppercase; letter-spacing: 0.5px;
     background: rgba(var(--primary-color-rgb), 0.12); color: var(--primary-on-surface);
     margin-left: var(--space-2); vertical-align: middle;
@@ -949,7 +949,7 @@
   :global([data-theme='dark']) .admin-badge { background: rgba(var(--warning-color-rgb), 0.2); }
 
   .shared-by {
-    font-size: 0.725rem; color: var(--text-muted);
+    font-size: var(--font-size-xs); color: var(--text-muted);
     font-style: italic; margin-top: var(--space-0-5);
   }
 
@@ -983,7 +983,7 @@
   .model-name-display {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: var(--space-0-5);
   }
 
   .model-label {
@@ -1007,9 +1007,9 @@
   .cap-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem var(--space-2);
+    padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
@@ -1049,9 +1049,9 @@
   .admin-badge-tag {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem var(--space-2);
+    padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-sm);
-    font-size: 0.675rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;

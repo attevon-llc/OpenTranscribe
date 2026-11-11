@@ -1041,7 +1041,7 @@ let _llmConfigModalWasOpen = false;
     align-items: center;
     justify-content: space-between;
     font-weight: var(--font-weight-medium);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     color: var(--text-color);
     margin-bottom: var(--space-2);
   }

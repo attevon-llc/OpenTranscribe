@@ -459,7 +459,7 @@
     border: 1px solid var(--warning-color);
     border-left: 4px solid var(--warning-color);
     border-radius: var(--radius-md);
-    padding: var(--space-3-5) 18px;
+    padding: var(--space-3-5) var(--space-5);
     margin-bottom: var(--space-5);
     color: var(--text-color);
   }
@@ -478,15 +478,15 @@
   }
 
   .cpu-mode-banner-reason {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     margin-bottom: var(--space-2-5);
   }
 
   .cpu-mode-banner-list {
     margin: 0 0 var(--space-2-5) 0;
-    padding-left: 22px;
-    font-size: 0.9rem;
+    padding-left: var(--space-6);
+    font-size: var(--font-size-body);
     line-height: 1.55;
   }
 
@@ -494,12 +494,12 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    padding: 1px 5px;
+    padding: 1px var(--space-1-5);
     font-size: 0.85em;
   }
 
   .cpu-mode-banner-footer {
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     border-top: 1px solid var(--border-color);
     padding-top: var(--space-2);
@@ -762,7 +762,7 @@
   .gpu-stepper {
     display: flex;
     align-items: center;
-    gap: 0.2rem;
+    gap: var(--space-1);
     margin-left: auto;
   }
 
@@ -776,7 +776,7 @@
     cursor: pointer;
     font-size: var(--font-size-md);
     line-height: 1;
-    padding: 0 0.3rem;
+    padding: 0 var(--space-1);
     transition: background-color var(--duration-fast), color var(--duration-fast);
   }
 
@@ -787,7 +787,7 @@
   }
 
   .gpu-step-label {
-    font-size: 0.6rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
     letter-spacing: 0.03em;
@@ -940,7 +940,7 @@
 
     .data-table th,
     .data-table td {
-      padding: 0.4rem var(--space-2);
+      padding: var(--space-1-5) var(--space-2);
       font-size: var(--font-size-xs);
     }
   }

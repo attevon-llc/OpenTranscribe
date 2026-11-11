@@ -263,7 +263,7 @@
   }
 
   .section-description {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     margin-bottom: var(--space-6);
     line-height: 1.4;
@@ -297,7 +297,7 @@
   }
 
   .setting-label {
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
     display: block;
@@ -305,14 +305,14 @@
   }
 
   .setting-description {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0;
     line-height: 1.3;
   }
 
   .setting-note {
-    font-size: 0.775rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: var(--space-1-5) 0 0;
     line-height: 1.3;
@@ -336,7 +336,7 @@
 
   .success-message {
     color: var(--success-text);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     margin-bottom: var(--space-3);
     padding: var(--space-2) var(--space-3);
     background: rgba(var(--success-color-rgb), 0.1);

@@ -204,12 +204,12 @@
     max-width: 800px;
     margin: 0 0 var(--space-4);
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   .maintenance-heading {
     margin: 0 0 var(--space-1);
-    font-size: 1.05rem;
+    font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
@@ -229,11 +229,11 @@
   .embedding-link-text p {
     margin: var(--space-1) 0 0;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .embedding-link-text .embedding-link-path {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-style: italic;
   }
 

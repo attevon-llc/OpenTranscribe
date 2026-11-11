@@ -255,7 +255,7 @@
   }
 
   .source-button {
-    padding: 0.45rem var(--space-4);
+    padding: var(--space-2) var(--space-4);
     background: var(--color-bg);
     border: none;
     border-radius: 0;
@@ -289,7 +289,7 @@
 
   .mapping-table th {
     text-align: left;
-    padding: var(--space-2) 0.6rem;
+    padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
@@ -300,7 +300,7 @@
   }
 
   .mapping-table td {
-    padding: 0.6rem;
+    padding: var(--space-2-5);
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text);
     vertical-align: top;
@@ -318,7 +318,7 @@
 
   .description {
     display: block;
-    margin-top: 0.2rem;
+    margin-top: var(--space-1);
     font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
   }
@@ -333,7 +333,7 @@
   }
 
   .btn-row {
-    margin-left: 0.35rem;
+    margin-left: var(--space-1-5);
   }
 
   @media (max-width: 768px) {

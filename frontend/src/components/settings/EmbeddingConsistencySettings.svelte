@@ -359,14 +359,14 @@
   }
 
   .section-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
 
   .section-desc {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
@@ -377,7 +377,7 @@
     background: var(--background-color);
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .counts-row {
@@ -444,13 +444,13 @@
 
   .action-content h4 {
     margin: 0 0 var(--space-1) 0;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     color: var(--text-color);
   }
 
   .action-content p {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -469,12 +469,12 @@
   }
 
   .progress-text {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .progress-percent {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
   }
@@ -499,7 +499,7 @@
 
   .results-title {
     margin: 0 0 var(--space-1) 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }

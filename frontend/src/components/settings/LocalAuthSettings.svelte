@@ -391,7 +391,7 @@
 
   .info-note {
     margin: var(--space-2) 0 0 var(--space-6);
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--color-info-border);
     border-radius: var(--radius-md);
     background: var(--color-info-bg);

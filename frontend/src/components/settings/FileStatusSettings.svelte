@@ -195,7 +195,7 @@
     text-decoration: none;
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     white-space: nowrap;
   }
 

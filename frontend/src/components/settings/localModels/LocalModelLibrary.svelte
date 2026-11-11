@@ -285,7 +285,7 @@
   }
   .hint {
     margin: 0 0 var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
   .locked {
@@ -295,7 +295,7 @@
   }
   .error-text {
     margin: 0 0 var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--error-text);
   }
   :global([data-theme='dark']) .error-text {
@@ -312,7 +312,7 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     margin-top: var(--space-2);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
   .switch-status:empty {

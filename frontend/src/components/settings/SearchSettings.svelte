@@ -725,7 +725,7 @@
     display: inline-block;
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);

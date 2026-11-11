@@ -481,3 +481,29 @@ def test_speaker_state_screens_reach_their_states_through_fixtures() -> None:
             i for i, s in enumerate(steps) if s.startswith("fixture:")
         )
         assert waits_for in steps
+
+
+# --- the photographed state must still be there after the photograph ---------------------
+def test_last_wait_is_the_final_wait_step_or_none() -> None:
+    assert ab.last_wait(("wait:.a", "click:.b", "wait:.c > .d", "hover:.e")) == ".c > .d"
+    assert ab.last_wait(("click:.b",)) is None
+
+
+def test_a_state_gone_after_the_capture_is_an_error_not_a_pass() -> None:
+    present = {".menu": 1}
+
+    class Page:
+        def locator(self, sel: str) -> Any:
+            return type("L", (), {"count": lambda _s: present.get(sel, 0)})()
+
+    ab.check_state_survived_capture(Page(), ("click:.x", "wait:.menu"))
+    ab.check_state_survived_capture(Page(), ("click:.x",))
+    present.clear()
+    with pytest.raises(ab.StepError, match="full_page=False"):
+        ab.check_state_survived_capture(Page(), ("click:.x", "wait:.menu"))
+
+
+def test_the_speaker_menu_screen_is_a_viewport_capture() -> None:
+    screen = screens.by_id()["file-detail-speaker-dropdown"]
+    assert ab.last_wait(screen.steps) == ".speaker-dropdown-portal .dropdown-menu"
+    assert screen.full_page is False

@@ -563,6 +563,18 @@ _FILE_DETAIL_STATES = (
         "before capture (timing), so the class is added to render the rule",
     ),
     Screen(
+        "file-detail-speaker-dropdown",
+        "/files/{file_uuid}",
+        steps=(
+            "click:.transcript-segment .speaker-trigger",
+            "wait:.speaker-dropdown-portal .dropdown-menu",
+        ),
+        ready=".transcript-segment",
+        # The menu closes on window resize, and a full-page capture fires one: viewport only.
+        full_page=False,
+        notes="SegmentSpeakerDropdown's body-portal menu open on the first segment",
+    ),
+    Screen(
         "file-detail-edit-hover",
         "/files/{file_uuid}",
         steps=("hover:.transcript-segment .edit-button",),

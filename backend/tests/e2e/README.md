@@ -165,7 +165,13 @@ GET with a whole JSON file from `styling_fixtures/` when there is no row to merg
 clusters, a shared profile, inbox suggestions). Both register a Playwright `page.route`, so follow
 them with `reload:page`: the page fetched before the route existed. A fixture file copies its
 endpoint's serializer key for key; `test_speaker_fixtures_have_exactly_the_keys_their_serializers_send`
-fails when the serializer gains or loses a key. Unit tests for the pure parts:
+fails when the serializer gains or loses a key.
+
+A screen's last `wait:` target must still be on the page AFTER the screenshot, or the screen is ERROR,
+not PASS. A full-page capture lays the page out at its full height, which fires `resize`, and a menu
+that closes on resize (SegmentSpeakerDropdown's body portal) was absent from the PNG while its `wait:`
+had passed: two menu-less pages compared as "no difference". Give such a screen `full_page=False`.
+Unit tests for the pure parts:
 `backend/tests/unit/test_styling_ab.py`. The axe surface for the shared-component fixture
 (`/a11y-fixtures/ui-kit`, surfaces `ui-kit` and `ui-kit-ar`) is in `test_a11y.py`.
 

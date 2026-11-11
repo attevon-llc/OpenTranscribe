@@ -312,11 +312,35 @@ def split_step(step: str) -> tuple[str, str]:
     return kind, arg
 
 
+def last_wait(steps: tuple[str, ...]) -> str | None:
+    """The selector of a screen's last ``wait:`` step: the state the photograph is meant to show."""
+    waits = [arg for kind, arg in map(split_step, steps) if kind == "wait"]
+    return waits[-1] if waits else None
+
+
 # ---------------------------------------------------------------------------
 # Browser parts
 # ---------------------------------------------------------------------------
 class StepError(RuntimeError):
     """A step could not run; the screen is reported ERROR with this message."""
+
+
+def check_state_survived_capture(page: Any, steps: tuple[str, ...]) -> None:
+    """Fail when the state the steps waited for is gone after the photograph.
+
+    A full-page screenshot makes Chromium lay the page out at its full height for the capture,
+    which fires ``resize``; a menu that closes on resize (the body-portal speaker menu does) is
+    then absent from the PNG while the ``wait:`` before it passed, and the screen compares two
+    menu-less pages as "no difference". Called after the screenshot, so a state that was gone
+    before it is caught too.
+    """
+    held = last_wait(steps)
+    if held and page.locator(held).count() == 0:
+        raise StepError(
+            f"{held!r} was waited for but is gone after the capture, so the PNG does not show it. "
+            "A full-page capture fires a resize, which closes menus that listen for one: give "
+            "the screen full_page=False."
+        )
 
 
 class ScreenUnavailableError(RuntimeError):
@@ -588,6 +612,7 @@ def capture(
             mask=[page.locator(m) for m in masks],
             mask_color="#ff00ff",
         )
+        check_state_survived_capture(page, screen.steps)
         snapshot = page.evaluate(_SNAPSHOT_JS, [masks, list(SNAPSHOT_PROPS)])
         has_btn = bool(page.evaluate("() => !!document.querySelector('.btn')"))
         return {"png": png, "snapshot": snapshot, "has_btn": has_btn}

@@ -278,7 +278,7 @@
 
   .change-type {
     padding: var(--space-0-5) var(--space-1-5);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     font-size: 0.625rem;
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;

@@ -79,7 +79,7 @@
     align-items: center;
     gap: var(--space-1-5);
     padding: var(--space-1-5) var(--space-3);
-    border-radius: 20px;
+    border-radius: var(--radius-pill);
     font-size: 0.8rem;
     background: var(--surface-color);
     border: 1px solid var(--border-color);

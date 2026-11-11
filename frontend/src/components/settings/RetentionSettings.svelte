@@ -606,7 +606,7 @@
     height: 16px;
     min-width: 16px;
     border: 2px solid var(--border-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background-color: var(--background-color);
     cursor: pointer;
     position: relative;

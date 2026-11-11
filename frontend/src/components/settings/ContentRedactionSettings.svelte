@@ -398,7 +398,7 @@
   .ex-blur {
     filter: blur(5px);
     background: var(--surface-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     user-select: none;
   }
 
@@ -421,9 +421,9 @@
     font-size: var(--font-size-sm);
     user-select: none;
     transition:
-      background-color 0.12s ease,
-      border-color 0.12s ease,
-      color 0.12s ease;
+      background-color var(--duration-fast) ease,
+      border-color var(--duration-fast) ease,
+      color var(--duration-fast) ease;
   }
   .chip.small {
     font-size: var(--font-size-xs);

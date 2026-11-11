@@ -63,4 +63,13 @@ describe('themeTokens resolver', () => {
     expect(contrastRatio([0, 0, 0], [255, 255, 255])).toBeCloseTo(21, 5);
     expect(() => parseColour('hotpink')).toThrow();
   });
+
+  it('parses a token mixed down with transparent as the same channels at a scaled alpha', () => {
+    const mixed = parseColour('color-mix(in srgb, rgba(250, 204, 21, 0.85) 47%, transparent)');
+    expect(mixed.rgb).toEqual([250, 204, 21]);
+    expect(mixed.alpha).toBeCloseTo(0.3995, 6);
+    expect(parseColour('color-mix(in srgb, #000000 50%, transparent)').alpha).toBe(0.5);
+    // Any other mix is not modelled: refuse it rather than guess.
+    expect(() => parseColour('color-mix(in srgb, #000 50%, #fff)')).toThrow();
+  });
 });

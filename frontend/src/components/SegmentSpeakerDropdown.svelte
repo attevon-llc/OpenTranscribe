@@ -618,11 +618,11 @@
      inline style always beats a class selector. A ring is layered on top instead so
      the highlight is visible without fighting the speaker colour. */
   .segment-speaker.search-match {
-    box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.85);
+    box-shadow: 0 0 0 2px var(--highlight-search);
   }
 
   .segment-speaker.current-match {
-    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.9);
+    box-shadow: 0 0 0 2px var(--highlight-current);
   }
 
   .dropdown-arrow {

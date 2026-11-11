@@ -192,6 +192,12 @@
   /* Button wash on a --primary-color bar; dark so the white label stays >= 4.5:1. */
   --on-solid-wash: rgba(0, 0, 0, 0.2);
   --on-solid-wash-hover: rgba(0, 0, 0, 0.3);
+  /* A search hit and the current hit: the ring colour, and the hue a translucent mark mixes
+     down from (color-mix with transparent). Same in both themes. */
+  --highlight-search: rgba(250, 204, 21, 0.85);
+  --highlight-current: rgba(249, 115, 22, 0.9);
+  /* Over an image or avatar so the white icon on it stays legible; not a modal backdrop. */
+  --media-scrim: rgba(0, 0, 0, 0.45);
   --text-on-warning: #1e293b; /* label on the amber warning fill: 6.81:1 (white is 2.15:1) */
   --media-letterbox: #000000; /* behind a video picture and its controls: black in both themes, like the picture */
 
@@ -386,8 +392,9 @@
   --empty-state-gap: 0.5rem;
   --empty-state-action-gap: 1rem;
 
-  /* Search-match highlight shared by every <mark> without its own rule. */
-  --highlight-bg: rgba(250, 204, 21, 0.4);
+  /* Search-match highlight shared by every <mark> without its own rule: --highlight-search at
+     .4 alpha (47% of its .85). */
+  --highlight-bg: color-mix(in srgb, var(--highlight-search) 47%, transparent);
 
   /* ---------------------------------------------------------------------
      Scales added by the styling layer (plan sections 3.3 to 3.8). Theme-independent, so
@@ -531,6 +538,9 @@
   /* Button wash on a --primary-color bar; dark so the white label stays >= 4.5:1. */
   --on-solid-wash: rgba(0, 0, 0, 0.2);
   --on-solid-wash-hover: rgba(0, 0, 0, 0.3);
+  --highlight-search: rgba(250, 204, 21, 0.85);
+  --highlight-current: rgba(249, 115, 22, 0.9);
+  --media-scrim: rgba(0, 0, 0, 0.45);
   --color-info-bg: rgba(96, 165, 250, 0.15);
   --color-info-border: rgba(96, 165, 250, 0.3);
   --color-info: var(--info-color);
@@ -559,7 +569,7 @@
   --success-hover: #10b981;
   --warning-dark: #fcd34d;
   --info-dark: #93c5fd;
-  --highlight-bg: rgba(250, 204, 21, 0.3);
+  --highlight-bg: color-mix(in srgb, var(--highlight-search) 35%, transparent); /* .3 alpha */
 
   /* Styling-layer role tokens whose dark value differs (see the :root block). */
   --control-border: #7c8aa0; /* 4.18:1 on the dark card */

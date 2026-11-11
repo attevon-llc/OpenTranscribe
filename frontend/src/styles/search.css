@@ -8,26 +8,28 @@
  * TranscriptSegmentList — do not rename.
  */
 
-/* Inline text-match highlight (the yellow marker on matched words). */
+/* Inline text-match highlight (the yellow marker on matched words). The translucent marks below
+   mix --highlight-search / --highlight-current (.85 / .9 alpha) down with transparent: N% of the
+   token is N% of its alpha (47% of .85 = .3995, the .4 this marker had); whole percentages keep
+   every mark within .0035 alpha of its old value, under one 8-bit step. */
 .transcript-search-highlight {
-  background-color: rgba(250, 204, 21, 0.4);
+  background-color: var(--highlight-bg);
   padding: 0.05em 0.15em;
   border-radius: var(--radius-xs);
 }
 
 .transcript-search-highlight.current {
-  background-color: rgba(250, 204, 21, 0.6);
-  border: 1px solid rgba(250, 204, 21, 0.8);
+  background-color: color-mix(in srgb, var(--highlight-search) 71%, transparent);
+  border: 1px solid color-mix(in srgb, var(--highlight-search) 94%, transparent);
 }
 
 [data-theme='dark'] .transcript-search-highlight {
-  background-color: rgba(250, 204, 21, 0.3);
   color: var(--text-primary);
 }
 
 [data-theme='dark'] .transcript-search-highlight.current {
-  background-color: rgba(250, 204, 21, 0.5);
-  border: 1px solid rgba(250, 204, 21, 0.7);
+  background-color: color-mix(in srgb, var(--highlight-search) 59%, transparent);
+  border: 1px solid color-mix(in srgb, var(--highlight-search) 82%, transparent);
 }
 
 /* `<mark class="search-match">` / `<mark class="current-match">` — the whole-word highlight
@@ -38,7 +40,7 @@
    own `:global(.search-match)`/`:global(.current-match)` with conflicting values and no dark
    variant; consolidated here so all three render identically (G7). */
 .search-match {
-  background-color: rgba(250, 204, 21, 0.45);
+  background-color: color-mix(in srgb, var(--highlight-search) 53%, transparent);
   color: var(--text-primary);
   padding: 0.1em 0.2em;
   border-radius: 3px;
@@ -46,23 +48,23 @@
 }
 
 .current-match {
-  background-color: rgba(249, 115, 22, 0.55);
+  background-color: color-mix(in srgb, var(--highlight-current) 61%, transparent);
   color: var(--text-primary);
   padding: 0.1em 0.2em;
   border-radius: 3px;
   font-weight: var(--font-weight-semibold);
-  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.75);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--highlight-current) 83%, transparent);
 }
 
 [data-theme='dark'] .search-match {
-  background-color: rgba(250, 204, 21, 0.35);
+  background-color: color-mix(in srgb, var(--highlight-search) 41%, transparent);
   color: var(--text-primary);
 }
 
 [data-theme='dark'] .current-match {
-  background-color: rgba(249, 115, 22, 0.45);
+  background-color: color-mix(in srgb, var(--highlight-current) 50%, transparent);
   color: var(--text-primary);
-  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.65);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--highlight-current) 72%, transparent);
 }
 
 /* `.search-keyword-match` / `.search-semantic-segment` — the consolidated transcript-view
@@ -73,7 +75,7 @@
  * `backend/tests/e2e/test_search.py:297` — do not rename.
  */
 .search-keyword-match {
-  background-color: rgba(250, 204, 21, 0.45);
+  background-color: color-mix(in srgb, var(--highlight-search) 53%, transparent);
   color: var(--text-primary);
   padding: 0.1em 0.2em;
   border-radius: 3px;
@@ -90,7 +92,7 @@
 }
 
 [data-theme='dark'] .search-keyword-match {
-  background-color: rgba(250, 204, 21, 0.3);
+  background-color: color-mix(in srgb, var(--highlight-search) 35%, transparent);
   color: var(--text-primary);
 }
 

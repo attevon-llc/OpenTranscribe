@@ -148,10 +148,20 @@ export function resolveToken(sets: TokenSets, theme: Theme, name: string): strin
   return resolveValue(sets, theme, raw, [name]);
 }
 
-/** Parse a resolved colour: `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb(a)(r, g, b[, a])`, `white`. */
+/**
+ * Parse a resolved colour: `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb(a)(r, g, b[, a])`, `white`, and
+ * `color-mix(in srgb, <colour> P%, transparent)`, the form a translucent mark of a token takes.
+ * Mixing with transparent in srgb interpolates premultiplied (CSS Color 5, color-mix), so the
+ * channels stay the colour's and only the alpha scales: alpha * P / 100.
+ */
 export function parseColour(value: string): Colour {
   const v = value.trim().toLowerCase();
   if (v === 'white') return { rgb: [255, 255, 255], alpha: 1 };
+  const mix = v.match(/^color-mix\(\s*in srgb\s*,\s*(.+?)\s+([\d.]+)%\s*,\s*transparent\s*\)$/);
+  if (mix) {
+    const base = parseColour(mix[1]);
+    return { rgb: base.rgb, alpha: (base.alpha * Number(mix[2])) / 100 };
+  }
   const digits = v.match(/^#([0-9a-f]{3,8})$/)?.[1];
   if (digits !== undefined) {
     let h = digits;

@@ -291,12 +291,12 @@ describe('find marks and rings (WCAG 2.2 AA)', () => {
 
   function markUses(file: string, css: string): MarkUse[] {
     const found: MarkUse[] = [];
-    for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-      let selector = rule[1].trim();
+    for (const [, rawSelector = '', body = ''] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      let selector = rawSelector.trim();
       const prefix = DARK_PREFIXES.find((p) => selector.startsWith(p));
       if (prefix) selector = selector.slice(prefix.length);
-      for (const decl of rule[2].split(';')) {
-        const [prop, ...rest] = decl.split(':');
+      for (const decl of body.split(';')) {
+        const [prop = '', ...rest] = decl.split(':');
         const value = rest.join(':');
         const token = value.match(HIGHLIGHT)?.[1];
         if (token === undefined) continue;

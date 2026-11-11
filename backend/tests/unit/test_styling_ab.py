@@ -231,6 +231,17 @@ def test_only_screens_that_hold_a_request_skip_network_idle() -> None:
     assert held == skipping == {"upload-active"}
 
 
+def test_screens_that_queue_an_upload_run_in_their_own_context() -> None:
+    # The upload queue persists in the browser profile; a shared context restores it (and the
+    # tray badge) into whichever screen is photographed next.
+    queues = {s.id for s in screens.SCREENS if "click:.nav-submit" in s.steps}
+    assert (
+        queues
+        == {s.id for s in screens.SCREENS if s.isolated}
+        == {"upload-failed", "upload-active"}
+    )
+
+
 def test_new_step_kinds_are_rejected_when_malformed() -> None:
     bad = (screens.Screen("x", "/", steps=("pause", "route:")),)
     problems = "\n".join(screens.validate(bad))

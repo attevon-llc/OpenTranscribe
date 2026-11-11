@@ -35,6 +35,7 @@ STEP_KINDS = frozenset(
         "file",
         "route",
         "pause",
+        "reload",
     }
 )
 
@@ -72,6 +73,9 @@ class Screen:
     #: False for a screen that holds a request open on purpose (``route:...|0``), which would
     #: keep ``networkidle`` from ever firing.
     network_idle: bool = True
+    #: True for a screen that queues an upload: the queue persists in the browser profile, and a
+    #: shared context would restore it (badge and all) into the next screen captured.
+    isolated: bool = False
     notes: str = field(default="", compare=False)
 
 
@@ -176,23 +180,28 @@ _APP = (
         masks=_GALLERY_MASKS,
         full_page=False,
         ready=".upload-btn",
+        isolated=True,
         notes="UploadManager panel with a failed row and its error message",
     ),
     Screen(
         "upload-active",
         "/",
         steps=(
+            # The tray stays minimised (and shows its activity dot) when the visitor collapsed it
+            # before; the store reads that flag once at load, hence the reload.
+            "local:upload-tray-user-collapsed=1",
+            "reload:page",
+            "wait:.upload-btn",
             _UPLOAD_PREPARE + "0",
             *_UPLOAD_FILE,
             *_UPLOAD_SUBMIT,
-            "pause:3000",
-            "press:Escape",
             "wait:.activity-indicator",
         ),
         masks=_GALLERY_MASKS,
         full_page=False,
         ready=".upload-btn",
         network_idle=False,
+        isolated=True,
         notes="minimised badge with the activity dot while a request is held in flight",
     ),
     Screen("file-detail", "/files/{file_uuid}", ready=".transcript-segment"),

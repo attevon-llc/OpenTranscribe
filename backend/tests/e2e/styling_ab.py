@@ -412,6 +412,8 @@ def run_step(page: Any, step: str) -> None:
         elif kind == "route":
             glob, _, status = arg.rpartition("|")
             _mock_route(page, glob, int(status))
+        elif kind == "reload":
+            page.reload()
         elif kind == "pause":
             page.wait_for_timeout(int(arg))
         else:
@@ -442,21 +444,30 @@ class Session:
         self.creds, self.inject_css = creds, inject_css
         self._ctx: dict[tuple[str, bool], Any] = {}
 
-    def context(self, variant: str, authed: bool) -> Any:
-        """A context for this variant; logged in once if ``authed``."""
+    def context(self, variant: str, authed: bool, fresh: bool = False) -> Any:
+        """A context for this variant; logged in once if ``authed``.
+
+        ``fresh`` returns a new uncached one: the caller closes it, so state the screen leaves
+        behind (a persisted upload queue) cannot reach the next screen.
+        """
+        key = (variant, authed)
+        if fresh:
+            return self._new_context(variant, authed)
+        if key not in self._ctx:
+            self._ctx[key] = self._new_context(variant, authed)
+        return self._ctx[key]
+
+    def _new_context(self, variant: str, authed: bool) -> Any:
         from _visual_capture import login
         from _visual_capture import make_context
 
-        key = (variant, authed)
-        if key not in self._ctx:
-            locale, theme = parse_variant(variant)
-            ctx = make_context(self.browser, theme, locale)
-            if authed:
-                page = ctx.new_page()
-                login(page, self.base, *self.creds)
-                page.close()
-            self._ctx[key] = ctx
-        return self._ctx[key]
+        locale, theme = parse_variant(variant)
+        ctx = make_context(self.browser, theme, locale)
+        if authed:
+            page = ctx.new_page()
+            login(page, self.base, *self.creds)
+            page.close()
+        return ctx
 
     def close(self) -> None:
         for ctx in self._ctx.values():
@@ -476,7 +487,7 @@ def capture(
                 "no completed file on this stack (seed it: --seed-benchmark)"
             )
         path = path.replace("{file_uuid}", file_uuid)
-    ctx = session.context(variant, screen.auth)
+    ctx = session.context(variant, screen.auth, fresh=screen.isolated)
     page = ctx.new_page()
     try:
         page.goto(session.base + path)
@@ -509,6 +520,8 @@ def capture(
         return {"png": png, "snapshot": snapshot, "has_btn": has_btn}
     finally:
         page.close()
+        if screen.isolated:
+            ctx.close()
 
 
 def _api_token_and_file(backend: str, creds: tuple[str, str]) -> tuple[str, str | None]:

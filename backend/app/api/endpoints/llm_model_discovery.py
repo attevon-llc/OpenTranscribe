@@ -8,7 +8,6 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Request
 from fastapi import Response
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -20,6 +19,7 @@ from app.api.rate_limit import limiter
 from app.api.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.services.llm_config_queries import find_own_llm_config_by_uuid
+from app.services.llm_settings_outage import llm_settings_outage_as_503
 from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.url_validation import PinnedTarget
@@ -152,12 +152,13 @@ def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None
     """
     try:
         config_uuid = uuid.UUID(config_id)
-        config = find_own_llm_config_by_uuid(db, config_uuid, user_id)
+        with llm_settings_outage_as_503():
+            config = find_own_llm_config_by_uuid(db, config_uuid, user_id)
         if config and config.api_key and str(config.provider) != "bedrock":
             return decrypt_api_key(str(config.api_key))
     except SecretDecryptionError:
         raise  # an unreadable stored key is a 409 for the caller, not "no key"
-    except (ValueError, SQLAlchemyError) as e:
+    except ValueError as e:
         logger.warning(
             f"Could not retrieve stored API key for config {config_id}: {e}", exc_info=True
         )

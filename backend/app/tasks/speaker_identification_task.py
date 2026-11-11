@@ -690,8 +690,9 @@ def identify_speakers_llm_task(self, file_uuid: str):
             raise
         except Exception as fatal:
             logger.exception(f"Speaker identification cannot proceed for {file_uuid}")
-            _mark_identification_failed(task_id, str(fatal))
-            return {"status": "error", "message": str(fatal)}
+            fatal_text = task_error_text(fatal)
+            _mark_identification_failed(task_id, fatal_text)
+            return {"status": "error", "message": fatal_text}
         raise  # unreachable — defer_for_redaction always raises
     except Exception as e:
         logger.exception(f"Error in speaker identification task for file {file_id}")

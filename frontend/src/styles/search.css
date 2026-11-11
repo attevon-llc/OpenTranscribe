@@ -9,9 +9,10 @@
  */
 
 /* Inline text-match highlight (the yellow marker on matched words). The translucent marks below
-   mix --highlight-search / --highlight-current (.85 / .9 alpha) down with transparent: N% of the
-   token is N% of its alpha (47% of .85 = .3995, the .4 this marker had); whole percentages keep
-   every mark within .0035 alpha of its old value, under one 8-bit step. */
+   mix the FILL tokens --highlight-search / --highlight-current down with transparent: N% of the
+   token is N% of its alpha. A border or ring uses the RING tokens (--highlight-search-ring,
+   --highlight-current-ring), which reach 3:1 against the surface; a fill never does.
+   contrast-pairs.test.ts reads every mark and ring in this file. */
 .transcript-search-highlight {
   background-color: var(--highlight-bg);
   padding: 0.05em 0.15em;
@@ -20,16 +21,16 @@
 
 .transcript-search-highlight.current {
   background-color: color-mix(in srgb, var(--highlight-search) 71%, transparent);
-  border: 1px solid color-mix(in srgb, var(--highlight-search) 94%, transparent);
+  border: 1px solid var(--highlight-search-ring);
 }
 
 [data-theme='dark'] .transcript-search-highlight {
   color: var(--text-primary);
 }
 
+/* 50%, not more: --text-primary on it is 4.87:1 on the dark card (59% was 4.03:1). */
 [data-theme='dark'] .transcript-search-highlight.current {
-  background-color: color-mix(in srgb, var(--highlight-search) 59%, transparent);
-  border: 1px solid color-mix(in srgb, var(--highlight-search) 82%, transparent);
+  background-color: color-mix(in srgb, var(--highlight-search) 50%, transparent);
 }
 
 /* `<mark class="search-match">` / `<mark class="current-match">` — the whole-word highlight
@@ -53,7 +54,7 @@
   padding: 0.1em 0.2em;
   border-radius: 3px;
   font-weight: var(--font-weight-semibold);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--highlight-current) 83%, transparent);
+  box-shadow: 0 0 0 2px var(--highlight-current-ring);
 }
 
 [data-theme='dark'] .search-match {
@@ -64,7 +65,6 @@
 [data-theme='dark'] .current-match {
   background-color: color-mix(in srgb, var(--highlight-current) 50%, transparent);
   color: var(--text-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--highlight-current) 72%, transparent);
 }
 
 /* `.search-keyword-match` / `.search-semantic-segment` — the consolidated transcript-view

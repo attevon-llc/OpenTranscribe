@@ -198,6 +198,8 @@ found literals that had no role. The first lane that uses one adds it to both `t
 |---|---|---|---|---|
 | `--highlight-search` | rgba(250,204,21,.85) | same | **new** | search-hit ring or mark in the transcript and segment speaker dropdown (`styles/search.css`, SegmentSpeakerDropdown) |
 | `--highlight-current` | rgba(249,115,22,.9) | same | **new** | the current search hit |
+| `--highlight-search-ring` | #a16207 | #facc15 | **new** (lane 3.0) | the ring around a search hit: the speaker-chip ring and the current transcript hit's border. 4.92:1 on white, 9.55:1 on the dark card. A fill is not a ring: the yellow fill as a ring was 1.44:1 on white (SC 1.4.11) |
+| `--highlight-current-ring` | #c2410c | #f97316 | **new** (lane 3.0) | the ring around the current hit (`.current-match`, speaker chip). 5.18:1 on white, 5.22:1 on the dark card (the fill as a ring was 2.55:1 light, 2.93:1 dark) |
 | `--media-scrim` | rgba(0,0,0,.45) | same | **new** | overlay on an image or avatar so white text or icons over it stay legible. It is not a modal backdrop: `--modal-backdrop` is .5 in light and .7 in dark |
 | `--on-solid-wash` | rgba(0,0,0,.2) | same | **new** | translucent button background on a `--primary-color` or `-solid` header (UploadManager header buttons). A darkening wash: white text on the white .2 wash over #2563eb was 3.7:1 (fails AA); on black .2 it is about 7:1 |
 | `--on-solid-wash-hover` | rgba(0,0,0,.3) | same | **new** | the hover state of the above |
@@ -1092,6 +1094,12 @@ master merge (repo plan 0b point 10), so its conflict window is small.
 - D13: dark shadow values per 3.6; `--card-shadow: var(--shadow-sm)`. (Done: the dark block
   carries the "Dark after D13" column, `--card-shadow` is one `var(--shadow-sm)` on `:root`, and
   the dark `.status-card` rule in UserFileStatus, now equal to the token, is deleted.)
+- Find-mark contrast (added 2026-11-11): the light find rings were 1.44:1 and 2.55:1 on white (the fill
+  tokens drawn as rings) and the dark current transcript mark carried its text at 4.03:1. A fill and a
+  ring are separate roles now: rings use `--highlight-search-ring` / `--highlight-current-ring` (3.2) in
+  `search.css` and SegmentSpeakerDropdown, the fills keep their values, and the dark current mark is
+  50% of the fill (4.87:1), not 59%. `contrast-pairs.test.ts` reads every mark (4.5:1 for
+  `--text-primary`) and ring (3:1) in both files and fails a ring drawn with a fill token.
 - All screens. Expected: blue tints shift by ΔE of about 1 to 2 (both themes); dark-mode shadows
   deepen.
 - Opus reviewer.

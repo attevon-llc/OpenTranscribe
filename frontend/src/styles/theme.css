@@ -192,10 +192,16 @@
   /* Button wash on a --primary-color bar; dark so the white label stays >= 4.5:1. */
   --on-solid-wash: rgba(0, 0, 0, 0.2);
   --on-solid-wash-hover: rgba(0, 0, 0, 0.3);
-  /* A search hit and the current hit: the ring colour, and the hue a translucent mark mixes
-     down from (color-mix with transparent). Same in both themes. */
+  /* A search hit and the current hit, two roles each. The FILL is the hue a translucent mark
+     mixes down from (color-mix with transparent, styles/search.css); text sits on it, so it
+     stays a pale highlighter. The RING marks a hit where the fill cannot (the current hit, a
+     speaker chip that keeps its own colour), so it needs 3:1 against the surface (SC 1.4.11):
+     the fills used as rings were 1.44:1 and 2.55:1 on white. contrast-pairs.test.ts checks
+     both roles in every search.css rule. */
   --highlight-search: rgba(250, 204, 21, 0.85);
   --highlight-current: rgba(249, 115, 22, 0.9);
+  --highlight-search-ring: #a16207; /* 4.92:1 on white */
+  --highlight-current-ring: #c2410c; /* 5.18:1 on white */
   /* Over an image or avatar so the white icon on it stays legible; not a modal backdrop. */
   --media-scrim: rgba(0, 0, 0, 0.45);
   --text-on-warning: #1e293b; /* label on the amber warning fill: 6.81:1 (white is 2.15:1) */
@@ -539,6 +545,9 @@
   --on-solid-wash-hover: rgba(0, 0, 0, 0.3);
   --highlight-search: rgba(250, 204, 21, 0.85);
   --highlight-current: rgba(249, 115, 22, 0.9);
+  /* Rings, dark: the full-strength hues, light on the dark card (9.55:1 and 5.22:1). */
+  --highlight-search-ring: #facc15;
+  --highlight-current-ring: #f97316;
   --media-scrim: rgba(0, 0, 0, 0.45);
   --color-info-bg: rgba(96, 165, 250, 0.15);
   --color-info-border: rgba(96, 165, 250, 0.3);

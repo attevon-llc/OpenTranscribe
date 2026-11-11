@@ -1,0 +1,32 @@
+[
+  {
+    "uuid": "5a1c0000-0000-4000-8000-0000000000e1",
+    "email": "casey.morgan@example.test",
+    "full_name": "Casey Morgan",
+    "role": "user",
+    "auth_type": "oidc",
+    "is_active": true,
+    "is_superuser": false,
+    "email_verified": true,
+    "approval_status": "approved",
+    "allow_local_fallback": true,
+    "account_expires_at": "2027-06-30T00:00:00",
+    "created_at": "2026-11-01T12:00:00",
+    "updated_at": "2026-11-01T12:00:00"
+  },
+  {
+    "uuid": "5a1c0000-0000-4000-8000-0000000000e2",
+    "email": "riley.chen@example.test",
+    "full_name": "Riley Chen",
+    "role": "admin",
+    "auth_type": "local",
+    "is_active": true,
+    "is_superuser": false,
+    "email_verified": true,
+    "approval_status": "approved",
+    "allow_local_fallback": false,
+    "account_expires_at": null,
+    "created_at": "2026-11-02T12:00:00",
+    "updated_at": "2026-11-02T12:00:00"
+  }
+]

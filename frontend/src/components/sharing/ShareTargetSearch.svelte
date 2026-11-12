@@ -176,7 +176,7 @@
 
   .search-icon {
     position: absolute;
-    left: 10px;
+    inset-inline-start: 10px;
     color: var(--text-secondary);
     pointer-events: none;
   }
@@ -221,7 +221,7 @@
     background: transparent;
     color: var(--text-color);
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     transition: background-color var(--duration-fast) ease;
   }
 

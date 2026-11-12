@@ -274,7 +274,7 @@
 
   .search-icon {
     position: absolute;
-    left: 10px;
+    inset-inline-start: 10px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-secondary);
@@ -295,7 +295,7 @@
 
   .search-clear {
     position: absolute;
-    right: 6px;
+    inset-inline-end: 6px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
@@ -354,7 +354,7 @@
     border-radius: var(--radius-lg);
     cursor: pointer;
     transition: all var(--duration-fast);
-    text-align: left;
+    text-align: start;
     width: 100%;
   }
 

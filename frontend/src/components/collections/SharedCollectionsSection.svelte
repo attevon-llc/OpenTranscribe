@@ -68,7 +68,7 @@
   }
 
   .shared-card {
-    border-left: 3px solid var(--primary-color);
+    border-inline-start: 3px solid var(--primary-color);
   }
 
   .badge.shared-permission {

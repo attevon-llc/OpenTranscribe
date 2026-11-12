@@ -378,7 +378,7 @@
 
   .tooltip-content ul {
     margin: 0;
-    padding-left: var(--space-5);
+    padding-inline-start: var(--space-5);
     font-size: var(--font-size-xs);
     color: var(--text-light);
   }

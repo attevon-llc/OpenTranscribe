@@ -314,7 +314,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    text-align: left;
+    text-align: start;
   }
 
   .verify-form label {
@@ -369,7 +369,7 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-2);
-    text-align: left;
+    text-align: start;
     font-size: var(--font-size-md);
     color: var(--text-color);
     cursor: pointer;

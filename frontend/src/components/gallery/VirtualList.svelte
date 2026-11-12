@@ -441,7 +441,7 @@
     padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-pill);
     white-space: nowrap;
-    margin-left: var(--space-1);
+    margin-inline-start: var(--space-1);
   }
 
   .no-speakers {

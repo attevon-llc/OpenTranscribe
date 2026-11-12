@@ -312,7 +312,7 @@
 
   .paste-button {
     position: absolute;
-    right: 8px;
+    inset-inline-end: 8px;
     background: transparent;
     border: none;
     color: var(--text-secondary);
@@ -423,7 +423,7 @@
     position: absolute;
     width: 16px;
     height: 16px;
-    left: 2px;
+    inset-inline-start: 2px;
     bottom: 2px;
     background: var(--text-on-solid);
     border-radius: var(--radius-round);
@@ -432,6 +432,7 @@
 
   .download-toggle input:checked + .download-toggle-slider { background-color: var(--primary-color); }
   .download-toggle input:checked + .download-toggle-slider::before { transform: translateX(16px); }
+  :global([dir='rtl']) .download-toggle input:checked + .download-toggle-slider::before { transform: translateX(-16px); }
 
   .download-options-hint { font-size: var(--font-size-2xs); color: var(--text-secondary); margin: 0; }
   .download-options-loading { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); }

@@ -560,8 +560,7 @@
   .navbar {
     position: fixed;
     top: 0;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     height: calc(60px + env(safe-area-inset-top, 0px));
     padding-top: env(safe-area-inset-top, 0);
     background-color: var(--navbar-bg);
@@ -687,7 +686,7 @@
   .notification-badge {
     position: absolute;
     top: -5px;
-    right: -5px;
+    inset-inline-end: -5px;
     background-color: var(--error-solid);
     color: var(--text-on-solid);
     width: 18px;
@@ -791,8 +790,7 @@
       gap: var(--space-1);
       position: fixed;
       top: calc(60px + env(safe-area-inset-top, 0px));
-      left: 0;
-      right: 0;
+      inset-inline: 0;
       background: var(--navbar-bg);
       border-bottom: 1px solid var(--border-color);
       padding: var(--space-3) var(--space-4);
@@ -862,7 +860,7 @@
       position: relative;
       width: 100%;
       top: auto;
-      right: auto;
+      inset-inline-end: auto;
       box-shadow: none;
       border: none;
       border-top: 1px solid var(--border-color);
@@ -960,7 +958,7 @@
   .recording-pulse {
     position: absolute;
     top: 6px;
-    left: 6px;
+    inset-inline-start: 6px;
     width: 6px;
     height: 6px;
     border-radius: var(--radius-round);
@@ -1061,8 +1059,8 @@
     transform: translateX(-50%);
     width: 0;
     height: 0;
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
+    border-inline-start: 8px solid transparent;
+    border-inline-end: 8px solid transparent;
     border-bottom: 8px solid var(--border-color);
   }
 
@@ -1074,8 +1072,8 @@
     transform: translateX(-50%);
     width: 0;
     height: 0;
-    border-left: 7px solid transparent;
-    border-right: 7px solid transparent;
+    border-inline-start: 7px solid transparent;
+    border-inline-end: 7px solid transparent;
     border-bottom: 7px solid var(--background-color);
   }
 
@@ -1123,9 +1121,9 @@
     font-variant-numeric: tabular-nums;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
-    margin-left: auto;
+    margin-inline-start: auto;
     min-width: 64px; /* Reserve space for HH:MM:SS */
-    text-align: right;
+    text-align: end;
     display: inline-block;
   }
 
@@ -1205,8 +1203,8 @@
     /* Adjust triangle for smaller screens */
     .recording-controls-popup::before,
     .recording-controls-popup::after {
-      border-left-width: 6px;
-      border-right-width: 6px;
+      border-inline-start-width: 6px;
+      border-inline-end-width: 6px;
     }
 
     .recording-controls-popup::before {

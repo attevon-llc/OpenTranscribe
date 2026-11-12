@@ -467,7 +467,7 @@
   .type-badge {
     position: absolute;
     top: 6px;
-    left: 6px;
+    inset-inline-start: 6px;
     width: 22px;
     height: 22px;
     display: flex;
@@ -488,7 +488,7 @@
   .duration-badge {
     position: absolute;
     bottom: 6px;
-    right: 6px;
+    inset-inline-end: 6px;
     background: var(--player-scrim);
     color: var(--text-on-solid);
     font-size: var(--font-size-2xs);
@@ -611,7 +611,7 @@
       width: 18px;
       height: 18px;
       top: 4px;
-      left: 4px;
+      inset-inline-start: 4px;
     }
 
     .type-badge svg {

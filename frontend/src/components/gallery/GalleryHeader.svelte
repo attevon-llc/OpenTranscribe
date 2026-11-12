@@ -109,8 +109,7 @@
     padding: var(--space-3) var(--space-4);
     background-color: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
-    margin-left: calc(-1 * var(--space-4));
-    margin-right: calc(-1 * var(--space-4));
+    margin-inline: calc(-1 * var(--space-4));
   }
 
   .toolbar-row {
@@ -210,8 +209,7 @@
     }
 
     .gallery-toolbar {
-      margin-left: calc(-1 * var(--space-4));
-      margin-right: calc(-1 * var(--space-4));
+      margin-inline: calc(-1 * var(--space-4));
       padding: var(--space-2) var(--space-4);
       /* Prevent content showing through gap between navbar and toolbar */
       background-color: var(--background-color);

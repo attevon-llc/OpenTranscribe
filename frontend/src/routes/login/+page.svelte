@@ -1128,7 +1128,7 @@
   }
 
   .forgot-password-row {
-    text-align: right;
+    text-align: end;
     margin-top: calc(-1 * var(--space-2));
   }
 
@@ -1277,7 +1277,7 @@
 
   .password-policy ul {
     margin: var(--space-2) 0 0;
-    padding-left: var(--space-4);
+    padding-inline-start: var(--space-4);
   }
 
   .password-policy li {
@@ -1307,7 +1307,7 @@
   }
 
   .mfa-form :global(.form-field) {
-    text-align: left;
+    text-align: start;
   }
 
   .mfa-form input {

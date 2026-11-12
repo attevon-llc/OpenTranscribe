@@ -68,6 +68,10 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   Hooks: `guard-stylelint-staged` (commit stage, staged files) and `guard-stylelint` (push stage,
   whole tree). ⚠️ Do not run `stylelint --fix` over `.svelte` files unreviewed: postcss-html
   rewrote a templated `style="..."` attribute and escaped a `<style>` inside a CSS comment.
+- `npm run format` / `format:check` — Prettier over every file it understands (`--ignore-unknown`,
+  `.prettierignore` skips generated and vendored output). The devDependency is pinned to the
+  `prettier` pre-commit hook's rev (`backend/tests/unit/test_prettier_hook_version_parity.py`),
+  so the script and the hook format identically.
 - `npm run test` / `test:watch` — Vitest unit/component tests (jsdom).
   ⚠️ **Those scripts set `NODE_OPTIONS=--no-experimental-webstorage`, and it is load-bearing on
   Node >=26.** Node 26 defines a `localStorage` accessor on `globalThis` that evaluates to

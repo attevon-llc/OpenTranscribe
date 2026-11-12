@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import socket
 import uuid as uuid_pkg
 from collections.abc import Iterator
@@ -93,6 +94,7 @@ from playwright.sync_api import Page
 from playwright.sync_api import expect
 from privacy_ui import PRIVACY_SURFACES
 from privacy_ui import open_privacy_surface
+from styling_screens import load_fixture
 from timeouts import APP_SHELL_READY_MS
 
 pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet stack)
@@ -436,6 +438,8 @@ SURFACES = [
     "privacy_settings",
     "purge_dialog",
     "about",
+    "search",
+    "chat_answer",
 ]
 THEMES = ["light", "dark"]
 
@@ -541,6 +545,11 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
     "privacy_settings": (),
     "purge_dialog": (),
     "about": (".about-modal-wrapper .header-version",),
+    # "N results in <time> ms" changes its text width on every run (#1282 C), and the navbar bell
+    # is on every authenticated page.
+    "search": (".result-summary", ".notifications-btn"),
+    # An element capture of one fixed, route-fulfilled answer: nothing volatile is in frame.
+    "chat_answer": (),
 }
 
 
@@ -696,7 +705,7 @@ _SHARED_STACK_HOSTS = ("localhost:5173", "localhost:5174", "127.0.0.1:5173", "12
 #: digit count was reflowing the panel. Do not move a surface out of this set on
 #: the strength of adding a mask — measure two runs against two different
 #: corpora first.
-_NEEDS_ISOLATED_STACK = frozenset({"gallery", "speakers", "file_detail"})
+_NEEDS_ISOLATED_STACK = frozenset({"gallery", "speakers", "file_detail", "search"})
 
 
 def _skip_unless_isolated_stack(surface: str, base_url: str, backend_url: str) -> None:
@@ -781,6 +790,32 @@ def _volatile_regions(page: Page, surface: str) -> list[Any]:
 
 @pytest.mark.parametrize("theme", THEMES)
 @pytest.mark.parametrize("surface", SURFACES)
+def _open_fixed_chat_answer(page: Page, base_url: str) -> None:
+    """Render the canned assistant answer (bold, list, quote, KaTeX, fenced code) with no LLM.
+
+    The two chat GETs are answered from the same fixtures the styling A/B tool's `chat-answer`
+    screen uses (#1282 D), so the surface needs no provider and no library content.
+    """
+    conversation = load_fixture("chat_conversation_detail.json")
+    messages = load_fixture("chat_messages_rendered_answer.json")
+    page.route(
+        re.compile(r"/api/chat/conversations/[0-9a-f-]+/messages"),
+        lambda route: (
+            route.fulfill(json=messages) if route.request.method == "GET" else route.continue_()
+        ),
+    )
+    page.route(
+        re.compile(r"/api/chat/conversations/[0-9a-f-]+$"),
+        lambda route: (
+            route.fulfill(json=conversation) if route.request.method == "GET" else route.continue_()
+        ),
+    )
+    page.goto(f"{base_url}/chat/00000000-0000-4000-8000-000000001282")
+    page.wait_for_selector(".chat-markdown pre .code-header", timeout=30000)
+    page.wait_for_selector(".chat-markdown .katex", timeout=30000)
+    _stabilize(page)
+
+
 def test_visual_regression(
     browser: Any,
     theme: str,
@@ -906,6 +941,14 @@ def test_visual_regression(
             # selectors that assertion just proved are still matching, so a
             # renamed class fails there rather than silently pinning nothing.
             _pin_masked_geometry(page, "chat_trace")
+        elif surface == "search":
+            page.goto(f"{base_url}/search?q=the")
+            page.wait_for_selector(".search-page, main", timeout=30000)
+            page.wait_for_selector(".result-summary", timeout=30000)
+            _stabilize(page)
+            _assert_masks(page, "search")
+        elif surface == "chat_answer":
+            _open_fixed_chat_answer(page, base_url)
         else:  # defensive
             pytest.fail(f"Unknown surface: {surface}")
 
@@ -916,6 +959,10 @@ def test_visual_regression(
                 animations="disabled",
                 mask=_volatile_regions(page, surface),
                 mask_color="#ff00ff",
+            )
+        elif surface == "chat_answer":
+            png_bytes = page.locator('[data-testid="chat-message-assistant"]').last.screenshot(
+                animations="disabled"
             )
         elif surface == "chat_trace":
             # Capture the PANEL, not the page. The thread beside it carries the

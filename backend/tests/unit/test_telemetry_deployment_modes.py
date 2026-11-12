@@ -130,7 +130,12 @@ def test_without_debug_the_same_state_sends(allowed, posts, stored_on):
 def test_the_overlay_forces_the_report_off_for_the_services_that_send(overlay):
     services = yaml.safe_load((REPO_ROOT / overlay).read_text())["services"]
 
-    for name in ("backend", "celery-worker"):
+    base = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text())["services"]
+    # telemetry.usage_report routes to `utility`; find the worker that consumes it.
+    senders = [n for n, svc in base.items() if "utility" in str(svc.get("command", ""))]
+    assert senders, "no worker consumes the utility queue"
+
+    for name in ("backend", *senders):
         assert services[name]["environment"]["OPENTRANSCRIBE_TELEMETRY"] == "false"
 
 

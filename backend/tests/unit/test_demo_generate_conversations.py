@@ -137,3 +137,35 @@ def test_a_chat_429_is_waited_out_and_the_message_is_sent(gen):
         assert hits[0] == 3
     finally:
         server.shutdown()
+
+
+def test_a_read_timeout_on_the_streamed_post_is_not_replayed(gen):
+    from http.server import ThreadingHTTPServer
+
+    import requests
+    from requests.adapters import HTTPAdapter
+
+    hits = [0]
+    release = threading.Event()
+
+    def slow_post(self: BaseHTTPRequestHandler) -> None:
+        hits[0] += 1
+        release.wait(timeout=5)
+
+    handler = type(
+        "Slow", (BaseHTTPRequestHandler,), {"do_POST": slow_post, "log_message": lambda *a: None}
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        s = requests.Session()
+        s.mount(base, HTTPAdapter(max_retries=gen.RETRY))
+
+        with pytest.raises(requests.exceptions.ConnectionError, match="Read timed out"):
+            s.post(f"{base}/chat", json={}, timeout=0.5)
+
+        assert hits[0] == 1
+    finally:
+        release.set()
+        server.shutdown()

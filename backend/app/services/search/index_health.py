@@ -279,9 +279,12 @@ def check_and_repair_chunks_index() -> list[str]:
 
     # A closed index (or a shard holding a closed file handle) is cured by reopening it, which
     # keeps every document; deleting and re-embedding the corpus is for real corruption only.
-    if _looks_closed(probe.detail) and _reopened(index_name):
-        clear_corruption_notice(index_name)
-        return [index_name]
+    if _looks_closed(probe.detail):
+        if _reopened(index_name):
+            clear_corruption_notice(index_name)
+            return [index_name]
+        logger.warning(f"Reopen of {index_name} not confirmed healthy; not rebuilding")
+        return []
 
     if repair_is_supervised(index_name):
         notify_corruption(index_name, probe)

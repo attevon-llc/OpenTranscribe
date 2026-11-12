@@ -124,7 +124,7 @@
 
   :global([data-theme='dark']) .tag-pill {
     background: rgba(var(--accent-rgb), 0.2);
-    color: #60a5fa;
+    color: var(--primary-on-surface);
   }
 
   .tag-remove {

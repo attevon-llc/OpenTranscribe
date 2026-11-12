@@ -194,11 +194,11 @@
   .sources-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
     background: none;
     border: none;
-    padding: var(--space-1) 0.35rem;
-    margin-inline-start: -0.35rem;
+    padding: var(--space-1) var(--space-1-5);
+    margin-inline-start: calc(-1 * var(--space-1-5));
     border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
@@ -250,8 +250,8 @@
 
   .source-card {
     display: flex;
-    gap: 0.6rem;
-    padding: 0.6rem var(--space-3);
+    gap: var(--space-2-5);
+    padding: var(--space-2-5) var(--space-3);
     text-decoration: none;
     color: inherit;
   }
@@ -267,7 +267,7 @@
   .source-body {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: var(--space-1);
     min-width: 0;
   }
 
@@ -299,7 +299,7 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
     font-size: var(--font-size-2xs);
-    padding: 0.05rem 0.35rem;
+    padding: 0.05rem var(--space-1-5);
     border-radius: var(--radius-sm);
     background: var(--background-secondary);
     border: 1px solid var(--border-color);
@@ -329,9 +329,9 @@
 
   .snippet-toggle {
     align-self: flex-start;
-    margin-block: -0.2rem 0.6rem;
+    margin-block: calc(-1 * var(--space-1)) var(--space-2-5);
     margin-inline: calc(0.75rem + 0.6rem + 1.6rem) 0.75rem;
-    padding: 0.15rem 0.4rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border: none;
     border-radius: var(--radius-sm);
     background: none;

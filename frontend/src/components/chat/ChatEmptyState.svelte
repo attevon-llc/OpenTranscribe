@@ -179,14 +179,14 @@
 
   .suggestions {
     display: grid;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
     width: 100%;
     max-width: 34rem;
     grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   }
 
   .suggestion-card {
-    padding: 0.85rem var(--space-4);
+    padding: var(--space-3-5) var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
     background-color: var(--surface-color);

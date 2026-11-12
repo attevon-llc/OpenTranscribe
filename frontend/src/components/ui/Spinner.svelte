@@ -36,7 +36,7 @@
     display: inline-block;
     border-radius: var(--radius-round);
     border-style: solid;
-    border-color: rgba(0, 0, 0, 0.1);
+    border-color: color-mix(in srgb, var(--text-color) 10%, transparent);
     animation: spin 0.8s linear infinite;
   }
 

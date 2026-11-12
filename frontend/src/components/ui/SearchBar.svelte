@@ -290,7 +290,7 @@
   .search-bar.pill:focus-within {
     border-color: var(--focus-ring-color);
     background: var(--surface-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.22);
+    box-shadow: var(--focus-ring);
   }
 
   .search-bar-btn,
@@ -353,7 +353,7 @@
     border: none;
     background: transparent;
     color: var(--text-color);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     outline: none;
     box-shadow: none;
   }
@@ -389,7 +389,7 @@
   }
 
   .search-bar-counter {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;

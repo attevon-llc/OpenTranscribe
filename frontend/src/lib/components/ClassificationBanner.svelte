@@ -255,7 +255,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     border-radius: var(--radius-sm);
     background-color: #fef3c7;
     color: #7c2d12;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
   }
 
@@ -271,7 +271,7 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .consent-text {
     color: #1f2937;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     line-height: 1.6;
   }
 

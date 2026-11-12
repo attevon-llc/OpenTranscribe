@@ -84,7 +84,7 @@
     font-weight: var(--font-weight-semibold);
     color: var(--slider-badge-text);
     background: var(--slider-badge-bg);
-    padding: 0.1rem 0.45rem;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-pill);
   }
 

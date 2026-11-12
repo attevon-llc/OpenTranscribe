@@ -58,18 +58,18 @@
   .warning-body {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
   }
 
   p {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     line-height: 1.55;
     color: var(--text-color);
   }
 
   .hint {
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 

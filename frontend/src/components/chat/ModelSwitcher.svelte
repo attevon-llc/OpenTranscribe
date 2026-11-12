@@ -109,11 +109,11 @@
   .model-switcher {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .field-label {
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
@@ -123,45 +123,45 @@
   }
 
   .context-note {
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
 
   .switch-warning {
-    margin-top: 0.35rem;
-    padding: 0.6rem 0.7rem;
+    margin-top: var(--space-1-5);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid rgba(var(--warning-color-rgb), 0.5);
     border-radius: var(--radius-lg);
     background-color: rgba(var(--warning-color-rgb), 0.1);
   }
 
   .warning-title {
-    margin: 0 0 0.2rem;
-    font-size: 0.8rem;
+    margin: 0 0 var(--space-1);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
 
   .warning-body {
     margin: 0 0 var(--space-2);
-    font-size: 0.76rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.45;
   }
 
   .warning-actions {
     display: flex;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
   }
 
   .warning-btn {
-    padding: var(--space-1) 0.6rem;
+    padding: var(--space-1) var(--space-2-5);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background-color: var(--card-background);
     color: var(--text-color);
-    font-size: 0.76rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
   }
 

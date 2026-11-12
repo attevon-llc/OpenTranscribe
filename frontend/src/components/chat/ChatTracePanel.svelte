@@ -190,26 +190,26 @@
     top: var(--navbar-height);
     right: 0;
     bottom: 0;
-    z-index: 25;
+    z-index: calc(var(--z-sticky) + 15);
     display: flex;
     flex-direction: column;
     width: min(24rem, 92vw);
     border-left: 1px solid var(--border-color);
     background-color: var(--surface-color);
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-lg);
   }
 
   .trace-header {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 0.7rem 0.85rem;
+    padding: var(--space-3) var(--space-3-5);
     border-bottom: 1px solid var(--border-color);
   }
 
   .trace-title {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
@@ -219,11 +219,11 @@
      the live indicator would train people to stop reading both. `help` cursor
      is what advertises that the title carries more. */
   .trace-beta {
-    padding: 0.05rem 0.35rem;
+    padding: 0.05rem var(--space-1-5);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-pill);
     color: var(--text-secondary);
-    font-size: 0.6rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -232,11 +232,11 @@
   }
 
   .trace-live {
-    padding: 0.05rem 0.35rem;
+    padding: 0.05rem var(--space-1-5);
     border-radius: var(--radius-pill);
     background-color: rgba(var(--primary-color-rgb), 0.14);
     color: var(--primary-on-surface);
-    font-size: 0.64rem;
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -244,9 +244,9 @@
   .trace-close {
     margin-left: auto;
     display: inline-flex;
-    padding: 0.2rem;
+    padding: var(--space-1);
     border: none;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
@@ -259,24 +259,24 @@
 
   .trace-truncated {
     margin: 0;
-    padding: 0.45rem 0.85rem;
+    padding: var(--space-2) var(--space-3-5);
     border-bottom: 1px solid var(--border-color);
     background-color: rgba(var(--primary-color-rgb), 0.06);
     color: var(--text-secondary);
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
   }
 
   .trace-body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 0.6rem 0.85rem 1.2rem;
+    padding: var(--space-2-5) var(--space-3-5) var(--space-5);
   }
 
   .trace-empty {
     margin: 0;
     color: var(--text-secondary);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
   }
 

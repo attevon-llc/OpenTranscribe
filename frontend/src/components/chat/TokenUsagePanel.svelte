@@ -74,14 +74,14 @@
   .token-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.2rem 0.4rem;
-    margin-left: -0.4rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1) var(--space-1-5);
+    margin-left: calc(-1 * var(--space-1-5));
     border: none;
     border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
-    font-size: 0.74rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 
@@ -111,15 +111,15 @@
   }
 
   .estimated {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
   }
 
   .token-detail {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
-    margin-top: 0.45rem;
-    padding: 0.6rem 0.7rem;
+    gap: var(--space-1-5);
+    margin-top: var(--space-2);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background-color: var(--surface-color);
@@ -127,14 +127,14 @@
 
   .token-line {
     margin: 0;
-    font-size: 0.76rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
 
   .warning {
     margin: 0;
-    font-size: 0.76rem;
+    font-size: var(--font-size-sm);
     color: var(--warning-text);
   }
 
@@ -146,7 +146,7 @@
   .token-breakdown {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 0.15rem var(--space-3);
+    gap: var(--space-0-5) var(--space-3);
     margin: 0;
     font-size: var(--font-size-xs);
   }

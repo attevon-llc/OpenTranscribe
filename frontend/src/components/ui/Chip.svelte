@@ -49,8 +49,8 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1-5);
-    padding: 3px var(--space-2-5);
-    border-radius: 14px;
+    padding: var(--space-1) var(--space-2-5);
+    border-radius: var(--radius-pill);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     line-height: 1.4;
@@ -104,7 +104,7 @@
   }
   .chip-remove:hover {
     opacity: 1;
-    background: rgba(0, 0, 0, 0.1);
+    background: color-mix(in srgb, var(--text-color) 10%, transparent);
   }
   .chip-remove:focus-visible {
     outline: 2px solid var(--focus-ring-color);

@@ -289,7 +289,7 @@
   .chat-message.user .bubble {
     max-width: min(80%, 42rem);
     padding: var(--space-2-5) var(--space-4);
-    border-radius: 18px;
+    border-radius: var(--radius-3xl);
     border-end-end-radius: var(--radius-sm);
     background-color: rgba(var(--primary-color-rgb), 0.1);
   }
@@ -309,7 +309,7 @@
 
   .error-text {
     margin: var(--space-1) 0 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border-radius: var(--radius-lg);
     background-color: rgba(var(--error-color-rgb), 0.08);
     border: 1px solid rgba(var(--error-color-rgb), 0.25);
@@ -319,7 +319,7 @@
 
   .context-warning {
     margin: var(--space-2) 0 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border-radius: var(--radius-lg);
     /* Theme-provided pair — light/dark parity is handled in theme.css. */
     background-color: var(--warning-bg);
@@ -330,8 +330,8 @@
   }
 
   .cancelled-note {
-    margin: 0.35rem 0 0;
-    font-size: 0.8rem;
+    margin: var(--space-1-5) 0 0;
+    font-size: var(--font-size-sm);
     font-style: italic;
     color: var(--text-secondary);
   }
@@ -339,7 +339,7 @@
   .actions {
     display: flex;
     align-items: center;
-    gap: 0.15rem;
+    gap: var(--space-0-5);
     opacity: 0;
     transition: opacity var(--duration-fast) ease;
   }
@@ -354,17 +354,17 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.3rem;
+    gap: var(--space-1);
     min-width: 28px;
     height: 28px;
-    padding: 0 0.4rem;
+    padding: 0 var(--space-1-5);
     background: none;
     border: none;
     border-radius: var(--radius-md);
     /* Ghost icon buttons: no global button shadow or hover scale. */
     box-shadow: none;
     color: var(--text-secondary);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
   }
 
@@ -378,7 +378,7 @@
   .edit-box {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     min-width: min(32rem, 70vw);
   }
 
@@ -390,16 +390,16 @@
   .edit-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
   }
 
   .edit-btn {
-    padding: var(--space-1) 0.7rem;
+    padding: var(--space-1) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background-color: var(--card-background);
     color: var(--text-color);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
   }
 
@@ -416,7 +416,7 @@
   .timestamp {
     font-size: var(--font-size-2xs);
     color: var(--text-secondary);
-    padding: 0 0.3rem;
+    padding: 0 var(--space-1);
     font-variant-numeric: tabular-nums;
   }
 

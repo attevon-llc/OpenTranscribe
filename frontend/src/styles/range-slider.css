@@ -37,7 +37,7 @@
 }
 
 [data-theme='dark'] {
-  --slider-player-thumb: #ffffff;
+  --slider-player-thumb: var(--text-on-solid);
   --slider-thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   --slider-thumb-shadow-hover: 0 1px 4px rgba(0, 0, 0, 0.7),
     0 0 0 4px rgba(var(--primary-color-rgb), 0.3);

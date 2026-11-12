@@ -182,9 +182,9 @@
   .conversation-item {
     display: flex;
     align-items: center;
-    gap: 0.15rem;
+    gap: var(--space-0-5);
     border-radius: var(--radius-lg);
-    padding: 0 0.2rem;
+    padding: 0 var(--space-1);
     position: relative;
   }
 
@@ -218,9 +218,9 @@
        painting a rounded card behind the title in light mode. */
     border-radius: 0;
     box-shadow: none;
-    padding: var(--space-2) 0.35rem;
+    padding: var(--space-2) var(--space-1-5);
     color: var(--text-color);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     cursor: pointer;
   }
 
@@ -246,7 +246,7 @@
 
   .item-actions {
     display: flex;
-    gap: 0.1rem;
+    gap: var(--space-0-5);
     opacity: 0;
     transition: opacity var(--duration-fast) ease;
   }
@@ -269,7 +269,7 @@
     padding: 0;
     box-shadow: none;
     border: none;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
@@ -291,32 +291,32 @@
 
   .rename-input {
     width: 100%;
-    padding: 0.4rem var(--space-2);
-    font-size: 0.85rem;
+    padding: var(--space-1-5) var(--space-2);
+    font-size: var(--font-size-md);
   }
 
   .confirm-row {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    padding: var(--space-2) 0.35rem;
+    gap: var(--space-1-5);
+    padding: var(--space-2) var(--space-1-5);
     width: 100%;
   }
 
   .confirm-text {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .confirm-actions {
     display: flex;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
   }
 
   .confirm-btn {
-    padding: 0.2rem 0.55rem;
+    padding: var(--space-1) var(--space-2);
     border: 1px solid var(--border-color);
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background-color: var(--card-background);
     color: var(--text-color);
     font-size: var(--font-size-xs);

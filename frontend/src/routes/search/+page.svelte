@@ -941,7 +941,7 @@
   .mode-btn.active {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-sm);
   }
 
   .mode-btn:hover:not(.active) {
@@ -1108,10 +1108,10 @@
   .neural-status {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-1);
     padding: var(--space-1) var(--space-2-5);
-    border-radius: 20px;
-    font-size: 0.7rem;
+    border-radius: var(--radius-pill);
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     border: 1px solid;
     cursor: default;

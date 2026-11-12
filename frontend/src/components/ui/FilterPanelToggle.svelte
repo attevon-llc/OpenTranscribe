@@ -57,7 +57,7 @@
   .filter-toggle-btn:hover {
     background-color: var(--hover-color);
     border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
   }
 
   .filter-toggle-btn:focus-visible {

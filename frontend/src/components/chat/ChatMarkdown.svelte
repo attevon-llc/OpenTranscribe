@@ -162,25 +162,6 @@
     overflow-wrap: anywhere;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* Syntax colours: blue / green / orange / teal / grey, no purple (noPurple.test.ts).
-       Light values meet 4.5:1 on --surface-color; the dark set is below. */
-    --hl-keyword: #0550ae;
-    --hl-string: #116329;
-    --hl-number: #953800;
-    --hl-title: #0e6e7a;
-    --hl-comment: #57606a;
-    --hl-meta: #6e5600;
-    --hl-deletion: var(--error-text);
-    --hl-addition: var(--success-text);
-  }
-
-  :global([data-theme='dark']) .chat-markdown {
-    --hl-keyword: #79b8ff;
-    --hl-string: #85e89d;
-    --hl-number: #ffab70;
-    --hl-title: #56d4dd;
-    --hl-comment: #959da5;
-    --hl-meta: #e3c26b;
   }
 
   .chat-markdown :global(p) {
@@ -276,7 +257,7 @@
   .chat-markdown :global(pre code) {
     display: block;
     overflow-x: auto;
-    padding: var(--space-3) var(--space-4) 0.85rem;
+    padding: var(--space-3) var(--space-4) var(--space-3-5);
     background: none;
     border: none;
     border-radius: 0;
@@ -289,7 +270,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 0.3rem 0.4rem 0.3rem var(--space-4);
+    padding: var(--space-1) var(--space-1-5) var(--space-1) var(--space-4);
     border-bottom: 1px solid var(--border-color);
     background-color: var(--card-background);
     font-family: var(--font-family);
@@ -303,9 +284,9 @@
 
   .chat-markdown :global(.code-copy) {
     margin-inline-start: auto;
-    padding: 0.15rem var(--space-2);
+    padding: var(--space-0-5) var(--space-2);
     border: 1px solid transparent;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background-color: transparent;
     /* Flat ghost control: cancel form-elements.css's global button shadow / hover scale. */
     box-shadow: none;
@@ -330,35 +311,35 @@
 
   /* highlight.js token classes (only these survive chatMarkdown's class allowlist). */
   .chat-markdown :global(:is(.hljs-keyword, .hljs-selector-tag, .hljs-type, .hljs-doctag)) {
-    color: var(--hl-keyword);
+    color: var(--syntax-keyword);
   }
   .chat-markdown :global(:is(.hljs-string, .hljs-regexp, .hljs-template-tag, .hljs-symbol)) {
-    color: var(--hl-string);
+    color: var(--syntax-string);
   }
   .chat-markdown
     :global(:is(.hljs-number, .hljs-literal, .hljs-variable, .hljs-template-variable)) {
-    color: var(--hl-number);
+    color: var(--syntax-number);
   }
   .chat-markdown
     :global(:is(.hljs-title, .hljs-section, .hljs-name, .hljs-attr, .hljs-attribute)) {
-    color: var(--hl-title);
+    color: var(--syntax-title);
   }
   /* stylelint-disable-next-line selector-class-pattern -- highlight.js emits this class name */
   .chat-markdown :global(:is(.hljs-built_in, .hljs-selector-class, .hljs-selector-id)) {
-    color: var(--hl-number);
+    color: var(--syntax-number);
   }
   .chat-markdown :global(:is(.hljs-comment, .hljs-quote)) {
-    color: var(--hl-comment);
+    color: var(--syntax-comment);
     font-style: italic;
   }
   .chat-markdown :global(:is(.hljs-meta, .hljs-tag, .hljs-subst, .hljs-params)) {
-    color: var(--hl-meta);
+    color: var(--syntax-meta);
   }
   .chat-markdown :global(.hljs-deletion) {
-    color: var(--hl-deletion);
+    color: var(--syntax-deletion);
   }
   .chat-markdown :global(.hljs-addition) {
-    color: var(--hl-addition);
+    color: var(--syntax-addition);
   }
   .chat-markdown :global(.hljs-emphasis) {
     font-style: italic;
@@ -392,7 +373,7 @@
   .chat-markdown :global(th),
   .chat-markdown :global(td) {
     border: 1px solid var(--border-color);
-    padding: 0.4rem 0.65rem;
+    padding: var(--space-1-5) var(--space-2-5);
     text-align: start;
     font-size: var(--font-size-md);
   }

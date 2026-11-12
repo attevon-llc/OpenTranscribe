@@ -655,7 +655,7 @@
     min-height: 0;
     --chat-gutter: 1.25rem;
     padding: 0 var(--chat-gutter);
-    transition: padding-right 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: padding-right var(--duration-base) cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   /* ⚠️ The open trace panel MUST reserve its own width, and the earlier
@@ -764,7 +764,7 @@
     max-width: 52rem;
     width: 100%;
     margin: 0 auto;
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+    padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
   }
 
   .chat-error {
@@ -775,22 +775,22 @@
     width: calc(100% - 2 * var(--chat-gutter));
     max-width: 52rem;
     margin: var(--space-3) auto 0;
-    padding: 0.6rem 0.85rem;
+    padding: var(--space-2-5) var(--space-3-5);
     border: 1px solid rgba(var(--error-color-rgb), 0.35);
     border-radius: var(--radius-lg);
     background-color: rgba(var(--error-color-rgb), 0.08);
     color: var(--error-text);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .error-action {
     margin-left: auto;
-    padding: 0.2rem 0.6rem;
+    padding: var(--space-1) var(--space-2-5);
     border: 1px solid currentcolor;
     border-radius: var(--radius-md);
     background: none;
     color: inherit;
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
   }
 
@@ -842,12 +842,17 @@
       bottom: 0;
       left: 0;
       width: min(17rem, 82vw);
-      z-index: 30;
+      z-index: calc(var(--z-sticky) + 20);
       transform: translateX(-100%);
       transition: transform var(--duration-base) ease;
     }
 
-    .chat-page.sidebar-open .sidebar-pane {
+    :global([dir='rtl']) .sidebar-pane {
+      transform: translateX(100%);
+    }
+
+    .chat-page.sidebar-open .sidebar-pane,
+    :global([dir='rtl']) .chat-page.sidebar-open .sidebar-pane {
       transform: translateX(0);
     }
 
@@ -855,7 +860,7 @@
       display: block;
       position: fixed;
       inset: var(--navbar-height) 0 0 0;
-      z-index: 29;
+      z-index: calc(var(--z-sticky) + 19);
       border: none;
       background-color: var(--modal-backdrop);
       cursor: pointer;

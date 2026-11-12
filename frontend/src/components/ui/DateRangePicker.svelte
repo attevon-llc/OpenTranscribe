@@ -321,7 +321,7 @@
     border-radius: var(--radius-2xl);
     background: var(--surface-color);
     color: var(--text-color);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-lg);
     animation: drp-in 0.12s ease-out;
   }
 
@@ -332,7 +332,7 @@
   .drp-layer.sheet {
     inset: auto 0 0;
     width: auto;
-    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
     border-radius: var(--radius-3xl) var(--radius-3xl) 0 0;
     animation-name: drp-sheet-in;
   }
@@ -341,7 +341,7 @@
     position: fixed;
     inset: 0;
     z-index: calc(var(--z-modal) + 9);
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--modal-backdrop);
   }
 
   @keyframes drp-in {
@@ -498,21 +498,21 @@
     font-size: var(--font-size-xs) !important;
   }
 
-  :global([data-theme='dark']) .drp-layer {
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.3);
-  }
-
   :global([data-theme='dark']) .drp-layer :global(.datepicker .calendars-container) {
     --datepicker-state-hover: rgba(var(--accent-rgb), 0.15);
-    --datepicker-calendar-day-color-hover: #fff;
+    --datepicker-calendar-day-color-hover: var(--text-on-solid);
     --datepicker-calendar-day-color-disabled: var(--text-secondary);
-    --datepicker-calendar-day-background-hover: rgba(255, 255, 255, 0.1);
-    --datepicker-calendar-header-month-nav-background-hover: rgba(255, 255, 255, 0.1);
+    --datepicker-calendar-day-background-hover: color-mix(in srgb, var(--text-color) 10%, transparent);
+    --datepicker-calendar-header-month-nav-background-hover: color-mix(
+      in srgb,
+      var(--text-color) 10%,
+      transparent
+    );
     /* Range selection colours */
     --datepicker-calendar-range-background: rgba(var(--accent-rgb), 0.2);
     --datepicker-calendar-range-color: var(--text-color);
     --datepicker-calendar-range-start-end-background: var(--primary-color);
-    --datepicker-calendar-range-start-end-color: #fff;
+    --datepicker-calendar-range-start-end-color: var(--text-on-solid);
     --datepicker-calendar-range-included-background: rgba(var(--accent-rgb), 0.12);
     --datepicker-calendar-range-included-color: var(--text-color);
     --datepicker-calendar-range-included-box-shadow: inset 20px 0 0 rgba(var(--accent-rgb), 0.12);

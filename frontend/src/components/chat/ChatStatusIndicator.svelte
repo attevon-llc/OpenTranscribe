@@ -50,7 +50,7 @@
 
   .shimmer {
     display: inline-block;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     background: linear-gradient(
       90deg,

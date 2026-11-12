@@ -40,8 +40,8 @@
   /* Nested levels get a rail, which is what makes a fan-out read as a branch
      rather than as a flat run of siblings. */
   .trace-list:not([data-depth='0']) {
-    margin-left: 0.32rem;
-    padding-left: 0.6rem;
+    margin-left: var(--space-1-5);
+    padding-left: var(--space-2-5);
     border-left: 1px solid var(--border-color);
   }
 </style>

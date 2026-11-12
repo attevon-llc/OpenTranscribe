@@ -132,15 +132,15 @@
     transform: translateX(-50%);
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.4rem 0.9rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-pill);
     background-color: var(--surface-color);
     color: var(--text-color);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-md);
   }
 
   .jump-pill:hover {

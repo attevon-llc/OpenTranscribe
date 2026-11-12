@@ -91,7 +91,7 @@
   }
 
   .chat-reasoning :global(.expandable-header) {
-    padding: 0.45rem 0.7rem;
+    padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
@@ -102,12 +102,12 @@
   }
 
   .chat-reasoning :global(.expandable-content) {
-    padding: 0 0.7rem 0.7rem;
+    padding: 0 var(--space-3) var(--space-3);
     border-top: 1px solid var(--border-color);
   }
 
   .reasoning-body {
-    padding-top: 0.6rem;
+    padding-top: var(--space-2-5);
     color: var(--text-secondary);
   }
 

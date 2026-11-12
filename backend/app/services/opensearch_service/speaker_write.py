@@ -281,6 +281,51 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
         return None
 
 
+def _speaker_document(
+    *,
+    speaker_id: int,
+    speaker_uuid: str,
+    user_id: int,
+    name: str,
+    embedding: list[float],
+    profile_id: int | None,
+    profile_uuid: str | None,
+    collection_ids: list[int] | None,
+    media_file_id: int | None,
+    segment_count: int,
+    display_name: str | None,
+    organization_id: int | None,
+    merged_from: list[str] | None,
+    states: dict[int, str],
+) -> dict[str, Any]:
+    """The whole voiceprint document :func:`add_speaker_embedding` writes (first try and repair).
+
+    ``organization_id`` is only written for org files, ``merged_from`` only by a merge.
+    """
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    doc: dict[str, Any] = {
+        "speaker_id": speaker_id,
+        "speaker_uuid": str(speaker_uuid),
+        "profile_id": profile_id,
+        "profile_uuid": str(profile_uuid) if profile_uuid else None,
+        "user_id": user_id,
+        "name": name,
+        "display_name": display_name,
+        "collection_ids": collection_ids or [],
+        "media_file_id": media_file_id,
+        "segment_count": segment_count,
+        "created_at": now,
+        "updated_at": now,
+        "embedding": embedding,
+    }
+    if organization_id is not None:
+        doc["organization_id"] = organization_id
+    if merged_from:
+        doc["merged_from"] = merged_from
+    stamp_availability(doc, states)
+    return doc
+
+
 def add_speaker_embedding(
     speaker_id: int,
     speaker_uuid: str,
@@ -295,6 +340,7 @@ def add_speaker_embedding(
     display_name: str | None = None,
     target_index: str | None = None,
     organization_id: int | None = None,
+    merged_from: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """
     Add a speaker embedding to OpenSearch with collection support
@@ -313,6 +359,9 @@ def add_speaker_embedding(
         display_name: Optional display name for the speaker
         target_index: Optional override index name (e.g. 'speakers_v3').
             Defaults to the 'speakers' alias when None.
+        merged_from: UUIDs of the speakers whose voiceprints this embedding has averaged
+            in, written in the same document so a replayed merge sees it (issue #1159).
+            Read back from ``_source`` only, never queried.
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping speaker embedding")
@@ -351,25 +400,22 @@ def add_speaker_embedding(
         )
 
         states = availability_by_file({media_file_id})
-        # Prepare document (organization_id only written for org files)
-        doc = {
-            "speaker_id": speaker_id,
-            "speaker_uuid": str(speaker_uuid),
-            "profile_id": profile_id,
-            "profile_uuid": str(profile_uuid) if profile_uuid else None,
-            "user_id": user_id,
-            "name": name,
-            "display_name": display_name,
-            "collection_ids": collection_ids or [],
-            "media_file_id": media_file_id,
-            "segment_count": segment_count,
-            "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
-            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
-            "embedding": embedding,
-        }
-        if organization_id is not None:
-            doc["organization_id"] = organization_id
-        stamp_availability(doc, states)
+        doc = _speaker_document(
+            speaker_id=speaker_id,
+            speaker_uuid=speaker_uuid,
+            user_id=user_id,
+            name=name,
+            embedding=embedding,
+            profile_id=profile_id,
+            profile_uuid=profile_uuid,
+            collection_ids=collection_ids,
+            media_file_id=media_file_id,
+            segment_count=segment_count,
+            display_name=display_name,
+            organization_id=organization_id,
+            merged_from=merged_from,
+            states=states,
+        )
 
         # Index the document using UUID as document ID
         response: dict[str, Any] = _client.opensearch_client.index(
@@ -413,24 +459,22 @@ def add_speaker_embedding(
             )
             if _repair_index(index_name):
                 try:
-                    doc = {
-                        "speaker_id": speaker_id,
-                        "speaker_uuid": str(speaker_uuid),
-                        "profile_id": profile_id,
-                        "profile_uuid": str(profile_uuid) if profile_uuid else None,
-                        "user_id": user_id,
-                        "name": name,
-                        "display_name": display_name,
-                        "collection_ids": collection_ids or [],
-                        "media_file_id": media_file_id,
-                        "segment_count": segment_count,
-                        "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                        "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                        "embedding": embedding,
-                    }
-                    if organization_id is not None:
-                        doc["organization_id"] = organization_id
-                    stamp_availability(doc, availability_by_file({media_file_id}))
+                    doc = _speaker_document(
+                        speaker_id=speaker_id,
+                        speaker_uuid=speaker_uuid,
+                        user_id=user_id,
+                        name=name,
+                        embedding=embedding,
+                        profile_id=profile_id,
+                        profile_uuid=profile_uuid,
+                        collection_ids=collection_ids,
+                        media_file_id=media_file_id,
+                        segment_count=segment_count,
+                        display_name=display_name,
+                        organization_id=organization_id,
+                        merged_from=merged_from,
+                        states=availability_by_file({media_file_id}),
+                    )
                     response = _client.opensearch_client.index(
                         index=index_name,
                         body=doc,

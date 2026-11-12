@@ -32,7 +32,8 @@ def get_speaker_document(speaker_uuid: str, *, strict: bool = False) -> dict[str
             (embedding reassignment) must pass it.
 
     Returns:
-        Dict with 'embedding' and 'segment_count' keys, or None if not found
+        Dict with 'embedding', 'segment_count' and 'merged_from' (the speakers a merge has
+        averaged in, empty when none) keys, or None if not found
 
     Raises:
         OpenSearchUnavailableError: ``strict`` and the lookup failed.
@@ -55,6 +56,7 @@ def get_speaker_document(speaker_uuid: str, *, strict: bool = False) -> dict[str
                 return {
                     "embedding": list(embedding),
                     "segment_count": int(source.get("segment_count", 1)),
+                    "merged_from": list(source.get("merged_from") or []),
                 }
             return None
 

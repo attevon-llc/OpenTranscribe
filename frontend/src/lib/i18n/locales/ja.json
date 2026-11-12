@@ -6136,5 +6136,13 @@
   "audioTracks.mismatchTitle": "言語が音声トラックのタグと異なります",
   "audioTracks.mismatchBody": "この録音の音声トラックには {{tagged}} のタグが付いていますが、音声は {{detected}} と検出されました。別の言語を想定していた場合は、別の音声トラックで再処理できます。",
   "audioTracks.chooseAnother": "別のトラックまたは言語を選択",
-  "audioTracks.chooseLanguage": "言語を選択"
+  "audioTracks.chooseLanguage": "言語を選択",
+  "settings.usageReport.prompt.title": "実際のインストール数の把握に協力しますか？",
+  "settings.usageReport.prompt.body": "このサーバーは1日に1回、OpenTranscribeプロジェクトに対して、存在していること、実行中のバージョン、先週追加されたファイルのおおよその数を知らせることができます。誰が使っているか、何が保存されているかは一切送信されません。設定からいつでも変更できます。",
+  "settings.usageReport.prompt.enable": "オンにする",
+  "settings.usageReport.prompt.dismiss": "いいえ",
+  "settings.usageReport.prompt.details": "送信される内容を正確に確認する",
+  "settings.usageReport.reason.offline": "これはオフライン（エアギャップ）環境のため、使用状況レポートは常にオフです。",
+  "settings.usageReport.reason.pki": "これはPKI環境のため、使用状況レポートは常にオフです。",
+  "settings.usageReport.reason.fips": "FIPSモードが有効なため、使用状況レポートは常にオフです。"
 }

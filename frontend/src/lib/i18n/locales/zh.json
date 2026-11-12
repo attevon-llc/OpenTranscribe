@@ -6136,5 +6136,13 @@
   "audioTracks.mismatchTitle": "语言与音轨标签不一致",
   "audioTracks.mismatchBody": "此录音的音轨标注为 {{tagged}}，但检测到的语音为 {{detected}}。如果您期望的是其他语言，可以使用另一条音轨重新处理。",
   "audioTracks.chooseAnother": "选择其他音轨或语言",
-  "audioTracks.chooseLanguage": "选择语言"
+  "audioTracks.chooseLanguage": "选择语言",
+  "settings.usageReport.prompt.title": "帮助项目统计真实安装数量？",
+  "settings.usageReport.prompt.body": "此服务器每天可向 OpenTranscribe 项目报告一次：它存在、运行的版本，以及上周大致新增了多少文件。绝不包含使用者是谁或其中存放了什么。您可随时在“设置”中更改。",
+  "settings.usageReport.prompt.enable": "开启",
+  "settings.usageReport.prompt.dismiss": "不用了",
+  "settings.usageReport.prompt.details": "查看具体发送的内容",
+  "settings.usageReport.reason.offline": "这是离线（隔离网络）部署，因此使用情况报告始终关闭。",
+  "settings.usageReport.reason.pki": "这是 PKI 部署，因此使用情况报告始终关闭。",
+  "settings.usageReport.reason.fips": "已启用 FIPS 模式，因此使用情况报告始终关闭。"
 }

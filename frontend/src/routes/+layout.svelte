@@ -62,6 +62,7 @@
   let SettingsModalShell: Awaited<ReturnType<typeof loadSettingsModalShell>>['default'] | null = null;
   let shellShown = false;
   let FirstRunWizard: typeof import('../components/FirstRunWizard.svelte').default | null = null;
+  let UsageReportPrompt: typeof import('../components/UsageReportPrompt.svelte').default | null = null;
   let ErasureRequestBanner: typeof import('../components/ErasureRequestBanner.svelte').default | null = null;
   let DemoBanner: Component | null = null;
   let QuotaExceededModal: typeof import('$lib/cloud/components/QuotaExceededModal.svelte').default | null = null;
@@ -119,6 +120,12 @@
     void import("../components/FirstRunWizard.svelte").then((m) => (FirstRunWizard = m.default));
   }
   $: ensureFirstRunWizard($isAuthenticated && !lifecycleHold && $user?.role === 'super_admin');
+  // The first-login opt-in for the anonymous usage report (#1019) is for the super admin only.
+  function ensureUsageReportPrompt(wanted: boolean) {
+    if (!wanted || UsageReportPrompt) return;
+    void import("../components/UsageReportPrompt.svelte").then((m) => (UsageReportPrompt = m.default));
+  }
+  $: ensureUsageReportPrompt($isAuthenticated && !lifecycleHold && $user?.role === 'super_admin');
   // Lazy: only rendered during an active support-access session.
   let SupportAccessBanner: typeof import("$components/supportAccess/SupportAccessBanner.svelte").default | null = null;
   function ensureSupportBanner(wanted: boolean) {
@@ -362,6 +369,7 @@
       {#if $supportSession.active && SupportAccessBanner}<svelte:component this={SupportAccessBanner} />{/if}
       {#if $demoMode && DemoBanner}<svelte:component this={DemoBanner} />{/if}
       {#if ErasureRequestBanner}<svelte:component this={ErasureRequestBanner} />{/if}
+      {#if UsageReportPrompt}<svelte:component this={UsageReportPrompt} />{/if}
       <NotificationsPanel />
       <UploadManager />
       {#if SettingsModal}

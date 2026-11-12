@@ -6226,5 +6226,13 @@
   "audioTracks.mismatchTitle": "Taal wijkt af van het label van het audiospoor",
   "audioTracks.mismatchBody": "Het audiospoor van deze opname is gelabeld als {{tagged}}, maar de spraak is herkend als {{detected}}. Als je een andere taal verwachtte, kun je het bestand opnieuw verwerken met een ander audiospoor.",
   "audioTracks.chooseAnother": "Ander spoor of andere taal kiezen",
-  "audioTracks.chooseLanguage": "Taal kiezen"
+  "audioTracks.chooseLanguage": "Taal kiezen",
+  "settings.usageReport.prompt.title": "Het project helpen echte installaties te tellen?",
+  "settings.usageReport.prompt.body": "Eén keer per dag kan deze server het OpenTranscribe-project laten weten dat hij bestaat, welke versie draait en ongeveer hoeveel bestanden vorige week zijn toegevoegd. Nooit wie hem gebruikt of wat erin staat. U kunt dit op elk moment wijzigen in Instellingen.",
+  "settings.usageReport.prompt.enable": "Inschakelen",
+  "settings.usageReport.prompt.dismiss": "Nee, bedankt",
+  "settings.usageReport.prompt.details": "Bekijk precies wat er wordt verzonden",
+  "settings.usageReport.reason.offline": "Dit is een offline (air-gapped) implementatie, dus het gebruiksrapport staat altijd uit.",
+  "settings.usageReport.reason.pki": "Dit is een PKI-implementatie, dus het gebruiksrapport staat altijd uit.",
+  "settings.usageReport.reason.fips": "FIPS-modus is actief, dus het gebruiksrapport staat altijd uit."
 }

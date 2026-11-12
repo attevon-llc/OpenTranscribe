@@ -6406,5 +6406,13 @@
   "audioTracks.mismatchTitle": "Язык не совпадает с тегом аудиодорожки",
   "audioTracks.mismatchBody": "Аудиодорожка этой записи помечена как {{tagged}}, но речь определена как {{detected}}. Если вы ожидали другой язык, можно повторно обработать файл с другой аудиодорожкой.",
   "audioTracks.chooseAnother": "Выбрать другую дорожку или язык",
-  "audioTracks.chooseLanguage": "Выбрать язык"
+  "audioTracks.chooseLanguage": "Выбрать язык",
+  "settings.usageReport.prompt.title": "Помочь проекту считать реальные установки?",
+  "settings.usageReport.prompt.body": "Раз в сутки этот сервер может сообщать проекту OpenTranscribe, что он существует, какую версию запускает и примерно сколько файлов добавлено за прошлую неделю. Никогда не сообщается, кто им пользуется и что в нём хранится. Это можно изменить в любой момент в Настройках.",
+  "settings.usageReport.prompt.enable": "Включить",
+  "settings.usageReport.prompt.dismiss": "Нет, спасибо",
+  "settings.usageReport.prompt.details": "Посмотреть, что именно отправляется",
+  "settings.usageReport.reason.offline": "Это автономная (изолированная) установка, поэтому отчёт об использовании всегда отключён.",
+  "settings.usageReport.reason.pki": "Это установка с PKI, поэтому отчёт об использовании всегда отключён.",
+  "settings.usageReport.reason.fips": "Включён режим FIPS, поэтому отчёт об использовании всегда отключён."
 }

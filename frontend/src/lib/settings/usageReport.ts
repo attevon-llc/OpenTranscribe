@@ -12,6 +12,9 @@ const REASON_KEYS: Record<TelemetryOffReason, string> = {
   env_disabled: 'settings.usageReport.reason.envDisabled',
   demo: 'settings.usageReport.reason.demo',
   no_receiver: 'settings.usageReport.reason.noReceiver',
+  offline: 'settings.usageReport.reason.offline',
+  pki: 'settings.usageReport.reason.pki',
+  fips: 'settings.usageReport.reason.fips',
 };
 
 /** Translation key for each reason the server gave; an unknown code still says "forced off". */

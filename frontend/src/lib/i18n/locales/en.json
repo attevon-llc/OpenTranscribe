@@ -6226,5 +6226,13 @@
   "audioTracks.mismatchTitle": "Language differs from the audio track's tag",
   "audioTracks.mismatchBody": "This recording's audio track is tagged {{tagged}}, but the speech was detected as {{detected}}. If you expected a different language, you can re-process using another audio track.",
   "audioTracks.chooseAnother": "Choose another track or language",
-  "audioTracks.chooseLanguage": "Choose a language"
+  "audioTracks.chooseLanguage": "Choose a language",
+  "settings.usageReport.prompt.title": "Help the project count real installs?",
+  "settings.usageReport.prompt.body": "Once a day this server can tell the OpenTranscribe project that it exists, which version it runs and roughly how many files were added last week. Never who uses it or what it holds. You can change this any time in Settings.",
+  "settings.usageReport.prompt.enable": "Turn on",
+  "settings.usageReport.prompt.dismiss": "No thanks",
+  "settings.usageReport.prompt.details": "See exactly what is sent",
+  "settings.usageReport.reason.offline": "This is an offline (air-gapped) deployment, so the usage report is always off.",
+  "settings.usageReport.reason.pki": "This is a PKI deployment, so the usage report is always off.",
+  "settings.usageReport.reason.fips": "FIPS mode is on, so the usage report is always off."
 }

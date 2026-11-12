@@ -6316,5 +6316,13 @@
   "audioTracks.mismatchTitle": "El idioma difiere de la etiqueta de la pista de audio",
   "audioTracks.mismatchBody": "La pista de audio de esta grabación está etiquetada como {{tagged}}, pero el habla se detectó como {{detected}}. Si esperaba otro idioma, puede volver a procesar el archivo con otra pista de audio.",
   "audioTracks.chooseAnother": "Elegir otra pista o idioma",
-  "audioTracks.chooseLanguage": "Elegir un idioma"
+  "audioTracks.chooseLanguage": "Elegir un idioma",
+  "settings.usageReport.prompt.title": "¿Ayudar al proyecto a contar instalaciones reales?",
+  "settings.usageReport.prompt.body": "Una vez al día, este servidor puede informar al proyecto OpenTranscribe de que existe, qué versión ejecuta y aproximadamente cuántos archivos se añadieron la semana pasada. Nunca quién lo usa ni qué contiene. Puede cambiarlo en cualquier momento en Ajustes.",
+  "settings.usageReport.prompt.enable": "Activar",
+  "settings.usageReport.prompt.dismiss": "No, gracias",
+  "settings.usageReport.prompt.details": "Ver exactamente qué se envía",
+  "settings.usageReport.reason.offline": "Esta es una implementación sin conexión (aislada), por lo que el informe de uso siempre está desactivado.",
+  "settings.usageReport.reason.pki": "Esta es una implementación con PKI, por lo que el informe de uso siempre está desactivado.",
+  "settings.usageReport.reason.fips": "El modo FIPS está activo, por lo que el informe de uso siempre está desactivado."
 }

@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
 from fixtures.speaker_cleanup_seams import make_file
 from fixtures.speaker_cleanup_seams import make_speaker
+from sqlalchemy.orm import Session
 
 from app.models.media import TranscriptSegment
 from app.scripts.demo_seed.bundle import BundleError
@@ -87,3 +89,19 @@ def test_export_names_every_item_with_no_finished_file(db_session, tmp_path):
     with pytest.raises(BundleError) as err:
         export_transcripts(db_session, tmp_path / "out", src / "manifest.json")
     assert "a: no completed file titled 'Talk A'" in err.value.problems[0]
+
+
+@pytest.mark.parametrize("kind", ["parent", "absolute"])
+def test_export_refuses_a_transcript_path_outside_the_bundle(tmp_path, kind):
+    src = _bundle(tmp_path)
+    escape = "../outside.json" if kind == "parent" else str(tmp_path / "outside.json")
+    manifest = json.loads((src / "manifest.json").read_text())
+    manifest["items"][0]["transcript"] = escape
+    (src / "manifest.json").write_text(json.dumps(manifest))
+    bundle = tmp_path / "out"
+    bundle.mkdir()
+
+    with pytest.raises(BundleError, match="escapes the bundle"):
+        export_transcripts(create_autospec(Session), bundle, src / "manifest.json")
+
+    assert not (tmp_path / "outside.json").exists()

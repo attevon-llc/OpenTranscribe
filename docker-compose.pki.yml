@@ -36,9 +36,9 @@ services:
       # all). Both need to be set for a proxied PKI deployment.
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
 
-  celery-worker:
+  celery-cpu-worker:
     environment:
-      # The worker on the utility queue sends the report; see the backend entry above.
+      # This worker consumes the `utility` queue, which runs telemetry.usage_report (the sender).
       OPENTRANSCRIBE_TELEMETRY: "false"
 
   frontend:

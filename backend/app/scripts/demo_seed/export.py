@@ -19,6 +19,7 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.scripts.demo_seed.bundle import BundleError
+from app.scripts.demo_seed.bundle import _inside
 
 UNKNOWN_SPEAKER = "UNKNOWN"
 
@@ -70,6 +71,10 @@ def export_transcripts(db: Session, bundle: Path, manifest_path: Path) -> list[s
     problems: list[str] = []
     written: list[str] = []
     for item in manifest["items"]:
+        target = _inside(bundle, item["transcript"])
+        if target is None:
+            problems.append(f"{item['id']}: transcript path escapes the bundle")
+            continue
         media_file = _find_file(db, item)
         if media_file is None:
             problems.append(f"{item['id']}: no completed file titled {item['title']!r}")
@@ -78,7 +83,6 @@ def export_transcripts(db: Session, bundle: Path, manifest_path: Path) -> list[s
         if not data["segments"]:
             problems.append(f"{item['id']}: the processed file has no transcript segments")
             continue
-        target = bundle / item["transcript"]
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         written.append(item["id"])

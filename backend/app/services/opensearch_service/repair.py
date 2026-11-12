@@ -76,6 +76,13 @@ def reopen_index(index_name: str) -> bool:
         indices.close(index=index_name)
     finally:
         indices.open(index=index_name)
+    # open() answers shards_acknowledged=false on its 30 s timeout instead of raising, and a
+    # recovering index fails the probe like a corrupt one: wait for health before judging.
+    health = _client.opensearch_client.cluster.health(
+        index=index_name, wait_for_status="yellow", timeout="60s"
+    )
+    if isinstance(health, dict) and health.get("timed_out"):
+        return False
     if _verify_index_queryable(index_name):
         _client.reset_knn_health_cache()
         return True

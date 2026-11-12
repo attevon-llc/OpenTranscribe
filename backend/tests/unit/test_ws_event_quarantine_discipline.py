@@ -320,6 +320,7 @@ class _EnclosingFunctionWalker(ast.NodeVisitor):
 
 
 @functools.cache
+@functools.cache
 def _scan() -> tuple[dict[str, list[int]], dict[str, list[int]], list[tuple[str, int]]]:
     """Return (direct_send_by_key, raw_publish_by_key, for_file_selector_findings).
 
@@ -361,9 +362,6 @@ def _scan() -> tuple[dict[str, list[int]], dict[str, list[int]], list[tuple[str,
     return direct_send, raw_publish, no_selector
 
 
-_DIRECT_SEND, _RAW_PUBLISH, _NO_SELECTOR = _scan()
-
-
 def test_the_scanner_actually_finds_call_sites() -> None:
     """A scanner that matches nothing is indistinguishable from a clean tree.
 
@@ -371,15 +369,15 @@ def test_the_scanner_actually_finds_call_sites() -> None:
     scripts/audit-tests.py), any structural gate needs a must-fire assertion
     against the REAL tree, not just its own synthetic selftest cases.
     """
-    assert len(_DIRECT_SEND) >= 25, (
+    assert len(_scan()[0]) >= 25, (
         f"expected at least 25 distinct direct send_ws_event call sites in the "
-        f"real tree, found {len(_DIRECT_SEND)} — either the scanner regressed or "
+        f"real tree, found {len(_scan()[0])} — either the scanner regressed or "
         "the codebase genuinely eliminated most of them (update this floor "
         "deliberately if so)"
     )
-    assert len(_RAW_PUBLISH) >= 4, (
+    assert len(_scan()[1]) >= 4, (
         f"expected at least 4 raw websocket_notifications publish call sites, "
-        f"found {len(_RAW_PUBLISH)}"
+        f"found {len(_scan()[1])}"
     )
 
 
@@ -390,7 +388,7 @@ def test_no_unallowlisted_direct_send_ws_event_call_sites() -> None:
     file_uuids=...), or — if it genuinely carries no MediaFile identity — add
     a `_DIRECT_SEND_ALLOWLIST` entry here with a written reason.
     """
-    unallowlisted = sorted(set(_DIRECT_SEND) - set(_DIRECT_SEND_ALLOWLIST))
+    unallowlisted = sorted(set(_scan()[0]) - set(_DIRECT_SEND_ALLOWLIST))
     assert not unallowlisted, (
         "These call a quarantine-blind send_ws_event with no allowlist entry. "
         "Route through send_ws_event_for_file, or add a reasoned "
@@ -402,7 +400,7 @@ def test_no_unallowlisted_direct_send_ws_event_call_sites() -> None:
 def test_a_site_may_not_exceed_its_allowlisted_count() -> None:
     """A NEW unguarded call added to an already-allowlisted function is still a leak."""
     over: list[str] = []
-    for key, findings in _DIRECT_SEND.items():
+    for key, findings in _scan()[0].items():
         expected = _DIRECT_SEND_ALLOWLIST.get(key)
         if expected is not None and len(findings) > expected[0]:
             over.append(f"{key} (found {len(findings)}, allowlisted {expected[0]})")
@@ -420,7 +418,7 @@ def test_the_allowlist_is_honest() -> None:
     inflated: list[str] = []
     unexplained: list[str] = []
     for key, (expected_count, reason) in sorted(_DIRECT_SEND_ALLOWLIST.items()):
-        actual = len(_DIRECT_SEND.get(key, []))
+        actual = len(_scan()[0].get(key, []))
         if actual == 0:
             stale.append(key)
         elif actual < expected_count:
@@ -442,10 +440,10 @@ def test_every_send_ws_event_for_file_call_passes_a_selector() -> None:
     very first invocation) is caught by the fast unit suite instead of only
     surfacing the first time that code path actually runs.
     """
-    assert not _NO_SELECTOR, (
+    assert not _scan()[2], (
         "These send_ws_event_for_file call sites pass no file_id/file_uuid/"
         "file_uuids keyword at all and will raise TypeError at runtime:\n  "
-        + "\n  ".join(f"{key} (line {lineno})" for key, lineno in _NO_SELECTOR)
+        + "\n  ".join(f"{key} (line {lineno})" for key, lineno in _scan()[2])
     )
 
 
@@ -460,7 +458,7 @@ def test_no_unallowlisted_raw_websocket_notifications_publish() -> None:
     entry is a new one of those, and needs the same "does this carry
     MediaFile identity" review as an unguarded send_ws_event call.
     """
-    unallowlisted = sorted(set(_RAW_PUBLISH) - set(_RAW_PUBLISH_ALLOWLIST))
+    unallowlisted = sorted(set(_scan()[1]) - set(_RAW_PUBLISH_ALLOWLIST))
     assert not unallowlisted, (
         "These publish directly to the websocket_notifications channel with "
         "no allowlist entry. Review whether the payload carries MediaFile "
@@ -473,7 +471,7 @@ def test_no_unallowlisted_raw_websocket_notifications_publish() -> None:
 
 def test_a_raw_publish_site_may_not_exceed_its_allowlisted_count() -> None:
     over: list[str] = []
-    for key, findings in _RAW_PUBLISH.items():
+    for key, findings in _scan()[1].items():
         expected = _RAW_PUBLISH_ALLOWLIST.get(key)
         if expected is not None and len(findings) > expected[0]:
             over.append(f"{key} (found {len(findings)}, allowlisted {expected[0]})")
@@ -488,7 +486,7 @@ def test_the_raw_publish_allowlist_is_honest() -> None:
     inflated: list[str] = []
     unexplained: list[str] = []
     for key, (expected_count, reason) in sorted(_RAW_PUBLISH_ALLOWLIST.items()):
-        actual = len(_RAW_PUBLISH.get(key, []))
+        actual = len(_scan()[1].get(key, []))
         if actual == 0:
             stale.append(key)
         elif actual < expected_count:

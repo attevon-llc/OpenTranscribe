@@ -320,6 +320,7 @@ def _uses_db_session(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return bool(params & {"db_session", "client"})
 
 
+@functools.cache
 def _collect() -> tuple[list[str], list[str], list[str]]:
     """Return (unmarked_ddl, unprotected_ddl, over_marked) test identifiers."""
     unmarked: list[str] = []
@@ -366,25 +367,22 @@ def _collect() -> tuple[list[str], list[str], list[str]]:
     return unmarked, unprotected, over_marked
 
 
-_UNMARKED, _UNPROTECTED, _OVER_MARKED = _collect()
-
-
 def test_every_ddl_test_carries_the_marker() -> None:
     """DDL through ``db_session`` without ``ddl_exclusive`` can deadlock any worker."""
-    assert not _UNMARKED, (
+    assert not _collect()[0], (
         "These tests execute schema DDL through db_session but do not carry "
         "@pytest.mark.ddl_exclusive, so nothing stops them running beside another "
-        "worker's INSERT on the same table (issue #389):\n  " + "\n  ".join(_UNMARKED)
+        "worker's INSERT on the same table (issue #389):\n  " + "\n  ".join(_collect()[0])
     )
 
 
 def test_no_ddl_runs_outside_the_advisory_lock() -> None:
     """DDL on a self-opened connection cannot be protected by the marker at all."""
-    assert not _UNPROTECTED, (
+    assert not _collect()[1], (
         "These tests execute schema DDL on a connection that does not come from "
         "db_session, so the advisory lock never covers them. Either route them through "
         "db_session or take the lock explicitly and add an allowlist entry:\n  "
-        + "\n  ".join(_UNPROTECTED)
+        + "\n  ".join(_collect()[1])
     )
 
 
@@ -395,10 +393,10 @@ def test_the_marker_is_not_applied_to_tests_that_only_read() -> None:
     ``ddl_exclusive`` at module scope turns every read-only schema assertion in the module
     into a full-suite barrier.
     """
-    assert not _OVER_MARKED, (
+    assert not _collect()[2], (
         "These tests carry ddl_exclusive but never execute DDL. Each one is a "
         "stop-the-world barrier for no reason — move the marker onto the specific tests "
-        "that run ALTER/DROP/CREATE:\n  " + "\n  ".join(_OVER_MARKED)
+        "that run ALTER/DROP/CREATE:\n  " + "\n  ".join(_collect()[2])
     )
 
 

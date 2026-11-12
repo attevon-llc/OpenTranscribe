@@ -42,6 +42,7 @@ module. None can be satisfied by naming the key in prose.
 from __future__ import annotations
 
 import ast
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -161,6 +162,7 @@ def _keys_read_by(tree: ast.AST) -> set[str]:
     return found
 
 
+@cache
 def _scan_readers() -> dict[str, set[str]]:
     """Map config key -> set of module paths (repo-relative) that read it."""
     readers: dict[str, set[str]] = {}
@@ -177,8 +179,6 @@ def _scan_readers() -> dict[str, set[str]]:
 
     return readers
 
-
-_READERS = _scan_readers()
 
 _ALL_KEYS = sorted({key for keys in auth_config_keys.CONFIG_CATEGORIES.values() for key in keys})
 
@@ -214,14 +214,14 @@ def _case(key: str) -> Any:
 def test_settable_key_changes_behaviour_or_declares_a_restart(key: str) -> None:
     """A settable key must have a reader outside the config plane, or a badge."""
     if key in auth_config_keys.RESTART_REQUIRED_KEYS:
-        assert key not in _READERS, (
+        assert key not in _scan_readers(), (
             f"'{key}' is marked requires_restart but is read live outside the config "
             "plane. Either it is live (drop it from RESTART_REQUIRED_KEYS) or the "
             "reader is misleading."
         )
         return
 
-    assert key in _READERS, (
+    assert key in _scan_readers(), (
         f"Auth config key '{key}' is settable in the admin UI and nothing outside the "
         "configuration plane resolves it through DynamicAuthSettings. Saving it does "
         "nothing. Either bridge it to its consumer, or — if it is frozen at import or "
@@ -248,8 +248,10 @@ def test_retired_keys_are_no_longer_settable() -> None:
 
 def test_scanner_finds_a_known_reader() -> None:
     """Guard the guard: a scanner that silently matches nothing passes everything."""
-    assert "ldap_server" in _READERS, "AST scan found no reader for ldap_server — it is wired"
-    assert "app/auth/ldap_auth.py" in _READERS["ldap_server"]
+    assert "ldap_server" in _scan_readers(), (
+        "AST scan found no reader for ldap_server — it is wired"
+    )
+    assert "app/auth/ldap_auth.py" in _scan_readers()["ldap_server"]
     assert _ACCESSOR_PROPERTIES, "DynamicAuthSettings exposes no properties — scan is blind"
 
 

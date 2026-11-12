@@ -847,7 +847,12 @@
       transition: transform var(--duration-base) ease;
     }
 
-    .chat-page.sidebar-open .sidebar-pane {
+    :global([dir='rtl']) .sidebar-pane {
+      transform: translateX(100%);
+    }
+
+    .chat-page.sidebar-open .sidebar-pane,
+    :global([dir='rtl']) .chat-page.sidebar-open .sidebar-pane {
       transform: translateX(0);
     }
 

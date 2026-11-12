@@ -20,7 +20,7 @@ import MiniPlayer from './MiniPlayer.svelte';
 // Load every locale pack while the file is collected. The first `it.each` case used to pay for
 // its pack's module transform inside its own 5 s budget (3.2 s warm-cache, over 5 s on a loaded
 // host), which timed out a test whose code was fine. Collection is not under the test timeout.
-await Promise.all(Object.values(PLAYER_LOCALE_PACKS).map((load) => load?.()));
+await Promise.all(Object.values(PLAYER_LOCALE_PACKS).flatMap((load) => (load ? [load()] : [])));
 
 const COMPONENT_FILE = resolve(__dirname, 'MiniPlayer.svelte');
 

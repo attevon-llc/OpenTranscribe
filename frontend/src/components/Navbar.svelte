@@ -79,13 +79,18 @@
     return toggleEl ? [...inside, toggleEl] : inside;
   }
 
+  async function moveDrawerFocus(open: boolean): Promise<void> {
+    await tick();
+    if (open) drawerFocusables()[0]?.focus();
+    else toggleEl?.focus();
+  }
+
   function syncDrawerFocus(open: boolean) {
     if (open === drawerWasOpen) return;
     drawerWasOpen = open;
-    tick().then(() => {
-      if (open) drawerFocusables()[0]?.focus();
-      else toggleEl?.focus();
-    });
+    // tick() rejects only when flushing some other pending update throws. Nothing here can
+    // recover from that, but it is logged rather than left as an unhandled rejection.
+    moveDrawerFocus(open).catch((error: unknown) => console.error('Drawer focus failed:', error));
   }
   $: syncDrawerFocus(mobileMenuOpen);
 

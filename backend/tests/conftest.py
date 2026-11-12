@@ -84,6 +84,12 @@ os.environ["TESTING"] = "True"
 os.environ["ENVIRONMENT"] = "testing"
 os.environ["SKIP_CELERY"] = "True"
 os.environ["SKIP_REDIS"] = "True"
+# SKIP_REDIS is advisory only; the memory-path tests assume nothing answers the default
+# redis://localhost:6379. A foreign Redis on a shared host flipped 27 of them (v0.7.0 gate).
+# Pin a refused port unless a phase exported REDIS_* (integration/GPU/e2e: REDIS_ENV in
+# scripts/run-integration-tests.sh), where REDIS_URL would override their HOST/PORT.
+if not any(os.environ.get(_v) for _v in ("REDIS_URL", "REDIS_HOST", "REDIS_PORT")):
+    os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
 os.environ["SKIP_WEBSOCKET"] = "True"
 os.environ["RATE_LIMIT_ENABLED"] = "false"  # Disable rate limiting for tests
 

@@ -13,6 +13,7 @@ Tests verify the full MFA lifecycle through FastAPI endpoints with a real databa
 Run with: pytest tests/test_mfa_integration.py -v
 """
 
+import time
 from unittest.mock import patch
 
 import pyotp
@@ -26,6 +27,50 @@ def enable_mfa_settings():
     """Enable MFA globally via settings patch for all tests in this module."""
     with patch.object(settings, "MFA_ENABLED", True), patch.object(settings, "MFA_REQUIRED", False):
         yield
+
+
+class _SetNxRedis:
+    """In-memory SET NX, the one Redis command the TOTP replay guard uses.
+
+    Every other command behaves like an unreachable Redis, so callers take their
+    documented fallback rather than an AttributeError.
+    """
+
+    def __init__(self):
+        self.keys: dict[str, str] = {}
+
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.keys:
+            return None
+        self.keys[key] = value
+        return True
+
+    def __getattr__(self, name):
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        def _down(*_args, **_kwargs):
+            raise RedisConnectionError(f"fake redis: {name} unavailable")
+
+        return _down
+
+
+@pytest.fixture(autouse=True)
+def totp_replay_store(monkeypatch):
+    """Pin the TOTP replay guard to a real single-use store, not to whatever answers :6379."""
+    import app.core.redis as redis_module
+
+    fake = _SetNxRedis()
+    monkeypatch.setattr(redis_module, "get_request_redis", lambda: fake)
+    return fake
+
+
+def _next_step_code(totp: pyotp.TOTP) -> str:
+    """A valid code from a different 30 s step (TOTP_VALID_WINDOW >= 1), so it is not a replay."""
+    return totp.at(int(time.time()) + 30)
+
+
+def _previous_step_code(totp: pyotp.TOTP) -> str:
+    return totp.at(int(time.time()) - 30)
 
 
 class TestMFAStatus:
@@ -184,7 +229,7 @@ class TestMFALoginFlow:
 
         # Verify with current TOTP
         totp = pyotp.TOTP(secret)
-        code = totp.now()
+        code = _next_step_code(totp)
 
         verify_response = client.post(
             "/api/auth/mfa/verify",
@@ -283,7 +328,7 @@ class TestMFALoginFlow:
             assert first_verify.status_code == 200
 
             # Second verify with same token fails (replay prevention)
-            code2 = totp.now()
+            code2 = _previous_step_code(totp)
             second_verify = client.post(
                 "/api/auth/mfa/verify",
                 json={"mfa_token": mfa_token, "code": code2},
@@ -310,7 +355,7 @@ class TestMFADisable:
         )
 
         # Disable MFA with current code
-        disable_code = totp.now()
+        disable_code = _next_step_code(totp)
         disable_response = client.post(
             "/api/auth/mfa/disable",
             headers=user_token_headers,

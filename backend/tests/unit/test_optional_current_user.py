@@ -33,6 +33,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import OperationalError
 from starlette.requests import Request
 
 from app.api.cookies import ACCESS_COOKIE
@@ -423,12 +424,20 @@ class TestTheAccountBehindTheToken:
         assert user is not None
         assert user.id == account.id
 
-    def test_a_broken_session_is_anonymous_rather_than_an_error(self, db_session, account):
+    def test_a_broken_session_is_anonymous_rather_than_an_error(
+        self, db_session, account, monkeypatch
+    ):
         """Optional auth's whole contract: it never raises. A public read surface
         must degrade to anonymous when the database is unavailable, not 500."""
 
         class _BrokenSession:
             def query(self, *_args, **_kwargs):
-                raise RuntimeError("database went away")
+                raise OperationalError("SELECT 1", {}, Exception("database went away"))
+
+        # Pin the lookup as the path under test: with a reachable Redis the revocation
+        # check would otherwise answer first (and with none it denies via the DB fallback).
+        monkeypatch.setattr(
+            token_service_module.token_service, "access_token_revoked", lambda *a, **k: False
+        )
 
         assert get_optional_current_user(_request(bearer=_token(account)), _BrokenSession()) is None

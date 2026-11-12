@@ -515,7 +515,7 @@ def test_capture_queue_depth_survives_llen_failure(monkeypatch, caplog):
     pipe.execute.side_effect = RedisConnectionError("redis down")
 
     with (
-        patch("app.core.redis.get_redis", return_value=client),
+        patch("app.core.redis.get_request_redis", return_value=client),
         caplog.at_level("DEBUG", logger="app.core.celery_metrics"),
     ):
         # Must not raise even though the pipelined LLEN/HVALS blew up.

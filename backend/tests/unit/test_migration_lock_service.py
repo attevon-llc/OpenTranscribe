@@ -89,8 +89,14 @@ class TestMigrationLockService:
         from app.services.migration_lock_service import LockState
 
         self.mock_redis.get.side_effect = RedisConnectionError("dropped mid-read")
-        assert self.service.state() is LockState.UNKNOWN
-        assert self.service.is_active() is True
+        # state() drops the client after the error and is_active() reconnects; keep that
+        # reconnect failing too, whatever happens to answer on the default URL.
+        with patch(
+            "app.services.migration_lock_service.get_request_redis",
+            side_effect=RedisConnectionError("down"),
+        ):
+            assert self.service.state() is LockState.UNKNOWN
+            assert self.service.is_active() is True
 
     def test_state_distinguishes_held_from_released(self):
         from app.services.migration_lock_service import LockState

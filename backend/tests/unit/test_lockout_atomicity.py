@@ -425,6 +425,8 @@ class _FakeMemoryStore:
 def _use_memory(monkeypatch) -> _FakeMemoryStore:
     store = _FakeMemoryStore()
     monkeypatch.setattr(lockout_store, "_redis_client", None)
+    # _get_store() re-probes Redis every 30 s; pin the memory path against a reachable Redis.
+    monkeypatch.setattr(lockout_store, "_get_redis_client", lambda: None)
     monkeypatch.setattr(lockout_store, "_in_memory_store", store)
     monkeypatch.setattr(lockout_store, "_store_initialized", True)
     assert not hasattr(store, "pipeline"), "a `pipeline` attribute would divert to Redis"

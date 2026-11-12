@@ -300,6 +300,22 @@ _APP = (
         masks=(".result-summary",),
     ),
     Screen(
+        "chat-answer",
+        "/chat/00000000-0000-4000-8000-000000001282",
+        steps=(
+            r"fixture:/api/chat/conversations/[0-9a-f-]+$|chat_conversation_detail.json",
+            r"fixture:/api/chat/conversations/[0-9a-f-]+/messages|chat_messages_rendered_answer.json",
+            "reload:page",
+            "wait:.chat-markdown pre .code-header",
+            "wait:.chat-markdown .katex",
+        ),
+        ready='[data-testid="chat-composer-input"]',
+        notes=(
+            "a rendered assistant answer (bold, list, quote, KaTeX, fenced code with its copy "
+            "header) from a fixed conversation, so it needs no LLM and no library content (#1282 D)"
+        ),
+    ),
+    Screen(
         "chat",
         "/chat",
         ready='[data-testid="chat-composer-input"]',

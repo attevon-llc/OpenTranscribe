@@ -1,0 +1,12 @@
+{
+  "uuid": "00000000-0000-4000-8000-000000001282",
+  "title": "Rendered answer",
+  "is_archived": false,
+  "last_message_at": "2026-01-01T12:00:00Z",
+  "created_at": "2026-01-01T12:00:00Z",
+  "updated_at": "2026-01-01T12:00:00Z",
+  "scope": {"file_uuids": [], "collection_uuids": [], "tag_names": [], "speakers": []},
+  "settings": {},
+  "llm_config_uuid": null,
+  "use_context": true
+}

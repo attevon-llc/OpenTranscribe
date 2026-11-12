@@ -1,0 +1,23 @@
+{
+  "messages": [
+    {
+      "uuid": "00000000-0000-4000-8000-0000000012a1",
+      "role": "user",
+      "content": "What is discussed?",
+      "status": "complete",
+      "created_at": "2026-01-01T12:00:00Z"
+    },
+    {
+      "uuid": "00000000-0000-4000-8000-0000000012a2",
+      "role": "assistant",
+      "content": "Based on the transcript excerpts provided, here is what I found.\n\nThe discussion covers **several points**. The speakers return to it more than once.\n\nKey points:\n\n- The first excerpt establishes the context\n- A follow-up exchange expands on it\n- No decision is recorded in the retrieved passages\n\n> This is a fixed answer for the visual baseline.\n\nInline math $a^2 + b^2 = c^2$ and a block:\n\n$$\\int_0^1 x^2\\,dx = \\tfrac{1}{3}$$\n\n```python\n# Code blocks render with a header and a copy button.\nprint('hello')\n```\n",
+      "status": "complete",
+      "model": "mock-gpt",
+      "provider": "custom",
+      "created_at": "2026-01-01T12:00:05Z"
+    }
+  ],
+  "total": 2,
+  "limit": 100,
+  "offset": 0
+}

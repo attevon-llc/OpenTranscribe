@@ -31,7 +31,11 @@ def test_the_task_is_registered_with_the_worker():
     assert TASK in celery_app.tasks
 
 
-def test_the_tick_runs_the_scheduled_erasure_executor(monkeypatch):
+def test_the_tick_runs_the_scheduled_erasure_executor_and_sends_due_reminders(monkeypatch):
+    from contextlib import contextmanager
+
+    from app.db import session_utils
+    from app.services import erasure_notifications
     from app.services import scheduled_erasure_service
     from app.tasks.erasure_reconciliation import erasure_execute_due
 
@@ -40,5 +44,18 @@ def test_the_tick_runs_the_scheduled_erasure_executor(monkeypatch):
         "execute_due_requests",
         lambda: {"due": 2, "executed": 1, "failures": 1},
     )
+    monkeypatch.setattr(erasure_notifications, "send_due_reminders", lambda db, **k: 3)
 
-    assert erasure_execute_due.run() == {"status": "ok", "due": 2, "executed": 1, "failures": 1}
+    @contextmanager
+    def no_database():
+        yield object()
+
+    monkeypatch.setattr(session_utils, "session_scope", no_database)
+
+    assert erasure_execute_due.run() == {
+        "status": "ok",
+        "due": 2,
+        "executed": 1,
+        "failures": 1,
+        "reminders": 3,
+    }

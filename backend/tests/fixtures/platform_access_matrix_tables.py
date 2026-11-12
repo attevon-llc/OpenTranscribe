@@ -253,6 +253,10 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
         "account-admin",
         "the role test only narrows the admin gate: only a super_admin may delete a super_admin; no tenant content",
     ),
+    "POST /api/admin/removed-members/{ledger_uuid}/restore": (
+        "account-admin",
+        "the role test only narrows the admin gate: only a super_admin restores a super_admin's account or undoes a super_admin's removal; no tenant content",
+    ),
     "POST /api/auth/invitations": (
         "account-admin",
         "the role test only narrows the admin gate: only a super_admin may invite into an elevated role; no tenant content",

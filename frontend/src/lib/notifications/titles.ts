@@ -81,19 +81,20 @@ export function llmBudgetMessage(
     : translate('notifications.llmBudgetExceededDay');
 }
 
-const ERASURE_MESSAGE_KEYS: Readonly<Record<string, string>> = {
-  requested: 'notifications.erasureRequestedMessage',
-  reminder: 'notifications.erasureReminderMessage',
-  cancelled: 'notifications.erasureCancelledMessage',
-  completed: 'notifications.erasureCompletedMessage',
-};
+const ERASURE_MESSAGE_KEYS: ReadonlyMap<string, string> = new Map([
+  ['requested', 'notifications.erasureRequestedMessage'],
+  ['reminder', 'notifications.erasureReminderMessage'],
+  ['cancelled', 'notifications.erasureCancelledMessage'],
+  ['completed', 'notifications.erasureCompletedMessage'],
+]);
 
 /** The scheduled-erasure notice (#1105), worded from its `event` and run time. */
 function erasureNoticeMessage(data: NotificationData, translate: Translate): string | undefined {
   const event = String(data.event ?? '');
-  if (!Object.hasOwn(ERASURE_MESSAGE_KEYS, event)) return undefined;
+  const key = ERASURE_MESSAGE_KEYS.get(event);
+  if (key === undefined) return undefined;
   const when = formatDateTime(data.scheduled_for ? String(data.scheduled_for) : '');
-  return translate(ERASURE_MESSAGE_KEYS[event], { when });
+  return translate(key, { when });
 }
 
 // Compose a localized message for types rendered client-side from payload

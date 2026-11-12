@@ -97,9 +97,9 @@
     }
     if (event.key !== 'Tab') return;
     const items = drawerFocusables();
-    if (items.length === 0) return;
     const first = items[0];
-    const last = items[items.length - 1];
+    const last = items.at(-1);
+    if (first === undefined || last === undefined) return;
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();

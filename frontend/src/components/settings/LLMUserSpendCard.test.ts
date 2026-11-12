@@ -71,17 +71,18 @@ describe('LLMUserSpendCard', () => {
     const table = await findByTestId('llm-user-spend-table');
     const rows = table.querySelectorAll('tbody tr');
     expect(rows).toHaveLength(3);
-    expect(rows[0].textContent).toContain('heavy@example.com');
-    expect(rows[0].textContent).toContain('1,500');
-    expect(rows[0].textContent).toContain('12,345');
-    expect(rows[0].textContent).toContain('$1.50');
+    const [heavy, partial, unpriced] = rows;
+    expect(heavy?.textContent).toContain('heavy@example.com');
+    expect(heavy?.textContent).toContain('1,500');
+    expect(heavy?.textContent).toContain('12,345');
+    expect(heavy?.textContent).toContain('$1.50');
     // A partial cost is explained in text, not only by a title tooltip.
-    expect(rows[1].querySelector('.sr-only')?.textContent).toContain(
+    expect(partial?.querySelector('.sr-only')?.textContent).toContain(
       'settings.llmUsage.perUser.partial'
     );
-    expect(rows[0].querySelector('.sr-only')).toBeNull();
-    expect(rows[2].textContent).toContain('settings.llmUsage.unpriced');
-    expect(rows[2].querySelector('.sr-only')).toBeNull();
+    expect(heavy?.querySelector('.sr-only')).toBeNull();
+    expect(unpriced?.textContent).toContain('settings.llmUsage.unpriced');
+    expect(unpriced?.querySelector('.sr-only')).toBeNull();
   });
 
   it('says so when nobody has used AI this month', async () => {

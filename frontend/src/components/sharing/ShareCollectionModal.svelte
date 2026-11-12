@@ -280,7 +280,7 @@
     gap: var(--space-2);
     margin: 0;
     padding: var(--space-2) var(--space-3);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     color: var(--text-primary);
     font-weight: var(--font-weight-semibold);
     background: var(--surface-color);
@@ -309,7 +309,7 @@
 
   .restricted-note :global(svg) {
     flex-shrink: 0;
-    margin-top: 0.15rem;
+    margin-top: var(--space-0-5);
   }
 
   .share-intro {
@@ -415,7 +415,7 @@
 
   .pending-section h4 {
     margin: 0 0 var(--space-2) 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
@@ -431,7 +431,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-    padding: 0.4rem 0.6rem;
+    padding: var(--space-1-5) var(--space-2-5);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
@@ -451,7 +451,7 @@
   }
 
   .pending-name {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
     white-space: nowrap;
@@ -483,7 +483,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-4) 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     justify-content: center;
   }

@@ -1090,7 +1090,7 @@
     gap: var(--space-3);
     padding: var(--space-6) 0;
     color: var(--text-light);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   .auth-header p.session-ended-notice {
@@ -1109,7 +1109,7 @@
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     text-align: center;
   }
 
@@ -1120,7 +1120,7 @@
 
   .auth-link-text {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   .auth-link {
@@ -1128,13 +1128,13 @@
   }
 
   .forgot-password-row {
-    text-align: right;
+    text-align: end;
     margin-top: calc(-1 * var(--space-2));
   }
 
   .forgot-password-link {
     color: var(--text-light);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     text-decoration: none;
   }
 
@@ -1189,7 +1189,7 @@
   .auth-divider span {
     padding: 0 var(--space-4);
     color: var(--text-light);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     white-space: nowrap;
   }
 
@@ -1250,7 +1250,7 @@
 
   .lifecycle-message {
     color: var(--text-light);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     margin-bottom: var(--space-6);
     text-align: center;
   }
@@ -1262,7 +1262,7 @@
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     text-align: center;
   }
 
@@ -1272,16 +1272,16 @@
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .password-policy ul {
     margin: var(--space-2) 0 0;
-    padding-left: 1.1rem;
+    padding-inline-start: var(--space-4);
   }
 
   .password-policy li {
-    margin-bottom: 0.2rem;
+    margin-bottom: var(--space-1);
   }
 
   /* MFA Form Styles */
@@ -1302,12 +1302,12 @@
 
   .mfa-description {
     color: var(--text-light);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     margin-bottom: var(--space-6);
   }
 
   .mfa-form :global(.form-field) {
-    text-align: left;
+    text-align: start;
   }
 
   .mfa-form input {
@@ -1326,7 +1326,7 @@
 
   .text-button {
     padding: var(--space-2);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   .text-button.cancel-button {

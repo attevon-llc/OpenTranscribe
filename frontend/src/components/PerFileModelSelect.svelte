@@ -59,7 +59,7 @@
 <style>
   .model-select {
     width: 100%;
-    padding: 0.4375rem var(--space-2-5);
+    padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-md);
     cursor: pointer;
   }

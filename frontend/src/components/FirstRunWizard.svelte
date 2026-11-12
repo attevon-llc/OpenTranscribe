@@ -650,7 +650,7 @@
     max-height: 40vh;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: var(--space-3-5) 18px;
+    padding: var(--space-3-5) var(--space-5);
     color: var(--text-primary);
   }
 
@@ -776,7 +776,7 @@
   }
 
   .wizard-checkbox input {
-    margin-top: 3px;
+    margin-top: var(--space-1);
   }
 
   .wizard-checkbox small {

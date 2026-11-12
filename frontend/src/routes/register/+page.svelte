@@ -290,7 +290,7 @@
 
   .auth-link-text {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   .auth-link {
@@ -348,7 +348,7 @@
     padding: var(--space-3) var(--space-4);
     box-shadow: var(--shadow-lg);
     width: 250px;
-    z-index: 100;
+    z-index: var(--z-dropdown);
     opacity: 0;
     visibility: hidden;
     transition: opacity var(--duration-base), visibility var(--duration-base);
@@ -372,13 +372,13 @@
   .tooltip-content strong {
     display: block;
     margin-bottom: var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
   .tooltip-content ul {
     margin: 0;
-    padding-left: var(--space-5);
+    padding-inline-start: var(--space-5);
     font-size: var(--font-size-xs);
     color: var(--text-light);
   }

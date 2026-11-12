@@ -165,7 +165,7 @@
 
   .loading-more p {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     margin: 0;
   }
 
@@ -192,7 +192,7 @@
     padding: var(--space-2) var(--space-4);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 20px;
+    border-radius: var(--radius-pill);
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);

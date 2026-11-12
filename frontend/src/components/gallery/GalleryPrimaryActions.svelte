@@ -73,7 +73,7 @@
     transition: all var(--duration-base) ease;
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
     white-space: nowrap;
     flex-shrink: 0;
     font-family: inherit;
@@ -115,18 +115,13 @@
     background-color: var(--surface-color);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--shadow-xs);
   }
 
   .collections-btn:hover:not(:disabled),
   .tags-btn:hover:not(:disabled) {
     background-color: var(--button-hover);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  }
-
-  :global([data-theme='dark']) .collections-btn:hover:not(:disabled),
-  :global([data-theme='dark']) .tags-btn:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.08);
+    box-shadow: var(--shadow-md);
   }
 
   @media (max-width: 1200px) {
@@ -136,8 +131,8 @@
     }
 
     .action-btn {
-      padding: 0.35rem 0.65rem;
-      font-size: 0.8rem;
+      padding: var(--space-1-5) var(--space-2-5);
+      font-size: var(--font-size-sm);
     }
   }
 
@@ -150,7 +145,7 @@
 
   @media (max-width: 480px) {
     .action-btn {
-      padding: 0.35rem 0.6rem;
+      padding: var(--space-1-5) var(--space-2-5);
       font-size: var(--font-size-xs);
     }
   }

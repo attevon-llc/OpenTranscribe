@@ -75,6 +75,6 @@
     gap: var(--space-2);
     padding: var(--space-4);
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 </style>

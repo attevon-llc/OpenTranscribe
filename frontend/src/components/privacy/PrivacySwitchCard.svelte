@@ -129,7 +129,7 @@
   }
 
   .switch {
-    margin-top: 0.1rem;
+    margin-top: var(--space-0-5);
     flex-shrink: 0;
   }
 

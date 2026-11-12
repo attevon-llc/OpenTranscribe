@@ -55,7 +55,7 @@
 
 <style>
   .section-label {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     padding: var(--space-1) 0;
@@ -68,7 +68,7 @@
   }
 
   .shared-card {
-    border-left: 3px solid var(--primary-color);
+    border-inline-start: 3px solid var(--primary-color);
   }
 
   .badge.shared-permission {

@@ -299,7 +299,7 @@
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
     background: rgba(var(--accent-rgb), 0.1);
-    padding: 0.1875rem var(--space-2-5);
+    padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-sm);
   }
 
@@ -307,7 +307,7 @@
 
   .level-meter {
     display: flex;
-    gap: 3px;
+    gap: var(--space-1);
     align-items: center;
     height: 30px;
     width: 50%;
@@ -317,10 +317,10 @@
   .level-bar {
     width: 10px;
     height: 22px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background-color: var(--border-color);
     opacity: 0.3;
-    transition: all 0.1s ease-out;
+    transition: all var(--duration-fast) ease-out;
   }
 
   .level-bar.active.low { background-color: var(--success-color); opacity: 1; }
@@ -334,7 +334,7 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-1);
-    padding: 0.4375rem var(--space-2-5);
+    padding: var(--space-2) var(--space-2-5);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background: transparent;

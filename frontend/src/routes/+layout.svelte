@@ -437,7 +437,7 @@
   .skip-link {
     position: absolute;
     top: -9999px;
-    left: 0;
+    inset-inline-start: 0;
     width: 1px;
     height: 1px;
     overflow: hidden;
@@ -449,7 +449,7 @@
 
   .skip-link:focus-visible {
     top: 0.5rem;
-    left: 0.5rem;
+    inset-inline-start: 0.5rem;
     width: auto;
     height: auto;
     padding: var(--space-2) var(--space-4);

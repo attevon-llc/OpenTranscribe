@@ -354,7 +354,7 @@
   .file-card.deleting {
     opacity: 0.5;
     transform: scale(0.95);
-    transition: all 0.25s ease-out;
+    transition: all var(--duration-base) ease-out;
     pointer-events: none;
   }
 
@@ -376,7 +376,7 @@
   .file-card.navigating .file-card-link {
     opacity: 0.72;
     transform: scale(0.985);
-    transition: opacity 0.12s ease, transform 0.12s ease;
+    transition: opacity var(--duration-fast) ease, transform var(--duration-fast) ease;
   }
 
   @keyframes new-file-glow {
@@ -467,7 +467,7 @@
   .type-badge {
     position: absolute;
     top: 6px;
-    left: 6px;
+    inset-inline-start: 6px;
     width: 22px;
     height: 22px;
     display: flex;
@@ -488,7 +488,7 @@
   .duration-badge {
     position: absolute;
     bottom: 6px;
-    right: 6px;
+    inset-inline-end: 6px;
     background: var(--player-scrim);
     color: var(--text-on-solid);
     font-size: var(--font-size-2xs);
@@ -590,7 +590,7 @@
     }
 
     .meta-line {
-      font-size: 0.625rem;
+      font-size: var(--font-size-2xs);
     }
 
     .file-card {
@@ -603,7 +603,7 @@
     }
 
     .duration-badge {
-      font-size: 0.6rem;
+      font-size: var(--font-size-2xs);
       padding: 1px var(--space-1);
     }
 
@@ -611,7 +611,7 @@
       width: 18px;
       height: 18px;
       top: 4px;
-      left: 4px;
+      inset-inline-start: 4px;
     }
 
     .type-badge svg {

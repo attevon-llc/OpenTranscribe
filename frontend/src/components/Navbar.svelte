@@ -560,8 +560,7 @@
   .navbar {
     position: fixed;
     top: 0;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     height: calc(60px + env(safe-area-inset-top, 0px));
     padding-top: env(safe-area-inset-top, 0);
     background-color: var(--navbar-bg);
@@ -639,7 +638,7 @@
     }
 
     .nav-link {
-      padding: 0.4rem 0.8rem;
+      padding: var(--space-1-5) var(--space-3);
       font-size: 0.9rem;
     }
 
@@ -687,7 +686,7 @@
   .notification-badge {
     position: absolute;
     top: -5px;
-    right: -5px;
+    inset-inline-end: -5px;
     background-color: var(--error-solid);
     color: var(--text-on-solid);
     width: 18px;
@@ -713,7 +712,7 @@
       display: block;
       position: fixed;
       inset: 0;
-      z-index: 1099;
+      z-index: calc(var(--z-dropdown) + 99);
       background: var(--modal-backdrop);
     }
   }
@@ -764,7 +763,7 @@
     }
 
     .nav-link {
-      padding: 0.4rem 0.6rem;
+      padding: var(--space-1-5) var(--space-2-5);
       font-size: var(--font-size-md);
     }
 
@@ -791,12 +790,11 @@
       gap: var(--space-1);
       position: fixed;
       top: calc(60px + env(safe-area-inset-top, 0px));
-      left: 0;
-      right: 0;
+      inset-inline: 0;
       background: var(--navbar-bg);
       border-bottom: 1px solid var(--border-color);
       padding: var(--space-3) var(--space-4);
-      z-index: 1100;
+      z-index: calc(var(--z-dropdown) + 100);
       box-shadow: var(--shadow-lg);
       max-height: calc(100vh - 60px - env(safe-area-inset-top, 0px));
       max-height: calc(100dvh - 60px - env(safe-area-inset-top, 0px));
@@ -862,7 +860,7 @@
       position: relative;
       width: 100%;
       top: auto;
-      right: auto;
+      inset-inline-end: auto;
       box-shadow: none;
       border: none;
       border-top: 1px solid var(--border-color);
@@ -902,7 +900,7 @@
     }
 
     .recording-indicator {
-      padding: 0.4rem var(--space-2);
+      padding: var(--space-1-5) var(--space-2);
     }
 
     .theme-toggle-container {
@@ -924,7 +922,7 @@
     align-items: center;
     gap: var(--space-2);
     font-family: inherit;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     transition: all var(--duration-slow) ease;
     overflow: hidden;
@@ -960,7 +958,7 @@
   .recording-pulse {
     position: absolute;
     top: 6px;
-    left: 6px;
+    inset-inline-start: 6px;
     width: 6px;
     height: 6px;
     border-radius: var(--radius-round);
@@ -989,7 +987,7 @@
     font-family: system-ui, -apple-system, sans-serif;
     font-variant-numeric: tabular-nums;
     font-weight: var(--font-weight-semibold);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.5px;
     min-width: 60px; /* Reserve space for HH:MM:SS */
     text-align: center;
@@ -1048,7 +1046,7 @@
     box-shadow: var(--shadow-xl);
     padding: var(--space-4);
     min-width: 200px;
-    z-index: 1001;
+    z-index: calc(var(--z-dropdown) + 1);
     animation: slide-in 0.2s ease-out;
   }
 
@@ -1061,8 +1059,8 @@
     transform: translateX(-50%);
     width: 0;
     height: 0;
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
+    border-inline-start: 8px solid transparent;
+    border-inline-end: 8px solid transparent;
     border-bottom: 8px solid var(--border-color);
   }
 
@@ -1074,8 +1072,8 @@
     transform: translateX(-50%);
     width: 0;
     height: 0;
-    border-left: 7px solid transparent;
-    border-right: 7px solid transparent;
+    border-inline-start: 7px solid transparent;
+    border-inline-end: 7px solid transparent;
     border-bottom: 7px solid var(--background-color);
   }
 
@@ -1121,11 +1119,11 @@
     color: var(--text-secondary);
     font-family: system-ui, -apple-system, sans-serif;
     font-variant-numeric: tabular-nums;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
-    margin-left: auto;
+    margin-inline-start: auto;
     min-width: 64px; /* Reserve space for HH:MM:SS */
-    text-align: right;
+    text-align: end;
     display: inline-block;
   }
 
@@ -1199,14 +1197,14 @@
     }
 
     .control-btn {
-      padding: 0.4rem;
+      padding: var(--space-1-5);
     }
 
     /* Adjust triangle for smaller screens */
     .recording-controls-popup::before,
     .recording-controls-popup::after {
-      border-left-width: 6px;
-      border-right-width: 6px;
+      border-inline-start-width: 6px;
+      border-inline-end-width: 6px;
     }
 
     .recording-controls-popup::before {

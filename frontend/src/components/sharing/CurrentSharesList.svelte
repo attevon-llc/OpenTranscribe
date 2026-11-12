@@ -153,7 +153,7 @@
   }
 
   .list-title {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0 0 var(--space-2) 0;
@@ -164,7 +164,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-    padding: var(--space-2) 0.6rem;
+    padding: var(--space-2) var(--space-2-5);
     border-radius: var(--radius-md);
     transition: background-color var(--duration-fast) ease;
   }
@@ -197,7 +197,7 @@
   }
 
   .target-name {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
     white-space: nowrap;
@@ -221,9 +221,9 @@
   }
 
   .permission-label {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    padding: 0.35rem var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
   }
 
 </style>

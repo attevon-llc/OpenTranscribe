@@ -100,7 +100,7 @@
     display: grid;
     grid-template-columns: var(--file-list-columns);
     gap: var(--file-list-gap);
-    padding: 0.5rem var(--file-list-pad);
+    padding: var(--space-2) var(--file-list-pad);
     align-items: center;
     /* Matches a real row's height, so the list does not grow or shrink when the
        placeholder is swapped out. */

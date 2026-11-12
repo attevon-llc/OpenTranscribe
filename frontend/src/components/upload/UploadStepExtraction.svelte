@@ -162,8 +162,8 @@
     border-radius: var(--radius-md);
   }
 
-  .comparison-value.video { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
-  .comparison-value.audio { color: #10b981; background: rgba(16, 185, 129, 0.1); }
+  .comparison-value.video { color: var(--error-text); background: var(--error-bg); }
+  .comparison-value.audio { color: var(--success-text); background: var(--success-bg); }
   .comparison-arrow { color: var(--text-secondary); }
 
   /* Radio choice group */
@@ -211,7 +211,7 @@
   .choice-content {
     display: flex;
     flex-direction: column;
-    gap: 0.1875rem;
+    gap: var(--space-1);
     min-width: 0;
   }
 
@@ -237,18 +237,18 @@
   }
 
   .choice-badge {
-    font-size: 0.6rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
-    padding: 0.0625rem var(--space-1-5);
+    padding: 1px var(--space-1-5);
     border-radius: var(--radius-pill);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
 
   .choice-badge.recommended {
-    background: rgba(16, 185, 129, 0.12);
-    color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.25);
+    background: rgba(var(--success-color-rgb), 0.12);
+    color: var(--success-text);
+    border: 1px solid rgba(var(--success-color-rgb), 0.25);
   }
 
   .choice-desc {

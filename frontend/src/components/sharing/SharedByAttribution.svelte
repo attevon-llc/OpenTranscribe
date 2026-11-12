@@ -13,7 +13,7 @@
 
 <style>
   .shared-by {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     font-style: italic;
     white-space: nowrap;

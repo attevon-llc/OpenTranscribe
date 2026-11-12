@@ -282,7 +282,7 @@
 
   .notifications-content::-webkit-scrollbar-thumb {
     background: var(--border-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .notifications-content::-webkit-scrollbar-thumb:hover {

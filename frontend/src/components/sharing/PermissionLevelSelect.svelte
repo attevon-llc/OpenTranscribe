@@ -37,8 +37,8 @@
 
 <style>
   .permission-select {
-    padding: 0.35rem var(--space-2);
-    font-size: 0.8rem;
+    padding: var(--space-1-5) var(--space-2);
+    font-size: var(--font-size-sm);
     cursor: pointer;
     min-width: 90px;
   }

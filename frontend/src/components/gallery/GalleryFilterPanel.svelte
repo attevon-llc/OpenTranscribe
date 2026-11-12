@@ -94,8 +94,8 @@
     display: none;
     position: fixed;
     inset: var(--content-top) 0 0 0;
-    background: rgba(0, 0, 0, 0.4);
-    z-index: 999;
+    background: var(--modal-backdrop);
+    z-index: calc(var(--z-dropdown) - 1);
   }
 
   /* Narrower filter sidebar on tablet to give more room to content */
@@ -110,21 +110,21 @@
     .filter-rail {
       position: fixed;
       top: var(--content-top);
-      left: -100%;
+      inset-inline-start: -100%;
       width: 85%;
       max-width: 320px;
       height: calc(100vh - var(--content-top));
       height: calc(100dvh - var(--content-top));
       background: var(--surface-color);
       z-index: var(--z-modal);
-      transition: left var(--duration-slow) ease;
-      border-right: 1px solid var(--border-color);
+      transition: inset-inline-start var(--duration-slow) ease;
+      border-inline-end: 1px solid var(--border-color);
       border-top: 1px solid var(--border-color);
-      box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--shadow-lg);
     }
 
     .filter-rail.show {
-      left: 0;
+      inset-inline-start: 0;
     }
 
     .filter-overlay-backdrop {

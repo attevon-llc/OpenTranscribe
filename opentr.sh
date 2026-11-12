@@ -1929,7 +1929,7 @@ fresh_stop() {
   # flag that is no longer recorded still comes down. Safe: the project is
   # isolated by construction, so nothing outside this deployment can be hit.
   # shellcheck disable=SC2086
-  COMPOSE_PROJECT_NAME="$proj" docker compose $chain down --remove-orphans 2>/dev/null || true
+  COMPOSE_PROJECT_NAME="$proj" COMPOSE_PROFILES="*" docker compose $chain down --remove-orphans 2>/dev/null || true
   echo "✅ Stopped. Volumes preserved — use 'fresh-destroy ${name}' to remove them."
 }
 

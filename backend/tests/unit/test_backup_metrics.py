@@ -113,3 +113,22 @@ def test_perform_backup_failure_lands_in_metrics(db_session):
 
     assert _sample("backup_runs_total", {"result": "failure"}) >= base_failure + 1
     assert _sample("backup_last_status") == 0.0
+
+
+def test_stale_after_is_one_and_a_half_schedule_gaps():
+    from app.services.backup_config import stale_after_seconds as _stale_after_seconds
+
+    daily = {backup_config.KEY_ENABLED: "true", backup_config.KEY_SCHEDULE: "0 3 * * *"}
+    weekly = {backup_config.KEY_ENABLED: "true", backup_config.KEY_SCHEDULE: "0 3 * * 0"}
+    assert _stale_after_seconds(daily) == 86400 * 1.5
+    assert _stale_after_seconds(weekly) == 7 * 86400 * 1.5
+
+
+def test_stale_after_is_zero_when_disabled_or_schedule_invalid():
+    from app.services.backup_config import stale_after_seconds as _stale_after_seconds
+
+    assert _stale_after_seconds({backup_config.KEY_ENABLED: "false"}) == 0.0
+    assert (
+        _stale_after_seconds({backup_config.KEY_ENABLED: "true", backup_config.KEY_SCHEDULE: "x"})
+        == 0.0
+    )

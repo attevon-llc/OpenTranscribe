@@ -273,7 +273,19 @@ def test_only_the_commit_stage_hook_runs_the_related_subset():
 def test_the_related_branch_still_falls_back_to_the_full_coverage_run():
     body = _uncommented(_function_body("run_all_checks"))
     assert "vitest related --run" in body, "the commit-stage branch no longer runs vitest related"
-    related, _, full = body.partition("else")
-    assert "npm run test:coverage" in full, (
+    # The `else` that closes the RELATED_ONLY `if` sits at the same indent as that `if`; a
+    # bare partition("else") lands on the inner no-staged-files branch instead.
+    guard = re.search(
+        r'^( *)if \[ "\$\{RELATED_ONLY:-false\}" = true \]; then$', body, re.MULTILINE
+    )
+    assert guard, "the RELATED_ONLY branch is gone from run_all_checks"
+    indent = guard.group(1)
+    branch = body[guard.end() :]
+    closing = re.search(rf"^{indent}else$", branch, re.MULTILINE)
+    assert closing, "the RELATED_ONLY branch has no else (the full-suite fallback)"
+    related, full = branch[: closing.start()], branch[closing.end() :]
+    assert "vitest related --run" in related
+    assert "npm run test:coverage" not in related
+    assert "npm run test:coverage" in full.split(f"\n{indent}fi", 1)[0], (
         "without --related-only the script must still run the full suite with coverage floors"
     )

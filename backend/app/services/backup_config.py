@@ -7,6 +7,7 @@ The S3 secret is AES-256-GCM encrypted at rest and never leaves this module exce
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core import constants
 from app.services import system_settings_service as sss
 from app.services.backup_cron import is_valid_cron
+from app.services.backup_cron import max_interval
 from app.services.scheduled_job_settings import bool_value
 from app.services.scheduled_job_settings import int_value
 from app.services.scheduled_job_settings import json_value
@@ -225,3 +227,22 @@ def destination_status(destination: str) -> dict[str, Any]:
     exists = path.is_dir()
     writable = exists and os.access(path, os.W_OK)
     return {"destination": destination, "exists": exists, "writable": writable, "mounted": writable}
+
+
+#: A backup is stale after this many schedule intervals without a success.
+STALE_INTERVAL_FACTOR = 1.5
+
+
+def stale_after_seconds(vals: Mapping[str, str | None]) -> float:
+    """Age past which a successful backup is stale: 1.5x the schedule's longest gap.
+
+    0 when backups are disabled or the schedule is unusable, which silences
+    ``BackupStale`` (a disabled or never-configured backup is not an outage).
+    """
+    if not bool_value(vals, KEY_ENABLED, constants.DEFAULT_BACKUP_ENABLED):
+        return 0.0
+    schedule = vals.get(KEY_SCHEDULE) or constants.DEFAULT_BACKUP_SCHEDULE
+    try:
+        return max_interval(schedule).total_seconds() * STALE_INTERVAL_FACTOR
+    except ValueError:
+        return 0.0

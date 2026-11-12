@@ -314,6 +314,8 @@ def test_frontend_only_hooks_are_skipped_on_a_pr_that_does_not_touch_the_fronten
     for name in ("Run pre-commit (pre-commit stage)", "Run pre-commit (pre-push stage)"):
         skip = steps[name]["env"]["SKIP"]
         assert "needs.changes.outputs.frontend != 'true'" in skip and "FRONTEND_ONLY_HOOKS" in skip
+        # paths-filter diffs only the last commit on a manual master run, so it must not skip.
+        assert "github.event_name != 'workflow_dispatch'" in skip
     assert "openapi-snapshot" in steps["Run pre-commit (pre-push stage)"]["env"]["SKIP"]
 
 
@@ -335,3 +337,8 @@ def test_the_mypy_and_apt_caches_exist_where_the_time_is_spent() -> None:
         assert names.index("Cache apt archives") < names.index("Install system dependencies")
         install = next(s for s in steps if s.get("name") == "Install system dependencies")
         assert 'Dir::Cache::archives="$HOME/apt-archives"' in install["run"]
+        assert "chown -R" in install["run"], (
+            "apt runs as root, so lock/ and partial/ in the archive dir are unreadable to the "
+            "cache post-step's tar and the cache never saves (actions/cache: Failed to save)"
+        )
+        assert install["run"].index("chown -R") > install["run"].index("apt-get -o Dir::Cache")

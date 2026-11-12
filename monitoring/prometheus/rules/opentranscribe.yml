@@ -107,13 +107,17 @@ groups:
 
   - name: opentranscribe-service-level
     rules:
-      # 5xx share of all requests. The ratio form keeps a quiet instance (a handful of
-      # requests, one failing) from paging on its own; `> 0` on the denominator is implicit
-      # because a division by zero yields no sample.
+      # 5xx share of all requests, only while traffic is above 0.1 req/s (about 30 requests
+      # in the 5m window). A pure ratio is most sensitive when volume is lowest (1 failure in
+      # 10 requests is 10%), so a near-idle install would page on a single repeated 5xx.
+      # https://prometheus.io/docs/practices/alerting/
       - alert: HttpServerErrorRate
         expr: |
-          sum(rate(http_requests_total{status=~"5.."}[5m]))
-          / sum(rate(http_requests_total[5m])) > 0.05
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(http_requests_total[5m])) > 0.05
+          )
+          and sum(rate(http_requests_total[5m])) > 0.1
         for: 10m
         labels:
           severity: high
@@ -123,15 +127,18 @@ groups:
 
   - name: opentranscribe-backup
     rules:
-      # 0 means "never succeeded" (metrics.py), which is also the state of an install with
-      # backups off, so it stays silent; the alert is for a backup that worked and then stopped.
+      # backup_stale_after_seconds is 1.5x the longest gap of the admin's backup.schedule,
+      # and 0 when backups are disabled, so a weekly schedule is judged against 10.5 days and a
+      # disabled one never fires. backup_last_success_timestamp_seconds is 0 before the first
+      # success, so the alert is for a backup that worked and then stopped.
       - alert: BackupStale
         expr: |
-          (time() - backup_last_success_timestamp_seconds) > 129600
+          (time() - backup_last_success_timestamp_seconds) > backup_stale_after_seconds
+          and backup_stale_after_seconds > 0
           and backup_last_success_timestamp_seconds > 0
         for: 15m
         labels:
           severity: high
         annotations:
-          summary: "No successful database backup in over 36 hours"
+          summary: "No successful database backup within 1.5x the backup schedule interval"
           description: "The last successful backup was {{ $value | humanizeDuration }} ago."

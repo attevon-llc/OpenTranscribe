@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import ast
 import re
+from functools import cache
 from pathlib import Path
 
 _TESTS_ROOT = Path(__file__).resolve().parents[1]
@@ -917,6 +918,7 @@ def _tree_wide_helpers() -> tuple[set[str], set[str]]:
     return deleting_helpers, cleaning_fixtures
 
 
+@cache
 def _collect() -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str, str], int, int]:
     """Return (uncleaned, identities, wrong_passwords, ambient_mutations, modules, functions)."""
     uncleaned: dict[str, str] = {}
@@ -1001,16 +1003,6 @@ def _collect() -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str
     return uncleaned, identities, wrong_passwords, ambient_mutations, module_count, function_count
 
 
-(
-    _UNCLEANED,
-    _IDENTITIES,
-    _WRONG_PASSWORDS,
-    _AMBIENT_MUTATIONS,
-    _MODULES,
-    _FUNCTIONS,
-) = _collect()
-
-
 def _report(findings: dict[str, str]) -> str:
     return "\n  ".join(f"{ident} -> {why}" for ident, why in sorted(findings.items()))
 
@@ -1022,48 +1014,47 @@ def _report(findings: dict[str, str]) -> str:
 
 def test_every_creating_e2e_test_tears_down() -> None:
     """E2E has no savepoint harness — what it creates on the dev stack stays there."""
-    assert not _UNCLEANED, (
+    assert not _collect()[0], (
         "These e2e tests/fixtures create or reconfigure persistent state on the LIVE "
         "dev stack with no guaranteed teardown (no try/finally, no addfinalizer, no "
         "requested fixture whose teardown deletes). Add cleanup that runs whether the "
         "test passes or fails — a delete on the happy path is skipped by the very "
-        "failure that leaves the object behind:\n  " + _report(_UNCLEANED)
+        "failure that leaves the object behind:\n  " + _report(_collect()[0])
     )
 
 
 def test_no_e2e_test_uses_a_fixed_identity() -> None:
     """A fixed identity turns "my test made a row" into "my test made THE row"."""
-    assert not _IDENTITIES, (
+    assert not _collect()[1], (
         "These e2e tests name persistent objects with a fixed identity instead of a "
         "uuid4/random-suffixed one. This is the defect that created a real "
         "test@example.com account on the live stack: the identity outlives the run, so "
         "it collides with the next one and cannot be swept by name. Suffix it, or "
-        "allow-list it with a reason:\n  " + _report(_IDENTITIES)
+        "allow-list it with a reason:\n  " + _report(_collect()[1])
     )
 
 
 def test_no_negative_login_targets_an_existing_account() -> None:
     """Lockout is per-account and progressive — one such test poisons the whole suite."""
-    assert not _WRONG_PASSWORDS, (
+    assert not _collect()[2], (
         "These e2e tests submit a WRONG PASSWORD for an account that exists. Lockout is "
         "keyed on the resolved account (app/auth/lockout.py: canonical_identifier) and "
         "escalates, so every later test that logs in as that account inherits the "
         "failure. Use a NONEXISTENT account — it takes the identical 401 path "
-        "(backend/tests/CLAUDE.md):\n  " + _report(_WRONG_PASSWORDS)
+        "(backend/tests/CLAUDE.md):\n  " + _report(_collect()[2])
     )
 
 
 def test_no_e2e_test_mutates_an_ambient_entity() -> None:
     """Acting destructively on a row you did not create is not undoable by deleting."""
-    assert not _AMBIENT_MUTATIONS, (
+    assert not _collect()[3], (
         "These e2e tests run a MUTATING pipeline action against a row they did not "
         "create — one they found by listing whatever the dev library happens to hold. "
         "Deleting afterwards does not undo it: a reprocess rewrites the transcript in "
         "place, and the auto-accept path then rewrites any ambient speaker profile the "
         "new voice matches (issue #541 — that is how a real profile's centroid and "
         "counters were altered and two visual baselines broke). Upload your own file "
-        "and delete it in a teardown, or allow-list it with a reason:\n  "
-        + _report(_AMBIENT_MUTATIONS)
+        "and delete it in a teardown, or allow-list it with a reason:\n  " + _report(_collect()[3])
     )
 
 
@@ -1073,8 +1064,8 @@ def test_no_e2e_test_mutates_an_ambient_entity() -> None:
 
 
 def test_scanner_parsed_the_e2e_suite() -> None:
-    assert _MODULES >= 20, f"suspiciously few e2e modules parsed: {_MODULES}"
-    assert _FUNCTIONS >= 200, f"suspiciously few e2e tests/fixtures parsed: {_FUNCTIONS}"
+    assert _collect()[4] >= 20, f"suspiciously few e2e modules parsed: {_collect()[4]}"
+    assert _collect()[5] >= 200, f"suspiciously few e2e tests/fixtures parsed: {_collect()[5]}"
 
 
 def test_scanner_finds_a_known_api_creation() -> None:

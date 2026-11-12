@@ -42,7 +42,11 @@ what it appears to. A green one from the wrong schema is worse.
 ## Key files
 
 - `conftest.py` — sets env **before** `app.*` imports (DB/MinIO creds via `dotenv_values(.env)`,
-  `POSTGRES_HOST=localhost:5176` — see the migration warning above). `db_session` = savepoint
+  `POSTGRES_HOST=localhost:5176` — see the migration warning above). It imports `app.main`/`User`
+  **lazily inside `client` and the user fixtures**, so a process that requests none of them never pays
+  the ~12 s app import (single-file collect 16 s to <1 s; whole-tree collect 110 s to 78 s serial, same
+  31,451 ids). Module-level repo scans in test files must be `functools.cache`d and called from the test
+  body: `unit/test_no_repo_scan_at_import.py` fails on a module-level `rglob`/`os.walk`. `db_session` = savepoint
   isolation surviving `commit()`;
   `client` overrides `get_db`; an autouse session fixture patches `Task.apply_async` so
   `.delay()` never reaches a real broker.

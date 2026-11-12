@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import ast
 import re
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,7 @@ _NARROWED_PHASES = [
 ]
 
 
+@cache
 def _marked_modules(marker: str) -> set[str]:
     """Modules containing at least one ``marker``-marked test or module-level mark."""
     found: set[str] = set()

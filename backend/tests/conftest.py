@@ -322,10 +322,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 
 # Import app modules after setting environment variables (they check env during import)
 from app.core.config import settings
-from app.core.security import get_password_hash
-from app.db.base import get_db
-from app.main import app
-from app.models.user import User
 
 # Use PostgreSQL test database (same as main database but with test schema isolation)
 # Models use PostgreSQL-specific types (JSONB) that SQLite doesn't support
@@ -738,6 +734,9 @@ def db_session(request):
 @pytest.fixture(scope="function")
 def client(db_session):
     """Fixture that provides a FastAPI TestClient with test DB session"""
+    # Imported here, not at module level: only a test that requests `client` pays the app import.
+    from app.db.base import get_db
+    from app.main import app
 
     # Override the get_db dependency to use test DB session
     def override_get_db():
@@ -765,6 +764,9 @@ def normal_user(db_session):
     import uuid
 
     unique_id = str(uuid.uuid4())[:8]
+    from app.core.security import get_password_hash
+    from app.models.user import User
+
     user = User(
         email=f"testuser_{unique_id}@example.com",
         full_name="Test User",
@@ -788,6 +790,9 @@ def admin_user(db_session):
     import uuid
 
     unique_id = str(uuid.uuid4())[:8]
+    from app.core.security import get_password_hash
+    from app.models.user import User
+
     user = User(
         email=f"testadmin_{unique_id}@example.com",
         full_name="Admin User",
@@ -849,6 +854,9 @@ def super_admin_user(db_session):
     import uuid
 
     unique_id = str(uuid.uuid4())[:8]
+    from app.core.security import get_password_hash
+    from app.models.user import User
+
     user = User(
         email=f"testsuperadmin_{unique_id}@example.com",
         full_name="Super Admin User",
@@ -955,6 +963,9 @@ def other_user(db_session):
     import uuid
 
     unique_id = str(uuid.uuid4())[:8]
+    from app.core.security import get_password_hash
+    from app.models.user import User
+
     user = User(
         email=f"otheruser_{unique_id}@example.com",
         full_name="Other User",

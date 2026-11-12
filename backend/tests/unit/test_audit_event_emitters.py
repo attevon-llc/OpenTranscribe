@@ -23,6 +23,7 @@ config keys and ``test_capability_contract.py`` uses for capability strings.
 from __future__ import annotations
 
 import ast
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,7 @@ def _declared_members() -> set[str]:
     return {member.name for member in AuditEventType}
 
 
+@cache
 def _scan_emitters() -> dict[str, set[str]]:
     """Map event-type member name -> set of module paths (repo-relative) that
     reference ``AuditEventType.<member>`` as a value.
@@ -68,13 +70,12 @@ def _scan_emitters() -> dict[str, set[str]]:
     return emitters
 
 
-_EMITTERS = _scan_emitters()
 _ALL_MEMBERS = sorted(_declared_members())
 
 
 @pytest.mark.parametrize("member", _ALL_MEMBERS)
 def test_event_type_has_an_emitter(member: str) -> None:
-    assert member in _EMITTERS, (
+    assert member in _scan_emitters(), (
         f"AuditEventType.{member} is declared but never referenced as "
         "AuditEventType.<member> anywhere in the app — nothing emits it. Wire a "
         "real audit_logger.log(...) call site, or remove the member if the event "
@@ -84,8 +85,10 @@ def test_event_type_has_an_emitter(member: str) -> None:
 
 def test_scanner_finds_a_known_emitter() -> None:
     """Guard the guard: a scanner that silently matches nothing passes everything."""
-    assert "AUTH_LOGIN_SUCCESS" in _EMITTERS, (
+    assert "AUTH_LOGIN_SUCCESS" in _scan_emitters(), (
         "AST scan found no emitter for a member known to be wired"
     )
-    assert any("app/api/endpoints" in p or "app/auth" in p for p in _EMITTERS["AUTH_LOGIN_SUCCESS"])
+    assert any(
+        "app/api/endpoints" in p or "app/auth" in p for p in _scan_emitters()["AUTH_LOGIN_SUCCESS"]
+    )
     assert _ALL_MEMBERS, "AuditEventType declares no members — scan is blind"

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import ast
 import re
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -209,6 +210,7 @@ def _live_reads(source: str) -> set[str]:
     return found
 
 
+@cache
 def _all_live_reads() -> set[str]:
     live: set[str] = set()
     for path in sorted(BACKEND_TESTS.rglob("*.py")):
@@ -222,6 +224,7 @@ def _all_live_reads() -> set[str]:
     return live
 
 
+@cache
 def _gate_scripts() -> list[Path]:
     """Every source that can hand a `RUN_*` to a test process.
 

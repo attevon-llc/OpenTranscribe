@@ -35,6 +35,7 @@ frontend's variable name.
 from __future__ import annotations
 
 import re
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -380,6 +381,7 @@ def _normalize_frontend_path(raw: str) -> tuple[str, ...]:
     return tuple(_WILDCARD if _WILDCARD in seg else seg for seg in segments)
 
 
+@cache
 def _scan_frontend_paths() -> set[tuple[str, ...]]:
     """Every path (as a normalized segment tuple) called from the frontend."""
     if not _FRONTEND_SRC.is_dir():
@@ -426,15 +428,12 @@ def _all_route_paths() -> set[str]:
     return {r.path for r in app.routes if hasattr(r, "path")}
 
 
-_FRONTEND_PATHS = _scan_frontend_paths()
-
-
 def _has_a_caller(route_path: str) -> bool:
     if route_path.startswith(_EXTERNAL_INTEGRATION_PREFIXES):
         return True
     if route_path in NO_FRONTEND_CALLER:
         return True
-    return _normalize_backend_path(route_path) in _FRONTEND_PATHS
+    return _normalize_backend_path(route_path) in _scan_frontend_paths()
 
 
 def _api_route_paths() -> list[str]:
@@ -472,10 +471,10 @@ def test_not_yet_verified_entries_are_real_routes() -> None:
 
 def test_scanner_finds_a_known_frontend_call() -> None:
     """Guard the guard: a scanner that silently matches nothing passes everything."""
-    assert _FRONTEND_PATHS, "no frontend API call sites parsed — scan is blind"
-    assert ("api", "admin", "group-mappings") in _FRONTEND_PATHS, (
+    assert _scan_frontend_paths(), "no frontend API call sites parsed — scan is blind"
+    assert ("api", "admin", "group-mappings") in _scan_frontend_paths(), (
         "AST scan found no frontend call to a route known to have a real UI "
-        f"(groupMappings.ts). Parsed paths sample: {sorted(_FRONTEND_PATHS)[:10]}"
+        f"(groupMappings.ts). Parsed paths sample: {sorted(_scan_frontend_paths())[:10]}"
     )
 
 

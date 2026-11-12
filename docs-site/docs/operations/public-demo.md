@@ -120,10 +120,14 @@ alarm on `CPUSurplusCreditsCharged` too, or choose standard mode.
    DEPLOYMENT_MODE=lite
    DEMO_MODE=true
    DEMO_USER_EMAIL=demo@example.com      # shown on your website
-   DEMO_USER_PASSWORD=<a password you publish>
+   DEMO_USER_PASSWORD=<generate one: openssl rand -base64 18>
    OT_IMAGE_TAG=v0.7.0                    # a released version, never latest
    NGINX_SERVER_NAME=demo.example.org
    ```
+
+   Both account values are required. The overlay passes them to the API, and `demo-reset.sh`
+   stops before changing anything if the password is missing. Without the email, "Try the
+   demo" answers 503 and the API log names `DEMO_USER_EMAIL`. There is no built-in password.
 
 3. Put the seed bundle on the host (see below), for example in
    `/opt/opentranscribe-demo-seed/current`.
@@ -263,6 +267,20 @@ host:
 python -m app.scripts.demo_seed validate --bundle /path/to/bundle
 ```
 
+The transcripts come from a real stack. Write the manifest (media paths, hashes, licences), copy
+the media into the bundle's `media/`, then upload each recording to a throwaway `--fresh` stack
+so it is transcribed and diarized. Name each upload with the item's `title` or media filename;
+`export` finds the newest completed file with that title or filename and writes
+`transcripts/<item>.json` (segments in time order, plus the speakers' display names):
+
+```bash
+./opentr.sh shell backend
+python -m app.scripts.demo_seed export --bundle /path/to/bundle --manifest /path/to/manifest.json
+```
+
+It copies the manifest into the bundle and lists every item with no finished file instead of
+writing a partial bundle.
+
 ### What goes in the bundle
 
 `demo/seed-catalog.json` lists the candidate sources by collection. Each item in a bundle names
@@ -307,6 +325,13 @@ throwaway stack:
        --bundle /path/to/bundle --base-url http://localhost:<frontend port> \
        --email demo@example.com
    ```
+
+   The generator finds each recording by the key the seeder records (the `demo__<item id>.transcript`
+   filename), then by the media filename it was uploaded under, then by manifest title, so it
+   works on a stack seeded with `demo_seed import` and on one where you uploaded the media.
+   A prompt naming an item that is not in the bundle is skipped with a message (`--strict` fails
+   instead). A remote model's hourly chat limit (HTTP 429) is waited out using the server's
+   `Retry-After`, and an answer with no citations stops the run, because it means retrieval failed.
 
 4. Read every answer. Do not edit model text: delete the conversation and regenerate.
 5. `python -m app.scripts.demo_seed validate --bundle /path/to/bundle` checks the structure

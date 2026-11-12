@@ -37,6 +37,12 @@ services:
       OPENTRANSCRIBE_TELEMETRY: "false"
       # Where the upgrade script's record is mounted (below); the login page shows the time.
       DEMO_STATUS_FILE: /run/demo/demo-status.json
+      # The shared account the seeder creates and the passwordless "Try the demo" signs in as.
+      # The email is a public address with a default; the password is never defaulted and is
+      # supplied by the operator (generate one: `openssl rand -base64 18`). It is passed here so
+      # a stack whose env file lacks them (a --fresh dev stack) still gets them from the shell.
+      DEMO_USER_EMAIL: ${DEMO_USER_EMAIL:-demo@example.com}
+      DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:-}
       DEMO_RATE_LIMIT_PER_MINUTE: ${DEMO_RATE_LIMIT_PER_MINUTE:-120}
       # nginx (Docker's pool) is always trusted. Cloudflare is NOT listed here: nginx itself
       # restores the visitor address from CF-Connecting-IP for Cloudflare peers only (the nginx

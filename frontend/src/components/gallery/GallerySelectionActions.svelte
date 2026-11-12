@@ -20,6 +20,7 @@
   const CHAT_MAX_FILES = 100;
   import { goto } from '$app/navigation';
   import { t } from '$stores/locale';
+  import { demoMode } from '$stores/demo';
   import { supportSessionGate } from '$stores/supportSession';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { HiddenMediaApi, HIDDEN_LIMIT_ERROR } from '$lib/api/hiddenMedia';
@@ -483,7 +484,8 @@
     <button
       class="btn btn-secondary action-btn select-btn"
       on:click={handleSelectFilesClick}
-      title={$t('gallery.bulk.selectFilesTooltip')}
+      disabled={$demoMode}
+      title={$demoMode ? $t('demo.readOnlyTooltip') : $t('gallery.bulk.selectFilesTooltip')}
     >
       <span>{$t('nav.selectFiles')}</span>
     </button>

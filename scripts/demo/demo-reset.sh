@@ -62,6 +62,15 @@ case " ${FILES[*]} " in
     *) echo "the demo overlay is not in the compose chain (is DEMO_MODE=true in .env?)" >&2; exit 2 ;;
 esac
 
+# The seed creates the shared account from these; refuse before anything is stopped or
+# deleted, naming the fix, rather than failing after the volumes are gone.
+env_value() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d ' "'"'"; }
+if [ -z "${DEMO_USER_PASSWORD:-$(env_value DEMO_USER_PASSWORD)}" ]; then
+    echo "DEMO_USER_PASSWORD is not set in .env or the environment; the seed creates the demo account with it." >&2
+    echo "Generate one and add it to .env:  echo \"DEMO_USER_PASSWORD=\$(openssl rand -base64 18)\" >> .env" >&2
+    exit 2
+fi
+
 # The API reports the upgrade time from this file (docker-compose.demo.yml mounts it); it must
 # exist before the first start or Docker creates a directory in its place.
 [ "$DRY_RUN" = 1 ] || [ -e "$INSTALL_DIR/demo-status.json" ] || printf '{}' >"$INSTALL_DIR/demo-status.json"

@@ -27,13 +27,27 @@ import sys
 from pathlib import Path
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 REFUSED_PROVIDERS = {'mock', 'mock-llm'}
 TIMEOUT = 900
+#: The corpus name `demo_seed import` gives every file it seeds (filename `demo__<item id>.transcript`).
+SEEDED_CORPUS = 'demo'
+#: A chat 429 (the remote-provider hourly message limit) is waited out, honouring Retry-After.
+RETRY = Retry(
+    total=10,
+    status_forcelist=[429],
+    allowed_methods=None,  # the chat message is a POST; a 429 is refused before any work, so replay is safe
+    backoff_factor=5,
+    respect_retry_after_header=True,
+    raise_on_status=False,
+)
 
 
 def _session(base: str, email: str, password: str) -> requests.Session:
     s = requests.Session()
+    s.mount(base, HTTPAdapter(max_retries=RETRY))
     resp = s.post(f'{base}/api/auth/login', data={'username': email, 'password': password})
     resp.raise_for_status()
     if csrf := s.cookies.get('csrf_token'):
@@ -41,23 +55,65 @@ def _session(base: str, email: str, password: str) -> requests.Session:
     return s
 
 
-def _file_uuids(s: requests.Session, base: str, titles: dict[str, str]) -> dict[str, str]:
-    """bundle item id -> seeded file UUID, matched on the manifest title."""
+def seeded_filename(item_id: str) -> str:
+    """The filename `demo_seed import` records for a bundle item; stable across title edits."""
+    return f'{SEEDED_CORPUS}__{item_id}.transcript'
+
+
+def match_files(files: list[dict], items: dict[str, dict]) -> tuple[dict[str, str], list[str]]:
+    """Bundle item id -> file UUID, plus the item ids with no file.
+
+    Tries, in order, the key the seeder records (the `demo__<id>.transcript` filename), the
+    media filename the item was uploaded under, then the manifest title. A normal upload never
+    carries the manifest title, so the title is the last resort and never the only route.
+    """
+    by_name: dict[str, str] = {}
     by_title: dict[str, str] = {}
+    for f in files:
+        if f.get('filename'):
+            by_name.setdefault(f['filename'], f['uuid'])
+        if f.get('title'):
+            by_title.setdefault(f['title'], f['uuid'])
+    found: dict[str, str] = {}
+    missing: list[str] = []
+    for item_id, item in items.items():
+        candidates = (
+            by_name.get(seeded_filename(item_id)),
+            by_name.get(Path(str(item.get('media', ''))).name),
+            by_title.get(str(item.get('title', ''))),
+        )
+        uuid = next((c for c in candidates if c), None)
+        if uuid:
+            found[item_id] = uuid
+        else:
+            missing.append(item_id)
+    return found, missing
+
+
+def split_prompts(
+    prompts: list[dict], item_ids: set[str]
+) -> tuple[list[dict], list[tuple[str, list[str]]]]:
+    """(runnable prompts, [(prompt id, items the bundle lacks)]) for prompts naming absent items."""
+    runnable: list[dict] = []
+    skipped: list[tuple[str, list[str]]] = []
+    for conv in prompts:
+        absent = [i for i in conv['items'] if i not in item_ids]
+        if absent:
+            skipped.append((conv['id'], absent))
+        else:
+            runnable.append(conv)
+    return runnable, skipped
+
+
+def _list_files(s: requests.Session, base: str) -> list[dict]:
+    files: list[dict] = []
     page = 1
     while True:
         data = s.get(f'{base}/api/files', params={'page': page, 'page_size': 100}).json()
-        for f in data['items']:
-            for key in ('title', 'filename'):
-                if f.get(key):
-                    by_title.setdefault(f[key], f['uuid'])
+        files += data['items']
         if not data.get('has_more'):
-            break
+            return files
         page += 1
-    missing = [i for i, t in titles.items() if t not in by_title]
-    if missing:
-        sys.exit(f'seeded files not found for items: {missing}')
-    return {i: by_title[t] for i, t in titles.items()}
 
 
 def _ask(s: requests.Session, base: str, conv_uuid: str, question: str) -> None:
@@ -79,6 +135,11 @@ def main() -> int:
     ap.add_argument('--email', required=True)
     ap.add_argument('--password-env', default='DEMO_USER_PASSWORD')
     ap.add_argument('--prompts', type=Path, default=Path('demo/conversation-prompts.json'))
+    ap.add_argument(
+        '--strict',
+        action='store_true',
+        help='fail, rather than skip, when a prompt names an item that is not in the bundle',
+    )
     args = ap.parse_args()
     base = args.base_url.rstrip('/')
     password = os.environ.get(args.password_env, '')
@@ -87,11 +148,19 @@ def main() -> int:
 
     manifest_path = args.bundle / 'manifest.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-    titles = {i['id']: i['title'] for i in manifest['items']}
-    prompts = json.loads(args.prompts.read_text(encoding='utf-8'))['conversations']
+    items = {i['id']: i for i in manifest['items']}
+    all_prompts = json.loads(args.prompts.read_text(encoding='utf-8'))['conversations']
+    prompts, skipped = split_prompts(all_prompts, set(items))
+    for prompt_id, absent in skipped:
+        print(f'skipping {prompt_id}: not in the bundle: {absent}', file=sys.stderr)
+    if skipped and args.strict:
+        sys.exit('prompts name items that are not in the bundle (drop --strict to skip them)')
 
     s = _session(base, args.email, password)
-    uuids = _file_uuids(s, base, titles)
+    needed = {i for conv in prompts for i in conv['items']}
+    uuids, missing = match_files(_list_files(s, base), {i: items[i] for i in needed})
+    if missing:
+        sys.exit(f'seeded files not found for items: {missing}')
     item_by_uuid = {v: k for k, v in uuids.items()}
     out_dir = args.bundle / 'conversations'
     out_dir.mkdir(exist_ok=True)
@@ -120,6 +189,8 @@ def main() -> int:
                 msg.update(provider=m['provider'], model=m['model'])
                 if m.get('reasoning_content'):
                     msg['reasoning_content'] = m['reasoning_content']
+                if not m.get('citations'):
+                    sys.exit(f'{conv["id"]}: an answer has no citations (retrieval failed?)')
                 msg['citations'] = [
                     {
                         'item_id': item_by_uuid[c['file_uuid']],

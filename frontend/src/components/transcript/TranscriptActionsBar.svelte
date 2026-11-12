@@ -4,6 +4,7 @@
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
   import { supportSessionGate } from '$stores/supportSession';
+  import { demoMode } from '$stores/demo';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { anchoredPanel } from '$lib/actions/anchoredPanel';
@@ -163,9 +164,9 @@
   <button
     class="edit-speakers-button"
     on:click={toggleSpeakerEditor}
-    disabled={$frozen && !isEditingSpeakers}
+    disabled={$demoMode || ($frozen && !isEditingSpeakers)}
     aria-describedby={$frozen ? 'transcript-actions-frozen-note' : undefined}
-    title={$frozen ? $t('holds.frozenControl') : $t('transcript.editSpeakersTitle')}
+    title={$demoMode ? $t('demo.readOnlyTooltip') : $frozen ? $t('holds.frozenControl') : $t('transcript.editSpeakersTitle')}
   >
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 20h9"></path>

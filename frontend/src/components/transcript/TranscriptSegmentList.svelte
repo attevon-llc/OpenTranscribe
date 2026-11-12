@@ -13,6 +13,7 @@
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { fileFrozen } from '$lib/legalHold/fileHoldContext';
+  import { demoMode } from '$stores/demo';
 
   export let file: TranscriptSourceFile | null = null;
   export let groupedTranscriptSegments: GroupedSegmentView[] = [];
@@ -397,12 +398,16 @@
             {/if}
           </div>
         </button>
-        {#if editable}
+        {#if editable && !$demoMode}
         <button
           class="edit-button"
           on:click|stopPropagation={() => editSegment(segment)}
           title={$t('transcript.editSegment')}
         >
+          {$t('common.edit')}
+        </button>
+        {:else if $demoMode}
+        <button class="edit-button" disabled title={$t('demo.readOnlyTooltip')}>
           {$t('common.edit')}
         </button>
         {:else if $frozen}

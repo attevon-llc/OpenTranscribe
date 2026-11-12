@@ -117,6 +117,20 @@ def test_a_missing_or_disabled_demo_user_is_unavailable_not_an_error(
     assert minted == []
 
 
+def test_an_unset_demo_user_email_fails_closed_and_names_the_setting(
+    mod, minted, monkeypatch, caplog
+):
+    monkeypatch.setattr(settings, "DEMO_MODE", True)
+    monkeypatch.setattr(settings, "DEMO_USER_EMAIL", "")
+
+    with caplog.at_level("ERROR"):
+        response = _client(mod, FakeDb([_user()])).post("/api/auth/demo/session")
+
+    assert response.status_code == 503
+    assert minted == []
+    assert "DEMO_USER_EMAIL is not set" in caplog.text
+
+
 def test_the_session_endpoint_is_limited_per_client_ip(mod, minted, monkeypatch):
     monkeypatch.setattr(settings, "DEMO_MODE", True)
     client = _client(mod, FakeDb([_user()]))

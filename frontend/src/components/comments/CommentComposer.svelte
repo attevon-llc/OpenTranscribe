@@ -1,6 +1,7 @@
 <script lang="ts">
   import { domId } from '$lib/utils/domId';
   import { t } from '$stores/locale';
+  import { demoMode } from '$stores/demo';
   import { formatClock } from '$lib/utils/formatting';
   import CommentKindHelp from './CommentKindHelp.svelte';
   import CommentTimeField from './CommentTimeField.svelte';
@@ -112,7 +113,13 @@
         />
       {/if}
     </div>
-    <button type="submit" class="btn btn-primary submit-button" aria-busy={submitting}>
+    <button
+      type="submit"
+      class="btn btn-primary submit-button"
+      aria-busy={submitting}
+      disabled={$demoMode}
+      title={$demoMode ? $t('demo.readOnlyTooltip') : undefined}
+    >
       {$t('comments.addComment')}
     </button>
   </div>

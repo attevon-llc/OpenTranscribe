@@ -73,6 +73,14 @@ def test_demo_mode_is_a_literal_not_read_from_the_project_env():
     assert {name: v for name, v in values.items() if v not in (None, "true")} == {}
 
 
+def test_the_demo_account_is_supplied_to_the_api_and_the_password_is_never_defaulted():
+    """A --fresh stack's env file has neither; the overlay must still pass what the shell sets."""
+    env = _compose(DEMO)["services"]["backend"]["environment"]
+
+    assert env["DEMO_USER_EMAIL"] == "${DEMO_USER_EMAIL:-demo@example.com}"
+    assert env["DEMO_USER_PASSWORD"] == "${DEMO_USER_PASSWORD:-}"
+
+
 def test_trusted_proxies_never_default_to_everything():
     value = _compose(DEMO)["services"]["backend"]["environment"]["RATE_LIMIT_TRUSTED_PROXIES"]
     default = re.fullmatch(r"\$\{RATE_LIMIT_TRUSTED_PROXIES:-([^}]*)\}", value)

@@ -77,9 +77,23 @@ def start_demo_session(request: Request, response: Response, db: Session = Depen
     client_ip, user_agent = _get_client_info(request)
 
     email = settings.DEMO_USER_EMAIL.strip()
+    if not email:
+        # Fail closed, and say what the operator must set: the visitor only sees a 503.
+        logger.error(
+            "demo session refused: DEMO_USER_EMAIL is not set. Set DEMO_USER_EMAIL and "
+            "DEMO_USER_PASSWORD in .env (see Operations > Public demo), then re-run the seed."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The demo is not available right now",
+        )
     user = find_demo_user(db, email)
     if user is None or not user.is_active:
-        logger.error("demo session requested but the demo user is not available")
+        logger.error(
+            "demo session requested but the demo user %s is not available; has the seed "
+            "(demo_seed import) run, with the same DEMO_USER_EMAIL?",
+            email,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The demo is not available right now",

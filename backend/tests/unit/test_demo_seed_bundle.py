@@ -15,6 +15,7 @@ import pytest
 
 from app.scripts.demo_seed.__main__ import main
 from app.scripts.demo_seed.bundle import ALLOWED_LICENSES
+from app.scripts.demo_seed.bundle import ATTRIBUTION_REQUIRED
 from app.scripts.demo_seed.bundle import COLLECTIONS
 from app.scripts.demo_seed.bundle import BundleError
 from app.scripts.demo_seed.bundle import load_bundle
@@ -170,3 +171,15 @@ def test_every_catalogue_source_names_a_known_collection_with_its_reasons():
     for source in catalog["sources"]:
         assert source["why_allowed"].strip(), source["name"]
         assert source["exclusions"], source["name"]
+
+
+def test_the_reno_snowpack_video_is_catalogued_as_cc_by_with_its_credit_line():
+    """Its own YouTube page declares CC BY, narrower than the NWS public-domain disclaimer."""
+    catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
+
+    reno = [s for s in catalog["sources"] if "Reno snowpack" in s["name"]]
+
+    assert len(reno) == 1
+    assert reno[0]["license"] == "CC-BY-4.0"
+    assert reno[0]["license"] in ATTRIBUTION_REQUIRED
+    assert reno[0]["attribution"].strip()

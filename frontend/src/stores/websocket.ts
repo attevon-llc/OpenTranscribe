@@ -2,6 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 import * as authStore from './auth';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
+import { demoMode } from '$stores/demo';
 import { sessionAnswersAfterRefusal, sessionSurvivesRevocation } from '$lib/auth/sessionRecheck';
 import { countUnreadItems } from '$lib/notifications/jobGrouping';
 import type { PostProcessingFrame } from '$lib/notifications/postProcessing';
@@ -78,6 +79,8 @@ function createWebSocketStore() {
 
   // Connect to WebSocket server (cookies are sent automatically)
   const connect = (_token?: string) => {
+    // The public demo refuses the socket by design (403 on the handshake); never open it.
+    if (get(demoMode)) return;
     update((state: WebSocketState) => {
       // Clean up previous connection if exists
       if (state.socket) {

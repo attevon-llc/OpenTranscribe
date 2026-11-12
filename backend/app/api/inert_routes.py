@@ -23,10 +23,13 @@ from starlette.routing import Route
 from starlette.routing import WebSocketRoute
 
 from app.core.celery_beat import BEAT_ENTRY_EFFECT
+from app.core.inert import MIN_ROUTES_MODELLED
 from app.core.inert import SAFE_METHODS
 from app.core.inert import WEBSOCKET
 from app.core.inert import InertReport
 from app.core.inert import RouteFinding
+from app.core.inert import active_beat_entries
+from app.core.inert import probe_demo_publish_refusal
 from app.core.inert import probe_publish_hook
 from app.core.inert import render
 from app.core.inert import unclassified_beat_entries
@@ -127,7 +130,9 @@ def _qualname(obj: Any) -> str:
     return f"{getattr(obj, '__module__', '?')}.{getattr(obj, '__qualname__', repr(obj))}"
 
 
-def check(app: Any, packages: tuple[str, ...] = APP_PACKAGES) -> InertReport:
+def check(
+    app: Any, packages: tuple[str, ...] = APP_PACKAGES, min_routes: int = MIN_ROUTES_MODELLED
+) -> InertReport:
     """Run all three checks against ``app`` (a FastAPI/Starlette application).
 
     ``packages`` names whose code the route model walks (tests add their own module).
@@ -143,6 +148,9 @@ def check(app: Any, packages: tuple[str, ...] = APP_PACKAGES) -> InertReport:
         beat_effects={name: str(effect) for name, effect in sorted(BEAT_ENTRY_EFFECT.items())},
         routes_modelled=len(findings),
         unresolved_imports=sorted(model.unresolved_imports),
+        min_routes=min_routes,
+        demo_publish_refused=probe_demo_publish_refusal(),
+        active_beat=active_beat_entries(),
     )
 
 
@@ -154,7 +162,13 @@ def main(argv: list[str] | None, app: Any, packages: tuple[str, ...] = APP_PACKA
     """
     parser = argparse.ArgumentParser(prog="python -m app.scripts.assert_inert")
     parser.add_argument("--json", action="store_true", help="print the report as JSON")
+    parser.add_argument(
+        "--min-routes",
+        type=int,
+        default=MIN_ROUTES_MODELLED,
+        help="route-count floor; fewer modelled routes reports NOT MEASURED",
+    )
     args = parser.parse_args(argv)
-    report = check(app, packages)
+    report = check(app, packages, args.min_routes)
     print(json.dumps(report.to_dict(), indent=2) if args.json else render(report))
     return report.exit_code

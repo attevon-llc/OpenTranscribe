@@ -26,6 +26,7 @@ FAKE_DOCKER = r"""#!/usr/bin/env bash
 args="$*"
 echo "docker ${args//-f docker-compose.yml -f docker-compose.lite.yml -f docker-compose.demo.yml/CHAIN} workers=${DEMO_WORKER_REPLICAS:-0}" >> "$STUB/calls.log"
 case "$args" in *demo_seed*) [ -f "$STUB/seed-fails" ] && exit 1 ;; esac
+case "$args" in *assert_inert*) [ -f "$STUB/not-inert" ] && exit 1 ;; esac
 exit 0
 """
 
@@ -79,8 +80,19 @@ def test_the_site_is_closed_for_the_whole_reset(stub):
         f"docker compose CHAIN run --rm -e DEMO_MODE=false -v {bundle}:/seed:ro backend "
         "python -m app.scripts.demo_seed import --bundle /seed workers=0",
         "docker compose CHAIN up -d --wait --wait-timeout 900 --scale nginx=0 workers=0",
+        "docker compose CHAIN exec -T backend python -m app.scripts.assert_inert workers=0",
         "docker compose CHAIN up -d --wait --wait-timeout 900 nginx workers=0",
     ]
+
+
+def test_a_demo_that_is_not_inert_never_opens_the_site(stub):
+    (stub[0] / "not-inert").write_text("")
+
+    proc, calls = run(stub)
+
+    assert proc.returncode != 0
+    assert calls[-1].endswith("python -m app.scripts.assert_inert workers=0")
+    assert not any(c.endswith("nginx workers=0") and " up " in c for c in calls)
 
 
 def test_a_failed_seed_leaves_the_site_closed(stub):

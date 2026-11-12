@@ -362,7 +362,11 @@ Run every item once before the demo is public, and again after the first upgrade
 - [ ] Each seeded file page shows its credit and licence.
 - [ ] Every write route answers `403 demo_read_only`, and the WebSocket is refused.
 - [ ] `docker compose exec backend python -m app.scripts.assert_inert` (through
-      `./opentr.sh shell backend` in a checkout) reports no task published after browsing every page.
+      `./opentr.sh shell backend` in a checkout) exits 0. It reports NOT MEASURED (exit 3) when
+      fewer than 300 routes were modelled or an import could not be resolved, and it is only
+      INERT on a demo when it has probed that `DEMO_MODE` refuses every publish. `demo-reset.sh`
+      runs it before nginx starts, so a reset (and an upgrade, which resets) that is not
+      provably inert leaves the site closed.
 - [ ] Database row counts do not change after browsing, apart from sign-in sessions.
 - [ ] Two visitors behind the proxy are limited separately (the Cloudflare live check above).
 - [ ] The finished conversations open in the chat sidebar, with citations; sending a message

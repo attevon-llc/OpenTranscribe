@@ -12,7 +12,9 @@
 #      (DEMO_WORKER_REPLICAS=1) and run the seeder with DEMO_MODE=false in a one-off
 #      container; it waits for the neural model, the index and the redaction status;
 #   4. demo phase: `up -d` again with the overlay's defaults (no worker, no beat);
-#   5. start nginx.
+#   5. prove the demo backend is inert (python -m app.scripts.assert_inert: exit 0 only when
+#      DEMO_MODE publish refusal is probed and the route model was measured; issue #898);
+#   6. start nginx.
 # Any failure exits non-zero with nginx still stopped: a half-seeded demo is never public.
 #
 # Usage: scripts/demo/demo-reset.sh [--dry-run]
@@ -73,5 +75,7 @@ run docker compose "${FILES[@]}" run --rm -e DEMO_MODE=false \
     -v "$SEED_BUNDLE:/seed:ro" backend python -m app.scripts.demo_seed import --bundle /seed
 
 run docker compose "${FILES[@]}" up -d --wait --wait-timeout "$UP_TIMEOUT" --scale nginx=0
+# set -e: a non-zero exit (not inert, or NOT MEASURED) stops here with nginx still closed.
+run docker compose "${FILES[@]}" exec -T backend python -m app.scripts.assert_inert
 run docker compose "${FILES[@]}" up -d --wait --wait-timeout "$UP_TIMEOUT" nginx
 echo "demo reset complete"

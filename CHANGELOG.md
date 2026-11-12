@@ -12,6 +12,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Added
 
+- The assert-inert checker reports NOT MEASURED for fewer than 300 modelled routes or an unresolved import and fails on MUTATING and INGEST beat entries unless `DEMO_MODE` publish refusal is probed; `demo-reset.sh` (so `demo-upgrade.sh` too) aborts with nginx closed on a non-zero exit (#898).
 - Prometheus alerts `HttpServerErrorRate` (5xx share above 5% for 10 minutes) and `BackupStale` (no successful backup in 36 hours), with promtool fire and quiet cases (#791).
 
 - **Data safety.** Deleting a file moves it to a **Trash** page (restorable for 30 days; an administrator sets 1 to 90 days under Settings > Data & Storage > File Retention). `DELETE /api/files/{uuid}` keeps its route and 204 answer but no longer destroys the file. You can hide files from your own views without deleting them (Organize > Hide from my view).

@@ -6325,5 +6325,13 @@
   "audioTracks.mismatchTitle": "La lingua differisce dall’etichetta della traccia audio",
   "audioTracks.mismatchBody": "La traccia audio di questa registrazione è etichettata come {{tagged}}, ma il parlato è stato rilevato come {{detected}}. Se ti aspettavi un’altra lingua, puoi rielaborare il file con un’altra traccia audio.",
   "audioTracks.chooseAnother": "Scegli un’altra traccia o lingua",
-  "audioTracks.chooseLanguage": "Scegli una lingua"
+  "audioTracks.chooseLanguage": "Scegli una lingua",
+  "settings.usageReport.prompt.title": "Aiutare il progetto a contare le installazioni reali?",
+  "settings.usageReport.prompt.body": "Una volta al giorno questo server può comunicare al progetto OpenTranscribe che esiste, quale versione esegue e circa quanti file sono stati aggiunti la settimana scorsa. Mai chi lo usa o cosa contiene. Puoi cambiare questa scelta in qualsiasi momento nelle Impostazioni.",
+  "settings.usageReport.prompt.enable": "Attiva",
+  "settings.usageReport.prompt.dismiss": "No, grazie",
+  "settings.usageReport.prompt.details": "Vedi esattamente cosa viene inviato",
+  "settings.usageReport.reason.offline": "Questa è una distribuzione offline (isolata), quindi il rapporto di utilizzo è sempre disattivato.",
+  "settings.usageReport.reason.pki": "Questa è una distribuzione PKI, quindi il rapporto di utilizzo è sempre disattivato.",
+  "settings.usageReport.reason.fips": "La modalità FIPS è attiva, quindi il rapporto di utilizzo è sempre disattivato."
 }

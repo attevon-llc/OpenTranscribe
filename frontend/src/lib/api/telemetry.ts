@@ -10,7 +10,14 @@ import axiosInstance from '$lib/axios';
 
 const BASE = '/admin/telemetry';
 
-export type TelemetryOffReason = 'do_not_track' | 'env_disabled' | 'demo' | 'no_receiver';
+export type TelemetryOffReason =
+  | 'do_not_track'
+  | 'env_disabled'
+  | 'demo'
+  | 'no_receiver'
+  | 'offline'
+  | 'pki'
+  | 'fips';
 
 export interface TelemetryStatus {
   /** The administrator's choice. */

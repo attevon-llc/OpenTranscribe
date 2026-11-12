@@ -89,11 +89,25 @@ What forces it off, whatever the switch says:
   the report on.
 - **`OPENTRANSCRIBE_DEMO_MODE=true`** marks a public demo deployment; the report cannot be
   turned on there.
+- **Offline, PKI and FIPS deployments** (`HF_HUB_OFFLINE`, `PKI_ENABLED`, `FIPS_MODE`): the
+  offline and PKI compose overlays force it off, and the server refuses to send whenever any of
+  these three is set.
 - If no receiver key is configured (`OPENTRANSCRIBE_TELEMETRY_PROJECT_KEY`), the report
   cannot be turned on.
 
 While any of these applies, the card says which one, and turning the report on is refused.
 Changes to these variables take effect after the backend and workers are restarted.
+
+## First-login prompt
+
+When nothing forces the report off (so `DO_NOT_TRACK=0` is set), the first super admin to sign in
+sees a one-time prompt offering to turn it on, with a link to the exact request body. "No thanks"
+is remembered in that browser; the Settings card remains the place to change the choice.
+
+## Debug switch
+
+`OPENTRANSCRIBE_TELEMETRY_DEBUG=true` makes the daily check build the report and write it to the
+worker log instead of sending it. Nothing leaves the machine, and the "last sent" time stays empty.
 
 ## How often
 
@@ -145,6 +159,7 @@ whether or not the report is on.
 
 ## The source
 
+- [`TELEMETRY.md`](https://github.com/attevon-llc/OpenTranscribe/blob/master/TELEMETRY.md): the short root summary
 - `backend/app/services/telemetry.py`: the payload, the switches and the sender
 - `backend/app/tasks/telemetry.py`: the hourly check
 - `backend/app/api/endpoints/admin_telemetry.py`: the settings card's API

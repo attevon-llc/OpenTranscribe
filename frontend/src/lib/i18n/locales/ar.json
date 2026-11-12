@@ -6595,5 +6595,13 @@
   "audioTracks.mismatchTitle": "اللغة تختلف عن وسم المسار الصوتي",
   "audioTracks.mismatchBody": "المسار الصوتي لهذا التسجيل موسوم بـ {{tagged}}، لكن الكلام اكتُشف بوصفه {{detected}}. إذا كنت تتوقع لغة مختلفة، يمكنك إعادة المعالجة باستخدام مسار صوتي آخر.",
   "audioTracks.chooseAnother": "اختر مساراً أو لغة أخرى",
-  "audioTracks.chooseLanguage": "اختر لغة"
+  "audioTracks.chooseLanguage": "اختر لغة",
+  "settings.usageReport.prompt.title": "هل تساعد المشروع في إحصاء التثبيتات الفعلية؟",
+  "settings.usageReport.prompt.body": "يمكن لهذا الخادم مرة واحدة يوميًا إبلاغ مشروع OpenTranscribe بأنه موجود، وبالإصدار الذي يعمل عليه، وبعدد تقريبي للملفات المضافة الأسبوع الماضي. لا يُرسل أبدًا من يستخدمه أو ما يحتويه. يمكنك تغيير ذلك في أي وقت من الإعدادات.",
+  "settings.usageReport.prompt.enable": "تشغيل",
+  "settings.usageReport.prompt.dismiss": "لا، شكرًا",
+  "settings.usageReport.prompt.details": "اطلع على ما يُرسل بالضبط",
+  "settings.usageReport.reason.offline": "هذا نشر غير متصل بالإنترنت (معزول)، لذلك يظل تقرير الاستخدام متوقفًا دائمًا.",
+  "settings.usageReport.reason.pki": "هذا نشر يعتمد PKI، لذلك يظل تقرير الاستخدام متوقفًا دائمًا.",
+  "settings.usageReport.reason.fips": "وضع FIPS مفعّل، لذلك يظل تقرير الاستخدام متوقفًا دائمًا."
 }

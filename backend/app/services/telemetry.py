@@ -67,6 +67,11 @@ REASON_DO_NOT_TRACK: TelemetryOffReason = "do_not_track"
 REASON_ENV_DISABLED: TelemetryOffReason = "env_disabled"
 REASON_DEMO: TelemetryOffReason = "demo"
 REASON_NO_RECEIVER: TelemetryOffReason = "no_receiver"
+#: Offline (air-gapped), PKI and FIPS deployments are the ones that must not call out, so the
+#: report is forced off there regardless of the admin switch.
+REASON_OFFLINE: TelemetryOffReason = "offline"
+REASON_PKI: TelemetryOffReason = "pki"
+REASON_FIPS: TelemetryOffReason = "fips"
 
 #: The field list, in order. The docs page and its parity test read this.
 PAYLOAD_FIELDS = ("schema_version", "install_id", "app_version", "files_last_7d_bucket")
@@ -130,9 +135,21 @@ def off_reasons() -> list[TelemetryOffReason]:
         reasons.append(REASON_ENV_DISABLED)
     if env_is_set("OPENTRANSCRIBE_DEMO_MODE") and env_bool("OPENTRANSCRIBE_DEMO_MODE", True):
         reasons.append(REASON_DEMO)
+    # Set by docker-compose.offline.yml on every service; an explicit "no" or typo stays off.
+    if env_is_set("HF_HUB_OFFLINE") and env_bool("HF_HUB_OFFLINE", True):
+        reasons.append(REASON_OFFLINE)
+    if env_bool("PKI_ENABLED", False):
+        reasons.append(REASON_PKI)
+    if env_bool("FIPS_MODE", False):
+        reasons.append(REASON_FIPS)
     if not receiver_key():
         reasons.append(REASON_NO_RECEIVER)
     return reasons
+
+
+def debug_enabled() -> bool:
+    """``OPENTRANSCRIBE_TELEMETRY_DEBUG``: log the request that would be sent, send nothing."""
+    return env_bool("OPENTRANSCRIBE_TELEMETRY_DEBUG", False)
 
 
 # --- the payload -------------------------------------------------------------------------
@@ -307,6 +324,9 @@ def send_if_due(db: Session, now: datetime | None = None) -> str:
         return "not_due"
     body = build_request(db, install_id, moment)
     set_setting(db, constants.TELEMETRY_LAST_ATTEMPT_AT_KEY, moment.isoformat())
+    if debug_enabled():
+        logger.info("Usage report debug mode, NOT sent. Request body: %s", body)
+        return "debug"
     if not _post(body):
         return "failed"
     set_setting(db, constants.TELEMETRY_LAST_SENT_AT_KEY, moment.isoformat())

@@ -6145,5 +6145,13 @@
   "audioTracks.mismatchTitle": "언어가 오디오 트랙 태그와 다릅니다",
   "audioTracks.mismatchBody": "이 녹음의 오디오 트랙은 {{tagged}}(으)로 태그되어 있지만 음성은 {{detected}}(으)로 감지되었습니다. 다른 언어를 예상했다면 다른 오디오 트랙으로 다시 처리할 수 있습니다.",
   "audioTracks.chooseAnother": "다른 트랙 또는 언어 선택",
-  "audioTracks.chooseLanguage": "언어 선택"
+  "audioTracks.chooseLanguage": "언어 선택",
+  "settings.usageReport.prompt.title": "실제 설치 수를 세는 데 도움을 주시겠습니까?",
+  "settings.usageReport.prompt.body": "이 서버는 하루에 한 번 OpenTranscribe 프로젝트에 서버가 존재한다는 사실, 실행 중인 버전, 지난주에 추가된 파일의 대략적인 수를 알릴 수 있습니다. 누가 사용하는지, 무엇이 들어 있는지는 절대 전송되지 않습니다. 설정에서 언제든지 변경할 수 있습니다.",
+  "settings.usageReport.prompt.enable": "켜기",
+  "settings.usageReport.prompt.dismiss": "괜찮습니다",
+  "settings.usageReport.prompt.details": "전송되는 내용 정확히 보기",
+  "settings.usageReport.reason.offline": "오프라인(폐쇄망) 배포이므로 사용 보고서는 항상 꺼져 있습니다.",
+  "settings.usageReport.reason.pki": "PKI 배포이므로 사용 보고서는 항상 꺼져 있습니다.",
+  "settings.usageReport.reason.fips": "FIPS 모드가 켜져 있으므로 사용 보고서는 항상 꺼져 있습니다."
 }

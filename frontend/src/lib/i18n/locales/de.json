@@ -6235,5 +6235,13 @@
   "audioTracks.mismatchTitle": "Sprache weicht vom Tag der Audiospur ab",
   "audioTracks.mismatchBody": "Die Audiospur dieser Aufnahme ist als {{tagged}} gekennzeichnet, die erkannte Sprache ist jedoch {{detected}}. Wenn Sie eine andere Sprache erwartet haben, können Sie die Datei mit einer anderen Audiospur erneut verarbeiten.",
   "audioTracks.chooseAnother": "Andere Spur oder Sprache wählen",
-  "audioTracks.chooseLanguage": "Sprache wählen"
+  "audioTracks.chooseLanguage": "Sprache wählen",
+  "settings.usageReport.prompt.title": "Dem Projekt helfen, echte Installationen zu zählen?",
+  "settings.usageReport.prompt.body": "Einmal am Tag kann dieser Server dem OpenTranscribe-Projekt mitteilen, dass er existiert, welche Version läuft und ungefähr wie viele Dateien letzte Woche hinzukamen. Niemals, wer ihn nutzt oder was er enthält. Sie können das jederzeit in den Einstellungen ändern.",
+  "settings.usageReport.prompt.enable": "Einschalten",
+  "settings.usageReport.prompt.dismiss": "Nein danke",
+  "settings.usageReport.prompt.details": "Genau ansehen, was gesendet wird",
+  "settings.usageReport.reason.offline": "Dies ist eine Offline-Bereitstellung (air-gapped), daher ist der Nutzungsbericht immer aus.",
+  "settings.usageReport.reason.pki": "Dies ist eine PKI-Bereitstellung, daher ist der Nutzungsbericht immer aus.",
+  "settings.usageReport.reason.fips": "Der FIPS-Modus ist aktiv, daher ist der Nutzungsbericht immer aus."
 }

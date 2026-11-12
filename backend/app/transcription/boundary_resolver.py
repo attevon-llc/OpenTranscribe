@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.env import env_raw
+from app.transcription.engine.config import DEFAULT_BOUNDARY_ACOUSTIC_COSINE_MARGIN
+from app.transcription.engine.config import DEFAULT_BOUNDARY_ACOUSTIC_MAX_WORD_DUR
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +59,8 @@ class BoundarySmoothingConfig:
     # Phase 3 acoustic re-check (runs in the GPU engine stage; off by default — adds an
     # embedding pass per short disputed/overlap word).
     acoustic_recheck_enabled: bool = False
-    acoustic_cosine_margin: float = 0.05
-    acoustic_max_word_dur: float = 1.0
+    acoustic_cosine_margin: float = DEFAULT_BOUNDARY_ACOUSTIC_COSINE_MARGIN
+    acoustic_max_word_dur: float = DEFAULT_BOUNDARY_ACOUSTIC_MAX_WORD_DUR
 
     @classmethod
     def from_db_env(cls, db: Any = None) -> BoundarySmoothingConfig:

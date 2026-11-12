@@ -9,9 +9,7 @@ Tests for all FedRAMP security controls implemented in OpenTranscribe:
 - Phase 5: Audit Logging (AU-2/AU-3)
 - Phase 6: Additional Controls (AC-2, AC-8, AC-10)
 
-NOTE: These tests verify FedRAMP compliance features.
-Currently skipped until all FedRAMP features are fully implemented.
-Set RUN_FEDRAMP_TESTS=true to run these tests.
+NOTE: These tests run by default (the RUN_FEDRAMP_TESTS gate was removed, issue #431).
 """
 
 from unittest.mock import patch

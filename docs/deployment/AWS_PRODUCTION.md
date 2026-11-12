@@ -33,7 +33,7 @@ are AWS-infra recommendations (outside this repo) are marked ☁️.
     injects its own inline SPA bootstrap** into the built `index.html`
     (`__sveltekit_… = {…}; kit.start(app, element)`). `script-src 'self'` alone would block it
     and break the app. The fix is to enable SvelteKit's CSP so it hashes that bootstrap:
-    in `svelte.config.js` set `kit.csp = { mode: 'hash', directives: { 'script-src': ['self'],
+    in `kit.config.js` set `kit.csp = { mode: 'hash', directives: { 'script-src': ['self'],
     'style-src': ['self','unsafe-inline'], … } }`. SvelteKit then emits a `<meta http-equiv>`
     CSP containing `script-src 'self' 'sha256-<bootstrap-hash>'`.
   - Caveats to handle in that effort: (a) a `<meta>` CSP **cannot** set `frame-ancestors` — keep

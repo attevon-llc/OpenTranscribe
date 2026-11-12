@@ -274,9 +274,10 @@ def test_fresh_dry_run_resolves_to_a_project_scoped_tag(tmp_path: Path):
     """The fix. A fresh deployment named ``tagiso`` must resolve to a tag namespaced
     under its own compose project, never the shared ``latest``.
 
-    ``--port-offset`` is required here because the port-collision guard probes the
-    REAL host's ports before --dry-run ever prints anything — this repo's own dev
-    stack (or another test's fresh deployment) may hold the standard ports.
+    The host port probe is stubbed (``OT_PORT_PROBE``, see ``_make_port_probe``), so the
+    collision guard never looks at the real host's ports and the result does not depend on
+    what this machine is running. ``--port-offset`` is kept only because the real flag
+    set a fresh deployment is started with includes it.
     """
     stdout = _dry_run(
         tmp_path,

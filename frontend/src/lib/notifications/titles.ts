@@ -32,6 +32,7 @@ export const TITLE_KEYS: Readonly<Record<string, string>> = {
   file_deleted: 'notifications.fileDeleted',
   file_takedown: 'notifications.fileTakedown',
   file_takedown_released: 'notifications.fileTakedownReleased',
+  erasure_notice: 'notifications.erasureNotice',
   collection_shared: 'notifications.collectionShared',
   collection_share_revoked: 'notifications.collectionShareRevoked',
   collection_share_updated: 'notifications.collectionShareUpdated',
@@ -79,6 +80,21 @@ export function llmBudgetMessage(
     : translate('notifications.llmBudgetExceededDay');
 }
 
+const ERASURE_MESSAGE_KEYS: Readonly<Record<string, string>> = {
+  requested: 'notifications.erasureRequestedMessage',
+  reminder: 'notifications.erasureReminderMessage',
+  cancelled: 'notifications.erasureCancelledMessage',
+  completed: 'notifications.erasureCompletedMessage',
+};
+
+/** The scheduled-erasure notice (#1105), worded from its `event` and run time. */
+function erasureNoticeMessage(data: NotificationData, translate: Translate): string | undefined {
+  const event = String(data.event ?? '');
+  if (!Object.hasOwn(ERASURE_MESSAGE_KEYS, event)) return undefined;
+  const when = data.scheduled_for ? new Date(String(data.scheduled_for)).toLocaleString() : '';
+  return translate(ERASURE_MESSAGE_KEYS[event], { when });
+}
+
 // Compose a localized message for types rendered client-side from payload
 // fields (instead of the backend's English fallback message). Currently the
 // DMCA takedown / release owner notices (§512(g)): the quarantined file 404s
@@ -91,6 +107,7 @@ export function composeClientMessage(
 ): string | undefined {
   const refused = llmBudgetMessage(data, translate);
   if (refused) return refused;
+  if (type === 'erasure_notice') return erasureNoticeMessage(data, translate);
   if (type !== 'file_takedown' && type !== 'file_takedown_released') return undefined;
   const filename = data.filename || '';
   if (type === 'file_takedown_released') {

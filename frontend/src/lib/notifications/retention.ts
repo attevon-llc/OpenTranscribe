@@ -77,6 +77,8 @@ export const RETENTION_BY_TYPE: Record<NotificationType, RetentionClass> = {
   group_member_removed: 'persistent',
   file_takedown: 'persistent',
   file_takedown_released: 'persistent',
+  // A scheduled data erasure: the admins and the member must be able to find it later.
+  erasure_notice: 'persistent',
 };
 
 export type RetentionSetting = 'read24h' | 'read7d' | 'never';

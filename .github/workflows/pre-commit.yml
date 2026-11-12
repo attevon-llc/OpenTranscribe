@@ -45,6 +45,11 @@ concurrency:
 permissions: {}
 
 env:
+  # Commit-stage hooks a push-stage hook fully supersedes (table + proof:
+  # backend/tests/unit/test_superseded_hook_skips.py). Skipped ONLY in the commit-stage leg,
+  # because the pre-push leg of this same workflow re-checks the same files. Not for local
+  # commits, which run the pre-commit stage alone. SKIP: https://pre-commit.com/#temporarily-disabling-hooks
+  SUPERSEDED_COMMIT_HOOKS: frontend-check,bandit,guard-stylelint-staged
   FRONTEND_ONLY_HOOKS: frontend-check,i18n-parity,frontend-build,guard-style-literals,guard-eslint-ratchet,guard-svelte-unused,guard-nuia,guard-unused-css,guard-knip,eslint-typed,guard-stylelint-staged,guard-stylelint
 
 jobs:
@@ -120,7 +125,7 @@ jobs:
           # scripts/guards/) cannot find anything on a PR that touches neither; `--all-files`
           # would still run them, which is what made a backend-only PR pay for npm and vite.
           # The `changes` job's frontend filter includes the same roots, plus the hook config.
-          SKIP: ${{ needs.changes.outputs.frontend != 'true' && github.event_name != 'workflow_dispatch' && env.FRONTEND_ONLY_HOOKS || '' }}
+          SKIP: ${{ format('{0},{1}', env.SUPERSEDED_COMMIT_HOOKS, needs.changes.outputs.frontend != 'true' && github.event_name != 'workflow_dispatch' && env.FRONTEND_ONLY_HOOKS || '') }}
 
       # ⚠️ BOTH stages, always (issue #688). `pre-commit run` with no --hook-stage runs
       # DEFAULT-stage hooks only, and .pre-commit-config.yaml sets

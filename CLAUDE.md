@@ -165,11 +165,19 @@ overlaps below is already in flight: another `safe-precommit.sh` run, or a
 `run-mutation-tests.sh --verify` run holding one of its per-module locks. **It does not make
 an arbitrary unstaged edit elsewhere in the tree safe** — only those two specific hazards.
 
-> ⚠️ **NEVER run `pre-commit` OR `git commit` while anything else is writing to this
-> checkout.** Not `--all-files`, not `--files <paths>`, not a plain `git commit`. **All three
-> stash every unstaged change in the entire repo** — including another agent's in-flight work in
-> files you are not touching — and restore it when the run ends. What you staged is irrelevant:
-> the stash happens *before any hook runs* and covers the whole tree.
+> ⚠️ **NEVER run `git commit` (or a bare `pre-commit run`) while anything else is writing to
+> this checkout.** Both stash every unstaged change in the entire repo — including another
+> agent's in-flight work in files you are not touching — and restore it when the run ends. What
+> you staged is irrelevant: the stash happens *before any hook runs* and covers the whole tree.
+>
+> **Correction (pinned pre-commit 4.7.0, `pre_commit/commands/run.py:344`):**
+> `stash = not args.all_files and not args.files`. So `pre-commit run --all-files` and
+> `pre-commit run --files <paths>` do **not** stash. An earlier version of this note said all
+> three forms stash; that was wrong for those two. `safe-precommit.sh` still guards its two other
+> hazards, and a hook that rewrites files still changes the tree. The commit-hook path (plain
+> `git commit`) and a bare `pre-commit run` do stash, so the rest of this section stands.
+>
+> CI's commit-stage leg `SKIP`s `frontend-check`, `bandit`, `guard-stylelint-staged` (their pre-push supersets run in the same workflow; proof: `test_superseded_hook_skips.py`).
 >
 > **The hazard is CONCURRENCY, not who is committing.** Read this as a rule about how many
 > writers share the checkout, and do not over-apply it into "a subagent may never commit" —

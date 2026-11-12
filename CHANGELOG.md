@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Ratchet guards (file size, style literals, unused CSS, raw env) rewrite their own baseline when a count only fell or an entry went stale, print what they lowered, and exit 1 so the hook asks for a re-stage; growth still fails untouched.
+
 ### Added
 
 - `guard-nuia` (push-stage pre-commit hook, `frontend/tsconfig.nuia.json`, `scripts/guards/check_nuia_ratchet.py`): `noUncheckedIndexedAccess` over the frontend, production code held at zero errors, `*.test.ts` files baselined per file (927 errors in 199 files) until they are converted. Also run by `scripts/lane-check.sh`.

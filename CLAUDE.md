@@ -227,7 +227,7 @@ Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]
 3. **Use the tools; never hand-roll a check.** Whole tree: `scripts/lane-check.sh` (every fast guard in parallel, via
    each hook's own entry), `scripts/safe-precommit.sh run --all-files` (and `--hook-stage pre-push`). Subset:
    `scripts/safe-precommit.sh run --files <paths>`. Auto-fix first: `ruff check --fix`, `ruff format`, the prettier
-   hook, `eslint --fix`, and the guards' `--tighten`. Never `npx prettier` or `npx stylelint` by hand: `npx` can
+   hook, `eslint --fix`, and the guards' `--tighten` (file-size, style-literals, unused-css and raw-env tighten themselves in the hook: re-stage). Never `npx prettier` or `npx stylelint` by hand: `npx` can
    pull a different version than the hook's pin and reformat the tree.
 4. **The tool misses a pattern? Extend the hook or rule (a ratchet), don't hand-hunt.** The tool flags something it can't
    auto-fix? Hand-fix that finding only.

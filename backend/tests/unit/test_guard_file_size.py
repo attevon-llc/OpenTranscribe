@@ -185,6 +185,24 @@ def test_loosened_entry_fails_and_tighten_repairs_it(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_hook_mode_rewrites_lowered_baseline_and_exits_1(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path, {"backend/app/big.py": 1100})
+    baseline = _baseline(tmp_path, ("backend/app/big.py", 1300))
+    assert _run(root, baseline) == 1
+    assert baseline.read_text("utf-8").split("\t")[1] == "1100"
+    assert _run(root, baseline) == 0
+
+
+@pytest.mark.unit
+def test_hook_mode_does_not_rewrite_when_a_count_grew(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path, {"backend/app/big.py": 1400, "backend/app/other.py": 1100})
+    baseline = _baseline(tmp_path, ("backend/app/big.py", 1300), ("backend/app/other.py", 1300))
+    before = baseline.read_text("utf-8")
+    assert _run(root, baseline) == 1
+    assert baseline.read_text("utf-8") == before
+
+
+@pytest.mark.unit
 def test_tighten_never_adds_a_new_violation(tmp_path: Path) -> None:
     root = _make_repo(tmp_path, {"backend/app/big.py": 1100})
     baseline = _baseline(tmp_path)

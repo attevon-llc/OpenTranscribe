@@ -191,6 +191,34 @@ def tighten(path: Path, current: dict[str, int], baseline: dict[str, Entry]) -> 
     return changed
 
 
+_TIGHTENABLE = ('is below the baseline', 'stale baseline entry')
+
+
+def only_tightenable(errors: list[str]) -> bool:
+    """True when every error is a lowered or stale baseline entry (never growth or new debt)."""
+    return bool(errors) and all(any(t in e for t in _TIGHTENABLE) for e in errors)
+
+
+def self_tighten(
+    path: Path, errors: list[str], current: dict[str, int], baseline: dict[str, Entry]
+) -> bool:
+    """Hook-mode repair: rewrite ``path`` when lowered/stale entries are the ONLY problem.
+
+    Prints what it lowered and returns True; the caller then exits non-zero, the same
+    "files were modified by this hook, re-stage" contract prettier uses. Growth or new
+    violations leave the file untouched and return False.
+    """
+    if not path.exists() or not only_tightenable(errors):
+        return False
+    tighten(path, current, baseline)
+    print(
+        f'{path.name}: baseline lowered by the hook, re-stage it and commit again:', file=sys.stderr
+    )
+    for line in errors:
+        print(f'  {line}', file=sys.stderr)
+    return True
+
+
 def _is_real_reason(reason: str) -> bool:
     """Apply ``scripts/audit_tests``'s placeholder-reason rule, so every allowlist agrees."""
     scripts_dir = str(Path(__file__).resolve().parents[1])
@@ -271,6 +299,8 @@ def finish_ratchet(
         print(f'tightened {changed} baseline lines in {path}')
         baseline = load(path)
     errors = compare(findings, baseline, unit=unit)
+    if not args.tighten and self_tighten(path, errors, findings, baseline):
+        return 1
     if errors:
         print(heading, file=sys.stderr)
         for line in errors:

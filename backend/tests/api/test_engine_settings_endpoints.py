@@ -243,16 +243,27 @@ def test_max_word_dur_below_min_is_422(client, super_admin_token_headers):
 def test_set_string_backend_persists(client, super_admin_token_headers, db_session):
     resp = client.post(
         f"{_BASE}/update",
-        json={"transcriber_backend": "whisperx"},
+        json={"diarizer_backend": "pyannote"},
         headers=super_admin_token_headers,
     )
     assert resp.status_code == status.HTTP_200_OK
-    entry = resp.json()["transcriber_backend"]
-    assert entry["value"] == "whisperx"
+    entry = resp.json()["diarizer_backend"]
+    assert entry["value"] == "pyannote"
     assert entry["source"] == "db"
 
 
-def test_unknown_transcriber_backend_is_400(client, super_admin_token_headers):
+def test_unwired_transcriber_backend_is_422(client, super_admin_token_headers):
+    """The engine only ever runs faster_whisper until #366, so another value is refused."""
+    resp = client.post(
+        f"{_BASE}/update",
+        json={"transcriber_backend": "whisperx"},
+        headers=super_admin_token_headers,
+    )
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert "#366" in resp.json()["detail"]
+
+
+def test_unknown_transcriber_backend_is_422(client, super_admin_token_headers):
     """E5: transcriber_backend had NO validation at all — any string returned 200
     and persisted, unlike diarizer_backend six lines away in the same handler."""
     resp = client.post(
@@ -260,8 +271,8 @@ def test_unknown_transcriber_backend_is_400(client, super_admin_token_headers):
         json={"transcriber_backend": "anything"},
         headers=super_admin_token_headers,
     )
-    assert resp.status_code == status.HTTP_400_BAD_REQUEST
-    assert "Unknown transcriber_backend" in resp.json()["detail"]
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert "transcriber_backend" in resp.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

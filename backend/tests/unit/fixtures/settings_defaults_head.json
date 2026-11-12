@@ -1515,7 +1515,6 @@
   "assemble_cors_origins",
   "db_role_split_requested",
   "effective_batch_size",
-  "effective_compute_type",
   "effective_torch_device",
   "effective_use_gpu",
   "fips_140_3_active",

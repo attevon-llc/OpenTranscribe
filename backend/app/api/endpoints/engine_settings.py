@@ -24,6 +24,10 @@ from app.db.base import get_db
 from app.services.system_setting_queries import find_system_setting
 from app.services.system_settings_service import get_setting
 from app.services.system_settings_service import set_setting
+from app.transcription.engine.config import DEFAULT_BOUNDARY_ACOUSTIC_COSINE_MARGIN
+from app.transcription.engine.config import DEFAULT_BOUNDARY_ACOUSTIC_MAX_WORD_DUR
+from app.transcription.engine.config import DEFAULT_DIARIZER_BACKEND
+from app.transcription.engine.config import DEFAULT_TRANSCRIBER_BACKEND
 from app.utils.lite_mode import refuse_on_lite
 
 router = APIRouter()
@@ -44,13 +48,19 @@ _KEYS = {
 }
 
 _ENV_DEFAULTS: dict[str, Any] = {
-    "transcriber_backend": ("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper"),
-    "diarizer_backend": ("ENGINE_DIARIZER_BACKEND", "native"),
-    "diarizer_require_sidecar": ("ENGINE_DIARIZER_REQUIRE_SIDECAR", "false"),
-    "boundary_smoothing_enabled": ("ENGINE_BOUNDARY_SMOOTHING_ENABLED", "true"),
+    "transcriber_backend": ("ENGINE_TRANSCRIBER_BACKEND", DEFAULT_TRANSCRIBER_BACKEND),
+    "diarizer_backend": ("ENGINE_DIARIZER_BACKEND", DEFAULT_DIARIZER_BACKEND),
+    "diarizer_require_sidecar": ("ENGINE_DIARIZER_REQUIRE_SIDECAR", False),
+    "boundary_smoothing_enabled": ("ENGINE_BOUNDARY_SMOOTHING_ENABLED", True),
     "boundary_acoustic_recheck_enabled": ("ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "false"),
-    "boundary_acoustic_cosine_margin": ("ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN", "0.05"),
-    "boundary_acoustic_max_word_dur": ("ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR", "1.0"),
+    "boundary_acoustic_cosine_margin": (
+        "ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN",
+        DEFAULT_BOUNDARY_ACOUSTIC_COSINE_MARGIN,
+    ),
+    "boundary_acoustic_max_word_dur": (
+        "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR",
+        DEFAULT_BOUNDARY_ACOUSTIC_MAX_WORD_DUR,
+    ),
 }
 
 _BOOL_KEYS = {
@@ -199,15 +209,16 @@ def update_engine_settings(
         refuse_on_lite("local_diarization_unavailable")
 
     if "transcriber_backend" in updates:
-        from app.transcription.engine.backends import VALID_TRANSCRIBER_BACKENDS
-
+        # Only the default is wired (the setting is logged, not routed, until #366), so a
+        # stored alternative would claim a choice the engine never honours.
         value = updates["transcriber_backend"]
-        if value.lower() not in VALID_TRANSCRIBER_BACKENDS:
+        if value.lower() != DEFAULT_TRANSCRIBER_BACKEND:
             raise HTTPException(
-                status_code=400,
+                status_code=422,
                 detail=(
-                    f"Unknown transcriber_backend '{value}'. "
-                    f"Valid values: {sorted(VALID_TRANSCRIBER_BACKENDS)}"
+                    f"transcriber_backend '{value}' is not selectable yet: the engine "
+                    f"always runs '{DEFAULT_TRANSCRIBER_BACKEND}' until alternative "
+                    "transcribers are wired (issue #366)."
                 ),
             )
         updates["transcriber_backend"] = value.lower()

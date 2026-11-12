@@ -202,19 +202,6 @@ class ProviderSettings(BaseSettings):
         return self.TORCH_DEVICE.lower()
 
     @property
-    def effective_compute_type(self) -> str:
-        """Get the effective compute type."""
-        if self.COMPUTE_TYPE.lower() == "auto":
-            try:
-                from app.utils.hardware_detection import detect_hardware
-
-                config = detect_hardware()
-                return config.compute_type
-            except ImportError:
-                return "int8"
-        return self.COMPUTE_TYPE.lower()
-
-    @property
     def effective_batch_size(self) -> int:
         """Get the effective batch size."""
         if self.BATCH_SIZE.lower() == "auto":

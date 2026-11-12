@@ -21,6 +21,14 @@ if TYPE_CHECKING:
     from app.transcription.config import TranscriptionConfig
 
 
+# The single home of the engine defaults: the dataclass fields below, the admin
+# engine-settings endpoint and the boundary resolver all read these.
+DEFAULT_TRANSCRIBER_BACKEND = "faster_whisper"
+DEFAULT_DIARIZER_BACKEND = "native"
+DEFAULT_BOUNDARY_ACOUSTIC_COSINE_MARGIN = 0.05
+DEFAULT_BOUNDARY_ACOUSTIC_MAX_WORD_DUR = 1.0
+
+
 @dataclass
 class EngineConfig:
     """Combined engine + transcription config.
@@ -30,8 +38,10 @@ class EngineConfig:
     """
 
     # Backend selection
-    transcriber_backend: str = "faster_whisper"  # faster_whisper | whisperx | cloud
-    diarizer_backend: str = "native"  # native (default, primary) | pyannote (failover)
+    transcriber_backend: str = DEFAULT_TRANSCRIBER_BACKEND  # faster_whisper | whisperx | cloud
+    diarizer_backend: str = (
+        DEFAULT_DIARIZER_BACKEND  # native (default, primary) | pyannote (failover)
+    )
 
     # Stage-specific toggles
     precompute_vad: bool = False  # Phase 3a — Silero VAD in Stage 1
@@ -41,8 +51,8 @@ class EngineConfig:
     # engine.boundary_acoustic_* SystemSettings (admin Engine panel) → env → defaults.
     # Reassigns short absorbed backchannels by voiceprint inside the GPU stage; off by default.
     boundary_acoustic_recheck_enabled: bool = False
-    boundary_acoustic_cosine_margin: float = 0.05
-    boundary_acoustic_max_word_dur: float = 1.0
+    boundary_acoustic_cosine_margin: float = DEFAULT_BOUNDARY_ACOUSTIC_COSINE_MARGIN
+    boundary_acoustic_max_word_dur: float = DEFAULT_BOUNDARY_ACOUSTIC_MAX_WORD_DUR
 
     # Shared-volume handoff path (Opt-3A) — the engine/ namespace of pipeline_scratch
     shared_volume_path: str = ENGINE_SHARED_VOLUME_DEFAULT
@@ -107,10 +117,11 @@ class EngineConfig:
         return cls(
             transcriber_backend=(
                 vals.get("engine.transcriber_backend")
-                or env_str("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper")
+                or env_str("ENGINE_TRANSCRIBER_BACKEND", DEFAULT_TRANSCRIBER_BACKEND)
             ),
             diarizer_backend=(
-                vals.get("engine.diarizer_backend") or env_str("ENGINE_DIARIZER_BACKEND", "native")
+                vals.get("engine.diarizer_backend")
+                or env_str("ENGINE_DIARIZER_BACKEND", DEFAULT_DIARIZER_BACKEND)
             ),
             # Deployment topology and a stub: no admin field writes these, so env only.
             gpu_split=gpu_split_enabled(),
@@ -122,12 +133,12 @@ class EngineConfig:
             boundary_acoustic_cosine_margin=_float(
                 "engine.boundary_acoustic_cosine_margin",
                 "ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN",
-                0.05,
+                DEFAULT_BOUNDARY_ACOUSTIC_COSINE_MARGIN,
             ),
             boundary_acoustic_max_word_dur=_float(
                 "engine.boundary_acoustic_max_word_dur",
                 "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR",
-                1.0,
+                DEFAULT_BOUNDARY_ACOUSTIC_MAX_WORD_DUR,
             ),
             shared_volume_path=resolve_engine_shared_volume_path(),
         )
@@ -145,7 +156,7 @@ class EngineConfig:
         tc = TranscriptionConfig.from_environment(**tc_overrides)
 
         engine = cls(
-            transcriber_backend=env_str("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper"),
+            transcriber_backend=env_str("ENGINE_TRANSCRIBER_BACKEND", DEFAULT_TRANSCRIBER_BACKEND),
             # Mirrors tc.diarizer_backend below (single decision point: DB > env > default,
             # resolved once by TranscriptionConfig._resolve_diarizer_backend) rather than
             # re-resolving independently from env alone — this is what to_snapshot() serializes
@@ -158,10 +169,16 @@ class EngineConfig:
                 "ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", False
             ),
             boundary_acoustic_cosine_margin=cls._db_env_float(
-                None, "", "ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN", 0.05
+                None,
+                "",
+                "ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN",
+                DEFAULT_BOUNDARY_ACOUSTIC_COSINE_MARGIN,
             ),
             boundary_acoustic_max_word_dur=cls._db_env_float(
-                None, "", "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR", 1.0
+                None,
+                "",
+                "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR",
+                DEFAULT_BOUNDARY_ACOUSTIC_MAX_WORD_DUR,
             ),
             shared_volume_path=resolve_engine_shared_volume_path(),
         )

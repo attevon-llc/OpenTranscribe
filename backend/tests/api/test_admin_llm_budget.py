@@ -61,3 +61,96 @@ def test_a_negative_limit_is_rejected(client, admin_token_headers):
 
 def test_an_empty_update_is_rejected(client, admin_token_headers):
     assert client.put(URL, json={}, headers=admin_token_headers).status_code == 400
+
+
+USERS_URL = "/api/admin/llm-budget/users"
+
+
+def _token_event(db, user, *, quantity, model="claude-sonnet-5", provider="anthropic", when=None):
+    from app.models.usage_event import UsageEvent
+
+    event = UsageEvent(
+        user_id=user.id,
+        event_type="chat.tokens",
+        quantity=quantity,
+        unit="tokens",
+        event_metadata={
+            "provider": provider,
+            "model": model,
+            "prompt_tokens": quantity - 10,
+            "completion_tokens": 10,
+        },
+    )
+    if when is not None:
+        event.created_at = when
+    db.add(event)
+    db.commit()
+
+
+def test_a_user_cannot_read_per_user_spend(client, user_token_headers):
+    assert client.get(USERS_URL, headers=user_token_headers).status_code == 403
+
+
+def test_an_anonymous_caller_cannot_read_per_user_spend(client):
+    assert client.get(USERS_URL).status_code == 401
+
+
+def test_an_admin_sees_each_users_tokens_and_estimated_cost(
+    client, db_session, admin_token_headers, normal_user
+):
+    from datetime import UTC
+    from datetime import datetime
+
+    from app.models.llm_token_budget import SCOPE_USER_DAY
+    from app.models.llm_token_budget import LLMTokenBudget
+
+    now = datetime.now(UTC)
+    db_session.add(
+        LLMTokenBudget(
+            scope=SCOPE_USER_DAY,
+            user_id=normal_user.id,
+            period=now.strftime("%Y-%m-%d"),
+            used=1500,
+        )
+    )
+    db_session.commit()
+    _token_event(db_session, normal_user, quantity=1000)
+    _token_event(db_session, normal_user, quantity=500, model="no-such-model-xyz")
+
+    body = client.get(USERS_URL, headers=admin_token_headers).json()
+
+    row = next(r for r in body["users"] if r["user_id"] == normal_user.id)
+    assert row["email"] == normal_user.email
+    assert row["tokens_today"] == 1500
+    assert row["tokens_this_month"] == 1500
+    assert row["estimated_cost_usd"] is not None
+    assert row["estimated_cost_usd"] > 0
+    # The unpriced model must be flagged, not counted as $0.
+    assert row["cost_incomplete"] is True
+    assert body["rates_verified_on"]
+    # Nothing that identifies a conversation, file or prompt is returned.
+    assert set(row) == {
+        "user_id",
+        "email",
+        "full_name",
+        "tokens_today",
+        "tokens_this_month",
+        "estimated_cost_usd",
+        "cost_incomplete",
+    }
+
+
+def test_events_from_a_previous_month_are_not_counted(
+    client, db_session, admin_token_headers, normal_user
+):
+    from datetime import UTC
+    from datetime import datetime
+    from datetime import timedelta
+
+    now = datetime.now(UTC)
+    last_month = now.replace(day=1) - timedelta(days=2)
+    _token_event(db_session, normal_user, quantity=1000, when=last_month)
+
+    body = client.get(USERS_URL, headers=admin_token_headers).json()
+
+    assert all(r["user_id"] != normal_user.id for r in body["users"])

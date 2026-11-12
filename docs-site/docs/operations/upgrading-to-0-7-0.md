@@ -268,6 +268,11 @@ estimated cost where the model's price is known. Models on your own server show 
 `vllm` or `ollama` address on another company's server now shows as "not priced" rather than
 free.
 
+Administrators also see a **Spend per user** table on that page: each person's tokens today
+and this month (UTC) and an estimated cost, heaviest first. A `*` marks a cost that leaves out
+models with no known price. It shows counts and money only, never conversation content. The
+same data is at `GET /api/admin/llm-budget/users` (administrators only).
+
 ## Celery worker database pools are sized per process
 
 **Check this if...** your `.env` sets `WORKER_DB_MAX_OVERFLOW`, or you raised a worker's

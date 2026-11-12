@@ -1,6 +1,7 @@
 """Admin LLM token limits (``/admin/llm-budget``, issue #790, owner decision D13).
 
 - ``GET /admin/llm-budget``: the limits and this instance's tokens this month.
+- ``GET /admin/llm-budget/users``: each user's tokens today and this month, and estimated USD.
 - ``PUT /admin/llm-budget``: change any of the limits (``0`` = unlimited).
 
 The limits are DB-backed ``SystemSettings`` (no restart, no ``.env`` edit); writing them
@@ -30,6 +31,8 @@ from app.auth.audit_events import AuditOutcome
 from app.core.constants import LLM_BUDGET_MAX_TOKENS
 from app.db.base import get_db
 from app.services import llm_budget
+from app.services import llm_spend_report
+from app.services.chat.pricing import RATES_VERIFIED_ON
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -73,6 +76,36 @@ def get_llm_budget(
 ) -> LLMBudgetSettings:
     """The token limits and this instance's tokens this month."""
     return _view(db, current_user.id)
+
+
+class UserSpendRow(BaseModel):
+    """One user's LLM spend. Counts and an estimate only: no conversation or file ids."""
+
+    user_id: int
+    email: str
+    full_name: str | None
+    tokens_today: int
+    tokens_this_month: int
+    estimated_cost_usd: float | None
+    cost_incomplete: bool
+
+
+class UserSpendReport(BaseModel):
+    users: list[UserSpendRow]
+    rates_verified_on: str
+
+
+@router.get("/users", response_model=UserSpendReport)
+def get_llm_spend_per_user(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+) -> UserSpendReport:
+    """Per-user tokens (today, this UTC month) and estimated USD, heaviest first."""
+    spend = llm_spend_report.per_user_spend(db, datetime.now(UTC))
+    return UserSpendReport(
+        users=[UserSpendRow(**vars(row)) for row in spend],
+        rates_verified_on=RATES_VERIFIED_ON,
+    )
 
 
 @router.put("", response_model=LLMBudgetSettings)

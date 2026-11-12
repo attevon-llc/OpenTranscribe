@@ -194,6 +194,12 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "month and the reset times; one aggregate number, no per-user or per-file breakdown",
     ),
     (
+        r"^GET /api/admin/llm-budget/users$",
+        "settings",
+        "admin-gated per-user LLM spend (issue #790): each user's email, token counts and an "
+        "estimated USD figure; no conversation, file or prompt identifiers",
+    ),
+    (
         r"^GET /api/speakers/debug/cross-media-data",
         "self-scoped",
         "admin-gated diagnostic that reads only the caller's own speakers (user_id filter)",

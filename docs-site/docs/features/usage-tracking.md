@@ -106,3 +106,12 @@ See [AI Chat](./rag-chat.md#chatting-efficiently) for the fuller version.
 Administrators can cap per-user messages per hour and concurrent replies in
 **Settings → Chat → Advanced features**. These bound request *volume*; the excerpt settings
 above bound the tokens each request costs.
+
+## Spend per user (administrators)
+
+**Settings → AI usage** has a **Spend per user** table for administrators: each person's tokens
+today and this month (both UTC) and an estimated cost, heaviest first. Tokens come from the same
+counters the token limits are enforced against. The cost is an estimate from the rate table and
+is marked with `*` when some of that person's models have no known price. The table shows
+counts and money only, never conversation content. The same data is at
+`GET /api/admin/llm-budget/users`, which answers `403` to anyone who is not an administrator.

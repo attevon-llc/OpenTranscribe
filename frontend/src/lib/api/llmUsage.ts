@@ -71,3 +71,24 @@ export async function updateLlmBudget(update: LlmBudgetUpdate): Promise<LlmBudge
   const { data } = await axiosInstance.put<LlmBudgetSettings>('/admin/llm-budget', update);
   return data;
 }
+
+export interface LlmUserSpend {
+  user_id: number;
+  email: string;
+  full_name: string | null;
+  tokens_today: number;
+  tokens_this_month: number;
+  estimated_cost_usd: number | null;
+  cost_incomplete: boolean;
+}
+
+export interface LlmUserSpendReport {
+  users: LlmUserSpend[];
+  rates_verified_on: string;
+}
+
+/** Admin only: every user's tokens today and this UTC month, with an estimated cost. */
+export async function getLlmSpendPerUser(): Promise<LlmUserSpendReport> {
+  const { data } = await axiosInstance.get<LlmUserSpendReport>('/admin/llm-budget/users');
+  return data;
+}

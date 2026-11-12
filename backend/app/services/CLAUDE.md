@@ -286,7 +286,7 @@ Backend selection, presign identity, absence/recovery rules: `backend/app/servic
 summaries, topics, speaker ID, the LLM redaction detector) reaches the provider through those two
 methods, so never add a per-feature check; a new LLM caller is covered by going through them. The
 limit is TOKENS per user per UTC day and per instance per UTC month (`SystemSettings`
-`llm.budget.*`, 0 = unlimited, admin UI Settings -> AI usage, `/admin/llm-budget`), so an unpriced
+`llm.budget.*`, 0 = unlimited, admin UI Settings -> AI usage, `/admin/llm-budget`, per-user spend `/users` via `llm_spend_report.py`), so an unpriced
 provider cannot slip past it. Accounting is a reserve-then-settle on `llm_token_budget` with one
 conditional `UPDATE` per counter (race-safe under READ COMMITTED). A refusal raises
 `LLMBudgetExceededError` (`code` `llm_budget_exceeded`, or `llm_budget_unavailable` when a set

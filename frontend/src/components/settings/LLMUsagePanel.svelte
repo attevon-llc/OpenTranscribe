@@ -9,6 +9,7 @@
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
   import LLMBudgetAdminCard from '$components/settings/LLMBudgetAdminCard.svelte';
+  import LLMUserSpendCard from '$components/settings/LLMUserSpendCard.svelte';
   import { getMyUsage, type MyUsage } from '$lib/api/llmUsage';
   import { LLM_FEATURE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { formatEstimatedCost, formatTokens, percentUsed } from '$lib/settings/llmUsageView';
@@ -125,6 +126,7 @@
 
     {#if isAdmin}
       <LLMBudgetAdminCard on:saved={load} />
+      <LLMUserSpendCard />
     {/if}
   </div>
 </div>

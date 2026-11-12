@@ -89,5 +89,13 @@ and `--tighten` the baseline in the same commit.
 - `auth.css` — the card/header/form/button/link base of the unauthenticated pages (login, register,
   forgot/reset password, accept invite, verify email); each page imports `$styles/auth.css` and restates
   only what differs. `utilities.css` also holds `.section-toggle` (+ `.section-toggle-heading`), `.text-btn`,
-  `.pill-chip`, `.copy-button-header` and the `.filter-rail` shell.
+  `.pill-chip`, `.preview-chip` (collapsed-section header chips), `.warning-note`, `.copy-button-header`
+  and the `.filter-rail` shell.
+- `settings-*-panels.css` — rules shared by a family of settings panels, each rooted at the family's class
+  (`.ops-panel`, `.provider-panel`, `.auth-panel`, ...); a panel keeps only the declarations that differ.
+  `settings-shared.css` holds `settings-*` classes used across families (state row, item list rows,
+  panel text and note). Before moving a rule here, check the panel has no other rule of equal
+  specificity on the same element: global sheets load first, so the panel's own rules win ties.
+- `components/supportAccess/support-access.css` — field label, modal lead and grant table, imported by
+  each support-access component that uses them (the `ui/tag-pill.css` pattern).
 - `sourceTree.ts` — `walkSource` / `rel` / `SRC` for the style-source tests; do not hand-roll another `walk()`.

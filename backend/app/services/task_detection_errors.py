@@ -4,6 +4,7 @@ Split out of ``task_detection_service``.
 """
 
 import logging
+import time
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -98,6 +99,37 @@ class TaskDetectionErrorsMixin:
             logger.info(f"Identified {len(stuck_files)} files stuck in DOWNLOADING status")
 
         return stuck_files
+
+    def identify_stranded_playlist_dispatches(self, db: Session) -> list[MediaFile]:
+        """Playlist placeholders whose claimed download was never started (issue #1159).
+
+        ``media_playlist_processing`` commits a download's claim before it sends the message,
+        so a worker lost between the two leaves a QUEUED placeholder that nothing will
+        download. A claim is stranded once it is ``PLAYLIST_DISPATCH_GRACE_SECONDS`` past the
+        time it was due (its countdown is in that time) and no delivery has started it. There
+        is no Task row for a download to check; a merely late message is safe because the
+        re-send carries the same task id and the download task starts only one of them.
+        """
+        from sqlalchemy import BigInteger
+        from sqlalchemy import or_
+
+        from app.services.media_download_playlist import DOWNLOAD_DUE_AT_KEY
+        from app.services.media_download_playlist import DOWNLOAD_STARTED_KEY
+        from app.services.media_download_playlist import DOWNLOAD_TASK_ID_KEY
+
+        cutoff = int(time.time()) - self.config.PLAYLIST_DISPATCH_GRACE_SECONDS
+        due_at = MediaFile.metadata_raw[DOWNLOAD_DUE_AT_KEY].astext.cast(BigInteger)
+        return (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.status == FileStatus.QUEUED,
+                or_(MediaFile.storage_path.is_(None), MediaFile.storage_path == ""),
+                MediaFile.metadata_raw.has_key(DOWNLOAD_TASK_ID_KEY),
+                ~MediaFile.metadata_raw.has_key(DOWNLOAD_STARTED_KEY),
+                due_at < cutoff,
+            )
+            .all()
+        )
 
     def identify_oom_error_files(self, db: Session) -> list[MediaFile]:
         """

@@ -290,7 +290,11 @@ should import `app.api` or `app.services` at module scope.
   non-trivial ones make their side effect idempotent: the speaker merge stamps `merged_from`
   on the averaged voiceprint in the same write, the speaker update's matching pass skips a row
   its same match already labeled (`speaker_update._carries_this_match`), and the playlist claims
-  `download_dispatched` with one conditional UPDATE before it sends each download.
+  each download with one conditional UPDATE before it sends it (task id + due time in
+  `metadata_raw`). A claim lost before its send is re-sent by `system.health_check` under the same
+  task id once `PLAYLIST_DISPATCH_GRACE_SECONDS` past due; `youtube_processing._starts_claimed_download`
+  starts only one delivery per id. A download has no Task row, so there is no row-based liveness
+  to consult (`identify_stuck_downloading_files`' Task check never matches one).
 - `task_liveness.run_heartbeat` hands the run back as **queued** only on a normal return, a
   Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — a cold-shutdown
   `SystemExit` is deliberately NOT handed back here. On billiard 4.3.0 the cancel ACKED a running

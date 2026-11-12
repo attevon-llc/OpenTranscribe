@@ -308,7 +308,7 @@ def _recover_stuck_tasks_and_inconsistent_files(db: Session, summary: dict[str, 
 
 
 def _recover_stuck_files(db: Session, summary: dict[str, Any]) -> None:
-    """Steps 3 and 3.5: files stuck without a live Celery task, and stuck DOWNLOADING files."""
+    """Steps 3-3.6: files stuck without a live Celery task, stuck downloads, stranded claims."""
     # Step 3: Identify and recover files stuck without active Celery tasks
     stuck_files_without_celery = (
         task_detection_service.identify_stuck_files_without_active_celery_tasks(db)
@@ -337,6 +337,16 @@ def _recover_stuck_files(db: Session, summary: dict[str, Any]) -> None:
             f"Download Recovery: Found {len(stuck_downloading_files)} stuck files, "
             f"recovered {download_recovery_stats['files_recovered']}, "
             f"retried {download_recovery_stats['tasks_retried']}"
+        )
+
+    # Step 3.6: playlist downloads claimed but never sent (a worker lost in between, #1159)
+    stranded = task_detection_service.identify_stranded_playlist_dispatches(db)
+    summary["stranded_playlist_dispatches_found"] = len(stranded)
+    if stranded:
+        from app.tasks.media_playlist_processing import resend_stranded_playlist_downloads
+
+        summary["stranded_playlist_dispatches_resent"] = resend_stranded_playlist_downloads(
+            db, stranded
         )
 
 
@@ -459,6 +469,7 @@ def _log_health_check_summary(summary: dict[str, Any]) -> None:
         f"Found {summary['inconsistent_files_found']} inconsistent files, fixed {summary['inconsistent_files_fixed']}; "
         f"Found {summary['stuck_files_without_celery_found']} stuck files without Celery tasks, recovered {summary['stuck_files_without_celery_recovered']}; "
         f"Found {summary['stuck_downloading_found']} stuck downloads, recovered {summary['stuck_downloading_recovered']}; "
+        f"Found {summary['stranded_playlist_dispatches_found']} stranded playlist downloads, re-sent {summary['stranded_playlist_dispatches_resent']}; "
         f"Found {summary['oom_files_found']} OOM error files, retried {summary['oom_files_retried']}, exhausted {summary['oom_files_exhausted']}; "
         f"Found {summary['retriable_errors_found']} retriable errors, retried {summary['retriable_errors_retried']}; "
         f"Found {summary['stuck_pending_downloads_found']} stuck PENDING downloads, marked {summary['stuck_pending_downloads_marked_error']} as ERROR; "
@@ -503,6 +514,8 @@ def periodic_health_check_task(self: Any) -> dict[str, Any]:
         "stuck_files_without_celery_recovered": 0,
         "stuck_downloading_found": 0,
         "stuck_downloading_recovered": 0,
+        "stranded_playlist_dispatches_found": 0,
+        "stranded_playlist_dispatches_resent": 0,
         "oom_files_found": 0,
         "oom_files_retried": 0,
         "oom_files_exhausted": 0,

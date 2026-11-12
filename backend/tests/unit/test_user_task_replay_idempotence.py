@@ -636,5 +636,7 @@ def test_dispatching_one_placeholder_twice_sends_one_download(db_session, normal
 
     db_session.refresh(mf)
     assert len(sent) == 1
-    assert mf.metadata_raw == {"from_playlist": True, mpp.DOWNLOAD_DISPATCHED_KEY: True}
+    assert mf.metadata_raw is not None
+    assert mf.metadata_raw["from_playlist"] is True
+    assert mf.metadata_raw[mpp.DOWNLOAD_DISPATCHED_KEY] is True
     assert mf.status == FileStatus.QUEUED

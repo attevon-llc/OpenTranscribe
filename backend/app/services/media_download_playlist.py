@@ -18,6 +18,15 @@ from app.services.media_download_formats import YT_DLP_BASE_OPTS
 
 logger = logging.getLogger(__name__)
 
+#: ``metadata_raw`` keys of a playlist placeholder's download claim (issue #1159), written by
+#: ``tasks.media_playlist_processing._claim_playlist_dispatch``: that the download was claimed,
+#: the Celery task id every send of it carries, the epoch second it is due to start, and that
+#: the first delivery under that id began (``tasks.youtube_processing``).
+DOWNLOAD_DISPATCHED_KEY = "download_dispatched"
+DOWNLOAD_TASK_ID_KEY = "download_task_id"
+DOWNLOAD_DUE_AT_KEY = "download_due_at"
+DOWNLOAD_STARTED_KEY = "download_started"
+
 
 def _check_existing_youtube_video(
     db: Session, user_id: int, video_id: str, organization_id: int | None = None
@@ -58,7 +67,7 @@ def _is_unstarted_playlist_placeholder(existing: MediaFile, playlist_info: dict[
     A ``download.media_playlist`` run lost with its worker (issue #1159) is replayed. Its
     placeholders that were committed before the loss would otherwise be skipped as duplicates
     and never downloaded, so the replay adopts them. A placeholder whose download was already
-    dispatched (``download_dispatched``) or that has moved on from QUEUED is left alone.
+    dispatched (``DOWNLOAD_DISPATCHED_KEY``) or that has moved on from QUEUED is left alone.
     """
     meta = existing.metadata_raw or {}
     return (
@@ -66,7 +75,7 @@ def _is_unstarted_playlist_placeholder(existing: MediaFile, playlist_info: dict[
         and not existing.storage_path
         and bool(meta.get("from_playlist"))
         and meta.get("playlist_id") == playlist_info.get("playlist_id")
-        and not meta.get("download_dispatched")
+        and not meta.get(DOWNLOAD_DISPATCHED_KEY)
     )
 
 

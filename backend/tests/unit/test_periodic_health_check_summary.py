@@ -30,6 +30,7 @@ def _services(*, found: int = 2):
     rec.recover_stuck_files_without_celery_tasks.return_value = {"files_recovered": 1}
     det.identify_stuck_downloading_files.return_value = items
     rec.recover_stuck_downloading_files.return_value = {"files_recovered": 2, "tasks_retried": 0}
+    det.identify_stranded_playlist_dispatches.return_value = items
     det.identify_oom_error_files.return_value = items
     rec.recover_oom_error_files.return_value = {"files_retried": 3, "files_exhausted": 1}
     det.identify_retriable_error_files_split.return_value = (["y"], ["z", "w"])
@@ -60,6 +61,10 @@ def _run(det, rec, *, oom_enabled=True):
             return_value=MagicMock(recovery_batch_size=3),
         ),
         patch.object(task_lock.task_lock_manager, "acquire_lock", _lock_held),
+        patch(
+            "app.tasks.media_playlist_processing.resend_stranded_playlist_downloads",
+            return_value=1,
+        ),
     ):
         return recovery.periodic_health_check_task()
 
@@ -74,6 +79,8 @@ def test_every_step_lands_in_the_summary():
     assert (summary["inconsistent_files_found"], summary["inconsistent_files_fixed"]) == (2, 2)
     assert summary["stuck_files_without_celery_recovered"] == 1
     assert summary["stuck_downloading_recovered"] == 2
+    assert summary["stranded_playlist_dispatches_found"] == 2
+    assert summary["stranded_playlist_dispatches_resent"] == 1
     assert (summary["oom_files_found"], summary["oom_files_retried"]) == (2, 3)
     assert summary["oom_files_exhausted"] == 1
     assert summary["retriable_errors_found"] == 3

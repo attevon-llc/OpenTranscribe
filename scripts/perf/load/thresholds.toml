@@ -29,7 +29,7 @@ max_deadlocks = 0
 [cross_tenant]           # the canary rows ("files.detail cross-tenant canary"): a 200 is a failure
 max_hits = 0
 min_probes = 1           # the canary must have run, or the zero means nothing
-exempt_profiles = ["pipeline", "herd", "hot-file"]   # profiles with no canary persona
+exempt_profiles = ["smoke", "steady", "ramp", "spike", "soak", "pipeline", "herd", "hot-file"]   # profiles with no canary persona
 
 [stream]                 # SSE rows: a chat answer read to its end
 first_token_p95_ms = 5000

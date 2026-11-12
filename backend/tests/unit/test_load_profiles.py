@@ -244,3 +244,17 @@ def test_run_sh_accepts_every_profile_name(load):
         if f"|{name}" not in text and f"{name}|" not in text
     ]
     assert not missing, missing
+
+
+def test_exempt_canary_profiles_are_exactly_those_without_a_canary_persona(load):
+    import tomllib
+
+    profiles = load["profiles"]
+    canary = {
+        name
+        for name, cls in load["locustfile"].USER_CLASSES.items()
+        if issubclass(cls, load["personas_roles"].CanaryMixin)
+    }
+    expected = {name for name, p in profiles.PROFILES.items() if not canary & set(p.personas)}
+    exempt = tomllib.loads((stub.LOAD_DIR / "thresholds.toml").read_text())["cross_tenant"]
+    assert set(exempt["exempt_profiles"]) == expected

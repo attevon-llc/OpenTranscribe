@@ -9,7 +9,9 @@ from typing import Literal
 from pydantic import BaseModel
 from pydantic import Field
 
-TelemetryOffReason = Literal["do_not_track", "env_disabled", "demo", "no_receiver"]
+TelemetryOffReason = Literal[
+    "do_not_track", "env_disabled", "demo", "no_receiver", "offline", "pki", "fips"
+]
 
 
 class TelemetryStatus(BaseModel):

@@ -22,6 +22,8 @@
 services:
   backend:
     environment:
+      # PKI deployments never send the anonymous usage report (issue #1019).
+      OPENTRANSCRIBE_TELEMETRY: "false"
       # The PKI frontend is an nginx that terminates mTLS and proxies /api to the
       # backend (frontend/nginx-pki.conf), so `request.client.host` is that proxy for
       # every API request. Without a trusted-proxy list all callers share one
@@ -33,6 +35,11 @@ services:
       # PKI_TRUSTED_PROXIES (which governs whether a DN header may be believed at
       # all). Both need to be set for a proxied PKI deployment.
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
+
+  celery-worker:
+    environment:
+      # The worker on the utility queue sends the report; see the backend entry above.
+      OPENTRANSCRIBE_TELEMETRY: "false"
 
   frontend:
     volumes:

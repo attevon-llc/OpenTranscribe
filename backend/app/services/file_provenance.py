@@ -23,6 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.db.savepoint import isolated
 from app.schemas.processing_provenance import STEP_ORDER
 from app.schemas.processing_provenance import ProvenanceEntry
 from app.services.pipeline_plan import PYANNOTE_AI
@@ -109,8 +110,7 @@ def record_stage(
         "entry": entry.model_dump_json(exclude_none=True),
     }
     try:
-        with db.begin_nested():
-            db.execute(_NEW_RUN_SQL if new_run else _MERGE_SQL, params)
+        isolated(db, lambda: db.execute(_NEW_RUN_SQL if new_run else _MERGE_SQL, params))
     except SQLAlchemyError as exc:
         logger.warning(
             "Provenance for file %s stage %s not recorded: %s", file_id, stage, type(exc).__name__

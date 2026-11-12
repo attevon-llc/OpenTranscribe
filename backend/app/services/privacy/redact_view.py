@@ -36,6 +36,7 @@ from typing import Any
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.exceptions import ConflictError
+from app.db.savepoint import isolated
 from app.services.privacy import policy
 from app.services.privacy.consent import has_voiceprint_consent_hooks
 from app.services.privacy.policy import Decision
@@ -105,7 +106,7 @@ class PrivacyView:
             # A SAVEPOINT: this read runs inside the caller's transaction, and a failed
             # statement aborts the whole transaction on PostgreSQL. Rolled back to the
             # savepoint, the files read as off and the caller can still issue queries.
-            rows = policy._isolated(
+            rows = isolated(
                 self._db,
                 lambda: (
                     self._db.query(MediaFile.id, MediaFile.user_id, MediaFile.organization_id)

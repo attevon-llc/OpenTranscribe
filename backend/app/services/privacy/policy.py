@@ -41,6 +41,7 @@ from typing import Literal
 
 from app.core import constants
 from app.core.env import is_truthy
+from app.db.savepoint import isolated
 from app.services.privacy.consent import VoiceprintConsentRequest
 from app.services.privacy.consent import has_voiceprint_consent_hooks
 from app.services.privacy.consent import voiceprint_consent_granted
@@ -115,23 +116,6 @@ def reset_privacy_ceiling_resolver() -> None:
     global _ceiling_resolver
     _ceiling_resolver = _community_ceiling_resolver
     clear_write_backstop_cache()
-
-
-def _isolated[T](db: Session, read: Callable[[], T]) -> T:
-    """Run ``read`` inside a savepoint so a failure cannot poison the caller's transaction.
-
-    Written with an explicit ``rollback``/``commit`` rather than ``with db.begin_nested()``:
-    the context-manager form raises "Can't operate on closed transaction" under the test
-    harness's savepoint-restarting listener once the test has committed.
-    """
-    savepoint = db.begin_nested()
-    try:
-        result = read()
-    except BaseException:
-        savepoint.rollback()
-        raise
-    savepoint.commit()
-    return result
 
 
 _DENY_PLATFORM = Decision(False, "platform")
@@ -262,7 +246,7 @@ def _stored_layers_isolated(db: Session, wanted: list[Scope]) -> dict[Scope, dic
     retry only runs on the error path.
     """
     try:
-        return _isolated(db, lambda: _stored_layers_many(db, wanted))
+        return isolated(db, lambda: _stored_layers_many(db, wanted))
     except Exception:
         logger.exception("privacy policy read failed; denying voiceprints and gender")
     if len(wanted) < 2:
@@ -270,7 +254,7 @@ def _stored_layers_isolated(db: Session, wanted: list[Scope]) -> dict[Scope, dic
     out: dict[Scope, dict[str, bool]] = {}
     for scope in wanted:
         try:
-            out.update(_isolated(db, partial(_stored_layers_many, db, [scope])))
+            out.update(isolated(db, partial(_stored_layers_many, db, [scope])))
         except Exception:
             logger.exception("privacy policy read failed for scope %s; denying", scope)
     return out
@@ -382,7 +366,7 @@ def _file_consent_allows(db: Session, media_file_id: int) -> bool:
     from app.models.media import MediaFile
 
     try:
-        state = _isolated(
+        state = isolated(
             db,
             lambda: (
                 db.query(MediaFile.voiceprint_consent)
@@ -397,7 +381,7 @@ def _file_consent_allows(db: Session, media_file_id: int) -> bool:
             return False
         if state == "granted":
             return True
-        return not _isolated(db, lambda: _consent_required(db))
+        return not isolated(db, lambda: _consent_required(db))
     except Exception:
         logger.exception("privacy: could not read the consent of file %s; denying", media_file_id)
         return False
@@ -478,7 +462,7 @@ def _file_scope(db: Session, file_id: int) -> tuple[int, int | None] | None:
     from app.models.media import MediaFile
 
     try:
-        row = _isolated(
+        row = isolated(
             db,
             lambda: (
                 db.query(MediaFile.user_id, MediaFile.organization_id)
@@ -539,7 +523,7 @@ def filter_shareable_profiles(
     if not ids:
         return []
     try:
-        rows = _isolated(
+        rows = isolated(
             db,
             lambda: (
                 db.query(SpeakerProfile.id, SpeakerProfile.user_id, SpeakerProfile.organization_id)
@@ -702,7 +686,7 @@ def declined_file_ids(db: Session, file_ids: Iterable[int | None]) -> set[int]:
     if not ids:
         return set()
     try:
-        rows = _isolated(
+        rows = isolated(
             db,
             lambda: (
                 db.query(MediaFile.id, MediaFile.voiceprint_consent)
@@ -710,7 +694,7 @@ def declined_file_ids(db: Session, file_ids: Iterable[int | None]) -> set[int]:
                 .all()
             ),
         )
-        required = _isolated(db, lambda: _consent_required(db))
+        required = isolated(db, lambda: _consent_required(db))
     except Exception:
         logger.exception("privacy: could not read file consent states; excluding all")
         return ids

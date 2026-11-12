@@ -65,7 +65,7 @@ def sent(monkeypatch, tmp_path) -> dict[str, list[Any]]:
     )
     monkeypatch.setattr("app.services.email_service.email_service.has_transport", lambda: True)
     fake = _FakeRedis()
-    monkeypatch.setattr(notices, "get_redis", lambda: fake)
+    monkeypatch.setattr(notices, "get_request_redis", lambda: fake)
     monkeypatch.setattr(
         gdpr_erasure_service, "erase_org_member_data", lambda *a, **k: {"complete": True}
     )

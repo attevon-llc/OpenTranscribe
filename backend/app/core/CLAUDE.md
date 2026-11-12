@@ -297,6 +297,11 @@ should import `app.api` or `app.services` at module scope.
   `task_liveness` lease keyed `download_run_id(file_uuid)` (`run_heartbeat(..., chained=False)`,
   so a return releases it and only a Celery retry hands it back as QUEUED), and
   `identify_stuck_downloading_files` recovers a DOWNLOADING file only when that lease is DEAD.
+  A delivery lost after it started the claim (`download_started`, epoch s) but before DOWNLOADING
+  is re-sent by the same finder once it started a grace ago and its lease is DEAD, under a NEW id.
+  Accepted bounds: overlapping downloads of one file (only after a duplicate exists) share the
+  lease, so the first to finish makes the other read DEAD; a lost Celery-retry message leaves the
+  file in DOWNLOADING for up to `TRANSCRIPTION_QUEUE_MAX_WAIT` (7 days), as transcription accepts.
 - `task_liveness.run_heartbeat` hands the run back as **queued** only on a normal return, a
   Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — a cold-shutdown
   `SystemExit` is deliberately NOT handed back here. On billiard 4.3.0 the cancel ACKED a running

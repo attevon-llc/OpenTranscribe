@@ -17,7 +17,9 @@ from typing import TypedDict
 
 from kombu.exceptions import KombuError
 from sqlalchemy import BigInteger
+from sqlalchemy import Text
 from sqlalchemy import and_
+from sqlalchemy import cast
 from sqlalchemy import func
 from sqlalchemy import literal
 from sqlalchemy import update
@@ -34,6 +36,7 @@ from app.services.formatting_service import FormattingService
 from app.services.media_download_playlist import DOWNLOAD_DISPATCHED_KEY
 from app.services.media_download_playlist import DOWNLOAD_DUE_AT_KEY
 from app.services.media_download_playlist import DOWNLOAD_OPTIONS_KEY
+from app.services.media_download_playlist import DOWNLOAD_STARTED_KEY
 from app.services.media_download_playlist import DOWNLOAD_TASK_ID_KEY
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.youtube_processing import process_youtube_url_task
@@ -150,6 +153,7 @@ def _claim_playlist_dispatch(
     task_id: str,
     options: dict[str, Any],
     previous_due_at: int | None = None,
+    restart: bool = False,
 ) -> bool:
     """Claim a placeholder's download for sending, unless a run already did; True if this run did.
 
@@ -162,6 +166,9 @@ def _claim_playlist_dispatch(
     takes the claim over (``previous_due_at``: only the claim it found, only while the file is
     still QUEUED) and sends again under the SAME id. If the first message was only late, the
     download task starts one of the two (``youtube_processing._starts_claimed_download``).
+    A claim whose delivery started and was then lost is taken over with ``restart``: under a
+    NEW id, with the start mark taken off in the same UPDATE, since a second start under the
+    started id is turned away.
     """
     current = func.coalesce(MediaFile.metadata_raw, literal({}, JSONB))
     if previous_due_at is None:
@@ -177,10 +184,13 @@ def _claim_playlist_dispatch(
         DOWNLOAD_DUE_AT_KEY: int(time.time()) + countdown,
         DOWNLOAD_OPTIONS_KEY: options,
     }
+    kept = (
+        current.op("-", return_type=JSONB)(cast(DOWNLOAD_STARTED_KEY, Text)) if restart else current
+    )
     claim = (
         update(MediaFile)
         .where(MediaFile.id == media_file_id, unclaimed)
-        .values(metadata_raw=current.op("||", return_type=JSONB)(literal(stamp, JSONB)))
+        .values(metadata_raw=kept.op("||", return_type=JSONB)(literal(stamp, JSONB)))
         .returning(MediaFile.id)
         .execution_options(synchronize_session=False)
     )
@@ -193,10 +203,13 @@ def resend_stranded_playlist_download(db: Session, media_file: MediaFile) -> boo
     """Send a claimed playlist download again, under its claimed task id; True if sent.
 
     For the health check's stranded-claim recovery. The import's per-download options (quality,
-    collections, tags) recorded with the claim are sent again unchanged.
+    collections, tags) recorded with the claim are sent again unchanged. A claim a lost delivery
+    had already started is sent under a new task id instead (``_claim_playlist_dispatch``'s
+    ``restart``).
     """
     meta = media_file.metadata_raw or {}
-    task_id = str(meta[DOWNLOAD_TASK_ID_KEY])
+    restart = DOWNLOAD_STARTED_KEY in meta
+    task_id = str(uuid.uuid4()) if restart else str(meta[DOWNLOAD_TASK_ID_KEY])
     options = dict(meta.get(DOWNLOAD_OPTIONS_KEY) or {})
     args = [str(media_file.source_url), int(media_file.user_id), str(media_file.uuid)]
     if not _claim_playlist_dispatch(
@@ -206,6 +219,7 @@ def resend_stranded_playlist_download(db: Session, media_file: MediaFile) -> boo
         task_id=task_id,
         options=options,
         previous_due_at=int(meta[DOWNLOAD_DUE_AT_KEY]),
+        restart=restart,
     ):
         return False
     process_youtube_url_task.apply_async(args=args, kwargs=options, task_id=task_id)

@@ -169,3 +169,14 @@ def test_a_read_timeout_on_the_streamed_post_is_not_replayed(gen):
     finally:
         release.set()
         server.shutdown()
+
+
+def test_an_error_that_is_not_connect_read_or_status_is_not_retried(gen):
+    """With ``total=None`` only the per-kind counts bound the policy, so the "other" kind (an
+    SSL failure, say, possibly after the POST was sent) needs its own zero (urllib3 2.x
+    ``Retry(other=...)``); unset it retried without limit."""
+    from urllib3.exceptions import MaxRetryError
+    from urllib3.exceptions import SSLError
+
+    with pytest.raises(MaxRetryError):
+        gen.RETRY.increment(method="POST", url="/api/chat", error=SSLError("handshake failed"))

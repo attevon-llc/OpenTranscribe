@@ -9,6 +9,7 @@ Supports YouTube, Vimeo, Twitter/X, TikTok, and many other platforms via yt-dlp.
 """
 
 import logging
+import time
 import uuid as uuid_lib
 from typing import Any
 from typing import TypedDict
@@ -139,7 +140,6 @@ def _apply_pre_download_jitter() -> None:
     if not settings.YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED:
         return
     import random
-    import time
 
     jitter_seconds = random.uniform(  # noqa: S311 - jitter / test randomness, not crypto  # nosec B311
         settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS,
@@ -213,7 +213,7 @@ def _starts_claimed_download(db: Session, media_file: MediaFile, request: Any) -
         )
         .values(
             metadata_raw=current.op("||", return_type=JSONB)(
-                literal({DOWNLOAD_STARTED_KEY: True}, JSONB)
+                literal({DOWNLOAD_STARTED_KEY: int(time.time())}, JSONB)
             )
         )
         .returning(MediaFile.id)

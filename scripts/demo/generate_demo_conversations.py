@@ -40,6 +40,7 @@ RETRY = Retry(
     connect=3,  # nothing was sent yet
     read=0,  # a read timeout on the streamed POST must not replay the question
     status=10,
+    other=0,  # an SSL or other failure may come after the POST was sent; with total=None nothing else bounds it
     status_forcelist=[429],
     allowed_methods=None,  # the chat message is a POST; a 429 is refused before any work, so replay is safe
     backoff_factor=5,

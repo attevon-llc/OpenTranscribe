@@ -67,6 +67,55 @@ def test_mobile_drawer_opens_and_closes_from_toggle_and_overlay(mobile_page: Pag
     expect(toggle).to_have_attribute("aria-expanded", "false")
 
 
+def test_mobile_drawer_moves_traps_and_restores_focus(mobile_page: Page) -> None:
+    """WCAG 2.4.3: focus enters the drawer, stays inside it while open, returns to the toggle."""
+    toggle = mobile_page.locator(".mobile-toggle button")
+    toggle.focus()
+    toggle.click()
+    expect(mobile_page.locator(".nav-links")).to_have_class(re.compile(r"\bopen\b"))
+
+    def focus_location() -> str:
+        return str(
+            mobile_page.evaluate(
+                """() => {
+              const a = document.activeElement;
+              if (!a) return 'none';
+              if (a.closest('.nav-links')) return 'drawer';
+              if (a.closest('.mobile-toggle')) return 'toggle';
+              return 'outside';
+            }"""
+            )
+        )
+
+    # On open, focus moves into the drawer (not left on the toggle or the page behind it).
+    expect(mobile_page.locator(".nav-links :focus")).to_have_count(1)
+    assert focus_location() == "drawer"
+
+    # Trapped: more Tab presses than the drawer has stops never reach the page behind it.
+    stops = mobile_page.locator(".nav-links a[href], .nav-links button:visible").count() + 2
+    seen: set[str] = set()
+    for _ in range(stops * 2):
+        mobile_page.keyboard.press("Tab")
+        seen.add(focus_location())
+    assert seen <= {"drawer", "toggle"}, f"focus escaped the open drawer: {seen}"
+    for _ in range(stops * 2):
+        mobile_page.keyboard.press("Shift+Tab")
+        seen.add(focus_location())
+    assert seen <= {"drawer", "toggle"}, f"focus escaped the open drawer backwards: {seen}"
+
+    # Closing returns focus to the trigger.
+    toggle.click()
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    expect(toggle).to_be_focused()
+
+    # Escape closes too, and also restores focus to the trigger.
+    toggle.click()
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    mobile_page.keyboard.press("Escape")
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    expect(toggle).to_be_focused()
+
+
 def test_mobile_drawer_does_not_scroll_the_page_sideways(mobile_page: Page) -> None:
     mobile_page.locator(".mobile-toggle button").click()
     expect(mobile_page.locator(".mobile-overlay")).to_be_visible()

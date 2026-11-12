@@ -12,6 +12,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Added
 
+- E2E for the mobile drawer's focus (enters on open, trapped, returns to the toggle on close and on Escape), the gallery Process and Organize menus at 1180 and 390 px, and `search` and `chat_answer` visual-regression surfaces (baselines come with the screenshot pass) (#1282).
 - CI caches apt archives and the mypy cache and skips the frontend-only pre-commit hooks on a PR that does not touch the frontend (#1099).
 - The release `test` stage runs the first-run wizard e2e on its fresh stack before anything dismisses the wizard, as the blocking criterion `first-run-wizard-e2e` (#1366).
 - The assert-inert checker reports NOT MEASURED for fewer than 300 modelled routes or an unresolved import and fails on MUTATING and INGEST beat entries unless `DEMO_MODE` publish refusal is probed; `demo-reset.sh` (so `demo-upgrade.sh` too) aborts with nginx closed on a non-zero exit (#898).
@@ -49,6 +50,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Fixed
 
+- The mobile nav drawer now moves focus in on open, traps Tab while open, closes on Escape and returns focus to its toggle (WCAG 2.4.3) (#1282).
 - The public demo no longer opens a WebSocket (the server refuses it by design) or shows the "Reconnecting to live updates" banner, and Edit Speakers, a transcript segment's Edit, Add comment and Select Files are disabled with the read-only tooltip (all 12 locales already carry it).
 - "Try the demo" answered 503 on a stack whose env file had no demo account. `docker-compose.demo.yml` now passes `DEMO_USER_EMAIL` (default `demo@example.com`) and `DEMO_USER_PASSWORD` (never defaulted) to the API, `demo-reset.sh` stops before touching anything when the password is missing, and the API log names the missing setting. `.env.example` and the demo docs say to generate the password with `openssl rand -base64 18`.
 - `scripts/demo/generate_demo_conversations.py` waits out a chat 429 using `Retry-After`, finds recordings by the seeder's `demo__<id>.transcript` filename (then the media filename, then the title), skips prompts that name items the bundle lacks (`--strict` fails), and stops on an answer with no citations. The prompts no longer name the two `no_speech` items. The NWS Reno snowpack video is catalogued as CC-BY-4.0 with its credit line (its YouTube page declares CC BY).

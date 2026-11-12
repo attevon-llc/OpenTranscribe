@@ -4,7 +4,7 @@
   import { goto } from "$app/navigation";
   import { pageStore } from '$stores/pageStore';
   import { user, logout } from "$stores/auth";
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
   import NavbarBrand from "$components/navbar/NavbarBrand.svelte";
   import UserDropdown from "$components/navbar/UserDropdown.svelte";
@@ -62,6 +62,52 @@
 
   // Close mobile menu on route change
   $: if ($pageStore.url.pathname) mobileMenuOpen = false;
+
+  // Drawer focus (WCAG 2.4.3): focus enters the drawer on open, Tab is trapped inside
+  // the drawer plus its toggle while open, and focus returns to the toggle on close.
+  let navLinksEl: HTMLElement | undefined;
+  let toggleEl: HTMLButtonElement | undefined;
+  let drawerWasOpen = false;
+  const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  function drawerFocusables(): HTMLElement[] {
+    const inside = navLinksEl
+      ? Array.from(navLinksEl.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+          (el) => el.offsetParent !== null
+        )
+      : [];
+    return toggleEl ? [...inside, toggleEl] : inside;
+  }
+
+  function syncDrawerFocus(open: boolean) {
+    if (open === drawerWasOpen) return;
+    drawerWasOpen = open;
+    tick().then(() => {
+      if (open) drawerFocusables()[0]?.focus();
+      else toggleEl?.focus();
+    });
+  }
+  $: syncDrawerFocus(mobileMenuOpen);
+
+  function handleDrawerKeydown(event: KeyboardEvent) {
+    if (!mobileMenuOpen) return;
+    if (event.key === 'Escape') {
+      mobileMenuOpen = false;
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const items = drawerFocusables();
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   // Reactive recording state from store - use store directly
   $: hasActiveRecording = $recordingStore.hasActiveRecording;
@@ -279,6 +325,8 @@
   });
 </script>
 
+<svelte:window on:keydown={handleDrawerKeydown} />
+
 <nav class="navbar">
   <div class="navbar-container">
     <!-- Far Left: OpenTranscribe Logo -->
@@ -287,7 +335,7 @@
     <!-- Spacer to push right elements to far right -->
     <div class="navbar-spacer"></div>
 
-    <div class="nav-links" class:open={mobileMenuOpen}>
+    <div class="nav-links" class:open={mobileMenuOpen} bind:this={navLinksEl}>
       <!-- Gallery. Always present, like every other destination: a nav whose
            items appear and disappear shifts the other items under the cursor
            and gives no stable place to aim for. -->
@@ -523,7 +571,7 @@
     </div>
 
     <div class="mobile-toggle">
-      <button on:click|stopPropagation={() => (mobileMenuOpen = !mobileMenuOpen)} aria-label={$t('nav.menu')} aria-expanded={mobileMenuOpen}>
+      <button bind:this={toggleEl} on:click|stopPropagation={() => (mobileMenuOpen = !mobileMenuOpen)} aria-label={$t('nav.menu')} aria-expanded={mobileMenuOpen}>
         <span class="sr-only">{$t('nav.menu')}</span>
         {#if mobileMenuOpen}
           <!-- X icon when open -->

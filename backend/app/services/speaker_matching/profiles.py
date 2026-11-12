@@ -4,6 +4,8 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from sqlalchemy.orm import selectinload
+
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
@@ -115,6 +117,7 @@ def find_speaker_occurrences(
         self.db.query(Speaker)
         .join(MediaFile, Speaker.media_file_id == MediaFile.id)
         .filter(Speaker.profile_id == profile_id, Speaker.user_id == user_id)
+        .options(selectinload(Speaker.media_file))
     )
     query = exclude_unavailable(query, include_quarantined=include_quarantined)
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
@@ -126,6 +129,7 @@ def find_speaker_occurrences(
     # so the file is not an occurrence of the profile; the scope is the speaker's file's,
     # never the caller's argument. A person's own link is never hidden.
     view = PrivacyView(self.db)
+    view.preload_files(int(s.media_file_id) for s in speakers)
     speakers = [
         s
         for s in speakers

@@ -67,6 +67,10 @@ def test_required_signals_are_alerted_on():
         "celery_queue_depth",
         "node_filesystem_avail_bytes",
         'up{job="opentranscribe-backend"} == 0',
+        "alert: BackupStale",
+        "backup_last_success_timestamp_seconds",
+        "alert: HttpServerErrorRate",
+        'http_requests_total{status=~"5.."}',
     ):
         assert expr in text
 

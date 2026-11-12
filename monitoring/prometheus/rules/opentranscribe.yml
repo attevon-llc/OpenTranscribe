@@ -104,3 +104,34 @@ groups:
         annotations:
           summary: "Governance audit events are not reaching the audit log"
           description: "{{ $value }} stuck. The cause is in audit_outbox.last_error."
+
+  - name: opentranscribe-service-level
+    rules:
+      # 5xx share of all requests. The ratio form keeps a quiet instance (a handful of
+      # requests, one failing) from paging on its own; `> 0` on the denominator is implicit
+      # because a division by zero yields no sample.
+      - alert: HttpServerErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          / sum(rate(http_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: "More than 5% of API requests are failing with 5xx"
+          description: "5xx share of requests over 5m is {{ $value | humanizePercentage }}."
+
+  - name: opentranscribe-backup
+    rules:
+      # 0 means "never succeeded" (metrics.py), which is also the state of an install with
+      # backups off, so it stays silent; the alert is for a backup that worked and then stopped.
+      - alert: BackupStale
+        expr: |
+          (time() - backup_last_success_timestamp_seconds) > 129600
+          and backup_last_success_timestamp_seconds > 0
+        for: 15m
+        labels:
+          severity: high
+        annotations:
+          summary: "No successful database backup in over 36 hours"
+          description: "The last successful backup was {{ $value | humanizeDuration }} ago."

@@ -715,6 +715,8 @@ sends firing alerts to the bundled Alertmanager
 | `DiskSpaceLow` | under 10% free on a real filesystem for 10 minutes |
 | `CeleryQueueBacklog`, `CeleryQueueStarved` | a queue holds more than 50 pending tasks for 15 minutes, or its oldest message has waited over 30 minutes |
 | `SecurityStateDegraded` | `security_state_degraded_total` increased in the last 10 minutes |
+| `HttpServerErrorRate` | more than 5% of API requests returned 5xx over 5 minutes, sustained for 10 minutes |
+| `BackupStale` | the last successful database backup is more than 36 hours old (silent until a first backup has succeeded) |
 | `AuditOutboxStuck` | `audit_outbox_stuck_events > 0` for 5 minutes (see [Governance audit outbox](#governance-audit-outbox)) |
 
 **Delivery.** Alertmanager posts to the backend at `/internal/alertmanager/webhook`, which turns

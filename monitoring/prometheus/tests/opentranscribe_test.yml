@@ -233,3 +233,55 @@ tests:
       - eval_time: 10m
         alertname: AuditOutboxStuck
         exp_alerts: []
+
+  - interval: 1m
+    name: 5xx share above five percent fires
+    input_series:
+      - series: 'http_requests_total{method="GET", route="/x", status="500"}'
+        values: '0+10x30'
+      - series: 'http_requests_total{method="GET", route="/x", status="200"}'
+        values: '0+90x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HttpServerErrorRate
+        exp_alerts:
+          - exp_labels: {severity: high}
+            exp_annotations:
+              summary: "More than 5% of API requests are failing with 5xx"
+              description: "5xx share of requests over 5m is 10%."
+
+  - interval: 1m
+    name: 5xx share below five percent stays quiet
+    input_series:
+      - series: 'http_requests_total{method="GET", route="/x", status="500"}'
+        values: '0+1x30'
+      - series: 'http_requests_total{method="GET", route="/x", status="200"}'
+        values: '0+99x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HttpServerErrorRate
+        exp_alerts: []
+
+  - interval: 1m
+    name: backup older than 36 hours fires
+    input_series:
+      - series: 'backup_last_success_timestamp_seconds{}'
+        values: '3600x3100'
+    alert_rule_test:
+      - eval_time: 50h
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels: {severity: high}
+            exp_annotations:
+              summary: "No successful database backup in over 36 hours"
+              description: "The last successful backup was 2d 1h 0m 0s ago."
+
+  - interval: 1m
+    name: never-succeeded backup stays quiet
+    input_series:
+      - series: 'backup_last_success_timestamp_seconds{}'
+        values: '0x3100'
+    alert_rule_test:
+      - eval_time: 50h
+        alertname: BackupStale
+        exp_alerts: []

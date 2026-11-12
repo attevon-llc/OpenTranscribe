@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './support-access.css';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
@@ -41,10 +42,10 @@
   size="sm"
 >
   {#if mode === 'revoke'}
-    <p class="body">{$t('supportAccess.revoke.body', { name })}</p>
+    <p class="support-modal-lead">{$t('supportAccess.revoke.body', { name })}</p>
   {/if}
   <form id="grant-note-form" on:submit|preventDefault={submit}>
-    <label for="grant-note" class="label">{$t('supportAccess.note.label')}</label>
+    <label for="grant-note" class="support-field-label">{$t('supportAccess.note.label')}</label>
     <textarea id="grant-note" rows="3" maxlength={NOTE_MAX} bind:value={note}></textarea>
   </form>
   <svelte:fragment slot="footer">
@@ -58,18 +59,6 @@
 </BaseModal>
 
 <style>
-  .body {
-    margin: 0 0 var(--space-4) 0;
-    font-size: var(--font-size-md);
-    color: var(--text-color);
-  }
-  .label {
-    display: block;
-    margin-bottom: var(--space-1-5);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-color);
-  }
   textarea {
     width: 100%;
     resize: vertical;

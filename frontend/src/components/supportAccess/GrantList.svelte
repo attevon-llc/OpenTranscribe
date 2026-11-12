@@ -27,6 +27,7 @@
 </script>
 
 <script lang="ts">
+  import './support-access.css';
   import { SUPPORT_LEVEL_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher } from 'svelte';
   import { locale, t } from '$stores/locale';
@@ -74,8 +75,8 @@
   };
 </script>
 
-<div class="table-wrap">
-  <table class="grant-table">
+<div class="support-table-wrap">
+  <table class="support-table grant-table">
     <caption class="sr-only">{caption}</caption>
     <thead>
       <tr>
@@ -146,32 +147,9 @@
 </div>
 
 <style>
-  .table-wrap {
-    overflow-x: auto;
-  }
   .grant-table {
-    width: 100%;
     /* Below this the columns crush into one-letter lines; scroll the wrapper instead. */
     min-width: 40rem;
-    border-collapse: collapse;
-    font-size: var(--font-size-sm);
-  }
-  .grant-table th {
-    text-align: start;
-    padding: var(--space-1-5) var(--space-2-5);
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-on-tint);
-    border-bottom: 1px solid var(--border-color);
-    white-space: nowrap;
-  }
-  .grant-table td {
-    padding: var(--space-2) var(--space-2-5);
-    border-bottom: 1px solid var(--border-color);
-    color: var(--text-color);
-    vertical-align: top;
   }
   tr.break-glass td:first-child {
     border-inline-start: 3px solid var(--error-color);

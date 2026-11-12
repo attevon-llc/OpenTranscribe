@@ -1,0 +1,44 @@
+/* Shared by the support-access modals, fields and grant tables (unscoped; import it from the component). */
+
+.support-field-label {
+  display: block;
+  margin-bottom: var(--space-1-5);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-color);
+}
+
+.support-modal-lead {
+  margin: 0 0 var(--space-4) 0;
+  font-size: var(--font-size-md);
+  color: var(--text-color);
+}
+
+.support-table-wrap {
+  overflow-x: auto;
+}
+
+.support-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.support-table th {
+  text-align: start;
+  padding: var(--space-1-5) var(--space-2-5);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-on-tint);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.support-table td {
+  padding: var(--space-2) var(--space-2-5);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-color);
+  vertical-align: top;
+}

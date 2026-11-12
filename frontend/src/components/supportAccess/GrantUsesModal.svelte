@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './support-access.css';
   import { SUPPORT_LEVEL_KEYS } from '$lib/i18n/keyMaps';
   import { locale, t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
@@ -73,8 +74,8 @@
   {:else if uses.length === 0}
     <p class="state">{$t('supportAccess.uses.empty')}</p>
   {:else}
-    <div class="table-wrap">
-      <table>
+    <div class="support-table-wrap">
+      <table class="support-table">
         <thead>
           <tr>
             <th scope="col">{$t('supportAccess.uses.col.time')}</th>
@@ -124,31 +125,6 @@
   }
   .state.error {
     color: var(--error-text);
-  }
-  .table-wrap {
-    overflow-x: auto;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--font-size-sm);
-  }
-  th {
-    text-align: start;
-    padding: var(--space-1-5) var(--space-2-5);
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-on-tint);
-    border-bottom: 1px solid var(--border-color);
-    white-space: nowrap;
-  }
-  td {
-    padding: var(--space-2) var(--space-2-5);
-    border-bottom: 1px solid var(--border-color);
-    color: var(--text-color);
-    vertical-align: top;
   }
   .nowrap {
     white-space: nowrap;

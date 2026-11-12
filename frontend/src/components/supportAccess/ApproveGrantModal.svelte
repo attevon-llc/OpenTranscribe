@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './support-access.css';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { SUPPORT_LEVEL_KEYS } from '$lib/i18n/keyMaps';
@@ -50,13 +51,13 @@
       <dt>{$t('supportAccess.col.reason')}</dt>
       <dd class="reason">{grant.reason}</dd>
     </dl>
-    <p class="requested">
+    <p class="support-modal-lead">
       {$t('supportAccess.approve.requestedDuration', {
         duration: durationLabel(requested, $t),
       })}
     </p>
     <form id="approve-form" on:submit|preventDefault={() => dispatch('submit', { duration_minutes: duration })}>
-      <label for="approve-duration" class="label">{$t('supportAccess.approve.grantFor')}</label>
+      <label for="approve-duration" class="support-field-label">{$t('supportAccess.approve.grantFor')}</label>
       <select id="approve-duration" bind:value={duration}>
         {#each choices as minutes (minutes)}
           <option value={minutes}>{durationLabel(minutes, $t)}</option>
@@ -91,18 +92,6 @@
     margin: 0;
     color: var(--text-color);
     overflow-wrap: anywhere;
-  }
-  .requested {
-    margin: 0 0 var(--space-4) 0;
-    font-size: var(--font-size-md);
-    color: var(--text-color);
-  }
-  .label {
-    display: block;
-    margin-bottom: var(--space-1-5);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-color);
   }
   select {
     width: 100%;

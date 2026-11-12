@@ -135,7 +135,7 @@
   }
   th {
     text-align: start;
-    padding: 0.4rem 0.6rem;
+    padding: var(--space-1-5) var(--space-2-5);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
@@ -145,7 +145,7 @@
     white-space: nowrap;
   }
   td {
-    padding: var(--space-2) 0.6rem;
+    padding: var(--space-2) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
     vertical-align: top;

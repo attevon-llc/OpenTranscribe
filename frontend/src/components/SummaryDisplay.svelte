@@ -506,7 +506,7 @@
   .decision-bullet, .follow-up-bullet {
     display: inline-flex;
     color: var(--success-text);
-    margin-top: 0.2rem;
+    margin-top: var(--space-1);
   }
 
   .decision-text, .follow-up-text {
@@ -529,7 +529,7 @@
   .action-item-bullet {
     display: inline-flex;
     color: var(--primary-on-surface);
-    margin-top: 0.2rem;
+    margin-top: var(--space-1);
   }
 
   .action-item-body {
@@ -545,15 +545,15 @@
     flex-wrap: wrap;
     gap: var(--space-3);
     margin-top: var(--space-1);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
   }
 
   .action-item-priority {
     text-transform: uppercase;
     font-weight: var(--font-weight-semibold);
-    padding: 0.05rem 0.4rem;
-    border-radius: 3px;
+    padding: 0.05rem var(--space-1-5);
+    border-radius: var(--radius-sm);
   }
 
   .action-item-priority.priority-high {
@@ -575,8 +575,8 @@
   }
 
   .speaker-item {
-    padding-left: var(--space-3);
-    border-left: 2px solid var(--border-color);
+    padding-inline-start: var(--space-3);
+    border-inline-start: 2px solid var(--border-color);
   }
 
   .speaker-header {
@@ -594,22 +594,22 @@
   .speaker-role {
     color: var(--text-muted);
     font-style: italic;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   .speaker-talktime {
     color: var(--primary-on-surface);
     font-weight: var(--font-weight-medium);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .speaker-points {
-    margin: 0.4rem 0 0;
-    padding-left: var(--space-5);
+    margin: var(--space-1-5) 0 0;
+    padding-inline-start: var(--space-5);
   }
 
   .speaker-points li {
-    margin-bottom: 0.2rem;
+    margin-bottom: var(--space-1);
     line-height: 1.5;
     color: var(--text-secondary);
   }
@@ -625,7 +625,7 @@
   }
 
   .disclaimer-text {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     font-style: italic;
     margin: 0;
@@ -639,27 +639,27 @@
 
   :global(.field-group) {
     margin-bottom: var(--space-6);
-    padding-left: var(--space-4);
+    padding-inline-start: var(--space-4);
   }
 
   :global(.field-group.depth-0) {
-    border-left: 3px solid var(--primary-color);
-    padding-left: var(--space-4);
+    border-inline-start: 3px solid var(--primary-color);
+    padding-inline-start: var(--space-4);
     margin-bottom: var(--space-8);
   }
 
   :global(.field-group.depth-1) {
-    border-left: 2px solid var(--border-color);
-    padding-left: var(--space-3);
+    border-inline-start: 2px solid var(--border-color);
+    padding-inline-start: var(--space-3);
   }
 
   :global(.field-group.depth-2) {
-    border-left: 1px solid var(--border-color);
-    padding-left: var(--space-2);
+    border-inline-start: 1px solid var(--border-color);
+    padding-inline-start: var(--space-2);
   }
 
   :global(.field-title) {
-    font-size: 1.1rem;
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-2);
     color: var(--text-primary);
@@ -672,7 +672,7 @@
 
   :global(.simple-list) {
     margin: var(--space-2) 0;
-    padding-left: var(--space-6);
+    padding-inline-start: var(--space-6);
   }
 
   :global(.simple-list li) {

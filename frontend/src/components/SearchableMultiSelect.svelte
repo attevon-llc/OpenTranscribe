@@ -170,7 +170,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     color: var(--text-color);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -190,7 +190,7 @@
 
   .toggle-text {
     flex: 1;
-    text-align: left;
+    text-align: start;
     color: var(--text-color);
   }
 
@@ -223,8 +223,8 @@
 
   .search-input {
     width: 100%;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.85rem;
+    padding: var(--space-1-5) var(--space-2-5);
+    font-size: var(--font-size-md);
   }
 
   .search-input::placeholder {
@@ -265,9 +265,9 @@
 
   .option-name {
     flex: 1;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     color: var(--text-color);
-    text-align: left;
+    text-align: start;
     overflow: visible;
     white-space: normal;
     overflow-wrap: break-word;
@@ -283,11 +283,11 @@
   .option-count {
     background-color: var(--border-color);
     color: var(--text-secondary);
-    padding: 0.1rem 0.4rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-xl);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-    margin-left: auto;
+    margin-inline-start: auto;
     flex-shrink: 0;
   }
 
@@ -295,6 +295,6 @@
     padding: var(--space-4);
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 </style>

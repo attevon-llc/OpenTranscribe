@@ -79,7 +79,7 @@
   .facts {
     display: grid;
     grid-template-columns: max-content 1fr;
-    gap: 0.35rem var(--space-4);
+    gap: var(--space-1-5) var(--space-4);
     margin: 0 0 var(--space-4) 0;
     font-size: var(--font-size-md);
   }
@@ -99,7 +99,7 @@
   }
   .label {
     display: block;
-    margin-bottom: 0.35rem;
+    margin-bottom: var(--space-1-5);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
@@ -108,7 +108,7 @@
     width: 100%;
   }
   .hint {
-    margin: 0.35rem 0 0;
+    margin: var(--space-1-5) 0 0;
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }

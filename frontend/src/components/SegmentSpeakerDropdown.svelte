@@ -424,7 +424,7 @@
 
     .speaker-dropdown-portal .create-speaker-btn svg {
       color: var(--primary-on-surface);
-      margin-right: var(--space-1);
+      margin-inline-end: var(--space-1);
     }
 
     .speaker-dropdown-portal .suggestion-header {
@@ -433,7 +433,7 @@
 
     .speaker-dropdown-portal .suggestion-btn svg {
       color: var(--warning-text);
-      margin-right: var(--space-1);
+      margin-inline-end: var(--space-1);
     }
 
     .speaker-dropdown-portal .suggestion-btn:hover {
@@ -501,7 +501,7 @@
 
     .speaker-dropdown-portal .suggestion-confidence {
       flex-shrink: 0;
-      margin-left: var(--space-2);
+      margin-inline-start: var(--space-2);
       font-size: var(--font-size-2xs);
       font-weight: var(--font-weight-semibold);
       color: var(--text-secondary);

@@ -101,12 +101,12 @@
     flex-wrap: wrap;
   }
   .redaction-status {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
   .redaction-bar-actions {
     display: flex;
-    gap: 0.9rem;
+    gap: var(--space-3-5);
     align-items: center;
   }
   /* Small, unobtrusive link-style button. Hover shifts to the primary-hover color with
@@ -114,19 +114,19 @@
   .redaction-link-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-1);
     background: none;
     border: none;
-    padding: 0.15rem 0.35rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-sm);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
     cursor: pointer;
     white-space: nowrap;
     transition:
-      color 0.12s ease,
-      background-color 0.12s ease;
+      color var(--duration-fast) ease,
+      background-color var(--duration-fast) ease;
   }
   .redaction-link-btn:hover {
     color: var(--link-hover);

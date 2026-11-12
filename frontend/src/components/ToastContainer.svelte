@@ -38,8 +38,7 @@
 
   @media (max-width: 640px) {
     .toast-container {
-      left: 20px;
-      right: 20px;
+      inset-inline: 20px;
       transform: none;
       width: auto;
     }

@@ -184,10 +184,10 @@
 
   .modal-note {
     margin: 0;
-    padding: 0.6rem var(--space-3);
-    border: 1px solid rgba(245, 158, 11, 0.45);
+    padding: var(--space-2-5) var(--space-3);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
-    background: rgba(245, 158, 11, 0.12);
+    background: rgba(var(--warning-color-rgb), 0.12);
     color: var(--color-text);
     font-size: var(--font-size-xs);
     line-height: 1.5;

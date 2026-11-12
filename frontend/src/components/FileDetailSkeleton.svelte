@@ -173,13 +173,10 @@
   }
 
   .skeleton-player-icon {
-    color: rgba(100, 116, 139, 0.35);
+    color: var(--text-secondary);
+    opacity: 0.35;
     position: relative;
     z-index: var(--z-base);
-  }
-
-  :global([data-theme='dark']) .skeleton-player-icon {
-    color: rgba(148, 163, 184, 0.35);
   }
 
   /* ── Chips row (tags) ── */
@@ -203,7 +200,7 @@
   .skeleton-transcript-list {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: var(--space-5);
     padding: var(--space-3) 0;
   }
 
@@ -247,10 +244,6 @@
     background: var(--skeleton-base);
   }
 
-  :global([data-theme='dark']) .shimmer {
-    background: rgba(148, 163, 184, 0.1);
-  }
-
   .shimmer::after {
     content: '';
     position: absolute;
@@ -272,6 +265,10 @@
       rgba(255, 255, 255, 0.06) 50%,
       transparent 100%
     );
+  }
+
+  :global([dir='rtl']) .shimmer::after {
+    animation-direction: reverse;
   }
 
   @keyframes shimmer-slide {

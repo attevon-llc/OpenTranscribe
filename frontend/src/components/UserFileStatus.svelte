@@ -496,7 +496,7 @@
   }
 
   .recovery-btn, .flower-btn {
-    padding: 0.6rem 1.2rem;
+    padding: var(--space-2-5) var(--space-5);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -507,7 +507,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     box-shadow: var(--shadow-primary);
   }
 
@@ -555,9 +555,9 @@
     content: attr(data-tooltip);
     position: absolute;
     top: calc(100% + 8px);
-    right: 0;
-    background: rgba(0, 0, 0, 0.85);
-    color: var(--text-on-solid);
+    inset-inline-end: 0;
+    background: var(--tooltip-bg);
+    color: var(--tooltip-text);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-regular);
     padding: var(--space-1-5) var(--space-2-5);
@@ -565,18 +565,13 @@
     white-space: nowrap;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.08s ease;
-    z-index: 20;
+    transition: opacity var(--duration-fast) ease;
+    z-index: calc(var(--z-sticky) + 10);
     line-height: 1.3;
   }
 
   .live-status-icon:hover::after {
     opacity: 1;
-  }
-
-  :global([data-theme='dark']) .live-status-icon::after {
-    background: rgba(255, 255, 255, 0.92);
-    color: #111;
   }
 
   .status-cards {
@@ -599,16 +594,12 @@
 
   .status-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-hover);
   }
 
   .status-card.error {
     border-color: var(--error-color);
     background: var(--error-background);
-  }
-
-  :global([data-theme='dark']) .status-card:hover {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
   }
 
   .status-number {
@@ -622,7 +613,7 @@
     /* These labels sit on per-status tinted cards; on the error tint --text-light
      * (an alias of --text-secondary) measures 4.16:1, under WCAG AA. */
     color: var(--text-on-tint);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
   }
 
@@ -645,7 +636,7 @@
     }
 
     .status-card {
-      padding: 0.6rem;
+      padding: var(--space-2-5);
     }
 
     .status-number {
@@ -653,7 +644,7 @@
     }
 
     .status-label {
-      font-size: 0.7rem;
+      font-size: var(--font-size-xs);
     }
   }
 

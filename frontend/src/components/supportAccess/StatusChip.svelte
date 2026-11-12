@@ -6,7 +6,7 @@
    * (#f59e0b on a pale tint is 1.8:1, #f87171 on the dark tint is 4.46:1), which axe flags as
    * serious. Here the text is the theme-aware `*-dark` shade, which is dark in light mode and
    * pale in dark mode, over a faint tint of the same hue. Colours are the app's tokens; only
-   * success (and light-mode warning) have no suitable text-shade token, so those values are spelled out.
+   * light-mode warning has no suitable text-shade token, so that value is spelled out.
    */
   export let tone: 'success' | 'warning' | 'error' | 'info' | 'neutral' = 'neutral';
 </script>
@@ -27,10 +27,7 @@
   }
   .success {
     background: rgba(var(--success-color-rgb), 0.12);
-    color: #047857;
-  }
-  :global([data-theme='dark']) .success {
-    color: #6ee7b7;
+    color: var(--success-text);
   }
   /* --warning-dark (#b45309) is 4.2:1 on the banner's amber tint; amber-800 clears 6:1. */
   .warning {

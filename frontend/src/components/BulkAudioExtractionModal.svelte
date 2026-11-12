@@ -150,7 +150,7 @@
     margin: 0;
     color: var(--text-secondary);
     line-height: 1.6;
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
   }
 
   .file-list-container {
@@ -257,20 +257,20 @@
   }
 
   .comparison-value {
-    font-size: 1.1rem;
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     padding: var(--space-2);
     border-radius: var(--radius-md);
   }
 
   .comparison-value.video {
-    color: #ef4444;
-    background: rgba(239, 68, 68, 0.1);
+    color: var(--error-text);
+    background: var(--error-bg);
   }
 
   .comparison-value.audio {
-    color: #10b981;
-    background: rgba(16, 185, 129, 0.1);
+    color: var(--success-text);
+    background: var(--success-bg);
   }
 
   .comparison-arrow {
@@ -285,10 +285,10 @@
     justify-content: center;
     gap: var(--space-2);
     padding: var(--space-3) var(--space-4);
-    background: rgba(16, 185, 129, 0.1);
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    background: var(--success-bg);
+    border: 1px solid rgba(var(--success-color-rgb), 0.2);
     border-radius: var(--radius-lg);
-    color: #10b981;
+    color: var(--success-text);
     font-weight: var(--font-weight-medium);
     font-size: var(--font-size-md);
   }

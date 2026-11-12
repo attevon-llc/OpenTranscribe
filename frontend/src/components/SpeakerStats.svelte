@@ -413,12 +413,12 @@
   .card-content {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
+    gap: var(--space-0-5);
     min-width: 0;
   }
 
   .card-value {
-    font-size: 1.1rem;
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     line-height: 1.2;
@@ -441,7 +441,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin: 0;
@@ -466,7 +466,7 @@
     height: 24px;
     border-radius: var(--radius-2xl);
     overflow: hidden;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
     margin: var(--space-3) 0 var(--space-4) 0;
     border: 1px solid var(--border-color);
   }
@@ -499,7 +499,7 @@
 
   .speaker-chip:hover {
     border-color: var(--primary-color);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
     transform: scale(1.02);
   }
 
@@ -520,7 +520,7 @@
   .speaker-name-chip {
     font-weight: var(--font-weight-medium);
     color: var(--text-primary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -544,14 +544,14 @@
   .stat-value {
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     line-height: 1.2;
   }
 
   .stat-label {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    margin-top: 0.1rem;
+    margin-top: var(--space-0-5);
   }
 
   /* Additional Metrics Row */
@@ -572,8 +572,8 @@
   .metric-title {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    font-size: 0.85rem;
+    gap: var(--space-1-5);
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin: 0 0 var(--space-2) 0;
@@ -594,21 +594,21 @@
   .metric-list {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
 
   .metric-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.8rem;
-    padding: 0.2rem 0;
+    font-size: var(--font-size-sm);
+    padding: var(--space-1) 0;
   }
 
   .metric-speaker {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     flex: 1;
     min-width: 0;
   }
@@ -653,7 +653,7 @@
     }
 
     .card-label {
-      font-size: 0.7rem;
+      font-size: var(--font-size-xs);
     }
 
     .speaker-chips-grid {
@@ -680,7 +680,7 @@
     }
 
     .section-title {
-      font-size: 0.85rem;
+      font-size: var(--font-size-md);
     }
 
     .talk-time-bar-large {
@@ -694,7 +694,7 @@
 
     .chip-stats {
       flex-direction: column;
-      gap: 0.4rem;
+      gap: var(--space-1-5);
     }
 
     .stat-item {

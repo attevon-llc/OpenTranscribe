@@ -143,14 +143,14 @@
     width: 120px;
     height: 3px;
     overflow: hidden;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: var(--border-color);
   }
 
   .bar-fill {
     width: 40%;
     height: 100%;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: var(--primary-color);
     animation: check-slide 1.2s ease-in-out infinite;
   }
@@ -199,7 +199,7 @@
   }
 
   .notice button {
-    padding: 0.4rem 0.9rem;
+    padding: var(--space-1-5) var(--space-3-5);
     border: 1px solid var(--primary-color);
     border-radius: var(--radius-lg);
     background: transparent;

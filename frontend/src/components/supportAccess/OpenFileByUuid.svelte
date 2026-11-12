@@ -64,7 +64,7 @@
     min-width: 0;
   }
   .error {
-    margin: 0.35rem 0 0;
+    margin: var(--space-1-5) 0 0;
     font-size: var(--font-size-xs);
     color: var(--error-text);
   }

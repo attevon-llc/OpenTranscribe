@@ -1310,13 +1310,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.4375rem var(--space-3);
+    padding: var(--space-2) var(--space-3);
     margin: 0 var(--space-2);
     border: none;
     border-radius: var(--radius-md);
     background-color: transparent;
     color: var(--text-color);
-    text-align: left;
+    text-align: start;
     cursor: pointer;
     transition: background-color var(--duration-fast), color var(--duration-fast);
     font-size: var(--font-size-sm);
@@ -1366,25 +1366,19 @@
   }
 
   /* Pending-work count (currently the account-approval queue). Amber rather than
-     the primary colour so it reads as "needs attention", and it uses explicit
-     light/dark values because the amber tokens are not defined in both themes. */
+     the primary colour so it reads as "needs attention". */
   .nav-badge {
     flex-shrink: 0;
     min-width: 1.25rem;
-    padding: 0 0.35rem;
+    padding: 0 var(--space-1-5);
     border-radius: var(--radius-pill);
-    background: rgba(245, 158, 11, 0.18);
-    color: #b45309;
-    border: 1px solid rgba(245, 158, 11, 0.45);
+    background: rgba(var(--warning-color-rgb), 0.18);
+    color: var(--warning-text);
+    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     text-align: center;
-  }
-
-  :global([data-theme='dark']) .nav-badge {
-    background: rgba(245, 158, 11, 0.22);
-    color: #fbbf24;
   }
 
 
@@ -1417,7 +1411,7 @@
   }
 
   .section-title {
-    font-size: 1.125rem;
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
@@ -1487,7 +1481,7 @@
   }
 
   .btn {
-    padding: 0.6rem 1.2rem;
+    padding: var(--space-2-5) var(--space-5);
     border-radius: var(--radius-xl);
     border: none;
     font-size: var(--font-size-sm);
@@ -1529,7 +1523,7 @@
   }
 
   .form-actions .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   .btn-secondary:hover:not(:disabled) {
@@ -1559,7 +1553,7 @@
     }
 
     .form-actions .btn-secondary {
-      margin-right: 0;
+      margin-inline-end: 0;
     }
   }
 </style>

@@ -133,7 +133,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     padding: 0 var(--space-4);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -159,7 +159,7 @@
   .header-action-btn:hover:not(:disabled) {
     background-color: var(--hover-bg);
     border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
   }
 
   .header-action-btn:active:not(:disabled) {
@@ -178,8 +178,8 @@
     }
 
     .header-action-btn {
-      font-size: 0.8rem;
-      padding: 0 0.6rem;
+      font-size: var(--font-size-sm);
+      padding: 0 var(--space-2-5);
       height: 36px;
     }
 

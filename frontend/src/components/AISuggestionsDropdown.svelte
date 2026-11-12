@@ -223,12 +223,12 @@
     color: var(--primary-on-surface);
     padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-xl);
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
   }
 
   .dropdown-icon {
-    margin-left: auto;
+    margin-inline-start: auto;
     transition: transform var(--duration-base);
     color: var(--text-secondary);
   }
@@ -272,9 +272,9 @@
 
   /* Match comment edit button styling */
   .btn-cancel, .btn-save {
-    padding: 0.4rem 0.8rem;
+    padding: var(--space-1-5) var(--space-3);
     border-radius: var(--radius-xl);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;

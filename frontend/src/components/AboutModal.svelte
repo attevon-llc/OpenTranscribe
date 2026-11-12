@@ -424,7 +424,7 @@
   }
 
   .subtitle {
-    font-size: 1.125rem;
+    font-size: var(--font-size-xl);
     color: var(--primary-on-surface);
     font-weight: var(--font-weight-medium);
     margin: 0 0 var(--space-4) 0;
@@ -463,14 +463,14 @@
 
   .feature-item h4 {
     color: var(--text-color);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
   }
 
   .feature-item p {
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     line-height: 1.5;
     margin: 0;
   }
@@ -503,14 +503,14 @@
 
   .step-content h4 {
     color: var(--text-color);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
   }
 
   .step-content p {
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     line-height: 1.5;
     margin: 0;
   }
@@ -524,7 +524,7 @@
 
   .header-version-number {
     color: var(--text-color);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     white-space: nowrap;
   }
@@ -537,7 +537,7 @@
   .header-version-sep {
     color: var(--text-secondary);
     opacity: 0.5;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   /* On a phone the tagline wraps; give it its own line so the separator
@@ -559,13 +559,13 @@
     border-radius: var(--radius-md);
     background: var(--warning-bg);
     color: var(--warning-text);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     line-height: 1.5;
   }
 
   .header-version-tagline {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   /* Legal / license section (issue #862) */
@@ -585,7 +585,7 @@
   .legal-caveat {
     display: block;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     line-height: 1.5;
     opacity: 0.85;
     margin: 0;
@@ -631,7 +631,7 @@
     gap: var(--space-2);
     color: var(--text-secondary);
     text-decoration: none;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     line-height: 1.5;
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
@@ -642,6 +642,10 @@
     color: var(--primary-on-surface);
     background: var(--hover-color);
     transform: translateX(4px);
+  }
+
+  :global([dir='rtl']) .credit-link:hover {
+    transform: translateX(-4px);
   }
 
   .credit-link svg {
@@ -655,7 +659,7 @@
 
   .credits-footer {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     line-height: 1.6;
     text-align: center;
     margin: 0;

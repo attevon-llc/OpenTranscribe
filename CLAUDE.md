@@ -217,6 +217,23 @@ blamed on the stash window (above) were real.
 
 Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]`. Inside Claude Code: `/fix-frontend`.
 
+## ⚠️ Work order and tools (owner rule, every session and every agent)
+
+1. **Order: code → merge into the integration branch → ONE full test run on the merged tree → merge to master.**
+   Never a full suite per branch, per commit, or after fixing one failure. Fixing a failure re-runs only the
+   failing tests. Screenshot/visual passes run once, at the end of a milestone.
+2. **A lane runs only its commit hook plus the targeted tests for the code it touched.** The commit hook runs only the
+   vitest tests related to the staged files; the full frontend suite runs at push stage and in the one full run.
+3. **Use the tools; never hand-roll a check.** Whole tree: `scripts/lane-check.sh` (every fast guard in parallel, via
+   each hook's own entry), `scripts/safe-precommit.sh run --all-files` (and `--hook-stage pre-push`). Subset:
+   `scripts/safe-precommit.sh run --files <paths>`. Auto-fix first: `ruff check --fix`, `ruff format`, the prettier
+   hook, `eslint --fix`, and the guards' `--tighten`. Never `npx prettier` or `npx stylelint` by hand: `npx` can
+   pull a different version than the hook's pin and reformat the tree.
+4. **The tool misses a pattern? Extend the hook or rule (a ratchet), don't hand-hunt.** The tool flags something it can't
+   auto-fix? Hand-fix that finding only.
+5. Conventional commit messages with ONE scope, no commas (`style(frontend): ...`); the commit-msg hook rejects others
+   only after the whole hook run, which wastes it.
+
 ## Testing
 
 **Local-first.** GitHub Actions runs the unit/API suite (`backend-tests` job, fresh Postgres + CPU-only `requirements-ci.txt`) and vitest as a safety net; the COMPLETE suite needs the live stack and runs locally:

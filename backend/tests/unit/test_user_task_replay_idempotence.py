@@ -240,7 +240,6 @@ def test_every_replayable_user_task_is_pinned_by_a_test_here():
         "propagate_title_rename",
         "regenerate_rename_digests",
         "process_speaker_merge_background",
-        "process_speaker_update_background",
         "download.media_playlist",
     }
     assert pinned <= tr.REPLAYABLE_TASKS

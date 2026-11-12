@@ -97,12 +97,12 @@ REPLAYABLE_TASKS: frozenset[str] = frozenset(
         # the matching value, so a second run converges. Pinned by
         # tests/unit/test_search_availability_task.py.
         "search.availability_reconcile",
-        # Speaker edits and the playlist import (issue #1159); see the idempotence notes in
-        # tests/unit/test_user_task_replay_idempotence.py. The merge consumes the source voiceprint
-        # as soon as it is averaged; the update's matching pass is state-derived but its fixed
-        # point is not proven on a live stack.
+        # The speaker merge and the playlist import (issue #1159); see the idempotence notes in
+        # tests/unit/test_user_task_replay_idempotence.py. The merge stamps the source on the
+        # averaged voiceprint and never averages a stamped source again; the playlist claims each
+        # download before sending it. ``process_speaker_update_background`` is NOT here: no test
+        # shows its retroactive matching reaches a fixed point (see _USER_TASKS_NOT_REPLAYED).
         "process_speaker_merge_background",
-        "process_speaker_update_background",
         "download.media_playlist",
     }
 )

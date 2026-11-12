@@ -427,6 +427,11 @@ def test_every_task_the_pipeline_dispatches_is_replayable_or_excluded_for_a_reas
 #: use retry or acks_late?": a late-acked task may run twice, so it must be idempotent), i.e.
 #: a second path to the same duplicate run.
 _USER_TASKS_NOT_REPLAYED = {
+    "process_speaker_update_background": (
+        "retroactive matching auto-applies speaker labels and rebuilds profile aggregates; "
+        "no evidence yet that a second pass is a fixed point (needs the live stack); the "
+        "committed label is in Postgres, so the loss is a stale search index, not lost data"
+    ),
     "download.media_url": (
         "success path dispatches the GPU transcription pipeline (a replay re-downloads and "
         "double-dispatches it); one-shot credentials are discarded in finally; a download lost "

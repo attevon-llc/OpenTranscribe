@@ -105,7 +105,7 @@
   .export-option-label {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
     cursor: pointer;
     font-size: 0.95rem;
     color: var(--text-color);
@@ -124,23 +124,23 @@
   }
 
   .option-hint {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     font-style: italic;
   }
 
   .export-redaction-note {
     margin-top: var(--space-4);
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     background: rgba(var(--warning-color-rgb), 0.12);
     border-radius: var(--radius-md);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
   .export-redaction-icon {
     vertical-align: -2px;
-    margin-inline-end: 0.3rem;
+    margin-inline-end: var(--space-1);
     color: var(--warning-text);
   }
 

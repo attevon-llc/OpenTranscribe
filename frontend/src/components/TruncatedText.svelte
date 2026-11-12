@@ -54,7 +54,7 @@
     color: var(--primary-on-surface);
     padding: 0;
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     cursor: pointer;
     text-decoration: underline;
     font-weight: var(--font-weight-medium);

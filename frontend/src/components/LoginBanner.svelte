@@ -167,7 +167,7 @@
     border-radius: var(--radius-sm);
     background: var(--warning-bg);
     color: var(--warning-text);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
   }
 

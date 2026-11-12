@@ -989,7 +989,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     color: var(--text-secondary);
-    padding: 0.3rem 0.7rem;
+    padding: var(--space-1) var(--space-3);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-regular);
     cursor: pointer;
@@ -1067,7 +1067,7 @@
 
   .loading-text,
   .empty-text {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0;
   }
@@ -1096,7 +1096,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.35rem 0;
+    padding: var(--space-1-5) 0;
   }
 
   /* Retry control for a facet whose fetch failed — an empty facet must never
@@ -1107,7 +1107,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     color: var(--text-color);
-    padding: 0.3rem 0.8rem;
+    padding: var(--space-1) var(--space-3);
     font-size: var(--font-size-xs);
     cursor: pointer;
     transition: all var(--duration-base) ease;

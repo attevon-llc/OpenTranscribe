@@ -65,7 +65,7 @@
   }
   .label {
     display: block;
-    margin-bottom: 0.35rem;
+    margin-bottom: var(--space-1-5);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);

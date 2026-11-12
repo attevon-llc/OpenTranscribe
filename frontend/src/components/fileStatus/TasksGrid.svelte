@@ -178,7 +178,7 @@
 
   .tasks-table thead th {
     text-align: left;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     font-weight: var(--font-weight-semibold);
     font-size: var(--font-size-xs);
     text-transform: uppercase;
@@ -248,7 +248,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 300px;
-    margin-top: 0.15rem;
+    margin-top: var(--space-0-5);
   }
 
   .task-status-cell {

@@ -153,7 +153,7 @@
 
   .gender-toggle-btn {
     font-size: var(--font-size-md);
-    padding: 3px var(--space-1-5);
+    padding: var(--space-1) var(--space-1-5);
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: transparent;
@@ -363,7 +363,7 @@
 
   .shared-badge {
     display: inline-block;
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-lg);

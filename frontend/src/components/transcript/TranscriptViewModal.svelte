@@ -429,16 +429,16 @@
   .redaction-link-btn {
     background: none;
     border: none;
-    padding: 0.15rem 0.35rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-sm);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--primary-on-surface);
     cursor: pointer;
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-1);
   }
   .redaction-link-btn:disabled {
     opacity: 0.6;
@@ -449,11 +449,11 @@
   .search-nav-bar {
     position: sticky;
     top: 0;
-    z-index: 5;
+    z-index: calc(var(--z-base) + 4);
     display: flex;
     align-items: center;
     gap: var(--space-4);
-    padding: 0.6rem var(--space-6);
+    padding: var(--space-2-5) var(--space-6);
     border-bottom: 1px solid var(--border-color);
     background-color: var(--bg-secondary);
     flex-shrink: 0;
@@ -472,7 +472,7 @@
   .match-legend {
     display: flex;
     gap: var(--space-3);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .legend-item.keyword {
@@ -485,8 +485,8 @@
   .loading-more-hint {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    font-size: 0.8rem;
+    gap: var(--space-1-5);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -498,7 +498,7 @@
   }
 
   .nav-count {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     white-space: nowrap;
   }

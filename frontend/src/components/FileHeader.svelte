@@ -477,7 +477,7 @@
     background: var(--border-color);
     border: 2px solid var(--surface-color);
     position: relative;
-    z-index: 2;
+    z-index: calc(var(--z-base) + 1);
     transition: all var(--duration-slow) ease;
   }
 

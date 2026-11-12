@@ -221,13 +221,13 @@
   }
 
   .metadata-label {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary-color);
   }
 
   .metadata-value {
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
     overflow-wrap: anywhere;
@@ -235,7 +235,7 @@
 
   .model-name-value {
     font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .diarization-disabled-value {
@@ -245,9 +245,9 @@
 
   .fallback-badge {
     display: inline-block;
-    margin-left: 0.4rem;
-    padding: 0.1rem 0.4rem;
-    font-size: 0.7rem;
+    margin-left: var(--space-1-5);
+    padding: var(--space-0-5) var(--space-1-5);
+    font-size: var(--font-size-xs);
     font-family: inherit;
     font-weight: var(--font-weight-medium);
     border-radius: var(--radius-sm);
@@ -314,7 +314,7 @@
     margin-top: var(--space-2);
     font-family: monospace;
     white-space: pre-wrap;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--error-text);
   }
 

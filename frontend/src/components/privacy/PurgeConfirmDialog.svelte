@@ -320,7 +320,7 @@
 
   .warning :global(svg) {
     flex-shrink: 0;
-    margin-top: 0.1875rem;
+    margin-top: var(--space-1);
     color: var(--error-text);
   }
 

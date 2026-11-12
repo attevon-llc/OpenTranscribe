@@ -390,7 +390,7 @@
   .tag-chip {
     background: var(--primary-light);
     color: var(--primary-on-surface);
-    padding: 3px var(--space-2);
+    padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-2xl);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
@@ -421,7 +421,7 @@
   .comment-form-container {
     position: sticky;
     top: 0;
-    z-index: 5;
+    z-index: calc(var(--z-base) + 4);
     padding: var(--space-4) var(--space-2);
     border-bottom: 1px solid var(--border-color);
   }
@@ -440,6 +440,6 @@
     padding: var(--space-4);
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 </style>

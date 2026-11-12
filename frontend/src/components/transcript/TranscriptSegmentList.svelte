@@ -510,7 +510,7 @@
   .reading-progress-fill {
     height: 100%;
     background: var(--primary-color);
-    transition: width 0.1s ease-out;
+    transition: width var(--duration-fast) ease-out;
     border-radius: 0;
   }
 
@@ -683,9 +683,9 @@
   .segment-text :global(span.redacted) {
     filter: blur(5px);
     background: var(--surface-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     cursor: help;
-    transition: filter 0.12s ease;
+    transition: filter var(--duration-fast) ease;
     user-select: none;
   }
   .segment-text :global(span.redacted:hover) {
@@ -701,7 +701,7 @@
     width: 2px;
     height: 20px;
     background: var(--border-hover);
-    border-radius: 1px;
+    border-radius: var(--radius-xs);
   }
 
   .low-confidence-dot {
@@ -811,7 +811,7 @@
     width: 2px;
     background: var(--primary-color);
     opacity: 0.3;
-    border-radius: 1px;
+    border-radius: var(--radius-xs);
   }
 
   .transcript-segment.in-overlap {
@@ -871,7 +871,7 @@
     }
 
     .segment-speaker {
-      font-size: 10px;
+      font-size: var(--font-size-2xs);
       padding: 1px var(--space-1-5);
       white-space: normal;
       max-width: none;

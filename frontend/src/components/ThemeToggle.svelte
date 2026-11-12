@@ -82,7 +82,7 @@
     width: 100%;
     height: 100%;
     background-color: var(--surface-secondary);
-    border-radius: 34px;
+    border-radius: var(--radius-pill);
     transition: all var(--duration-slow) ease;
     /* Ensure strong outline is visible in both modes */
     border: 2px solid var(--control-border);
@@ -132,7 +132,7 @@
     background-color: var(--text-on-solid);
     transition: transform var(--duration-slow) ease;
     box-shadow: var(--shadow-md);
-    z-index: 2;
+    z-index: calc(var(--z-base) + 1);
     transform: translateY(-50%); /* Perfect vertical centering */
   }
 

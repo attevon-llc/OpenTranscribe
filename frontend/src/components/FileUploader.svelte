@@ -930,7 +930,7 @@
     border: 2px solid var(--border-color);
     background: var(--background-color);
     color: var(--text-secondary);
-    transition: all 0.25s ease;
+    transition: all var(--duration-base) ease;
     flex-shrink: 0;
   }
 
@@ -955,7 +955,7 @@
 
   /* Label */
   .step-label {
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     white-space: nowrap;
@@ -979,7 +979,7 @@
     margin: 0 var(--space-1);
     min-width: 12px;
     max-width: 36px;
-    transition: background 0.25s ease;
+    transition: background var(--duration-base) ease;
   }
 
   .step-line.completed { background: var(--primary-color); }
@@ -1029,7 +1029,7 @@
     border: none;
     cursor: pointer;
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     border-radius: var(--radius-md) var(--radius-md) 0 0;
     transition: all var(--duration-base) ease;

@@ -94,7 +94,7 @@
     position: fixed;
     inset-inline: 0;
     top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height) + var(--demo-banner-height));
-    z-index: 1150;
+    z-index: calc(var(--z-navbar) - 50);
     display: flex;
     flex-wrap: wrap;
     align-items: center;

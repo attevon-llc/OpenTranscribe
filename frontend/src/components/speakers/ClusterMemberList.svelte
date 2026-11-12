@@ -349,7 +349,7 @@
 
   /* Outlier badges */
   .outlier-badge {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-lg);
@@ -449,12 +449,12 @@
     }
 
     .outlier-badge {
-      font-size: 9px;
+      font-size: var(--font-size-2xs);
       padding: 1px var(--space-1);
     }
 
     .verified-badge {
-      font-size: 10px;
+      font-size: var(--font-size-2xs);
       padding: 1px var(--space-1);
     }
 
@@ -469,7 +469,7 @@
 
     .btn-cancel,
     .btn-confirm {
-      padding: 5px var(--space-2-5);
+      padding: var(--space-1-5) var(--space-2-5);
       font-size: var(--font-size-xs);
     }
 
@@ -479,7 +479,7 @@
     }
 
     .separator-hint {
-      font-size: 10px;
+      font-size: var(--font-size-2xs);
     }
   }
 

@@ -291,7 +291,7 @@
   }
 
   .suggested-badge {
-    font-size: 10px;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-lg);

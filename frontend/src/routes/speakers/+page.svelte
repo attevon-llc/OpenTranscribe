@@ -377,13 +377,13 @@
   .rename-propagation-indicator {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     margin-inline-start: var(--space-2);
-    padding: var(--space-1) 0.65rem;
+    padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-pill);
     background-color: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
   }
 
@@ -459,7 +459,7 @@
 
   .badge {
     font-size: var(--font-size-2xs);
-    padding: 1px 7px;
+    padding: 1px var(--space-2);
     border-radius: var(--radius-xl);
     background: var(--hover-color);
     color: var(--text-secondary);

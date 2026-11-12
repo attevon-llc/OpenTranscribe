@@ -88,7 +88,7 @@
     position: fixed;
     inset: 0;
     background: transparent;
-    z-index: 999;
+    z-index: calc(var(--z-dropdown) - 1);
   }
 
   .notifications-panel {

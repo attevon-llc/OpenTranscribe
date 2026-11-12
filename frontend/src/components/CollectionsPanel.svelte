@@ -677,7 +677,7 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-1-5);
-    padding: 0.6rem 1.2rem;
+    padding: var(--space-2-5) var(--space-5);
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -807,12 +807,12 @@
 
   .collections-list::-webkit-scrollbar-track {
     background: var(--surface-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .collections-list::-webkit-scrollbar-thumb {
     background: var(--border-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .collections-list::-webkit-scrollbar-thumb:hover {

@@ -198,7 +198,7 @@
 
   .session-note {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   .session-actions {

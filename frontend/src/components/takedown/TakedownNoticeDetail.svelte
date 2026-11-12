@@ -163,7 +163,7 @@
 
   .links th,
   .links td {
-    padding: 0.4rem;
+    padding: var(--space-1-5);
     border-bottom: 1px solid var(--border-color);
     text-align: start;
     vertical-align: top;

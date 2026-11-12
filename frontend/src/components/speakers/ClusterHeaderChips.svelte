@@ -94,12 +94,12 @@
   .gender-chip {
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
-    padding: 3px var(--space-2);
+    padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-xl);
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
     line-height: 1;
     vertical-align: middle;
   }
@@ -155,7 +155,7 @@
     .quality-badge,
     .gender-chip,
     .outlier-chip {
-      font-size: 10px;
+      font-size: var(--font-size-2xs);
       padding: 1px var(--space-1-5);
     }
 
@@ -165,7 +165,7 @@
 
     .promoted-badge {
       max-width: 100px;
-      font-size: 10px;
+      font-size: var(--font-size-2xs);
       padding: 1px var(--space-1-5);
     }
   }

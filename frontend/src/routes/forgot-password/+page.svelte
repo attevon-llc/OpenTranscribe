@@ -16,7 +16,7 @@
 
   async function handleSubmit() {
     if (!email.trim()) {
-      errorMessage = 'Please enter your email address.';
+      errorMessage = $t('auth.validEmailRequired');
       return;
     }
 

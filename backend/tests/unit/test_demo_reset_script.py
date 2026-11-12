@@ -56,6 +56,7 @@ def run(stub, *args, **env):
             "STUB": str(install),
             "DEMO_INSTALL_DIR": str(install),
             "DEMO_SEED_BUNDLE": str(bundle),
+            "DEMO_USER_PASSWORD": "test-only-value",
             **env,
         },
         capture_output=True,
@@ -91,6 +92,23 @@ def test_a_failed_seed_leaves_the_site_closed(stub):
     assert proc.returncode != 0
     assert calls[-1].startswith("docker compose CHAIN run --rm -e DEMO_MODE=false")
     assert not any(c.endswith("nginx workers=0") and " up " in c for c in calls)
+
+
+def test_without_a_demo_password_nothing_is_touched_and_the_fix_is_named(stub):
+    proc, calls = run(stub, DEMO_USER_PASSWORD="")
+
+    assert proc.returncode == 2
+    assert calls == []
+    assert "DEMO_USER_PASSWORD" in proc.stderr and "openssl rand" in proc.stderr
+
+
+def test_the_password_may_come_from_the_install_dirs_env_file(stub):
+    install, _, _ = stub
+    (install / ".env").write_text("DEMO_USER_PASSWORD=from-the-env-file\n")
+
+    proc, calls = run(stub, "--dry-run", DEMO_USER_PASSWORD="")
+
+    assert proc.returncode == 0, proc.stderr
 
 
 def test_without_a_bundle_nothing_is_touched(stub):

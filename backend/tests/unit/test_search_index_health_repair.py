@@ -67,6 +67,15 @@ class _RecordingIndices:
         self._parent.deleted.append(index)
 
 
+class _RecordingCluster:
+    def __init__(self, parent: _RecordingOpenSearch) -> None:
+        self._parent = parent
+
+    def health(self, **kwargs: Any) -> dict[str, Any]:
+        self._parent.health_calls.append(kwargs)
+        return {"status": "yellow", "timed_out": False}
+
+
 class _RecordingOpenSearch:
     """Records which indices were probed, and how."""
 
@@ -85,7 +94,9 @@ class _RecordingOpenSearch:
         self.opened: list[str] = []
         self.force_merged: list[str] = []
         self.deleted: list[str] = []
+        self.health_calls: list[dict[str, Any]] = []
         self.indices = _RecordingIndices(self)
+        self.cluster = _RecordingCluster(self)
 
     def search(self, index: str, body: dict[str, Any]) -> dict[str, Any]:
         if "knn" in body.get("query", {}):
@@ -362,6 +373,7 @@ def test_the_close_reopen_strategy_runs_before_any_destructive_step(corrupt_chun
 
     assert corrupt_chunks.closed == ["transcript_chunks"]
     assert corrupt_chunks.opened == ["transcript_chunks"]
+    assert [c["index"] for c in corrupt_chunks.health_calls] == ["transcript_chunks"]
     assert corrupt_chunks.force_merged == ["transcript_chunks"]
 
 

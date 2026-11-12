@@ -120,7 +120,7 @@ jobs:
           # scripts/guards/) cannot find anything on a PR that touches neither; `--all-files`
           # would still run them, which is what made a backend-only PR pay for npm and vite.
           # The `changes` job's frontend filter includes the same roots, plus the hook config.
-          SKIP: ${{ needs.changes.outputs.frontend != 'true' && env.FRONTEND_ONLY_HOOKS || '' }}
+          SKIP: ${{ needs.changes.outputs.frontend != 'true' && github.event_name != 'workflow_dispatch' && env.FRONTEND_ONLY_HOOKS || '' }}
 
       # ⚠️ BOTH stages, always (issue #688). `pre-commit run` with no --hook-stage runs
       # DEFAULT-stage hooks only, and .pre-commit-config.yaml sets
@@ -142,10 +142,12 @@ jobs:
         if: matrix.stage == 'pre-push'
         run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
         env:
+          # A manual (workflow_dispatch) run never skips them: paths-filter diffs only the
+          # last commit.
           # Needs the backend venv's torch; the backend-tests job runs the same
           # `generate-openapi.py --check` as a required step. The frontend-only hooks are also
           # skipped when the PR does not touch the frontend (see the pre-commit stage above).
-          SKIP: ${{ needs.changes.outputs.frontend != 'true' && format('openapi-snapshot,{0}', env.FRONTEND_ONLY_HOOKS) || 'openapi-snapshot' }}
+          SKIP: ${{ needs.changes.outputs.frontend != 'true' && github.event_name != 'workflow_dispatch' && format('openapi-snapshot,{0}', env.FRONTEND_ONLY_HOOKS) || 'openapi-snapshot' }}
 
       # Negative control for the mypy hook (issue #1271). The hook runs in an isolated virtualenv;
       # a typed package missing from its additional_dependencies makes mypy treat it as Any and
@@ -381,6 +383,11 @@ jobs:
           mkdir -p "$HOME/apt-archives/partial"
           sudo apt-get update
           sudo apt-get -o Dir::Cache::archives="$HOME/apt-archives" install -y ffmpeg libpq-dev libimage-exiftool-perl
+          # apt ran as root: `lock` is root-owned 0640 and `partial/` is _apt-owned 0700, so
+          # the cache post-step's tar (running as the runner user) fails with "Permission
+          # denied" and only logs "Failed to save", leaving every run cold.
+          # https://github.com/actions/cache#readme
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/apt-archives"
 
       - name: Install Python dependencies (CPU wheels)
         run: |
@@ -682,6 +689,11 @@ jobs:
           mkdir -p "$HOME/apt-archives/partial"
           sudo apt-get update
           sudo apt-get -o Dir::Cache::archives="$HOME/apt-archives" install -y ffmpeg libpq-dev libimage-exiftool-perl
+          # apt ran as root: `lock` is root-owned 0640 and `partial/` is _apt-owned 0700, so
+          # the cache post-step's tar (running as the runner user) fails with "Permission
+          # denied" and only logs "Failed to save", leaving every run cold.
+          # https://github.com/actions/cache#readme
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/apt-archives"
 
       - name: Install Python dependencies (CPU wheels)
         run: |
@@ -782,4 +794,5 @@ jobs:
 
       # Dead code (knip) and import cycles (madge) are not a step here: they are the
       # `guard-knip` pre-commit hook (push stage), which the pre-commit job above runs on every
-      # PR, so local `--hook-stage pre-push` and CI run the same command.
+      # PR that touches the frontend (skipped on backend-only PRs), so local
+      # `--hook-stage pre-push` and CI run the same command.

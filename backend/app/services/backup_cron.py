@@ -5,6 +5,7 @@ Pure functions, shared by the backup, media-mirror and directory-sync schedulers
 
 from __future__ import annotations
 
+import itertools
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -125,3 +126,26 @@ def is_due(schedule: str, last_run_at: str | None, now: datetime | None = None) 
         cursor += timedelta(minutes=1)
         scanned += 1
     return False
+
+
+#: Horizon scanned by :func:`max_interval`; two months covers every monthly schedule.
+_INTERVAL_SCAN_DAYS = 62
+
+
+def max_interval(schedule: str, start: datetime | None = None) -> timedelta:
+    """Return the longest gap between consecutive fires of ``schedule``.
+
+    Scans ``_INTERVAL_SCAN_DAYS`` minute by minute from ``start`` (default now, UTC).
+    Raises ``ValueError`` for a malformed cron or one that fires fewer than twice in the
+    horizon (so no interval exists).
+    """
+    cron = parse_cron(schedule)
+    cursor = (start or datetime.now(UTC)).replace(second=0, microsecond=0)
+    fires = []
+    for _ in range(_INTERVAL_SCAN_DAYS * 1440):
+        if _matches(cursor, cron):
+            fires.append(cursor)
+        cursor += timedelta(minutes=1)
+    if len(fires) < 2:
+        raise ValueError(f"Cron fires fewer than twice in {_INTERVAL_SCAN_DAYS} days: {schedule!r}")
+    return max(b - a for a, b in itertools.pairwise(fires))

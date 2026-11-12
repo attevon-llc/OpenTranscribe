@@ -113,6 +113,7 @@ files_uploaded_total: Counter
 backup_runs_total: Counter
 backup_last_success_timestamp_seconds: Gauge
 backup_last_status: Gauge
+backup_stale_after_seconds: Gauge
 media_mirror_runs_total: Counter
 media_mirror_last_success_timestamp_seconds: Gauge
 media_mirror_last_status: Gauge
@@ -153,6 +154,7 @@ def _register() -> None:
     global backup_runs_total
     global backup_last_success_timestamp_seconds
     global backup_last_status
+    global backup_stale_after_seconds
     global media_mirror_runs_total
     global media_mirror_last_success_timestamp_seconds
     global media_mirror_last_status
@@ -335,6 +337,12 @@ def _register() -> None:
     # Media mirror (issue #242) — same sample-at-scrape pattern as the backup
     # collectors above (state persisted to SystemSettings by the download-queue
     # worker, projected here by app.core.backup_metrics.update_media_mirror_metrics).
+    backup_stale_after_seconds = Gauge(
+        "backup_stale_after_seconds",
+        "Age in seconds past which the last successful backup counts as stale: 1.5x the "
+        "longest gap of backup.schedule; 0 when backups are disabled or the schedule is invalid.",
+        multiprocess_mode="mostrecent",
+    )
     media_mirror_runs_total = Counter(
         "media_mirror_runs_total",
         "Scheduled/manual media mirror runs by result (synced from the DB at scrape).",

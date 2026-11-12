@@ -263,24 +263,120 @@ tests:
         exp_alerts: []
 
   - interval: 1m
-    name: backup older than 36 hours fires
+    name: 5xx share above five percent is still pending before for 10m has elapsed
+    input_series:
+      - series: 'http_requests_total{method="GET", route="/x", status="500"}'
+        values: '0+10x30'
+      - series: 'http_requests_total{method="GET", route="/x", status="200"}'
+        values: '0+90x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: HttpServerErrorRate
+        exp_alerts: []
+
+  - interval: 1m
+    name: 5xx share of exactly five percent stays quiet
+    input_series:
+      - series: 'http_requests_total{method="GET", route="/x", status="500"}'
+        values: '0+5x30'
+      - series: 'http_requests_total{method="GET", route="/x", status="200"}'
+        values: '0+95x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HttpServerErrorRate
+        exp_alerts: []
+
+  - interval: 1m
+    name: a high 5xx share on near-idle traffic stays quiet
+    input_series:
+      - series: 'http_requests_total{method="GET", route="/x", status="500"}'
+        values: '0+1x30'
+      - series: 'http_requests_total{method="GET", route="/x", status="200"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HttpServerErrorRate
+        exp_alerts: []
+
+  - interval: 1m
+    name: backup older than the daily stale threshold fires
     input_series:
       - series: 'backup_last_success_timestamp_seconds{}'
         values: '3600x3100'
+      - series: 'backup_stale_after_seconds{}'
+        values: '129600x3100'
     alert_rule_test:
       - eval_time: 50h
         alertname: BackupStale
         exp_alerts:
           - exp_labels: {severity: high}
             exp_annotations:
-              summary: "No successful database backup in over 36 hours"
+              summary: "No successful database backup within 1.5x the backup schedule interval"
               description: "The last successful backup was 2d 1h 0m 0s ago."
+
+  - interval: 1m
+    name: backup 35 hours old stays quiet
+    input_series:
+      - series: 'backup_last_success_timestamp_seconds{}'
+        values: '3600x3100'
+      - series: 'backup_stale_after_seconds{}'
+        values: '129600x3100'
+    alert_rule_test:
+      - eval_time: 36h
+        alertname: BackupStale
+        exp_alerts: []
+
+  - interval: 1m
+    name: backup past the threshold is pending until for 15m has elapsed
+    input_series:
+      - series: 'backup_last_success_timestamp_seconds{}'
+        values: '3600x3100'
+      - series: 'backup_stale_after_seconds{}'
+        values: '129600x3100'
+    alert_rule_test:
+      # age crosses 36h at 37h; 5 minutes later it is pending, not firing
+      - eval_time: 37h5m
+        alertname: BackupStale
+        exp_alerts: []
+      - eval_time: 37h20m
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels: {severity: high}
+            exp_annotations:
+              summary: "No successful database backup within 1.5x the backup schedule interval"
+              description: "The last successful backup was 1d 12h 20m 0s ago."
+
+  - interval: 1m
+    name: weekly schedule is judged against its own interval
+    input_series:
+      - series: 'backup_last_success_timestamp_seconds{}'
+        values: '3600x3100'
+      - series: 'backup_stale_after_seconds{}'
+        values: '907200x3100'
+    alert_rule_test:
+      - eval_time: 50h
+        alertname: BackupStale
+        exp_alerts: []
+
+  - interval: 1m
+    name: disabled backups stay quiet after an earlier success
+    input_series:
+      - series: 'backup_last_success_timestamp_seconds{}'
+        values: '3600x3100'
+      - series: 'backup_stale_after_seconds{}'
+        values: '0x3100'
+    alert_rule_test:
+      - eval_time: 50h
+        alertname: BackupStale
+        exp_alerts: []
 
   - interval: 1m
     name: never-succeeded backup stays quiet
     input_series:
       - series: 'backup_last_success_timestamp_seconds{}'
         values: '0x3100'
+      - series: 'backup_stale_after_seconds{}'
+        values: '129600x3100'
     alert_rule_test:
       - eval_time: 50h
         alertname: BackupStale

@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 from app.core.metrics import backup_last_status
 from app.core.metrics import backup_last_success_timestamp_seconds
 from app.core.metrics import backup_runs_total
+from app.core.metrics import backup_stale_after_seconds
 from app.core.metrics import media_mirror_last_run_objects
 from app.core.metrics import media_mirror_last_status
 from app.core.metrics import media_mirror_last_success_timestamp_seconds
@@ -111,6 +112,8 @@ def update_backup_metrics(db: Session | None = None) -> None:
             backup_config.KEY_LAST_SUCCESS_AT,
             backup_config.KEY_RUNS_SUCCESS,
             backup_config.KEY_RUNS_FAILURE,
+            backup_config.KEY_ENABLED,
+            backup_config.KEY_SCHEDULE,
         ]
         if db is not None:
             vals = sss.get_settings_map(db, keys)
@@ -134,6 +137,7 @@ def update_backup_metrics(db: Session | None = None) -> None:
             with contextlib.suppress(ValueError, TypeError):
                 backup_last_status.set(1 if json.loads(raw_result).get("ok") else 0)
         _sync_run_counters(vals)
+        backup_stale_after_seconds.set(backup_config.stale_after_seconds(vals))
     except _SCRAPE_ERRORS as exc:  # scrape must never fail on DB issues
         logger.warning("Backup metric sampling skipped: %s", exc, exc_info=True)
 

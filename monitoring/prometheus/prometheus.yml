@@ -63,8 +63,8 @@ scrape_configs:
       - targets:
           - alertmanager:9093
 
-  # Load-test exporters (docker-compose.load-monitoring.yml, --with-load-monitoring). Without that
-  # overlay these targets are simply down; no rule alerts on them, like the worker targets above.
+  # Load-test exporters (the `load-monitoring` profile of docker-compose.monitoring.yml, enabled with
+  # COMPOSE_PROFILES=load-monitoring). Without that profile these targets are simply down; no rule alerts on them, like the worker targets above.
   - job_name: postgres-exporter
     static_configs:
       - targets:

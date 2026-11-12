@@ -144,7 +144,7 @@
   }
 
   .source-badge {
-    margin-left: var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
     padding: 0.05rem var(--space-1-5);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
@@ -172,7 +172,7 @@
   }
 
   .edit-link {
-    margin-left: var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
     border: none;
     background: none;
     padding: 0;
@@ -183,16 +183,16 @@
   }
 
   .details {
-    border-left: 2px solid var(--border-color);
-    margin-left: var(--space-1);
-    padding-left: var(--space-2-5);
+    border-inline-start: 2px solid var(--border-color);
+    margin-inline-start: var(--space-1);
+    padding-inline-start: var(--space-2-5);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
 
   .details ul {
     margin: var(--space-1) 0;
-    padding-left: var(--space-4);
+    padding-inline-start: var(--space-4);
   }
 
   .conflict-note {

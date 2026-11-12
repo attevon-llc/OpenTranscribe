@@ -691,7 +691,7 @@
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
-    margin-left: var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
     white-space: nowrap;
     transition: color var(--duration-base) ease;
   }

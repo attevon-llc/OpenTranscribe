@@ -427,7 +427,7 @@
     padding: var(--space-1) var(--space-2);
     font-size: var(--font-size-sm);
     cursor: pointer;
-    margin-left: var(--space-2);
+    margin-inline-start: var(--space-2);
   }
 
   .collection-add-button:disabled {

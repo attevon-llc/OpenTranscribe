@@ -79,8 +79,8 @@
   }
 
   .topic-item {
-    border-left: 3px solid var(--border-color);
-    padding-left: var(--space-5);
+    border-inline-start: 3px solid var(--border-color);
+    padding-inline-start: var(--space-5);
     padding-bottom: var(--space-4);
   }
 
@@ -125,7 +125,7 @@
 
   .topic-points {
     margin: var(--space-3) 0 0 0;
-    padding-left: var(--space-5);
+    padding-inline-start: var(--space-5);
   }
 
   .topic-points li {
@@ -148,7 +148,7 @@
 
   @media (max-width: 768px) {
     .topic-item {
-      padding-left: var(--space-4);
+      padding-inline-start: var(--space-4);
     }
 
     .topic-heading {

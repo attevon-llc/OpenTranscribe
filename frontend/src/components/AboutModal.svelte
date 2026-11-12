@@ -644,6 +644,10 @@
     transform: translateX(4px);
   }
 
+  :global([dir='rtl']) .credit-link:hover {
+    transform: translateX(-4px);
+  }
+
   .credit-link svg {
     flex-shrink: 0;
     opacity: 0.7;

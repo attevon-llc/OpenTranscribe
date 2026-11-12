@@ -1316,7 +1316,7 @@
     border-radius: var(--radius-md);
     background-color: transparent;
     color: var(--text-color);
-    text-align: left;
+    text-align: start;
     cursor: pointer;
     transition: background-color var(--duration-fast), color var(--duration-fast);
     font-size: var(--font-size-sm);
@@ -1523,7 +1523,7 @@
   }
 
   .form-actions .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   .btn-secondary:hover:not(:disabled) {
@@ -1553,7 +1553,7 @@
     }
 
     .form-actions .btn-secondary {
-      margin-right: 0;
+      margin-inline-end: 0;
     }
   }
 </style>

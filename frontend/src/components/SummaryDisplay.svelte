@@ -575,8 +575,8 @@
   }
 
   .speaker-item {
-    padding-left: var(--space-3);
-    border-left: 2px solid var(--border-color);
+    padding-inline-start: var(--space-3);
+    border-inline-start: 2px solid var(--border-color);
   }
 
   .speaker-header {
@@ -605,7 +605,7 @@
 
   .speaker-points {
     margin: var(--space-1-5) 0 0;
-    padding-left: var(--space-5);
+    padding-inline-start: var(--space-5);
   }
 
   .speaker-points li {
@@ -639,23 +639,23 @@
 
   :global(.field-group) {
     margin-bottom: var(--space-6);
-    padding-left: var(--space-4);
+    padding-inline-start: var(--space-4);
   }
 
   :global(.field-group.depth-0) {
-    border-left: 3px solid var(--primary-color);
-    padding-left: var(--space-4);
+    border-inline-start: 3px solid var(--primary-color);
+    padding-inline-start: var(--space-4);
     margin-bottom: var(--space-8);
   }
 
   :global(.field-group.depth-1) {
-    border-left: 2px solid var(--border-color);
-    padding-left: var(--space-3);
+    border-inline-start: 2px solid var(--border-color);
+    padding-inline-start: var(--space-3);
   }
 
   :global(.field-group.depth-2) {
-    border-left: 1px solid var(--border-color);
-    padding-left: var(--space-2);
+    border-inline-start: 1px solid var(--border-color);
+    padding-inline-start: var(--space-2);
   }
 
   :global(.field-title) {
@@ -672,7 +672,7 @@
 
   :global(.simple-list) {
     margin: var(--space-2) 0;
-    padding-left: var(--space-6);
+    padding-inline-start: var(--space-6);
   }
 
   :global(.simple-list li) {

@@ -267,6 +267,10 @@
     );
   }
 
+  :global([dir='rtl']) .shimmer::after {
+    animation-direction: reverse;
+  }
+
   @keyframes shimmer-slide {
     100% {
       transform: translateX(100%);

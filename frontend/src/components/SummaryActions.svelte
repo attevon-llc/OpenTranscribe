@@ -248,7 +248,7 @@
     flex: 1;
     min-width: 0;
     cursor: pointer;
-    padding-right: var(--space-10);
+    padding-inline-end: var(--space-10);
   }
 
   .prompt-select:disabled {

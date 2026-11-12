@@ -190,7 +190,7 @@
 
   .toggle-text {
     flex: 1;
-    text-align: left;
+    text-align: start;
     color: var(--text-color);
   }
 
@@ -267,7 +267,7 @@
     flex: 1;
     font-size: var(--font-size-body);
     color: var(--text-color);
-    text-align: left;
+    text-align: start;
     overflow: visible;
     white-space: normal;
     overflow-wrap: break-word;
@@ -287,7 +287,7 @@
     border-radius: var(--radius-xl);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-    margin-left: auto;
+    margin-inline-start: auto;
     flex-shrink: 0;
   }
 

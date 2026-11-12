@@ -228,7 +228,7 @@
   }
 
   .dropdown-icon {
-    margin-left: auto;
+    margin-inline-start: auto;
     transition: transform var(--duration-base);
     color: var(--text-secondary);
   }

@@ -137,8 +137,8 @@
     margin-bottom: var(--space-2);
     min-width: 300px;
     max-width: 500px;
-    border-left: 4px solid var(--toast-solid);
     border: 1px solid var(--border-color);
+    border-inline-start: 4px solid var(--toast-solid);
   }
 
   .toast-icon {

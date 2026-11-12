@@ -628,7 +628,7 @@
 
   .error-container {
     flex-direction: row;
-    text-align: left;
+    text-align: start;
   }
 
   .error-icon {

@@ -555,7 +555,7 @@
     content: attr(data-tooltip);
     position: absolute;
     top: calc(100% + 8px);
-    right: 0;
+    inset-inline-end: 0;
     background: var(--tooltip-bg);
     color: var(--tooltip-text);
     font-size: var(--font-size-2xs);

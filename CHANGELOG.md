@@ -45,6 +45,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Fixed
 
+- **Worker loss no longer drops a playlist import or a speaker edit.** `download.media_playlist`, `process_speaker_update_background` and `process_speaker_merge_background` are now re-sent when their worker dies mid-run. A replayed playlist adopts the placeholders it had already created and queues each download once, and a speaker merge consumes the absorbed speaker's voiceprint the moment it is averaged, so a replay cannot average it in twice. (#1159)
 - **Legal holds are honoured everywhere.** A hold placed while a recording is being deleted keeps it; erasures, voiceprint purges, corpus injection, speaker matching, shared-path repointing and identity re-verification skip held or quarantined recordings; the retention preview excludes them.
 - **Erasure.** Account erasure no longer destroys media of recordings the person no longer owns or the speakers of recordings handed to an administrator; the last-super-administrator rule is rechecked on every run; the erasure receipt records speaker ids correctly and covers LLM token counters.
 - **Voiceprint purges** interrupted between their two passes are recorded and finished by a scheduled check (reason `interrupted` if they never reached the second pass).

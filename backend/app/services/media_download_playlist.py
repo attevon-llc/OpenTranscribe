@@ -52,6 +52,24 @@ def _check_existing_youtube_video(
     return result
 
 
+def _is_unstarted_playlist_placeholder(existing: MediaFile, playlist_info: dict[str, Any]) -> bool:
+    """Whether ``existing`` is a placeholder of THIS playlist whose download was never dispatched.
+
+    A ``download.media_playlist`` run lost with its worker (issue #1159) is replayed. Its
+    placeholders that were committed before the loss would otherwise be skipped as duplicates
+    and never downloaded, so the replay adopts them. A placeholder whose download was already
+    dispatched (``download_dispatched``) or that has moved on from QUEUED is left alone.
+    """
+    meta = existing.metadata_raw or {}
+    return (
+        existing.status == FileStatus.QUEUED
+        and not existing.storage_path
+        and bool(meta.get("from_playlist"))
+        and meta.get("playlist_id") == playlist_info.get("playlist_id")
+        and not meta.get("download_dispatched")
+    )
+
+
 def _process_playlist_videos(
     db: Session,
     user_id: int,
@@ -102,6 +120,11 @@ def _process_playlist_videos(
             )
         else:
             existing_video = None
+
+        if existing_video and _is_unstarted_playlist_placeholder(existing_video, playlist_info):
+            logger.info(f"Resuming undispatched playlist placeholder for: {video_title}")
+            created_media_files.append(existing_video)
+            continue
 
         if existing_video:
             logger.info(f"Video already exists in library: {video_title} (YouTube ID: {video_id})")

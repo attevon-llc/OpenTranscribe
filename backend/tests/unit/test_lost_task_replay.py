@@ -427,25 +427,11 @@ def test_every_task_the_pipeline_dispatches_is_replayable_or_excluded_for_a_reas
 #: use retry or acks_late?": a late-acked task may run twice, so it must be idempotent), i.e.
 #: a second path to the same duplicate run.
 _USER_TASKS_NOT_REPLAYED = {
-    "process_speaker_merge_background": (
-        "not idempotent: step 1 averages the source voiceprint into the survivor and only a "
-        "later step deletes the source document, so a replay after the average averages it in "
-        "a second time (see test_user_task_replay_idempotence.py)"
-    ),
-    "process_speaker_update_background": (
-        "retroactive matching auto-applies speaker labels and rebuilds profile aggregates; "
-        "no evidence yet that a second pass is a fixed point (needs the live stack); the "
-        "committed label is in Postgres, so the loss is a stale search index, not lost data"
-    ),
     "download.media_url": (
         "success path dispatches the GPU transcription pipeline (a replay re-downloads and "
         "double-dispatches it); one-shot credentials are discarded in finally; a download lost "
         "with its worker leaves the file DOWNLOADING, which recover_stuck_downloading_files "
         "already resets and re-queues"
-    ),
-    "download.media_playlist": (
-        "creates one placeholder MediaFile per video and fans out download.media_url; a replay "
-        "after a partial fan-out would create the placeholders again"
     ),
     "download.prepare_media": (
         "builds an ephemeral derived asset and pushes the presigned URL to the waiting browser "

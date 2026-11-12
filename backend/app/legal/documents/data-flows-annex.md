@@ -90,7 +90,7 @@ it receives. Attevon is not a party to that relationship.
 
 The web app loads fonts and the FFmpeg WebAssembly module from the install itself
 (`frontend/static/`). Its Content Security Policy limits connections to the install's own origin
-(`frontend/kit.config.js`, `nginx/site.conf.template`). Links to GitHub or Hugging Face in the
+(`frontend/svelte.config.js`, `nginx/site.conf.template`). Links to GitHub or Hugging Face in the
 UI are ordinary links followed only if clicked.
 
 ## 5. Keeping this annex true

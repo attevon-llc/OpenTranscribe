@@ -226,7 +226,10 @@ def assert_no_held_files(db: Session, user_id: int) -> None:
     deleting the offending upload — and deleting an abusive *account* is the commonest
     reason to have quarantined its files in the first place, so blocking on it would
     turn a takedown into a shield. Only the unattended retention sweep refuses to touch
-    a file under review (``tasks/cleanup._select_expired_files``).
+    a file under review (``tasks/cleanup._select_expired_files``): it deletes by age, on
+    nobody's decision. The scheduled erase after a removal's grace period
+    (``removed_member_service``) is unattended too, but it carries out an administrator's
+    decision about this account, so it follows this rule, not the sweep's.
 
     There is deliberately **no override argument**: an argument that skips the guard is
     the guard's own failure mode. The supported path is to lift the hold first —

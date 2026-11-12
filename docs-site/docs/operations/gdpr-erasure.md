@@ -110,10 +110,17 @@ search index is re-pointed at the new owner, so search and chat keep finding the
   starts at the removal. While it runs, other people cannot reach the member's personal files
   through collection shares. An administrator can restore the account inside the period
   (Settings, Removed members, Restore, or `POST /api/admin/removed-members/{ledger_uuid}/restore`),
-  which cancels the erase and switches the account back on; what was handed to the organization
-  stays with it. After the period the hourly job runs the account erasure; a file under a legal
-  hold or quarantine is never erased (the request is refused up front while one exists, and a
-  hold placed during the wait leaves that file and keeps the account). The same four notices as
+  which cancels the erase and switches the account back on if it was on when it was removed (an
+  account an administrator had already switched off stays off); what was handed to the
+  organization stays with it. Only a super_admin can restore a super_admin's account, or an
+  account a super_admin removed. After the period the hourly job runs the account erasure; a file
+  under a legal hold is never erased (the request is refused up front while one exists, and a
+  hold placed during the wait leaves that file and keeps the account). Quarantine alone does not
+  stop the erase, exactly as for an immediate account deletion: quarantine is a review state, the
+  usual reason to quarantine an account's uploads is the abuse it is being removed for, and it is
+  not a ground for keeping personal data under GDPR Art. 17(3). A takedown that must keep its
+  evidence places a legal hold (the takedown default), and that wins. A notice that cannot be
+  sent, or whose recipients cannot be looked up, never blocks the erase. The same four notices as
   above go to the administrator who removed the account and to the admins of its organizations.
   An account in no organization (every community-edition account) is still erased at once.
 - **Member removal** (managed edition): the platform calls the same transfer before it removes the

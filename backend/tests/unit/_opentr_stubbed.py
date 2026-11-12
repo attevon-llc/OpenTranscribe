@@ -38,3 +38,18 @@ def run_opentr_stubbed(
         timeout=120,
     )
     return proc, log.read_text().splitlines() if log.exists() else []
+
+
+def make_port_probe(tmp_path: Path, *, busy: bool) -> Path:
+    """An ``OT_PORT_PROBE`` stub: logs every port it is asked about, then answers.
+
+    The image-tag tests are about tags, so the port-collision guard must not read the real
+    host (another project holding a shifted port used to fail them).
+    """
+    probe = tmp_path / "port_probe.sh"
+    probe.write_text(
+        f'#!/usr/bin/env bash\necho "$1" >> "{tmp_path}/probed_ports"\nexit {0 if busy else 1}\n',
+        encoding="utf-8",
+    )
+    probe.chmod(0o755)
+    return probe

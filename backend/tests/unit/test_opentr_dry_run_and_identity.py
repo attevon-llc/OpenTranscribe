@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._opentr_stubbed import make_port_probe
 from tests.unit._shell_extract import REPO_ROOT
 from tests.unit._shell_extract import extract_function
 
@@ -43,6 +44,7 @@ def _scratch(tmp_path: Path, name: str = "proj") -> tuple[Path, dict[str, str]]:
         "HOME": str(tmp_path),
         "DOCKER_LOG": str(tmp_path / "docker.log"),
         "OPENTR_NO_ENV_LINK": "1",
+        "OT_PORT_PROBE": str(make_port_probe(tmp_path, busy=False)),
     }
     return root, env
 

@@ -77,3 +77,15 @@ def test_missing_packages_fail_closed(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_package_outside_the_tooling_set_is_not_scanned(tmp_path: Path) -> None:
     assert guard.main(_argv(_repo(tmp_path, BAD, package="benchmarks"))) == 2
+
+
+@pytest.mark.unit
+def test_warm_cache_still_catches_a_cross_module_type_change(tmp_path: Path) -> None:
+    root = _repo(tmp_path, "def f() -> int:\n    return 1\n")
+    (root / "scripts/guards/user.py").write_text("from m import f\n\nx: int = f()\n")
+    assert guard.scripts_errors(root) == {}
+    assert (root / ".cache/ot-guards/scripts-mypy/mypy").is_dir()
+    (root / "scripts/guards/m.py").write_text("def f() -> str:\n    return 'a'\n")
+    assert guard.scripts_errors(root) == {"scripts/guards/user.py::assignment": 1}
+    (root / "scripts/guards/m.py").write_text("def f() -> int:\n    return 1\n")
+    assert guard.scripts_errors(root) == {}

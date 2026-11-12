@@ -145,3 +145,22 @@ def test_wrong_mypy_pin_exits_two(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_tree_without_hidden_errors_passes(tmp_path: Path) -> None:
     assert guard.main(_argv(_repo(tmp_path, "x: int = 1\n"))) == 0
+
+
+@pytest.mark.unit
+def test_warm_cache_catches_a_cross_module_change_and_drops_deleted_files(
+    tmp_path: Path,
+) -> None:
+    root = _repo(tmp_path, "def f() -> int:\n    return 1\n")
+    (root / "backend" / "user.py").write_text("from m import f\n\nx: int = f()  # type: ignore\n")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    assert guard.hidden_errors(root) == {}
+    assert (root / ".cache/ot-guards/hidden-mypy/mypy").is_dir()
+    (root / "backend" / "m.py").write_text("def f() -> str:\n    return 'a'\n")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    assert guard.hidden_errors(root) == {"backend/user.py::assignment": 1}
+    (root / "backend" / "m.py").write_text("def f() -> int:\n    return 1\n")
+    assert guard.hidden_errors(root) == {}
+    subprocess.run(["git", "rm", "-q", "-f", "backend/user.py"], cwd=root, check=True)
+    assert guard.hidden_errors(root) == {}
+    assert not (root / ".cache/ot-guards/hidden-mypy/tree/backend/user.py").exists()

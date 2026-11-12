@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
+import os
 import sys
 from collections import Counter
+from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from audit_tests.allowlist import (
@@ -18,6 +22,43 @@ from audit_tests.allowlist import (
 from audit_tests.findings import CATEGORIES, Finding
 from audit_tests.scan import scan_file
 from audit_tests.selftest import run_selftest, selftest_main
+
+_ORIG_WALK = ast.walk
+
+
+def _memoized_walk(node: ast.AST) -> Iterator[ast.AST]:
+    """``ast.walk`` with the result cached on the node (same nodes, same BFS order).
+
+    Profiling (TEST_SPEED_PLAN appendix) put 80% of a whole-tree scan in the detectors each
+    re-walking the same function subtree, some nested inside a walk. Trees live for one
+    ``scan_file`` call and are never mutated, so the cache is dropped with the tree.
+    """
+    cached: tuple[ast.AST, ...] | None = node.__dict__.get('_ot_walk')
+    if cached is None:
+        cached = tuple(_ORIG_WALK(node))
+        node.__dict__['_ot_walk'] = cached
+    return iter(cached)
+
+
+def install_memoized_walk() -> None:
+    vars(ast)['walk'] = _memoized_walk
+
+
+def _scan_one(job: tuple[Path, Path]) -> list[Finding]:
+    return scan_file(*job)
+
+
+def scan_tree(paths: list[Path], root: Path) -> list[Finding]:
+    """Findings for ``paths`` in input order. ``OT_AUDIT_WORKERS`` (default min(8, cpus)) caps the
+    process pool (``concurrent.futures``); 1 scans serially. ``map`` preserves order, so the
+    output is identical either way."""
+    workers = int(os.environ.get('OT_AUDIT_WORKERS') or min(8, os.cpu_count() or 1))
+    jobs = [(p, root) for p in paths]
+    if workers <= 1 or len(jobs) < 2:
+        return [f for job in jobs for f in _scan_one(job)]
+    with ProcessPoolExecutor(max_workers=workers, initializer=install_memoized_walk) as pool:
+        return [f for found in pool.map(_scan_one, jobs, chunksize=16) for f in found]
+
 
 # ----------------------------------------------------------------------------------- main
 
@@ -36,6 +77,7 @@ def main(description: str) -> int:
     )
     args = ap.parse_args()
 
+    install_memoized_walk()
     if args.selftest:
         return selftest_main()
     if args.root is None:
@@ -47,11 +89,12 @@ def main(description: str) -> int:
     # A broken detector reports zero findings, so never let the tree scan speak without it.
     selftest_failures = run_selftest(verbose=False)
 
-    findings: list[Finding] = []
-    for path in sorted(args.root.rglob('*.py')):
-        if args.no_e2e and 'e2e' in path.parts:
-            continue
-        findings.extend(scan_file(path, args.root))
+    paths = [
+        path
+        for path in sorted(args.root.rglob('*.py'))
+        if not (args.no_e2e and 'e2e' in path.parts)
+    ]
+    findings = scan_tree(paths, args.root)
 
     if args.category:
         findings = [f for f in findings if f.category == args.category]

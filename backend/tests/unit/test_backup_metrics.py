@@ -132,3 +132,27 @@ def test_stale_after_is_zero_when_disabled_or_schedule_invalid():
         _stale_after_seconds({backup_config.KEY_ENABLED: "true", backup_config.KEY_SCHEDULE: "x"})
         == 0.0
     )
+
+
+def test_each_schedule_is_scanned_once(monkeypatch):
+    """The metrics refresh asks for the stale age every minute; the two-month scan behind it
+    runs once per schedule string, an unusable schedule (Feb 31 never fires) included."""
+    calls: list[str] = []
+    scan = backup_config.max_interval
+
+    def counting(schedule: str, start=None):
+        calls.append(schedule)
+        return scan(schedule, start)
+
+    monkeypatch.setattr(backup_config, "max_interval", counting)
+    schedules = ["17 4 * * *", "17 4 * * 1", "0 0 31 2 *"]
+    for _refresh in range(3):
+        for schedule in schedules:
+            backup_config.stale_after_seconds(
+                {backup_config.KEY_ENABLED: "true", backup_config.KEY_SCHEDULE: schedule}
+            )
+
+    assert calls == schedules
+    assert backup_config.stale_after_seconds(
+        {backup_config.KEY_ENABLED: "true", backup_config.KEY_SCHEDULE: "17 4 * * 1"}
+    ) == pytest.approx(7 * 86400 * 1.5)

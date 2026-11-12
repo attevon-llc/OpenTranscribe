@@ -6,6 +6,7 @@ The S3 secret is AES-256-GCM encrypted at rest and never leaves this module exce
 
 from __future__ import annotations
 
+import functools
 import os
 from collections.abc import Mapping
 from pathlib import Path
@@ -241,7 +242,17 @@ def stale_after_seconds(vals: Mapping[str, str | None]) -> float:
     """
     if not bool_value(vals, KEY_ENABLED, constants.DEFAULT_BACKUP_ENABLED):
         return 0.0
-    schedule = vals.get(KEY_SCHEDULE) or constants.DEFAULT_BACKUP_SCHEDULE
+    return _stale_after_for_schedule(vals.get(KEY_SCHEDULE) or constants.DEFAULT_BACKUP_SCHEDULE)
+
+
+@functools.lru_cache(maxsize=32)
+def _stale_after_for_schedule(schedule: str) -> float:
+    """:func:`stale_after_seconds` for an enabled schedule, scanned once per schedule string.
+
+    ``max_interval`` walks two months minute by minute (about 0.1 s of CPU) and the metrics
+    refresh asks every minute, so the answer, an unusable schedule's 0 included, is kept. The
+    scan starts at the first call; only a day-of-month or month schedule can depend on that.
+    """
     try:
         return max_interval(schedule).total_seconds() * STALE_INTERVAL_FACTOR
     except ValueError:

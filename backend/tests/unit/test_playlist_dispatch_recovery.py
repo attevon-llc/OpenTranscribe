@@ -25,6 +25,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.media_download_playlist import DOWNLOAD_DISPATCHED_KEY
 from app.services.media_download_playlist import DOWNLOAD_DUE_AT_KEY
+from app.services.media_download_playlist import DOWNLOAD_OPTIONS_KEY
 from app.services.media_download_playlist import DOWNLOAD_STARTED_KEY
 from app.services.media_download_playlist import DOWNLOAD_TASK_ID_KEY
 from app.tasks import media_playlist_processing as mpp
@@ -65,12 +66,14 @@ def test_the_first_send_carries_the_task_id_its_claim_recorded(sent):
     mf = MediaFile(id=7, source_url="https://x", title="t", metadata_raw={})
 
     before = int(time.time())
-    assert mpp._dispatch_playlist_video_task(mf, 1, db, countdown=40) is True
+    assert mpp._dispatch_playlist_video_task(mf, 1, db, countdown=40, video_quality="720p") is True
 
     sql, params = _compiled(statements[0])
     stamp = _stamp(params)
     assert " ? " in sql, "the first claim is conditional on there being no claim yet"
     assert stamp[DOWNLOAD_DISPATCHED_KEY] is True
+    assert stamp[DOWNLOAD_OPTIONS_KEY] == sent[0]["kwargs"]
+    assert stamp[DOWNLOAD_OPTIONS_KEY]["video_quality"] == "720p"
     assert before + 40 <= stamp[DOWNLOAD_DUE_AT_KEY] <= int(time.time()) + 40
     (call,) = sent
     assert call["task_id"] == stamp[DOWNLOAD_TASK_ID_KEY]
@@ -80,7 +83,13 @@ def test_the_first_send_carries_the_task_id_its_claim_recorded(sent):
 def test_a_resend_takes_over_only_the_claim_it_found_and_reuses_its_task_id(sent):
     statements: list[Any] = []
     db = _session(statements, returns=7)
-    meta = {DOWNLOAD_DISPATCHED_KEY: True, DOWNLOAD_TASK_ID_KEY: "t-1", DOWNLOAD_DUE_AT_KEY: 100}
+    options = {"collection_ids": None, "tag_names": ["t"], "video_quality": "720p"}
+    meta = {
+        DOWNLOAD_DISPATCHED_KEY: True,
+        DOWNLOAD_TASK_ID_KEY: "t-1",
+        DOWNLOAD_DUE_AT_KEY: 100,
+        DOWNLOAD_OPTIONS_KEY: options,
+    }
     mf = MediaFile(id=7, uuid=uuid_module.uuid4(), user_id=3, source_url="https://x")
     mf.metadata_raw = meta
 
@@ -91,7 +100,8 @@ def test_a_resend_takes_over_only_the_claim_it_found_and_reuses_its_task_id(sent
     assert "->> " in sql and "AS BIGINT) = " in sql
     assert 100 in params.values() and FileStatus.QUEUED in params.values()
     assert _stamp(params)[DOWNLOAD_TASK_ID_KEY] == "t-1"
-    assert sent == [{"args": ["https://x", 3, str(mf.uuid)], "task_id": "t-1"}]
+    assert _stamp(params)[DOWNLOAD_OPTIONS_KEY] == options, "the claim keeps the import's options"
+    assert sent == [{"args": ["https://x", 3, str(mf.uuid)], "kwargs": options, "task_id": "t-1"}]
 
 
 def test_a_resend_whose_claim_was_taken_sends_nothing(sent):

@@ -26,6 +26,8 @@ DOWNLOAD_DISPATCHED_KEY = "download_dispatched"
 DOWNLOAD_TASK_ID_KEY = "download_task_id"
 DOWNLOAD_DUE_AT_KEY = "download_due_at"
 DOWNLOAD_STARTED_KEY = "download_started"
+#: The import's per-download options (quality, collections, tags), so a re-send keeps them.
+DOWNLOAD_OPTIONS_KEY = "download_options"
 
 
 def _check_existing_youtube_video(

@@ -290,8 +290,8 @@ should import `app.api` or `app.services` at module scope.
   non-trivial ones make their side effect idempotent: the speaker merge stamps `merged_from`
   on the averaged voiceprint in the same write, the speaker update's matching pass skips a row
   its same match already labeled (`speaker_update._carries_this_match`), and the playlist claims
-  each download with one conditional UPDATE before it sends it (task id + due time in
-  `metadata_raw`). A claim lost before its send is re-sent by `system.health_check` under the same
+  each download with one conditional UPDATE before it sends it (task id, due time and the import's
+  download options in `metadata_raw`). A claim lost before its send is re-sent by `system.health_check` under the same
   task id once `PLAYLIST_DISPATCH_GRACE_SECONDS` past due; `youtube_processing._starts_claimed_download`
   starts only one delivery per id. A download has no Task row: its liveness is a
   `task_liveness` lease keyed `download_run_id(file_uuid)` (`run_heartbeat(..., chained=False)`,

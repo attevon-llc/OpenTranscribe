@@ -33,6 +33,7 @@ from app.models.user import User
 from app.services.formatting_service import FormattingService
 from app.services.media_download_playlist import DOWNLOAD_DISPATCHED_KEY
 from app.services.media_download_playlist import DOWNLOAD_DUE_AT_KEY
+from app.services.media_download_playlist import DOWNLOAD_OPTIONS_KEY
 from app.services.media_download_playlist import DOWNLOAD_TASK_ID_KEY
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.youtube_processing import process_youtube_url_task
@@ -147,6 +148,7 @@ def _claim_playlist_dispatch(
     *,
     countdown: int,
     task_id: str,
+    options: dict[str, Any],
     previous_due_at: int | None = None,
 ) -> bool:
     """Claim a placeholder's download for sending, unless a run already did; True if this run did.
@@ -173,6 +175,7 @@ def _claim_playlist_dispatch(
         DOWNLOAD_DISPATCHED_KEY: True,
         DOWNLOAD_TASK_ID_KEY: task_id,
         DOWNLOAD_DUE_AT_KEY: int(time.time()) + countdown,
+        DOWNLOAD_OPTIONS_KEY: options,
     }
     claim = (
         update(MediaFile)
@@ -189,22 +192,23 @@ def _claim_playlist_dispatch(
 def resend_stranded_playlist_download(db: Session, media_file: MediaFile) -> bool:
     """Send a claimed playlist download again, under its claimed task id; True if sent.
 
-    For the health check's stranded-claim recovery. The import's per-download overrides (quality,
-    collections, tags) are not kept: collections and tags were applied when the placeholder was
-    created, and the download falls back to the owner's saved quality.
+    For the health check's stranded-claim recovery. The import's per-download options (quality,
+    collections, tags) recorded with the claim are sent again unchanged.
     """
     meta = media_file.metadata_raw or {}
     task_id = str(meta[DOWNLOAD_TASK_ID_KEY])
+    options = dict(meta.get(DOWNLOAD_OPTIONS_KEY) or {})
     args = [str(media_file.source_url), int(media_file.user_id), str(media_file.uuid)]
     if not _claim_playlist_dispatch(
         db,
         int(media_file.id),
         countdown=0,
         task_id=task_id,
+        options=options,
         previous_due_at=int(meta[DOWNLOAD_DUE_AT_KEY]),
     ):
         return False
-    process_youtube_url_task.apply_async(args=args, task_id=task_id)
+    process_youtube_url_task.apply_async(args=args, kwargs=options, task_id=task_id)
     return True
 
 
@@ -270,7 +274,7 @@ def _dispatch_playlist_video_task(
 
         task_id = str(uuid.uuid4())
         if not _claim_playlist_dispatch(
-            db, int(media_file.id), countdown=countdown, task_id=task_id
+            db, int(media_file.id), countdown=countdown, task_id=task_id, options=kwargs
         ):
             logger.info(f"Download for '{title}' was already dispatched by another run")
             return False

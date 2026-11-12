@@ -379,19 +379,6 @@
     color: var(--error-text);
   }
 
-  .section-title {
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    margin: 0;
-    color: var(--text-color);
-  }
-
-  .section-desc {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    margin: var(--space-1) 0 var(--space-4) 0;
-  }
-
   .overview-section {
     margin-bottom: var(--space-4);
   }

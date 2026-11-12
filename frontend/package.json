@@ -30,6 +30,8 @@
     "lint:fix": "eslint . --fix",
     "lint:types": "eslint -c eslint.typed.config.js src",
     "lint:css": "python3 ../scripts/guards/check_stylelint_ratchet.py",
+    "format": "prettier --write --ignore-unknown .",
+    "format:check": "prettier --check --ignore-unknown .",
     "check:i18n": "node scripts/check-i18n-parity.mjs && node scripts/check-i18n-unused.mjs",
     "test:audit": "node scripts/audit-frontend-tests.mjs",
     "test:audit:selftest": "node scripts/audit-frontend-tests.mjs --selftest"

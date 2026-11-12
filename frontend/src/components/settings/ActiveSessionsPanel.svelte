@@ -136,7 +136,7 @@
   <div class="panel-header">
     <div>
       <h4 class="card-title">{$t('settings.sessions.title')}</h4>
-      <p class="panel-description">{$t('settings.sessions.description')}</p>
+      <p class="settings-panel-text">{$t('settings.sessions.description')}</p>
     </div>
     <button
       type="button"
@@ -149,7 +149,7 @@
   </div>
 
   {#if loading}
-    <p class="panel-status">{$t('settings.sessions.loading')}</p>
+    <p class="settings-panel-text">{$t('settings.sessions.loading')}</p>
   {:else if sessions.length === 0}
     <EmptyState
       title={$t('settings.sessions.empty')}
@@ -157,7 +157,7 @@
       padding="1.5rem"
     />
   {:else}
-    <p class="panel-status">{$t('settings.sessions.count', { count: total })}</p>
+    <p class="settings-panel-text">{$t('settings.sessions.count', { count: total })}</p>
     <div class="table-scroll">
       <table class="sessions-table">
         <thead>
@@ -191,7 +191,7 @@
     </div>
   {/if}
 
-  <p class="panel-note">{$t('settings.sessions.readOnlyNote')}</p>
+  <p class="settings-panel-text settings-panel-note panel-note">{$t('settings.sessions.readOnlyNote')}</p>
 
   <div class="panel-actions">
     <button
@@ -237,18 +237,7 @@
     color: var(--text-color);
   }
 
-  .panel-description,
-  .panel-status,
   .panel-note {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-    margin: 0;
-  }
-
-  .panel-note {
-    padding: var(--space-2) var(--space-2-5);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
     background-color: var(--background-color);
   }
 

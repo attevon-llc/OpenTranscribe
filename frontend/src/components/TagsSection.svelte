@@ -45,10 +45,10 @@
     <div class="tags-preview">
       {#if file?.tags && file.tags.length > 0}
         {#each file.tags.slice(0, 3) as tag (tag.uuid)}
-          <span class="tag-chip">{tag.name}</span>
+          <span class="preview-chip">{tag.name}</span>
         {/each}
         {#if file.tags.length > 3}
-          <span class="tag-chip more">{$t('tags.moreCount', { count: file.tags.length - 3 })}</span>
+          <span class="preview-chip more">{$t('tags.moreCount', { count: file.tags.length - 3 })}</span>
         {/if}
       {:else}
         <span class="no-tags">{$t('tags.noTags')}</span>
@@ -67,7 +67,7 @@
         {#if file?.tags && file.tags.length > 0}
           <div class="tags-readonly">
             {#each file.tags as tag (tag.uuid)}
-              <span class="tag-chip">{tag.name}</span>
+              <span class="preview-chip">{tag.name}</span>
             {/each}
           </div>
         {:else}
@@ -102,17 +102,7 @@
     flex-wrap: wrap;
   }
 
-  .tag-chip {
-    background: var(--primary-light);
-    color: var(--primary-on-surface);
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-2xl);
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-medium);
-    white-space: nowrap;
-  }
-
-  .tag-chip.more {
+  .preview-chip.more {
     background: var(--surface-secondary);
     color: var(--text-secondary);
   }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import './support-access.css';
   import { BREAK_GLASS_SUMMARY_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher, tick } from 'svelte';
   import { t } from '$stores/locale';
@@ -122,7 +123,7 @@
       />
       <p class="max">{$t('supportAccess.breakGlass.maxDuration')}</p>
       <div class="field">
-        <label for="bg-ticket" class="label">{$t('supportAccess.breakGlass.ticket')}</label>
+        <label for="bg-ticket" class="support-field-label">{$t('supportAccess.breakGlass.ticket')}</label>
         <input
           id="bg-ticket"
           type="text"
@@ -145,7 +146,7 @@
       })}
     </p>
     <form id="break-glass-confirm" class="confirm-form" on:submit|preventDefault={confirm}>
-      <label for="bg-typed" class="label" id="bg-typed-label">
+      <label for="bg-typed" class="support-field-label" id="bg-typed-label">
         {$t('supportAccess.breakGlass.confirmTypeName', { target: target.label })}
       </label>
       <input
@@ -230,13 +231,6 @@
   }
   .field {
     margin-bottom: var(--space-4);
-  }
-  .label {
-    display: block;
-    margin-bottom: var(--space-1-5);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-color);
   }
   input[type='text'] {
     width: 100%;

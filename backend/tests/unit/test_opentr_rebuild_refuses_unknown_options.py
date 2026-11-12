@@ -9,37 +9,20 @@ can never touch a real container.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[3]
-OPENTR = REPO / "opentr.sh"
+from tests.unit._opentr_stubbed import OPENTR
+from tests.unit._opentr_stubbed import run_opentr_stubbed
 
 pytestmark = pytest.mark.skipif(not OPENTR.exists(), reason="opentr.sh not present")
 
 
 def _run(tmp_path: Path, *args: str) -> tuple[subprocess.CompletedProcess[str], str]:
-    stubs = tmp_path / "bin"
-    stubs.mkdir()
-    log = tmp_path / "docker.log"
-    for tool in ("docker", "nvidia-smi"):
-        stub = stubs / tool
-        stub.write_text(f'#!/bin/sh\necho "{tool} $*" >> "{log}"\nexit 0\n')
-        stub.chmod(0o755)
-    env = {**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}"}
-    proc = subprocess.run(
-        ["bash", str(OPENTR), *args],
-        cwd=REPO,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    calls = log.read_text() if log.exists() else ""
-    return proc, calls
+    proc, lines = run_opentr_stubbed(tmp_path, *args)
+    return proc, "\n".join(lines)
 
 
 @pytest.mark.unit

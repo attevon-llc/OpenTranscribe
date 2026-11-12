@@ -115,10 +115,10 @@
     {#if items.length === 0}
       <p class="hint" data-testid="removed-members-empty">{$t('settings.removedMembers.empty')}</p>
     {:else}
-      <ul class="list">
+      <ul class="settings-item-list">
         {#each items as item (item.ledger_uuid)}
-          <li class="row" data-testid="removed-member-row">
-            <div class="what">
+          <li class="settings-item-row" data-testid="removed-member-row">
+            <div class="settings-item-text">
               <strong>{item.display_name ?? $t('settings.removedMembers.unnamed')}</strong>
               <span class="hint">
                 {$t('settings.removedMembers.erasedAt', {
@@ -185,32 +185,5 @@
   .error {
     margin: 0;
     color: var(--error-text);
-  }
-
-  .list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-4);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: var(--surface-color);
-  }
-
-  .what {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-0-5);
-    color: var(--text-color);
   }
 </style>

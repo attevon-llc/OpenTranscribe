@@ -6,6 +6,7 @@
 </script>
 
 <script lang="ts">
+  import './support-access.css';
   import { SUPPORT_LEVEL_KEYS } from '$lib/i18n/keyMaps';
   import { t } from '$stores/locale';
   import SearchableSelect from '$components/ui/SearchableSelect.svelte';
@@ -90,7 +91,7 @@
       </button>
     </div>
   {:else}
-    <span id="{idPrefix}-target-label" class="label">
+    <span id="{idPrefix}-target-label" class="support-field-label">
       {targetKind === 'organization'
         ? $t('supportAccess.request.searchOrganization')
         : $t('supportAccess.request.searchUser')}
@@ -126,7 +127,7 @@
 </fieldset>
 
 <div class="field">
-  <label for="{idPrefix}-duration" class="label">{$t('supportAccess.request.duration')}</label>
+  <label for="{idPrefix}-duration" class="support-field-label">{$t('supportAccess.request.duration')}</label>
   <select id="{idPrefix}-duration" bind:value={duration}>
     {#each durations as minutes (minutes)}
       <option value={minutes}>{durationLabel(minutes, $t)}</option>
@@ -135,7 +136,7 @@
 </div>
 
 <div class="field">
-  <label for="{idPrefix}-reason" class="label">{$t('supportAccess.request.reason')}</label>
+  <label for="{idPrefix}-reason" class="support-field-label">{$t('supportAccess.request.reason')}</label>
   <textarea
     id="{idPrefix}-reason"
     rows="4"
@@ -157,13 +158,6 @@
     min-width: 0;
   }
   legend,
-  .label {
-    display: block;
-    margin-bottom: var(--space-1-5);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-color);
-  }
   .radio {
     display: inline-flex;
     align-items: center;

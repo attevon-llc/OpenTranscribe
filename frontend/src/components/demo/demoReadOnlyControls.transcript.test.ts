@@ -96,8 +96,9 @@ describe('segment Edit', () => {
     const { container } = render(TranscriptSegmentList, { props: segmentProps });
     const buttons = container.querySelectorAll<HTMLButtonElement>('.edit-button');
     expect(buttons).toHaveLength(1);
-    expect(buttons[0].disabled).toBe(true);
-    expect(buttons[0].getAttribute('title')).toBe(TOOLTIP);
+    const [button] = buttons;
+    expect(button?.disabled).toBe(true);
+    expect(button?.getAttribute('title')).toBe(TOOLTIP);
   });
 });
 

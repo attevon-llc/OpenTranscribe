@@ -104,7 +104,7 @@
 </script>
 
 <div class="audit-panel">
-  <p class="panel-description">{$t('settings.authAudit.description')}</p>
+  <p class="settings-panel-text">{$t('settings.authAudit.description')}</p>
 
   <div class="controls">
     <label class="category-label" for="auth-audit-category">
@@ -121,7 +121,7 @@
   </div>
 
   {#if loading}
-    <p class="panel-status">{$t('settings.authAudit.loading')}</p>
+    <p class="settings-panel-text">{$t('settings.authAudit.loading')}</p>
   {:else if entries.length === 0}
     <EmptyState
       title={$t('settings.authAudit.empty')}
@@ -175,7 +175,7 @@
     {/if}
   {/if}
 
-  <p class="panel-note">{$t('settings.authAudit.redactionNote')}</p>
+  <p class="settings-panel-text settings-panel-note panel-note">{$t('settings.authAudit.redactionNote')}</p>
 </div>
 
 <style>
@@ -185,18 +185,7 @@
     gap: var(--space-3);
   }
 
-  .panel-description,
-  .panel-status,
   .panel-note {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-    margin: 0;
-  }
-
-  .panel-note {
-    padding: var(--space-2) var(--space-2-5);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
     background: var(--color-bg-secondary);
   }
 

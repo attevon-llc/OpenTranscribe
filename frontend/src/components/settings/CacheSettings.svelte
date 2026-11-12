@@ -166,34 +166,12 @@
 </div>
 
 <style>
-  .section-title {
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    margin: 0;
-    color: var(--text-color);
-  }
-
   .section-desc {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    margin: var(--space-1) 0 var(--space-4) 0;
     line-height: 1.4;
   }
 
   .status-block {
     margin: 0 0 var(--space-4) 0;
-    padding: var(--space-2-5) var(--space-3);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background-color: var(--background-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .status-item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    flex-wrap: wrap;
   }
 
   .field-group {
@@ -201,12 +179,6 @@
     flex-direction: column;
     gap: var(--space-1);
     margin-bottom: var(--space-4);
-  }
-
-  .field-label {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    font-weight: var(--font-weight-medium);
   }
 
   .inline-input {
@@ -225,11 +197,6 @@
   .number-input {
     width: 70px;
     text-align: center;
-  }
-
-  .run-confirm-text {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
   }
 
   .button-row .btn-secondary {

@@ -151,7 +151,7 @@
       </FormField>
 
       {#if grantsNothing}
-        <p class="warning-banner" role="alert">
+        <p class="warning-note warning-banner" role="alert">
           {$t('settings.groupMappings.grantsNothingWarning')}
         </p>
       {/if}
@@ -192,12 +192,6 @@
   }
 
   .warning-banner {
-    margin: 0;
-    padding: var(--space-2-5) var(--space-3);
-    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
-    border-radius: var(--radius-md);
-    background: rgba(var(--warning-color-rgb), 0.12);
-    color: var(--text-color);
     font-size: var(--font-size-sm);
     line-height: 1.45;
   }

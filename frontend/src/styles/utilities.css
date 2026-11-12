@@ -67,6 +67,29 @@
   border-radius: var(--radius-xs);
 }
 
+/* A small warning note in a form or dialog: warning-tinted box, body-colour text. */
+.warning-note {
+  margin: 0;
+  padding: var(--space-2-5) var(--space-3);
+  border: 1px solid rgba(var(--warning-color-rgb), 0.45);
+  border-radius: var(--radius-md);
+  background: rgba(var(--warning-color-rgb), 0.12);
+  color: var(--text-color);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+/* A small chip in a collapsed section's header preview (file tags, comment count). */
+.preview-chip {
+  background: var(--primary-light);
+  color: var(--primary-on-surface);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-2xl);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
 /* Pill-shaped 30px control chip (gallery count chip, sort button). */
 .pill-chip {
   display: inline-flex;

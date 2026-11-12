@@ -64,6 +64,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - Dependencies refreshed (backend and frontend); the HTTPS proxy runs `nginx:1.31.8-alpine3.24`.
 - `opentr.sh` commands now exit with the status of what they ran, and `remove`, `purge`, `health`, `build` and the rebuild commands refuse arguments they ignore.
 - **Internal.** Narrowed about 600 broad exception handlers and removed every `type: ignore` in app code; new guards for file size, complexity, unused CSS, dependencies, index access and type-aware lint; Stylelint, a style-token guard and usage-derived contrast tests; CI runs the backend suite in 8 shards; the backend coverage floor is 86; test and release scripts reorganised into packages.
+- Settings panels, the support-access dialogs and a few section notes take their repeated style rules from shared stylesheets, and `npm run format` / `format:check` run the pinned Prettier.
 
 ### Removed
 

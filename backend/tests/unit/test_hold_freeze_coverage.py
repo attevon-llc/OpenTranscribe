@@ -454,15 +454,15 @@ ROUTE_DESTROY_GUARDED: dict[str, tuple[str, str]] = {
         _DESTROY + "; an organization hold defers the organization erasure",
     ),
     _r("admin.py::delete_admin_user"): (
-        "services/user_deletion_service.py::_assert_no_held_files",
+        "services/user_deletion_service.py::assert_no_held_files",
         _DESTROY + "; refused while the account owns or commented on a held file",
     ),
     _r("users_admin_edit.py::delete_user"): (
-        "services/user_deletion_service.py::_assert_no_held_files",
+        "services/user_deletion_service.py::assert_no_held_files",
         _DESTROY + "; refused while the account owns or commented on a held file",
     ),
     _r("scim/users.py::delete_user"): (
-        "services/user_deletion_service.py::_assert_no_held_files",
+        "services/user_deletion_service.py::assert_no_held_files",
         _DESTROY + "; refused while the account owns or commented on a held file",
     ),
     _r("privacy.py::purge_my_data"): (
@@ -889,6 +889,7 @@ ROUTE_NOT_FILE_CONTENT: dict[str, str] = {
     },
     _r("admin_maintenance.py::start_data_integrity_check"): _ORPHANS,
     _r("admin_storage_integrity.py::start_storage_orphan_sweep"): _ORPHANS,
+    _r("admin_removed_members.py::restore_removed_member"): _ERASURE_CONTROL,
     _r("org_admin_erasure.py::cancel_scheduled_erasure"): _ERASURE_CONTROL,
     _r("org_admin_ownership.py::transfer_ownership"): (
         "hands the organization's owner role to another admin: writes the organization row only"

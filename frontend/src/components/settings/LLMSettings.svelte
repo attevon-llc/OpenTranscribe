@@ -785,29 +785,8 @@
     margin: 0 auto;
   }
 
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-4);
-    padding-bottom: var(--space-2);
-    border-bottom: 1px solid var(--border-color);
-  }
-
   .section-header h4 {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin: 0;
     font-size: 1.125rem;
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
-  .config-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
   }
 
   .config-item {
@@ -828,12 +807,6 @@
     margin-bottom: var(--space-1);
   }
 
-  .config-provider {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    margin-bottom: var(--space-1);
-  }
-
   .config-url {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
@@ -846,17 +819,6 @@
     align-items: center;
     gap: var(--space-2);
     flex-shrink: 0;
-  }
-
-  .config-status {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1-5) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    width: fit-content;
   }
 
   .delete-all-section {
@@ -908,13 +870,6 @@
 
   :global([data-theme='dark']) .admin-badge {
     background: rgba(var(--warning-color-rgb), 0.2);
-  }
-
-  .shared-by {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-    font-style: italic;
-    margin-top: var(--space-0-5);
   }
 
   .toggle-label {

@@ -30,12 +30,17 @@ export const englishLookupLocale = () => ({
   t: readable((key: string) => english[key] ?? key),
 });
 
-/** Returns the key followed by the JSON of the options, so tests can assert the params passed. */
-export const keyWithOptionsLocale = () => ({
-  t: readable((key: string, opts?: Record<string, unknown>) =>
+/**
+ * Returns the key followed by the JSON of the options, so tests can assert the params passed.
+ * `code` is the `locale` store value; `null` omits the store for components that never read it.
+ */
+export const keyWithOptionsLocale = (options: { code?: string | null } = {}) => {
+  const { code = null } = options;
+  const t = readable((key: string, opts?: Record<string, unknown>) =>
     opts ? `${key} ${JSON.stringify(opts)}` : key
-  ),
-});
+  );
+  return code === null ? { t } : { t, locale: readable(code) };
+};
 
 /** Returns the key immediately followed by the JSON of the vars. */
 export const keyWithVarsLocale = () => {

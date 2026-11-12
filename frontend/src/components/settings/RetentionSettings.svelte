@@ -502,19 +502,6 @@
 </div>
 
 <style>
-  .section-title {
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    margin: 0;
-    color: var(--text-color);
-  }
-
-  .section-desc {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    margin: var(--space-1) 0 var(--space-4) 0;
-  }
-
   .fields-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -523,20 +510,8 @@
     margin-bottom: var(--space-3);
   }
 
-  .field-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
   .toggle-field {
     justify-content: flex-end;
-  }
-
-  .field-label {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    font-weight: var(--font-weight-medium);
   }
 
   .inline-input {
@@ -643,27 +618,7 @@
 
   /* Status */
   .status-block {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
     margin: var(--space-3) 0;
-    padding: var(--space-2-5) var(--space-3);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background-color: var(--background-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .status-item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    flex-wrap: wrap;
-  }
-
-  .run-confirm-text {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
   }
 
   /* Preview */

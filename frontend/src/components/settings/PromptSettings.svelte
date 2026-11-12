@@ -848,41 +848,9 @@
 
   /* New button styles to match LLM provider page */
 
-  .config-status {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1-5) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    width: fit-content;
-  }
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-4);
-    padding-bottom: var(--space-2);
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .section-header h4 {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
-  }
-
   /* Additional styles to match LLM provider structure */
-  .config-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
+  .section-header h4 {
+    font-size: 1.125rem;
   }
 
   .config-item {
@@ -940,12 +908,6 @@
     text-align: start;
     pointer-events: none;
     transform: translate(-50%, 8px);
-  }
-
-  .config-provider {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    margin-bottom: var(--space-1);
   }
 
   .config-url {

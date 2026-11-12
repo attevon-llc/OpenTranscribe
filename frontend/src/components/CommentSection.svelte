@@ -300,7 +300,7 @@
     <h4 class="section-heading">{$t('comments.title')}</h4>
     <div class="comments-preview">
       {#if comments && comments.length > 0}
-        <span class="tag-chip">{comments.length} {comments.length !== 1 ? $t('comments.comments') : $t('comments.comment')}</span>
+        <span class="preview-chip">{comments.length} {comments.length !== 1 ? $t('comments.comments') : $t('comments.comment')}</span>
       {:else}
         <span class="no-comments">{$t('comments.noComments')}</span>
       {/if}
@@ -385,16 +385,6 @@
     display: flex;
     gap: var(--space-2);
     align-items: center;
-  }
-
-  .tag-chip {
-    background: var(--primary-light);
-    color: var(--primary-on-surface);
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-2xl);
-    font-size: var(--font-size-2xs);
-    font-weight: var(--font-weight-medium);
-    white-space: nowrap;
   }
 
   .no-comments {

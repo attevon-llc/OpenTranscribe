@@ -64,7 +64,7 @@ describe('RemovedMembersCard', () => {
     render(RemovedMembersCard);
 
     const row = await screen.findByTestId('removed-member-row');
-    const text = row.querySelector('.what .hint')?.textContent?.trim() ?? '';
+    const text = row.querySelector('.settings-item-text .hint')?.textContent?.trim() ?? '';
     expect(text).toMatch(/^Erased at .*2026/);
     expect(text).not.toContain(': ');
   });

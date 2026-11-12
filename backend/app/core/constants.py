@@ -686,6 +686,12 @@ GDPR_ORG_MEMBER_ERASURE_DELAY_HOURS_KEY = "gdpr.org_member_erasure_delay_hours"
 DEFAULT_GDPR_ORG_ERASURE_DELAY_HOURS = 72
 MIN_GDPR_ORG_ERASURE_DELAY_HOURS = 24
 MAX_GDPR_ORG_ERASURE_DELAY_HOURS = 168
+#: Grace period (days) before the PERSONAL files of an account an administrator removed are erased
+#: (issue #1104, criterion OD-4). 0 erases at once. Default 14 and cap 21, the self-service grace
+#: values, because the Art. 12(3) clock starts at the request (plan 1091 section 11, row "Admin-initiated
+#: account deletion grace": "cap it like D1 (default 14, max 21)").
+GDPR_REMOVED_MEMBER_GRACE_DAYS_KEY = "gdpr.removed_member_grace_days"
+DEFAULT_GDPR_REMOVED_MEMBER_GRACE_DAYS = 14
 #: ``UserSetting`` key for the user layer of voiceprint matching. The gender user layer is the
 #: existing ``speaker_attribute_gender_detection_enabled``.
 PRIVACY_USER_VOICEPRINT_MATCHING_KEY = "privacy_voiceprint_matching_enabled"

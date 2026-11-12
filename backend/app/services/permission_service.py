@@ -24,11 +24,13 @@ from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
+from app.models.erasure import ErasureLedgerEntry
 from app.models.group import UserGroupMember
 from app.models.media import MediaFile
 from app.models.sharing import CollectionShare
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
+from app.services.erasure_ledger_service import owners_pending_removal
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +184,10 @@ class PermissionService:
         )
 
         if max_perm and max_perm > 0:
+            if db.execute(
+                owners_pending_removal().where(ErasureLedgerEntry.subject_user_id == owner_row[0])
+            ).first():
+                return None
             return PERMISSION_NAMES[max_perm]
 
         # A member of an organization collection they may see reads the files in it.
@@ -263,13 +269,14 @@ class PermissionService:
                 CollectionShare.target_group_id.in_(user_group_ids),
             )
         ]
+        # The MediaFile join gates the tenant and hides a removed member's files: while their
+        # erase is pending (#1104) collection shares must not keep them reachable by others.
+        shared_stmt = select(CollectionMember.media_file_id).join(
+            MediaFile, MediaFile.id == CollectionMember.media_file_id
+        )
+        share_where.append(MediaFile.user_id.notin_(owners_pending_removal()))
         if org_pred is not None:
-            shared_stmt = select(CollectionMember.media_file_id).join(
-                MediaFile, MediaFile.id == CollectionMember.media_file_id
-            )
             share_where.append(org_pred)
-        else:
-            shared_stmt = select(CollectionMember.media_file_id)
 
         shared = shared_stmt.join(
             CollectionShare,

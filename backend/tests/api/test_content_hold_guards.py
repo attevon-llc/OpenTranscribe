@@ -236,23 +236,23 @@ def test_cancelling_a_pending_upload_is_refused_while_held(client, gov, monkeypa
 
 
 def test_deleting_an_account_that_owns_an_org_held_file_is_refused(gov):
-    from app.services.user_deletion_service import _assert_no_held_files
+    from app.services.user_deletion_service import assert_no_held_files
 
     f = gov.file(gov.alice)
     gov.file(gov.alice)  # an unheld sibling: only the held one counts
     hold = _hold(gov, f)
 
     with pytest.raises(ConflictError) as refused:
-        _assert_no_held_files(gov.db, gov.alice.id)
+        assert_no_held_files(gov.db, gov.alice.id)
     detail = refused.value.detail
     assert isinstance(detail, dict)
     assert refused.value.status_code == status.HTTP_409_CONFLICT
     assert detail["files_under_legal_hold"] == 1 and detail["held_by"] == ["organization"]
     assert "holds" not in detail
 
-    _assert_no_held_files(gov.db, gov.bob.id)  # control: nobody holds bob's files
+    assert_no_held_files(gov.db, gov.bob.id)  # control: nobody holds bob's files
     _release(gov, hold)
-    _assert_no_held_files(gov.db, gov.alice.id)
+    assert_no_held_files(gov.db, gov.alice.id)
 
 
 def test_retention_does_not_select_an_org_held_file(gov):

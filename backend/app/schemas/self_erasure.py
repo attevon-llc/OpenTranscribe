@@ -72,6 +72,8 @@ class SelfErasureSettings(BaseModel):
     #: How long an organization admin's scheduled erasure waits (issue #1105), in hours.
     org_erasure_delay_hours: int = Field(ge=24, le=168)
     org_member_erasure_delay_hours: int = Field(ge=24, le=168)
+    #: Grace days before an administrator-removed member's personal files are erased (#1104).
+    removed_member_grace_days: int = Field(default=14, ge=0, le=21)
     min_org_erasure_delay_hours: int = 24
     max_org_erasure_delay_hours: int = 168
 
@@ -81,3 +83,4 @@ class SelfErasureSettingsUpdate(BaseModel):
     grace_days: int | None = Field(default=None, ge=0, le=21)
     org_erasure_delay_hours: int | None = Field(default=None, ge=24, le=168)
     org_member_erasure_delay_hours: int | None = Field(default=None, ge=24, le=168)
+    removed_member_grace_days: int | None = Field(default=None, ge=0, le=21)

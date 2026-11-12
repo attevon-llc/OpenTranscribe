@@ -30,6 +30,7 @@ vi.mock('$lib/api/telemetry', () => ({
 vi.mock('$lib/api/selfErasure', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/api/selfErasure')>()),
   getSelfErasureSettings: vi.fn().mockRejectedValue(new Error('not under test')),
+  listRemovedMembers: vi.fn().mockRejectedValue(new Error('not under test')),
 }));
 
 import PrivacyRedactionSettings from './PrivacyRedactionSettings.svelte';

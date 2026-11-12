@@ -18,6 +18,7 @@
   import RedactionPolicySettings from '$components/settings/RedactionPolicySettings.svelte';
   import InstancePrivacyCard from '$components/settings/InstancePrivacyCard.svelte';
   import SelfErasureAdminCard from '$components/settings/SelfErasureAdminCard.svelte';
+  import RemovedMembersCard from '$components/settings/RemovedMembersCard.svelte';
   import UsageReportCard from '$components/settings/UsageReportCard.svelte';
   import {
     privacyRedactionTabs,
@@ -99,6 +100,7 @@
       {#if visited.policy}
         <InstancePrivacyCard />
         <SelfErasureAdminCard />
+        <RemovedMembersCard />
         <UsageReportCard />
         <RedactionPolicySettings />
       {/if}

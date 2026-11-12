@@ -56,6 +56,29 @@ queue, then fail.
 Pool saturation is judged from Postgres (`pg_stat_activity`, connections from the API's container),
 not from the API's own `/metrics`: a saturated API cannot reliably serve its own metrics.
 
+### Who the test simulates
+
+The older profiles (`steady`, `ramp`, `spike`) drive generic web personas. The `knee`, `waves`,
+`egress`, `leak` and `soak-*` profiles drive five roles instead, in a mix that is an assumption
+(no production telemetry exists), written down with its reasons in the runbook:
+
+| Role | Share | What it does |
+|---|---:|---|
+| Researcher | 44% | searches (keyword and hybrid) with phrases drawn from the library's own transcripts, opens transcripts, a few chat over a collection |
+| Background tab (socket) | 20% | holds the live socket and does nothing else |
+| Status poller | 13% | an upload page left open, polling task and file status |
+| Team lead | 13% | gallery, collections, shares, summaries and exports |
+| Speaker curator | 9% | the speaker inbox, naming and merging speakers |
+
+The shapes are `knee` (small even steps to find the saturation point), `waves` (one compressed
+business day), `herd` (many sign-ins at once), `hot-file` (everyone on one file), `egress` (many
+people behind one address, with the rate limits left on), `leak` (20 minutes, memory and
+connections) and `soak-8h` / `soak-24h`. The long soaks are ready but not routinely run; the
+short profiles are the default, and every long shape can be shortened to minutes for a check.
+Pass and fail limits are the project's targets: page reads p95 300 ms, keyword search 800 ms,
+hybrid search 1.5 s, writes 500 ms, chat first token 5 s, errors under 0.1%, no deadlocks and no
+cross-tenant hit. To watch Postgres, Redis and each container during a run, start the fresh stack with `--with-monitoring` and `COMPOSE_PROFILES=load-monitoring`.
+
 ### Before v0.7.0 (one API process, pool 20 + 40)
 
 | Load | Result |
@@ -71,7 +94,7 @@ Postgres used 30 to 68% of one core: the limit was the single process, not the d
 
 ### After v0.7.0
 
-To be filled by the final measurement pass.
+To be filled by the v0.7.0 load run (measured in the v0.7.0 load run; no numbers are given until then).
 
 ## 3. Size the database connection budget
 

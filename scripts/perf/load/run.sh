@@ -5,7 +5,8 @@
 #   scripts/perf/load/run.sh --fresh NAME --profile PROFILE [--mix MIX] [--gpus 1,2]
 #                            [--out DIR] [-- extra locust arguments]
 #
-# PROFILE: smoke | steady | ramp | spike | soak | pipeline   (scripts/perf/load/profiles.py)
+# PROFILE: smoke | steady | ramp | spike | soak | pipeline | knee | waves | herd | hot-file | egress | leak | soak-8h | soak-24h
+#          (scripts/perf/load/profiles.py; knee, waves, egress and leak use the realistic people mix)
 # MIX:     mixed (default: reads and writes, no recordings sent to the GPU)
 #          read-only (no writes at all) | mixed-gpu (editors also upload real recordings)
 #          The pipeline profile always uploads; --mix does not apply to it.
@@ -30,7 +31,7 @@ while [[ $# -gt 0 ]]; do
         --gpus)    GPUS="$2"; shift 2 ;;
         --out)     OUT="$2"; shift 2 ;;
         --)        shift; EXTRA=("$@"); break ;;
-        -h|--help) sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)         echo "run.sh: unknown argument $1 (see --help)" >&2; exit 2 ;;
     esac
 done
@@ -39,8 +40,8 @@ done
 [[ -f "${REPO_ROOT}/.fresh/${FRESH}.offset" ]] || {
     echo "run.sh: no --fresh deployment '${FRESH}' (.fresh/${FRESH}.offset is missing)" >&2; exit 2; }
 case "$PROFILE" in
-    smoke|steady|ramp|spike|soak|pipeline) ;;
-    *) echo "run.sh: --profile must be smoke, steady, ramp, spike, soak or pipeline" >&2; exit 2 ;;
+    smoke|steady|ramp|spike|soak|pipeline|knee|waves|herd|hot-file|egress|leak|soak-8h|soak-24h) ;;
+    *) echo "run.sh: --profile must be one of smoke steady ramp spike soak pipeline knee waves herd hot-file egress leak soak-8h soak-24h" >&2; exit 2 ;;
 esac
 TAGS=()
 if [[ "$PROFILE" != pipeline ]]; then

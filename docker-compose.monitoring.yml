@@ -127,6 +127,58 @@ services:
     depends_on:
       - prometheus
 
+  # --- Load-test exporters (issue #1174) ------------------------------------------------
+  # Off unless COMPOSE_PROFILES=load-monitoring (README: scripts/perf/load). Maintained upstream
+  # exporters, pinned by tag AND digest (resolved 2026-11-12):
+  #   postgres_exporter  https://github.com/prometheus-community/postgres_exporter
+  #   redis_exporter     https://github.com/oliver006/redis_exporter
+  #   cAdvisor           https://github.com/google/cadvisor/blob/master/docs/running.md
+  # --fresh isolation: no container_name and no published port; Prometheus scrapes them by
+  # service name (monitoring/prometheus/prometheus.yml) and the compose project namespaces them.
+  postgres-exporter:
+    profiles: [load-monitoring]
+    image: prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104fae0e2d84a27bb8d69b38430a11910c5382cad85d478d2bab713e
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - DATA_SOURCE_URI=postgres:5432/${POSTGRES_DB:-opentranscribe}?sslmode=disable
+      - DATA_SOURCE_USER=${POSTGRES_USER:-postgres}
+      - DATA_SOURCE_PASS=${POSTGRES_PASSWORD:-}
+    depends_on:
+      - postgres
+
+  redis-exporter:
+    profiles: [load-monitoring]
+    image: oliver006/redis_exporter:v1.97.0@sha256:f5f903fbe77571d455ede0453b084d6840bc62fc105efac001034421cab83b99
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    depends_on:
+      - redis
+
+  cadvisor:
+    profiles: [load-monitoring]
+    image: ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a
+    restart: unless-stopped
+    # cAdvisor reads the container runtime's cgroups; its documented run command needs these
+    # read-only host mounts (and, on some kernels, privileged: left off, add it only if a host
+    # shows no per-container series).
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=10s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+
 # Overlay-local named volumes (overlays may declare their own — watch overlay precedent).
 # The bearer token Alertmanager presents to the backend webhook. Compose reads it from
 # ALERTMANAGER_WEBHOOK_TOKEN in the environment/.env (generate one with

@@ -31,10 +31,12 @@ MODULES = (
     "scenario",
     "routes",
     "profiles",
+    "phrasebook",
     "personas_base",
     "personas_read",
     "personas_write",
     "ws_listener",
+    "personas_roles",
     "locustfile",
 )
 ORG_CAPABILITIES = ("organizations", "org.takedown", "org.legal_hold", "org.audit_logs")
@@ -267,7 +269,9 @@ class RecordingClient:
             self.cookiejar[:] = [_Cookie("csrf_token", "token"), _Cookie("access_token", "jwt")]
         elif method != "GET":
             assert kwargs["headers"].get("X-CSRF-Token") == "token", f"{method} {url} lacks CSRF"
-        status = next((st for pat, st in self.statuses.items() if re.fullmatch(pat, url)), 200)
+        # A correct server refuses the cross-tenant canary (a file the caller does not own).
+        default = 404 if "canary" in kwargs["name"] else 200
+        status = next((st for pat, st in self.statuses.items() if re.fullmatch(pat, url)), default)
         return _Response(status, self._body(method, url))
 
     def iter_lines(self, url: str, method: str = "GET", **kwargs: Any) -> Iterator[str]:

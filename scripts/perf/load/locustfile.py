@@ -4,9 +4,11 @@
     locust -f scripts/perf/load/locustfile.py --fresh perf1337 --load-profile smoke --headless
 
 Simulated people sign in as the scale seed's identities (``perf-N@loadtest.invalid``) with the
-SPA's own cookie and CSRF flow and act as one of seven personas (``personas_read``,
-``personas_write``, ``ws_listener``): viewers, the heavy owner, editors, chat users, the
-administrator, the organization administrator and open browser tabs holding the live socket.
+SPA's own cookie and CSRF flow and act as one of the personas (``personas_read``,
+``personas_write``, ``personas_roles``, ``ws_listener``): viewers, the heavy owner, editors, chat users, the
+administrator, the organization administrator and open browser tabs holding the live socket. The
+``people`` profiles use the role personas of ``personas_roles`` instead (researcher, speaker
+curator, team lead, status poller, watcher tab) in a realistic mix.
 ``--load-profile`` picks the load shape (``profiles.py``); ``--exclude-tags write`` makes a run
 read-only. The runbook is ``scripts/perf/load/README.md``.
 
@@ -24,6 +26,15 @@ import profiles
 import scenario
 from locust import LoadTestShape, events
 from personas_read import Administrator, HeavyOwner, OrgAdmin, Viewer
+from personas_roles import (
+    HotFileReader,
+    LoginHerd,
+    Researcher,
+    SpeakerCurator,
+    StatusPoller,
+    TeamLead,
+    WatcherBot,
+)
 from personas_write import ChatUser, Editor, PipelineUploader
 from ws_listener import WebSocketListener
 
@@ -40,6 +51,13 @@ USER_CLASSES: dict[str, Any] = {
         OrgAdmin,
         WebSocketListener,
         PipelineUploader,
+        Researcher,
+        SpeakerCurator,
+        TeamLead,
+        StatusPoller,
+        WatcherBot,
+        LoginHerd,
+        HotFileReader,
     )
 }
 
@@ -99,6 +117,7 @@ def _guard(environment: Any, **_kwargs: Any) -> None:
     ChatUser.fixed_count = (
         options.chat_users if options.chat_users is not None else profile.chat_users
     )
+    Researcher.chat_budget = ChatUser.fixed_count
     logger.info('Loading --fresh %s at %s, profile %s', target.fresh, target.base_url, profile.name)
 
 

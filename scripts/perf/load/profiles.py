@@ -27,6 +27,24 @@ WEB_PERSONAS = (
     'WebSocketListener',
 )
 PIPELINE_PERSONAS = ('PipelineUploader',)
+#: The realistic mix (personas_roles.py): who is at the keyboard, weighted in the classes
+#: (Researcher 40, SpeakerCurator 8, TeamLead 12, StatusPoller 12, WatcherBot 18; README,
+#: "Who the people are").
+PEOPLE_PERSONAS = ('Researcher', 'SpeakerCurator', 'TeamLead', 'StatusPoller', 'WatcherBot')
+HERD_PERSONAS = ('LoginHerd',)
+HOT_FILE_PERSONAS = ('HotFileReader',)
+#: A compressed business day for ``waves``: (share of the day that has passed, share of the
+#: target users present). Morning ramp, a dip at lunch, a second peak, an evening tail.
+BUSINESS_DAY = (
+    (0.08, 0.10),
+    (0.20, 0.60),
+    (0.38, 1.00),
+    (0.48, 0.45),
+    (0.60, 0.90),
+    (0.80, 0.70),
+    (0.92, 0.30),
+    (1.00, 0.10),
+)
 
 
 @dataclass(frozen=True)
@@ -92,14 +110,69 @@ def _steady(p: Params) -> list[Stage]:
     return [Stage(until=_ramp_time(users, rate) + hold, users=users, rate=rate)]
 
 
-def _ramp(p: Params) -> list[Stage]:
-    steps, rate, hold = p.steps or (100, 250, 500, 1000), p.rate or 2.0, p.hold or 600.0
+def _step_stages(steps: tuple[int, ...], rate: float, hold: float) -> list[Stage]:
     stages, clock, previous = [], 0.0, 0
     for users in steps:
         clock += _ramp_time(abs(users - previous), rate) + hold
         stages.append(Stage(until=clock, users=users, rate=rate))
         previous = users
     return stages
+
+
+def _ramp(p: Params) -> list[Stage]:
+    return _step_stages(p.steps or (100, 250, 500, 1000), p.rate or 2.0, p.hold or 600.0)
+
+
+def _knee(p: Params) -> list[Stage]:
+    """Small, even steps up to where latency bends: finer than ``ramp`` below 100 users."""
+    steps = p.steps or (10, 25, 50, 100, 150, 200, 300, 400, 500)
+    return _step_stages(steps, p.rate or 5.0, p.hold or 180.0)
+
+
+def _waves(p: Params) -> list[Stage]:
+    """One compressed business day (``--hold`` seconds long) peaking at ``--target-users``."""
+    users, rate, day = p.users or 200, p.rate or 5.0, p.hold or 1800.0
+    return [
+        Stage(until=day * when, users=round(users * level), rate=rate)
+        for when, level in BUSINESS_DAY
+    ]
+
+
+def _herd(p: Params) -> list[Stage]:
+    """Everyone signs in within about five seconds, keeps re-signing in for a minute, then leaves."""
+    users, hold = p.users or 300, p.hold or 60.0
+    rate = p.rate or users / 5.0
+    up = _ramp_time(users, rate) + hold
+    return [
+        Stage(until=up, users=users, rate=rate),
+        Stage(until=up + _ramp_time(users, rate) + 60.0, users=0, rate=rate),
+    ]
+
+
+def _hot_file(p: Params) -> list[Stage]:
+    users, rate, hold = p.users or 200, p.rate or 10.0, p.hold or 300.0
+    return [Stage(until=_ramp_time(users, rate) + hold, users=users, rate=rate)]
+
+
+def _egress(p: Params) -> list[Stage]:
+    """Many people behind one client address; the per-IP rate limits are the subject."""
+    users, rate, hold = p.users or 500, p.rate or 10.0, p.hold or 600.0
+    return [Stage(until=_ramp_time(users, rate) + hold, users=users, rate=rate)]
+
+
+def _long_soak(default_hold: float) -> Callable[[Params], list[Stage]]:
+    """A people-mix soak whose length is ``--hold`` (default 8 h or 24 h), so a 2-minute run proves the wiring."""
+
+    def build(p: Params) -> list[Stage]:
+        users, rate, hold = p.users or 200, p.rate or 1.0, p.hold or default_hold
+        return [Stage(until=_ramp_time(users, rate) + hold, users=users, rate=rate)]
+
+    return build
+
+
+def _leak(p: Params) -> list[Stage]:
+    users, rate, hold = p.users or 100, p.rate or 2.0, p.hold or 1200.0
+    return [Stage(until=_ramp_time(users, rate) + hold, users=users, rate=rate)]
 
 
 def _spike(p: Params) -> list[Stage]:
@@ -131,6 +204,58 @@ PROFILES: dict[str, Profile] = {
         Profile('ramp', 'step through --steps, holding each', WEB_PERSONAS, 8, _ramp),
         Profile('spike', '0 to --target-users at once, then back to 0', WEB_PERSONAS, 8, _spike),
         Profile('soak', 'moderate load for 90 minutes', WEB_PERSONAS, 8, _soak),
+        Profile(
+            'knee',
+            'realistic mix, small even steps up to the saturation point',
+            PEOPLE_PERSONAS,
+            8,
+            _knee,
+        ),
+        Profile(
+            'waves',
+            'realistic mix over one compressed business day (--hold = its length)',
+            PEOPLE_PERSONAS,
+            8,
+            _waves,
+        ),
+        Profile(
+            'herd',
+            'login herd: --target-users sign in within seconds, then keep signing in',
+            HERD_PERSONAS,
+            0,
+            _herd,
+        ),
+        Profile(
+            'hot-file', 'everyone reads and annotates one file', HOT_FILE_PERSONAS, 0, _hot_file
+        ),
+        Profile(
+            'egress',
+            'realistic mix behind one client address; per-IP limits NOT raised',
+            PEOPLE_PERSONAS,
+            8,
+            _egress,
+        ),
+        Profile(
+            'leak',
+            'realistic mix for 20 minutes: memory and connection growth',
+            PEOPLE_PERSONAS,
+            8,
+            _leak,
+        ),
+        Profile(
+            'soak-8h',
+            'realistic mix for 8 h (--hold shortens it)',
+            PEOPLE_PERSONAS,
+            8,
+            _long_soak(8 * 3600.0),
+        ),
+        Profile(
+            'soak-24h',
+            'realistic mix for 24 h (--hold shortens it)',
+            PEOPLE_PERSONAS,
+            8,
+            _long_soak(24 * 3600.0),
+        ),
         Profile(
             'pipeline',
             'concurrent real uploads through the GPU pipeline',

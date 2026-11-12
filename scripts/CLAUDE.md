@@ -210,11 +210,11 @@ PG=<fresh postgres container> scripts/perf/query-review/explain.sh <run-id> [id 
   plans every one against the current schema.
 - Enable `pg_stat_statements`/`auto_explain` with an UNQUOTED
   `ALTER SYSTEM SET shared_preload_libraries = pg_stat_statements, auto_explain;` (quoted, Postgres will not start).
-- Concurrent users: `scripts/perf/load/run.sh --fresh NAME --profile smoke|steady|ramp|spike|soak|pipeline
+- Concurrent users: `scripts/perf/load/run.sh --fresh NAME --profile smoke|steady|ramp|spike|soak|pipeline|knee|waves|herd|hot-file|egress|leak|soak-8h|soak-24h
   [--mix mixed|read-only|mixed-gpu]` (Locust from its own venv, `LOCUST=...`; sampler + summary with a
   pass/fail verdict from `thresholds.toml`), same seed plus `--waveform-pm 1000`, same `--fresh`-only guard,
   stack started `--with-mock-llm`; runbook in `scripts/perf/load/README.md`; side tools in `scripts/perf/load/tools/` (chain/run_profile/pg_probe/report_table/build_snapshot). `backend/tests/unit/test_load_*.py`
-  check every request against `backend/openapi.json`, API-group coverage, cleanup, profiles and seed needs.
+  check requests vs `backend/openapi.json`, group coverage, cleanup, profiles, seed needs. Realistic roles: `personas_roles.py`; exporters via `COMPOSE_PROFILES=load-monitoring` + `--with-monitoring`; soak-8h/24h are ready, not routinely run.
 - Regression checks use `backend/tests/query_budget.py` (`count_statements`): assert the statement count is
   EQUAL at two row counts (for example 2 and 12) with a control that the response held both, never a ceiling.
   Prove each check red on a `git archive HEAD` tree first.

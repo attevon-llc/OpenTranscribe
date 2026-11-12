@@ -170,7 +170,7 @@ export DEV_RATE_LIMIT_AUTH_PER_MINUTE=100000 DEV_RATE_LIMIT_DIRECTORY_PER_MINUTE
        DEV_RATE_LIMIT_AUTH_METHODS_PER_MINUTE=100000 DEV_RATE_LIMIT_SEARCH_PER_MINUTE=100000
 ./opentr.sh start dev --fresh perf1337 --port-offset 300 --with-mock-llm
 ./scripts/seed-query-review.sh --fresh perf1337 --waveform-pm 1000
-scripts/perf/load/run.sh --fresh perf1337 --profile ramp      # or smoke, steady, spike, soak, pipeline
+scripts/perf/load/run.sh --fresh perf1337 --profile ramp      # or smoke, steady, spike, soak, pipeline, knee, waves, herd, hot-file, egress, leak, soak-8h, soak-24h
 ```
 
 Simulated people sign in as the seeded `perf-N` identities and act as one of eight personas:
@@ -184,13 +184,15 @@ Every write cleans up after itself. `--mix read-only` excludes every write.
 Profiles (`scripts/perf/load/profiles.py`, a Locust `LoadTestShape`): `smoke` (a few people for
 a minute), `steady` (N held), `ramp` (100, 250, 500, 1,000, each held), `spike` (0 to N to 0),
 `soak` (moderate load for 90 minutes) and `pipeline` (N concurrent real uploads, end-to-end time
-and queue depth).
+and queue depth). The realistic-people shapes are `knee`, `waves`, `herd`, `hot-file`, `egress`,
+`leak` and the ready-but-not-routinely-run `soak-8h` / `soak-24h`; the roles, weights and the
+reasons for them are in the runbook's "Who the people are".
 
 Each run directory holds Locust's per-endpoint percentiles, failures by cause and percentile
 history, the sampler's 5-second CSV (`pg_stat_activity` states including idle in transaction,
 `db_pool_*`, Celery queue depths, CPU and memory of the stack's containers, the project GPUs'
 memory and utilisation), and `summary.md`, a report with a pass/fail verdict against
-`scripts/perf/load/thresholds.toml` (for example p95 under 1 s for reads, error rate under 0.5%).
+`scripts/perf/load/thresholds.toml` (the issue #1174 SLOs: reads p95 300 ms, writes 500 ms, errors 0.1%, plus search, deadlock and cross-tenant checks).
 
 Compare runs only on the same snapshot, settings and host load. A p95 that climbs while Postgres is
 idle and the API's `pg_stat_activity` connections sit at the pool capacity is pool or thread saturation, not slow SQL; a p95

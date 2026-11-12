@@ -2,17 +2,34 @@
 # Times are milliseconds (Locust's unit, also for the stream, socket and pipeline rows).
 # Change a limit here, in review, never on the command line of one run.
 
+# The limits are the SLOs of issue #1174 (page reads p95 <= 300 ms, keyword search <= 800 ms,
+# hybrid <= 1.5 s, writes <= 500 ms, chat first token <= 5 s, 5xx < 0.1 %, 0 deadlocks, 0
+# cross-tenant hits). The first load framework's looser values were read p95 1000 ms, write
+# p95 2000 ms and 0.5 % errors; they were a starting point before any measurement existed.
+
 [overall]
-max_error_rate = 0.005   # failed requests / all requests, every kind
+max_error_rate = 0.001   # failed requests / all requests, every kind
 min_requests = 20        # a row with fewer requests is reported but not judged on percentiles
 
 [read]                   # GET requests, per endpoint
-p95_ms = 1000
-p99_ms = 3000
+p95_ms = 300
+p99_ms = 3000            # not in the issue: kept from the first framework
 
 [write]                  # POST / PUT / PATCH / DELETE, per endpoint (login included)
-p95_ms = 2000
-p99_ms = 5000
+p95_ms = 500
+p99_ms = 5000            # not in the issue: kept from the first framework
+
+[search]                 # GET /api/search rows: "search keyword", "search hybrid" (unlabelled = hybrid)
+keyword_p95_ms = 800
+hybrid_p95_ms = 1500
+
+[deadlock]               # pg_stat_database.deadlocks, last sample minus first
+max_deadlocks = 0
+
+[cross_tenant]           # the canary rows ("files.detail cross-tenant canary"): a 200 is a failure
+max_hits = 0
+min_probes = 1           # the canary must have run, or the zero means nothing
+exempt_profiles = ["pipeline", "herd", "hot-file"]   # profiles with no canary persona
 
 [stream]                 # SSE rows: a chat answer read to its end
 first_token_p95_ms = 5000

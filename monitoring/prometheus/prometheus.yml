@@ -62,3 +62,25 @@ scrape_configs:
     static_configs:
       - targets:
           - alertmanager:9093
+
+  # Load-test exporters (docker-compose.load-monitoring.yml, --with-load-monitoring). Without that
+  # overlay these targets are simply down; no rule alerts on them, like the worker targets above.
+  - job_name: postgres-exporter
+    static_configs:
+      - targets:
+          - postgres-exporter:9187
+        labels:
+          service: postgres
+
+  - job_name: redis-exporter
+    static_configs:
+      - targets:
+          - redis-exporter:9121
+        labels:
+          service: redis
+
+  # Per-container CPU, memory and network; the compose project/service labels select one stack.
+  - job_name: cadvisor
+    static_configs:
+      - targets:
+          - cadvisor:8080

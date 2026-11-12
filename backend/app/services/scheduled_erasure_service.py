@@ -350,6 +350,9 @@ def cancel(
             started, ``not_cancellable`` for any other state.
     """
     current = now or datetime.now(UTC)
+    # Re-read under the row lock the executor flips ``pending`` under (``_execute_one``): checked on
+    # a stale copy, a cancel could overwrite an erasure that has already started.
+    db.refresh(entry, with_for_update=True)
     if entry.status == "deferred" and entry.deferred_reason == "grace_period":
         if entry.scheduled_for is not None and current >= entry.scheduled_for:
             raise ScheduledErasureError("already_executing", "The delay is over.", entry=entry)
@@ -486,7 +489,8 @@ def _execute_one(db: Session, entry_id: int, now: datetime) -> bool:
     audit_outbox.deliver_staged(db)
     db.refresh(entry)
     # Before the run: an organization erasure deletes the memberships the admins are found by.
-    recipients = notices.resolve_recipients(db, entry)
+    # A lookup failure only costs the completion notice its recipients, never the run.
+    recipients = notices.resolve_recipients_or_none(db, entry)
     summary = run_entry(db, entry)
     if summary.get("complete"):
         notices.notify(db, entry, notices.ErasureNoticeKind.COMPLETED, recipients)

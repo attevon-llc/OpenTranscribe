@@ -130,6 +130,12 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 - `./opentr.sh start` and `reset` now warn when a GPU device id you exported (for example `GPU_SCALE_DEVICE_ID=2`) is replaced by `.env` or by a flag, and name `--gpu-device` or `--diar-native-gpu`. Before, the workers silently started on the `.env` card.
 - `scripts/run-integration-tests.sh` gives the stack's Redis host, port and password to the GPU and e2e smoke phases as well as the integration phase, fills in only the values you did not export (a shell with just `REDIS_PORT` set no longer gets a port with no password), and runs the unit and FIPS phases with every `REDIS_*` variable unset.
+- The platform access matrix classifies `GET /api/admin/removed-members` and its restore route as account administration, and `docs/security/platform-access-matrix.tsv` now lists them and `GET /api/admin/llm-budget/users` (the matrix gate was red).
+- Security: a plain admin could restore (reactivate) a removed super_admin account, or undo a removal a super_admin made. `POST /api/admin/removed-members/{ledger_uuid}/restore` now applies the same rule as every other write to an account and answers 403 unless the caller is a super_admin.
+- Restoring a removed member re-reads the scheduled erase under its row lock, so a restore that races the hourly executor answers 409 instead of recording a cancellation for an erase that is already running. The account is switched off in the same commit that schedules its erase and switched back on in the same commit that cancels it, so a failure in between can no longer leave either half done.
+- Restoring a removed member no longer switches on an account that an administrator had already switched off before removing it.
+- A scheduled erasure no longer skips its run when the recipients of its completion notice cannot be looked up, and a failed notice lookup no longer aborts the caller's database transaction (both lookups now run in a SAVEPOINT).
+- The GDPR erasure docs said quarantine stops a removed member's scheduled erase; it does not, by design, exactly as for an immediate account deletion (a takedown that must keep evidence places a legal hold, and that wins). The docs, the removal service and the deletion guard's docstring now say so, and say who may restore.
 
 ### Changed
 

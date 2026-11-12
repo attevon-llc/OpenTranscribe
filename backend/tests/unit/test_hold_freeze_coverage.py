@@ -889,6 +889,7 @@ ROUTE_NOT_FILE_CONTENT: dict[str, str] = {
     },
     _r("admin_maintenance.py::start_data_integrity_check"): _ORPHANS,
     _r("admin_storage_integrity.py::start_storage_orphan_sweep"): _ORPHANS,
+    _r("admin_removed_members.py::restore_removed_member"): _ERASURE_CONTROL,
     _r("org_admin_erasure.py::cancel_scheduled_erasure"): _ERASURE_CONTROL,
     _r("org_admin_ownership.py::transfer_ownership"): (
         "hands the organization's owner role to another admin: writes the organization row only"

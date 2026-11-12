@@ -677,7 +677,7 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-1-5);
-    padding: 0.6rem 1.2rem;
+    padding: var(--space-2-5) var(--space-5);
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -720,7 +720,7 @@
 
   .search-icon {
     position: absolute;
-    left: 12px;
+    inset-inline-start: 12px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-secondary);
@@ -744,7 +744,7 @@
 
   .search-clear {
     position: absolute;
-    right: 6px;
+    inset-inline-end: 6px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
@@ -797,7 +797,7 @@
     overflow-y: auto;
     flex: 1;
     max-height: 400px;
-    padding-right: var(--space-2);
+    padding-inline-end: var(--space-2);
   }
 
   /* Custom scrollbar styling */
@@ -807,12 +807,12 @@
 
   .collections-list::-webkit-scrollbar-track {
     background: var(--surface-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .collections-list::-webkit-scrollbar-thumb {
     background: var(--border-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .collections-list::-webkit-scrollbar-thumb:hover {

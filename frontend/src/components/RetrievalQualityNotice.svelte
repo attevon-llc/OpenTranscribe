@@ -154,7 +154,7 @@
     align-items: flex-start;
     gap: var(--space-2);
     width: 100%;
-    padding: 0.55rem 0.7rem;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background-color: var(--surface-secondary);
@@ -163,14 +163,14 @@
      * 12.8px text below. It clears AA on the base white surface, which is why the
      * miss is invisible until you scan this component specifically. */
     color: var(--text-on-tint);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
-    text-align: left;
+    text-align: start;
   }
 
   .notice-icon {
     flex: 0 0 auto;
-    margin-top: 0.15rem;
+    margin-top: var(--space-0-5);
     color: var(--text-secondary);
   }
 
@@ -202,7 +202,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.2rem;
+    padding: var(--space-1);
     border: none;
     border-radius: var(--radius-sm);
     background: none;

@@ -995,7 +995,7 @@
     background-color: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
-    padding: 0.6rem 1.2rem;
+    padding: var(--space-2-5) var(--space-5);
     border-radius: var(--radius-xl);
     cursor: pointer;
     font-size: var(--font-size-sm);
@@ -1160,7 +1160,7 @@
   .expiration-editor input[type='date'] {
     height: 32px;
     padding: 0 var(--space-1-5);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .expiration-save-button {

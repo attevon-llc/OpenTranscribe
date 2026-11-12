@@ -162,7 +162,7 @@
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     text-align: center;
   }
 
@@ -176,7 +176,7 @@
 
   .muted {
     color: var(--text-light);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     margin: 0;
   }
 </style>

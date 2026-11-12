@@ -297,17 +297,17 @@
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
     color: var(--text-light);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     margin: 0;
   }
 
   .password-policy ul {
     margin: var(--space-2) 0 0;
-    padding-left: 1.1rem;
+    padding-inline-start: var(--space-4);
   }
 
   .password-policy li {
-    margin-bottom: 0.2rem;
+    margin-bottom: var(--space-1);
   }
 
   .auth-button {
@@ -328,7 +328,7 @@
 
   .muted {
     color: var(--text-light);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     margin: 0;
   }
 </style>

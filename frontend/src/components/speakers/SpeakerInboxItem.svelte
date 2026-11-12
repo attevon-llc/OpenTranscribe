@@ -144,7 +144,7 @@
 <style>
   .inbox-item {
     border-bottom: 1px solid var(--border-color);
-    transition: background 0.1s ease;
+    transition: background var(--duration-fast) ease;
   }
 
   .inbox-item:hover {
@@ -263,7 +263,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    margin-top: 3px;
+    margin-top: var(--space-1);
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
     flex-wrap: wrap;
@@ -337,7 +337,7 @@
     max-width: 170px;
     min-width: 0;
     flex-shrink: 1;
-    padding: 0.3rem var(--space-2);
+    padding: var(--space-1) var(--space-2);
     font-size: var(--font-size-sm);
     cursor: pointer;
   }
@@ -414,7 +414,7 @@
     }
 
     .item-actions {
-      margin-left: auto;
+      margin-inline-start: auto;
     }
 
     .suggestion-name {

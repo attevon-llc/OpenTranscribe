@@ -563,7 +563,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
   }
 
   .legend-title {
@@ -594,7 +594,7 @@
     display: none;
     position: absolute;
     top: 100%;
-    left: 50%;
+    inset-inline-start: 50%;
     transform: translateX(-50%);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -616,7 +616,7 @@
     gap: var(--space-2);
     color: var(--text-color-secondary);
     margin-bottom: var(--space-2);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .legend-item:last-child {
@@ -626,7 +626,7 @@
   .legend-color {
     width: 12px;
     height: 12px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     display: inline-block;
   }
 
@@ -670,7 +670,7 @@
 
   .timestamp-link {
     font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
@@ -691,15 +691,15 @@
   }
 
   .timestamp-more {
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary-color);
     font-style: italic;
     padding-top: 1px;
   }
 
   .speaker-content-below {
-    margin-left: 0;
-    padding-left: 0;
+    margin-inline-start: 0;
+    padding-inline-start: 0;
   }
 
   /* Matches .segment-speaker styling from transcript segments */
@@ -745,10 +745,10 @@
   .gender-badge {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    font-size: 0.65rem;
+    gap: var(--space-1);
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
-    padding: 0.15rem 0.4rem;
+    padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-pill);
     flex-shrink: 0;
     cursor: default;
@@ -804,15 +804,15 @@
   .match-confidence {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
-    font-size: 0.65rem;
+    gap: var(--space-1);
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
     color: var(--success-text);
   }
 
   .save-speakers-button {
     margin-top: var(--space-4);
-    padding: 0.6rem 1.2rem;
+    padding: var(--space-2-5) var(--space-5);
     background: var(--primary-color);
     color: var(--text-on-solid);
     border: none;
@@ -851,13 +851,13 @@
   .propagation-pending {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    margin-left: var(--space-3);
-    padding: var(--space-1) 0.65rem;
+    gap: var(--space-1-5);
+    margin-inline-start: var(--space-3);
+    padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-pill);
     background-color: rgba(var(--primary-color-rgb), 0.1);
     color: var(--primary-on-surface);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
   }
 
@@ -896,7 +896,7 @@
 
   /* Compact cross-video UI styles */
   .cross-video-compact {
-    margin-top: 0.3rem;
+    margin-top: var(--space-1);
     padding: var(--space-2);
     background-color: var(--background-main);
     border: 1px solid var(--border-color);
@@ -915,7 +915,7 @@
   .compact-text {
     color: var(--text-color);
     flex: 1;
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
   }
 
   .compact-controls {
@@ -928,8 +928,8 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 0.15rem;
-    border-radius: 3px;
+    padding: var(--space-0-5);
+    border-radius: var(--radius-sm);
     color: var(--text-color-secondary);
     transition: background-color var(--duration-base) ease;
     display: flex;
@@ -956,27 +956,27 @@
   }
 
   .matches-help {
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-color-secondary);
-    margin-bottom: 0.3rem;
+    margin-bottom: var(--space-1);
     font-style: italic;
   }
 
   .compact-matches {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: var(--space-0-5);
   }
 
   .compact-match {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.15rem 0.35rem;
+    padding: var(--space-0-5) var(--space-1-5);
     background-color: var(--background-alt);
     border: 1px solid var(--border-color-soft);
-    border-radius: 3px;
-    font-size: 0.65rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-2xs);
     cursor: help;
     transition: background-color var(--duration-base) ease;
   }
@@ -992,9 +992,9 @@
   }
 
   .more-matches-compact {
-    padding: 0.2rem 0.4rem;
+    padding: var(--space-1) var(--space-1-5);
     text-align: center;
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-color-secondary);
     font-style: italic;
   }
@@ -1018,7 +1018,7 @@
     display: none;
     position: absolute;
     top: 100%;
-    left: 50%;
+    inset-inline-start: 50%;
     transform: translateX(-50%);
     background: var(--card-background);
     border: 1px solid var(--border-color);
@@ -1039,9 +1039,9 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.3rem var(--space-2);
+    padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-sm);
-    margin-bottom: 0.2rem;
+    margin-bottom: var(--space-1);
     background: var(--surface-color);
   }
 
@@ -1053,14 +1053,14 @@
     flex: 1;
     font-size: var(--font-size-xs);
     color: var(--text-color);
-    margin-right: var(--space-2);
+    margin-inline-end: var(--space-2);
   }
 
   .popup-match-confidence {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
-    font-size: 0.65rem;
+    gap: var(--space-1);
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
     color: var(--success-text);
     white-space: nowrap;
@@ -1071,8 +1071,8 @@
     max-height: 200px;
     overflow-y: auto;
     border: 1px solid var(--border-color-soft);
-    border-radius: 3px;
-    padding: 0.2rem;
+    border-radius: var(--radius-sm);
+    padding: var(--space-1);
   }
 
   .matches-scroll-container::-webkit-scrollbar {
@@ -1081,12 +1081,12 @@
 
   .matches-scroll-container::-webkit-scrollbar-track {
     background: var(--background-alt);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .matches-scroll-container::-webkit-scrollbar-thumb {
     background: var(--border-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .matches-scroll-container::-webkit-scrollbar-thumb:hover {
@@ -1097,8 +1097,8 @@
   .suggestions-toggle {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.3rem var(--space-2);
+    gap: var(--space-1-5);
+    padding: var(--space-1) var(--space-2);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
@@ -1107,7 +1107,7 @@
     cursor: pointer;
     transition: all var(--duration-base) ease;
     width: 100%;
-    text-align: left;
+    text-align: start;
   }
 
   .suggestions-toggle:hover {
@@ -1125,24 +1125,24 @@
   }
 
   .suggestions-dropdown {
-    margin-top: 0.3rem;
+    margin-top: var(--space-1);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background: var(--surface-color);
-    padding: 0.4rem;
+    padding: var(--space-1-5);
   }
 
 
   /* Unified Suggestions Section */
   .suggestions-section {
-    margin-top: 0.4rem;
+    margin-top: var(--space-1-5);
   }
 
   .expand-hint {
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     color: var(--text-secondary-color);
     font-style: italic;
-    margin-left: 0.3rem;
+    margin-inline-start: var(--space-1);
   }
 
   /* Chip-based layout */
@@ -1159,7 +1159,7 @@
   }
 
   .chip-label {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     color: var(--text-secondary-color);
     min-width: 35px;
@@ -1170,7 +1170,7 @@
   .chips-wrap {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem;
+    gap: var(--space-1);
     align-items: center;
     flex: 1;
   }
@@ -1178,11 +1178,11 @@
   .suggestion-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-1);
     padding: var(--space-1) var(--space-2);
     border: none;
     border-radius: var(--radius-3xl);
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -1224,9 +1224,9 @@
   }
 
   .chip-confidence {
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     background: color-mix(in srgb, var(--text-on-solid) 25%, transparent);
-    padding: 0.1rem 0.3rem;
+    padding: var(--space-0-5) var(--space-1);
     border-radius: var(--radius-lg);
     font-weight: var(--font-weight-semibold);
   }
@@ -1234,7 +1234,7 @@
   .source-icon {
     width: 12px;
     height: 12px;
-    margin-right: var(--space-1);
+    margin-inline-end: var(--space-1);
     opacity: 0.9;
     stroke: var(--text-on-solid);
     fill: none;
@@ -1255,7 +1255,7 @@
   }
 
   .chip-role {
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     opacity: 0.7;
     text-transform: capitalize;
     font-style: italic;
@@ -1266,7 +1266,7 @@
      from "voice similarity" matters for deciding whether to trust a
      suggestion, and a tooltip is invisible to touch and keyboard use. */
   .chip-source-label {
-    font-size: 0.62rem;
+    font-size: var(--font-size-2xs);
     opacity: 0.85;
     font-style: italic;
     white-space: nowrap;
@@ -1307,7 +1307,7 @@
     }
 
     .gender-badge {
-      font-size: 0.6rem;
+      font-size: var(--font-size-2xs);
     }
 
     .speaker-input-wrapper {
@@ -1316,8 +1316,8 @@
     }
 
     .speaker-profile-badge {
-      font-size: 0.6rem;
-      padding: 0.15rem 0.35rem;
+      font-size: var(--font-size-2xs);
+      padding: var(--space-0-5) var(--space-1-5);
     }
   }
 </style>

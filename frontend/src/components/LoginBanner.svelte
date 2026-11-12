@@ -163,18 +163,18 @@
   .notice-updated {
     margin: 0 0 var(--space-4);
     padding: var(--space-3) var(--space-4);
-    border-left: 4px solid var(--warning-text);
+    border-inline-start: 4px solid var(--warning-text);
     border-radius: var(--radius-sm);
     background: var(--warning-bg);
     color: var(--warning-text);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
   }
 
   .banner-error {
     margin: var(--space-4) 0 0;
     padding: var(--space-3) var(--space-4);
-    border-left: 4px solid var(--error-text);
+    border-inline-start: 4px solid var(--error-text);
     border-radius: var(--radius-sm);
     background: var(--error-bg);
     color: var(--error-text);

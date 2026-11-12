@@ -314,13 +314,13 @@
     padding: var(--space-2-5) var(--space-3);
     border-radius: var(--radius-md);
     border: 1px solid var(--error-color);
-    background: rgba(220, 38, 38, 0.08);
+    background: var(--error-bg);
     font-weight: var(--font-weight-medium);
   }
 
   .warning :global(svg) {
     flex-shrink: 0;
-    margin-top: 0.1875rem;
+    margin-top: var(--space-1);
     color: var(--error-text);
   }
 
@@ -374,9 +374,5 @@
     border-radius: var(--radius-sm);
     padding: 0 var(--space-1);
     white-space: nowrap;
-  }
-
-  :global([data-theme='dark']) .warning {
-    background: rgba(248, 113, 113, 0.12);
   }
 </style>

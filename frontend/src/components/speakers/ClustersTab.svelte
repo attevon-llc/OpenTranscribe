@@ -244,7 +244,7 @@
 
   .search-clear-btn {
     position: absolute;
-    right: 8px;
+    inset-inline-end: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -308,7 +308,7 @@
     /* 11px on the hover tint — --text-secondary measures 4.34:1 here, under AA. */
     color: var(--text-on-tint);
     background: var(--hover-color);
-    padding: 1px 7px;
+    padding: 1px var(--space-2);
     border-radius: var(--radius-xl);
     white-space: nowrap;
     align-self: center;
@@ -354,7 +354,7 @@
     background: none;
     cursor: pointer;
     width: 100%;
-    text-align: left;
+    text-align: start;
     border-radius: var(--radius-sm);
     transition: background var(--duration-fast) ease;
     box-shadow: none;
@@ -499,7 +499,7 @@
     }
 
     .last-clustered-chip {
-      font-size: 0.7rem;
+      font-size: var(--font-size-xs);
       flex-basis: 100%;
       text-align: center;
     }

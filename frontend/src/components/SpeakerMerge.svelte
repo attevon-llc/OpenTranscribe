@@ -403,7 +403,7 @@
   .speaker-badge {
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
-    padding: 3px var(--space-2);
+    padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-2xl);
     border: 1px solid;
     text-transform: uppercase;

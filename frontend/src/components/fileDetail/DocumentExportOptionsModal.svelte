@@ -65,14 +65,14 @@
   .export-field {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
     font-size: 0.95rem;
     color: var(--text-color);
   }
 
   .export-format-note {
     margin: var(--space-4) 0 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     line-height: 1.5;
   }

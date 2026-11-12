@@ -262,7 +262,7 @@
   .upload-badge {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    border-radius: 20px;
+    border-radius: var(--radius-pill);
     padding: var(--space-2) var(--space-3);
     cursor: grab;
     box-shadow: var(--shadow-lg);
@@ -301,7 +301,7 @@
   .activity-indicator {
     position: absolute;
     top: -2px;
-    right: -2px;
+    inset-inline-end: -2px;
     width: 8px;
     height: 8px;
     background: var(--error-solid);
@@ -413,12 +413,12 @@
 
   .upload-list::-webkit-scrollbar-track {
     background: var(--border-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .upload-list::-webkit-scrollbar-thumb {
     background: var(--text-secondary);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 
   .upload-list::-webkit-scrollbar-thumb:hover {
@@ -451,8 +451,7 @@
     }
 
     .upload-manager {
-      right: 20px !important;
-      left: 20px !important;
+      inset-inline: 20px !important;
       width: auto;
     }
   }

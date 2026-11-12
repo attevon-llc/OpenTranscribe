@@ -107,7 +107,7 @@
 
           {#if detailedStatus.is_stuck}
             <div class="warning">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; margin-right: 4px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; margin-inline-end: var(--space-1);">
                 <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
                 <path d="M12 9v4"/>
                 <path d="m12 17 .01 0"/>
@@ -221,13 +221,13 @@
   }
 
   .metadata-label {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary-color);
   }
 
   .metadata-value {
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
     overflow-wrap: anywhere;
@@ -235,7 +235,7 @@
 
   .model-name-value {
     font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .diarization-disabled-value {
@@ -245,9 +245,9 @@
 
   .fallback-badge {
     display: inline-block;
-    margin-left: 0.4rem;
-    padding: 0.1rem 0.4rem;
-    font-size: 0.7rem;
+    margin-inline-start: var(--space-1-5);
+    padding: var(--space-0-5) var(--space-1-5);
+    font-size: var(--font-size-xs);
     font-family: inherit;
     font-weight: var(--font-weight-medium);
     border-radius: var(--radius-sm);
@@ -314,7 +314,7 @@
     margin-top: var(--space-2);
     font-family: monospace;
     white-space: pre-wrap;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--error-text);
   }
 

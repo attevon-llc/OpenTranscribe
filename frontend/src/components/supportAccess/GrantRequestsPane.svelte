@@ -252,8 +252,8 @@
     color: var(--text-color);
   }
   .count {
-    margin-inline-start: 0.4rem;
-    padding: 0 0.45rem;
+    margin-inline-start: var(--space-1-5);
+    padding: 0 var(--space-2);
     border-radius: var(--radius-xl);
     background: var(--warning-bg);
     color: var(--text-color);
@@ -269,13 +269,13 @@
   .filter {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
     white-space: nowrap;
   }
   select {
-    padding: 0.3rem var(--space-2);
+    padding: var(--space-1) var(--space-2);
     font-size: var(--font-size-sm);
   }
   .state {

@@ -499,8 +499,7 @@
   .reading-progress-bar {
     position: sticky;
     top: 0;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     height: 3px;
     background: var(--border-color);
     z-index: var(--z-sticky);
@@ -510,7 +509,7 @@
   .reading-progress-fill {
     height: 100%;
     background: var(--primary-color);
-    transition: width 0.1s ease-out;
+    transition: width var(--duration-fast) ease-out;
     border-radius: 0;
   }
 
@@ -602,7 +601,7 @@
     padding: var(--space-2) var(--space-3);
     background: none;
     border: none;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
     transition: all var(--duration-base) ease;
     border-radius: var(--radius-sm);
@@ -662,7 +661,7 @@
     color: var(--text-primary);
     line-height: 1.4;
     position: relative;
-    padding-left: var(--space-3);
+    padding-inline-start: var(--space-3);
     overflow-wrap: anywhere;
     min-width: 0; /* Allow text to shrink in grid layout */
   }
@@ -671,10 +670,10 @@
      a highlight, ported from the deleted SearchTranscriptModal. Only populated when the
      parent supplies `segmentClassification` (the search-result view). */
   .segment-text.keyword-segment {
-    border-left: 3px solid var(--primary-color);
+    border-inline-start: 3px solid var(--primary-color);
   }
   .segment-text.semantic-segment {
-    border-left: 3px solid var(--text-secondary);
+    border-inline-start: 3px solid var(--text-secondary);
   }
 
   /* Content redaction — "blur" mask style. The backend emits
@@ -683,9 +682,9 @@
   .segment-text :global(span.redacted) {
     filter: blur(5px);
     background: var(--surface-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     cursor: help;
-    transition: filter 0.12s ease;
+    transition: filter var(--duration-fast) ease;
     user-select: none;
   }
   .segment-text :global(span.redacted:hover) {
@@ -696,12 +695,12 @@
   .segment-text::before {
     content: '';
     position: absolute;
-    left: 0;
+    inset-inline-start: 0;
     top: 2px;
     width: 2px;
     height: 20px;
     background: var(--border-hover);
-    border-radius: 1px;
+    border-radius: var(--radius-xs);
   }
 
   .low-confidence-dot {
@@ -732,7 +731,7 @@
   .segment-edit-container {
     padding: var(--space-4);
     background: var(--background-secondary);
-    border-left: 3px solid var(--primary-color);
+    border-inline-start: 3px solid var(--primary-color);
   }
 
   .segment-edit-input {
@@ -769,8 +768,8 @@
   .overlap-group {
     position: relative;
     margin: var(--space-2) 0;
-    padding-left: var(--space-3);
-    border-left: 3px solid var(--primary-color);
+    padding-inline-start: var(--space-3);
+    border-inline-start: 3px solid var(--primary-color);
     background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.05) 0%, transparent 100%);
     border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   }
@@ -805,18 +804,18 @@
 
   .overlap-connector {
     position: absolute;
-    left: 6px;
+    inset-inline-start: 6px;
     top: 40px;
     bottom: 8px;
     width: 2px;
     background: var(--primary-color);
     opacity: 0.3;
-    border-radius: 1px;
+    border-radius: var(--radius-xs);
   }
 
   .transcript-segment.in-overlap {
-    margin-left: var(--space-1);
-    border-left: none;
+    margin-inline-start: var(--space-1);
+    border-inline-start: none;
   }
 
   .transcript-segment.in-overlap .segment-content {
@@ -871,7 +870,7 @@
     }
 
     .segment-speaker {
-      font-size: 10px;
+      font-size: var(--font-size-2xs);
       padding: 1px var(--space-1-5);
       white-space: normal;
       max-width: none;
@@ -883,7 +882,7 @@
     .segment-text {
       grid-column: 1 / -1;
       grid-row: 2;
-      padding-left: 0;
+      padding-inline-start: 0;
       font-size: var(--font-size-sm);
     }
 

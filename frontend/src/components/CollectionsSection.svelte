@@ -104,7 +104,7 @@
   .collection-chip {
     background: var(--primary-light);
     color: var(--primary-on-surface);
-    padding: 3px var(--space-2);
+    padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-2xl);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
@@ -139,15 +139,5 @@
     font-style: italic;
     text-align: center;
     padding: var(--space-5);
-  }
-
-  /* Dark mode support */
-  :global([data-theme='dark']) .collection-chip {
-    background: rgba(var(--accent-rgb), 0.2);
-    color: #93bbfc;
-  }
-
-  :global([data-theme='dark']) .collection-chip.more {
-    background: rgba(255, 255, 255, 0.1);
   }
 </style>

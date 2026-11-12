@@ -1,27 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', () => {
-  const store = <T>(value: T) => ({
-    subscribe: (run: (v: T) => void) => {
-      run(value);
-      return () => {};
-    },
-  });
-  return {
-    t: store((key: string, vars?: Record<string, unknown>) =>
-      vars ? `${key} ${JSON.stringify(vars)}` : key
-    ),
-    locale: store('en'),
-  };
-});
-const toast = vi.hoisted(() => ({
-  success: vi.fn(),
-  error: vi.fn(),
-  warning: vi.fn(),
-  info: vi.fn(),
-}));
-vi.mock('$stores/toast', () => ({ toastStore: toast }));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyWithOptionsLocale({ code: 'en' })
+);
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 const api = vi.hoisted(() => ({
   getMyUsage: vi.fn(),
   getLlmBudget: vi.fn(),
@@ -29,6 +12,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('$lib/api/llmUsage', () => api);
 
+import { toastStore } from '$stores/toast';
 import LLMBudgetAdminCard from './LLMBudgetAdminCard.svelte';
 
 const SETTINGS = {
@@ -77,7 +61,7 @@ describe('LLMBudgetAdminCard', () => {
       instance_monthly_tokens: 1_000_000,
       local_unlimited: false,
     });
-    expect(toast.success).toHaveBeenCalledWith('settings.llmUsage.admin.saved');
+    expect(toastStore.success).toHaveBeenCalledWith('settings.llmUsage.admin.saved');
   });
 
   it('refuses a negative limit before anything is sent', async () => {

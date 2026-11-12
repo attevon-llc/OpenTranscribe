@@ -1,30 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', () => {
-  const store = <T>(value: T) => ({
-    subscribe: (run: (v: T) => void) => {
-      run(value);
-      return () => {};
-    },
-  });
-  return {
-    t: store((key: string, vars?: Record<string, unknown>) =>
-      vars ? `${key} ${JSON.stringify(vars)}` : key
-    ),
-    locale: store('en'),
-  };
-});
-const toast = vi.hoisted(() => ({
-  success: vi.fn(),
-  error: vi.fn(),
-  warning: vi.fn(),
-  info: vi.fn(),
-}));
-vi.mock('$stores/toast', () => ({ toastStore: toast }));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyWithOptionsLocale({ code: 'en' })
+);
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 const api = vi.hoisted(() => ({ getLlmSpendPerUser: vi.fn() }));
 vi.mock('$lib/api/llmUsage', () => api);
 
+import { toastStore } from '$stores/toast';
 import LLMUserSpendCard from './LLMUserSpendCard.svelte';
 
 const REPORT = {
@@ -96,6 +80,6 @@ describe('LLMUserSpendCard', () => {
   it('toasts when the report cannot be loaded', async () => {
     api.getLlmSpendPerUser.mockRejectedValue(new Error('boom'));
     render(LLMUserSpendCard);
-    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(toastStore.error).toHaveBeenCalledTimes(1));
   });
 });

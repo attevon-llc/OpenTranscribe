@@ -16,7 +16,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import torch
 from scipy.io import wavfile
 
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
@@ -64,6 +63,8 @@ class TestLoaderChainFallsThrough:
         ids=lambda e: type(e).__name__,
     )
     def test_torchaudio_failure_reaches_scipy(self, monkeypatch, wav_path, exc, caplog):
+        import torch
+
         _ffmpeg_fails(monkeypatch)
         calls = _torchaudio_load_raises(monkeypatch, exc)
 

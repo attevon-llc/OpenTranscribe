@@ -114,6 +114,10 @@ what it appears to. A green one from the wrong schema is worse.
   `norecursedirs=["tests/e2e"]`. **`--strict-markers` makes an unregistered marker a collection
   error** — register any new marker in `[tool.pytest.ini_options] markers` or collection fails.
   (The e2e markers live in `tests/e2e/pytest.ini`, which is a separate rootdir config.)
+- **No module-level `import torch` under `tests/unit` or `tests/api`** (U2): import it inside the
+  test or fixture that uses it, never `pytest.importorskip`. Every collecting xdist worker pays
+  torch's import time and memory otherwise. `test_no_module_level_torch_import.py` is the AST
+  guard; `tests/integration` and `tests/onnx` are exempt (real GPU/model modules).
 - **CI shards the suite (issue #1099).** `.github/workflows/pre-commit.yml` runs `tests/` as
   `--splits 8 --group N` (pytest-split, `duration_based_chunks`, balanced by the committed
   `backend/.test_durations`); a stale file unbalances legs but never drops a test.

@@ -184,7 +184,7 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: var(--modal-backdrop);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -196,7 +196,7 @@
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-xl);
     width: 90%;
     max-height: 90vh;
     display: flex;
@@ -315,10 +315,6 @@
     font-weight: var(--font-weight-medium);
   }
 
-  :global([data-theme='dark']) .modal-backdrop {
-    background-color: rgba(0, 0, 0, 0.65);
-  }
-
   @keyframes slide-in {
     from {
       opacity: 0;
@@ -370,7 +366,7 @@
 
     .modal-header {
       padding: var(--space-4);
-      padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+      padding-top: calc(var(--space-4) + env(safe-area-inset-top, 0px));
     }
 
     .modal-header h2 {
@@ -383,7 +379,7 @@
 
     .modal-footer {
       padding: var(--space-3) var(--space-4);
-      padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
       flex-wrap: wrap;
     }
 

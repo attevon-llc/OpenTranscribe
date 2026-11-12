@@ -196,7 +196,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
-    padding: var(--space-4) 1.125rem;
+    padding: var(--space-4) var(--space-5);
     transition: border-color var(--duration-fast);
   }
 
@@ -216,7 +216,7 @@
   .pinned-label {
     display: inline-flex;
     align-items: center;
-    gap: 0.3125rem;
+    gap: var(--space-1-5);
     color: var(--primary-on-surface);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);

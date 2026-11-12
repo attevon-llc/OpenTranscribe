@@ -151,7 +151,7 @@
   .picker-tab {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
     min-height: 0;
   }
 
@@ -166,11 +166,11 @@
   .picker-row {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: var(--space-2) 0.4rem;
+    gap: var(--space-2-5);
+    padding: var(--space-2) var(--space-1-5);
     border-radius: var(--radius-md);
     cursor: pointer;
-    font-size: 0.87rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
   }
 
@@ -215,9 +215,9 @@
      caller's own recordings. */
   .ownership-badge {
     flex: none;
-    padding: 0.1rem 0.45rem;
+    padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-pill);
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
     background-color: var(--button-hover);
@@ -228,7 +228,7 @@
     padding: var(--space-6) var(--space-2);
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
 
   .sentinel {

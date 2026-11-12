@@ -77,7 +77,7 @@
   .sk-field {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
   }
 
   .sk-label {
@@ -124,7 +124,7 @@
   .sk-card {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
     padding: var(--space-5);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);

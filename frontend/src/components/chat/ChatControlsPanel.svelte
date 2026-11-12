@@ -368,16 +368,16 @@
     position: absolute;
     top: 3.25rem;
     right: 0.75rem;
-    z-index: 20;
+    z-index: calc(var(--z-sticky) + 10);
     width: min(22rem, calc(100vw - 2rem));
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
+    gap: var(--space-4);
     padding: var(--space-4);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-2xl);
     background-color: var(--card-background);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+    box-shadow: var(--shadow-lg);
     /* ⚠️ Without these the panel had NO bound at all — `max-height: none`,
        `overflow-y: visible`. Expanding "Advanced" takes it from ~610px to
        875px, and measured at 1440x{900,800,700} it ran past the viewport
@@ -400,11 +400,11 @@
     top: -1rem;
     z-index: var(--z-base);
     margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
-    padding: var(--space-4) var(--space-4) 0.6rem;
+    padding: var(--space-4) var(--space-4) var(--space-2-5);
     background-color: var(--card-background);
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
   }
 
   .panel-header h2 {
@@ -440,17 +440,17 @@
   .control-group {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
   }
 
   .advanced {
     border-top: 1px solid var(--border-color);
-    padding-top: 0.85rem;
+    padding-top: var(--space-3-5);
   }
 
   .advanced summary {
     cursor: pointer;
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
     list-style: revert;
@@ -467,7 +467,7 @@
   }
 
   .advanced > .control-group {
-    margin-top: 0.9rem;
+    margin-top: var(--space-3-5);
   }
 
   /* form-elements.css gives every <input> width:100% and a surface fill; the
@@ -475,8 +475,8 @@
   .advanced input[type='number'] {
     flex: 1;
     min-width: 0;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.85rem;
+    padding: var(--space-1-5) var(--space-2-5);
+    font-size: var(--font-size-md);
   }
 
   .number-row {
@@ -495,7 +495,7 @@
   }
 
   .hint-line + .hint-line {
-    margin-top: 0.2rem;
+    margin-top: var(--space-1);
   }
 
   .hint-line.clamped {
@@ -505,7 +505,7 @@
   .toggle-row {
     display: flex;
     align-items: flex-start;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
     cursor: pointer;
   }
 
@@ -516,7 +516,7 @@
     flex: none;
     width: 1rem;
     height: 1rem;
-    margin: 0.15rem 0 0;
+    margin: var(--space-0-5) 0 0;
     padding: 0;
     accent-color: var(--primary-color);
     cursor: pointer;
@@ -524,7 +524,7 @@
 
   .toggle-label {
     display: block;
-    font-size: 0.87rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
@@ -541,7 +541,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
@@ -559,7 +559,7 @@
 
   .char-count {
     align-self: flex-end;
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }

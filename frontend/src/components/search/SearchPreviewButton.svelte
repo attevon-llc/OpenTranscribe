@@ -90,6 +90,6 @@
      LIGHT blue in dark mode and would wash out the white glyph. */
   .preview-btn.active:hover {
     background: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.25);
+    box-shadow: var(--focus-ring);
   }
 </style>

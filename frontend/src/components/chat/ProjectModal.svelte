@@ -216,29 +216,29 @@
   .project-form {
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
+    gap: var(--space-4);
   }
 
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
   }
 
   .field-label {
-    font-size: 0.87rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
 
   .scope-button {
     align-self: flex-start;
-    padding: 0.45rem 0.8rem;
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-pill);
     background-color: var(--surface-color);
     color: var(--text-color);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     box-shadow: none;
     cursor: pointer;
   }
@@ -263,7 +263,7 @@
   }
 
   .hint {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.45;
   }
@@ -277,13 +277,13 @@
 
   .confirm-text {
     margin-right: auto;
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 
   .error {
     margin: 0;
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--error-text);
   }
 </style>

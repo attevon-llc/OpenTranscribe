@@ -284,8 +284,8 @@
   .sidebar-header {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    padding: 0.85rem var(--space-3);
+    gap: var(--space-2-5);
+    padding: var(--space-3-5) var(--space-3);
     border-bottom: 1px solid var(--border-color);
     position: sticky;
     top: 0;
@@ -297,14 +297,14 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     width: 100%;
-    padding: 0.55rem var(--space-3);
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background-color: var(--card-background);
     color: var(--text-color);
-    font-size: 0.87rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: background-color var(--duration-fast) ease;
@@ -316,16 +316,16 @@
 
   .archive-toggle {
     align-self: flex-start;
-    padding: 0.15rem 0.4rem;
-    margin-left: -0.4rem;
+    padding: var(--space-0-5) var(--space-1-5);
+    margin-left: calc(-1 * var(--space-1-5));
     border: none;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     /* form-elements.css's bare `button` rule sets a drop-shadow that isn't
        cleared by border/background alone (see ConversationListItem.svelte). */
     box-shadow: none;
     background: none;
     color: var(--text-secondary);
-    font-size: 0.74rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
   }
 
@@ -347,14 +347,14 @@
   }
 
   .group + .group {
-    margin-top: 0.85rem;
+    margin-top: var(--space-3-5);
   }
 
   /* --- projects (#360) --- */
   .projects-group {
     border-bottom: 1px solid var(--border-color);
-    padding-bottom: 0.6rem;
-    margin-bottom: 0.3rem;
+    padding-bottom: var(--space-2-5);
+    margin-bottom: var(--space-1);
   }
 
   .projects-header {
@@ -377,7 +377,7 @@
     padding: 0;
     box-shadow: none;
     border: none;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
@@ -399,7 +399,7 @@
   }
 
   .project-conversations {
-    margin-left: 0.7rem;
+    margin-left: var(--space-3);
     border-left: 1px solid var(--border-color);
     padding-left: var(--space-1);
   }
@@ -407,9 +407,9 @@
   .project-row {
     display: flex;
     align-items: center;
-    gap: 0.15rem;
+    gap: var(--space-0-5);
     border-radius: var(--radius-lg);
-    padding: 0 0.2rem;
+    padding: 0 var(--space-1);
   }
 
   .project-row:hover {
@@ -421,13 +421,13 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.45rem 0.35rem;
+    gap: var(--space-1-5);
+    padding: var(--space-2) var(--space-1-5);
     border: none;
     background: none;
     box-shadow: none;
     color: var(--text-color);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     text-align: left;
     cursor: pointer;
   }
@@ -456,22 +456,22 @@
 
   .project-count {
     flex: none;
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
 
   .projects-empty,
   .project-empty {
-    margin: 0.35rem 0.35rem 0;
-    font-size: 0.78rem;
+    margin: var(--space-1-5) var(--space-1-5) 0;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     list-style: none;
   }
 
   .group-label {
-    margin: 0 0 0.3rem;
-    padding: 0 0.35rem;
+    margin: 0 0 var(--space-1);
+    padding: 0 var(--space-1-5);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
@@ -483,13 +483,13 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
+    gap: var(--space-0-5);
   }
 
   .empty {
     padding: var(--space-6) var(--space-3);
     text-align: center;
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
 

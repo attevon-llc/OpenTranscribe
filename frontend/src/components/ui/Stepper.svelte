@@ -82,7 +82,7 @@
     top: 11px;
     inset-inline: calc(-50% + 16px) calc(50% + 16px);
     height: 2px;
-    border-radius: 1px;
+    border-radius: var(--radius-xs);
     background-color: var(--border-color);
   }
 

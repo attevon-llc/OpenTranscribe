@@ -154,9 +154,9 @@
     align-items: flex-end;
     gap: var(--space-2);
     padding-block: var(--space-2);
-    padding-inline: 0.9rem var(--space-2);
+    padding-inline: var(--space-3-5) var(--space-2);
     border: 1px solid var(--field-border);
-    border-radius: 24px;
+    border-radius: var(--radius-3xl);
     background-color: var(--field-bg);
     transition:
       border-color var(--duration-fast) ease,
@@ -187,7 +187,7 @@
     font-family: inherit;
     font-size: 0.95rem;
     line-height: 1.5;
-    padding: 0.35rem 0;
+    padding: var(--space-1-5) 0;
     max-height: 208px;
     overflow-y: hidden;
   }
@@ -246,12 +246,12 @@
     justify-content: space-between;
     align-items: center;
     gap: var(--space-4);
-    padding: 0.4rem var(--space-3) 0;
+    padding: var(--space-1-5) var(--space-3) 0;
     min-height: 1.1rem;
   }
 
   .counter {
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
@@ -262,9 +262,9 @@
   }
 
   .ai-disclaimer {
-    margin: 0.15rem 0 0;
+    margin: var(--space-0-5) 0 0;
     text-align: center;
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 

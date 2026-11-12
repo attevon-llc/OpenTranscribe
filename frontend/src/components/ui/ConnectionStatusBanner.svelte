@@ -49,13 +49,13 @@
     z-index: var(--z-navbar);
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
     max-width: calc(100vw - 2rem);
-    padding: 0.55rem var(--space-4);
+    padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-pill);
     background: var(--surface-color);
     border: 1px solid var(--warning-color);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--shadow-lg);
     color: var(--text-color);
     font-size: var(--font-size-md);
     line-height: 1.3;
@@ -80,12 +80,12 @@
 
   .connection-retry {
     flex: 0 0 auto;
-    padding: 0.3rem var(--space-3);
+    padding: var(--space-1) var(--space-3);
     border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
     background: var(--button-hover);
     color: var(--text-color);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     cursor: pointer;
     transition: background-color var(--duration-base) ease;

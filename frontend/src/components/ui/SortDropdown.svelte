@@ -273,7 +273,7 @@
   @media (max-width: 768px) {
     .sort-button {
       font-size: var(--font-size-sm);
-      padding: 0.4rem var(--space-3);
+      padding: var(--space-1-5) var(--space-3);
     }
 
     .dropdown-menu {

@@ -309,7 +309,7 @@
     font-size: var(--font-size-sm);
     text-align: start;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background var(--duration-fast);
   }
 
   .suggestion-item:hover,
@@ -347,7 +347,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     box-shadow: var(--dropdown-shadow);
-    z-index: 100;
+    z-index: var(--z-dropdown);
     display: flex;
     align-items: center;
     gap: var(--space-2);

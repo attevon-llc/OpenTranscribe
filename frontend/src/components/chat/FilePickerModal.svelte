@@ -182,7 +182,7 @@
   .picker {
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
+    gap: var(--space-3-5);
     min-height: 24rem;
   }
 
@@ -197,15 +197,15 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding-top: 0.85rem;
+    padding-top: var(--space-3-5);
     border-top: 1px solid var(--border-color);
   }
 
   .summary {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    font-size: 0.82rem;
+    gap: var(--space-2-5);
+    font-size: var(--font-size-md);
     color: var(--text-color);
     flex-wrap: wrap;
   }
@@ -216,7 +216,7 @@
 
   .estimate {
     color: var(--text-secondary);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
   }
 
   .estimate.over {
@@ -227,10 +227,10 @@
   .clear-link {
     background: none;
     border: none;
-    padding: 0.15rem 0.3rem;
+    padding: var(--space-0-5) var(--space-1);
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     text-decoration: underline;
   }

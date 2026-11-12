@@ -59,14 +59,14 @@
   .filter-chip-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     color: var(--text-color);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-regular);
-    padding: 0.35rem 0.7rem;
+    padding: var(--space-1-5) var(--space-3);
     cursor: pointer;
     transition: all var(--duration-base) ease;
     white-space: nowrap;
@@ -95,7 +95,7 @@
   }
 
   .filter-chip-count {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     opacity: 0.8;
   }
 </style>

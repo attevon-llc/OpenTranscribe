@@ -86,7 +86,7 @@
   .picker-tab {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
     min-height: 0;
   }
 
@@ -103,7 +103,7 @@
   .tag-cloud {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     overflow-y: auto;
     max-height: 42vh;
     align-content: flex-start;
@@ -112,13 +112,13 @@
   .tag-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.3rem 0.7rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-pill);
     background-color: var(--surface-color);
     color: var(--text-color);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     transition:
       border-color var(--duration-fast) ease,
@@ -137,7 +137,7 @@
   }
 
   .tag-count {
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
   }
@@ -147,7 +147,7 @@
     padding: var(--space-6) var(--space-2);
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     margin: 0;
   }
 </style>

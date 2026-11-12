@@ -44,7 +44,7 @@
   background-color: color-mix(in srgb, var(--highlight-search) 53%, transparent);
   color: var(--text-primary);
   padding: 0.1em 0.2em;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-weight: var(--font-weight-medium);
 }
 
@@ -52,7 +52,7 @@
   background-color: color-mix(in srgb, var(--highlight-current) 61%, transparent);
   color: var(--text-primary);
   padding: 0.1em 0.2em;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-weight: var(--font-weight-semibold);
   box-shadow: 0 0 0 2px var(--highlight-current-ring);
 }
@@ -78,7 +78,7 @@
   background-color: color-mix(in srgb, var(--highlight-search) 53%, transparent);
   color: var(--text-primary);
   padding: 0.1em 0.2em;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-weight: var(--font-weight-semibold);
 }
 

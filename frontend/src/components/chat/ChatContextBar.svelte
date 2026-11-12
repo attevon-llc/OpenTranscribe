@@ -157,20 +157,20 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     padding: var(--space-2) 0;
   }
 
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.22rem 0.6rem;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-pill);
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     color: var(--text-secondary);
-    font-size: 0.76rem;
+    font-size: var(--font-size-sm);
     white-space: nowrap;
   }
 
@@ -210,12 +210,12 @@
     width: 1rem;
     height: 1rem;
     padding: 0;
-    margin: 0 -0.15rem 0 0.05rem;
+    margin: 0 calc(-1 * var(--space-0-5)) 0 0.05rem;
     border: none;
     border-radius: var(--radius-round);
     background: none;
     color: inherit;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     line-height: 1;
     cursor: pointer;
   }
@@ -243,13 +243,13 @@
   .text-action {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.22rem 0.55rem;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
     border: none;
     border-radius: var(--radius-md);
     background: none;
     color: var(--text-secondary);
-    font-size: 0.76rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
   }
 

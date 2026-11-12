@@ -377,8 +377,8 @@
   .occurrence-type-label {
     display: inline-block;
     margin-bottom: var(--space-0-5);
-    padding: 0 0.3125rem;
-    border-radius: 3px;
+    padding: 0 var(--space-1-5);
+    border-radius: var(--radius-sm);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
     text-transform: uppercase;

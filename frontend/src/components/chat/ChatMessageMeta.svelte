@@ -198,8 +198,8 @@
   .meta-toggle {
     background: none;
     border: none;
-    padding: 0.2rem 0.35rem;
-    margin-left: -0.35rem;
+    padding: var(--space-1) var(--space-1-5);
+    margin-left: calc(-1 * var(--space-1-5));
     border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
@@ -214,13 +214,13 @@
   .meta-grid {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: var(--space-1) 0.85rem;
+    gap: var(--space-1) var(--space-3-5);
     margin: var(--space-2) 0 0;
-    padding: 0.65rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background-color: var(--surface-color);
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
   }
 
   dt {
@@ -262,28 +262,28 @@
 
   .estimated {
     color: var(--text-secondary);
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     margin-left: var(--space-1);
   }
 
   .disambiguation-hint {
-    margin-bottom: 0.3rem;
+    margin-bottom: var(--space-1);
     color: var(--text-secondary);
   }
 
   .disambiguation-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
   }
 
   .disambiguation-chip {
-    padding: 0.18rem 0.55rem;
+    padding: var(--space-0-5) var(--space-2);
     border: 1px solid rgba(var(--primary-color-rgb), 0.35);
     border-radius: var(--radius-pill);
     background-color: rgba(var(--primary-color-rgb), 0.08);
     color: var(--primary-on-surface);
-    font-size: 0.76rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
   }

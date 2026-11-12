@@ -98,7 +98,7 @@
   .trace-node {
     position: relative;
     margin: 0;
-    padding: 0.1rem 0;
+    padding: var(--space-0-5) 0;
     animation: trace-node-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
@@ -111,8 +111,8 @@
   .trace-row {
     display: flex;
     align-items: baseline;
-    gap: 0.4rem;
-    font-size: 0.78rem;
+    gap: var(--space-1-5);
+    font-size: var(--font-size-sm);
     line-height: 1.6;
   }
 
@@ -123,7 +123,7 @@
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     flex: 1;
     min-width: 0;
   }
@@ -195,12 +195,12 @@
   }
 
   .trace-badge {
-    padding: 0.02rem 0.3rem;
+    padding: 0.02rem var(--space-1);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background: var(--background-secondary);
     color: var(--text-secondary);
-    font-size: 0.66rem;
+    font-size: var(--font-size-2xs);
     letter-spacing: 0.02em;
     text-transform: uppercase;
     white-space: nowrap;
@@ -219,7 +219,7 @@
   .trace-ms,
   .trace-reason {
     color: var(--text-secondary);
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
   }
 

@@ -749,17 +749,6 @@
 />
 
 <style>
-  .lite-note {
-    margin: 0 0 var(--space-4);
-    padding: var(--space-3) var(--space-4);
-    border-radius: var(--radius-lg);
-    border: 1px solid rgba(var(--primary-color-rgb), 0.3);
-    background: rgba(var(--primary-color-rgb), 0.08);
-    color: var(--text-color);
-    font-size: var(--font-size-md);
-    line-height: 1.45;
-  }
-
   /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
      beneath left-aligned tabs reads as misaligned. */
   .asr-settings {
@@ -818,23 +807,8 @@
     margin-inline-start: auto;
   }
 
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-4);
-    padding-bottom: var(--space-2);
-    border-bottom: 1px solid var(--border-color);
-  }
-
   .section-header h4 {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin: 0;
     font-size: 1.125rem;
-    font-weight: var(--font-weight-medium);
-    color: var(--text-color);
   }
 
   .config-list {
@@ -947,11 +921,6 @@
     background: rgba(var(--warning-color-rgb), 0.12); color: var(--warning-text);
   }
   :global([data-theme='dark']) .admin-badge { background: rgba(var(--warning-color-rgb), 0.2); }
-
-  .shared-by {
-    font-size: var(--font-size-xs); color: var(--text-secondary);
-    font-style: italic; margin-top: var(--space-0-5);
-  }
 
   .toggle-text {
     cursor: pointer; user-select: none; font-size: var(--font-size-xs); color: var(--text-secondary); }

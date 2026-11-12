@@ -314,17 +314,6 @@
 </div>
 
 <style>
-  .lite-note {
-    margin: 0 0 var(--space-4);
-    padding: var(--space-3) var(--space-4);
-    border-radius: var(--radius-lg);
-    border: 1px solid rgba(var(--primary-color-rgb), 0.3);
-    background: rgba(var(--primary-color-rgb), 0.08);
-    color: var(--text-color);
-    font-size: var(--font-size-md);
-    line-height: 1.45;
-  }
-
   /* Left-aligned: these panels sit under a tab strip, and centring a narrower column
      beneath left-aligned tabs reads as misaligned. */
   .engine-settings {

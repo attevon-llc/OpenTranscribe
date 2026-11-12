@@ -21,7 +21,6 @@ import argparse
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -55,7 +54,8 @@ def scripts_errors(root: Path) -> dict[str, int]:
     if not targets:
         msg = f'none of the scripts/ tooling packages {PACKAGES} exist under {root}'
         raise _baseline.ScanError(msg)
-    with tempfile.TemporaryDirectory(prefix='ot-scripts-mypy.') as cache:
+    state = hidden.guard_cache_dir(root, 'scripts-mypy')
+    with hidden.exclusive(state):
         proc = subprocess.run(  # nosec B603  our own interpreter
             [
                 sys.executable,
@@ -64,7 +64,7 @@ def scripts_errors(root: Path) -> dict[str, int]:
                 '--config-file',
                 'pyproject.toml',
                 '--cache-dir',
-                cache,
+                str(state / 'mypy'),
                 '--no-color-output',
                 '--no-error-summary',
                 '--show-error-codes',

@@ -23,12 +23,14 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import io
 import re
 import subprocess
 import sys
-import tempfile
 import tokenize
+from collections.abc import Iterator
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -113,6 +115,42 @@ def check_mypy_version(root: Path) -> None:
         raise _baseline.ScanError(msg)
 
 
+def guard_cache_dir(root: Path, guard: str) -> Path:
+    """Per-checkout persistent state for ``guard`` under the git-ignored ``.cache/``.
+
+    mypy's incremental mode reuses an entry only when path and mtime/size (or hash) still match
+    and is safe on a stale or missing cache (https://mypy.readthedocs.io/en/stable/command_line.html
+    #incremental-mode), so a cold start is simply the old behaviour.
+    """
+    path = root / '.cache' / 'ot-guards' / guard
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+@contextlib.contextmanager
+def exclusive(state: Path) -> Iterator[None]:
+    """Serialise runs of one guard in one checkout; they share a mypy cache and a stripped tree."""
+    with (state / 'lock').open('w') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+
+
+def sync_tree(copy: Path, wanted: dict[str, str]) -> None:
+    """Make ``copy`` hold exactly ``wanted`` (rel path -> text), rewriting only changed files.
+
+    Unchanged files keep their mtime so mypy's cache stays valid; vanished files are deleted.
+    """
+    for existing in [p for p in copy.rglob('*') if p.is_file()]:
+        if existing.relative_to(copy).as_posix() not in wanted:
+            existing.unlink()
+    for rel, text in wanted.items():
+        dest = copy / rel
+        if dest.is_file() and dest.read_text(encoding='utf-8') == text:
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding='utf-8')
+
+
 def hidden_errors(root: Path) -> dict[str, int]:
     """Run mypy over a stripped copy of the tracked tree; ``path::code`` -> error count."""
     check_mypy_version(root)
@@ -120,19 +158,19 @@ def hidden_errors(root: Path) -> dict[str, int]:
     if not files:
         msg = f'no tracked Python files under {TARGET}/ in {root}'
         raise _baseline.ScanError(msg)
-    with tempfile.TemporaryDirectory(prefix='ot-hidden-mypy.') as tmp:
-        copy = Path(tmp) / 'tree'
-        for rel in [*files, 'pyproject.toml']:
-            dest = copy / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            text = (root / rel).read_text(encoding='utf-8')
-            try:
-                dest.write_text(
-                    strip_type_ignores(text) if rel != 'pyproject.toml' else text, encoding='utf-8'
-                )
-            except (tokenize.TokenError, SyntaxError) as exc:
-                msg = f'cannot tokenise {rel}: {exc}'
-                raise _baseline.ScanError(msg) from exc
+    wanted: dict[str, str] = {}
+    for rel in [*files, 'pyproject.toml']:
+        text = (root / rel).read_text(encoding='utf-8')
+        try:
+            wanted[rel] = strip_type_ignores(text) if rel != 'pyproject.toml' else text
+        except (tokenize.TokenError, SyntaxError) as exc:
+            msg = f'cannot tokenise {rel}: {exc}'
+            raise _baseline.ScanError(msg) from exc
+    state = guard_cache_dir(root, 'hidden-mypy')
+    copy = state / 'tree'
+    with exclusive(state):
+        copy.mkdir(exist_ok=True)
+        sync_tree(copy, wanted)
         proc = subprocess.run(  # nosec B603  our own interpreter
             [
                 sys.executable,
@@ -141,7 +179,7 @@ def hidden_errors(root: Path) -> dict[str, int]:
                 '--config-file',
                 'pyproject.toml',
                 '--cache-dir',
-                str(Path(tmp) / 'cache'),
+                str(state / 'mypy'),
                 '--no-color-output',
                 '--no-error-summary',
                 '--show-error-codes',

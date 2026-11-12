@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `python -m app.scripts.demo_seed export --bundle <dir> --manifest <manifest.json>` (#628): writes a seed bundle's `transcripts/<item>.json` from a stack that processed the manifest's media, in the shape `validate` and `import` read.
 - `guard-nuia` (push-stage pre-commit hook, `frontend/tsconfig.nuia.json`, `scripts/guards/check_nuia_ratchet.py`): `noUncheckedIndexedAccess` over the frontend, production code held at zero errors, `*.test.ts` files baselined per file (927 errors in 199 files) until they are converted. Also run by `scripts/lane-check.sh`.
 - `guard-deptry` (push-stage pre-commit hook, `backend/deptry.toml`): fails on Python packages that are imported but undeclared, declared but never imported, only transitive, or dev-only. Every ignore in the config carries its reason.
 - `npm run check:i18n` now also fails on an English key that no source file references (`frontend/scripts/check-i18n-unused.mjs`, allowlist in `i18n-dynamic-prefixes.json`), and the untranslated-copy test flags any English word left in the Arabic, Russian, Japanese, Korean or Chinese locale unless allowlisted with a reason.

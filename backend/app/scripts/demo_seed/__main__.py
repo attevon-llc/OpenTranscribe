@@ -1,5 +1,6 @@
-"""Seed the public demo from a bundle (issue #628): ``validate`` or ``import``.
+"""Seed the public demo from a bundle (issue #628): ``validate``, ``import`` or ``export``.
 
+    python -m app.scripts.demo_seed export --bundle /out --manifest /seed/manifest.json
     python -m app.scripts.demo_seed validate --bundle /seed
     python -m app.scripts.demo_seed import --bundle /seed
 
@@ -293,13 +294,29 @@ def _import(bundle: Path) -> int:
     return EXIT_OK
 
 
+def _export(bundle: Path, manifest: Path | None) -> int:
+    from app.db.base import SessionLocal
+    from app.scripts.demo_seed.export import export_transcripts
+
+    if manifest is None:
+        print("export needs --manifest", file=sys.stderr)
+        return EXIT_USAGE
+    with SessionLocal() as db:
+        written = export_transcripts(db, bundle, manifest)
+    print(f"exported {len(written)} transcript(s) to {bundle}")
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point; returns the exit code."""
     parser = argparse.ArgumentParser(prog="python -m app.scripts.demo_seed")
-    parser.add_argument("command", choices=("validate", "import"))
+    parser.add_argument("command", choices=("validate", "import", "export"))
     parser.add_argument("--bundle", type=Path, required=True)
+    parser.add_argument("--manifest", type=Path, help="export: the manifest naming the items")
     args = parser.parse_args(argv)
     try:
+        if args.command == "export":
+            return _export(args.bundle, args.manifest)
         if args.command == "validate":
             version, items = load_bundle(args.bundle)
             conversations = load_conversations(args.bundle, {i.id for i in items})

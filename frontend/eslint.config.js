@@ -61,7 +61,7 @@ export default tseslint.config(
       // typescript-eslint's no-unused-vars crashes on svelte-eslint-parser nodes (a bare
       // `$: x = 1` is enough; still true on typescript-eslint 8.72.1 + eslint-plugin-svelte
       // 3.24.1). Unused locals in .svelte are ratcheted by scripts/guards/check_svelte_unused.py
-      // (tsconfig.unused.json) instead. Re-test upstream before removing this block.
+      // (tsconfig.ratchets.json) instead. Re-test upstream before removing this block.
       '@typescript-eslint/no-unused-vars': 'off',
       'no-unused-vars': 'off',
     },

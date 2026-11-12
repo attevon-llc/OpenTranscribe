@@ -458,7 +458,7 @@ repos:
         verbose: true
       # typescript-eslint's no-unused-vars crashes on svelte-eslint-parser nodes (still true on
       # typescript-eslint 8.72.1 + eslint-plugin-svelte 3.24.1), so the TypeScript compiler's
-      # noUnusedLocals/noUnusedParameters (tsconfig.unused.json) covers .svelte files instead.
+      # noUnusedLocals/noUnusedParameters (tsconfig.ratchets.json) covers .svelte files instead.
       - id: guard-svelte-unused
         name: unused locals in .svelte files ratchet (baselined)
         entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_svelte_unused.py'
@@ -467,8 +467,10 @@ repos:
         files: ^(frontend/(src/|tsconfig[^/]*\.json$|package\.json$)|scripts/guards/.*)
         stages: [pre-push]
         verbose: true
-      # `noUncheckedIndexedAccess` (tsconfig.nuia.json) on top of the real tsconfig: production code
+      # `noUncheckedIndexedAccess` (tsconfig.ratchets.json) on top of the real tsconfig: production code
       # is held at zero, *.test.ts files are baselined until they are converted.
+      # Shares ONE svelte-check run with guard-svelte-unused (frontend/.cache/svelte-check/, keyed by
+      # a content hash of the frontend tree), so the pair costs one run, not two.
       - id: guard-nuia
         name: noUncheckedIndexedAccess errors ratchet (baselined)
         entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_nuia_ratchet.py'

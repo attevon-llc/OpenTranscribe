@@ -18,6 +18,7 @@ from .endpoints import admin_identity
 from .endpoints import admin_llm_budget
 from .endpoints import admin_maintenance
 from .endpoints import admin_quarantine
+from .endpoints import admin_removed_members
 from .endpoints import admin_scim_tokens
 from .endpoints import admin_settings
 from .endpoints import admin_storage_integrity
@@ -191,6 +192,10 @@ include_router_with_consistency(
 )
 include_router_with_consistency(
     self_erasure.admin_router, prefix="/admin/self-erasure", tags=["admin"]
+)
+# Accounts an administrator removed, waiting out their grace period (issue #1104).
+include_router_with_consistency(
+    admin_removed_members.router, prefix="/admin/removed-members", tags=["admin"]
 )
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(

@@ -26,10 +26,10 @@ from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
+from app.services import removed_member_service
 from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_not_last_super_admin
 from app.services.account_security_service import audit_user_deleted
-from app.services.user_deletion_service import delete_user_account
 from app.services.user_lookup import list_users_by_name
 
 # No basicConfig here — this module is imported via the API router before
@@ -386,13 +386,24 @@ def delete_admin_user(
         # The held-file refusal (before any pass, issue #689), the purge plan, the
         # savepoint-wrapped passes, the commit and the external purge. A non-empty
         # residual_errors becomes a PARTIAL audit outcome + ERROR log, never swallowed.
-        residual_errors = delete_user_account(db, user)
+        removal = removed_member_service.remove_account(db, user, current_user)
+        residual_errors = removal.residual_errors
 
         # This endpoint destroys a user, their files and their transcripts irreversibly
         # and recorded NOTHING — while its twin, DELETE /api/users/{uuid}, performs the
         # identical deletion through these same three helpers and does audit it. Emitted
         # after the commit, matching that twin, so a failed delete leaves no record of a
         # deletion that did not happen. FedRAMP AU-2/AU-12, GDPR Art. 30(2)(d).
+        if removal.entry is not None:
+            # Scheduled, not deleted: the ledger's gdpr.erasure.scheduled event is the record.
+            return {
+                "message": "User removed; personal files are erased after the grace period",
+                "storage_objects_failed": 0,
+                "scheduled_for": removal.entry.scheduled_for.isoformat()
+                if removal.entry.scheduled_for
+                else None,
+                "ledger_uuid": str(removal.entry.uuid),
+            }
         audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent, residual_errors)
 
         logger.info(f"User deletion completed successfully: {user_id}")

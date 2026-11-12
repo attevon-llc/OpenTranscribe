@@ -53,6 +53,8 @@ export interface SelfErasureSettings {
   enabled: boolean;
   grace_days: number;
   max_grace_days: number;
+  /** Days before an administrator-removed member's personal files are erased (0 = at once). */
+  removed_member_grace_days: number;
 }
 
 export async function getSelfErasureStatus(): Promise<SelfErasureStatus> {
@@ -76,9 +78,30 @@ export async function getSelfErasureSettings(): Promise<SelfErasureSettings> {
 }
 
 export async function putSelfErasureSettings(
-  update: Partial<Pick<SelfErasureSettings, 'enabled' | 'grace_days'>>
+  update: Partial<Pick<SelfErasureSettings, 'enabled' | 'grace_days' | 'removed_member_grace_days'>>
 ): Promise<SelfErasureSettings> {
   const response = await axiosInstance.put('/admin/self-erasure', update);
+  return response.data;
+}
+
+/** `GET /admin/removed-members`: an account an administrator removed, waiting out its grace. */
+export interface RemovedMember {
+  ledger_uuid: string;
+  subject_user_uuid: string | null;
+  display_name: string | null;
+  requested_at: string;
+  scheduled_for: string | null;
+  status: 'scheduled' | 'cancelled';
+}
+
+export async function listRemovedMembers(): Promise<RemovedMember[]> {
+  const response = await axiosInstance.get('/admin/removed-members');
+  return response.data;
+}
+
+/** Cancel the pending erase and reactivate the account. 409 once the grace period is over. */
+export async function restoreRemovedMember(ledgerUuid: string): Promise<RemovedMember> {
+  const response = await axiosInstance.post(`/admin/removed-members/${ledgerUuid}/restore`);
   return response.data;
 }
 

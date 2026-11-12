@@ -36,6 +36,7 @@ from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.core.constants import GDPR_ORG_ERASURE_DELAY_HOURS_KEY
 from app.core.constants import GDPR_ORG_MEMBER_ERASURE_DELAY_HOURS_KEY
+from app.core.constants import GDPR_REMOVED_MEMBER_GRACE_DAYS_KEY
 from app.core.constants import GDPR_SELF_ERASURE_ENABLED_KEY
 from app.core.constants import GDPR_SELF_ERASURE_GRACE_DAYS_KEY
 from app.core.constants import MAX_GDPR_ORG_ERASURE_DELAY_HOURS
@@ -49,6 +50,7 @@ from app.schemas.self_erasure import SelfErasureRequestReceipt
 from app.schemas.self_erasure import SelfErasureSettings
 from app.schemas.self_erasure import SelfErasureSettingsUpdate
 from app.schemas.self_erasure import SelfErasureStatus
+from app.services import removed_member_service
 from app.services import scheduled_erasure_service as scheduled
 from app.services import self_erasure_service as service
 from app.services.reauth import can_reauthenticate
@@ -182,6 +184,7 @@ def _read_settings(db: Session) -> SelfErasureSettings:
         max_grace_days=MAX_GDPR_SELF_ERASURE_GRACE_DAYS,
         org_erasure_delay_hours=_delay_hours(db, "organization"),
         org_member_erasure_delay_hours=_delay_hours(db, "org_member"),
+        removed_member_grace_days=removed_member_service.grace_days(db),
         min_org_erasure_delay_hours=MIN_GDPR_ORG_ERASURE_DELAY_HOURS,
         max_org_erasure_delay_hours=MAX_GDPR_ORG_ERASURE_DELAY_HOURS,
     )
@@ -211,6 +214,17 @@ def put_self_erasure_settings(
     if body.grace_days is not None and body.grace_days != service.grace_days(db):
         set_setting(db, GDPR_SELF_ERASURE_GRACE_DAYS_KEY, body.grace_days)
         changes.append({"setting": GDPR_SELF_ERASURE_GRACE_DAYS_KEY, "value": body.grace_days})
+    if (
+        body.removed_member_grace_days is not None
+        and body.removed_member_grace_days != removed_member_service.grace_days(db)
+    ):
+        set_setting(db, GDPR_REMOVED_MEMBER_GRACE_DAYS_KEY, body.removed_member_grace_days)
+        changes.append(
+            {
+                "setting": GDPR_REMOVED_MEMBER_GRACE_DAYS_KEY,
+                "value": body.removed_member_grace_days,
+            }
+        )
     for key, subject_type, value in (
         (GDPR_ORG_ERASURE_DELAY_HOURS_KEY, "organization", body.org_erasure_delay_hours),
         (

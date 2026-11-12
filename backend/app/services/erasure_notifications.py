@@ -7,7 +7,10 @@ quarantine filter applies); an email goes out as well when a mail transport is c
 
 Everything here is best effort and never raises: a notice that fails must not stop an erasure from
 being scheduled, cancelled or run, and the ledger and audit log are the record, not the notice.
-Self-service (``user``) requests are not covered: the person who made them is the one who asked.
+Self-service (``user``, ``data_subject``) requests are not covered: the person who made them is the
+one who asked. An administrator's removal of an account (``user`` by ``super_admin``/``org_admin``,
+issue #1104) is covered: the requesting administrator and the administrators of the organizations
+the removed account belongs to are told; the removed account is deactivated and is not.
 The reminder is de-duplicated with a Redis ``SET NX`` so the hourly tick sends it once.
 """
 
@@ -40,7 +43,7 @@ REMINDER_LEAD = timedelta(hours=24)
 _REMINDER_KEY_TTL_SECONDS = 22 * 24 * 3600
 
 #: Subject types an organization administrator schedules.
-_NOTIFIED_SUBJECT_TYPES = ("org_member", "organization")
+_NOTIFIED_SUBJECT_TYPES = ("org_member", "organization", "user")
 
 
 class ErasureNoticeKind(StrEnum):
@@ -60,7 +63,10 @@ def _when(entry: ErasureLedgerEntry) -> str:
 
 def _message(kind: ErasureNoticeKind, entry: ErasureLedgerEntry) -> str:
     """The English fallback text; the web client words the notice itself in the user's language."""
-    scope = "an organization" if entry.subject_type == "organization" else "an organization member"
+    scope = {
+        "organization": "an organization",
+        "user": "a removed member's personal files",
+    }.get(entry.subject_type, "an organization member")
     if kind is ErasureNoticeKind.REQUESTED:
         return (
             f"A data erasure of {scope} was scheduled to run at {_when(entry)}. "
@@ -83,6 +89,8 @@ def resolve_recipients(db: Session, entry: ErasureLedgerEntry) -> list[tuple[int
     """
     if entry.subject_type not in _NOTIFIED_SUBJECT_TYPES:
         return []
+    if entry.subject_type == "user":
+        return _removal_recipients(db, entry)
     ids: set[int] = set()
     if entry.subject_organization_id is not None:
         ids.update(
@@ -94,6 +102,31 @@ def resolve_recipients(db: Session, entry: ErasureLedgerEntry) -> list[tuple[int
         )
     if entry.subject_type == "org_member" and entry.subject_user_id is not None:
         ids.add(int(entry.subject_user_id))
+    if not ids:
+        return []
+    rows = db.query(User.id, User.email).filter(User.id.in_(ids), User.is_active.is_(True)).all()
+    return [(int(r.id), r.email) for r in rows]
+
+
+def _removal_recipients(db: Session, entry: ErasureLedgerEntry) -> list[tuple[int, str | None]]:
+    """The requesting admin plus the admins of the removed account's organizations (#1104)."""
+    if entry.actor_kind == "data_subject":
+        return []
+    ids: set[int] = set()
+    if entry.actor_user_id is not None:
+        ids.add(int(entry.actor_user_id))
+    if entry.subject_user_id is not None:
+        member_orgs = db.query(OrganizationMembership.organization_id).filter(
+            OrganizationMembership.user_id == entry.subject_user_id
+        )
+        ids.update(
+            int(r[0])
+            for r in db.query(OrganizationMembership.user_id).filter(
+                OrganizationMembership.organization_id.in_(member_orgs),
+                OrganizationMembership.role == "org:admin",
+            )
+        )
+        ids.discard(int(entry.subject_user_id))
     if not ids:
         return []
     rows = db.query(User.id, User.email).filter(User.id.in_(ids), User.is_active.is_(True)).all()
@@ -156,6 +189,7 @@ def send_due_reminders(db: Session, *, now: datetime | None = None) -> int:
         db.query(ErasureLedgerEntry)
         .filter(
             ErasureLedgerEntry.subject_type.in_(_NOTIFIED_SUBJECT_TYPES),
+            ErasureLedgerEntry.actor_kind != "data_subject",
             ErasureLedgerEntry.status == "deferred",
             ErasureLedgerEntry.deferred_reason == "grace_period",
             ErasureLedgerEntry.scheduled_for > current,

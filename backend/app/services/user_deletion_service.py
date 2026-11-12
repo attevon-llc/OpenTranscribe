@@ -200,7 +200,7 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         logger.info(f"Deleted {len(tag_ids)} tags for user {user_id}")
 
 
-def _assert_no_held_files(db: Session, user_id: int) -> None:
+def assert_no_held_files(db: Session, user_id: int) -> None:
     """Refuse to delete an account that still owns legally-held evidence (issue #689).
 
     "Held" is the platform's hold OR an organization's (``hold_guard.held_pred``, issue #1276):
@@ -301,7 +301,7 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
     """Delete all media files and related records for a user.
 
     **A user owning any file under an active legal hold is REFUSED before anything is
-    deleted** (:func:`_assert_no_held_files`, issue #689). The check runs
+    deleted** (:func:`assert_no_held_files`, issue #689). The check runs
     here as well as in :func:`delete_user_account`, the single caller of the three
     passes, which runs it *first* so that the two earlier passes
     (``_delete_user_owned_records``, ``_delete_user_speakers``) have not already
@@ -351,7 +351,7 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
     Raises:
         ConflictError: 409 when the user owns a file under an active legal hold.
     """
-    _assert_no_held_files(db, user_id)
+    assert_no_held_files(db, user_id)
 
     media_ids = [
         row[0] for row in db.query(MediaFile.id).filter(MediaFile.user_id == user_id).all()
@@ -426,7 +426,7 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
         logger.info(f"Deleted {media_count} media files for user {user_id}")
 
 
-def _hand_over_org_content(db: Session, user_id: int) -> None:
+def hand_over_org_content(db: Session, user_id: int) -> None:
     """Re-own the account's organization content before the destroy passes (issue #1104).
 
     For every organization the account is a member of and owns content in, an administrator
@@ -505,8 +505,8 @@ def delete_user_account(db: Session, user: User) -> list[dict[str, Any]]:
     user_id = int(user.id)
     user_uuid = str(user.uuid)
 
-    _assert_no_held_files(db, user_id)
-    _hand_over_org_content(db, user_id)
+    assert_no_held_files(db, user_id)
+    hand_over_org_content(db, user_id)
 
     purge_plan = account_purge.load_account_purge_plans(db, user_id)
 

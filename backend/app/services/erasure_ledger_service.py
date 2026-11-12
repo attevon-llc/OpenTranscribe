@@ -70,7 +70,9 @@ from typing import Any
 
 from minio.error import MinioException
 from sqlalchemy import ColumnElement
+from sqlalchemy import Select
 from sqlalchemy import and_
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from urllib3.exceptions import HTTPError as Urllib3HTTPError
@@ -648,6 +650,24 @@ def record_resurrection(
         action="gdpr_erasure_resurrection_detected",
         outcome=AuditOutcome.FAILURE,
         extra={"store_key": store_key} if store_key else None,
+    )
+
+
+#: Ledger actor kinds of an administrator's account removal (issue #1104).
+ADMIN_ACTOR_KINDS = ("super_admin", "org_admin")
+
+
+def owners_pending_removal() -> Select[Any]:
+    """``SELECT user_id`` of accounts whose administrator removal waits out its grace period.
+
+    The sharing resolvers use it so a removed member's files stay unreachable by others.
+    """
+    return select(ErasureLedgerEntry.subject_user_id).where(
+        ErasureLedgerEntry.subject_type == "user",
+        ErasureLedgerEntry.status == "deferred",
+        ErasureLedgerEntry.deferred_reason == "grace_period",
+        ErasureLedgerEntry.actor_kind.in_(ADMIN_ACTOR_KINDS),
+        ErasureLedgerEntry.subject_user_id.is_not(None),
     )
 
 

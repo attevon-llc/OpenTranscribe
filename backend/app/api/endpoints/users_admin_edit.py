@@ -31,6 +31,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserUpdate
+from app.services import removed_member_service
 from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_local_fallback_settable
 from app.services.account_security_service import assert_not_last_super_admin
@@ -43,7 +44,6 @@ from app.services.account_security_service import audit_role_change
 from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import revoke_all_sessions
-from app.services.user_deletion_service import delete_user_account
 from app.services.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -315,9 +315,14 @@ def delete_user(
 
     # The cascade shared with DELETE /admin/users/{uuid}: held-file refusal, purge
     # plan, the savepoint-wrapped passes, commit, then the external purge.
-    residual_errors = delete_user_account(db, user)
+    removal = removed_member_service.remove_account(db, user, current_user)
+    if removal.scheduled:
+        # Not deleted yet: the ledger's gdpr.erasure.scheduled event is the record.
+        return None
 
     # ADMIN_USER_DELETE existed as an event type with no emitter anywhere.
-    audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent, residual_errors)
+    audit_user_deleted(
+        deleted_snapshot, current_user, client_ip, user_agent, removal.residual_errors
+    )
 
     return None

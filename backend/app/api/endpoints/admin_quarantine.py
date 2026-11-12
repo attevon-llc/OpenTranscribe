@@ -175,7 +175,7 @@ def release_media_file(
     that is *released but still held* -- ``is_quarantined=False, legal_hold=True``.
     Before this, that state's only documented remedy (this very endpoint) refused
     it with 409 "File is not quarantined", which made the account-deletion guard's
-    (``_assert_no_held_files``) own documented remedy unreachable. The
+    (``assert_no_held_files``) own documented remedy unreachable. The
     409 stays for the *release-from-quarantine* leg -- releasing a file that was
     never quarantined and carries no hold is still refused -- but a
     released-but-held file may now have its hold lifted here.

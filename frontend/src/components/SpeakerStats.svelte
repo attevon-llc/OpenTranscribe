@@ -420,7 +420,7 @@
   .card-value {
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
     line-height: 1.2;
   }
 
@@ -443,7 +443,7 @@
     gap: var(--space-2);
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
     margin: 0;
   }
 
@@ -519,7 +519,7 @@
 
   .speaker-name-chip {
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
     font-size: var(--font-size-body);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -543,7 +543,7 @@
 
   .stat-value {
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
     font-size: var(--font-size-body);
     line-height: 1.2;
   }
@@ -575,7 +575,7 @@
     gap: var(--space-1-5);
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
     margin: 0 0 var(--space-2) 0;
   }
 
@@ -621,7 +621,7 @@
   }
 
   .speaker-name-small {
-    color: var(--text-primary);
+    color: var(--text-color);
     font-weight: var(--font-weight-medium);
     overflow: hidden;
     text-overflow: ellipsis;

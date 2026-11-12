@@ -305,7 +305,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .domain-tabs {
@@ -323,7 +323,7 @@
     cursor: pointer;
     background: transparent;
     border: 1px solid var(--border-color);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     transition: all var(--duration-fast);
   }
 
@@ -365,7 +365,7 @@
   .list-loading, .empty-terms {
     text-align: center;
     padding: var(--space-6);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
 
@@ -419,13 +419,13 @@
 
   .category-text {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .system-badge {
     padding: var(--space-0-5) var(--space-1-5);
     background: color-mix(in srgb, var(--text-secondary) 15%, transparent);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-xs);
   }

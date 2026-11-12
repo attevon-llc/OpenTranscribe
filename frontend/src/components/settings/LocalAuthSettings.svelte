@@ -384,7 +384,7 @@
     border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
     background: rgba(var(--warning-color-rgb), 0.12);
-    color: var(--color-text);
+    color: var(--text-color);
     font-size: var(--font-size-sm);
     line-height: 1.45;
   }
@@ -395,7 +395,7 @@
     border: 1px solid var(--color-info-border);
     border-radius: var(--radius-md);
     background: var(--color-info-bg);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
     line-height: 1.5;
   }

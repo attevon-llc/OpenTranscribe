@@ -149,7 +149,7 @@
     padding: var(--space-2); border: 1px solid var(--border-color); border-radius: var(--radius-md);
   }
   .stacked-field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background); }
-  .stacked-field input::placeholder { color: var(--text-light); }
+  .stacked-field input::placeholder { color: var(--text-secondary); }
 
   .consent-row {
     display: flex; align-items: flex-start; gap: var(--space-2-5);
@@ -158,7 +158,7 @@
     background: var(--surface-color);
   }
   .consent-row input[type='checkbox'] { margin-top: var(--space-1); flex-shrink: 0; }
-  .consent-text { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); }
+  .consent-text { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-color); }
 
   .validation-error {
     display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2);

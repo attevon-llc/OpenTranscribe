@@ -32,7 +32,7 @@
 }
 
 .auth-header p {
-  color: var(--text-light);
+  color: var(--text-secondary);
   font-size: var(--font-size-body);
 }
 
@@ -76,7 +76,7 @@
 .auth-links {
   margin-top: var(--space-6);
   text-align: center;
-  color: var(--text-light);
+  color: var(--text-secondary);
 }
 
 .auth-link {

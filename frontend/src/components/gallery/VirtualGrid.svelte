@@ -516,7 +516,7 @@
     /* Was 600 — the over-bold outlier issue #749 names (the list's `.file-title` is
        already 500; this is the view that needed fixing, not the list). */
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -562,7 +562,7 @@
   /* --- Dark mode --- */
 
   :global([data-theme='dark']) .file-name {
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   :global([data-theme='dark']) .meta-line {

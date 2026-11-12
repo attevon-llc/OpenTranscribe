@@ -554,7 +554,7 @@
     border-radius: var(--radius-md);
     cursor: pointer;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     white-space: nowrap;
   }
 
@@ -604,20 +604,20 @@
   .cost-hint {
     margin: var(--space-1) 0 0;
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .field-hint {
     margin: var(--space-1) 0 0;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-style: italic;
   }
 
   .pricing-disclaimer {
     margin: 0;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-style: italic;
   }
 

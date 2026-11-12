@@ -389,7 +389,7 @@
   .collection-remove {
     background: none;
     border: none;
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-base);
     cursor: pointer;
     padding: 0;
@@ -444,7 +444,7 @@
   }
 
   .suggested-label {
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
 
   .suggested-collection {
@@ -454,7 +454,7 @@
     padding: var(--space-1) var(--space-2);
     font-size: var(--font-size-sm);
     cursor: pointer;
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
 
   .suggested-collection:hover {
@@ -492,7 +492,7 @@
   }
 
   .dropdown-label {
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
 

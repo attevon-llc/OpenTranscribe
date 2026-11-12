@@ -324,7 +324,7 @@
     margin: 0 0 var(--space-4) 0;
     font-size: var(--font-size-sm);
     line-height: 1.5;
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .tier-grid {
@@ -339,14 +339,14 @@
     flex-direction: column;
     gap: var(--space-1-5);
     padding: var(--space-3);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background: var(--color-bg);
     cursor: pointer;
   }
 
   .tier-card.selected {
-    border-color: var(--color-primary);
+    border-color: var(--primary-color);
     box-shadow: 0 0 0 2px var(--color-primary-alpha);
   }
 
@@ -371,18 +371,18 @@
   .tier-name {
     font-weight: var(--font-weight-semibold);
     font-size: var(--font-size-body);
-    color: var(--color-text);
+    color: var(--text-color);
   }
 
   .tier-desc {
     font-size: var(--font-size-xs);
     line-height: 1.4;
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .policy-preview {
     background: var(--color-bg);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     padding: var(--space-3);
     margin-bottom: var(--space-4);
@@ -400,7 +400,7 @@
     border: 1px solid var(--color-info-border);
     border-radius: var(--radius-md);
     background: var(--color-info-bg);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
     line-height: 1.5;
   }
@@ -479,17 +479,17 @@
   .list-status {
     margin: 0 0 var(--space-4) 0;
     padding: var(--space-2-5) var(--space-3);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
     line-height: 1.5;
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .list-status.missing {
     border-color: rgba(var(--warning-color-rgb), 0.45);
     background: rgba(var(--warning-color-rgb), 0.12);
-    color: var(--color-text);
+    color: var(--text-color);
   }
 
   .list-status code {

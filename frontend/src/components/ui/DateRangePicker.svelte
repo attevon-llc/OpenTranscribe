@@ -305,7 +305,7 @@
   }
 
   .date-text.placeholder {
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   /* The floating layer. Fixed to the viewport and portaled to <body> (see the script

@@ -279,14 +279,14 @@
     align-items: flex-start;
     gap: var(--space-3);
     padding: var(--space-3);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     cursor: pointer;
     transition: border-color var(--duration-base), background-color var(--duration-base);
   }
 
   .radio-label:hover {
-    border-color: var(--color-primary);
+    border-color: var(--primary-color);
   }
 
   .radio-label input[type="radio"] {
@@ -303,7 +303,7 @@
 
   .radio-title {
     font-weight: var(--font-weight-medium);
-    color: var(--color-text);
+    color: var(--text-color);
   }
 
   .radio-description {

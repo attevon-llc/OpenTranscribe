@@ -363,7 +363,7 @@
       border-radius: var(--radius-md);
       cursor: pointer;
       transition: background-color var(--duration-fast) ease;
-      color: var(--text-primary);
+      color: var(--text-color);
       font-size: var(--font-size-md);
       text-align: start;
     }

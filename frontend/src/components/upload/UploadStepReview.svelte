@@ -176,7 +176,7 @@
   }
 
   .review-value {
-    flex: 1; font-size: var(--font-size-sm); color: var(--text-primary);
+    flex: 1; font-size: var(--font-size-sm); color: var(--text-color);
     overflow-wrap: anywhere;
   }
 
@@ -198,7 +198,7 @@
 
   .review-chip.collection {
     background: var(--primary-bg); color: var(--primary-on-surface);
-    border: 1px solid var(--primary-border);
+    border: 1px solid var(--primary-color);
   }
 
   :global([data-theme='dark']) .review-chip.collection { background: rgba(var(--accent-rgb), 0.15); border-color: rgba(var(--accent-rgb), 0.3); }

@@ -128,8 +128,8 @@
   }
 
   .toggle-btn:hover:not(.active) {
-    background: var(--hover-bg);
-    color: var(--text-primary);
+    background: var(--hover-color);
+    color: var(--text-color);
   }
 
   .toggle-btn:focus:not(:focus-visible) {

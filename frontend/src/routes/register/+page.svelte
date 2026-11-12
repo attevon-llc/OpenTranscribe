@@ -310,7 +310,7 @@
     border: none;
     cursor: pointer;
     padding: var(--space-1);
-    color: var(--text-light);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     border-radius: var(--radius-sm);
@@ -328,7 +328,7 @@
   }
 
   .info-icon {
-    color: var(--text-light);
+    color: var(--text-secondary);
     cursor: help;
     transition: color var(--duration-base);
   }
@@ -380,7 +380,7 @@
     margin: 0;
     padding-inline-start: var(--space-5);
     font-size: var(--font-size-xs);
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
 
   .tooltip-content li {

@@ -103,7 +103,7 @@
   .demo-build {
     margin: 0;
     font-size: var(--font-size-md);
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
 
   .demo-build {

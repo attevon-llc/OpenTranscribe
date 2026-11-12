@@ -153,6 +153,6 @@
     font-size: var(--font-size-sm); color: var(--text-secondary);
   }
   .text { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
-  .text strong { color: var(--text-primary); font-weight: var(--font-weight-semibold); }
+  .text strong { color: var(--text-color); font-weight: var(--font-weight-semibold); }
   .progress { color: var(--primary-on-surface); }
 </style>

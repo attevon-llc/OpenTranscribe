@@ -568,7 +568,7 @@
 
   .legend-title {
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .legend-info-wrapper {
@@ -614,7 +614,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    color: var(--text-color-secondary);
+    color: var(--text-secondary);
     margin-bottom: var(--space-2);
     font-size: var(--font-size-sm);
   }
@@ -634,7 +634,7 @@
     margin: 0;
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .speaker-list {
@@ -692,7 +692,7 @@
 
   .timestamp-more {
     font-size: var(--font-size-2xs);
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
     font-style: italic;
     padding-top: 1px;
   }
@@ -930,7 +930,7 @@
     cursor: pointer;
     padding: var(--space-0-5);
     border-radius: var(--radius-sm);
-    color: var(--text-color-secondary);
+    color: var(--text-secondary);
     transition: background-color var(--duration-base) ease;
     display: flex;
     align-items: center;
@@ -957,7 +957,7 @@
 
   .matches-help {
     font-size: var(--font-size-2xs);
-    color: var(--text-color-secondary);
+    color: var(--text-secondary);
     margin-bottom: var(--space-1);
     font-style: italic;
   }
@@ -995,7 +995,7 @@
     padding: var(--space-1) var(--space-1-5);
     text-align: center;
     font-size: var(--font-size-2xs);
-    color: var(--text-color-secondary);
+    color: var(--text-secondary);
     font-style: italic;
   }
 
@@ -1090,7 +1090,7 @@
   }
 
   .matches-scroll-container::-webkit-scrollbar-thumb:hover {
-    background: var(--text-color-secondary);
+    background: var(--text-secondary);
   }
 
 
@@ -1102,7 +1102,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
     cursor: pointer;
     transition: all var(--duration-base) ease;
@@ -1112,7 +1112,7 @@
 
   .suggestions-toggle:hover {
     background: var(--surface-hover);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .suggestions-toggle svg {
@@ -1140,7 +1140,7 @@
 
   .expand-hint {
     font-size: var(--font-size-2xs);
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
     font-style: italic;
     margin-inline-start: var(--space-1);
   }
@@ -1161,7 +1161,7 @@
   .chip-label {
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
     min-width: 35px;
     padding-top: var(--space-1);
     flex-shrink: 0;

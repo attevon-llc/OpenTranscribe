@@ -249,7 +249,7 @@
 
   .source-toggle {
     display: inline-flex;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     overflow: hidden;
   }
@@ -260,7 +260,7 @@
     border: none;
     border-radius: 0;
     box-shadow: none;
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
@@ -294,15 +294,15 @@
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-secondary);
-    border-bottom: 1px solid var(--color-border);
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
   }
 
   .mapping-table td {
     padding: var(--space-2-5);
-    border-bottom: 1px solid var(--color-border);
-    color: var(--color-text);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
     vertical-align: top;
   }
 

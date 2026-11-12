@@ -177,7 +177,7 @@
 
   .mobile-filter-toggle:hover {
     border-color: var(--primary-color);
-    color: var(--text-primary);
+    color: var(--text-color);
     background: var(--hover-color);
   }
 

@@ -39,7 +39,7 @@
   margin: 0;
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 /* Text link-button. form-elements.css styles every bare <button> with a drop shadow and a

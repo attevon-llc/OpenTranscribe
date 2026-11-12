@@ -136,7 +136,7 @@
 
   .banner-content {
     padding: var(--space-6);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .banner-content h2 {

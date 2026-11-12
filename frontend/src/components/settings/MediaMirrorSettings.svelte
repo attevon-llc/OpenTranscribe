@@ -462,13 +462,13 @@
 
   .subsection-desc {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0 0 var(--space-2) 0;
   }
 
   .never-delete-note {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0 0 var(--space-3) 0;
     font-style: italic;
   }
@@ -493,13 +493,13 @@
 
   .field-label {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-weight: var(--font-weight-medium);
   }
 
   .field-hint {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .mount-ok {
@@ -555,7 +555,7 @@
 
   .run-confirm-text {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .button-row .btn-secondary {

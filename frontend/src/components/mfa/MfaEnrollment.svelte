@@ -254,7 +254,7 @@
   .enroll-instruction {
     margin: 0;
     font-size: var(--font-size-md);
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
 
   .enroll-lead {
@@ -294,7 +294,7 @@
     display: block;
     margin-bottom: var(--space-1-5);
     font-size: var(--font-size-xs);
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
 
   .secret-code {

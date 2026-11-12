@@ -255,7 +255,7 @@
   }
 
   .or-text {
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: 0.85em;
   }
 

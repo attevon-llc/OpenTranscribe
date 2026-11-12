@@ -138,7 +138,7 @@
 
   .hint {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: var(--space-2) 0 0;
   }
 
@@ -164,7 +164,7 @@
 
   .usage-table th {
     font-weight: var(--font-weight-semibold);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .usage-table .num {

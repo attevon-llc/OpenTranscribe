@@ -132,7 +132,7 @@
 
   /* Aliases for settings components */
   --color-primary: var(--primary-color);
-  --color-primary-dark: var(--primary-dark);
+  --color-primary-dark: var(--primary-on-surface);
   --color-primary-alpha: rgba(59, 130, 246, 0.2);
   --color-text: var(--text-color);
   --color-text-secondary: var(--text-secondary);
@@ -298,7 +298,7 @@
   --primary-bg: var(--primary-light);
   --primary-border: var(--primary-color);
   --primary-color-alpha: var(--color-primary-alpha);
-  --primary-color-dark: var(--primary-dark);
+  --primary-color-dark: var(--primary-on-surface);
   --primary-color-hover: var(--primary-hover);
   --primary-color-light: var(--primary-light);
 
@@ -331,7 +331,7 @@
   /* Tags */
   --tag-bg: rgba(var(--primary-color-rgb), 0.1);
   --tag-border: rgba(var(--primary-color-rgb), 0.3);
-  --tag-color: var(--primary-dark);
+  --tag-color: var(--primary-on-surface);
 
   /* Status tints, derived from the RGB triplets so they track the theme */
   --danger-color: var(--error-color);
@@ -531,7 +531,7 @@
 
   /* Aliases for settings components - dark mode */
   --color-primary: var(--primary-color);
-  --color-primary-dark: var(--primary-dark);
+  --color-primary-dark: var(--primary-on-surface);
   --color-primary-alpha: rgba(96, 165, 250, 0.2);
   --color-text: var(--text-color);
   --color-text-secondary: var(--text-secondary);

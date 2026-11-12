@@ -533,7 +533,7 @@
   }
 
   .recovery-btn:disabled {
-    background: var(--text-light);
+    background: var(--text-secondary);
     cursor: not-allowed;
     transform: none;
   }

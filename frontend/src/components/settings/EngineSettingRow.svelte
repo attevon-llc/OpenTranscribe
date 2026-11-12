@@ -111,7 +111,7 @@
   .field-hint {
     margin: 0;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     line-height: 1.4;
   }
 

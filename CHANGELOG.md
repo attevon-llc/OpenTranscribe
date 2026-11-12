@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Styling layer complete.** Every stylesheet colour, spacing, radius, type size, z-index and duration now comes from theme tokens, layouts use logical properties so Arabic (RTL) mirrors correctly, and 20 deprecated token aliases were replaced by their canonical names (the style guard now rejects them). See `frontend/src/styles/CLAUDE.md`.
 - **prettier pinned to the hook's version.** `frontend/package.json` now pins prettier 3.1.0, the same as the pre-commit hook, so `npx prettier` and the hook format identically; a parity test keeps the two equal.
 - Ratchet guards (file size, style literals, unused CSS, raw env) rewrite their own baseline when a count only fell or an entry went stale, print what they lowered, and exit 1 so the hook asks for a re-stage; growth still fails untouched.
 

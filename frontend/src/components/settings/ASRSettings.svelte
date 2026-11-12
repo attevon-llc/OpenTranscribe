@@ -769,7 +769,7 @@
   .loading {
     text-align: center;
     padding: var(--space-12);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
 
@@ -783,12 +783,12 @@
     font-size: var(--font-size-sm);
     background: var(--primary-bg);
     color: var(--primary-on-surface);
-    border: 1px solid var(--primary-border);
+    border: 1px solid var(--primary-color);
   }
 
   .status-bar.local {
     background: var(--card-bg);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     border-color: var(--border-color);
   }
 
@@ -909,7 +909,7 @@
 
   .config-model {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin-top: var(--space-0-5);
   }
 
@@ -949,12 +949,12 @@
   :global([data-theme='dark']) .admin-badge { background: rgba(var(--warning-color-rgb), 0.2); }
 
   .shared-by {
-    font-size: var(--font-size-xs); color: var(--text-muted);
+    font-size: var(--font-size-xs); color: var(--text-secondary);
     font-style: italic; margin-top: var(--space-0-5);
   }
 
   .toggle-text {
-    cursor: pointer; user-select: none; font-size: var(--font-size-xs); color: var(--text-muted); }
+    cursor: pointer; user-select: none; font-size: var(--font-size-xs); color: var(--text-secondary); }
 
   /* Local model section (all users) */
   .local-model-section {
@@ -994,7 +994,7 @@
 
   .model-desc {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .model-capabilities {

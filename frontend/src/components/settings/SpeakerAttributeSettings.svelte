@@ -313,7 +313,7 @@
 
   .setting-note {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: var(--space-1-5) 0 0;
     line-height: 1.3;
   }

@@ -113,7 +113,7 @@
   .collections-btn,
   .tags-btn {
     background-color: var(--surface-color);
-    color: var(--text-primary);
+    color: var(--text-color);
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-xs);
   }

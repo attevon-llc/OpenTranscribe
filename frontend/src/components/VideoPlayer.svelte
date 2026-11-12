@@ -388,6 +388,6 @@
     background: var(--bg-color);
     border: 2px dashed var(--border-color);
     border-radius: var(--radius-lg);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 </style>

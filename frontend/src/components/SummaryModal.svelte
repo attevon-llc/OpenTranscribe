@@ -551,7 +551,7 @@
     margin: 0;
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -574,7 +574,7 @@
   }
 
   .copy-button-header:hover:not(:disabled) {
-    background-color: var(--hover-bg);
+    background-color: var(--hover-color);
     color: var(--primary-on-surface);
     border-color: var(--primary-color);
   }
@@ -599,7 +599,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background-color: var(--bg-primary);
-    color: var(--text-primary);
+    color: var(--text-color);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
@@ -612,7 +612,7 @@
   }
 
   .reprocess-button-header:hover:not(:disabled) {
-    background-color: var(--hover-bg);
+    background-color: var(--hover-color);
     border-color: var(--primary-color);
     color: var(--primary-on-surface);
   }

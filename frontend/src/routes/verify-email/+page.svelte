@@ -161,7 +161,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-md);
     text-align: center;
   }
@@ -175,7 +175,7 @@
   }
 
   .muted {
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-body);
     margin: 0;
   }

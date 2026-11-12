@@ -1078,7 +1078,7 @@
     background: rgba(var(--error-color-rgb), 0.08);
     border: 1px solid rgba(var(--error-color-rgb), 0.2);
     border-radius: var(--radius-lg);
-    color: var(--text-primary);
+    color: var(--text-color);
     font-size: var(--font-size-sm);
     margin-bottom: var(--space-3);
   }
@@ -1161,7 +1161,7 @@
     color: var(--text-secondary);
   }
 
-  .nav-back:hover { background: var(--button-hover); color: var(--text-primary); }
+  .nav-back:hover { background: var(--button-hover); color: var(--text-color); }
 
   /* "Review with defaults" — prominent secondary action, clearly distinct from Next */
   .nav-review-defaults {

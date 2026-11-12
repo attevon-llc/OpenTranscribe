@@ -165,7 +165,7 @@
   }
   .intro-desc {
     font-size: var(--font-size-md);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0;
     line-height: 1.5;
   }
@@ -177,7 +177,7 @@
   }
   .section-desc {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0 0 var(--space-4) 0;
   }
   .setting-row {

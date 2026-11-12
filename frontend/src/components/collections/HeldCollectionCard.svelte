@@ -48,7 +48,7 @@
     border: 1px dashed var(--color-warning-border);
     border-radius: var(--radius-lg);
     background: var(--color-warning-bg);
-    color: var(--text-primary);
+    color: var(--text-color);
     text-align: start;
     font-weight: var(--font-weight-regular);
     box-shadow: none;

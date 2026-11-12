@@ -212,7 +212,7 @@
 
   .upload-name {
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

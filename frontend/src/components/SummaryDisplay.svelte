@@ -467,7 +467,7 @@
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-3);
-    color: var(--text-primary);
+    color: var(--text-color);
     border-bottom: 2px solid var(--border-color);
     padding-bottom: var(--space-2);
   }
@@ -546,7 +546,7 @@
     gap: var(--space-3);
     margin-top: var(--space-1);
     font-size: var(--font-size-md);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .action-item-priority {
@@ -565,7 +565,7 @@
   }
 
   .action-item-priority.priority-low {
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .speakers-list {
@@ -588,11 +588,11 @@
 
   .speaker-name {
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .speaker-role {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-style: italic;
     font-size: var(--font-size-body);
   }
@@ -626,7 +626,7 @@
 
   .disclaimer-text {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-style: italic;
     margin: 0;
     line-height: 1.4;
@@ -662,7 +662,7 @@
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-2);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   :global(.field-content) {

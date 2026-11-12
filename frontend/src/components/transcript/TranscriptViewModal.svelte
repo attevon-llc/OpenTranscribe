@@ -405,7 +405,7 @@
   .modal-title {
     font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
     margin: 0;
     margin-inline-end: var(--space-6);
     flex: 1;
@@ -462,7 +462,7 @@
 
   .search-query-echo {
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -476,7 +476,7 @@
   }
 
   .legend-item.keyword {
-    color: var(--text-primary);
+    color: var(--text-color);
   }
   .legend-item.semantic {
     color: var(--text-secondary);
@@ -517,9 +517,9 @@
     min-height: 28px;
   }
   .nav-btn:hover {
-    background-color: var(--hover-bg);
+    background-color: var(--hover-color);
     border-color: var(--primary-color);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .modal-content-wrapper {
@@ -543,7 +543,7 @@
 
   .no-transcript h3 {
     margin: 0;
-    color: var(--text-primary);
+    color: var(--text-color);
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
   }

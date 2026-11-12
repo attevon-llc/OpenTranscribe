@@ -82,7 +82,7 @@
     margin: 0 0 var(--space-2);
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .tracks-list {
@@ -104,7 +104,7 @@
   }
 
   .track.active {
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .track-number {
@@ -117,7 +117,7 @@
     font-size: var(--font-size-xs);
     background: var(--color-info-bg);
     border: 1px solid var(--color-info-border);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .mismatch {
@@ -132,7 +132,7 @@
     margin: 0 0 var(--space-0-5);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .mismatch-body {
@@ -148,7 +148,7 @@
     font-size: var(--font-size-sm);
     cursor: pointer;
     background: transparent;
-    color: var(--text-primary);
+    color: var(--text-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
   }

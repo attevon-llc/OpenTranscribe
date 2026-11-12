@@ -213,7 +213,7 @@
   }
 
   .action-button.primary:hover:not(:disabled) {
-    background-color: var(--primary-dark);
+    background-color: var(--primary-on-surface);
   }
 
   .action-button.warning {
@@ -233,7 +233,7 @@
   }
 
   .action-button.regenerate:hover:not(:disabled) {
-    background-color: var(--primary-dark);
+    background-color: var(--primary-on-surface);
   }
 
   .prompt-picker {
@@ -264,14 +264,14 @@
     border-radius: var(--radius-md);
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
   }
 
   .admin-hint {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-style: italic;
   }
 

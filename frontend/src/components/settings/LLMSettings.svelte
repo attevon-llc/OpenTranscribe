@@ -830,13 +830,13 @@
 
   .config-provider {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin-bottom: var(--space-1);
   }
 
   .config-url {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-family: var(--font-mono);
     opacity: 0.7;
   }
@@ -912,7 +912,7 @@
 
   .shared-by {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-style: italic;
     margin-top: var(--space-0-5);
   }
@@ -923,7 +923,7 @@
     gap: var(--space-2);
     cursor: pointer;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .toggle-text {
@@ -973,13 +973,13 @@
 
   .toggle-desc {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     line-height: 1.4;
   }
 
   .summary-hint {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     padding: var(--space-2) var(--space-4);
     background: var(--surface-color);
     border-radius: var(--radius-sm);

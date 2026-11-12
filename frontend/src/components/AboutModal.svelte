@@ -410,7 +410,7 @@
   .modal-title {
     margin: 0;
     font-size: var(--font-size-xl);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .about-modal-wrapper :global(.modal-body) {

@@ -422,7 +422,7 @@
   }
 
   .upload-list::-webkit-scrollbar-thumb:hover {
-    background: var(--text-primary);
+    background: var(--text-color);
   }
 
   /* Animations */

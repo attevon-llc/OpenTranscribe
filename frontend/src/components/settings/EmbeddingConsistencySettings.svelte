@@ -367,7 +367,7 @@
 
   .section-desc {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
 
@@ -393,7 +393,7 @@
 
   .counts-row.unrepairable,
   .counts-row.info-row {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-style: italic;
   }
 
@@ -506,7 +506,7 @@
 
   .results-meta {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0;
   }
 

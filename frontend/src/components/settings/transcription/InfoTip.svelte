@@ -158,7 +158,7 @@
     position: relative;
     display: inline-flex;
     align-items: center;
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .tip.inline {

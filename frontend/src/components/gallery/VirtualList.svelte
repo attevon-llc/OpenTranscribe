@@ -402,7 +402,7 @@
     flex: 0 1 auto;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

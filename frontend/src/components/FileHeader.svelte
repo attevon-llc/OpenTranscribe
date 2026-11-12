@@ -334,7 +334,7 @@
     margin: 0 0 var(--space-4) 0;
     font-size: 28px;
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
     line-height: 1.2;
     overflow-wrap: anywhere;
   }

@@ -189,13 +189,13 @@
   .panel-status,
   .panel-note {
     font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     margin: 0;
   }
 
   .panel-note {
     padding: var(--space-2) var(--space-2-5);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background: var(--color-bg-secondary);
   }
@@ -214,7 +214,7 @@
   }
 
   .label-text {
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
   }
 
@@ -228,7 +228,7 @@
   .table-scroll {
     overflow: auto;
     max-height: 420px;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     -webkit-overflow-scrolling: touch;
   }
@@ -243,8 +243,8 @@
   .audit-table td {
     padding: var(--space-1-5) var(--space-2);
     text-align: start;
-    border-bottom: 1px solid var(--color-border);
-    color: var(--color-text);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
     white-space: nowrap;
   }
 
@@ -257,7 +257,7 @@
     font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .audit-table tbody tr:hover {
@@ -267,7 +267,7 @@
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: var(--font-size-2xs);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .value {

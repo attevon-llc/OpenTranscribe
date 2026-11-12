@@ -66,7 +66,7 @@
     background: var(--bg-secondary);
     padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-sm);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .kind-help p {

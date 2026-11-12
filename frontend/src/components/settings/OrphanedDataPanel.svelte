@@ -372,7 +372,7 @@
 
   .orphan-row.sub {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .orphan-val {
@@ -389,7 +389,7 @@
   .muted {
     margin: var(--space-1-5) 0 0;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .ids {

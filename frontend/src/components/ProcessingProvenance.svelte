@@ -89,7 +89,7 @@
     flex-wrap: wrap;
     gap: var(--space-1-5);
     align-items: baseline;
-    color: var(--text-primary);
+    color: var(--text-color);
     min-width: 0;
   }
 

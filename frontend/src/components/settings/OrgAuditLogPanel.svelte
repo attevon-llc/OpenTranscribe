@@ -131,7 +131,7 @@
 
   .intro {
     margin: 0 0 var(--space-3);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
 </style>

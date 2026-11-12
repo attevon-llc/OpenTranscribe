@@ -557,7 +557,7 @@
   .section-intro {
     margin: calc(-1 * var(--space-2)) 0 var(--space-4) 0;
     font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     line-height: 1.5;
   }
 
@@ -567,7 +567,7 @@
     border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
     background: rgba(var(--warning-color-rgb), 0.12);
-    color: var(--color-text);
+    color: var(--text-color);
     font-size: var(--font-size-xs);
     line-height: 1.5;
   }
@@ -583,8 +583,8 @@
     padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-pill);
     background: var(--color-bg-tertiary);
-    border: 1px solid var(--color-border);
-    color: var(--color-text);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
     font-size: var(--font-size-xs);
     font-family: monospace;
   }
@@ -595,7 +595,7 @@
     border-radius: var(--radius-md);
     background: rgba(var(--success-color-rgb), 0.12);
     border: 1px solid rgba(var(--success-color-rgb), 0.4);
-    color: var(--color-text);
+    color: var(--text-color);
     font-size: var(--font-size-sm);
     line-height: 1.5;
   }

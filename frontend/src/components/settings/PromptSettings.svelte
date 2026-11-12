@@ -909,7 +909,7 @@
   .info-tooltip {
     display: inline-flex;
     align-items: center;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     opacity: 0.6;
     cursor: help;
     transition: opacity var(--duration-base) ease;
@@ -944,13 +944,13 @@
 
   .config-provider {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin-bottom: var(--space-1);
   }
 
   .config-url {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     opacity: 0.7;
     max-width: 400px;
     display: -webkit-box;
@@ -972,7 +972,7 @@
   }
 
   .linked-label {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
     white-space: nowrap;
   }
@@ -1164,7 +1164,7 @@
 
   .shared-by {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin-top: var(--space-1-5);
     font-style: italic;
   }
@@ -1195,7 +1195,7 @@
 
   .toggle-text {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .modal-title {

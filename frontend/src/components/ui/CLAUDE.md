@@ -140,7 +140,8 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
 - **No hardcoded English** — user-visible text comes from props the caller translates via i18n,
   or from the i18n store. Don't bake copy into a primitive.
 - Theme with `var(--primary-color)`, `var(--surface-color)`, `var(--border-color)`, etc.;
-  never hardcode hex. Buttons reuse the global classes in `src/styles/form-elements.css`.
+  never hardcode hex. Buttons reuse the global classes in `src/styles/form-elements.css`: `.btn` plus
+  `.btn-primary|secondary|danger|danger-outline|warning|success|ghost|link|refresh`, `.btn-sm|lg`, `.btn-icon-only`.
 - Export shared types from a `<script context="module" lang="ts">` block (instance `<script>`
   cannot `export interface`).
 

@@ -1089,7 +1089,7 @@
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-6) 0;
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-body);
   }
 
@@ -1108,7 +1108,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-body);
     text-align: center;
   }
@@ -1133,7 +1133,7 @@
   }
 
   .forgot-password-link {
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-md);
     text-decoration: none;
   }
@@ -1148,7 +1148,7 @@
     border: none;
     cursor: pointer;
     padding: var(--space-1);
-    color: var(--text-light);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     border-radius: var(--radius-sm);
@@ -1188,7 +1188,7 @@
 
   .auth-divider span {
     padding: 0 var(--space-4);
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-md);
     white-space: nowrap;
   }
@@ -1249,7 +1249,7 @@
   }
 
   .lifecycle-message {
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-body);
     margin-bottom: var(--space-6);
     text-align: center;
@@ -1261,7 +1261,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-md);
     text-align: center;
   }
@@ -1271,7 +1271,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
 
@@ -1301,7 +1301,7 @@
   }
 
   .mfa-description {
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-body);
     margin-bottom: var(--space-6);
   }
@@ -1330,7 +1330,7 @@
   }
 
   .text-button.cancel-button {
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
 
   .text-button.cancel-button:hover {
@@ -1357,7 +1357,7 @@
   }
 
   .login-success-text {
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: 0.95rem;
     font-weight: var(--font-weight-medium);
     margin: 0;

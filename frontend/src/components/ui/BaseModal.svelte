@@ -226,7 +226,7 @@
   .modal-header h2 {
     margin: 0;
     font-size: var(--font-size-xl);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .modal-header-content {

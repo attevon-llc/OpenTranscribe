@@ -147,9 +147,9 @@
   .coming-soon {
     text-align: center;
     padding: var(--space-6);
-    background: var(--color-surface);
+    background: var(--surface-color);
     border-radius: var(--radius-md);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
   }
 
   .coming-soon-icon {
@@ -162,11 +162,11 @@
   .coming-soon h3 {
     margin: 0 0 var(--space-2) 0;
     font-size: var(--font-size-base);
-    color: var(--color-text);
+    color: var(--text-color);
   }
 
   .coming-soon p {
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     margin: var(--space-1) 0;
     font-size: var(--font-size-sm);
   }

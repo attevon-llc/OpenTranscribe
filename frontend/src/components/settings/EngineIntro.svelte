@@ -68,7 +68,7 @@
 
   .engine-intro p.admin-detail {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .intro-head {

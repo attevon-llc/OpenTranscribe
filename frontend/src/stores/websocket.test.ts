@@ -1002,3 +1002,19 @@ describe('processing card data: post-processing record', () => {
     expect(notifications().map((n) => n.dismissible)).toEqual([true, true, true]);
   });
 });
+
+describe('websocket in the public demo', () => {
+  it('never opens a socket, because the demo refuses it by design', async () => {
+    const { demoMode } = await import('$stores/demo');
+    websocketStore.disconnect();
+    demoMode.set(true);
+    try {
+      websocketStore.connect();
+
+      expect(FakeWebSocket.instances).toHaveLength(0);
+      expect(get(websocketStore).status).toBe('disconnected');
+    } finally {
+      demoMode.set(false);
+    }
+  });
+});

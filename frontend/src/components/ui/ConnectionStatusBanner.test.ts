@@ -99,3 +99,22 @@ describe('ConnectionStatusBanner across sign-in', () => {
     expect(bannerText()).toBeNull();
   });
 });
+
+describe('ConnectionStatusBanner in the public demo', () => {
+  it('stays hidden when there is no socket, while a normal deployment shows the loss', async () => {
+    const { demoMode } = await import('$stores/demo');
+    render(ConnectionStatusBanner);
+    const first = await signIn();
+    first.simulateServerClose(1006);
+    await tick();
+    expect(bannerText()).not.toBeNull();
+
+    demoMode.set(true);
+    try {
+      await tick();
+      expect(bannerText()).toBeNull();
+    } finally {
+      demoMode.set(false);
+    }
+  });
+});

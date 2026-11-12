@@ -8,11 +8,13 @@
    */
   import { connectionStatus, websocketStore } from '$stores/websocket';
   import { t } from '$stores/locale';
+  import { demoMode } from '$stores/demo';
 
   $: status = $connectionStatus;
   // A first connect in flight is not a lost connection; saying "Reconnecting" there
   // flashed on every sign-in and page load.
-  $: visible = status === 'reconnecting' || status === 'disconnected';
+  // The public demo has no live updates by design, so there is nothing to report as lost.
+  $: visible = !$demoMode && (status === 'reconnecting' || status === 'disconnected');
   $: message =
     status === 'reconnecting'
       ? $t('connection.reconnecting')

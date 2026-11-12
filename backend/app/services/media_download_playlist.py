@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 #: ``metadata_raw`` keys of a playlist placeholder's download claim (issue #1159), written by
 #: ``tasks.media_playlist_processing._claim_playlist_dispatch``: that the download was claimed,
-#: the Celery task id every send of it carries, the epoch second it is due to start, and that
-#: the first delivery under that id began (``tasks.youtube_processing``).
+#: the Celery task id every send of it carries, the epoch second it is due to start, and the
+#: epoch second the first delivery under that id began (``tasks.youtube_processing``).
 DOWNLOAD_DISPATCHED_KEY = "download_dispatched"
 DOWNLOAD_TASK_ID_KEY = "download_task_id"
 DOWNLOAD_DUE_AT_KEY = "download_due_at"

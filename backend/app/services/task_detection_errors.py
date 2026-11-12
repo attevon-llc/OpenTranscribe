@@ -75,27 +75,52 @@ class TaskDetectionErrorsMixin:
         time it was due (its countdown is in that time) and no delivery has started it. There
         is no Task row for a download to check; a merely late message is safe because the
         re-send carries the same task id and the download task starts only one of them.
+
+        A delivery lost after it started the claim (``DOWNLOAD_STARTED_KEY``, the epoch second
+        it did) and before the file reached DOWNLOADING leaves the same QUEUED placeholder, its
+        message already acked. It is stranded once it started a grace ago as well and its
+        download lease (``task_liveness.download_run_id``) reads DEAD; a RUNNING or QUEUED
+        lease, or an unreadable Redis (UNKNOWN), leaves it alone. Its re-send carries a NEW task
+        id, since the download task turns away a second start under the old one.
         """
         from sqlalchemy import BigInteger
+        from sqlalchemy import case
+        from sqlalchemy import func
         from sqlalchemy import or_
 
+        from app.core.task_liveness import RunState
+        from app.core.task_liveness import download_run_id
+        from app.core.task_liveness import probe_runs
         from app.services.media_download_playlist import DOWNLOAD_DUE_AT_KEY
         from app.services.media_download_playlist import DOWNLOAD_STARTED_KEY
         from app.services.media_download_playlist import DOWNLOAD_TASK_ID_KEY
 
         cutoff = int(time.time()) - self.config.PLAYLIST_DISPATCH_GRACE_SECONDS
         due_at = MediaFile.metadata_raw[DOWNLOAD_DUE_AT_KEY].astext.cast(BigInteger)
-        return (
+        started = MediaFile.metadata_raw[DOWNLOAD_STARTED_KEY]
+        # A start stamped before it carried its time (JSON ``true``) reads as long ago.
+        started_at = case(
+            (func.jsonb_typeof(started) == "number", started.astext.cast(BigInteger)), else_=0
+        )
+        claims = (
             db.query(MediaFile)
             .filter(
                 MediaFile.status == FileStatus.QUEUED,
                 or_(MediaFile.storage_path.is_(None), MediaFile.storage_path == ""),
                 MediaFile.metadata_raw.has_key(DOWNLOAD_TASK_ID_KEY),
-                ~MediaFile.metadata_raw.has_key(DOWNLOAD_STARTED_KEY),
                 due_at < cutoff,
+                or_(~MediaFile.metadata_raw.has_key(DOWNLOAD_STARTED_KEY), started_at < cutoff),
             )
             .all()
         )
+        started_claims = [mf for mf in claims if DOWNLOAD_STARTED_KEY in (mf.metadata_raw or {})]
+        leases = probe_runs(download_run_id(str(mf.uuid)) for mf in started_claims)
+        return [
+            mf
+            for mf in claims
+            if DOWNLOAD_STARTED_KEY not in (mf.metadata_raw or {})
+            or leases[download_run_id(str(mf.uuid))].state == RunState.DEAD
+        ]
 
     def identify_oom_error_files(self, db: Session) -> list[MediaFile]:
         """

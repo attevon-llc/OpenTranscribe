@@ -29,3 +29,13 @@ def test_a_child_process_a_unit_test_starts_inherits_none_of_them(run_in_clean_p
         f"print(','.join(n for n in {STACK_POINTER_VARS!r} if n in os.environ) or 'none')"
     )
     assert run_in_clean_process(code) == "none"
+
+
+@pytest.mark.unit
+def test_unit_phase_redis_url_points_at_a_refused_port() -> None:
+    """With no REDIS_* exported the suite must not reach whatever listens on :6379."""
+    from app.core.config import settings
+
+    if any(os.environ.get(v) for v in ("REDIS_HOST", "REDIS_PORT")):
+        pytest.skip("a phase exported REDIS_* on purpose (integration/GPU/e2e)")
+    assert settings.REDIS_URL == "redis://127.0.0.1:1/0"

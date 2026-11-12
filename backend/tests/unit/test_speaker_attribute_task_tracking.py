@@ -106,7 +106,10 @@ def test_duplicate_in_progress_skip_path_creates_skipped_task_row(
         def delete(self, *args, **kwargs):
             pass
 
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: _FakeRedis())
+    fake = _FakeRedis()
+    monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+    # task_replay.is_alive() (the take-over guard) reads the heartbeat through this client.
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
 
     called = {"inference": False}
 

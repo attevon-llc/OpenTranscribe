@@ -492,9 +492,9 @@ run_phase_watching_skips "Security suites (FIPS_MODE=true)" "$FIPS_SKIP_CEILING"
 # talk to the live stack and share its state (uploads, reprocessing, mirror state); running
 # them concurrently would make them interfere rather than faster.
 #
-# ⚠️ `-n <N> --dist loadfile` was evaluated for this phase and REJECTED. Three things were
-# checked before concluding that, so a future attempt starts from facts rather than repeating
-# them:
+# ⚠️ `-n <N> --dist loadfile` over the WHOLE selection was evaluated and REJECTED; the shape that
+# works (the split this paragraph asks for) is now built, see "Split in two (I1)" below. Three
+# things were checked before concluding that, so a future attempt starts from facts:
 #   * `--dist loadfile` IS the right distribution here if anyone tries again — every
 #     container-provisioning fixture in this selection is module- or session-scoped, and both
 #     `xdist_group` marks in it (`tests/test_selective_reprocess.py`,
@@ -620,11 +620,63 @@ except Exception:
         fi
     fi
     # --- END integration-env ---
+    # Split in two (I1): the throwaway-container modules run concurrently with the live-stack
+    # ones. The first lane is `-n 4 --dist loadfile` (a module stays on one worker, which its
+    # module-scoped container fixtures and module-level xdist_group marks need), at nice 10 so it
+    # cannot starve the timing-sensitive live lane. The live lane is the previous command plus one
+    # `--ignore` per self-contained module, DERIVED from the same array, so a module is in exactly
+    # one lane and a new integration module is live (serial) by default. Both guards are unit
+    # tests: test_integration_split_is_a_partition (ids: serial + parallel == unsplit, disjoint)
+    # and test_self_contained_integration_modules_touch_no_live_stack (AST). Never add the
+    # interfering modules named in the long comment above.
+    INTEGRATION_SELF_CONTAINED=(
+        tests/integration/test_dbs_wait_for_speaker_attributes.py
+        tests/integration/test_dbs_wait_for_table_settled.py
+        tests/integration/test_scheduled_backup_restore_roundtrip.py
+        tests/integration/test_opentr_restore_roundtrip.py
+        tests/integration/test_dockerfile_targetarch_build.py
+        tests/integration/test_image_hygiene_real_docker.py
+        tests/integration/test_cleanup_test_data_isolated.py
+        tests/integration/test_cleanup_test_users_isolated_db.py
+        tests/integration/test_schema_detection_untracked_legacy_db.py
+        tests/integration/test_v436_lite_settings_migration.py
+        tests/integration/test_chown_scripts_real_tree.py
+    )
+    INTEGRATION_LIVE_IGNORES=()
+    for _sc in "${INTEGRATION_SELF_CONTAINED[@]}"; do
+        INTEGRATION_LIVE_IGNORES+=("--ignore=$_sc")
+    done
+    # A subshell loses array appends, so the lane reports through files and its output is
+    # printed after `wait` rather than interleaved with the live lane's stream.
+    SC_DIR="$RUN_SCRATCH/self-contained"
+    mkdir -p "$SC_DIR"
+    (
+        FAILED_PHASES=()
+        SKIPPED_PHASES=()
+        run_phase_watching_skips "Integration-marked tests (self-contained)" "$INTEGRATION_SKIP_CEILING" \
+            nice -n 10 "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest "${INTEGRATION_SELF_CONTAINED[@]}" \
+            -o addopts="" -n 4 --dist loadfile -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
+            --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
+            "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/integration-self-contained.xml"
+        printf '%s\n' "${FAILED_PHASES[@]}" >"$SC_DIR/failed"
+        printf '%s\n' "${SKIPPED_PHASES[@]}" >"$SC_DIR/skipped"
+    ) >"$SC_DIR/out" 2>&1 &
+    SC_PID=$!
     run_phase_watching_skips "Integration-marked tests" "$INTEGRATION_SKIP_CEILING" \
         "${REDIS_ENV[@]}" "${INTEGRATION_ENV[@]}" "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
+        "${INTEGRATION_LIVE_IGNORES[@]}" \
         -o addopts="" -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
         --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
         "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/integration.xml"
+    wait "$SC_PID" || true
+    cat "$SC_DIR/out"
+    # An absent result file means the lane died before reporting: that is a failure, never a pass.
+    if [ ! -f "$SC_DIR/failed" ]; then
+        FAILED_PHASES+=("Integration-marked tests (self-contained) (no result)")
+    else
+        while IFS= read -r _l; do [ -n "$_l" ] && FAILED_PHASES+=("$_l"); done <"$SC_DIR/failed" || true
+        while IFS= read -r _l; do [ -n "$_l" ] && SKIPPED_PHASES+=("$_l"); done <"$SC_DIR/skipped" || true
+    fi
 fi
 
 # 3b. The venv this gate runs in must install what the image ships (#492).

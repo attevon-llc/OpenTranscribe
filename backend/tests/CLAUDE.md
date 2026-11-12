@@ -73,6 +73,14 @@ what it appears to. A green one from the wrong schema is worse.
     authority on whether the work happens; the marker only stops an opt-in-by-design test from
     being counted. `--export-capability` selects the first back in.
 
+    **Integration phase lanes (I1).** `run-integration-tests.sh` runs `INTEGRATION_SELF_CONTAINED`
+    (throwaway-container modules, `-n 4 --dist loadfile`) concurrently with the serial live-stack lane,
+    whose `--ignore`s are derived from that array. A new integration module is serial by default; list
+    it only if it touches no live service. Guards: `test_integration_split_is_a_partition.py` and
+    `test_self_contained_integration_modules_touch_no_live_stack.py`. Never list
+    `test_fusion_strategy_switch`, `test_redaction_pipeline`, `test_lite_mode_mocked_providers`,
+    `test_keyword_search_latency_opensearch`.
+
     ⚠️ **Worked example (2026-09-12): adding ONE new integration test tripped this.**
     `test_chat_cache_share_revocation` needs a real, password-protected, in-network-only Redis
     (the cache under test IS Redis) — unsatisfiable from a bare host run of the gate. Adding it

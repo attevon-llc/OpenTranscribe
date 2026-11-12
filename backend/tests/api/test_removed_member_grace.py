@@ -6,10 +6,15 @@ channels are recorded. The organization-content hand-over is unchanged (``test_o
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
+from unittest.mock import create_autospec
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.core.constants import GDPR_REMOVED_MEMBER_GRACE_DAYS_KEY
 from app.models.erasure import ErasureLedgerEntry
@@ -216,3 +221,186 @@ def test_the_reminder_goes_out_for_a_removal(gov, frames, monkeypatch):
 
     assert sent == 1
     assert (gov.admin.id, "reminder") in frames
+
+
+# --- Who may restore, and the restore's atomicity ------------------------------------------------
+
+RESTORE_URL = "/api/admin/removed-members/{}/restore"
+FUTURE = datetime(2100, 1, 1, tzinfo=UTC)
+
+
+def _session_holding(subject: User) -> Any:
+    """A session double that finds one account, the only read the restore route's guard makes."""
+    db = create_autospec(Session, instance=True)
+    db.get.side_effect = lambda model, ident: subject if ident == subject.id else None
+    return db
+
+
+def _removal_of(subject: User, removed_by: str) -> ErasureLedgerEntry:
+    return ErasureLedgerEntry(
+        uuid=uuid.uuid4(),
+        subject_type="user",
+        subject_user_id=subject.id,
+        subject_user_uuid=uuid.uuid4(),
+        actor_kind=removed_by,
+        requested_at=datetime(2099, 12, 1, tzinfo=UTC),
+        scheduled_for=FUTURE,
+        status="deferred",
+        deferred_reason="grace_period",
+    )
+
+
+@pytest.mark.parametrize(
+    ("subject_role", "removed_by", "caller_role", "allowed"),
+    [
+        ("super_admin", "org_admin", "admin", False),
+        ("user", "super_admin", "admin", False),
+        ("super_admin", "org_admin", "super_admin", True),
+        ("user", "super_admin", "super_admin", True),
+        ("user", "org_admin", "admin", True),
+    ],
+)
+def test_only_a_super_admin_restores_a_super_admin_or_undoes_a_super_admins_removal(
+    monkeypatch, subject_role, removed_by, caller_role, allowed
+):
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from app.api.endpoints import admin_removed_members as route
+    from app.auth import refusal_audit
+
+    subject = User(id=7, role=subject_role, email="subject@example.com")
+    caller = User(id=8, role=caller_role, email="caller@example.com")
+    entry = _removal_of(subject, removed_by)
+    restored: list[User] = []
+    refusals: list[str] = []
+
+    def restore(db: Session, e: ErasureLedgerEntry, actor: User, client: Any = None) -> Any:
+        restored.append(actor)
+        return e
+
+    def audit(**event: Any) -> None:
+        refusals.append(event["details"]["action"])
+
+    monkeypatch.setattr(route.removal, "find_removal", lambda db, ledger_uuid: entry)
+    monkeypatch.setattr(route.removal, "restore_account", restore)
+    monkeypatch.setattr(refusal_audit.audit_logger, "log", audit)
+    request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
+    db = _session_holding(subject)
+
+    if allowed:
+        route.restore_removed_member(request, entry.uuid, db, caller)
+        assert restored == [caller]
+        assert refusals == []
+    else:
+        with pytest.raises(HTTPException) as refused:
+            route.restore_removed_member(request, entry.uuid, db, caller)
+        assert refused.value.status_code == 403
+        assert restored == []
+        assert len(refusals) == 1
+
+
+def test_a_user_cannot_restore_and_an_anonymous_caller_is_refused(gov, client, user_token_headers):
+    removal.remove_account(gov.db, gov.alice, gov.admin)
+    url = RESTORE_URL.format(_entry(gov.db, gov.alice).uuid)
+
+    assert client.post(url, headers=user_token_headers).status_code == 403
+    assert client.post(url).status_code == 401
+    gov.db.expire_all()
+    assert _entry(gov.db, gov.alice).status == "deferred"
+
+
+def test_over_http_a_plain_admin_cannot_restore_a_super_admin_and_a_super_admin_can(
+    gov, client, admin_token_headers, super_admin_token_headers
+):
+    gov.alice.role = "super_admin"
+    gov.alice.is_superuser = True
+    gov.db.commit()
+    removal.remove_account(gov.db, gov.alice, gov.admin)
+    url = RESTORE_URL.format(_entry(gov.db, gov.alice).uuid)
+
+    assert client.post(url, headers=admin_token_headers).status_code == 403
+    gov.db.expire_all()
+    assert _entry(gov.db, gov.alice).status == "deferred"
+    assert gov.db.get(User, gov.alice.id).is_active is False
+
+    assert client.post(url, headers=super_admin_token_headers).status_code == 200
+    gov.db.expire_all()
+    assert gov.db.get(User, gov.alice.id).is_active is True
+
+
+def test_restore_rereads_the_entry_under_the_executors_row_lock(monkeypatch):
+    """The executor flips ``deferred`` to ``pending`` under ``FOR UPDATE``; a cancel that checks
+    a copy read before that commit must see ``pending`` once it holds the lock."""
+    entry = _removal_of(User(id=7, role="user", email="subject@example.com"), "org_admin")
+    locks: list[object] = []
+    cancelled: list[ErasureLedgerEntry] = []
+
+    def executor_won_the_lock(row: ErasureLedgerEntry, with_for_update: object = None) -> None:
+        locks.append(with_for_update)
+        row.status, row.deferred_reason = "pending", None
+
+    def cancel_request(db: Session, e: ErasureLedgerEntry, now: Any = None) -> Any:
+        cancelled.append(e)
+        return e
+
+    db = create_autospec(Session, instance=True)
+    db.refresh.side_effect = executor_won_the_lock
+    monkeypatch.setattr(scheduled, "_stage", lambda *a, **k: None)
+    monkeypatch.setattr(scheduled.notices, "notify", lambda *a, **k: 0)
+    monkeypatch.setattr(scheduled.ledger, "cancel_request", cancel_request)
+
+    with pytest.raises(scheduled.ScheduledErasureError) as refused:
+        scheduled.cancel(
+            db,
+            entry,
+            actor=User(id=1, role="admin", email="admin@example.com"),
+            now=datetime(2099, 1, 1, tzinfo=UTC),
+        )
+
+    assert refused.value.code == "already_executing"
+    assert locks == [True]
+    assert cancelled == []
+
+
+def test_the_account_is_switched_off_in_the_scheduled_erases_own_commit(gov, monkeypatch):
+    def notice_fails(*a, **k):
+        raise RuntimeError("after the ledger commit")
+
+    monkeypatch.setattr(scheduled.notices, "notify", notice_fails)
+
+    with pytest.raises(RuntimeError):
+        removal.remove_account(gov.db, gov.alice, gov.admin)
+
+    gov.db.rollback()
+    assert _entry(gov.db, gov.alice).status == "deferred"
+    assert gov.db.get(User, gov.alice.id).is_active is False
+
+
+def test_restore_switches_the_account_on_in_the_cancellations_own_commit(gov, monkeypatch):
+    removal.remove_account(gov.db, gov.alice, gov.admin)
+    entry = _entry(gov.db, gov.alice)
+
+    def notice_fails(*a, **k):
+        raise RuntimeError("after the cancellation commit")
+
+    monkeypatch.setattr(scheduled.notices, "notify", notice_fails)
+
+    with pytest.raises(RuntimeError):
+        removal.restore_account(gov.db, entry, gov.admin)
+
+    gov.db.rollback()
+    assert _entry(gov.db, gov.alice).status == "cancelled"
+    assert gov.db.get(User, gov.alice.id).is_active is True
+
+
+def test_restore_leaves_an_account_that_was_already_off_switched_off(gov):
+    gov.alice.is_active = False
+    gov.db.commit()
+    removal.remove_account(gov.db, gov.alice, gov.admin)
+
+    removal.restore_account(gov.db, _entry(gov.db, gov.alice), gov.admin)
+
+    gov.db.expire_all()
+    assert _entry(gov.db, gov.alice).status == "cancelled"
+    assert gov.db.get(User, gov.alice.id).is_active is False

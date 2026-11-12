@@ -350,6 +350,9 @@ def cancel(
             started, ``not_cancellable`` for any other state.
     """
     current = now or datetime.now(UTC)
+    # Re-read under the row lock the executor flips ``pending`` under (``_execute_one``): checked on
+    # a stale copy, a cancel could overwrite an erasure that has already started.
+    db.refresh(entry, with_for_update=True)
     if entry.status == "deferred" and entry.deferred_reason == "grace_period":
         if entry.scheduled_for is not None and current >= entry.scheduled_for:
             raise ScheduledErasureError("already_executing", "The delay is over.", entry=entry)

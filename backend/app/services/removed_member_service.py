@@ -5,8 +5,14 @@ at once. Organization content is handed to an administrator exactly as before
 (``org_content_transfer``); the account is then deactivated and a ``user`` erasure is scheduled on
 the existing ledger machinery (``scheduled_erasure_service``: same state machine, executor, audit
 events and notices as #1105). Until it runs, an administrator can restore the account, which
-cancels the erasure. Legal hold and quarantine win: a held file is refused at request time (the
-unchanged 409) and skipped by the executor if a hold appears during the wait.
+cancels the erasure and switches the account back on, unless it was already off when it was
+removed. Legal hold wins: a held file is refused at request time (the unchanged 409) and skipped
+by the executor if a hold appears during the wait. Quarantine alone does not stop the erase, as
+for an immediate deletion (``user_deletion_service.assert_no_held_files`` gives the reason); a
+takedown that must keep its evidence places a legal hold as well.
+
+The deactivation commits with the ledger entry, and the reactivation with its cancellation, so
+neither can be left half done.
 
 A grace of 0 days, or an account that belongs to no organization (every community-edition
 account), keeps the old immediate erasure.
@@ -40,6 +46,11 @@ logger = logging.getLogger(__name__)
 #: Ledger actor kinds of an administrator's removal; the account holder's own request is
 #: ``data_subject`` and is not managed here.
 ADMIN_ACTOR_KINDS = ledger.ADMIN_ACTOR_KINDS
+
+#: Ledger ``counters`` key set to 1 when the account was active at removal, so a restore gives
+#: back exactly that. ``counters`` is the entry's only numeric field that can change after insert
+#: and it holds nothing else until the erasure runs; a missing key means "leave it off".
+RESTORE_REACTIVATES_KEY = "restore_reactivates_account"
 
 
 def grace_days(db: Session) -> int:
@@ -96,6 +107,10 @@ def remove_account(
     user_deletion_service.hand_over_org_content(db, user_id)
 
     kind = "super_admin" if str(actor.role) == "super_admin" else "org_admin"
+    was_active = bool(user.is_active)
+    # Rides the ledger entry's own commit (``record_request``): a scheduled erase never sits on an
+    # account that can still sign in, and a ledger failure rolls the deactivation back with it.
+    user.is_active = False
     try:
         entry = scheduled.schedule(
             db,
@@ -110,7 +125,9 @@ def remove_account(
         if error.code != "request_exists" or error.entry is None:
             raise
         entry = error.entry
-    user.is_active = False
+    else:
+        if was_active:
+            entry.counters = {RESTORE_REACTIVATES_KEY: 1}
     db.commit()
     token_service.stamp_user_revocation_epoch(str(user.uuid))
     return RemovalResult(entry=entry)
@@ -139,8 +156,8 @@ def restore_account(
     now: datetime | None = None,
     client: dict[str, Any] | None = None,
 ) -> ErasureLedgerEntry:
-    """Cancel the erasure and reactivate the account. Organization content already handed over
-    stays with the organization.
+    """Cancel the erasure and reactivate the account if it was active when removed, in the
+    cancellation's commit. Organization content already handed over stays with the organization.
 
     Raises:
         scheduled_erasure_service.ScheduledErasureError: ``already_executing`` once the grace is
@@ -151,12 +168,14 @@ def restore_account(
             "not_cancellable", "This request cannot be restored here.", entry=entry
         )
     user_id = entry.subject_user_id
-    cancelled = scheduled.cancel(db, entry, actor=actor, now=now, client=client)
     user = db.get(User, user_id) if user_id is not None else None
-    if user is not None:
+    if user is not None and (entry.counters or {}).get(RESTORE_REACTIVATES_KEY) == 1:
         user.is_active = True
-        db.commit()
-    return cancelled
+    try:
+        return scheduled.cancel(db, entry, actor=actor, now=now, client=client)
+    except scheduled.ScheduledErasureError:
+        db.rollback()
+        raise
 
 
 def removal_display_names(db: Session, entries: list[ErasureLedgerEntry]) -> dict[int, str]:

@@ -9,6 +9,7 @@ mention a name do not count.
 from __future__ import annotations
 
 import ast
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,7 @@ SINGLE_HOME: list[tuple[str, str, str | None]] = [
 ]
 
 
+@cache
 def _module_level_names(path: Path) -> set[str]:
     names: set[str] = set()
     for node in ast.parse(path.read_text(encoding="utf-8")).body:

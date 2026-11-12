@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import inspect
 import itertools
+from functools import cache
 from pathlib import Path
 
 import redis
@@ -100,6 +101,7 @@ def redis_commands_called(source: str) -> set[str]:
     return commands
 
 
+@cache
 def _app_commands() -> set[str]:
     commands: set[str] = set()
     for path in sorted(APP_ROOT.rglob("*.py")):

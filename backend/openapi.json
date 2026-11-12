@@ -16873,6 +16873,74 @@
         "title": "ReleaseRequest",
         "type": "object"
       },
+      "RemovedMember": {
+        "description": "One removal waiting out its grace period. Ids, times and the display label only.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "ledger_uuid": {
+            "format": "uuid",
+            "title": "Ledger Uuid",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled For"
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_user_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject User Uuid"
+          }
+        },
+        "required": [
+          "ledger_uuid",
+          "subject_user_uuid",
+          "display_name",
+          "requested_at",
+          "scheduled_for",
+          "status"
+        ],
+        "title": "RemovedMember",
+        "type": "object"
+      },
       "ReprocessRequest": {
         "description": "Request schema for reprocessing a file with optional speaker diarization settings.\n\nAttributes:\n    stages: Pipeline stages to re-run. Empty list = full reprocess (backward compatible).\n    min_speakers: Optional minimum number of speakers for diarization\n    max_speakers: Optional maximum number of speakers for diarization\n    num_speakers: Optional fixed number of speakers for diarization (overrides min/max)",
         "properties": {
@@ -18249,6 +18317,13 @@
             "minimum": 24.0,
             "title": "Org Member Erasure Delay Hours",
             "type": "integer"
+          },
+          "removed_member_grace_days": {
+            "default": 14,
+            "maximum": 21.0,
+            "minimum": 0.0,
+            "title": "Removed Member Grace Days",
+            "type": "integer"
           }
         },
         "required": [
@@ -18311,6 +18386,19 @@
               }
             ],
             "title": "Org Member Erasure Delay Hours"
+          },
+          "removed_member_grace_days": {
+            "anyOf": [
+              {
+                "maximum": 21.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed Member Grace Days"
           }
         },
         "title": "SelfErasureSettingsUpdate",
@@ -21854,7 +21942,10 @@
                 "do_not_track",
                 "env_disabled",
                 "demo",
-                "no_receiver"
+                "no_receiver",
+                "offline",
+                "pki",
+                "fips"
               ],
               "type": "string"
             },
@@ -24669,6 +24760,86 @@
           "masked_email"
         ],
         "title": "UserSearchResult",
+        "type": "object"
+      },
+      "UserSpendReport": {
+        "properties": {
+          "rates_verified_on": {
+            "title": "Rates Verified On",
+            "type": "string"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/UserSpendRow"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "users",
+          "rates_verified_on"
+        ],
+        "title": "UserSpendReport",
+        "type": "object"
+      },
+      "UserSpendRow": {
+        "description": "One user's LLM spend. Counts and an estimate only: no conversation or file ids.",
+        "properties": {
+          "cost_incomplete": {
+            "title": "Cost Incomplete",
+            "type": "boolean"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "estimated_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost Usd"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "tokens_this_month": {
+            "title": "Tokens This Month",
+            "type": "integer"
+          },
+          "tokens_today": {
+            "title": "Tokens Today",
+            "type": "integer"
+          },
+          "user_uuid": {
+            "format": "uuid",
+            "title": "User Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_uuid",
+          "email",
+          "full_name",
+          "tokens_today",
+          "tokens_this_month",
+          "estimated_cost_usd",
+          "cost_incomplete"
+        ],
+        "title": "UserSpendRow",
         "type": "object"
       },
       "UserUpdate": {
@@ -28740,7 +28911,7 @@
     },
     "/api/admin/files/{file_uuid}/release": {
       "post": {
-        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.\n\nJ-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file\nthat is *released but still held* -- ``is_quarantined=False, legal_hold=True``.\nBefore this, that state's only documented remedy (this very endpoint) refused\nit with 409 \"File is not quarantined\", which made the account-deletion guard's\n(``_assert_no_held_files``) own documented remedy unreachable. The\n409 stays for the *release-from-quarantine* leg -- releasing a file that was\nnever quarantined and carries no hold is still refused -- but a\nreleased-but-held file may now have its hold lifted here.",
+        "description": "Release a quarantined file: restore access, lift the legal-hold, audit.\n\nJ-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file\nthat is *released but still held* -- ``is_quarantined=False, legal_hold=True``.\nBefore this, that state's only documented remedy (this very endpoint) refused\nit with 409 \"File is not quarantined\", which made the account-deletion guard's\n(``assert_no_held_files``) own documented remedy unreachable. The\n409 stays for the *release-from-quarantine* leg -- releasing a file that was\nnever quarantined and carries no hold is still refused -- but a\nreleased-but-held file may now have its hold lifted here.",
         "operationId": "release_media_file_api_admin_files__file_uuid__release_post",
         "parameters": [
           {
@@ -30148,6 +30319,33 @@
         ]
       }
     },
+    "/api/admin/llm-budget/users": {
+      "get": {
+        "description": "Per-user tokens (today, this UTC month) and estimated USD, heaviest first.",
+        "operationId": "get_llm_spend_per_user_api_admin_llm_budget_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSpendReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Llm Spend Per User",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/local-models": {
       "get": {
         "description": "The catalog with what is downloaded, the download in flight and the free disk space.",
@@ -30832,6 +31030,86 @@
           }
         ],
         "summary": "Update Redaction Policy",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/removed-members": {
+      "get": {
+        "description": "Accounts removed by an administrator whose personal files are not yet erased.",
+        "operationId": "list_removed_members_api_admin_removed_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RemovedMember"
+                  },
+                  "title": "Response List Removed Members Api Admin Removed Members Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Removed Members",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/removed-members/{ledger_uuid}/restore": {
+      "post": {
+        "description": "Cancel the pending erasure and reactivate the account (403 for a super_admin's account or\nremoval unless the caller is one, 409 once the grace is over).",
+        "operationId": "restore_removed_member_api_admin_removed_members__ledger_uuid__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ledger_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ledger Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovedMember"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Restore Removed Member",
         "tags": [
           "admin"
         ]

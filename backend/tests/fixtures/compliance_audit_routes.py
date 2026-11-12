@@ -183,6 +183,9 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
     ("POST", "/api/org-admin/gdpr/erasures/{ledger_uuid}/cancel"): A(
         ("ERASURE_CANCELLED",), pinned_by="api/test_org_admin_erasure.py"
     ),
+    ("POST", "/api/admin/removed-members/{ledger_uuid}/restore"): A(
+        ("ERASURE_CANCELLED",), pinned_by="api/test_removed_member_grace.py"
+    ),
     # Single-recording erasure, the account holder's own request (and its withdrawal), the
     # receipt reads, and the per-file voiceprint opt-out whose purge is a compliance event.
     ("POST", "/api/admin/gdpr/erase-file/{file_uuid}"): A(

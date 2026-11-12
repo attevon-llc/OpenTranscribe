@@ -5,7 +5,8 @@ through. For the allowlisted search-index tasks that must change nothing: the se
 the same writes, derived from Postgres and the arguments alone, with no counter, append or
 accumulate in the script. ``process_speaker_merge_background`` averages a voiceprint, which is
 not a fixed point by itself, so the average stamps the source it consumed in the same document
-write and a replay that finds the stamp does not average again.
+write and a replay that finds the stamp does not average again. ``download.media_playlist``
+claims each download in Postgres before sending it, so a replay sends nothing twice.
 
 These use a recording OpenSearch client; a live double-run against a real index is a separate,
 stack-bound check.
@@ -422,24 +423,88 @@ def test_a_replayed_playlist_leaves_dispatched_or_foreign_placeholders_alone():
     assert not _is_unstarted_playlist_placeholder(_placeholder(meta={"from_playlist": False}), info)
 
 
-def test_playlist_dispatch_marks_the_placeholder_so_a_replay_will_not_requeue_it(monkeypatch):
-    from app.tasks import media_playlist_processing as mpp
-
-    sent: list[tuple] = []
-    monkeypatch.setattr(
-        mpp.process_youtube_url_task, "apply_async", lambda **kw: sent.append(kw["args"])
-    )
+def _dispatch_with(monkeypatch, *, claimed: bool) -> tuple[bool, list[str], list[Any]]:
+    """Dispatch one placeholder, recording the order of the claim, its commit and the send."""
     from unittest.mock import create_autospec
 
     from sqlalchemy.orm import Session
 
     from app.models.media import MediaFile
+    from app.tasks import media_playlist_processing as mpp
+
+    events: list[str] = []
+    statements: list[Any] = []
+    monkeypatch.setattr(
+        mpp.process_youtube_url_task, "apply_async", lambda **_kw: events.append("send")
+    )
+
+    def execute(statement: Any) -> SimpleNamespace:
+        statements.append(statement)
+        events.append("claim")
+        return SimpleNamespace(scalar_one_or_none=lambda: 7 if claimed else None)
 
     db = create_autospec(Session, instance=True)
-    mf = MediaFile(source_url="https://x", title="t", metadata_raw={"a": 1})
+    db.execute.side_effect = execute
+    db.commit.side_effect = lambda: events.append("commit")
+    mf = MediaFile(id=7, source_url="https://x", title="t", metadata_raw={"a": 1})
+    return mpp._dispatch_playlist_video_task(mf, 1, db), events, statements
 
-    assert mpp._dispatch_playlist_video_task(mf, 1, db) is True
 
-    assert mf.metadata_raw == {"a": 1, "download_dispatched": True}
-    db.commit.assert_called_once_with()
+def test_playlist_dispatch_commits_its_claim_before_the_download_is_sent(monkeypatch):
+    """A loss after the send cannot leave the placeholder unmarked for a replay to resend."""
+    from sqlalchemy.dialects import postgresql
+
+    dispatched, events, statements = _dispatch_with(monkeypatch, claimed=True)
+
+    assert dispatched is True
+    assert events == ["claim", "commit", "send"]
+    (claim,) = statements
+    sql = str(claim.compile(dialect=postgresql.dialect()))
+    # Conditional on the mark being absent, and it adds the mark: one atomic statement.
+    assert sql.startswith("UPDATE media_file SET metadata_raw=")
+    assert "coalesce(media_file.metadata_raw" in sql and " ? " in sql and " || " in sql
+    assert sql.endswith("RETURNING media_file.id")
+
+
+def test_a_placeholder_another_run_already_claimed_is_not_sent_again(monkeypatch):
+    """Two overlapping playlist runs (a replay beside a slow original) send one download."""
+    dispatched, events, _statements = _dispatch_with(monkeypatch, claimed=False)
+
+    assert dispatched is False
+    assert events == ["claim", "commit"]
+
+
+def test_dispatching_one_placeholder_twice_sends_one_download(db_session, normal_user, monkeypatch):
+    """The claim against Postgres: the second dispatch of the same placeholder finds the mark."""
+    import uuid as uuid_module
+
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+    from app.tasks import media_playlist_processing as mpp
+
+    sent: list[Any] = []
+    monkeypatch.setattr(
+        mpp.process_youtube_url_task, "apply_async", lambda **kw: sent.append(kw["args"])
+    )
+    mf = MediaFile(
+        uuid=uuid_module.uuid4(),
+        user_id=normal_user.id,
+        filename="video.mp4",
+        title="t",
+        storage_path="",
+        file_size=0,
+        content_type="video/mp4",
+        status=FileStatus.QUEUED,
+        source_url="https://youtu.be/abc123",
+        metadata_raw={"from_playlist": True},
+    )
+    db_session.add(mf)
+    db_session.commit()
+
+    assert mpp._dispatch_playlist_video_task(mf, normal_user.id, db_session) is True
+    assert mpp._dispatch_playlist_video_task(mf, normal_user.id, db_session) is False
+
+    db_session.refresh(mf)
     assert len(sent) == 1
+    assert mf.metadata_raw == {"from_playlist": True, mpp.DOWNLOAD_DISPATCHED_KEY: True}
+    assert mf.status == FileStatus.QUEUED

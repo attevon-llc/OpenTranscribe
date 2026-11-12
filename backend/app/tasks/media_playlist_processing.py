@@ -13,6 +13,11 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import TypedDict
 
+from sqlalchemy import func
+from sqlalchemy import literal
+from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import JSONB
+
 from app.core.celery import celery_app
 from app.core.queues import DownloadPriority
 from app.db.session_utils import session_scope
@@ -30,6 +35,9 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+#: ``metadata_raw`` key set once a placeholder's ``download.media_url`` has been claimed.
+DOWNLOAD_DISPATCHED_KEY = "download_dispatched"
 
 
 class YouTubePlaylistProcessingResult(TypedDict):
@@ -127,6 +135,34 @@ def _notify_playlist_file_created(user_id: int, media_file: MediaFile) -> None:
         logger.exception(f"Failed to send file_created notification for video {media_file.id}: {e}")
 
 
+def _claim_playlist_dispatch(db: Session, media_file_id: int) -> bool:
+    """Mark a placeholder's download as sent, unless a run already did; True if this run did.
+
+    One conditional UPDATE, committed BEFORE the download is sent (issue #1159). A replay of
+    the playlist task that overlaps the original run, or follows a loss after the send, finds
+    the mark and sends nothing, so a placeholder never gets two downloads and two GPU
+    pipelines. The row lock the UPDATE takes serialises two concurrent runs; the second sees
+    the first's mark once it commits. The cost is at-most-once: a worker lost between this
+    commit and the send leaves the placeholder QUEUED with no download, the same outcome as a
+    lost countdown message.
+    """
+    current = func.coalesce(MediaFile.metadata_raw, literal({}, JSONB))
+    claim = (
+        update(MediaFile)
+        .where(MediaFile.id == media_file_id, ~current.has_key(DOWNLOAD_DISPATCHED_KEY))
+        .values(
+            metadata_raw=current.op("||", return_type=JSONB)(
+                literal({DOWNLOAD_DISPATCHED_KEY: True}, JSONB)
+            )
+        )
+        .returning(MediaFile.id)
+        .execution_options(synchronize_session=False)
+    )
+    claimed = db.execute(claim).scalar_one_or_none() is not None
+    db.commit()
+    return claimed
+
+
 def _dispatch_playlist_video_task(
     media_file: MediaFile,
     user_id: int,
@@ -154,9 +190,12 @@ def _dispatch_playlist_video_task(
     Returns:
         True if task was dispatched successfully, False otherwise.
     """
+    # Read before the claim commits: a commit expires the instance, and these are all the
+    # send and the log need.
+    video_url = str(media_file.source_url)
+    file_uuid = str(media_file.uuid)
+    title = media_file.title
     try:
-        video_url = str(media_file.source_url)
-
         kwargs: dict = {"collection_ids": collection_ids, "tag_names": tag_names}
         if video_quality is not None:
             kwargs["video_quality"] = video_quality
@@ -165,24 +204,23 @@ def _dispatch_playlist_video_task(
         if audio_quality is not None:
             kwargs["audio_quality"] = audio_quality
 
+        if not _claim_playlist_dispatch(db, int(media_file.id)):
+            logger.info(f"Download for '{title}' was already dispatched by another run")
+            return False
+
         # Use apply_async to support countdown parameter
         process_youtube_url_task.apply_async(
-            args=[video_url, user_id, str(media_file.uuid)],
+            args=[video_url, user_id, file_uuid],
             kwargs=kwargs,
             countdown=countdown,
         )
 
-        # Marks the download as sent, so a replay of the playlist task (issue #1159) adopts only
-        # the placeholders it never reached instead of queueing a second download.
-        marked = dict(media_file.metadata_raw or {})
-        marked["download_dispatched"] = True
-        media_file.metadata_raw = marked
-        db.commit()
-
-        logger.info(f"Dispatched task for '{media_file.title}' with {countdown}s delay")
+        logger.info(f"Dispatched task for '{title}' with {countdown}s delay")
         return True
     except Exception as e:
-        logger.exception(f"Failed to dispatch task for video {media_file.title}: {e}")
+        logger.exception(f"Failed to dispatch task for video {title}: {e}")
+        # Nothing was sent: the claim either failed or committed before a send that raised.
+        db.rollback()
         error_msg = f"Failed to start processing: {str(e)}"
         media_file.last_error_message = error_msg
         media_file.error_category = categorize_error(error_msg).value
@@ -193,7 +231,7 @@ def _dispatch_playlist_video_task(
 
 # Replayable (issue #1159, ``core/task_replay.py``): placeholders already created are adopted by
 # the replay (``media_download_playlist._is_unstarted_playlist_placeholder``) and a download is
-# queued once per placeholder (``download_dispatched``).
+# queued at most once per placeholder (``_claim_playlist_dispatch``).
 @celery_app.task(name="download.media_playlist", bind=True, priority=DownloadPriority.PLAYLIST)
 def process_youtube_playlist_task(
     self: Any,

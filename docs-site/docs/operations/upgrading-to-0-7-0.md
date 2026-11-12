@@ -669,7 +669,7 @@ entry without its credential; re-enter the key. Back up `ENCRYPTION_KEY` with th
   Custom CSS that targeted `.plyr` selectors no longer applies.
 - `./opentr.sh backup` and `restore` accept `--fresh <name>` and then touch only that
   deployment; `remove`, `purge`, `health` and `build` refuse arguments they ignore.
-- Non-English interface languages are labelled machine-translated in Settings > Language.
+- Non-English interface languages are labelled machine-translated in Settings > Profile & Security.
 - **Managed editions:** deleting an account now hands the person's organization content to an
   administrator first. Code that creates organizations must call
   `services.organization_owner.set_owner`, or organization erasure answers 409

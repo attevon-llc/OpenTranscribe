@@ -240,6 +240,7 @@ def test_every_replayable_user_task_is_pinned_by_a_test_here():
         "propagate_title_rename",
         "regenerate_rename_digests",
         "process_speaker_merge_background",
+        "process_speaker_update_background",
         "download.media_playlist",
     }
     assert pinned <= tr.REPLAYABLE_TASKS
@@ -390,6 +391,136 @@ def test_the_speaker_document_read_returns_the_merge_stamp(monkeypatch):
     assert stamped is not None and plain is not None
     assert stamped["merged_from"] == ["s"]
     assert plain["merged_from"] == []
+
+
+def test_a_replayed_matching_pass_does_not_relabel_a_speaker_it_already_labeled(monkeypatch):
+    """The speaker update's matching pass, run twice: the second run writes no identity again.
+
+    Re-applying a match restamps ``identity_source_at``, which appends a second "confirmed"
+    row to the append-only identity history, and re-touches the profile. Everything else the
+    pass writes is an overwrite with the same value (``record_suggestion``), a keep-the-max
+    upsert (``store_speaker_match``) or a rebuild from Postgres (``_update_profile_embedding``).
+    """
+    import uuid as uuid_module
+    from unittest.mock import create_autospec
+
+    from sqlalchemy.orm import Session
+
+    from app.api.endpoints import speaker_update as su
+    from app.models.speaker import Speaker
+    from app.services.speaker_rename_tracker import SpeakerRenameTracker
+
+    speaker = Speaker(
+        id=5,
+        uuid=uuid_module.uuid4(),
+        user_id=1,
+        media_file_id=3,
+        name="SPEAKER_01",
+        verified=False,
+    )
+    side_effects: list[str] = []
+    monkeypatch.setattr(su.speaker_lookups, "speakers_by_id", lambda _db, _ids: {5: speaker})
+    monkeypatch.setattr(su, "store_speaker_match", lambda *_a: side_effects.append("match"))
+    monkeypatch.setattr(su, "touch_profile_interaction", lambda *_a: side_effects.append("touch"))
+    monkeypatch.setattr(su, "_update_profile_embedding", lambda *_a: side_effects.append("rebuild"))
+    monkeypatch.setattr(su, "_get_profile_uuid", lambda _db, _pid: "profile-uuid")
+    trigger = {
+        "id": 1,
+        "uuid": "trigger-uuid",
+        "user_id": 1,
+        "organization_id": None,
+        "display_name": "Dana Lee",
+        "profile_id": 7,
+        "profile_uuid": "profile-uuid",
+        "embedding_model": "m",
+    }
+    scored = [{"id": 5, "similarity": 0.9}]
+    db = create_autospec(Session, instance=True)
+
+    first = su._persist_match_results(db, trigger, scored, SpeakerRenameTracker())
+    stamped_at = speaker.identity_source_at
+    second = su._persist_match_results(db, trigger, scored, SpeakerRenameTracker())
+
+    assert first == second == (1, 0, [first[2][0]])
+    assert (speaker.display_name, speaker.profile_id, speaker.verified) == ("Dana Lee", 7, True)
+    assert stamped_at is not None
+    assert speaker.identity_source_at is stamped_at, "the replay restamped the identity"
+    assert side_effects == ["match", "touch", "rebuild", "match"]
+
+
+def test_the_speaker_labeling_workflow_run_twice_changes_nothing_the_second_time(
+    db_session, normal_user, monkeypatch
+):
+    """``process_speaker_update_background``'s matching step against Postgres, run twice."""
+    import uuid as uuid_module
+
+    from app.api.endpoints import speaker_update as su
+    from app.api.endpoints.speakers_profile_workflow import _handle_speaker_labeling_workflow
+    from app.models.media import MediaFile
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerMatch
+    from app.models.speaker import SpeakerProfile
+    from app.models.speaker_identity_event import SpeakerIdentityEvent
+
+    files = [
+        MediaFile(
+            user_id=normal_user.id,
+            filename=f"replay-{n}.wav",
+            storage_path=f"test/{uuid_module.uuid4().hex}.wav",
+            file_size=1,
+            content_type="audio/wav",
+            status="completed",
+        )
+        for n in range(2)
+    ]
+    db_session.add_all(files)
+    db_session.commit()
+    labeled = Speaker(
+        user_id=normal_user.id,
+        media_file_id=files[0].id,
+        name="SPEAKER_00",
+        display_name="Dana Lee",
+    )
+    other = Speaker(user_id=normal_user.id, media_file_id=files[1].id, name="SPEAKER_00")
+    db_session.add_all([labeled, other])
+    db_session.commit()
+    monkeypatch.setattr(su, "get_speaker_embedding", lambda _uuid: [1.0, 0.0, 0.0])
+    monkeypatch.setattr(su, "_push_speaker_documents", lambda _docs: None)
+    monkeypatch.setattr(su, "_send_bulk_update_notification", lambda *_a: None)
+
+    def snapshot() -> tuple:
+        db_session.expire_all()
+        row = db_session.get(Speaker, other.id)
+        assert row is not None
+        events = (
+            db_session.query(SpeakerIdentityEvent)
+            .filter(SpeakerIdentityEvent.speaker_id.in_([labeled.id, other.id]))
+            .count()
+        )
+        profiles = (
+            db_session.query(SpeakerProfile)
+            .filter(SpeakerProfile.user_id == normal_user.id, SpeakerProfile.name == "Dana Lee")
+            .count()
+        )
+        matches = db_session.query(SpeakerMatch).filter(SpeakerMatch.speaker2_id == other.id)
+        return (
+            row.display_name,
+            row.profile_id,
+            row.verified,
+            row.identity_source,
+            row.identity_source_at,
+            events,
+            profiles,
+            matches.count(),
+        )
+
+    first = _handle_speaker_labeling_workflow(db_session, labeled.id, "Dana Lee", normal_user.id)
+    after_first = snapshot()
+    second = _handle_speaker_labeling_workflow(db_session, labeled.id, "Dana Lee", normal_user.id)
+
+    assert first == second == {"auto_applied_count": 1, "suggested_count": 0}
+    assert after_first[0] == "Dana Lee" and after_first[6] == 1
+    assert snapshot() == after_first
 
 
 def _placeholder(**over):

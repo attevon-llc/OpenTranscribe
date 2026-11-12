@@ -287,9 +287,10 @@ should import `app.api` or `app.services` at module scope.
   (it re-sends from its own heartbeat record; `acks_late` would add the broker's redelivery as a
   second path to the same duplicate). Idempotence evidence: `test_user_task_replay_idempotence.py`.
   A task goes on the list only with a test that runs it twice; unsure means NOT replayable. The
-  two non-trivial ones make their side effect idempotent: the speaker merge stamps `merged_from`
-  on the averaged voiceprint in the same write, and the playlist claims `download_dispatched`
-  with one conditional UPDATE before it sends each download.
+  non-trivial ones make their side effect idempotent: the speaker merge stamps `merged_from`
+  on the averaged voiceprint in the same write, the speaker update's matching pass skips a row
+  its same match already labeled (`speaker_update._carries_this_match`), and the playlist claims
+  `download_dispatched` with one conditional UPDATE before it sends each download.
 - `task_liveness.run_heartbeat` hands the run back as **queued** only on a normal return, a
   Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — a cold-shutdown
   `SystemExit` is deliberately NOT handed back here. On billiard 4.3.0 the cancel ACKED a running

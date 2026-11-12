@@ -45,6 +45,11 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 #: The pseudo-method a WebSocket route is reported under.
 WEBSOCKET = "WEBSOCKET"
 
+#: Fewer routes than this means the route table did not load (a half-imported app, a wrong
+#: entry point), and an empty table would otherwise read as "nothing publishes". The real app
+#: models 636 routes; the floor leaves room to retire routes without ever letting a dozen pass.
+MIN_ROUTES_MODELLED = 300
+
 EXIT_INERT = 0
 EXIT_NOT_INERT = 1
 EXIT_USAGE = 2
@@ -94,6 +99,27 @@ def probe_publish_hook() -> bool:
     before = published_counts().get(PROBE_TASK, 0.0)
     before_task_publish.send(sender=PROBE_TASK, headers={}, body=None)
     return published_counts().get(PROBE_TASK, 0.0) > before
+
+
+def probe_demo_publish_refusal() -> bool:
+    """True when ``DEMO_MODE`` is on and ``send_task`` provably refuses to publish.
+
+    Calls the real ``celery_app.send_task`` with the probe name and expects
+    :class:`~app.core.demo_publish.DemoPublishRefusedError`; reading the setting alone would
+    not notice a Celery app that is not the refusing subclass. Off outside the demo, so a
+    normal deployment is judged on what its routes and beat entries can publish.
+    """
+    from app.core.celery import celery_app
+    from app.core.config import settings
+    from app.core.demo_publish import DemoPublishRefusedError
+
+    if not settings.DEMO_MODE:
+        return False
+    try:
+        celery_app.send_task(PROBE_TASK)
+    except DemoPublishRefusedError:
+        return True
+    return False
 
 
 @dataclass
@@ -172,6 +198,19 @@ class RouteFinding:
 # --- 3. the beat plane -------------------------------------------------------------------
 
 
+def active_beat_entries(effects: dict[str, Any] | None = None) -> list[str]:
+    """Beat entries classified MUTATING or INGEST: they change or import state when beat runs."""
+    from app.core.celery_beat import BEAT_ENTRY_EFFECT
+    from app.core.celery_beat import BeatEffect
+
+    effects = BEAT_ENTRY_EFFECT if effects is None else effects
+    return sorted(
+        name
+        for name, effect in effects.items()
+        if effect in (BeatEffect.MUTATING, BeatEffect.INGEST)
+    )
+
+
 def unclassified_beat_entries(
     schedule: dict[str, Any] | None = None, effects: dict[str, Any] | None = None
 ) -> list[str]:
@@ -201,13 +240,39 @@ class InertReport:
     beat_effects: dict[str, str]
     routes_modelled: int
     unresolved_imports: list[str]
+    min_routes: int = MIN_ROUTES_MODELLED
+    demo_publish_refused: bool = False
+    active_beat: list[str] = field(default_factory=list)
+
+    @property
+    def not_measured_reasons(self) -> list[str]:
+        """Why the verdict cannot be trusted; empty when everything was measured."""
+        reasons = []
+        if not self.hook_measured:
+            reasons.append("publish counter ABSENT")
+        if self.routes_modelled < self.min_routes:
+            reasons.append(
+                f"only {self.routes_modelled} routes modelled, floor is {self.min_routes}"
+            )
+        if self.unresolved_imports:
+            reasons.append(f"unimportable modules: {', '.join(self.unresolved_imports)}")
+        return reasons
 
     @property
     def status(self) -> Status:
-        """NOT MEASURED wins: without a counter no crawl result means anything."""
-        if not self.hook_measured:
+        """NOT MEASURED wins: a verdict from a blind checker means nothing.
+
+        When ``DEMO_MODE`` publish refusal is proven, a route or middleware that reaches a
+        publish cannot enqueue, and beat entries never run in the demo, so only unclassified
+        beat entries still count. Otherwise MUTATING and INGEST beat entries do.
+        """
+        if self.not_measured_reasons:
             return Status.NOT_MEASURED
-        if self.publishing_safe_routes or self.publishing_middleware or self.unclassified_beat:
+        if self.unclassified_beat:
+            return Status.NOT_INERT
+        if self.demo_publish_refused:
+            return Status.INERT
+        if self.publishing_safe_routes or self.publishing_middleware or self.active_beat:
             return Status.NOT_INERT
         return Status.INERT
 
@@ -232,14 +297,22 @@ class InertReport:
             "unclassified_beat": self.unclassified_beat,
             "beat_effects": self.beat_effects,
             "unresolved_imports": self.unresolved_imports,
+            "min_routes": self.min_routes,
+            "demo_publish_refused": self.demo_publish_refused,
+            "active_beat": self.active_beat,
+            "not_measured_reasons": self.not_measured_reasons,
         }
 
 
 def render(report: InertReport) -> str:
     """The human-readable report."""
     lines = [f"assert-inert: {report.status} ({report.routes_modelled} routes modelled)"]
-    if not report.hook_measured:
-        lines.append("  publish counter: ABSENT -- no crawl result can be trusted")
+    for reason in report.not_measured_reasons:
+        lines.append(f"  not measured: {reason}")
+    if report.demo_publish_refused:
+        lines.append("  DEMO_MODE refuses every publish (probed): routes and beat cannot enqueue")
+    elif report.active_beat:
+        lines.append(f"  beat entries that mutate or ingest: {', '.join(report.active_beat)}")
     for finding in report.publishing_safe_routes:
         lines.append(f"  {', '.join(finding.keys)} [{finding.kind}]")
         lines.append(f"      {finding.witness}")

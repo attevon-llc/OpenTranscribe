@@ -56,6 +56,10 @@ trap teardown_fresh EXIT
 PREFLIGHT_WHY="$(fresh_stack_preflight_before "$FRESH_NAME" 2>&1)" \
     || fail_precondition "preflight: ${PREFLIGHT_WHY}" "fix the cause above, then re-run the test stage"
 
+# The first-run wizard e2e consumes the wizard's one-time state, so the stack is brought up with
+# the wizard still pending and it is completed right after that test (issue #1366).
+export FRESH_STACK_DEFER_FIRST_RUN=1
+
 echo -e "${BLUE}Starting isolated fresh stack '${FRESH_NAME}' (port offset +${PORT_OFFSET})${NC}" >&2
 if ! fresh_stack_up "$FRESH_NAME" "$PORT_OFFSET"; then
     fail_precondition "could not start the isolated fresh stack '${FRESH_NAME}'" \
@@ -68,6 +72,18 @@ fi
 PREFLIGHT_WHY="$(fresh_stack_preflight_after "$FRESH_NAME" 2>&1)" \
     || fail_precondition "preflight: ${PREFLIGHT_WHY}" "fix the cause above, then re-run the test stage"
 record dev-stack-up pass
+
+# First, on the untouched stack: run-e2e.sh excludes the `first_run` marker from every phase and
+# the gates below dismiss the wizard, so this is the only place the wizard itself is exercised.
+wizard_rc=0
+./scripts/e2e/run-e2e-first-run.sh || wizard_rc=$?
+fresh_stack_complete_first_run
+if (( wizard_rc == 0 )); then
+    record first-run-wizard-e2e pass
+else
+    record first-run-wizard-e2e fail "run-e2e-first-run.sh exited $wizard_rc" \
+        "read the failing step above; re-run ./scripts/e2e/run-e2e-first-run.sh --fresh ${FRESH_NAME} on a new fresh stack"
+fi
 
 echo -e "${BLUE}Running the canonical pre-merge gate${NC}" >&2
 rc=0
@@ -133,6 +149,7 @@ fi
 
 # Both halves of the contract. Reachable on both outcomes — the gate above always records
 # one — so this cannot convert a test failure (1) into a wiring-misuse exit (2).
+(( wizard_rc != 0 && rc == 0 )) && rc=1
 criteria_assert_all_checked
 
 if [[ "$JSON_OUT" == "true" ]]; then

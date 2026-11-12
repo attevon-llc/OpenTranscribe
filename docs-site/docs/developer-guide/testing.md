@@ -659,6 +659,20 @@ collection, so about 12 min for the backend and about 10 min for pre-commit in p
 fixed install and collection costs, not the tests, are what keep this above the 8-minute
 goal; shrinking them (a prebuilt CI image, a collection cache) is the next step.
 
+Three further cuts, wired in `pre-commit.yml` and pinned by `test_ci_sharding.py`:
+
+- **apt cache.** The two backend jobs cache the downloaded `.deb` files (`actions/cache` on
+  `~/apt-archives`, installed with `-o Dir::Cache::archives`); `apt-get update` still runs.
+- **mypy cache.** The pre-commit legs cache `.mypy_cache`, keyed on the backend requirements and
+  the hook config (mypy's incremental cache is safe to restore stale).
+- **No frontend hooks on a backend-only PR.** The `changes` job gates the pre-commit legs: when
+  the frontend filter does not match, the hooks listed in the workflow's `FRONTEND_ONLY_HOOKS`
+  are passed to pre-commit's `SKIP`, so npm and the vite build are not run. The filter also
+  matches `.pre-commit-config.yaml` and `scripts/guards/**`, so changing a hook still runs it.
+
+The under-15-minute target for a backend-only PR is still to be measured on GitHub after the
+push.
+
 To compare after a push, from the PR's runs:
 
 ```bash

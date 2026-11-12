@@ -44,6 +44,9 @@ concurrency:
 # Granted per job; nothing here writes to the repo, PRs or issues.
 permissions: {}
 
+env:
+  FRONTEND_ONLY_HOOKS: frontend-check,i18n-parity,frontend-build,guard-style-literals,guard-eslint-ratchet,guard-svelte-unused,guard-nuia,guard-unused-css,guard-knip,eslint-typed,guard-stylelint-staged,guard-stylelint
+
 jobs:
   # The two hook tiers run in PARALLEL legs of one matrix (issue #1099): measured on master PR
   # runs, the commit tier took ~8-9 min and the push tier ~7-8 min back to back in one job, so
@@ -52,6 +55,7 @@ jobs:
   # BOTH legs succeed (backend/tests/unit/test_ci_sharding.py pins that).
   pre-commit-stage:
     name: Pre-commit hooks (${{ matrix.stage }})
+    needs: changes
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -95,9 +99,28 @@ jobs:
           restore-keys: |
             pre-commit-${{ matrix.stage }}-${{ runner.os }}-
 
+      # mypy's incremental cache (mypy docs, "The mypy cache"): the hook runs mypy from the
+      # repo root, so the cache lands in `.mypy_cache` there. mypy keys entries by its own
+      # version and file hashes, so a stale restore is correct, merely slower.
+      - name: Cache mypy
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            .mypy_cache
+            backend/.mypy_cache
+          key: mypy-${{ matrix.stage }}-${{ runner.os }}-${{ hashFiles('backend/requirements*.txt', '.pre-commit-config.yaml') }}
+          restore-keys: |
+            mypy-${{ matrix.stage }}-${{ runner.os }}-
+
       - name: Run pre-commit (pre-commit stage)
         if: matrix.stage == 'pre-commit'
         run: pre-commit run --all-files --show-diff-on-failure
+        env:
+          # Frontend-only hooks (every id here has a `files:` pattern rooted in frontend/ or
+          # scripts/guards/) cannot find anything on a PR that touches neither; `--all-files`
+          # would still run them, which is what made a backend-only PR pay for npm and vite.
+          # The `changes` job's frontend filter includes the same roots, plus the hook config.
+          SKIP: ${{ needs.changes.outputs.frontend != 'true' && env.FRONTEND_ONLY_HOOKS || '' }}
 
       # ⚠️ BOTH stages, always (issue #688). `pre-commit run` with no --hook-stage runs
       # DEFAULT-stage hooks only, and .pre-commit-config.yaml sets
@@ -120,8 +143,9 @@ jobs:
         run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
         env:
           # Needs the backend venv's torch; the backend-tests job runs the same
-          # `generate-openapi.py --check` as a required step.
-          SKIP: openapi-snapshot
+          # `generate-openapi.py --check` as a required step. The frontend-only hooks are also
+          # skipped when the PR does not touch the frontend (see the pre-commit stage above).
+          SKIP: ${{ needs.changes.outputs.frontend != 'true' && format('openapi-snapshot,{0}', env.FRONTEND_ONLY_HOOKS) || 'openapi-snapshot' }}
 
       # Negative control for the mypy hook (issue #1271). The hook runs in an isolated virtualenv;
       # a typed package missing from its additional_dependencies makes mypy treat it as Any and
@@ -221,6 +245,11 @@ jobs:
             frontend:
               - 'frontend/**'
               - '.github/workflows/pre-commit.yml'
+              # The frontend-only pre-commit hooks are skipped unless this filter matches, so it
+              # must include everything they can be triggered by or defined in.
+              - '.pre-commit-config.yaml'
+              - 'scripts/guards/**'
+              - 'scripts/frontend-check.sh'
 
   # Resolves every backend requirements file with `pip install --dry-run` (nothing is
   # installed, no torch download beyond metadata) and fails on ResolutionImpossible. No
@@ -326,6 +355,17 @@ jobs:
           cache: 'pip'
           cache-dependency-path: backend/requirements-ci.txt
 
+      # Downloaded .deb files, so a warm run does not re-download ffmpeg and its ~100 dependencies
+      # (actions/cache docs: caching dependencies). `apt-get update` still runs, so the index is
+      # current; the key changes whenever the package list in this workflow does.
+      - name: Cache apt archives
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-ffmpeg-${{ runner.os }}-${{ hashFiles('.github/workflows/pre-commit.yml') }}
+          restore-keys: |
+            apt-ffmpeg-${{ runner.os }}-
+
       - name: Install system dependencies
         # Bounded separately from the job: a mirror that stops answering should fail this
         # step in minutes, not consume the whole job budget retrying (issue #493).
@@ -337,7 +377,10 @@ jobs:
         # libimage-exiftool-perl: every backend image ships exiftool, and the
         # media-duration tests (#969/#974) run real files through it.
         timeout-minutes: 10
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg libpq-dev libimage-exiftool-perl
+        run: |
+          mkdir -p "$HOME/apt-archives/partial"
+          sudo apt-get update
+          sudo apt-get -o Dir::Cache::archives="$HOME/apt-archives" install -y ffmpeg libpq-dev libimage-exiftool-perl
 
       - name: Install Python dependencies (CPU wheels)
         run: |
@@ -613,6 +656,17 @@ jobs:
           cache: 'pip'
           cache-dependency-path: backend/requirements-ci.txt
 
+      # Downloaded .deb files, so a warm run does not re-download ffmpeg and its ~100 dependencies
+      # (actions/cache docs: caching dependencies). `apt-get update` still runs, so the index is
+      # current; the key changes whenever the package list in this workflow does.
+      - name: Cache apt archives
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-ffmpeg-${{ runner.os }}-${{ hashFiles('.github/workflows/pre-commit.yml') }}
+          restore-keys: |
+            apt-ffmpeg-${{ runner.os }}-
+
       - name: Install system dependencies
         # Bounded separately from the job: a mirror that stops answering should fail this
         # step in minutes, not consume the whole job budget retrying (issue #493).
@@ -624,7 +678,10 @@ jobs:
         # libimage-exiftool-perl: every backend image ships exiftool, and the
         # media-duration tests (#969/#974) run real files through it.
         timeout-minutes: 10
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg libpq-dev libimage-exiftool-perl
+        run: |
+          mkdir -p "$HOME/apt-archives/partial"
+          sudo apt-get update
+          sudo apt-get -o Dir::Cache::archives="$HOME/apt-archives" install -y ffmpeg libpq-dev libimage-exiftool-perl
 
       - name: Install Python dependencies (CPU wheels)
         run: |

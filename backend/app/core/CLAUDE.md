@@ -221,7 +221,10 @@ should import `app.api` or `app.services` at module scope.
   `GET_ROUTES_THAT_ENQUEUE` there is a **ratchet**: a new safe-method route that reaches a
   publish fails it; a route made inert leaves the fixture in the same change. On a deployment:
   `python -m app.scripts.assert_inert [--json]` inside the backend container (`app.core` may not
-  import `app.main`, so the entry point lives in `app/scripts/`).
+  import `app.main`, so the entry point lives in `app/scripts/`). NOT MEASURED (exit 3) also covers
+  fewer than `MIN_ROUTES_MODELLED` routes and any unresolved import; MUTATING/INGEST beat entries
+  fail unless `probe_demo_publish_refusal()` proves `DEMO_MODE` refuses publishes.
+  `scripts/demo/demo-reset.sh` gates on the exit code.
 - `tenancy.py` — `UNSCOPED` sentinel + `OrgScope`; stdlib-only so any layer can import it.
   `tenant_limits.py` — per-org limit resolver hooks (community no-op).
 

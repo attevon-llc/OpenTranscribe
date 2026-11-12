@@ -12,6 +12,11 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Added
 
+- CI caches apt archives and the mypy cache and skips the frontend-only pre-commit hooks on a PR that does not touch the frontend (#1099).
+- The release `test` stage runs the first-run wizard e2e on its fresh stack before anything dismisses the wizard, as the blocking criterion `first-run-wizard-e2e` (#1366).
+- The assert-inert checker reports NOT MEASURED for fewer than 300 modelled routes or an unresolved import and fails on MUTATING and INGEST beat entries unless `DEMO_MODE` publish refusal is probed; `demo-reset.sh` (so `demo-upgrade.sh` too) aborts with nginx closed on a non-zero exit (#898).
+- Prometheus alerts `HttpServerErrorRate` (5xx share above 5% for 10 minutes) and `BackupStale` (no successful backup in 36 hours), with promtool fire and quiet cases (#791).
+
 - **Data safety.** Deleting a file moves it to a **Trash** page (restorable for 30 days; an administrator sets 1 to 90 days under Settings > Data & Storage > File Retention). `DELETE /api/files/{uuid}` keeps its route and 204 answer but no longer destroys the file. You can hide files from your own views without deleting them (Organize > Hide from my view).
 - **Legal holds.** Administrators place a hold on files or a whole collection without taking them down (Settings > Legal holds, the gallery selection, or a file's page; `/api/admin/holds`). A held file keeps its transcript, speakers, title, summary, topics, tags and collections exactly as they were; held files show a badge, a gallery filter and a collection, and the page explains what is blocked. See the Legal holds user guide.
 - **Organizations.** An organization has an owner who can hand it to another administrator. Member and organization erasures are scheduled (72 hours by default, 24 to 168), listed under Settings > Scheduled erasures, cancellable, and need the admin's password or authenticator code. When a member's account is deleted their organization files, speakers, profiles, collections, prompts and vocabulary are first handed to an administrator.

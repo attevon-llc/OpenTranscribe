@@ -53,6 +53,10 @@ ROUTES_THAT_MUST_STAY_CLEAN = (
 PACKAGES = ("app", __name__)
 
 
+#: The synthetic apps have 3 routes; the production floor would (correctly) call them unmeasured.
+SMALL_APP = ["--min-routes", "3"]
+
+
 def _model():
     return ReachabilityModel(packages=PACKAGES)
 
@@ -159,7 +163,7 @@ class TestPublishCounter:
         assert window.result.status == inert.Status.NOT_MEASURED
 
     def test_without_the_receiver_the_cli_exits_not_measured(self, live_app, hook_absent, capsys):
-        code = inert_routes.main([], app=_synthetic_app(), packages=PACKAGES)
+        code = inert_routes.main(SMALL_APP, app=_synthetic_app(), packages=PACKAGES)
 
         assert code == inert.EXIT_NOT_MEASURED == 3
         assert "NOT MEASURED" in capsys.readouterr().out
@@ -297,13 +301,17 @@ class TestBeatClassification:
 
 
 class TestVerdict:
-    def test_a_quiet_app_is_inert(self, live_app, capsys):
-        assert inert_routes.main([], app=_synthetic_app(), packages=PACKAGES) == inert.EXIT_INERT
+    def test_a_quiet_app_is_inert(self, live_app, capsys, monkeypatch):
+        monkeypatch.setattr(inert_routes, "active_beat_entries", list)
+        assert (
+            inert_routes.main(SMALL_APP, app=_synthetic_app(), packages=PACKAGES)
+            == inert.EXIT_INERT
+        )
         assert "assert-inert: INERT" in capsys.readouterr().out
 
     def test_an_app_that_enqueues_on_a_visit_is_not_inert(self, live_app, capsys):
         code = inert_routes.main(
-            ["--json"], app=_synthetic_app(enqueue_on_get=True), packages=PACKAGES
+            ["--json", *SMALL_APP], app=_synthetic_app(enqueue_on_get=True), packages=PACKAGES
         )
 
         assert code == inert.EXIT_NOT_INERT
@@ -323,3 +331,67 @@ class TestVerdict:
 
         assert run(["--json"]) == inert.EXIT_NOT_INERT
         assert '"path": "/api/system/stats"' in capsys.readouterr().out
+
+
+class TestMeasurementFloors:
+    def test_an_empty_route_table_is_not_measured_not_inert(self, live_app, capsys):
+        from fastapi import FastAPI
+
+        code = inert_routes.main([], app=FastAPI(), packages=PACKAGES)
+
+        assert code == inert.EXIT_NOT_MEASURED
+        assert "routes modelled, floor is" in capsys.readouterr().out
+
+    def test_the_floor_is_below_the_real_app_so_the_demo_gate_can_pass_it(self, live_app):
+        report = inert_routes.check(live_app)
+
+        assert report.routes_modelled >= inert.MIN_ROUTES_MODELLED
+        assert report.not_measured_reasons == []
+
+    def test_an_unresolved_import_is_not_measured(self, live_app):
+        clean = inert_routes.check(_synthetic_app(), PACKAGES, min_routes=3)
+        clean.demo_publish_refused = True
+        assert clean.status == inert.Status.INERT
+
+        gap = inert_routes.check(_synthetic_app(), PACKAGES, min_routes=3)
+        gap.demo_publish_refused = True
+        gap.unresolved_imports = ["app.missing"]
+
+        assert gap.status == inert.Status.NOT_MEASURED
+        assert "app.missing" in gap.not_measured_reasons[0]
+
+
+class TestBeatEffectsAndDemoRefusal:
+    def test_mutating_and_ingest_entries_make_a_live_deployment_not_inert(self, live_app):
+        report = inert_routes.check(_synthetic_app(), PACKAGES, min_routes=3)
+
+        assert report.demo_publish_refused is False
+        assert report.active_beat, "the real beat table has MUTATING entries"
+        assert report.status == inert.Status.NOT_INERT
+
+    def test_a_proven_demo_publish_refusal_clears_routes_and_beat(self, live_app):
+        live = inert_routes.check(_synthetic_app(enqueue_on_get=True), PACKAGES, min_routes=3)
+        demo = inert_routes.check(_synthetic_app(enqueue_on_get=True), PACKAGES, min_routes=3)
+        demo.demo_publish_refused = True
+
+        assert live.status == inert.Status.NOT_INERT
+        assert demo.status == inert.Status.INERT
+
+    def test_an_unclassified_beat_entry_is_not_inert_even_under_the_refusal(self, live_app):
+        report = inert_routes.check(_synthetic_app(), PACKAGES, min_routes=3)
+        report.demo_publish_refused = True
+        report.unclassified_beat = ["new-sweep"]
+
+        assert report.status == inert.Status.NOT_INERT
+
+    def test_the_probe_is_true_only_when_demo_mode_refuses(self, live_app, monkeypatch):
+        from app.core.celery import celery_app
+        from app.core.config import settings
+
+        # conftest patches send_task on the instance; the probe must meet the real one.
+        monkeypatch.delitem(vars(celery_app), "send_task", raising=False)
+        monkeypatch.setattr(settings, "DEMO_MODE", False)
+        assert inert.probe_demo_publish_refusal() is False
+
+        monkeypatch.setattr(settings, "DEMO_MODE", True)
+        assert inert.probe_demo_publish_refusal() is True

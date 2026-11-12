@@ -24,6 +24,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -287,3 +288,50 @@ def test_durations_file_is_valid_and_not_empty() -> None:
     assert isinstance(data, dict) and len(data) > 1000
     assert all(isinstance(k, str) and "::" in k for k in data)
     assert all(isinstance(v, (int, float)) and v >= 0 for v in data.values())
+
+
+def _workflow() -> dict[str, Any]:
+    workflow: dict[str, Any] = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    return workflow
+
+
+def test_frontend_only_hooks_are_skipped_on_a_pr_that_does_not_touch_the_frontend() -> None:
+    workflow = _workflow()
+    leg = workflow["jobs"]["pre-commit-stage"]
+    assert leg["needs"] == "changes"
+    config = yaml.safe_load(PRECOMMIT_CONFIG.read_text(encoding="utf-8"))
+    hooks = {h["id"]: h for repo in config["repos"] for h in repo["hooks"]}
+    skipped = workflow["env"]["FRONTEND_ONLY_HOOKS"].split(",")
+    unknown = [h for h in skipped if h not in hooks]
+    assert not unknown, f"FRONTEND_ONLY_HOOKS names hooks that do not exist: {unknown}"
+    for hook_id in skipped:
+        pattern = re.compile(hooks[hook_id]["files"])
+        for backend_path in ("backend/app/main.py", "docs-site/docs/x.md", "monitoring/a.yml"):
+            assert not pattern.search(backend_path), (
+                f"{hook_id} matches {backend_path}; skipping it on a backend-only PR loses coverage"
+            )
+    steps = {s["name"]: s for s in leg["steps"] if "name" in s}
+    for name in ("Run pre-commit (pre-commit stage)", "Run pre-commit (pre-push stage)"):
+        skip = steps[name]["env"]["SKIP"]
+        assert "needs.changes.outputs.frontend != 'true'" in skip and "FRONTEND_ONLY_HOOKS" in skip
+    assert "openapi-snapshot" in steps["Run pre-commit (pre-push stage)"]["env"]["SKIP"]
+
+
+def test_the_frontend_filter_covers_everything_that_can_trigger_a_skipped_hook() -> None:
+    changes = _workflow()["jobs"]["changes"]
+    filters = next(s for s in changes["steps"] if s.get("id") == "filter")["with"]["filters"]
+    frontend = yaml.safe_load(filters)["frontend"]
+    for needed in ("frontend/**", ".pre-commit-config.yaml", "scripts/guards/**"):
+        assert needed in frontend
+
+
+def test_the_mypy_and_apt_caches_exist_where_the_time_is_spent() -> None:
+    jobs = _workflow()["jobs"]
+    stage_steps = {s.get("name"): s for s in jobs["pre-commit-stage"]["steps"]}
+    assert ".mypy_cache" in stage_steps["Cache mypy"]["with"]["path"]
+    for job in ("backend-test-shard", "backend-fips-tests"):
+        steps = jobs[job]["steps"]
+        names = [s.get("name") for s in steps]
+        assert names.index("Cache apt archives") < names.index("Install system dependencies")
+        install = next(s for s in steps if s.get("name") == "Install system dependencies")
+        assert 'Dir::Cache::archives="$HOME/apt-archives"' in install["run"]

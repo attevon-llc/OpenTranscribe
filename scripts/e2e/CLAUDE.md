@@ -18,6 +18,9 @@ Moved intact from `scripts/CLAUDE.md`. Fixtures, markers and `RUN_*` gates: `bac
   `backend/tests/unit/test_release_e2e_selection.py`.
 - `e2e/run-e2e-first-run.sh` — the first-run wizard terms step (#1366, marker `first_run`). It consumes the
   wizard's one-time state, so it runs FIRST on a throwaway `--fresh` stack and `run-e2e.sh` excludes the marker.
+  `scripts/release/60-test.sh` runs it (criterion `first-run-wizard-e2e`): it sets
+  `FRESH_STACK_DEFER_FIRST_RUN=1` so `fresh-stack-lib.sh` leaves the wizard pending, runs this script,
+  then completes the wizard for the gates that follow.
 
 ## styling-ab.sh and dependency changes
 

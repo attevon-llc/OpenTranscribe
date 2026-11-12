@@ -378,6 +378,10 @@ stages:
         description: scripts/e2e/run-e2e-release.sh (the v0.6.0 browser journeys) exits 0 on the same fresh stack
         severity: blocking
 
+      - id: first-run-wizard-e2e
+        description: scripts/e2e/run-e2e-first-run.sh (the first-run wizard terms step) exits 0 on the fresh stack before anything dismisses the wizard
+        severity: blocking
+
   # ─── Local build of every architecture leg. Publishes nothing. ──────────
   build:
     description: Build every declared leg locally and prove each one knows its own version

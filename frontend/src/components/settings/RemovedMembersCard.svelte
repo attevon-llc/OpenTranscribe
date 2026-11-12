@@ -121,11 +121,9 @@
             <div class="what">
               <strong>{item.display_name ?? $t('settings.removedMembers.unnamed')}</strong>
               <span class="hint">
-                {$t('settings.removedMembers.erasedAt')}: {formatDateTime(
-                  item.scheduled_for,
-                  '',
-                  $locale
-                )}
+                {$t('settings.removedMembers.erasedAt', {
+                  when: formatDateTime(item.scheduled_for, '', $locale),
+                })}
               </span>
             </div>
             <button
@@ -160,9 +158,9 @@
   .intro {
     margin: 0;
     font-size: var(--font-size-sm);
-    line-height: 1.5;
+    line-height: var(--line-height-normal);
     color: var(--text-secondary);
-    max-width: 72ch;
+    max-width: var(--measure-prose);
   }
 
   .grace {

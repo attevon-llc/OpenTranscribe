@@ -270,6 +270,12 @@ authStore.token.subscribe((token: string | null) => {
   }
 });
 
+// The session probe and the auth-methods probe race at startup: the cookie session can
+// connect before `demoMode` is known. Drop that socket the moment the demo flag turns on.
+demoMode.subscribe((isDemo) => {
+  if (isDemo) websocketStore.disconnect();
+});
+
 // A handshake made while the account owed a banner acknowledgment or a password change
 // was refused, and a refusal is terminal; connect again once the hold clears.
 authStore.lifecycleHoldCleared.subscribe((count: number) => {

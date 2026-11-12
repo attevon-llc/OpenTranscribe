@@ -6074,7 +6074,7 @@
   "settings.removedMembers.saveError": "설정을 저장할 수 없습니다.",
   "settings.removedMembers.loadError": "제거된 구성원을 불러올 수 없습니다.",
   "settings.removedMembers.empty": "삭제를 기다리는 제거된 구성원이 없습니다.",
-  "settings.removedMembers.erasedAt": "삭제 예정",
+  "settings.removedMembers.erasedAt": "{{when}} 삭제 예정",
   "settings.removedMembers.restore": "복원",
   "settings.removedMembers.restored": "구성원을 복원했습니다.",
   "settings.removedMembers.tooLate": "유예 기간이 끝나 더 이상 복원할 수 없습니다.",

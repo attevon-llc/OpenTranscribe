@@ -6524,7 +6524,7 @@
   "settings.removedMembers.saveError": "تعذر حفظ الإعداد.",
   "settings.removedMembers.loadError": "تعذر تحميل الأعضاء المُزالين.",
   "settings.removedMembers.empty": "لا يوجد عضو مُزال بانتظار المحو.",
-  "settings.removedMembers.erasedAt": "يُمحى في",
+  "settings.removedMembers.erasedAt": "يُمحى في {{when}}",
   "settings.removedMembers.restore": "استعادة",
   "settings.removedMembers.restored": "تمت استعادة العضو.",
   "settings.removedMembers.tooLate": "انتهت فترة السماح ولم تعد الاستعادة ممكنة.",

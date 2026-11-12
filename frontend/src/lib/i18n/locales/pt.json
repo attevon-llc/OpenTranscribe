@@ -6254,7 +6254,7 @@
   "settings.removedMembers.saveError": "Não foi possível salvar a configuração.",
   "settings.removedMembers.loadError": "Não foi possível carregar os membros removidos.",
   "settings.removedMembers.empty": "Nenhum membro removido aguarda apagamento.",
-  "settings.removedMembers.erasedAt": "Apagado em",
+  "settings.removedMembers.erasedAt": "Apagado em {{when}}",
   "settings.removedMembers.restore": "Restaurar",
   "settings.removedMembers.restored": "O membro foi restaurado.",
   "settings.removedMembers.tooLate": "O período de carência terminou, não é mais possível restaurar.",

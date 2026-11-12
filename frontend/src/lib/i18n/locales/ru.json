@@ -6337,7 +6337,7 @@
   "settings.removedMembers.saveError": "Не удалось сохранить настройку.",
   "settings.removedMembers.loadError": "Не удалось загрузить удалённых участников.",
   "settings.removedMembers.empty": "Нет удалённых участников, ожидающих стирания.",
-  "settings.removedMembers.erasedAt": "Будет стёрто",
+  "settings.removedMembers.erasedAt": "Будет стёрто: {{when}}",
   "settings.removedMembers.restore": "Восстановить",
   "settings.removedMembers.restored": "Участник восстановлен.",
   "settings.removedMembers.tooLate": "Льготный период закончился, восстановление невозможно.",

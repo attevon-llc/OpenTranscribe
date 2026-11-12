@@ -6164,7 +6164,7 @@
   "settings.removedMembers.saveError": "The setting could not be saved.",
   "settings.removedMembers.loadError": "The removed members could not be loaded.",
   "settings.removedMembers.empty": "No removed member is waiting to be erased.",
-  "settings.removedMembers.erasedAt": "Erased at",
+  "settings.removedMembers.erasedAt": "Erased at {{when}}",
   "settings.removedMembers.restore": "Restore",
   "settings.removedMembers.restored": "The member was restored.",
   "settings.removedMembers.tooLate": "The grace period is over, so it can no longer be restored.",

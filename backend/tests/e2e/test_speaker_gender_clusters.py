@@ -19,7 +19,6 @@ Run (visible on XRDP):
     DISPLAY=:13 pytest backend/tests/e2e/test_speaker_gender_clusters.py -v --headed
 """
 
-import os
 import uuid
 import warnings
 
@@ -35,29 +34,6 @@ from timeouts import DATA_AFTER_RELOAD_MS
 # ``--backend-url`` and this file always drove whatever was on the default ports — even
 # when the run was aimed at an isolated stack (issue #431). Everything below takes
 # conftest's ``base_url`` / ``backend_url`` fixtures instead.
-
-# Credentials imported from conftest to avoid secret detection false positives
-try:
-    from conftest import TEST_ADMIN_EMAIL
-    from conftest import TEST_ADMIN_PASSWORD
-except ImportError:
-    TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
-    TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "admin")
-
-
-@pytest.fixture(scope="session")
-def api_session(backend_url: str) -> requests.Session:
-    """Create an authenticated requests.Session, shared across all tests."""
-    session = requests.Session()
-    resp = session.post(
-        f"{backend_url}/api/auth/login",
-        data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    token = resp.json()["access_token"]
-    session.headers.update({"Authorization": f"Bearer {token}"})
-    return session
 
 
 @pytest.fixture(scope="session")

@@ -9,7 +9,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
   const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  const t = (key: string) => en[key] ?? key;
+  const t = (key: string, params: Record<string, unknown> = {}) =>
+    (en[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_, name) => String(params[name] ?? ''));
   return { t: readable(t), locale: readable('en') };
 });
 
@@ -56,6 +57,16 @@ describe('RemovedMembersCard', () => {
     expect(await screen.findByTestId('removed-member-row')).toBeTruthy();
     expect(screen.getByText('Alice Member')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Restore' })).toBeTruthy();
+  });
+
+  it('puts the date inside one translated sentence, with no joined colon', async () => {
+    api.listRemovedMembers.mockResolvedValue([member()]);
+    render(RemovedMembersCard);
+
+    const row = await screen.findByTestId('removed-member-row');
+    const text = row.querySelector('.what .hint')?.textContent?.trim() ?? '';
+    expect(text).toMatch(/^Erased at .*2026/);
+    expect(text).not.toContain(': ');
   });
 
   it('shows the empty line when nobody is waiting', async () => {

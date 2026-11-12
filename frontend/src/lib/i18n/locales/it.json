@@ -6254,7 +6254,7 @@
   "settings.removedMembers.saveError": "Impossibile salvare l'impostazione.",
   "settings.removedMembers.loadError": "Impossibile caricare i membri rimossi.",
   "settings.removedMembers.empty": "Nessun membro rimosso è in attesa di cancellazione.",
-  "settings.removedMembers.erasedAt": "Cancellato il",
+  "settings.removedMembers.erasedAt": "Cancellato il {{when}}",
   "settings.removedMembers.restore": "Ripristina",
   "settings.removedMembers.restored": "Il membro è stato ripristinato.",
   "settings.removedMembers.tooLate": "Il periodo di tolleranza è scaduto, non è più possibile ripristinare.",

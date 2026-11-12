@@ -51,6 +51,20 @@
     showDownloadDropdown = false;
   }
 
+  // WAI-ARIA APG menu button: Escape closes the open menu and returns focus to its button.
+  // On the window, not the panel: focus stays on the trigger after a click, and the panel
+  // is re-parented to <body> by anchoredPanel, so a keydown on the panel never fires.
+  function onWindowKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return;
+    if (showExportDropdown) {
+      closeExportDropdown();
+      exportButton?.focus();
+    } else if (showDownloadDropdown) {
+      closeDownloadDropdown();
+      downloadButton?.focus();
+    }
+  }
+
   function selectDownload(mode: string) {
     closeDownloadDropdown();
     dispatch('download', { mode });
@@ -70,7 +84,7 @@
 </script>
 
 <!-- Close dropdowns on outside click -->
-<svelte:window on:click={() => { closeExportDropdown(); closeDownloadDropdown(); }} />
+<svelte:window on:click={() => { closeExportDropdown(); closeDownloadDropdown(); }} on:keydown={onWindowKeydown} />
 
 <div class="transcript-actions">
   <!-- A support session cannot export (the server refuses it, and so does the UI). -->
@@ -92,6 +106,7 @@
       <div
         role="presentation"
         class="export-dropdown-content"
+        data-testid="export-menu"
         use:anchoredPanel={{ anchor: exportButton, width: 'content' }}
         on:click|stopPropagation
       >
@@ -210,6 +225,7 @@
         <div
           role="presentation"
           class="export-dropdown-content"
+          data-testid="download-menu"
           use:anchoredPanel={{ anchor: downloadButton, width: 'content', edge: 'right' }}
           on:click|stopPropagation
         >

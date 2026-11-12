@@ -32,8 +32,6 @@ import requests
 
 # Absolute import — the e2e dir is not a package, so a relative import breaks
 # collection when invoked as `pytest backend/tests/e2e/` from the repo root.
-from conftest import TEST_ADMIN_EMAIL
-from conftest import TEST_ADMIN_PASSWORD
 from conftest import unique_conversation_title
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -54,28 +52,6 @@ STREAM_TIMEOUT_MS = 90_000
 # ---------------------------------------------------------------------------
 # API helpers (used to arrange state and to clean up deterministically)
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def api_session(backend_url: str) -> requests.Session:
-    """An authenticated API session for arranging and cleaning up test state."""
-    session = requests.Session()
-    response = session.post(
-        f"{backend_url}/api/auth/token",
-        data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
-        timeout=30,
-    )
-    assert response.status_code == 200, f"Login failed: {response.status_code}"
-
-    # Attach the CSRF token to every subsequent request. Without it the backend
-    # rejects all mutations with 403, which silently broke two things: tests
-    # that arrange state via POST failed outright, and `cleanup_conversations`
-    # DELETEs failed too — so every E2E run was LEAVING its conversations behind
-    # in dev data, exactly what this suite is required not to do.
-    csrf_token = session.cookies.get("csrf_token")
-    assert csrf_token, "login did not set a csrf_token cookie"
-    session.headers["X-CSRF-Token"] = csrf_token
-    return session
 
 
 @pytest.fixture

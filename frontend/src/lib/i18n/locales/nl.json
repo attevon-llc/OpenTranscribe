@@ -6164,7 +6164,7 @@
   "settings.removedMembers.saveError": "De instelling kon niet worden opgeslagen.",
   "settings.removedMembers.loadError": "De verwijderde leden konden niet worden geladen.",
   "settings.removedMembers.empty": "Geen verwijderd lid wacht op verwijdering.",
-  "settings.removedMembers.erasedAt": "Gewist op",
+  "settings.removedMembers.erasedAt": "Gewist op {{when}}",
   "settings.removedMembers.restore": "Herstellen",
   "settings.removedMembers.restored": "Het lid is hersteld.",
   "settings.removedMembers.tooLate": "De wachttijd is voorbij, herstellen kan niet meer.",

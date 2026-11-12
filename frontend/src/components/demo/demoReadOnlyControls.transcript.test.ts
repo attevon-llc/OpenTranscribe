@@ -4,7 +4,7 @@
  * "disabled" assertion cannot pass on a control that was never enabled in the first place.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', async () =>
   (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
@@ -115,6 +115,20 @@ describe('Add comment', () => {
     const button = container.querySelector('.submit-button') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.getAttribute('title')).toBe(TOOLTIP);
+  });
+
+  it('does not send on Enter in a demo, and does send outside one', async () => {
+    const submit = vi.fn(async () => true);
+    for (const demo of [true, false]) {
+      submit.mockClear();
+      demoMode.set(demo);
+      const { container, unmount } = render(CommentComposer, { props: { submit } });
+      const box = container.querySelector('textarea') as HTMLTextAreaElement;
+      await fireEvent.input(box, { target: { value: 'hello' } });
+      await fireEvent.keyDown(box, { key: 'Enter' });
+      expect(submit).toHaveBeenCalledTimes(demo ? 0 : 1);
+      unmount();
+    }
   });
 });
 

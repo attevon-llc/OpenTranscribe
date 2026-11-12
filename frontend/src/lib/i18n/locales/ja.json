@@ -6074,7 +6074,7 @@
   "settings.removedMembers.saveError": "設定を保存できませんでした。",
   "settings.removedMembers.loadError": "削除されたメンバーを読み込めませんでした。",
   "settings.removedMembers.empty": "消去待ちの削除済みメンバーはいません。",
-  "settings.removedMembers.erasedAt": "消去予定",
+  "settings.removedMembers.erasedAt": "{{when}} に消去予定",
   "settings.removedMembers.restore": "復元",
   "settings.removedMembers.restored": "メンバーを復元しました。",
   "settings.removedMembers.tooLate": "猶予期間が終了したため、復元できません。",

@@ -99,7 +99,7 @@ def test_answer_renders_markdown_and_a_code_block_with_a_copy_button(
     answer = _ask(gallery_page, base_url, conversation, "What is discussed?")
     prose = answer.locator(".chat-markdown")
     expect(prose.locator("strong").first).to_be_visible()
-    assert prose.locator("ul > li").count() >= 3, "the bullet list did not render as a list"
+    expect(prose.locator("ul > li")).to_have_count(3)
     expect(prose.locator("blockquote")).to_have_count(1)
     code = prose.locator("pre")
     expect(code).to_have_count(1)

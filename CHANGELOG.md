@@ -49,6 +49,8 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - `scripts/lane-check.sh`: every fast whole-tree guard (duplicates, hidden-mypy, style-literals, unused-css, suppressions, vulture, svelte-unused, nuia, api-boundary, raw-env, ruff-ratchet, i18n parity, audit-tests, frontend test:audit) in one parallel command with a PASS/FAIL line each. Each guard runs its pre-commit hook's own entry (read by `scripts/lib/precommit_entry.py`), so the two cannot drift; it never stashes the worktree.
 
 ### Fixed
+- The export and download menus close on Escape and return focus to their button; the demo no longer sends a comment on Enter; the usage-report prompt is a labelled region that fits 390 px screens; the erasure notice date follows the app language; the demo drops a websocket opened before the demo flag was known; the removed-members date is one translated sentence.
+- The shared `api_session` e2e fixture now lives in `backend/tests/e2e/conftest.py` (the chat rendering tests had none); the file-menu e2e tests select menus by test id.
 
 - The mobile nav drawer now moves focus in on open, traps Tab while open, closes on Escape and returns focus to its toggle (WCAG 2.4.3) (#1282).
 - Load test (#1174): Researchers outside `--chat-users` no longer chat (Locust merges base-class tasks, so the gated overrides ran beside the ungated ones); the gate now lives in `ChatUser`. The `smoke`, `steady`, `ramp`, `spike` and `soak` profiles no longer always fail the canary check, and a run with no `samples.csv` fails instead of passing the deadlock and pool checks. The test stub now merges base-class tasks like Locust 2.47.

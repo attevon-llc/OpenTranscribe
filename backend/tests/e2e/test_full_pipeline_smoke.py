@@ -52,8 +52,6 @@ from pathlib import Path
 
 import pytest
 import requests
-from conftest import TEST_ADMIN_EMAIL
-from conftest import TEST_ADMIN_PASSWORD
 from conftest import delete_media_file
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -103,22 +101,6 @@ def _require_opt_in():
             f"no LLM reachable on localhost:{LLM_TEST_PORT} — start it with "
             "'./opentr.sh start dev --with-llm-test'"
         )
-
-
-@pytest.fixture(scope="module")
-def api_session(backend_url: str) -> requests.Session:
-    """An authenticated API session for the whole module's arrange/act/cleanup calls."""
-    session = requests.Session()
-    response = session.post(
-        f"{backend_url}/api/auth/token",
-        data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
-        timeout=30,
-    )
-    assert response.status_code == 200, f"Login failed: {response.status_code}"
-    csrf_token = session.cookies.get("csrf_token")
-    assert csrf_token, "login did not set a csrf_token cookie"
-    session.headers["X-CSRF-Token"] = csrf_token
-    return session
 
 
 @pytest.fixture(scope="module")

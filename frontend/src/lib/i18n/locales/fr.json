@@ -6254,7 +6254,7 @@
   "settings.removedMembers.saveError": "Le paramètre n'a pas pu être enregistré.",
   "settings.removedMembers.loadError": "Les membres supprimés n'ont pas pu être chargés.",
   "settings.removedMembers.empty": "Aucun membre supprimé n'attend d'être effacé.",
-  "settings.removedMembers.erasedAt": "Effacé le",
+  "settings.removedMembers.erasedAt": "Effacé le {{when}}",
   "settings.removedMembers.restore": "Restaurer",
   "settings.removedMembers.restored": "Le membre a été restauré.",
   "settings.removedMembers.tooLate": "Le délai de grâce est écoulé, la restauration n'est plus possible.",

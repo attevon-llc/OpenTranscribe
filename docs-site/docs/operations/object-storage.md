@@ -277,6 +277,15 @@ after the push, replace the `image:` line with the commented mirror line (same d
 Offline bundles and `scripts/uninstall-offline-package.sh` list the image by its upstream name, so
 update them in the same change as the switch.
 
+## Known risk: a single-maintainer fork
+
+The pinned Silo image is a fork kept by one maintainer. If that maintainer stops publishing, the
+pinned digest keeps working, but security fixes and new S3 behaviour stop arriving, and the image
+is not rebuilt from upstream source by us. This is recorded as an accepted risk (issue #775).
+The mitigations are the digest pin (the image you run never changes underneath you), the
+S3-generic backend work below, and the path to your own S3 in [Using your own S3](#using-your-own-s3).
+Plan for an S3 replacement if you need a vendor-supported object store.
+
 ## Roadmap
 
 These are plans, not part of 0.6.0:

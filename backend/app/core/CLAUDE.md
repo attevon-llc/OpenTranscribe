@@ -306,6 +306,27 @@ should import `app.api` or `app.services` at module scope.
   `live*` files are swept at import. Pinned by `test_gauge_multiprocess_modes.py`. Dev runs one
   process (`--reload`), tests the plain registry.
 
+## Settings that stay environment-only (issue #566, D15/D15b)
+
+Moving a knob into the admin UI was decided per setting, not wholesale. These stay in `.env` on
+purpose, so do not add UI fields or `SystemSettings` keys for them without a new decision:
+
+- Search fusion knobs (`SEARCH_FUSION_STRATEGY` and the RRF constants) and index topology
+  (`OPENSEARCH_*_INDEX_SHARDS`/`REPLICAS`, index timeouts): changing them needs a reindex or is
+  an operator capacity choice, not a per-tenant preference.
+- Whisper model and mode (`WHISPER_MODEL`, `WHISPER_HYBRID_MODE`, other `WHISPER_*`): tied to
+  the model cache and the GPU image.
+- YouTube transport (`YOUTUBE_DOWNLOAD_RATE_LIMIT`, `YOUTUBE_COOKIE_*`, the
+  `YOUTUBE_PLAYLIST_STAGGER_*` and `YOUTUBE_PRE_DOWNLOAD_JITTER_*` keys): host and network
+  specific, and the cookie settings reference host paths.
+- Chunk sizing: deferred (D15b) because the values have no recorded provenance to justify a UI.
+- GPU placement, FIPS mode and bootstrap values read before a database session exists.
+
+What did move (DB-backed, seeded once from the old env value, which is never read again): the
+five `youtube.*` policy keys (`core/youtube_defaults.py`) and the `transcription.default_vad_*`
+keys. `tests/unit/test_moved_env_settings_not_in_template.py` fails if any of those names comes
+back as an active line in `.env.example`.
+
 ## Caching rule
 
 **Cache only where invalidation is provable; where it is not, say why.** A TTL alone is not an

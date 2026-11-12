@@ -983,6 +983,11 @@ when there is work for them. To hold more open connections, raise `UVICORN_LIMIT
 `API_THREADPOOL_SIZE` below the pool capacity, or so low that the limit is not below `C + T`,
 logs a warning at startup.
 
+The storage (S3/Silo) HTTP connection pool follows the same value: one pool per process, sized
+`max(10, API_THREADPOOL_SIZE)` (the derived count when it is `0`), so every API thread can hold a
+storage connection without queueing. Change `API_THREADPOOL_SIZE` and the storage pool moves with
+it; there is no separate setting.
+
 `DB_STATEMENT_TIMEOUT_MS` is a Postgres `statement_timeout` for the API process's own
 connections, set per session when each connection opens (PostgreSQL advises against setting it
 server-wide). `docker-compose.yml` sets it to 30000 on the backend service only; its coded default

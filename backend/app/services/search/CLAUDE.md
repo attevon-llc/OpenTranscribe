@@ -274,6 +274,13 @@ it cannot be sent, and it cannot reach the kNN reads. The Postgres post-filter
   cache TTL. Once #383's digest tier lands, rename joins the digest-regeneration triggers
   (addendum G1) — the seam is that module's `_finish`.
 
+## Search settings that stay environment-only (#566)
+
+Fusion knobs (`SEARCH_FUSION_STRATEGY`, the RRF constants) and index topology
+(`OPENSEARCH_CHUNKS_INDEX_SHARDS`/`REPLICAS`, index timeouts) are deliberately env-only: they
+shape the index or are operator capacity choices. Do not give them admin-UI fields. The full
+list of env-only decisions is in `backend/app/core/CLAUDE.md`.
+
 ## Fusion is selectable per request (#363, #403 Stage 5 plumbing)
 
 The fusion strategy id is threaded down to four attach sites and never re-read from settings; `_verified_pipelines` is a set so one strategy cannot certify another; there is no search response cache (removed, concurrency audit L8), so no page can be replayed across strategies. **MEASURED: RRF stays** (ten arms, zero both-corpus wins; #363 closed). Detail: `backend/app/services/search/notes/fusion.md`.

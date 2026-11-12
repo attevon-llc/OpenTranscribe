@@ -715,19 +715,16 @@ _E2E_LITERAL_NOT_PERSISTED: dict[str, str] = {
     "backend/tests/e2e/test_upload_tray_and_notifications.py::e2e-card-failed-": (
         "same as e2e-card-processing-: browser-local only"
     ),
-    "backend/tests/e2e/test_notification_missed_frames.py::e2e-missed-frames-": (
-        "a filename inside a seeded notification record in a throwaway browser context's "
-        "localStorage; no file or row exists server-side"
-    ),
-    "backend/tests/e2e/test_notification_missed_frames.py::**/api/files/": (
-        "a Playwright route glob matching a request URL, not a name that is stored anywhere"
-    ),
     "backend/tests/e2e/test_chat.py::{label}": (
         "_unique() names LLM provider configs (swept by base_url in cleanup-test-users.py); "
         "conversation titles use unique_conversation_title() and its e2e-chat- prefix"
     ),
     "backend/tests/e2e/test_chat_grounding.py::{name}": (
         "llm_config_factory's LLM config name; swept by base_url in cleanup-test-users.py"
+    ),
+    "backend/tests/e2e/test_chat_rendering.py::Mock chat render {model}": (
+        "an LLM config name; the fixture deletes it and cleanup-test-users.py sweeps it by "
+        "base_url (MOCK_BACKEND_URL)"
     ),
     "backend/tests/e2e/test_watch_sources_e2e.py::noreply+": (
         "the from_address of the e2e-watch-mailer- email config, not an account; the "

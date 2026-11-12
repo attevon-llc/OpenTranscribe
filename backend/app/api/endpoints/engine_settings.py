@@ -72,7 +72,7 @@ _BOOL_KEYS = {
 _FLOAT_KEYS = {"boundary_acoustic_cosine_margin", "boundary_acoustic_max_word_dur"}
 
 _DESCRIPTIONS = {
-    "transcriber_backend": "Transcription backend (faster_whisper | whisperx | cloud)",
+    "transcriber_backend": "Transcription backend (faster_whisper; others are refused until #366)",
     "diarizer_backend": (
         "Speaker diarization backend (native | pyannote) — native (diar-native, "
         "Rust/speakrs) is primary; pyannote is the explicit failover, also used "

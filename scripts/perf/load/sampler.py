@@ -57,12 +57,16 @@ FORBIDDEN_GPUS = frozenset({0})
 METRIC_PREFIXES = ('db_pool_', 'http_requests_in_flight')
 COMMAND_TIMEOUT_S = 4.0
 
+DEADLOCK_ROW = '__deadlocks'
 PG_SQL = (
-    "SELECT coalesce(state, 'none'), count(*), "
+    "(SELECT coalesce(state, 'none'), count(*), "
     "count(*) FILTER (WHERE state LIKE 'idle in transaction%' "
     "AND now() - xact_start > interval '1 second'), "
-    'coalesce(max(extract(epoch FROM now() - xact_start)), 0) '
-    'FROM pg_stat_activity WHERE datname = current_database() GROUP BY 1'
+    'coalesce(max(extract(epoch FROM now() - xact_start)), 0)::float8 '
+    'FROM pg_stat_activity WHERE datname = current_database() GROUP BY 1) '
+    # The cumulative deadlock counter rides along as one more row; the summary takes last - first.
+    f"UNION ALL SELECT '{DEADLOCK_ROW}', deadlocks, 0, 0::float8 "
+    'FROM pg_stat_database WHERE datname = current_database()'
 )
 API_APP_NAME = 'opentranscribe-api'
 API_CONN_SQL = (
@@ -103,6 +107,9 @@ def parse_pg(text: str) -> list[Row]:
         if len(parts) != 4:
             continue
         state, count, idle, age = parts
+        if state == DEADLOCK_ROW:
+            rows.append(('pg', 'deadlocks_total', float(count)))
+            continue
         rows.append(('pg', f'state:{state}', float(count)))
         long_idle += float(idle)
         oldest = max(oldest, float(age))

@@ -36,7 +36,53 @@ def _sample_audio() -> bytes:
     return _AUDIO
 
 
-class _Uploads(SeededUser):
+class SpeakerWork(SeededUser):
+    """The speaker edit both the editor and the speaker curator make."""
+
+    abstract = True
+
+    def _temporary_speaker(self) -> None:
+        """Create a speaker, give it a segment, rename it, hand the segment back, merge it away.
+
+        The merge returns the segment to its original speaker and removes the temporary
+        speaker, so the file ends as it started.
+        """
+        file_uuid = self._a_file()
+        if file_uuid is None:
+            return
+        self._call('speakers.list', params={'file_uuid': file_uuid}, label='for file')
+        page = self._call(
+            'files.segments', fill={'file_uuid': file_uuid}, params={'segment_limit': 50}
+        )
+        segments = [
+            s
+            for s in _items(page, 'transcript_segments')
+            if s.get('uuid') and isinstance(s.get('speaker'), dict) and s['speaker'].get('uuid')
+        ]
+        if not segments:
+            return
+        segment = random.choice(segments)
+        original = segment['speaker']['uuid']
+        created = self._call(
+            'speakers.create',
+            params={'media_file_uuid': file_uuid},
+            json={'name': f'LOADTEST_{uuid.uuid4().hex[:6]}'},
+        )
+        if created.status_code != 200:
+            return
+        temp = created.json()['uuid']
+        moved = {'segment_uuid': segment['uuid']}
+        self._call('segments.speaker', fill=moved, json={'speaker_uuid': temp})
+        self._call(
+            'speakers.update', fill={'speaker_uuid': temp}, json={'display_name': 'Load Test'}
+        )
+        # Restore by merging the temp speaker into the original: the merge moves its segment
+        # back and removes it. Moving the segment back first deletes the now-empty temp speaker
+        # (transcript_segments.py), so the merge then 404s.
+        self._call('speakers.merge', fill={'speaker_uuid': temp, 'target_speaker_uuid': original})
+
+
+class _Uploads(SpeakerWork):
     """Uploading a real recording and waiting for the pipeline to finish it."""
 
     abstract = True
@@ -139,20 +185,7 @@ class Editor(_Uploads):
     @tag('write')
     @task(1)
     def collection(self) -> None:
-        if len(self.file_uuids) < 2:
-            return
-        resp = self._call(
-            'collections.create',
-            json={'name': f'Load test {uuid.uuid4().hex[:8]}', 'is_public': False},
-        )
-        if resp.status_code != 200:
-            return
-        fill = {'collection_uuid': resp.json()['uuid']}
-        members = {'media_file_ids': random.sample(self.file_uuids, 2)}
-        self._call('collections.add_media', fill=fill, json=members)
-        self._call('collections.media', fill=fill, params={'page': 1, 'page_size': 20})
-        self._call('collections.remove_media', fill=fill, json=members)
-        self._call('collections.delete', fill=fill, expect=(200, 204))
+        self._collection_roundtrip()
 
     @tag('write')
     @task(2)
@@ -175,44 +208,7 @@ class Editor(_Uploads):
     @tag('write')
     @task(1)
     def speakers(self) -> None:
-        """Create a speaker, give it a segment, rename it, hand the segment back, merge it away.
-
-        The merge returns the segment to its original speaker and removes the temporary
-        speaker, so the file ends as it started.
-        """
-        file_uuid = self._a_file()
-        if file_uuid is None:
-            return
-        self._call('speakers.list', params={'file_uuid': file_uuid}, label='for file')
-        page = self._call(
-            'files.segments', fill={'file_uuid': file_uuid}, params={'segment_limit': 50}
-        )
-        segments = [
-            s
-            for s in _items(page, 'transcript_segments')
-            if s.get('uuid') and isinstance(s.get('speaker'), dict) and s['speaker'].get('uuid')
-        ]
-        if not segments:
-            return
-        segment = random.choice(segments)
-        original = segment['speaker']['uuid']
-        created = self._call(
-            'speakers.create',
-            params={'media_file_uuid': file_uuid},
-            json={'name': f'LOADTEST_{uuid.uuid4().hex[:6]}'},
-        )
-        if created.status_code != 200:
-            return
-        temp = created.json()['uuid']
-        moved = {'segment_uuid': segment['uuid']}
-        self._call('segments.speaker', fill=moved, json={'speaker_uuid': temp})
-        self._call(
-            'speakers.update', fill={'speaker_uuid': temp}, json={'display_name': 'Load Test'}
-        )
-        # Restore by merging the temp speaker into the original: the merge moves its segment
-        # back and removes it. Moving the segment back first deletes the now-empty temp speaker
-        # (transcript_segments.py), so the merge then 404s.
-        self._call('speakers.merge', fill={'speaker_uuid': temp, 'target_speaker_uuid': original})
+        self._temporary_speaker()
 
     @tag('write')
     @task(1)
@@ -346,10 +342,9 @@ class ChatUser(SeededUser):
         config = self._config(model)
         if config is None or not self.file_uuids:
             return
-        scope = {'file_uuids': random.sample(self.file_uuids, min(3, len(self.file_uuids)))}
         created = self._call(
             'chat.create',
-            json={'title': 'Load test', 'scope': scope, 'llm_config_uuid': config},
+            json={'title': 'Load test', 'scope': self._scope(), 'llm_config_uuid': config},
             expect=(200, 201),
             label=model,
         )
@@ -358,6 +353,13 @@ class ChatUser(SeededUser):
         fill = {'conversation_uuid': created.json()['uuid']}
         self._stream(fill, model)
         self._call('chat.delete', fill=fill, expect=(200, 204), label=model)
+
+    def _scope(self) -> dict[str, list[str]]:
+        """What a chat is about: up to three of the person's own files."""
+        return {'file_uuids': random.sample(self.file_uuids, min(3, len(self.file_uuids)))}
+
+    def _question(self) -> str:
+        return 'What did they decide about the budget?'
 
     def _stream(self, fill: dict[str, str], model: str) -> None:
         """Send one question and read the answer's server-sent events to the end.
@@ -374,7 +376,7 @@ class ChatUser(SeededUser):
             for line in self.client.iter_lines(
                 routes.ROUTES['chat.send'][1].format(**fill),
                 method='POST',
-                json={'content': 'What did they decide about the budget?'},
+                json={'content': self._question()},
                 headers=self._csrf_header(),
                 name=f'chat.send {model}',
             ):

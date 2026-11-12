@@ -11,6 +11,7 @@ from __future__ import annotations
 import itertools
 import random
 import time
+import uuid
 from collections import defaultdict
 from typing import Any
 
@@ -19,6 +20,9 @@ import scenario
 from locust import FastHttpUser, between
 
 _COUNTERS: defaultdict[str, itertools.count[int]] = defaultdict(itertools.count)
+#: Files each signed-in identity has listed, shared by every simulated user in this process; the
+#: cross-tenant canary asks for a file that belongs to somebody else.
+FILES_BY_OWNER: defaultdict[str, list[str]] = defaultdict(list)
 
 
 def _items(resp: Any, key: str | None = None) -> list[dict[str, Any]]:
@@ -118,9 +122,27 @@ class SeededUser(FastHttpUser):
         uuids = [row['uuid'] for row in _items(resp, 'items') if row.get('uuid')]
         if uuids:
             self.file_uuids = uuids
+            FILES_BY_OWNER[self.email] = uuids
 
     def _a_file(self) -> str | None:
         return random.choice(self.file_uuids) if self.file_uuids else None
+
+    def _collection_roundtrip(self) -> None:
+        """Create a collection, fill it with two files, read it, empty it and delete it."""
+        if len(self.file_uuids) < 2:
+            return
+        resp = self._call(
+            'collections.create',
+            json={'name': f'Load test {uuid.uuid4().hex[:8]}', 'is_public': False},
+        )
+        if resp.status_code != 200:
+            return
+        fill = {'collection_uuid': resp.json()['uuid']}
+        members = {'media_file_ids': random.sample(self.file_uuids, 2)}
+        self._call('collections.add_media', fill=fill, json=members)
+        self._call('collections.media', fill=fill, params={'page': 1, 'page_size': 20})
+        self._call('collections.remove_media', fill=fill, json=members)
+        self._call('collections.delete', fill=fill, expect=(200, 204))
 
     def _sleep(self, seconds: float) -> None:
         """Wait inside a task (gevent-friendly: Locust patches ``time.sleep``)."""

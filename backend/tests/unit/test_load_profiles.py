@@ -36,12 +36,32 @@ def test_every_profile_loads_and_names_only_real_personas(load):
     profiles = load["profiles"]
     classes = load["locustfile"].USER_CLASSES
 
-    assert set(profiles.PROFILES) == {"smoke", "steady", "ramp", "spike", "soak", "pipeline"}
+    assert set(profiles.PROFILES) == {
+        "smoke",
+        "steady",
+        "ramp",
+        "spike",
+        "soak",
+        "pipeline",
+        "knee",
+        "waves",
+        "herd",
+        "hot-file",
+        "egress",
+        "leak",
+        "soak-8h",
+        "soak-24h",
+    }
     for profile in profiles.PROFILES.values():
-        _timeline(profile, profiles.Params(), step=30.0)
+        _timeline(profile, profiles.Params(), step=600.0, limit=30 * 3600.0)
         assert set(profile.personas) <= set(classes), profile.name
     assert "PipelineUploader" not in profiles.WEB_PERSONAS
-    assert set(profiles.WEB_PERSONAS) | {"PipelineUploader"} == set(classes)
+    role_personas = (
+        set(profiles.PEOPLE_PERSONAS)
+        | set(profiles.HERD_PERSONAS)
+        | set(profiles.HOT_FILE_PERSONAS)
+    )
+    assert set(profiles.WEB_PERSONAS) | {"PipelineUploader"} | role_personas == set(classes)
 
 
 def test_smoke_is_a_few_people_for_a_minute(load):
@@ -122,3 +142,105 @@ def test_the_shape_hands_locust_the_chosen_profiles_classes(load):
     assert (users, rate) == (4, 1.0)
     assert classes == [locustfile.USER_CLASSES["PipelineUploader"]]
     assert shape.tick() is None
+
+
+# --- the shapes of issue #1174 -------------------------------------------------------------
+
+
+def _levels(timeline):
+    """The user counts in order, consecutive repeats collapsed."""
+    out: list[int] = []
+    for _, users in timeline:
+        if not out or out[-1] != users:
+            out.append(users)
+    return out
+
+
+def test_knee_climbs_in_small_even_steps_and_holds_each(load):
+    profiles = load["profiles"]
+    timeline, _ = _timeline(profiles.get("knee"), profiles.Params(hold=60.0, rate=50.0), step=1.0)
+
+    assert _levels(timeline) == [10, 25, 50, 100, 150, 200, 300, 400, 500]
+    assert profiles.get("knee").personas == profiles.PEOPLE_PERSONAS
+
+
+def test_waves_rise_dip_at_lunch_peak_again_and_fall_over_one_day(load):
+    profiles = load["profiles"]
+    params = profiles.Params(users=100, hold=1000.0)
+    timeline, stopped_at = _timeline(profiles.get("waves"), params, step=1.0)
+    levels = _levels(timeline)
+
+    assert stopped_at == 1000.0
+    assert max(levels) == 100
+    peaks = [i for i in range(1, len(levels) - 1) if levels[i - 1] < levels[i] > levels[i + 1]]
+    assert len(peaks) == 2, levels  # a morning and an afternoon peak
+    assert levels[peaks[0] + 1] < 100 and levels[-1] <= 10  # a lunch dip, an evening tail
+
+
+def test_waves_length_is_the_hold_so_a_short_run_has_the_same_shape(load):
+    profiles = load["profiles"]
+    short, stopped = _timeline(profiles.get("waves"), profiles.Params(users=50, hold=120.0))
+
+    assert stopped == 120.0
+    assert _levels(short)[0] == 5 and max(_levels(short)) == 50
+
+
+def test_herd_signs_everyone_in_within_seconds_then_empties(load):
+    profiles = load["profiles"]
+    herd = profiles.get("herd")
+    first = herd.tick(0.0, profiles.Params(users=500))
+
+    assert first == (500, 100.0, ("LoginHerd",))  # 500 users at 100 a second: five seconds
+    timeline, _ = _timeline(herd, profiles.Params(users=500))
+    assert timeline[-1][1] == 0 and herd.chat_users == 0
+
+
+def test_hot_file_runs_only_the_hot_file_reader(load):
+    profiles = load["profiles"]
+    timeline, stopped_at = _timeline(profiles.get("hot-file"), profiles.Params(users=200))
+
+    assert profiles.get("hot-file").personas == ("HotFileReader",)
+    assert max(users for _, users in timeline) == 200
+    assert stopped_at == 20.0 + 300.0  # the ramp at 10 a second, then five minutes
+
+
+def test_egress_and_leak_use_the_realistic_mix(load):
+    profiles = load["profiles"]
+
+    for name, minutes in (("egress", 10), ("leak", 20)):
+        profile = profiles.get(name)
+        _, stopped_at = _timeline(profile, profiles.Params(users=100, rate=100.0))
+        assert profile.personas == profiles.PEOPLE_PERSONAS
+        assert stopped_at == 1.0 + minutes * 60.0
+
+
+@pytest.mark.parametrize(("name", "hours"), [("soak-8h", 8), ("soak-24h", 24)])
+def test_the_long_soaks_run_their_full_length_by_default(load, name, hours):
+    profiles = load["profiles"]
+    _, stopped_at = _timeline(
+        profiles.get(name), profiles.Params(users=100, rate=100.0), step=600.0, limit=30 * 3600.0
+    )
+
+    assert hours * 3600.0 <= stopped_at <= hours * 3600.0 + 600.0
+
+
+def test_a_long_soak_shortens_to_two_minutes_with_hold_for_a_wiring_check(load):
+    profiles = load["profiles"]
+    for name in ("soak-8h", "soak-24h"):
+        timeline, stopped_at = _timeline(
+            profiles.get(name), profiles.Params(users=10, rate=10.0, hold=120.0)
+        )
+
+        assert stopped_at == 1.0 + 120.0
+        assert {users for _, users in timeline} == {10}
+
+
+def test_run_sh_accepts_every_profile_name(load):
+    text = (stub.LOAD_DIR / "run.sh").read_text()
+
+    missing = [
+        name
+        for name in load["profiles"].PROFILES
+        if f"|{name}" not in text and f"{name}|" not in text
+    ]
+    assert not missing, missing

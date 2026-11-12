@@ -63,6 +63,10 @@ def limits_for(kind: str, name: str, limits: dict[str, Any]) -> dict[str, float]
     section = limits.get(kind, {})
     if kind == 'stream' and name.endswith('first token'):
         return {'p95_ms': section['first_token_p95_ms']}
+    if name == 'search' or name.startswith('search '):
+        # An unlabelled search is the API's default mode, hybrid.
+        mode = 'keyword' if name.startswith('search keyword') else 'hybrid'
+        return {'p95_ms': limits['search'][f'{mode}_p95_ms']}
     return {k: v for k, v in section.items() if k in ('p95_ms', 'p99_ms')}
 
 
@@ -93,6 +97,36 @@ def endpoint_section(stats: list[dict[str, str]], limits: dict[str, Any], v: Ver
             f'{r["50%"]} | {r["95%"]} | {r["99%"]} | {limit} | {verdict} |'
         )
     return lines
+
+
+def cross_tenant_section(
+    stats: list[dict[str, str]], limits: dict[str, Any], profile: str, v: Verdict
+) -> list[str]:
+    """The canary rows must show zero hits, and must exist unless the profile has no canary."""
+    lim = limits['cross_tenant']
+    rows = [r for r in stats if 'canary' in r['Name']]
+    probes = sum(int(_num(r['Request Count']) or 0) for r in rows)
+    hits = sum(int(_num(r['Failure Count']) or 0) for r in rows)
+    if profile in lim['exempt_profiles']:
+        return [f'Cross-tenant canary: not part of the `{profile}` profile ({probes} probes).']
+    v.check(
+        probes >= lim['min_probes'],
+        f'cross-tenant canary ran {probes} probes (need {lim["min_probes"]})',
+    )
+    v.check(hits <= lim['max_hits'], f'{hits} cross-tenant canary requests were not refused')
+    return [f'Cross-tenant canary: {hits} failures in {probes} probes.']
+
+
+def deadlock_section(
+    series: dict[tuple[str, str], list[tuple[float, float]]], limits: dict[str, Any], v: Verdict
+) -> list[str]:
+    points = series.get(('pg', 'deadlocks_total'))
+    if not points:
+        v.check(False, 'no deadlock counter was sampled (pg_stat_database)')
+        return ['Deadlocks: not sampled.']
+    new = points[-1][1] - points[0][1]
+    v.check(new <= limits['deadlock']['max_deadlocks'], f'{new:.0f} deadlocks during the run')
+    return [f'Deadlocks during the run: {new:.0f}.']
 
 
 def failure_section(failures: list[dict[str, str]]) -> list[str]:
@@ -166,7 +200,7 @@ def sampler_section(samples: list[dict[str, str]], limits: dict[str, Any], v: Ve
             f'| {source} | {name} | {min(values):.1f} | {statistics.fmean(values):.1f} | '
             f'{max(values):.1f} | {values[-1]:.1f} | {verdict} |'
         )
-    lines += ['', *pool_saturation(series, samples, lim, v)]
+    lines += ['', *pool_saturation(series, samples, lim, v), *deadlock_section(series, limits, v)]
     return lines
 
 
@@ -244,6 +278,15 @@ def pool_saturation(
     return lines
 
 
+def _profile_of(run_dir: Path) -> str:
+    """The profile name run.sh wrote to ``env.txt`` (``''`` when absent)."""
+    env = run_dir / 'env.txt'
+    for line in env.read_text().splitlines() if env.is_file() else ():
+        if line.startswith('profile:'):
+            return line.split(':', 1)[1].split()[0]
+    return ''
+
+
 def summarize(run_dir: Path, limits: dict[str, Any]) -> tuple[str, Verdict]:
     stats = _read_csv(run_dir / 'locust_stats.csv')
     if not stats:
@@ -259,6 +302,10 @@ def summarize(run_dir: Path, limits: dict[str, Any]) -> tuple[str, Verdict]:
     )
     body = [
         *endpoint_section(stats, limits, v),
+        '',
+        '## Cross-tenant canary',
+        '',
+        *cross_tenant_section(stats, limits, _profile_of(run_dir), v),
         '',
         '## Failures by cause',
         '',

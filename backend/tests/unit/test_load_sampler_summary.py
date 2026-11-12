@@ -85,6 +85,16 @@ def test_pg_states_and_long_idle_transactions_are_counted(sampler):
     assert rows[("pg", "oldest_xact_s")] == 12.5
 
 
+def test_the_cumulative_deadlock_counter_is_its_own_series_not_a_connection_state(sampler):
+    text = "active,3,0,0.5\n__deadlocks,12,0,0\n"
+
+    rows = sampler.parse_pg(text)
+
+    assert ("pg", "deadlocks_total", 12.0) in rows
+    assert not any(name == "state:__deadlocks" for _, name, _ in rows)
+    assert "pg_stat_database" in sampler.PG_SQL
+
+
 def test_pool_gauges_are_read_from_the_metrics_text(sampler):
     text = (
         "# HELP db_pool_capacity x\n# TYPE db_pool_capacity gauge\n"
@@ -147,6 +157,10 @@ def _run_dir(
     sweeps: int = 2,
     pool_sweeps: int | None = None,
     api_connections: int = 5,
+    deadlocks: int = 0,
+    canary_hits: int | None = 0,
+    keyword_p95: int = 700,
+    profile: str = "leak",
 ) -> Path:
     """``sweeps`` sampler sweeps; only the first ``pool_sweeps`` got an API answer (default all)."""
     pool_sweeps = sweeps if pool_sweeps is None else pool_sweeps
@@ -155,6 +169,7 @@ def _run_dir(
         ts = 1.0 + 5 * i
         samples += [
             [ts, "pg", "idle_in_transaction_over_1s", idle_txn if i == 1 else 0],
+            [ts, "pg", "deadlocks_total", 7 + (deadlocks if i == sweeps - 1 else 0)],
             [ts, "pgapi", "connections", api_connections],
             [ts, "pgapi", "capacity", 60],
             [ts, "container", "mem_bytes:backend", 1000 + 100 * (i == sweeps - 1)],
@@ -172,7 +187,14 @@ def _run_dir(
             ["POST", "comments.create", 100, 0, 50, 300, 600],
             ["SSE", "mock-gpt first token", 50, 0, 900, 1500, 2000],
             ["WS", "echo round trip", 500, 0, 5, 40, 90],
+            ["GET", "search keyword", 100, 0, 100, keyword_p95, keyword_p95 + 100],
+            ["GET", "search hybrid", 100, 0, 200, 1400, 1600],
             ["GET", "rarely called", 3, 0, 9000, 9000, 9000],
+            *(
+                [["GET", "files.detail cross-tenant canary", 40, canary_hits, 20, 60, 90]]
+                if canary_hits is not None
+                else []
+            ),
             ["", "Aggregated", 1653, failures, 80, 400, 900],
         ],
     )
@@ -182,6 +204,7 @@ def _run_dir(
         [["GET", "files.list", "HTTP 500", failures]] if failures else [],
     )
     _write(tmp_path / "samples.csv", ["ts", "source", "name", "value"], samples)
+    (tmp_path / "env.txt").write_text(f"profile:  {profile}   mix: mixed\n")
     return tmp_path
 
 
@@ -190,7 +213,7 @@ def _limits() -> dict:
 
 
 def test_a_run_inside_every_limit_passes(summarize, tmp_path):
-    report, verdict = summarize.summarize(_run_dir(tmp_path, read_p95=400, failures=0), _limits())
+    report, verdict = summarize.summarize(_run_dir(tmp_path, read_p95=200, failures=0), _limits())
 
     assert verdict.failures == []
     assert "**Verdict: PASS**" in report
@@ -202,7 +225,13 @@ def test_a_run_inside_every_limit_passes(summarize, tmp_path):
     [
         ({"read_p95": 1500, "failures": 0}, "GET files.list: p95 1500.0"),
         ({"read_p95": 400, "failures": 50}, "error rate"),
-        ({"read_p95": 400, "failures": 0, "idle_txn": 2}, "idle in a transaction"),
+        ({"read_p95": 200, "failures": 0, "idle_txn": 2}, "idle in a transaction"),
+        # SLOs of issue #1174: each is the only thing wrong with its run.
+        ({"read_p95": 350, "failures": 0}, "GET files.list: p95 350.0"),
+        ({"read_p95": 200, "failures": 0, "keyword_p95": 900}, "GET search keyword: p95 900"),
+        ({"read_p95": 200, "failures": 0, "deadlocks": 1}, "1 deadlocks during the run"),
+        ({"read_p95": 200, "failures": 0, "canary_hits": 1}, "1 cross-tenant canary requests"),
+        ({"read_p95": 200, "failures": 0, "canary_hits": None}, "canary ran 0 probes"),
     ],
 )
 def test_a_broken_limit_fails_the_run(summarize, tmp_path, kwargs, reason):
@@ -232,7 +261,7 @@ def test_a_saturated_pool_fails_the_run_even_when_the_api_stopped_answering_metr
     # M2 run 05: 2 of 111 /metrics samples arrived, both unsaturated, and the report said
     # "0.0% saturated". Postgres is asked directly, so every sweep has the API's connections.
     run_dir = _run_dir(
-        tmp_path, read_p95=400, failures=0, sweeps=111, pool_sweeps=2, api_connections=60
+        tmp_path, read_p95=200, failures=0, sweeps=111, pool_sweeps=2, api_connections=60
     )
 
     report, verdict = summarize.summarize(run_dir, _limits())
@@ -242,7 +271,7 @@ def test_a_saturated_pool_fails_the_run_even_when_the_api_stopped_answering_metr
 
 
 def test_a_run_whose_pg_stat_activity_samples_are_mostly_missing_fails(summarize, tmp_path):
-    run_dir = _run_dir(tmp_path, read_p95=400, failures=0, sweeps=10)
+    run_dir = _run_dir(tmp_path, read_p95=200, failures=0, sweeps=10)
     rows: list[list[object]] = [list(r) for r in csv.reader((run_dir / "samples.csv").open())]
     kept = [r for r in rows[1:] if r[1] != "pgapi" or r[0] in ("1.0", "6.0")]
     _write(run_dir / "samples.csv", [str(h) for h in rows[0]], kept)
@@ -253,7 +282,7 @@ def test_a_run_whose_pg_stat_activity_samples_are_mostly_missing_fails(summarize
 
 
 def test_a_full_set_of_unsaturated_samples_passes_the_coverage_rule(summarize, tmp_path):
-    run_dir = _run_dir(tmp_path, read_p95=400, failures=0, sweeps=20, pool_sweeps=4)
+    run_dir = _run_dir(tmp_path, read_p95=200, failures=0, sweeps=20, pool_sweeps=4)
 
     _report, verdict = summarize.summarize(run_dir, _limits())
 
@@ -276,3 +305,36 @@ def test_the_api_connection_query_names_the_container_and_the_app_name(sampler):
 @pytest.mark.parametrize(("env", "want"), [("20 40", 60.0), ("5 0", 5.0), (" ", 60.0)])
 def test_the_pool_capacity_comes_from_the_containers_env(sampler, env, want):
     assert sampler.parse_pool_capacity(env) == want
+
+
+def test_a_hybrid_search_is_judged_by_the_hybrid_limit_not_the_keyword_one(summarize, tmp_path):
+    # 1,400 ms is over the keyword limit (800) and inside the hybrid one (1,500): the same
+    # number passes or fails by the mode in the row's name.
+    run_dir = _run_dir(tmp_path, read_p95=200, failures=0)
+
+    _report, verdict = summarize.summarize(run_dir, _limits())
+
+    assert verdict.failures == []
+    assert summarize.limits_for("read", "search hybrid", _limits()) == {"p95_ms": 1500}
+    assert summarize.limits_for("read", "search", _limits()) == {"p95_ms": 1500}
+    assert summarize.limits_for("read", "search keyword", _limits()) == {"p95_ms": 800}
+
+
+def test_a_profile_without_the_canary_persona_is_not_failed_for_lacking_it(summarize, tmp_path):
+    run_dir = _run_dir(tmp_path, read_p95=200, failures=0, canary_hits=None, profile="hot-file")
+
+    _report, verdict = summarize.summarize(run_dir, _limits())
+
+    assert verdict.failures == []
+
+
+def test_the_slo_values_are_the_ones_the_issue_states():
+    limits = _limits()
+
+    assert limits["read"]["p95_ms"] == 300
+    assert limits["write"]["p95_ms"] == 500
+    assert limits["overall"]["max_error_rate"] == 0.001
+    assert (limits["search"]["keyword_p95_ms"], limits["search"]["hybrid_p95_ms"]) == (800, 1500)
+    assert limits["stream"]["first_token_p95_ms"] == 5000
+    assert limits["deadlock"]["max_deadlocks"] == 0
+    assert limits["cross_tenant"]["max_hits"] == 0

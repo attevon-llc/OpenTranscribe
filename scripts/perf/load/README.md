@@ -35,7 +35,7 @@ venv, never in `backend/venv`:
 python3 -m venv ~/ot-cleanup-work/concurrency/locust-venv
 ~/ot-cleanup-work/concurrency/locust-venv/bin/pip install -r scripts/perf/load/requirements.txt
 export LOCUST=~/ot-cleanup-work/concurrency/locust-venv/bin/locust
-$LOCUST -f scripts/perf/load/locustfile.py --list      # import check: lists the 8 personas
+$LOCUST -f scripts/perf/load/locustfile.py --list      # import check: lists the personas
 ```
 
 `sampler.py` and `summarize.py` need only the system `python3` (3.11 or newer).
@@ -115,6 +115,101 @@ migrations, watch sources, directory sync, storage audit, support-access grants)
 `backend/tests/unit/test_load_scenario_routes.py` derives the same map from a recorded run and
 fails when they differ, when a new group appears, or when a request is not in `openapi.json`.
 
+## Who the people are (the realistic mix)
+
+`personas_roles.py` models people by who is at the keyboard. The `knee`, `waves`, `egress`,
+`leak` and `soak-*` profiles run only this mix. The weights are **reasoned assumptions, not
+measurements** (there is no production telemetry to copy); change them in the class `weight`,
+in review, when real usage says otherwise.
+
+| Persona | Weight | Share | What they do, and why that share |
+|---|---:|---:|---|
+| `Researcher` | 40 | 44% | Searches (keyword 2 in 3, hybrid 1 in 3, with suggestions and counts), opens transcripts, finds files by phrase, browses a collection; a few chat over a collection. Searching and reading is the product, so they are the largest group. |
+| `WatcherBot` | 18 | 20% | A background tab holding the `/api/ws` socket. Most open tabs have nobody looking at them. |
+| `StatusPoller` | 12 | 13% | A tab left on the upload page: polls active tasks and file status every 5 to 10 s, the way the SPA does while its socket is down. |
+| `TeamLead` | 12 | 13% | Gallery and collections, shares, summaries, exports; occasionally curates a collection. A few people per team. |
+| `SpeakerCurator` | 8 | 9% | Works the speaker inbox: clusters, suggestions, identity history; names and merges speakers. The rarest role and the only heavy writer on speakers. |
+
+Rules that keep it honest:
+
+- **Phrasebook.** Search terms and chat questions come from `phrasebook.py`: words and two-word
+  windows from the transcript pages the person has opened, plus speaker, tag and collection
+  names. They are never random strings, and the choice is among phrases already seen. An empty
+  phrasebook (the very first search) falls back to three common words.
+- **Chat is budgeted.** Chat turns are limited to 20 a minute per client address, so only the
+  first `--chat-users` researchers (default 8) chat. They scope a chat to a whole collection 7
+  times in 10, else to a few files.
+- **Cross-tenant canary.** Researchers, curators and team leads also ask for a file another
+  identity listed and must be refused (403 or 404). A 200 shows as a failure of
+  `files.detail cross-tenant canary`, which `thresholds.toml` holds to zero hits.
+- **Sharing is read-only.** Team leads read a collection's shares but do not create them: a
+  share needs a second real user and would write to someone else's account.
+- Writes undo themselves in the same task, like every other persona (see Rules).
+
+## Load shapes
+
+Locust runs one `LoadTestShape` per run. `ProfileShape` in `locustfile.py` is that class; it asks
+the `--load-profile` chosen in `profiles.py` for the user count, spawn rate and persona classes
+on every tick, so each shape is a profile, and `profiles.py` stays importable without Locust for
+the unit tests (Locust docs, "Custom load shapes").
+
+| Profile | Shape | Personas | Defaults (override with `-- --target-users N --ramp-rate R --hold S --steps a,b,c`) |
+|---|---|---|---|
+| `smoke` | a few people, one minute | web | 10 users |
+| `steady` | held | web | 100 users, 900 s |
+| `ramp` | step up, hold each | web | 100, 250, 500, 1000; 600 s each |
+| `spike` | 0 to N in ~10 s, hold, back to 0 | web | 500 users, 120 s |
+| `soak` | moderate, 90 min | web | 200 users |
+| `pipeline` | real uploads through the GPU workers | uploader | 4 users, 30 min |
+| `knee` | small even steps to find the saturation point | people | 10, 25, 50, 100, 150, 200, 300, 400, 500; 180 s each |
+| `waves` | one compressed business day: morning ramp, lunch dip, second peak, evening tail | people | 200 users at the peak; `--hold` is the day's length, 1800 s |
+| `herd` | the login herd: N people sign in within about 5 s, then keep signing in for a minute | login herd | 300 users |
+| `hot-file` | everyone on one file: many sessions of one account read and annotate its first file | hot file reader | 200 users, 300 s |
+| `egress` | many people behind one client address (every simulated user already shares yours) | people | 500 users, 600 s |
+| `leak` | the 20-minute leak run: memory and connection growth | people | 100 users, 1200 s |
+| `soak-8h`, `soak-24h` | the long soaks | people | 200 users; `--hold` is the duration (8 h, 24 h) |
+
+- **`egress` is only meaningful with the per-IP limits left at the stack's defaults.** Do not
+  export the `DEV_RATE_LIMIT_*` variables from "Prepare the stack" for it: the `rate limited
+  (429)` rows in `locust_failures.csv` are the result, and the question is whether sign-in,
+  search and chat limits protect the server without locking out ordinary users.
+- **`herd` and `hot-file`** need the raised sign-in limit, and `hot-file` pins the heavy owner
+  (`perf-2`) and takes the oldest file of its first listing, so every session lands on the same
+  rows. Its comment add/delete is where a deadlock between writers would show.
+- A `waves` or `soak-*` run's length is a parameter, never a different shape.
+
+### The long soaks are ready but not routinely run
+
+`soak-8h` and `soak-24h` exist and are tested for their schedule, but they are **not part of any
+routine or release run**; the fast, short profiles (`smoke`, `knee`, `leak`) are the default.
+Prove the wiring with a short override instead of waiting hours:
+
+```bash
+scripts/perf/load/run.sh --fresh perf1337 --profile soak-8h -- --target-users 10 --ramp-rate 10 --hold 120
+```
+
+That is a two-minute run of the 8 h shape (the same users, personas and verdict). Fault
+injection, the multi-GPU `--gpu-devices` overlay and Kubernetes are follow-ups, not built.
+
+## Watch it: the exporters
+
+Start the fresh stack with the monitoring overlays to see Postgres, Redis and every container
+while the run goes:
+
+```bash
+COMPOSE_PROFILES=load-monitoring ./opentr.sh start dev --fresh perf1337 --port-offset 300 --with-mock-llm --with-monitoring
+```
+
+The `load-monitoring` profile of `docker-compose.monitoring.yml` adds the maintained exporters, pinned by tag and digest:
+[postgres_exporter](https://github.com/prometheus-community/postgres_exporter) v0.20.1,
+[redis_exporter](https://github.com/oliver006/redis_exporter) v1.97.0 and
+[cAdvisor](https://github.com/google/cadvisor/blob/master/docs/running.md) v0.60.6. They publish
+no host port; the `--with-monitoring` Prometheus scrapes them by service name
+(`monitoring/prometheus/prometheus.yml`), and `--fresh` isolates them with the rest of the
+project. The samples in `samples.csv` stay the pass/fail source; the exporters are for
+looking around (Prometheus on the stack's `PROMETHEUS_PORT`). A load dashboard and OpenSearch
+k-NN stats are not built yet.
+
 ## Run: one command per profile
 
 Each command creates a run directory (printed first; `--out DIR` to choose it), starts the
@@ -162,10 +257,12 @@ python3 scripts/perf/load/summarize.py "$RUN"                                   
 | `summary.md` | the report: verdict, per-endpoint table with limits, failures by cause, percentile history, sampler min/mean/max, pool saturation, memory growth |
 | `report.html`, `locust.log`, `sampler.log` | Locust's own report and both logs |
 
-The limits are in `thresholds.toml` (p95 under 1 s for reads, error rate under 0.5%, no
-connection idle in a transaction for over a second, the pool saturated in at most 5% of
-samples, at least 80% of sampler sweeps producing data, memory growth under 25% across a soak).
-Change them there, in review.
+The limits are in `thresholds.toml` and are the SLOs of issue #1174: page reads p95 300 ms,
+keyword search 800 ms, hybrid search 1.5 s, writes 500 ms, chat first token 5 s, errors 0.1%,
+no deadlock (`pg_stat_database.deadlocks`, last sample minus first), no cross-tenant canary
+hit (and the canary must have run), no connection idle in a transaction for over a second, the
+pool saturated in at most 5% of samples, at least 80% of sampler sweeps producing data, memory
+growth under 25% across a soak. Change them there, in review.
 
 ## Reading the result
 

@@ -6074,7 +6074,7 @@
   "settings.removedMembers.saveError": "无法保存该设置。",
   "settings.removedMembers.loadError": "无法加载已移除的成员。",
   "settings.removedMembers.empty": "没有等待删除的已移除成员。",
-  "settings.removedMembers.erasedAt": "删除时间",
+  "settings.removedMembers.erasedAt": "删除时间：{{when}}",
   "settings.removedMembers.restore": "恢复",
   "settings.removedMembers.restored": "已恢复该成员。",
   "settings.removedMembers.tooLate": "宽限期已结束，无法再恢复。",

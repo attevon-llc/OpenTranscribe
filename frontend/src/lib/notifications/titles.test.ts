@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Translate } from '$lib/i18n';
 import en from '$lib/i18n/locales/en.json';
+import { locale as appLocale } from '$stores/locale';
 import { TITLE_KEYS, composeClientMessage, notificationTitle } from './titles';
 
 const english = en as Record<string, string>;
@@ -88,6 +89,25 @@ describe('composeClientMessage', () => {
     const msg = composeClientMessage('erasure_notice', { event }, echo);
     expect(msg).toBe(`${key}:{"when":""}`);
     expect(key in english).toBe(true);
+  });
+
+  it('formats the run time in the app locale, not the runtime default', () => {
+    const iso = '2026-11-30T13:04:00Z';
+    const expected = new Date(iso).toLocaleString('de');
+    expect(expected).not.toBe(new Date(iso).toLocaleString('en-US'));
+    appLocale.set('de');
+    try {
+      const msg = composeClientMessage(
+        'erasure_notice',
+        { event: 'requested', scheduled_for: iso },
+        echo
+      );
+      expect(msg).toBe(
+        `notifications.erasureRequestedMessage:${JSON.stringify({ when: expected })}`
+      );
+    } finally {
+      appLocale.set('en');
+    }
   });
 
   it('leaves an erasure notice of an unknown event to the backend message', () => {

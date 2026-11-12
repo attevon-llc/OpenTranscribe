@@ -84,3 +84,23 @@ describe('TranscriptActionsBar document exports (issue #1278)', () => {
     expect(text.disabled).toBe(false);
   });
 });
+
+describe('TranscriptActionsBar menu keyboard (WAI-ARIA APG menu button)', () => {
+  it('closes the export menu on Escape and returns focus to its button', async () => {
+    await openMenu();
+    expect(document.querySelector('[data-testid="export-menu"]')).not.toBeNull();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('[data-testid="export-menu"]')).toBeNull();
+    expect(document.activeElement).toBe(document.querySelector('.export-transcript-button'));
+  });
+
+  it('closes the download menu on Escape and returns focus to its button', async () => {
+    render(TranscriptActionsBar, { props: { file, diarizationDisabled: false } });
+    const button = document.querySelector('.download-button') as HTMLElement;
+    await fireEvent.click(button);
+    expect(document.querySelector('[data-testid="download-menu"]')).not.toBeNull();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('[data-testid="download-menu"]')).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+});

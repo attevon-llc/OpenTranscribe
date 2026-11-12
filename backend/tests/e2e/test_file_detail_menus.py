@@ -87,7 +87,7 @@ def test_export_menu_fits_and_closes(detail_page: Any, width: int, height: int) 
     metrics = _open_menu_metrics(
         page,
         page.locator(".export-transcript-button"),
-        page.locator(".export-dropdown:not(.download-dropdown) .export-dropdown-content"),
+        page.get_by_test_id("export-menu"),
     )
     _check_menu(metrics, width, "Export")
     assert metrics["entries"] >= 6, f"Export lists too few formats: {metrics['entries']}"
@@ -99,7 +99,7 @@ def test_download_menu_fits_and_closes(detail_page: Any, width: int, height: int
     metrics = _open_menu_metrics(
         page,
         page.locator(".download-button"),
-        page.locator(".download-dropdown .export-dropdown-content"),
+        page.get_by_test_id("download-menu"),
     )
     _check_menu(metrics, width, "Download")
     assert metrics["entries"] >= 2, "Download lists no audio choices"

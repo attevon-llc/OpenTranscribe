@@ -1017,4 +1017,19 @@ describe('websocket in the public demo', () => {
       demoMode.set(false);
     }
   });
+
+  it('drops a socket opened before the demo flag was known', async () => {
+    const { demoMode } = await import('$stores/demo');
+    websocketStore.disconnect();
+    demoMode.set(false);
+    websocketStore.connect();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    try {
+      demoMode.set(true);
+      expect(get(websocketStore).socket).toBeNull();
+      expect(get(websocketStore).status).toBe('disconnected');
+    } finally {
+      demoMode.set(false);
+    }
+  });
 });

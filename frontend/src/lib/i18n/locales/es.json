@@ -6254,7 +6254,7 @@
   "settings.removedMembers.saveError": "No se pudo guardar el ajuste.",
   "settings.removedMembers.loadError": "No se pudieron cargar los miembros eliminados.",
   "settings.removedMembers.empty": "Ningún miembro eliminado está pendiente de borrado.",
-  "settings.removedMembers.erasedAt": "Se borra el",
+  "settings.removedMembers.erasedAt": "Se borra el {{when}}",
   "settings.removedMembers.restore": "Restaurar",
   "settings.removedMembers.restored": "Se restauró al miembro.",
   "settings.removedMembers.tooLate": "El período de gracia terminó, ya no se puede restaurar.",

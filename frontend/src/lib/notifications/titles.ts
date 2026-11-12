@@ -5,6 +5,7 @@
  * resolved in the user's language at the moment the frame arrives.
  */
 import type { Translate } from '$lib/i18n';
+import { formatDateTime } from '$lib/utils/formatting';
 import type { NotificationData } from '$lib/notifications/types';
 
 /**
@@ -91,7 +92,7 @@ const ERASURE_MESSAGE_KEYS: Readonly<Record<string, string>> = {
 function erasureNoticeMessage(data: NotificationData, translate: Translate): string | undefined {
   const event = String(data.event ?? '');
   if (!Object.hasOwn(ERASURE_MESSAGE_KEYS, event)) return undefined;
-  const when = data.scheduled_for ? new Date(String(data.scheduled_for)).toLocaleString() : '';
+  const when = formatDateTime(data.scheduled_for ? String(data.scheduled_for) : '');
   return translate(ERASURE_MESSAGE_KEYS[event], { when });
 }
 

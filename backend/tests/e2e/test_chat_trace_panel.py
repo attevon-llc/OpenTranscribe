@@ -25,8 +25,6 @@ from collections.abc import Iterator
 
 import pytest
 import requests
-from conftest import TEST_ADMIN_EMAIL
-from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
@@ -58,21 +56,6 @@ def _mock_llm_running() -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.3)
         return sock.connect_ex(("127.0.0.1", MOCK_LLM_PORT)) == 0
-
-
-@pytest.fixture(scope="module")
-def api_session(backend_url: str) -> requests.Session:
-    session = requests.Session()
-    response = session.post(
-        f"{backend_url}/api/auth/token",
-        data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
-        timeout=30,
-    )
-    assert response.status_code == 200, f"Login failed: {response.status_code}"
-    csrf_token = session.cookies.get("csrf_token")
-    assert csrf_token, "login did not set a csrf_token cookie"
-    session.headers["X-CSRF-Token"] = csrf_token
-    return session
 
 
 def _trace_enabled(api_session: requests.Session, backend_url: str) -> bool:

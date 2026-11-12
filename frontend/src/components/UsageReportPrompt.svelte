@@ -72,7 +72,9 @@
 </script>
 
 {#if visible}
-  <div class="prompt" role="dialog" aria-labelledby="usage-report-prompt-title" data-testid="usage-report-prompt">
+  <!-- Non-modal and never takes focus: a labelled region, not a dialog (WAI-ARIA APG dialog
+       pattern requires focus management and Escape, which a corner notice must not steal). -->
+  <div class="prompt" role="region" aria-labelledby="usage-report-prompt-title" data-testid="usage-report-prompt">
     <h2 id="usage-report-prompt-title" class="title">{$t('settings.usageReport.prompt.title')}</h2>
     <p class="body">{$t('settings.usageReport.prompt.body')}</p>
     <div class="actions">
@@ -95,7 +97,7 @@
     inset-inline-end: var(--space-4);
     inset-block-end: var(--space-4);
     z-index: var(--z-navbar);
-    max-width: 24rem;
+    max-width: min(24rem, calc(100vw - 2 * var(--space-4)));
     padding: var(--space-4);
     background: var(--surface-color);
     color: var(--text-color);

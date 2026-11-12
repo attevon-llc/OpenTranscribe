@@ -993,6 +993,29 @@ def unique_conversation_title(label: str) -> str:
 
 
 @pytest.fixture(scope="session")
+def api_session(backend_url: str) -> requests.Session:
+    """An authenticated API session for arranging and cleaning up test state.
+
+    Shared by every e2e module (pytest: fixtures in a conftest.py are visible to
+    the whole directory). Carries the CSRF header, without which every mutation
+    answers 403 and cleanup DELETEs silently become no-ops, and the bearer token
+    for helpers that take one (``Authorization: Bearer ...``).
+    """
+    session = requests.Session()
+    response = session.post(
+        f"{backend_url}/api/auth/token",
+        data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+        timeout=30,
+    )
+    assert response.status_code == 200, f"Login failed: {response.status_code}"
+    csrf_token = session.cookies.get("csrf_token")
+    assert csrf_token, "login did not set a csrf_token cookie"
+    session.headers["X-CSRF-Token"] = csrf_token
+    session.headers["Authorization"] = f"Bearer {response.json()['access_token']}"
+    return session
+
+
+@pytest.fixture(scope="session")
 def admin_token(backend_url: str) -> Iterator[str]:
     """A bearer token for TEST_ADMIN_EMAIL, obtained once per session.
 

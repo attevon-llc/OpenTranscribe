@@ -47,7 +47,8 @@
 
   async function onSubmit(event?: Event) {
     event?.preventDefault();
-    if (submitting) return;
+    // The button is disabled in demo mode; Enter must not be a way around that.
+    if ($demoMode || submitting) return;
     if (!text.trim()) {
       showEmptyError = true;
       textarea?.focus();

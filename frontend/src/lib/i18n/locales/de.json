@@ -6164,7 +6164,7 @@
   "settings.removedMembers.saveError": "Die Einstellung konnte nicht gespeichert werden.",
   "settings.removedMembers.loadError": "Die entfernten Mitglieder konnten nicht geladen werden.",
   "settings.removedMembers.empty": "Kein entferntes Mitglied wartet auf die Löschung.",
-  "settings.removedMembers.erasedAt": "Gelöscht am",
+  "settings.removedMembers.erasedAt": "Gelöscht am {{when}}",
   "settings.removedMembers.restore": "Wiederherstellen",
   "settings.removedMembers.restored": "Das Mitglied wurde wiederhergestellt.",
   "settings.removedMembers.tooLate": "Die Wartefrist ist abgelaufen, eine Wiederherstellung ist nicht mehr möglich.",

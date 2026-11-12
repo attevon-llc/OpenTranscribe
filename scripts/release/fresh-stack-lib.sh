@@ -121,7 +121,9 @@ fresh_stack_seed_library() {
     local repo="${REPO_ROOT:-.}"
     [[ -f "$repo/scripts/seed-fresh-deployment.sh" ]] || return 0
     BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}" bash "$repo/scripts/seed-fresh-deployment.sh" >&2 || true
-    fresh_stack_complete_first_run
+    # The caller that runs the first-run wizard e2e (60-test.sh, issue #1366) needs the wizard
+    # still pending, and completes it itself once that test has run.
+    [[ "${FRESH_STACK_DEFER_FIRST_RUN:-0}" == "1" ]] || fresh_stack_complete_first_run
     fresh_stack_warm_frontend
 }
 

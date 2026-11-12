@@ -119,6 +119,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 - `./opentr.sh start` and `reset` now warn when a GPU device id you exported (for example `GPU_SCALE_DEVICE_ID=2`) is replaced by `.env` or by a flag, and name `--gpu-device` or `--diar-native-gpu`. Before, the workers silently started on the `.env` card.
 - `scripts/run-integration-tests.sh` gives the stack's Redis host, port and password to the GPU and e2e smoke phases as well as the integration phase, fills in only the values you did not export (a shell with just `REDIS_PORT` set no longer gets a port with no password), and runs the unit and FIPS phases with every `REDIS_*` variable unset.
+- The platform access matrix classifies `GET /api/admin/removed-members` and its restore route as account administration, and `docs/security/platform-access-matrix.tsv` now lists them and `GET /api/admin/llm-budget/users` (the matrix gate was red).
 
 ### Changed
 

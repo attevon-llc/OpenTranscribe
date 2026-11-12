@@ -109,6 +109,13 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "speaker or collection content",
     ),
     (
+        r"^\w+ /api/admin/removed-members",
+        "account-admin",
+        "accounts an administrator removed, waiting out their grace before the personal-file "
+        "erase (issue #1104): ledger uuid, display label and dates, and the restore that "
+        "cancels the erase; no media, transcript, speaker or collection content",
+    ),
+    (
         r"^\w+ /api/admin/gdpr/(erasures|erase-file|erasure-receipt)",
         "platform-ops",
         "erasure receipts are counts keyed by store name and a digest, never personal data or "

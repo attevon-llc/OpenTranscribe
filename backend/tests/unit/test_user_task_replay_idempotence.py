@@ -238,16 +238,15 @@ def test_every_replayable_user_task_is_pinned_by_a_test_here():
         "propagate_speaker_rename",
         "propagate_title_rename",
         "regenerate_rename_digests",
+        "process_speaker_merge_background",
+        "process_speaker_update_background",
+        "download.media_playlist",
     }
     assert pinned <= tr.REPLAYABLE_TASKS
 
 
-def test_the_speaker_merge_voiceprint_average_is_not_a_fixed_point(monkeypatch):
-    """The reason ``process_speaker_merge_background`` is excluded, not replayed.
-
-    The source voiceprint stays in the index until a later step deletes it, so a run lost in
-    between and replayed averages the source in again and drags the survivor towards it.
-    """
+def test_the_speaker_merge_voiceprint_average_is_a_fixed_point(monkeypatch):
+    """A merge replayed after its average landed must not average the source in again."""
     from app.api.endpoints import speakers_merge
 
     store = {"source": [1.0, 0.0], "target": [0.0, 1.0]}
@@ -256,6 +255,10 @@ def test_the_speaker_merge_voiceprint_average_is_not_a_fixed_point(monkeypatch):
     monkeypatch.setattr(
         "app.services.opensearch_service.add_speaker_embedding",
         lambda *, speaker_uuid, embedding, **_kw: store.__setitem__(speaker_uuid, embedding),
+    )
+    monkeypatch.setattr(
+        "app.services.opensearch_service.remove_speaker_embedding",
+        lambda uuid: store.pop(uuid, None) is not None,
     )
     target = {
         "uuid": "target",
@@ -272,4 +275,58 @@ def test_the_speaker_merge_voiceprint_average_is_not_a_fixed_point(monkeypatch):
     speakers_merge._merge_speaker_embeddings("source", target)
 
     assert after_first == [0.5, 0.5]
-    assert store["target"] != after_first
+    assert store["target"] == after_first
+    assert "source" not in store
+
+
+def _placeholder(**over):
+    from app.models.media import FileStatus
+
+    meta = {"from_playlist": True, "playlist_id": "PL1"}
+    meta.update(over.pop("meta", {}))
+    return SimpleNamespace(
+        **{"status": FileStatus.QUEUED, "storage_path": "", "metadata_raw": meta, **over}
+    )
+
+
+def test_a_replayed_playlist_adopts_placeholders_it_never_dispatched():
+    from app.services.media_download_playlist import _is_unstarted_playlist_placeholder
+
+    info = {"playlist_id": "PL1"}
+    assert _is_unstarted_playlist_placeholder(_placeholder(), info)
+
+
+def test_a_replayed_playlist_leaves_dispatched_or_foreign_placeholders_alone():
+    from app.models.media import FileStatus
+    from app.services.media_download_playlist import _is_unstarted_playlist_placeholder
+
+    info = {"playlist_id": "PL1"}
+    assert not _is_unstarted_playlist_placeholder(
+        _placeholder(meta={"download_dispatched": True}), info
+    )
+    assert not _is_unstarted_playlist_placeholder(_placeholder(status=FileStatus.DOWNLOADING), info)
+    assert not _is_unstarted_playlist_placeholder(_placeholder(meta={"playlist_id": "PL2"}), info)
+    assert not _is_unstarted_playlist_placeholder(_placeholder(meta={"from_playlist": False}), info)
+
+
+def test_playlist_dispatch_marks_the_placeholder_so_a_replay_will_not_requeue_it(monkeypatch):
+    from app.tasks import media_playlist_processing as mpp
+
+    sent: list[tuple] = []
+    monkeypatch.setattr(
+        mpp.process_youtube_url_task, "apply_async", lambda **kw: sent.append(kw["args"])
+    )
+    from unittest.mock import create_autospec
+
+    from sqlalchemy.orm import Session
+
+    from app.models.media import MediaFile
+
+    db = create_autospec(Session, instance=True)
+    mf = MediaFile(source_url="https://x", title="t", metadata_raw={"a": 1})
+
+    assert mpp._dispatch_playlist_video_task(mf, 1, db) is True
+
+    assert mf.metadata_raw == {"a": 1, "download_dispatched": True}
+    db.commit.assert_called_once_with()
+    assert len(sent) == 1

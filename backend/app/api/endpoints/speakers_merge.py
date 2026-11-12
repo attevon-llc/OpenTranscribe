@@ -207,6 +207,7 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target: dict[str, Any]) 
 
         from app.services.opensearch_service import add_speaker_embedding
         from app.services.opensearch_service import get_speaker_embedding
+        from app.services.opensearch_service import remove_speaker_embedding
 
         # Get embeddings for both speakers
         source_embedding = get_speaker_embedding(str(source_speaker_uuid))
@@ -233,6 +234,9 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target: dict[str, Any]) 
                 organization_id=target.get("organization_id"),
             )
             logger.info(f"Updated target speaker {target['id']} with averaged embedding")
+            # Consume the source at once. A replay of a lost merge (issue #1159) finds no
+            # source voiceprint and skips the average, instead of averaging it in twice.
+            remove_speaker_embedding(str(source_speaker_uuid))
         else:
             logger.warning("Could not retrieve embeddings for speaker merge")
     except Exception as e:

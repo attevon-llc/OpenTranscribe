@@ -172,6 +172,13 @@ def _dispatch_playlist_video_task(
             countdown=countdown,
         )
 
+        # Marks the download as sent, so a replay of the playlist task (issue #1159) adopts only
+        # the placeholders it never reached instead of queueing a second download.
+        marked = dict(media_file.metadata_raw or {})
+        marked["download_dispatched"] = True
+        media_file.metadata_raw = marked
+        db.commit()
+
         logger.info(f"Dispatched task for '{media_file.title}' with {countdown}s delay")
         return True
     except Exception as e:
@@ -184,6 +191,9 @@ def _dispatch_playlist_video_task(
         return False
 
 
+# Replayable (issue #1159, ``core/task_replay.py``): placeholders already created are adopted by
+# the replay (``media_download_playlist._is_unstarted_playlist_placeholder``) and a download is
+# queued once per placeholder (``download_dispatched``).
 @celery_app.task(name="download.media_playlist", bind=True, priority=DownloadPriority.PLAYLIST)
 def process_youtube_playlist_task(
     self: Any,

@@ -250,7 +250,9 @@ run_all_checks() {
     CHECK_OUTPUT=""
 
     # ESLint (lint gate — passes on warnings, fails only on errors)
-    run_step "eslint" "" npm run lint
+    # Content-keyed result cache (base config only; never the type-aware lint:types). The lockfile
+    # hash partitions it so a plugin upgrade cannot replay stale findings.
+    ESLINT_CACHE_KEY=$(sha256sum "$FRONTEND_DIR/package-lock.json" | cut -c1-12) run_step "eslint" "" npm run lint
 
     # i18n key parity across all 12 locales.
     # This ran in CI only (.github/workflows/pre-commit.yml), so a local commit that added a

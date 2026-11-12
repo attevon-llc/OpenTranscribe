@@ -2,11 +2,11 @@
 """Ratchet for ``noUncheckedIndexedAccess`` errors in the frontend.
 
 ``arr[i]`` and record lookups are typed as present by default, so an out-of-range index or a missing
-key is ``undefined`` at runtime with no compiler warning. ``frontend/tsconfig.nuia.json`` extends
-the real tsconfig with ``noUncheckedIndexedAccess`` (TypeScript tsconfig reference); the real
-config is error-free under ``npm run check``, so every error in this run is one the flag introduced.
-The guard runs ``svelte-check --tsconfig ./tsconfig.nuia.json --output machine-verbose`` and counts
-ERROR diagnostics per file. Production files are held at zero; ``*.test.ts`` files are baselined
+key is ``undefined`` at runtime with no compiler warning. ``frontend/tsconfig.ratchets.json``
+extends the real tsconfig with ``noUncheckedIndexedAccess`` (TypeScript tsconfig reference) and the
+two noUnused* flags; the real config is error-free under ``npm run check``, so every error in this
+run is one a flag introduced. The guard runs svelte-check against it (one run shared with
+``check_svelte_unused.py``) and counts the ERROR diagnostics that are not unused-symbol codes per file. Production files are held at zero; ``*.test.ts`` files are baselined
 until a later pass converts them, after which the flag can move into the main tsconfig.
 
 Counts may only shrink against ``baselines/nuia.txt``. Output that is not the expected shape
@@ -28,13 +28,12 @@ import _svelte_check as sc
 
 
 def _select(record: dict) -> str | None:
-    if record.get('type') != 'ERROR':
-        return None
+    if record.get('type') != 'ERROR' or record.get('code') in sc.UNUSED_CODES:
+        return None  # unused-symbol errors belong to check_svelte_unused.py
     return f'frontend/{sc.filename_of(record, "error diagnostic")}'
 
 
 RATCHET = sc.Ratchet(
-    tsconfig='tsconfig.nuia.json',
     baseline=Path(__file__).resolve().parent / 'baselines' / 'nuia.txt',
     description=__doc__.split('\n\n')[0],
     select=_select,

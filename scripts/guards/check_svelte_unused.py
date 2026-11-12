@@ -4,9 +4,9 @@
 ``@typescript-eslint/no-unused-vars`` crashes on svelte-eslint-parser nodes (an implicit reactive
 declaration such as ``$: x = 1`` has no definition; reproduced with typescript-eslint 8.72.1 and
 eslint-plugin-svelte 3.24.1 / svelte-eslint-parser 1.10.1), so it is off for ``.svelte`` files and
-the TypeScript compiler does the job instead. ``frontend/tsconfig.unused.json`` extends the real
-tsconfig with ``noUnusedLocals`` and ``noUnusedParameters``; this guard runs
-``svelte-check --output machine-verbose`` against it and counts the diagnostics with codes 6133
+the TypeScript compiler does the job instead. ``frontend/tsconfig.ratchets.json`` extends the real
+tsconfig with ``noUnusedLocals`` and ``noUnusedParameters`` (plus nuia); this guard reads
+``svelte-check --output machine-verbose`` run against it (one run shared with ``check_nuia_ratchet.py``) and counts the diagnostics with codes 6133
 (declared but never read), 6192 (all imports unused), 6196 (declared but never used) and 6198
 (all destructured elements unused) per ``path::TS<code>``. ``.ts`` files are left to eslint.
 
@@ -40,7 +40,6 @@ def _select(record: dict) -> str | None:
 
 
 RATCHET = sc.Ratchet(
-    tsconfig='tsconfig.unused.json',
     baseline=Path(__file__).resolve().parent / 'baselines' / 'svelte_unused.txt',
     description=__doc__.split('\n\n')[0],
     select=_select,

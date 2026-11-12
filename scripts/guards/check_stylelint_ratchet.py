@@ -55,7 +55,21 @@ def _run_stylelint(frontend: Path, targets: list[str], timeout: int) -> str:
         raise bl.ScanError(f'{frontend} is not a directory')
     with tempfile.TemporaryDirectory(prefix='ot-stylelint-') as tmp:
         report = Path(tmp) / 'report.json'
-        argv = ['npx', '--no-install', 'stylelint', *targets, '-f', 'json', '-o', str(report)]
+        argv = [
+            'npx',
+            '--no-install',
+            'stylelint',
+            *targets,
+            '-f',
+            'json',
+            '-o',
+            str(report),
+            '--cache',
+            '--cache-strategy',
+            'content',
+            '--cache-location',
+            '.cache/stylelint/',
+        ]
         try:
             proc = subprocess.run(
                 argv, cwd=frontend, capture_output=True, text=True, timeout=timeout, check=False

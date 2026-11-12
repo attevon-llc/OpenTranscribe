@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -41,6 +42,14 @@ bl = _load_lib()
 DEFAULT_TIMEOUT = 900
 
 
+def _lock_key(frontend: Path) -> str:
+    """Cache partition: a plugin upgrade can change results without touching file content."""
+    lock = frontend / 'package-lock.json'
+    if not lock.is_file():
+        return 'default'
+    return hashlib.sha256(lock.read_bytes()).hexdigest()[:12]
+
+
 def _run_eslint(root: Path, timeout: int) -> str:
     """Run eslint in ``frontend/`` and return stdout. Exit 0 and 1 are both valid results."""
     frontend = root / 'frontend'
@@ -48,7 +57,19 @@ def _run_eslint(root: Path, timeout: int) -> str:
         raise bl.ScanError(f'{frontend} is not a directory')
     try:
         proc = subprocess.run(
-            ['npx', '--no-install', 'eslint', '.', '-f', 'json'],
+            [
+                'npx',
+                '--no-install',
+                'eslint',
+                '.',
+                '-f',
+                'json',
+                '--cache',
+                '--cache-strategy',
+                'content',
+                '--cache-location',
+                f'.cache/eslint/{_lock_key(frontend)}/',
+            ],
             cwd=frontend,
             capture_output=True,
             text=True,

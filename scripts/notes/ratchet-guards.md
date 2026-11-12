@@ -9,11 +9,11 @@ an allowlist entry with no violation left fails as stale and is deleted by hand.
 - `file_size`: `opentranscribe.sh` (2872) and `setup-opentranscribe.sh` (2748) are `single-file-installer` allowlist
   entries (a user-downloaded installer stays one self-contained file). `size_report.py --write-snapshot` refreshes
   `baselines/size_stats.json`; allowlisted files are excluded from its debt figures.
-- `guard-svelte-unused` (push stage, ~50 s): `svelte-check` with `frontend/tsconfig.unused.json`
-  (`noUnusedLocals`/`noUnusedParameters`), `.svelte` files only. The eslint `no-unused-vars` rule crashes on
+- `guard-svelte-unused` (push stage, ~50 s for the pair): `svelte-check` with `frontend/tsconfig.ratchets.json`
+  (`noUnusedLocals`/`noUnusedParameters`; ONE run shared with `guard-nuia` via `frontend/.cache/svelte-check/`), `.svelte` files only. The eslint `no-unused-vars` rule crashes on
   implicit reactive declarations, so it stays off for `.svelte`.
-- `guard-nuia` (push stage, ~50 s): `svelte-check` with `frontend/tsconfig.nuia.json`
-  (`noUncheckedIndexedAccess`), errors counted per file. Production files are at zero; `baselines/nuia.txt` holds
+- `guard-nuia` (push stage, ~50 s): `svelte-check` output of the same shared run
+  (`noUncheckedIndexedAccess`), non-unused errors counted per file. Production files are at zero; `baselines/nuia.txt` holds
   only `*.test.ts` files until they are converted, after which the flag moves into the main tsconfig.
 - `guard-duplicates` (push stage): `jscpd` (pinned) with `--min-tokens 100`; 50 flags import/kwarg boilerplate.
   `check_duplicates.py --report PATH` writes the full clone list.

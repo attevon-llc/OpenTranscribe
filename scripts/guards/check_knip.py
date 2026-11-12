@@ -123,7 +123,19 @@ def run_knip(frontend: Path) -> str:
     if sync.returncode != 0:
         msg = f'svelte-kit sync failed ({sync.returncode}): {sync.stderr.strip()[:300]}'
         raise bl.ScanError(msg)
-    proc = _run(['npx', '--no-install', 'knip', '--reporter', 'json'], frontend)
+    proc = _run(
+        [
+            'npx',
+            '--no-install',
+            'knip',
+            '--reporter',
+            'json',
+            '--cache',
+            '--cache-location',
+            '../.cache/knip',
+        ],
+        frontend,
+    )
     errors = [line for line in proc.stderr.splitlines() if line.startswith('ERROR')]
     if errors:
         msg = 'knip reported errors: ' + '; '.join(errors[:3])

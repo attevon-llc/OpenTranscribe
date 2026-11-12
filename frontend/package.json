@@ -26,7 +26,7 @@
     "test:ui": "NODE_OPTIONS=--no-experimental-webstorage vitest --ui",
     "pretest:coverage": "svelte-kit sync",
     "test:coverage": "NODE_OPTIONS=--no-experimental-webstorage vitest run --coverage",
-    "lint": "eslint .",
+    "lint": "eslint . --cache --cache-strategy content --cache-location .cache/eslint/${ESLINT_CACHE_KEY:-default}/",
     "lint:fix": "eslint . --fix",
     "lint:types": "eslint -c eslint.typed.config.js src",
     "lint:css": "python3 ../scripts/guards/check_stylelint_ratchet.py",

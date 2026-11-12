@@ -9,40 +9,21 @@ invoked and the confirmation prompt never appears.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[3]
-OPENTR = REPO / "opentr.sh"
+from tests.unit._opentr_stubbed import OPENTR
+from tests.unit._opentr_stubbed import run_opentr_stubbed
 
 pytestmark = pytest.mark.skipif(not OPENTR.exists(), reason="opentr.sh not present")
 
 
 def _run(tmp_path: Path, *args: str) -> tuple[subprocess.CompletedProcess[str], str]:
-    stubs = tmp_path / "bin"
-    stubs.mkdir()
-    log = tmp_path / "docker.log"
-    for tool in ("docker", "nvidia-smi"):
-        stub = stubs / tool
-        stub.write_text(f'#!/bin/sh\necho "{tool} $*" >> "{log}"\nexit 0\n')
-        stub.chmod(0o755)
-    env = {**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}"}
-    env.pop("COMPOSE_PROJECT_NAME", None)
-    proc = subprocess.run(
-        ["bash", str(OPENTR), *args],
-        cwd=REPO,
-        env=env,
-        input="y\n",
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    proc, lines = run_opentr_stubbed(tmp_path, *args, stdin="y\n")
     # opentr.sh's prologue probes `docker info` / nvidia-smi before dispatch; those are read-only
     # and not what is under test. Anything else is a real call aimed at a stack.
-    lines = log.read_text().splitlines() if log.exists() else []
     acting = [ln for ln in lines if ln != "docker info" and not ln.startswith("nvidia-smi")]
     return proc, "\n".join(acting)
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -81,7 +82,7 @@ def get_llm_budget(
 class UserSpendRow(BaseModel):
     """One user's LLM spend. Counts and an estimate only: no conversation or file ids."""
 
-    user_id: int
+    user_uuid: UUID
     email: str
     full_name: str | None
     tokens_today: int

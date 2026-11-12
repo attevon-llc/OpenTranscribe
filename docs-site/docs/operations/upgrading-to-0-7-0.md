@@ -354,6 +354,17 @@ with "one open request per subject", so a member erasure and the same person's o
 request no longer block each other. It needs nothing from you. Before downgrading past it,
 cancel any open organization or member erasure; the downgrade refuses otherwise.
 
+
+### Removing a member now waits before erasing their personal files
+
+`DELETE /api/users/{uuid}` and `DELETE /api/admin/users/{uuid}` still hand an organization's
+content to an administrator first. For an account that belongs to an organization they now switch
+the account off and schedule the erase of its personal files `gdpr.removed_member_grace_days` later
+(default 14, 0 to 21) instead of erasing at once; the answer is still `204` (admin route: `200` with
+`scheduled_for`). Restore the account in that window under Settings, Privacy & Redaction, Removed
+members. Set the setting to 0 to keep the old immediate erase. Accounts in no organization, which is
+every community-edition account, are unchanged. No migration.
+
 ## Voiceprint purges that were interrupted
 
 **Check this if...** you run voiceprint or gender purges (Settings -> Privacy & redaction, or Settings -> Speaker identification for your own voiceprints), or a purge you

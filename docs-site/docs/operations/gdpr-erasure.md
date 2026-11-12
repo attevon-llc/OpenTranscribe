@@ -101,6 +101,21 @@ search index is re-pointed at the new owner, so search and chat keep finding the
   owner, else its longest-standing active admin. If the person is the only admin and still owns
   organization content, the deletion is refused with `409 no_transfer_target` until another admin
   exists. In the community edition nobody has an organization membership, so nothing changes.
+- **Personal files wait out a grace period.** After the hand-over, an account that belongs to at
+  least one organization is switched off (it cannot sign in and its sessions end) and the erase of
+  its personal files is scheduled on the same ledger as the scheduled erasures above, after
+  `gdpr.removed_member_grace_days` (default 14, 0 to 21; 0 erases at once). A super_admin sets it with
+  `PUT /api/admin/self-erasure` (`removed_member_grace_days`) or under Settings, Privacy &
+  Redaction, Removed members. The cap is the self-service one because the one-month deadline
+  starts at the removal. While it runs, other people cannot reach the member's personal files
+  through collection shares. An administrator can restore the account inside the period
+  (Settings, Removed members, Restore, or `POST /api/admin/removed-members/{ledger_uuid}/restore`),
+  which cancels the erase and switches the account back on; what was handed to the organization
+  stays with it. After the period the hourly job runs the account erasure; a file under a legal
+  hold or quarantine is never erased (the request is refused up front while one exists, and a
+  hold placed during the wait leaves that file and keeps the account). The same four notices as
+  above go to the administrator who removed the account and to the admins of its organizations.
+  An account in no organization (every community-edition account) is still erased at once.
 - **Member removal** (managed edition): the platform calls the same transfer before it removes the
   membership; core has no member-removal path of its own.
 - **Legal holds.** A file under a hold is never re-owned: it is counted in `skipped_held`, and

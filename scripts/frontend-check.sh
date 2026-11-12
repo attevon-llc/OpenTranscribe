@@ -9,6 +9,10 @@
 # Options:
 #   --no-claude      Skip Claude auto-fix on failure
 #   --check-only     Skip the vite build. Everything else still runs — see the note below.
+#   --related-only   Commit-stage hook only: vitest runs just the tests related to the STAGED
+#                    frontend files (`vitest related`), without the coverage floors. The full
+#                    suite with floors runs at push stage (frontend-build), in CI, and in
+#                    every caller that does not pass this flag.
 #   --verbose        Show full output from checks
 #   -h, --help       Show this help message
 #
@@ -58,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --check-only|--no-build)
             BUILD_ENABLED=false
+            shift
+            ;;
+        --related-only)
+            RELATED_ONLY=true
             shift
             ;;
         --verbose)
@@ -277,7 +285,23 @@ run_all_checks() {
     # OT_HOOK_VITEST_WORKERS (a number or a percentage like 25%). Only this hook is capped:
     # CI and a bare `npm test` keep the config's '50%'. Coverage floors are unchanged.
     local vitest_workers="${OT_HOOK_VITEST_WORKERS:-8}"
+    # Commit stage (--related-only, owner decision 2026-11-11): a one-line CSS change ran all
+    # ~1,750 tests, and with several lanes committing the serialised hook queue reached 20-30
+    # minutes per commit. `vitest related <files> --run` runs only the tests whose import graph
+    # reaches the staged files (https://vitest.dev/guide/cli#vitest-related). The full suite
+    # and the coverage floors still run at push stage (frontend-build) and in CI, which runs
+    # both stages (test_precommit_stage_ci_parity.py).
+    if [ "${RELATED_ONLY:-false}" = true ]; then
+        local -a staged=()
+        mapfile -t staged < <(git -C "$FRONTEND_DIR/.." diff --cached --name-only --diff-filter=ACMR -- 'frontend/src' | sed 's#^frontend/##')
+        if [ "${#staged[@]}" -eq 0 ]; then
+            print_info "vitest: no staged frontend files; the full suite runs at push stage"
+        else
+            run_step "vitest related (${#staged[@]} staged files, ${vitest_workers} workers)" "Tests +[0-9]+ failed|Test Files +[0-9]+ failed" npx vitest related --run --passWithNoTests "--maxWorkers=${vitest_workers}" "${staged[@]}"
+        fi
+    else
     run_step "vitest (with coverage floors, ${vitest_workers} workers)" "Tests +[0-9]+ failed|Test Files +[0-9]+ failed|Coverage for [a-z]+ .* does not meet" npm run test:coverage -- "--maxWorkers=${vitest_workers}"
+    fi
     run_step "frontend test-auditor self-test" "" npm run test:audit:selftest
     run_step "frontend test-quality audit" "" npm run test:audit
 

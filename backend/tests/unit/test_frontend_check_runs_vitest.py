@@ -233,3 +233,47 @@ def test_build_is_skipped_when_the_output_is_unwritable():
     body = _uncommented(_function_body("run_all_checks"))
     check_at = body.index("check_build_output_writable")
     assert check_at < body.index("npm run build"), "writability check must precede the build"
+
+
+# --------------------------------------------------------------------------------------
+# 5: --related-only narrows ONLY the commit-stage hook; every full-suite caller keeps it.
+# --------------------------------------------------------------------------------------
+
+
+def _hook_entries() -> dict[str, str]:
+    config = (REPO_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    pairs = re.findall(
+        r"- id: (frontend-check|frontend-build)\n\s+name: .*\n\s+entry: (.*)\n", config
+    )
+    entries = dict(pairs)
+    assert set(entries) == {"frontend-check", "frontend-build"}, (
+        f"hook entries not found: {entries}"
+    )
+    return entries
+
+
+def test_only_the_commit_stage_hook_runs_the_related_subset():
+    """The commit hook runs `vitest related` on staged files; the full suite runs elsewhere.
+
+    A one-line CSS commit ran all ~1,750 tests with coverage, and with several lanes queued on
+    the shared commit lock each commit waited 20-30 minutes (owner decision 2026-11-11). The
+    full suite and its coverage floors must still run at push stage, in CI (which runs both
+    stages) and in the two local callers; a ``--related-only`` anywhere else would hide them.
+    """
+    entries = _hook_entries()
+    assert "--related-only" in entries["frontend-check"], entries["frontend-check"]
+    assert "--related-only" not in entries["frontend-build"], (
+        "the push-stage hook is where the full vitest suite and coverage floors run"
+    )
+    for caller in ("scripts/run-dev-tests.sh", "scripts/test-matrix.sh"):
+        text = (REPO_ROOT / caller).read_text(encoding="utf-8")
+        assert "--related-only" not in text, f"{caller} must run the full frontend suite"
+
+
+def test_the_related_branch_still_falls_back_to_the_full_coverage_run():
+    body = _uncommented(_function_body("run_all_checks"))
+    assert "vitest related --run" in body, "the commit-stage branch no longer runs vitest related"
+    related, _, full = body.partition("else")
+    assert "npm run test:coverage" in full, (
+        "without --related-only the script must still run the full suite with coverage floors"
+    )

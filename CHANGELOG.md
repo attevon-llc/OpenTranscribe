@@ -93,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Faster frontend commit hook.** The commit-stage hook now runs only the vitest tests related to the staged files (`vitest related`). The full suite with its coverage floors still runs at push stage, in CI and in `run-dev-tests.sh` / `test-matrix.sh`.
 - Theme tokens for the lanes that follow: `--tooltip-bg` / `--tooltip-text` (the info tooltip chip; dark mode gets a lighter chip, #475569, since the old #1a1a1a was darker than the dark card), a `--syntax-*` code palette (chat code blocks' highlight colours, same values, each at least 4.5:1 on the code block in both themes) and `--qr-surface` (white in both themes, so a QR code keeps a light quiet zone for scanners).
 - Theme: translucent blue washes and the primary-button shadow use the primary blue #2563eb instead of the lighter #3b82f6, so a tint matches the button beside it (`--accent-rgb` now aliases `--primary-color-rgb`). Dark-mode shadows are stronger (alpha .25 to .45 instead of the light theme's .05 to .15), so cards, menus and dialogs keep their lift on dark surfaces; `--card-shadow` is now the `--shadow-sm` step.
 - Pydantic schemas in `auth_config`, `download_settings` and `transcription_settings` use `model_config = ConfigDict(...)` instead of the deprecated class-based `Config`; generated JSON schemas are unchanged. `backend/tests/unit/test_no_pydantic_v1_deprecations.py` fails on any `PydanticDeprecatedSince20` at import of `app.schemas` / `app.models`.

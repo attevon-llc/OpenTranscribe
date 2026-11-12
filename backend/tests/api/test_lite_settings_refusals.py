@@ -26,6 +26,7 @@ from fixtures.hf_cache import make_complete_repo
 from app.models import UserSetting
 from app.models.user_asr_settings import UserASRSettings
 from app.services.pipeline_plan import ISSUE_MESSAGES
+from app.transcription.engine.config import DEFAULT_TRANSCRIBER_BACKEND
 from tests.helpers import detail_dict
 
 _ASR = "/api/asr-settings"
@@ -224,7 +225,7 @@ ROWS = [
     (_set_local_model, LOCAL_ASR, status.HTTP_200_OK),
     (_engine("diarizer_backend", "pyannote"), LOCAL_DIAR, status.HTTP_200_OK),
     (_engine("diarizer_require_sidecar", True), LOCAL_DIAR, status.HTTP_200_OK),
-    (_engine("transcriber_backend", "whisperx"), LOCAL_ASR, status.HTTP_200_OK),
+    (_engine("transcriber_backend", DEFAULT_TRANSCRIBER_BACKEND), LOCAL_ASR, status.HTTP_200_OK),
 ]
 
 

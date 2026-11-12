@@ -45,6 +45,7 @@ from sqlalchemy import func
 from sqlalchemy import select
 
 from app.core import constants
+from app.core.config import settings
 from app.core.env import env_bool
 from app.core.env import env_is_set
 from app.core.env import env_str
@@ -138,9 +139,9 @@ def off_reasons() -> list[TelemetryOffReason]:
     # Set by docker-compose.offline.yml on every service; an explicit "no" or typo stays off.
     if env_is_set("HF_HUB_OFFLINE") and env_bool("HF_HUB_OFFLINE", True):
         reasons.append(REASON_OFFLINE)
-    if env_bool("PKI_ENABLED", False):
+    if settings.PKI_ENABLED:
         reasons.append(REASON_PKI)
-    if env_bool("FIPS_MODE", False):
+    if settings.FIPS_MODE:
         reasons.append(REASON_FIPS)
     if not receiver_key():
         reasons.append(REASON_NO_RECEIVER)

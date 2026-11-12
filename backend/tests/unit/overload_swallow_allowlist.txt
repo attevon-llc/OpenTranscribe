@@ -37,4 +37,3 @@ app/api/endpoints/search_index_health.py::repair_indices  # per-index "failed" i
 app/api/endpoints/auth_config_connection_tests.py::_test_ldap_connection  # an admin "test connection" result: success=False
 app/api/endpoints/llm_connection_tests.py::_run_connection_test  # an admin "test connection" result: success=False (both handlers: stored-key lookup falls back to no key, the dial reports FAILED)
 app/api/endpoints/llm_model_discovery.py::get_ollama_models  # model discovery answers success=False with a message
-app/api/endpoints/llm_model_discovery.py::_get_stored_api_key  # discovery proceeds without a stored key and says so

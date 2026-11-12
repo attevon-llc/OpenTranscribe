@@ -46,7 +46,7 @@ def _transcript(db: Session, media_file: MediaFile) -> dict:
     rows = db.scalars(
         select(TranscriptSegment)
         .where(TranscriptSegment.media_file_id == media_file.id)
-        .order_by(TranscriptSegment.start_time, TranscriptSegment.id)
+        .order_by(TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id)
     )
     segments = []
     for row in rows:

@@ -13,6 +13,7 @@ import pytest
 import yaml
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.services import telemetry
 
 _DB = MagicMock(spec=Session)
@@ -26,12 +27,20 @@ def allowed(monkeypatch):
         "OPENTRANSCRIBE_TELEMETRY",
         "OPENTRANSCRIBE_DEMO_MODE",
         "HF_HUB_OFFLINE",
-        "PKI_ENABLED",
-        "FIPS_MODE",
         "OPENTRANSCRIBE_TELEMETRY_DEBUG",
     ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(settings, "PKI_ENABLED", False)
+    monkeypatch.setattr(settings, "FIPS_MODE", False)
     monkeypatch.setenv("OPENTRANSCRIBE_TELEMETRY_PROJECT_KEY", "phc_test_key")
+
+
+def _restrict(monkeypatch, name):
+    """PKI_ENABLED and FIPS_MODE are Settings fields; HF_HUB_OFFLINE is read from the env."""
+    if name == "HF_HUB_OFFLINE":
+        monkeypatch.setenv(name, "1")
+    else:
+        monkeypatch.setattr(settings, name, True)
 
 
 @pytest.fixture
@@ -55,15 +64,13 @@ def test_nothing_forces_it_off_in_a_plain_deployment(allowed):
     [("HF_HUB_OFFLINE", "offline"), ("PKI_ENABLED", "pki"), ("FIPS_MODE", "fips")],
 )
 def test_each_restricted_deployment_forces_it_off(allowed, monkeypatch, name, reason):
-    monkeypatch.setenv(name, "true" if name != "HF_HUB_OFFLINE" else "1")
+    _restrict(monkeypatch, name)
 
     assert telemetry.off_reasons() == [reason]
 
 
 def test_an_explicit_no_does_not_force_it_off(allowed, monkeypatch):
     monkeypatch.setenv("HF_HUB_OFFLINE", "0")
-    monkeypatch.setenv("PKI_ENABLED", "false")
-    monkeypatch.setenv("FIPS_MODE", "false")
 
     assert telemetry.off_reasons() == []
 
@@ -95,14 +102,14 @@ def stored_on(monkeypatch):
 def test_a_stored_on_switch_sends_nothing_in_a_restricted_deployment(
     allowed, posts, stored_on, monkeypatch, name
 ):
-    monkeypatch.setenv(name, "1")
+    _restrict(monkeypatch, name)
 
     assert telemetry.send_if_due(_DB) == "blocked"
     assert posts == []
 
 
 def test_turning_it_on_is_refused_in_a_restricted_deployment(allowed, monkeypatch):
-    monkeypatch.setenv("FIPS_MODE", "true")
+    monkeypatch.setattr(settings, "FIPS_MODE", True)
 
     with pytest.raises(telemetry.TelemetryRefusedError) as refused:
         telemetry.set_enabled(_DB, True)

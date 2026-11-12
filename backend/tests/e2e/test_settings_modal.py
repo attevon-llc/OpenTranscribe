@@ -191,7 +191,8 @@ class TestSettingsModal:
         expect(app_page.locator(".settings-sidebar")).to_be_visible(timeout=5000)
         # Sidebar should expose multiple navigable sections.
         nav_items = app_page.locator(".settings-sidebar .nav-item")
-        assert nav_items.count() >= 3, "Settings sidebar should list several sections"
+        # Web-first assertion: the nav renders after the sidebar frame, and count() does not wait.
+        expect(nav_items.nth(2)).to_be_visible(timeout=10000)
 
     def test_switching_sections_renders_each(self, app_page: Page) -> None:
         """Switching between sections renders each one without new console errors."""

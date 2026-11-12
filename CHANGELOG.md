@@ -44,6 +44,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - **Internal.** Narrowed about 600 broad exception handlers and removed every `type: ignore` in app code; new guards for file size, complexity, unused CSS, dependencies, index access and type-aware lint; Stylelint, a style-token guard and usage-derived contrast tests; CI runs the backend suite in 8 shards; the backend coverage floor is 86; test and release scripts reorganised into packages.
 
 ### Fixed
+- **Query counts (#1337).** The admin and organization hold lists, a speaker profile's occurrences, the cross-media speaker lists, and the task health and recovery reports now load their related collections, files and owners in one extra statement instead of one per row.
 
 - **Legal holds are honoured everywhere.** A hold placed while a recording is being deleted keeps it; erasures, voiceprint purges, corpus injection, speaker matching, shared-path repointing and identity re-verification skip held or quarantined recordings; the retention preview excludes them.
 - **Erasure.** Account erasure no longer destroys media of recordings the person no longer owns or the speakers of recordings handed to an administrator; the last-super-administrator rule is rechecked on every run; the erasure receipt records speaker ids correctly and covers LLM token counters.

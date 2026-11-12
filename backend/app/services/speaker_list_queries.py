@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import load_only
+from sqlalchemy.orm import selectinload
 
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
@@ -239,7 +240,9 @@ def _scoped_speakers(
         query = exclude_unavailable(query, include_quarantined=include_quarantined)
     if tenant_pred is not None:
         query = query.filter(tenant_pred)
-    rows: list[Speaker] = query.all()
+    # Every caller reads each speaker's file (occurrence rows, tenant checks); one IN query
+    # replaces a lazy load per speaker.
+    rows: list[Speaker] = query.options(selectinload(Speaker.media_file)).all()
     return rows
 
 

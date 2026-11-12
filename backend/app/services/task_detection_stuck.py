@@ -10,6 +10,7 @@ from datetime import datetime
 from datetime import timedelta
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 
 from app.core.broker_orphans import dead_unqueued_run_ids
 from app.core.task_config import TaskRecoveryConfig
@@ -62,6 +63,7 @@ class TaskDetectionStuckMixin:
         # Find potentially stuck tasks
         potential_stuck_tasks = (
             db.query(Task)
+            .options(selectinload(Task.media_file))
             .filter(
                 Task.status.in_(["pending", "in_progress"]),
                 Task.updated_at < stale_time,
@@ -316,6 +318,7 @@ class TaskDetectionStuckMixin:
         stuck_threshold = now - timedelta(minutes=5)
         abandoned_files = (
             db.query(MediaFile)
+            .options(selectinload(MediaFile.user))
             .filter(
                 MediaFile.status == FileStatus.PROCESSING,
                 or_(
@@ -489,6 +492,7 @@ class TaskDetectionStuckMixin:
 
         return (
             db.query(MediaFile)
+            .options(selectinload(MediaFile.user))
             .filter(
                 MediaFile.status == FileStatus.PENDING,
                 MediaFile.upload_time < stale_time,

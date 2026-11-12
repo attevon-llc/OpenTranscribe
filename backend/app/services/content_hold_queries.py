@@ -14,6 +14,7 @@ from sqlalchemy import ColumnElement
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 
 from app.models.content_hold import AUTHORITY_ORGANIZATION
 from app.models.content_hold import AUTHORITY_PLATFORM
@@ -84,6 +85,7 @@ def _page(
     rows = list(
         db.execute(
             select(ContentHold)
+            .options(selectinload(ContentHold.collection))
             .where(*where)
             .order_by(ContentHold.id.desc())
             .limit(limit)

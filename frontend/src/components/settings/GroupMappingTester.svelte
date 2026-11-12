@@ -204,7 +204,7 @@
     margin: 0;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .tester-note {
@@ -266,7 +266,7 @@
   .result {
     margin-top: var(--space-4);
     padding: var(--space-3-5);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background: var(--color-bg);
     display: flex;
@@ -285,7 +285,7 @@
     min-width: 9rem;
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .chips {
@@ -302,7 +302,7 @@
   .result-note {
     margin: 0;
     font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     line-height: 1.5;
   }
 

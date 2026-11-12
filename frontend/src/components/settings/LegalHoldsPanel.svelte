@@ -249,7 +249,7 @@
 
   .intro {
     margin: 0 0 var(--space-3);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .intro.note {
@@ -267,7 +267,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1-5);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .empty {
@@ -276,7 +276,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-8) var(--space-4);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     border: 1px dashed var(--border-color);
     border-radius: var(--radius-md);
   }
@@ -287,7 +287,7 @@
 
   .table-wrap {
     overflow-x: auto;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
   }
 
@@ -302,7 +302,7 @@
     padding: var(--space-2);
     text-align: start;
     vertical-align: top;
-    border-block-end: 1px solid var(--color-border);
+    border-block-end: 1px solid var(--border-color);
   }
 
   .holds-table th {
@@ -310,7 +310,7 @@
     font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   tr.released {
@@ -319,7 +319,7 @@
 
   .reason {
     margin-block-start: var(--space-1);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     max-width: 28rem;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -342,12 +342,12 @@
     padding-inline-start: var(--space-4);
     max-height: 8rem;
     overflow-y: auto;
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .sub {
     margin-block-start: var(--space-0-5);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-2xs);
   }
 
@@ -362,7 +362,7 @@
   }
 
   .field small {
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .release-body {

@@ -387,7 +387,7 @@
 
   .help-text {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     line-height: 1.4;
     font-weight: var(--font-weight-regular);
   }
@@ -416,7 +416,7 @@
   .scope-note {
     margin: 0;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     line-height: 1.4;
   }
 </style>

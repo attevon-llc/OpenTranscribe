@@ -7,7 +7,7 @@
 .auth-panel .enable-toggle {
   margin-bottom: var(--space-6);
   padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .auth-panel .toggle-label {
@@ -45,7 +45,7 @@
   margin: 0 0 var(--space-4) 0;
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .auth-panel .form-row {
@@ -81,7 +81,7 @@
   gap: var(--space-4);
   justify-content: flex-end;
   padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--border-color);
 }
 
 .auth-panel .input-with-toggle,
@@ -93,9 +93,9 @@
 .auth-panel .toggle-visibility {
   padding: var(--space-2) var(--space-3);
   background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font-size: var(--font-size-xs);
   cursor: pointer;
   white-space: nowrap;
@@ -107,7 +107,7 @@
 }
 
 .auth-panel .toggle-visibility:hover:not(:disabled) {
-  background: var(--color-bg-hover);
+  background: var(--hover-color);
 }
 
 .auth-panel .warning-box {
@@ -125,5 +125,5 @@
 .auth-panel .warning-box p {
   margin: var(--space-2) 0 0 0;
   font-size: var(--font-size-md);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }

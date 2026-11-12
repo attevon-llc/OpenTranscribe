@@ -279,7 +279,7 @@
     border: none;
     cursor: pointer;
     padding: var(--space-1);
-    color: var(--text-light);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     border-radius: var(--radius-sm);
@@ -296,7 +296,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background-color: var(--background-color);
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-sm);
     margin: 0;
   }
@@ -327,7 +327,7 @@
   }
 
   .muted {
-    color: var(--text-light);
+    color: var(--text-secondary);
     font-size: var(--font-size-body);
     margin: 0;
   }

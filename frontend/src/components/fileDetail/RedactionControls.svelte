@@ -102,7 +102,7 @@
   }
   .redaction-status {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
   .redaction-bar-actions {
     display: flex;

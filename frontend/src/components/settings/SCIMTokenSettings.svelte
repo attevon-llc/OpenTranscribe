@@ -268,15 +268,15 @@
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--color-text-secondary);
-    border-bottom: 1px solid var(--color-border);
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
   }
 
   .token-table td {
     padding: var(--space-2-5);
-    border-bottom: 1px solid var(--color-border);
-    color: var(--color-text);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
     vertical-align: top;
   }
 
@@ -309,7 +309,7 @@
     align-items: center;
     gap: var(--space-2);
     background: var(--color-bg-secondary);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     padding: var(--space-2-5);
     margin-bottom: var(--space-4);

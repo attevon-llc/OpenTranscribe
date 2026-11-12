@@ -329,7 +329,7 @@
   .setting-label {
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .setting-help {
@@ -340,7 +340,7 @@
 
   .setting-note {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     line-height: 1.3;
   }
 

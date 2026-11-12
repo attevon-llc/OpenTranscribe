@@ -35,7 +35,7 @@
 
   .legal-prose {
     max-inline-size: var(--measure-prose);
-    color: var(--text-primary);
+    color: var(--text-color);
     font-size: var(--font-size-body);
     line-height: var(--line-height-body);
     text-align: start;
@@ -65,7 +65,7 @@
   .legal-prose :global(h4),
   .legal-prose :global(h5),
   .legal-prose :global(h6) {
-    color: var(--text-primary);
+    color: var(--text-color);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-height-tight);
   }
@@ -152,7 +152,7 @@
   }
 
   .legal-prose :global(ol > li::marker) {
-    color: var(--text-primary);
+    color: var(--text-color);
     font-weight: var(--font-weight-medium);
   }
 

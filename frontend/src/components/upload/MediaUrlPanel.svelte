@@ -275,7 +275,7 @@
     border: 1px solid rgba(var(--error-color-rgb), 0.2);
     border-radius: var(--radius-lg);
     font-size: var(--font-size-sm);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .offline-banner svg { flex-shrink: 0; color: var(--error-text); margin-top: var(--space-0-5); }
@@ -292,7 +292,7 @@
     gap: var(--space-2);
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .url-label svg { color: #ff0000; }
@@ -339,7 +339,7 @@
     gap: var(--space-2);
   }
 
-  .protected-media-header { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+  .protected-media-header { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--text-color); }
 
   .protected-media-fields {
     display: grid;
@@ -397,7 +397,7 @@
     gap: var(--space-3);
   }
 
-  .download-option-row label { font-size: var(--font-size-sm); color: var(--text-primary); }
+  .download-option-row label { font-size: var(--font-size-sm); color: var(--text-color); }
 
   .download-select {
     padding: var(--space-1-5) var(--space-2);

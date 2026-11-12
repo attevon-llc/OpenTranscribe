@@ -301,7 +301,7 @@
 
   .dropdown-header {
     padding: var(--space-3) var(--space-4);
-    color: var(--text-color-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.4;
     white-space: normal;

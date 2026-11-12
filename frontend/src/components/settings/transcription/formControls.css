@@ -29,7 +29,7 @@
 .tx-form .input-hint {
   margin: var(--space-1-5) 0 0 0;
   font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .tx-form .speaker-range-row {
@@ -140,12 +140,12 @@
 
 .tx-form .input-label {
   font-size: var(--font-size-sm);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .tx-form .input-suffix {
   font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .tx-form .subsection {
@@ -164,7 +164,7 @@
 
 .tx-form .subsection-desc {
   font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin: 0 0 var(--space-4) 0;
 }
 
@@ -200,7 +200,7 @@
 
 .tx-form .field-desc {
   font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin: var(--space-1) 0 0 0;
 }
 

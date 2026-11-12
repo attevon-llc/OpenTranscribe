@@ -128,7 +128,7 @@
   .loading-text,
   .empty-text {
     font-size: var(--font-size-body);
-    color: var(--text-light);
+    color: var(--text-secondary);
     margin: 0;
   }
 

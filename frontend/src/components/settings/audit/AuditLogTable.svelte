@@ -147,7 +147,7 @@
   .audit-table td {
     padding: var(--space-1-5) var(--space-2);
     text-align: start;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
   }
 
@@ -157,7 +157,7 @@
     font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     position: sticky;
     top: 0;
     z-index: var(--z-base);
@@ -184,7 +184,7 @@
   .ip {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: var(--font-size-2xs);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .event-type {
@@ -222,7 +222,7 @@
   .no-logs {
     text-align: center;
     padding: var(--space-4);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }
 
@@ -230,7 +230,7 @@
   .audit-table-container {
     max-height: 400px;
     overflow-y: auto;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     position: relative;
   }
@@ -260,7 +260,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: var(--font-size-xs);
     line-height: 1.5;
-    color: var(--color-text);
+    color: var(--text-color);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     background: var(--color-bg-secondary);

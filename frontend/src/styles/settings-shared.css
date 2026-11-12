@@ -46,13 +46,13 @@
 }
 
 .settings-info-box strong {
-  color: var(--color-text);
+  color: var(--text-color);
 }
 
 .settings-info-box p {
   margin: var(--space-2) 0 0 0;
   font-size: var(--font-size-md);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 

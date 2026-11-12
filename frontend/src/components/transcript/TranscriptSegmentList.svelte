@@ -525,7 +525,7 @@
     justify-content: center;
     gap: var(--space-2);
     padding: var(--space-4);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: var(--font-size-md);
   }
 
@@ -539,7 +539,7 @@
     background: var(--surface-secondary);
     border-top: 1px solid var(--border-color);
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .segments-count {
@@ -658,7 +658,7 @@
 
   .segment-text {
     font-size: var(--font-size-md);
-    color: var(--text-primary);
+    color: var(--text-color);
     line-height: 1.4;
     position: relative;
     padding-inline-start: var(--space-3);

@@ -133,7 +133,7 @@
   .help-text {
     margin: var(--space-2) 0 0;
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   @media (max-width: 768px) {

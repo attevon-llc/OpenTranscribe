@@ -136,14 +136,14 @@
   }
 
   .stepper-step[data-state='current'] .stepper-label {
-    color: var(--text-primary);
+    color: var(--text-color);
     font-weight: var(--font-weight-semibold);
   }
 
   .stepper-caption {
     display: none;
     margin: var(--space-2) 0 0;
-    color: var(--text-primary);
+    color: var(--text-color);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     text-align: center;

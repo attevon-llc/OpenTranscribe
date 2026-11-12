@@ -244,7 +244,7 @@
 
   .intro-text {
     margin-bottom: var(--space-6);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-md);
   }
 
@@ -268,7 +268,7 @@
     margin: 0 0 var(--space-4) 0;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
 
@@ -285,7 +285,7 @@
 
   .preview {
     font-size: var(--font-size-md);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
 
@@ -306,7 +306,7 @@
 
   .token-info {
     background: var(--color-bg);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     padding: var(--space-3);
     margin-top: var(--space-4);
@@ -314,7 +314,7 @@
   }
 
   .token-info strong {
-    color: var(--color-text);
+    color: var(--text-color);
     display: block;
     margin-bottom: var(--space-2);
   }
@@ -322,7 +322,7 @@
   .token-info ul {
     margin: 0;
     padding-inline-start: var(--space-5);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .token-info li {
@@ -340,14 +340,14 @@
     align-items: flex-start;
     gap: var(--space-3);
     padding: var(--space-3);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     cursor: pointer;
     transition: border-color var(--duration-base), background-color var(--duration-base);
   }
 
   .radio-label:hover {
-    border-color: var(--color-primary);
+    border-color: var(--primary-color);
   }
 
   .radio-label input[type="radio"] {
@@ -364,7 +364,7 @@
 
   .radio-title {
     font-weight: var(--font-weight-medium);
-    color: var(--color-text);
+    color: var(--text-color);
     font-size: var(--font-size-md);
   }
 
@@ -389,13 +389,13 @@
     display: block;
     margin-bottom: var(--space-1);
     font-size: var(--font-size-md);
-    color: var(--color-text);
+    color: var(--text-color);
   }
 
   .recommendation p {
     margin: 0;
     font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .actions {
@@ -403,7 +403,7 @@
     gap: var(--space-4);
     justify-content: flex-end;
     padding-top: var(--space-4);
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--border-color);
   }
 
   @media (max-width: 768px) {

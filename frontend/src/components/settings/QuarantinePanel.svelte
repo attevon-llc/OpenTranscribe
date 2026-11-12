@@ -342,7 +342,7 @@
   .toggle-btn.active {
     background: var(--primary-color);
     color: var(--text-on-solid);
-    border-color: var(--accent-color);
+    border-color: var(--primary-color);
   }
 
   .settings-state-row.error {

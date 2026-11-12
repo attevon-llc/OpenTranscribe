@@ -65,7 +65,7 @@
 
   .progress-value {
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .progress-track {

@@ -651,7 +651,7 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: var(--space-3-5) var(--space-5);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .terms-panel:focus-visible {
@@ -696,7 +696,7 @@
     border-inline-start-width: 4px;
     border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .wizard-callout-warning {
@@ -749,7 +749,7 @@
     border-radius: var(--radius-lg);
     background-color: var(--bg-secondary);
     box-shadow: none;
-    color: var(--text-primary);
+    color: var(--text-color);
     cursor: pointer;
   }
 
@@ -812,7 +812,7 @@
   .wizard-skip-link:hover:not(:disabled) {
     background: none;
     box-shadow: none;
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .terms-footer {

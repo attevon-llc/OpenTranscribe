@@ -41,8 +41,8 @@
   }
 
   .spinner:not(.custom-color) {
-    border-top-color: var(--accent-color);
-    border-right-color: var(--accent-color);
+    border-top-color: var(--primary-color);
+    border-right-color: var(--primary-color);
   }
 
   .spinner-small {

@@ -290,7 +290,7 @@
 
   .section-desc {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
 
@@ -319,13 +319,13 @@
 
   .field-label {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-weight: var(--font-weight-medium);
   }
 
   .field-hint {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .mount-ok {
@@ -374,7 +374,7 @@
 
   .run-confirm-text {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .button-row .btn-secondary {

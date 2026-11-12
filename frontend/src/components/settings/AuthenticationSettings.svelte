@@ -540,9 +540,9 @@
   .coming-soon {
     text-align: center;
     padding: var(--space-8);
-    background: var(--color-surface);
+    background: var(--surface-color);
     border-radius: var(--radius-lg);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
   }
 
   .coming-soon-icon {
@@ -555,11 +555,11 @@
   .coming-soon h3 {
     margin: 0 0 var(--space-2) 0;
     font-size: var(--font-size-xl);
-    color: var(--color-text);
+    color: var(--text-color);
   }
 
   .coming-soon p {
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     margin: var(--space-2) 0;
   }
 
@@ -575,19 +575,19 @@
     background: var(--color-background);
     padding: var(--space-4);
     border-radius: var(--radius-md);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border-color);
   }
 
   .config-method h4 {
     margin: 0 0 var(--space-2) 0;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
+    color: var(--text-color);
   }
 
   .config-method code {
     display: block;
-    background: var(--color-surface);
+    background: var(--surface-color);
     padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-xs);

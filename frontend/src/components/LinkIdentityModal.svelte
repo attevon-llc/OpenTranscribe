@@ -179,7 +179,7 @@
   .modal-intro {
     margin: 0;
     font-size: var(--font-size-md);
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
   }
 
   .modal-note {
@@ -188,7 +188,7 @@
     border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
     background: rgba(var(--warning-color-rgb), 0.12);
-    color: var(--color-text);
+    color: var(--text-color);
     font-size: var(--font-size-xs);
     line-height: 1.5;
   }

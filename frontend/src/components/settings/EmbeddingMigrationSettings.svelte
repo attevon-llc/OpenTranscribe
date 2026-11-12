@@ -609,7 +609,7 @@
 
   .section-desc {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
 
@@ -696,7 +696,7 @@
   .migration-estimate {
     margin-top: var(--space-1) !important;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .migration-actions {
@@ -813,7 +813,7 @@
 
   .reextract-hint {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .reextract-confirm {

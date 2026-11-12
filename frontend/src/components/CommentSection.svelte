@@ -378,7 +378,7 @@
     margin: 0;
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .comments-preview {

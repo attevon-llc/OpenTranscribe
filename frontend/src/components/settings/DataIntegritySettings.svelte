@@ -388,7 +388,7 @@
 
   .section-desc {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
 
@@ -405,7 +405,7 @@
 
   .pg-stats {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin-bottom: var(--space-2);
     display: flex;
     gap: var(--space-2);
@@ -449,7 +449,7 @@
   .index-name {
     font-size: var(--font-size-2xs);
     font-family: monospace;
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .index-body {
@@ -458,7 +458,7 @@
   }
 
   .index-body.empty {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-style: italic;
     padding: var(--space-2) var(--space-2-5);
   }
@@ -476,7 +476,7 @@
   }
 
   .breakdown-row.muted {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
   }
 
@@ -579,7 +579,7 @@
 
   .results-meta {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0 0 var(--space-3) 0;
   }
 

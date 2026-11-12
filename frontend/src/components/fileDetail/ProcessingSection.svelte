@@ -54,7 +54,7 @@
   }
 
   .section-toggle {
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .chevron {

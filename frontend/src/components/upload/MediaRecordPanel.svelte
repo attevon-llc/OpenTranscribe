@@ -193,7 +193,7 @@
     border: 1px solid rgba(var(--error-color-rgb), 0.2);
     border-radius: var(--radius-lg);
     font-size: var(--font-size-md);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .unsupported-msg svg { flex-shrink: 0; color: var(--error-text); }
@@ -212,7 +212,7 @@
     gap: var(--space-2);
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .device-select {
@@ -291,7 +291,7 @@
     50% { opacity: 0.4; }
   }
 
-  .status-text { font-weight: var(--font-weight-semibold); font-size: var(--font-size-md); color: var(--text-primary); }
+  .status-text { font-weight: var(--font-weight-semibold); font-size: var(--font-size-md); color: var(--text-color); }
 
   .duration-badge {
     font-family: Monaco, Menlo, monospace;
@@ -357,7 +357,7 @@
   }
 
   .complete-info { text-align: center; }
-  .complete-title { display: block; font-weight: var(--font-weight-semibold); font-size: var(--font-size-body); color: var(--text-primary); }
+  .complete-title { display: block; font-weight: var(--font-weight-semibold); font-size: var(--font-size-body); color: var(--text-color); }
   .complete-meta { font-size: var(--font-size-sm); color: var(--text-secondary); }
 
   .ctrl-btn.clear:hover { background: var(--button-hover); }

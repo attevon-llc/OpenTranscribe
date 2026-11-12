@@ -280,7 +280,7 @@
   .credential-note {
     margin: var(--space-1-5) 0 var(--space-3);
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .credential-note {

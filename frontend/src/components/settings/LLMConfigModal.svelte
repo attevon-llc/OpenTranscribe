@@ -856,7 +856,7 @@ let _llmConfigModalWasOpen = false;
 
   .field-desc {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: var(--space-1-5) 0 0 0;
     line-height: 1.5;
   }
@@ -945,11 +945,11 @@ let _llmConfigModalWasOpen = false;
 
   .model-details {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .close-selector {
-    background: var(--secondary-color);
+    background: var(--text-secondary);
     color: var(--surface-color);
     border: none;
     padding: var(--space-2) var(--space-4);
@@ -1002,7 +1002,7 @@ let _llmConfigModalWasOpen = false;
   .info-tooltip {
     display: inline-flex;
     align-items: center;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     opacity: 0.6;
     cursor: help;
     transition: opacity var(--duration-base) ease;

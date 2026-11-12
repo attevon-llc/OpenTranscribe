@@ -158,7 +158,7 @@
   }
 
   .tag-input::placeholder {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     opacity: 0.6;
   }
 </style>

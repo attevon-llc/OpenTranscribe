@@ -124,7 +124,7 @@
   .discovery-summary {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-regular);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .discovery-summary-active {
@@ -162,7 +162,7 @@
     width: 8px;
     height: 8px;
     border-radius: var(--radius-round);
-    background: var(--text-muted);
+    background: var(--text-secondary);
   }
 
   .discovery-status-dot-reachable {
@@ -182,7 +182,7 @@
 
   .discovery-row-detail {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);

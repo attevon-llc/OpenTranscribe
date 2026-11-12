@@ -233,7 +233,7 @@
   .choice-title {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .choice-badge {

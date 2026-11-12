@@ -58,7 +58,7 @@
 <style>
   /* Matches the SummaryModal copy button. */
   .settings-copy-button:hover {
-    background-color: var(--hover-bg);
+    background-color: var(--hover-color);
     color: var(--primary-on-surface);
     border-color: var(--primary-color);
   }

@@ -103,7 +103,7 @@
   }
 
   .label-text {
-    color: var(--color-text-secondary);
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
   }
 

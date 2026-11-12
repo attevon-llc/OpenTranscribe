@@ -223,7 +223,7 @@
   .metadata-label {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
   }
 
   .metadata-value {
@@ -351,8 +351,8 @@
   }
 
   .retry-btn:disabled {
-    background: var(--text-light);
-    border-color: var(--text-light);
+    background: var(--text-secondary);
+    border-color: var(--text-secondary);
     cursor: not-allowed;
     transform: none;
   }

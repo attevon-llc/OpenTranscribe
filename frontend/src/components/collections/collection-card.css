@@ -17,7 +17,7 @@
 
 .collection-card:hover {
   border-color: var(--primary-color);
-  background: var(--card-hover);
+  background: var(--hover-color);
 }
 
 .collection-card.selected {
@@ -34,7 +34,7 @@
   margin: 0 0 var(--space-1) 0;
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
+  color: var(--text-color);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

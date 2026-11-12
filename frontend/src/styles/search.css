@@ -25,7 +25,7 @@
 }
 
 [data-theme='dark'] .transcript-search-highlight {
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 /* 50%, not more: --text-primary on it is 4.87:1 on the dark card (59% was 4.03:1). */
@@ -42,7 +42,7 @@
    variant; consolidated here so all three render identically (G7). */
 .search-match {
   background-color: color-mix(in srgb, var(--highlight-search) 53%, transparent);
-  color: var(--text-primary);
+  color: var(--text-color);
   padding: 0.1em 0.2em;
   border-radius: var(--radius-sm);
   font-weight: var(--font-weight-medium);
@@ -50,7 +50,7 @@
 
 .current-match {
   background-color: color-mix(in srgb, var(--highlight-current) 61%, transparent);
-  color: var(--text-primary);
+  color: var(--text-color);
   padding: 0.1em 0.2em;
   border-radius: var(--radius-sm);
   font-weight: var(--font-weight-semibold);
@@ -59,12 +59,12 @@
 
 [data-theme='dark'] .search-match {
   background-color: color-mix(in srgb, var(--highlight-search) 41%, transparent);
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 [data-theme='dark'] .current-match {
   background-color: color-mix(in srgb, var(--highlight-current) 50%, transparent);
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 /* `.search-keyword-match` / `.search-semantic-segment` — the consolidated transcript-view
@@ -76,7 +76,7 @@
  */
 .search-keyword-match {
   background-color: color-mix(in srgb, var(--highlight-search) 53%, transparent);
-  color: var(--text-primary);
+  color: var(--text-color);
   padding: 0.1em 0.2em;
   border-radius: var(--radius-sm);
   font-weight: var(--font-weight-semibold);
@@ -84,7 +84,7 @@
 
 .search-semantic-segment {
   background-color: rgba(var(--primary-color-rgb), 0.12);
-  color: var(--text-primary);
+  color: var(--text-color);
   padding: 0.05em 0.1em;
   border-radius: var(--radius-xs);
   -webkit-box-decoration-break: clone;
@@ -93,12 +93,12 @@
 
 [data-theme='dark'] .search-keyword-match {
   background-color: color-mix(in srgb, var(--highlight-search) 35%, transparent);
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 [data-theme='dark'] .search-semantic-segment {
   background-color: rgba(var(--primary-color-rgb), 0.22);
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 /* Whole-element "current match" pulse — used when scrolling a container (e.g. a

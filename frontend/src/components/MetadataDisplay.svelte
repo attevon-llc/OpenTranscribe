@@ -290,7 +290,7 @@
 
   .metadata-value {
     font-size: var(--font-size-md);
-    color: var(--text-primary);
+    color: var(--text-color);
     font-weight: var(--font-weight-medium);
   }
 

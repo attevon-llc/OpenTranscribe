@@ -203,7 +203,7 @@
 
   .sort-button:hover {
     border-color: var(--primary-color);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .sort-button:focus {

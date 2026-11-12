@@ -39,7 +39,7 @@
   .demo-attribution {
     margin: var(--space-1) 0 0;
     font-size: var(--font-size-sm);
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
 
   .demo-attribution a {

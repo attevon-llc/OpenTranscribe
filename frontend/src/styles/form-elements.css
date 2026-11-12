@@ -180,7 +180,7 @@
 }
 
 :where(input, textarea)::placeholder {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   opacity: 1;
 }
 

@@ -125,7 +125,7 @@
     max-width: 22rem;
   }
   .field small {
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
   .form-input {
     padding: var(--space-1-5) var(--space-2);

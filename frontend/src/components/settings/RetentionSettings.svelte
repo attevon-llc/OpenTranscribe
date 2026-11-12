@@ -511,7 +511,7 @@
 
   .section-desc {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
 
@@ -535,7 +535,7 @@
 
   .field-label {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-weight: var(--font-weight-medium);
   }
 
@@ -663,7 +663,7 @@
 
   .run-confirm-text {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   /* Preview */
@@ -677,14 +677,14 @@
   .preview-empty {
     padding: var(--space-3) var(--space-4);
     font-size: var(--font-size-md);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0;
   }
 
   .preview-summary {
     padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     border-bottom: 1px solid var(--border-color);
     margin: 0;
     background-color: var(--background-secondary);
@@ -702,7 +702,7 @@
 
   .preview-table th {
     background-color: var(--background-secondary);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-weight: var(--font-weight-semibold);
     text-align: start;
     padding: var(--space-1-5) var(--space-2-5);

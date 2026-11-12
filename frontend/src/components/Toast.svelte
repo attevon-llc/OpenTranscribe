@@ -156,7 +156,7 @@
   .toast-message {
     flex: 1;
     font-size: var(--font-size-md);
-    color: var(--text-primary);
+    color: var(--text-color);
     font-weight: var(--font-weight-medium);
     min-width: 0;
     /* A sentence wraps to three lines before it is cut: a one-line clip hid the reason in
@@ -215,6 +215,6 @@
 
   .toast-close:hover {
     background: var(--surface-hover);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 </style>

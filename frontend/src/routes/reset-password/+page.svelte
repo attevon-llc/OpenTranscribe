@@ -154,7 +154,7 @@
     border: none;
     cursor: pointer;
     padding: var(--space-1);
-    color: var(--text-light);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     border-radius: var(--radius-sm);

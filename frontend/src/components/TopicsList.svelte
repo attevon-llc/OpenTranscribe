@@ -67,7 +67,7 @@
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     margin-bottom: var(--space-3);
-    color: var(--text-primary);
+    color: var(--text-color);
     border-bottom: 2px solid var(--border-color);
     padding-bottom: var(--space-2);
   }
@@ -94,7 +94,7 @@
     gap: var(--space-2);
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
     margin: 0 0 var(--space-2) 0;
     line-height: 1.3;
   }
@@ -114,7 +114,7 @@
   }
 
   .importance-low {
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .topic-meta {
@@ -140,7 +140,7 @@
 
   /* Clean list styling similar to markdown */
   .topic-points li::marker {
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   /* Search highlighting: .search-match / .current-match live in src/styles/search.css

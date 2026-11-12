@@ -142,7 +142,7 @@
 
   .input-label {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .form-input {

@@ -669,7 +669,7 @@
     margin: 0;
     font-size: 18px;
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .btn-create {

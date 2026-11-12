@@ -281,7 +281,7 @@
     margin: 0;
     padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-body);
-    color: var(--text-primary);
+    color: var(--text-color);
     font-weight: var(--font-weight-semibold);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -301,7 +301,7 @@
     padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-sm);
     line-height: 1.5;
-    color: var(--text-primary);
+    color: var(--text-color);
     background: var(--surface-secondary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
@@ -402,7 +402,7 @@
     margin: 0 0 var(--space-1) 0;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .empty-desc {

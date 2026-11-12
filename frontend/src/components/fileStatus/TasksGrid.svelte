@@ -142,7 +142,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
     padding: var(--space-1-5);
     border-radius: var(--radius-round);
     display: flex;
@@ -183,7 +183,7 @@
     font-size: var(--font-size-xs);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
     background: var(--background-color);
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
@@ -235,7 +235,7 @@
   }
 
   .task-filename.muted {
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
   }
 
   .task-error-inline {
@@ -265,7 +265,7 @@
   .task-progress-text {
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
   }
 
   .task-actions-cell {
@@ -276,13 +276,13 @@
   .no-tasks {
     text-align: center;
     padding: var(--space-8);
-    color: var(--text-secondary-color);
+    color: var(--text-secondary);
   }
 
   .loading {
     text-align: center;
     padding: var(--space-8);
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
 
 </style>

@@ -92,7 +92,7 @@
   .range-slider__default {
     margin: var(--space-2) 0 0 0;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .range-slider__default {

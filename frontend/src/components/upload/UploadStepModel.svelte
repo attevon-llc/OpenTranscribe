@@ -115,7 +115,7 @@
   .toggle-label {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
 </style>

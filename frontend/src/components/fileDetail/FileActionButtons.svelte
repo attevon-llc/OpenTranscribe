@@ -129,7 +129,7 @@
 
   .header-action-btn {
     background-color: var(--bg-primary);
-    color: var(--text-primary);
+    color: var(--text-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     padding: 0 var(--space-4);
@@ -157,7 +157,7 @@
   }
 
   .header-action-btn:hover:not(:disabled) {
-    background-color: var(--hover-bg);
+    background-color: var(--hover-color);
     border-color: var(--primary-color);
     box-shadow: var(--shadow-md);
   }

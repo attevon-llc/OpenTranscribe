@@ -338,7 +338,7 @@
 
   .intro-desc {
     font-size: var(--font-size-md);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0;
     line-height: 1.5;
   }
@@ -352,7 +352,7 @@
 
   .section-desc {
     font-size: var(--font-size-sm);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0 0 var(--space-4) 0;
   }
 
@@ -387,7 +387,7 @@
   .example-label {
     display: block;
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin-bottom: var(--space-1);
   }
   .example-text {
@@ -459,7 +459,7 @@
   .lang-icon {
     flex-shrink: 0;
     display: inline-flex;
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
   .lang-icon {
     vertical-align: -2px;
@@ -468,7 +468,7 @@
 
   .lang-note {
     font-size: var(--font-size-xs);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);

@@ -878,7 +878,7 @@
   .stage-label {
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
     line-height: 1.3;
   }
 
@@ -934,7 +934,7 @@
 
   .review-setting {
     font-size: var(--font-size-md);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .review-setting.muted {
@@ -976,7 +976,7 @@
 
   .v4-path strong {
     font-size: var(--font-size-md);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .v4-path span {
@@ -1053,7 +1053,7 @@
   .setting-field label {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .setting-field .hint {
@@ -1068,7 +1068,7 @@
   }
 
   .setting-field input::placeholder {
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
   .model-hint-text {

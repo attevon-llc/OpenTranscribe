@@ -138,7 +138,7 @@
   .composer-label {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   textarea {
@@ -174,7 +174,7 @@
     align-items: center;
     gap: var(--space-2);
     font-size: var(--font-size-sm);
-    color: var(--text-primary);
+    color: var(--text-color);
     cursor: pointer;
   }
 
@@ -190,6 +190,6 @@
   }
 
   .kind-summary.general {
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 </style>

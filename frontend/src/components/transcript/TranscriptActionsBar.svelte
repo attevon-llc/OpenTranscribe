@@ -270,7 +270,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    color: var(--text-primary);
+    color: var(--text-color);
     text-decoration: none;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
@@ -304,7 +304,7 @@
     background: none;
     border: none;
     text-align: start;
-    color: var(--text-primary);
+    color: var(--text-color);
     font-size: var(--font-size-md);
     cursor: pointer;
     transition: background-color var(--duration-base) ease;

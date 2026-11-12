@@ -251,7 +251,7 @@
     margin: 0;
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .edit-body {
@@ -362,7 +362,7 @@
   .chip-name {
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
     padding: 0 var(--space-1);
   }
 
@@ -401,7 +401,7 @@
 
   .chip-edit:hover:not(:disabled) {
     background: var(--surface-hover);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .auto-applied-banner {

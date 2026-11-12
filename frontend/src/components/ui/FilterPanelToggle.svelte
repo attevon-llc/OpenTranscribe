@@ -42,7 +42,7 @@
     width: 32px;
     height: 32px;
     background-color: var(--bg-primary);
-    color: var(--text-primary);
+    color: var(--text-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     padding: 0;

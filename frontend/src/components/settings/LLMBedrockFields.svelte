@@ -212,7 +212,7 @@
     padding: var(--space-0-5) var(--space-2);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-pill);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     background: var(--surface-color);
   }
 
@@ -222,7 +222,7 @@
   }
 
   .status-detail {
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
 
 

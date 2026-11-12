@@ -287,7 +287,7 @@
 
   .saved-name {
     font-weight: var(--font-weight-medium);
-    color: var(--text-primary);
+    color: var(--text-color);
   }
 
   .saved-list li[data-qualifies='false'] .saved-name {

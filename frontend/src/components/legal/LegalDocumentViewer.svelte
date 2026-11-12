@@ -138,7 +138,7 @@
     border-inline-start-width: 4px;
     border-radius: var(--radius-lg);
     background-color: rgba(var(--warning-color-rgb), 0.12);
-    color: var(--text-primary);
+    color: var(--text-color);
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
   }

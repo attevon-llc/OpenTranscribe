@@ -20,6 +20,7 @@ from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
+from app.core import task_liveness
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import DEFAULT_AUDIO_QUALITY
@@ -355,8 +356,13 @@ def process_youtube_url_task(
             progress=10,
         )
 
-        # Open a new session with fresh state for the main processing work
-        with session_scope() as db:
+        # Open a new session with fresh state for the main processing work. The download holds
+        # a lease for as long as it runs, which is what tells the stuck-download check that it
+        # is alive; a Celery retry hands it back to the queue instead of releasing it.
+        with (
+            task_liveness.run_heartbeat(task_liveness.download_run_id(file_uuid), chained=False),
+            session_scope() as db,
+        ):
             # Get the user and media file records
             user = db.query(User).filter(User.id == user_id).first()
             media_file = get_refreshed_object(db, MediaFile, file_id)

@@ -16,8 +16,6 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Task
-from app.services.task_detection_stuck import _get_container_boot_time
 from app.utils.db_helpers import owned_in_tenant
 from app.utils.error_classification import ErrorCategory
 
@@ -30,13 +28,17 @@ class TaskDetectionErrorsMixin:
     config: TaskRecoveryConfig
 
     def identify_stuck_downloading_files(self, db: Session) -> list[MediaFile]:
-        """
-        Identify files stuck in DOWNLOADING status without active download tasks.
+        """Files in DOWNLOADING whose download no longer runs.
 
-        A file is considered stuck if:
-        1. Status is DOWNLOADING
-        2. No active Celery task exists for the file
-        3. File has been in DOWNLOADING status for > 5 minutes
+        A URL download holds a lease (``task_liveness.download_run_id``) for as long as it runs,
+        refreshed by a daemon thread and handed back to the queue across a Celery retry. A file
+        is stuck when that lease reads DEAD: no worker holds it and no retry is waiting. A
+        RUNNING or QUEUED lease is alive however long the download takes, and an unreadable
+        Redis (UNKNOWN) concludes nothing.
+
+        This used to judge age from ``upload_time`` (the file's creation) and look for Task rows
+        of a download type that nothing writes, so every download still running five minutes
+        after its file was created was reset and downloaded a second time.
 
         Args:
             db: Database session
@@ -44,60 +46,24 @@ class TaskDetectionErrorsMixin:
         Returns:
             List of files stuck in downloading
         """
-        from datetime import timedelta
+        from app.core.task_liveness import RunState
+        from app.core.task_liveness import download_run_id
+        from app.core.task_liveness import probe_runs
 
-        now = datetime.now(UTC)
-        stuck_threshold = now - timedelta(minutes=5)
-
-        # Find files in DOWNLOADING status that were updated > 5 minutes ago
         downloading_files = (
-            db.query(MediaFile)
-            .filter(
-                MediaFile.status == FileStatus.DOWNLOADING,
-                MediaFile.upload_time < stuck_threshold,  # Been downloading for > 5 min
-            )
-            .all()
+            db.query(MediaFile).filter(MediaFile.status == FileStatus.DOWNLOADING).all()
         )
-
         if not downloading_files:
             return []
 
-        boot_time = _get_container_boot_time()
-        stuck_files = []
-
-        # Batch-fetch all active download tasks (avoids N+1 per-file queries)
-        dl_file_ids = [mf.id for mf in downloading_files]
-        active_dl_tasks = (
-            db.query(Task)
-            .filter(
-                Task.media_file_id.in_(dl_file_ids),
-                Task.task_type.in_(["youtube_download", "url_download"]),
-                Task.status.in_(["pending", "in_progress"]),
-            )
-            .all()
-            if dl_file_ids
-            else []
-        )
-        tasks_by_file: dict[int, list] = {}
-        for task in active_dl_tasks:
-            if task.media_file_id is None:
-                continue
-            tasks_by_file.setdefault(task.media_file_id, []).append(task)
-
-        for media_file in downloading_files:
-            file_tasks = tasks_by_file.get(media_file.id, [])
-            if not file_tasks:
-                stuck_files.append(media_file)
-            else:
-                has_post_boot_task = any(
-                    task.updated_at and task.updated_at > boot_time for task in file_tasks
-                )
-                if not has_post_boot_task:
-                    stuck_files.append(media_file)
-
+        leases = probe_runs(download_run_id(str(mf.uuid)) for mf in downloading_files)
+        stuck_files = [
+            mf
+            for mf in downloading_files
+            if leases[download_run_id(str(mf.uuid))].state == RunState.DEAD
+        ]
         if stuck_files:
             logger.info(f"Identified {len(stuck_files)} files stuck in DOWNLOADING status")
-
         return stuck_files
 
     def identify_stranded_playlist_dispatches(self, db: Session) -> list[MediaFile]:

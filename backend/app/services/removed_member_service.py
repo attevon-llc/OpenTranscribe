@@ -122,9 +122,12 @@ def remove_account(
             client=client,
         )
     except scheduled.ScheduledErasureError as error:
-        if error.code != "request_exists" or error.entry is None:
+        if error.code != "request_exists":
             raise
-        entry = error.entry
+        open_entry = scheduled.open_request(db, "user", user_id, None)
+        if open_entry is None:
+            raise
+        entry = open_entry
     else:
         if was_active:
             entry.counters = {RESTORE_REACTIVATES_KEY: 1}

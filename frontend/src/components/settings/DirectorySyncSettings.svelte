@@ -281,19 +281,6 @@
 </div>
 
 <style>
-  .section-title {
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    margin: 0;
-    color: var(--text-color);
-  }
-
-  .section-desc {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    margin: var(--space-1) 0 var(--space-4) 0;
-  }
-
   .dry-run-row {
     margin-top: var(--space-2);
   }
@@ -309,30 +296,6 @@
     gap: var(--space-3) var(--space-5);
     margin-top: var(--space-3);
     margin-bottom: var(--space-3);
-  }
-
-  .field-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  .field-label {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    font-weight: var(--font-weight-medium);
-  }
-
-  .field-hint {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-  }
-
-  .mount-ok {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    color: var(--success-text);
   }
 
   .toggle-label {
@@ -353,30 +316,6 @@
   }
 
   /* Status */
-  .status-block {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    margin: var(--space-4) 0 var(--space-3) 0;
-    padding: var(--space-2-5) var(--space-3);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background-color: var(--background-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .status-item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1-5);
-    flex-wrap: wrap;
-  }
-
-  .run-confirm-text {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-  }
-
   .button-row .btn-secondary {
     margin-inline-end: auto;
   }

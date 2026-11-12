@@ -622,6 +622,43 @@ replaced by `.env` or by a flag, and name `--gpu-device` and `--diar-native-gpu`
 workers started silently on the card `.env` named. `--dry-run` writes
 nothing, including with `--with-pki`, and does not build or pull images.
 
+## API capacity and overload limits
+
+**Check this if...** your host has less than 8 GB of memory, or you saw 503 answers under load.
+
+The API now runs `UVICORN_WORKERS` processes (default 2; each loads its own models, roughly
+1 to 1.8 GB). Set `UVICORN_WORKERS=1` on a small host. An overloaded API answers 503 rather than
+stalling: it waits at most 5 s for a database connection (`DB_POOL_TIMEOUT_SECONDS`), bounds each
+statement to 30 s (`DB_STATEMENT_TIMEOUT_MS`), gives up on a request after 55 s of work
+(`REQUEST_DEADLINE_SECONDS`, 0 turns it off), and accepts at most `UVICORN_LIMIT_CONCURRENCY`
+open connections per process (512). Chat has a deployment-wide cap on replies streaming at once
+(`CHAT_MAX_CONCURRENT_STREAMS_GLOBAL`, 64). See [Scaling and Sizing](./scaling-and-sizing.md).
+
+## Optional: anonymous usage report, demo mode
+
+Both are off after the upgrade and need nothing from you. The images ship `DO_NOT_TRACK=1`; see
+[Telemetry](./telemetry.md) to opt in. `DEMO_MODE=true` turns an install into a public read-only
+demo (writes are refused with `403 demo_read_only`); see [Public demo](./public-demo.md). Do not set
+it on an install people use.
+
+## Stored secrets that cannot be decrypted
+
+If `ENCRYPTION_KEY` was rotated or a stored secret is corrupt, reading it now fails with
+`SecretDecryptionError` instead of acting as if no secret was set. Provider screens list the
+entry without its credential; re-enter the key. Back up `ENCRYPTION_KEY` with the rest of `.env`.
+
+## Smaller changes
+
+- The video and audio player is Video.js 10 (Plyr is gone); the frontend builds on SvelteKit 3.
+  Custom CSS that targeted `.plyr` selectors no longer applies.
+- `./opentr.sh backup` and `restore` accept `--fresh <name>` and then touch only that
+  deployment; `remove`, `purge`, `health` and `build` refuse arguments they ignore.
+- Non-English interface languages are labelled machine-translated in Settings > Language.
+- **Managed editions:** deleting an account now hands the person's organization content to an
+  administrator first. Code that creates organizations must call
+  `services.organization_owner.set_owner`, or organization erasure answers 409
+  `org_owner_required`.
+
 ## Extensions that import OpenTranscribe modules
 
 **Check this if...** you run your own Python package on top of the backend image (extra routers,

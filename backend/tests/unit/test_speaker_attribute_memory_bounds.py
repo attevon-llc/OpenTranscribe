@@ -17,7 +17,6 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-import torch
 
 from app.services import speaker_attribute_service as sas
 from app.services.audio_segment_utils import center_window
@@ -34,6 +33,8 @@ SR = 16000
 @pytest.fixture
 def recording_service():
     """A loaded service whose feature extractor records the length it was handed."""
+    import torch
+
     svc = sas.SpeakerAttributeService()
     svc._model_loaded = True
     seen: list[int] = []

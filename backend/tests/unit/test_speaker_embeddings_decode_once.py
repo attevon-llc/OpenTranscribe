@@ -21,13 +21,14 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import torch
 
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 
 
 def _stub_service(monkeypatch) -> tuple[SpeakerEmbeddingService, list[str]]:
     """Build a service with no real model, torch device, or sidecar involved."""
+    import torch
+
     monkeypatch.setattr(SpeakerEmbeddingService, "_initialize_model", lambda self: None)
     monkeypatch.setattr(
         "app.utils.hardware_detection.detect_hardware",

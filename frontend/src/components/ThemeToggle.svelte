@@ -108,7 +108,7 @@
   /* Position sun on left side */
   .sun-icon {
     color: var(--warning-solid);
-    left: 7px;
+    inset-inline-start: 7px;
     opacity: 1;
     transition: opacity var(--duration-slow) ease;
   }
@@ -116,7 +116,7 @@
   /* Position moon on right side */
   .moon-icon {
     color: var(--text-secondary);
-    right: 7px;
+    inset-inline-end: 7px;
     opacity: 1;
     transition: opacity var(--duration-slow) ease;
   }
@@ -125,7 +125,7 @@
   .toggle-thumb {
     position: absolute;
     top: 50%;
-    left: 3px;
+    inset-inline-start: 3px;
     width: 22px;
     height: 22px;
     border-radius: var(--radius-round);
@@ -139,5 +139,10 @@
   /* Move the thumb when checked */
   input:checked + .toggle-track .toggle-thumb {
     transform: translateX(26px) translateY(-50%); /* Maintain vertical centering while moving horizontally */
+  }
+
+  /* The thumb starts at the inline-start edge, which is the right edge in RTL, so it slides left. */
+  :global([dir='rtl']) input:checked + .toggle-track .toggle-thumb {
+    transform: translateX(-26px) translateY(-50%);
   }
 </style>

@@ -301,7 +301,7 @@
   .activity-indicator {
     position: absolute;
     top: -2px;
-    right: -2px;
+    inset-inline-end: -2px;
     width: 8px;
     height: 8px;
     background: var(--error-solid);
@@ -451,8 +451,7 @@
     }
 
     .upload-manager {
-      right: 20px !important;
-      left: 20px !important;
+      inset-inline: 20px !important;
       width: auto;
     }
   }

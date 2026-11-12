@@ -1049,7 +1049,7 @@
   .duplicate-message {
     background: rgba(var(--accent-rgb), 0.1);
     border: 1px solid var(--primary-color);
-    border-left: 4px solid var(--primary-color);
+    border-inline-start: 4px solid var(--primary-color);
     color: var(--primary-on-surface);
   }
 

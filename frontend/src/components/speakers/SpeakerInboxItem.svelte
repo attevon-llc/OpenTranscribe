@@ -414,7 +414,7 @@
     }
 
     .item-actions {
-      margin-left: auto;
+      margin-inline-start: auto;
     }
 
     .suggestion-name {

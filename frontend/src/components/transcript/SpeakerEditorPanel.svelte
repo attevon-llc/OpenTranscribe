@@ -594,7 +594,7 @@
     display: none;
     position: absolute;
     top: 100%;
-    left: 50%;
+    inset-inline-start: 50%;
     transform: translateX(-50%);
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -698,8 +698,8 @@
   }
 
   .speaker-content-below {
-    margin-left: 0;
-    padding-left: 0;
+    margin-inline-start: 0;
+    padding-inline-start: 0;
   }
 
   /* Matches .segment-speaker styling from transcript segments */
@@ -852,7 +852,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1-5);
-    margin-left: var(--space-3);
+    margin-inline-start: var(--space-3);
     padding: var(--space-1) var(--space-2-5);
     border-radius: var(--radius-pill);
     background-color: rgba(var(--primary-color-rgb), 0.1);
@@ -1018,7 +1018,7 @@
     display: none;
     position: absolute;
     top: 100%;
-    left: 50%;
+    inset-inline-start: 50%;
     transform: translateX(-50%);
     background: var(--card-background);
     border: 1px solid var(--border-color);
@@ -1053,7 +1053,7 @@
     flex: 1;
     font-size: var(--font-size-xs);
     color: var(--text-color);
-    margin-right: var(--space-2);
+    margin-inline-end: var(--space-2);
   }
 
   .popup-match-confidence {
@@ -1107,7 +1107,7 @@
     cursor: pointer;
     transition: all var(--duration-base) ease;
     width: 100%;
-    text-align: left;
+    text-align: start;
   }
 
   .suggestions-toggle:hover {
@@ -1142,7 +1142,7 @@
     font-size: var(--font-size-2xs);
     color: var(--text-secondary-color);
     font-style: italic;
-    margin-left: var(--space-1);
+    margin-inline-start: var(--space-1);
   }
 
   /* Chip-based layout */
@@ -1234,7 +1234,7 @@
   .source-icon {
     width: 12px;
     height: 12px;
-    margin-right: var(--space-1);
+    margin-inline-end: var(--space-1);
     opacity: 0.9;
     stroke: var(--text-on-solid);
     fill: none;

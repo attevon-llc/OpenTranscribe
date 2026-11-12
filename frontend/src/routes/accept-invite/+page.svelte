@@ -303,7 +303,7 @@
 
   .password-policy ul {
     margin: var(--space-2) 0 0;
-    padding-left: var(--space-4);
+    padding-inline-start: var(--space-4);
   }
 
   .password-policy li {

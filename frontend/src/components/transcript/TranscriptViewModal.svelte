@@ -407,7 +407,7 @@
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin: 0;
-    margin-right: var(--space-6);
+    margin-inline-end: var(--space-6);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -494,7 +494,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .nav-count {

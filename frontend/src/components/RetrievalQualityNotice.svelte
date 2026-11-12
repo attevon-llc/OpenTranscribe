@@ -165,7 +165,7 @@
     color: var(--text-on-tint);
     font-size: var(--font-size-sm);
     line-height: 1.5;
-    text-align: left;
+    text-align: start;
   }
 
   .notice-icon {

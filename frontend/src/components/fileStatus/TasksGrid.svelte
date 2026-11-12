@@ -177,7 +177,7 @@
   }
 
   .tasks-table thead th {
-    text-align: left;
+    text-align: start;
     padding: var(--space-2-5) var(--space-3);
     font-weight: var(--font-weight-semibold);
     font-size: var(--font-size-xs);

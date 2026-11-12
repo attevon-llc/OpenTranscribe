@@ -244,7 +244,7 @@
 
   .search-clear-btn {
     position: absolute;
-    right: 8px;
+    inset-inline-end: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -354,7 +354,7 @@
     background: none;
     cursor: pointer;
     width: 100%;
-    text-align: left;
+    text-align: start;
     border-radius: var(--radius-sm);
     transition: background var(--duration-fast) ease;
     box-shadow: none;

@@ -720,7 +720,7 @@
 
   .search-icon {
     position: absolute;
-    left: 12px;
+    inset-inline-start: 12px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-secondary);
@@ -744,7 +744,7 @@
 
   .search-clear {
     position: absolute;
-    right: 6px;
+    inset-inline-end: 6px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
@@ -797,7 +797,7 @@
     overflow-y: auto;
     flex: 1;
     max-height: 400px;
-    padding-right: var(--space-2);
+    padding-inline-end: var(--space-2);
   }
 
   /* Custom scrollbar styling */

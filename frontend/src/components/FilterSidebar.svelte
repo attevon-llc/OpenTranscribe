@@ -1020,8 +1020,7 @@
     content: '';
     position: absolute;
     top: -0.75rem;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     height: 1px;
     background: var(--border-color);
     opacity: 1;

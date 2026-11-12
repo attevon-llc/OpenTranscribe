@@ -107,7 +107,7 @@
 
           {#if detailedStatus.is_stuck}
             <div class="warning">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; margin-right: 4px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; margin-inline-end: var(--space-1);">
                 <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
                 <path d="M12 9v4"/>
                 <path d="m12 17 .01 0"/>
@@ -245,7 +245,7 @@
 
   .fallback-badge {
     display: inline-block;
-    margin-left: var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
     padding: var(--space-0-5) var(--space-1-5);
     font-size: var(--font-size-xs);
     font-family: inherit;

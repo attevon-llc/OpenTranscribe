@@ -369,7 +369,7 @@
     border-radius: var(--radius-lg);
     background: var(--accent-light);
     color: var(--primary-on-surface);
-    margin-left: var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
     vertical-align: middle;
     white-space: nowrap;
   }

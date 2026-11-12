@@ -192,7 +192,7 @@
     font-size: var(--font-size-2xs);
     background: var(--color-bg-secondary);
     padding: var(--space-0-5) var(--space-1-5);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     display: inline-block;
   }
 
@@ -202,8 +202,8 @@
 
   .outcome {
     padding: var(--space-0-5) var(--space-1-5);
-    border-radius: 3px;
-    font-size: 0.625rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;
@@ -243,13 +243,13 @@
     color: var(--text-secondary);
     padding: var(--space-1) var(--space-2);
     background: var(--surface-color);
-    z-index: 2;
+    z-index: calc(var(--z-base) + 1);
   }
 
   .loading-more {
     text-align: center;
     padding: var(--space-3);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 

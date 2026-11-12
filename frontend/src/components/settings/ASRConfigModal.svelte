@@ -534,7 +534,7 @@
   }
 
   .form-select {
-    padding-right: var(--space-10);
+    padding-inline-end: var(--space-10);
     cursor: pointer;
   }
 
@@ -567,11 +567,11 @@
   }
 
   .cap-badge {
-    padding: 0.2rem var(--space-2);
+    padding: var(--space-1) var(--space-2);
     background: rgba(var(--accent-rgb), 0.1);
     color: var(--primary-on-surface);
     border-radius: var(--radius-sm);
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
   }
 
@@ -579,12 +579,12 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-2);
-    padding: 0.6rem 0.8rem;
+    padding: var(--space-2-5) var(--space-3);
     margin: var(--space-2) 0;
     background: rgba(var(--warning-color-rgb), 0.1);
     border: 1px solid rgba(var(--warning-color-rgb), 0.3);
     border-radius: var(--radius-md);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--warning-text);
     line-height: 1.4;
   }
@@ -595,15 +595,15 @@
   }
 
   .diarization-quality-note {
-    margin: 0.4rem 0;
-    font-size: 0.8rem;
+    margin: var(--space-1-5) 0;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.4;
   }
 
   .cost-hint {
     margin: var(--space-1) 0 0;
-    font-size: 0.775rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 

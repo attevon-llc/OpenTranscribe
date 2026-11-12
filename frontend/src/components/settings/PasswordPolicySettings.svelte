@@ -337,7 +337,7 @@
   .tier-card {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
     padding: var(--space-3);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
@@ -391,12 +391,12 @@
 
   .policy-preview ul {
     margin: var(--space-2) 0 0 0;
-    padding-left: var(--space-5);
+    padding-inline-start: var(--space-5);
   }
 
   .info-note {
     margin: 0 0 var(--space-4) 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--color-info-border);
     border-radius: var(--radius-md);
     background: var(--color-info-bg);
@@ -440,7 +440,7 @@
   }
 
   .help-text.indented {
-    margin-left: var(--space-6);
+    margin-inline-start: var(--space-6);
     margin-bottom: var(--space-3);
   }
 
@@ -478,7 +478,7 @@
 
   .list-status {
     margin: 0 0 var(--space-4) 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
@@ -494,7 +494,7 @@
 
   .list-status code {
     display: block;
-    margin-top: 0.35rem;
+    margin-top: var(--space-1-5);
     font-size: var(--font-size-xs);
     user-select: all;
   }

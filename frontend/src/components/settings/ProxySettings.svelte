@@ -263,7 +263,7 @@
   }
 
   .help-text.indented {
-    margin-left: var(--space-6);
+    margin-inline-start: var(--space-6);
     margin-bottom: var(--space-3);
   }
 

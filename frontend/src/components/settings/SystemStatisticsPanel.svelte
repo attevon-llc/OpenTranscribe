@@ -457,9 +457,9 @@
   .cpu-mode-banner {
     background: rgba(var(--warning-color-rgb), 0.08);
     border: 1px solid var(--warning-color);
-    border-left: 4px solid var(--warning-color);
+    border-inline-start: 4px solid var(--warning-color);
     border-radius: var(--radius-md);
-    padding: var(--space-3-5) 18px;
+    padding: var(--space-3-5) var(--space-5);
     margin-bottom: var(--space-5);
     color: var(--text-color);
   }
@@ -478,28 +478,28 @@
   }
 
   .cpu-mode-banner-reason {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     margin-bottom: var(--space-2-5);
   }
 
   .cpu-mode-banner-list {
     margin: 0 0 var(--space-2-5) 0;
-    padding-left: 22px;
-    font-size: 0.9rem;
+    padding-inline-start: var(--space-6);
+    font-size: var(--font-size-body);
     line-height: 1.55;
   }
 
   .cpu-mode-banner-list code {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 3px;
-    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    padding: 1px var(--space-1-5);
     font-size: 0.85em;
   }
 
   .cpu-mode-banner-footer {
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     border-top: 1px solid var(--border-color);
     padding-top: var(--space-2);
@@ -546,7 +546,7 @@
     align-items: flex-start;
     gap: var(--space-4);
     margin-bottom: var(--space-4);
-    padding-right: var(--space-8);
+    padding-inline-end: var(--space-8);
   }
 
   .section-header-row .section-description {
@@ -592,7 +592,7 @@
 
   .stat-card-clickable:hover {
     border-color: var(--primary-color);
-    box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.1);
+    box-shadow: var(--shadow-md);
   }
 
   .stat-card-with-bar {
@@ -762,8 +762,8 @@
   .gpu-stepper {
     display: flex;
     align-items: center;
-    gap: 0.2rem;
-    margin-left: auto;
+    gap: var(--space-1);
+    margin-inline-start: auto;
   }
 
   .gpu-step-btn {
@@ -771,12 +771,12 @@
     align-items: center;
     background: none;
     border: 1px solid var(--border-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
     cursor: pointer;
     font-size: var(--font-size-md);
     line-height: 1;
-    padding: 0 0.3rem;
+    padding: 0 var(--space-1);
     transition: background-color var(--duration-fast), color var(--duration-fast);
   }
 
@@ -787,7 +787,7 @@
   }
 
   .gpu-step-label {
-    font-size: 0.6rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
     letter-spacing: 0.03em;
@@ -838,7 +838,7 @@
 
   .data-table th {
     padding: var(--space-2) var(--space-3);
-    text-align: left;
+    text-align: start;
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
@@ -916,7 +916,7 @@
     .section-header-row {
       flex-direction: column;
       align-items: flex-start;
-      padding-right: 0;
+      padding-inline-end: 0;
       gap: var(--space-2);
     }
 
@@ -940,7 +940,7 @@
 
     .data-table th,
     .data-table td {
-      padding: 0.4rem var(--space-2);
+      padding: var(--space-1-5) var(--space-2);
       font-size: var(--font-size-xs);
     }
   }

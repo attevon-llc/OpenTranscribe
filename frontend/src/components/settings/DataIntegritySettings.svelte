@@ -380,14 +380,14 @@
   }
 
   .section-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
 
   .section-desc {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
@@ -397,7 +397,7 @@
   }
 
   .overview-title {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-2) 0;
     color: var(--text-color);
@@ -447,7 +447,7 @@
   }
 
   .index-name {
-    font-size: 0.65rem;
+    font-size: var(--font-size-2xs);
     font-family: monospace;
     color: var(--text-muted);
   }
@@ -477,7 +477,7 @@
 
   .breakdown-row.muted {
     color: var(--text-muted);
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
   }
 
   .breakdown-val {
@@ -536,13 +536,13 @@
 
   .action-content h4 {
     margin: 0 0 var(--space-1) 0;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     color: var(--text-color);
   }
 
   .action-content p {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -560,19 +560,19 @@
   }
 
   .progress-text {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .progress-percent {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--primary-on-surface);
   }
 
   .results-title {
     margin: 0 0 var(--space-1) 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
@@ -614,7 +614,7 @@
   .col-total,
   .col-orphans,
   .col-cleaned {
-    text-align: right;
+    text-align: end;
   }
 
   @media (max-width: 768px) {
@@ -637,7 +637,7 @@
 
     .results-row {
       grid-template-columns: 1fr 60px 60px 60px;
-      font-size: 0.7rem;
+      font-size: var(--font-size-xs);
     }
 
     .col-index {

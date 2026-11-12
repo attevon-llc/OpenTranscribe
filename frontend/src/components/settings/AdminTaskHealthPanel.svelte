@@ -410,7 +410,7 @@
 
     .data-table th,
     .data-table td {
-      padding: 0.4rem var(--space-2);
+      padding: var(--space-1-5) var(--space-2);
       font-size: var(--font-size-xs);
     }
   }

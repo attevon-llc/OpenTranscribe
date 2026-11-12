@@ -282,14 +282,14 @@
 
 <style>
   .section-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
 
   .section-desc {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
@@ -300,7 +300,7 @@
 
   .enable-hint {
     display: block;
-    margin: var(--space-1) 0 0 2.75rem;
+    margin: var(--space-1) 0 0 var(--space-12);
   }
 
   .fields-grid {
@@ -318,20 +318,20 @@
   }
 
   .field-label {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     font-weight: var(--font-weight-medium);
   }
 
   .field-hint {
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
   }
 
   .mount-ok {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-1);
     color: var(--success-text);
   }
 
@@ -356,29 +356,29 @@
   .status-block {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
     margin: var(--space-4) 0 var(--space-3) 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background-color: var(--background-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .status-item {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
 
   .run-confirm-text {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .button-row .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   @media (max-width: 768px) {
@@ -401,7 +401,7 @@
     }
 
     .button-row .btn-secondary {
-      margin-right: 0;
+      margin-inline-end: 0;
     }
 
     .button-row .btn {

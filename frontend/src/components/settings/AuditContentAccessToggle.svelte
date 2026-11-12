@@ -112,7 +112,7 @@
   }
 
   .note {
-    margin: 0.4rem 0 0;
+    margin: var(--space-1-5) 0 0;
     font-size: var(--font-size-xs);
     color: var(--text-color);
   }

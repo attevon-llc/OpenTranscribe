@@ -92,7 +92,7 @@
     max-height: 900px;
     background-color: var(--surface-color);
     border-radius: var(--radius-2xl);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-xl);
     overflow: hidden;
     animation: slide-up 0.3s ease-out;
     display: flex;
@@ -119,7 +119,7 @@
     font-size: 1.1rem;
     color: var(--text-color);
     margin: 0;
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   .settings-modal-container {
@@ -136,7 +136,7 @@
     flex-direction: column;
     width: 240px;
     background-color: var(--background-color);
-    border-right: 1px solid var(--border-color);
+    border-inline-end: 1px solid var(--border-color);
     overflow: hidden;
     flex-shrink: 0;
   }

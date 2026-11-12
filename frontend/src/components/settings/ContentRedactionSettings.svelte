@@ -307,7 +307,7 @@
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.redactBeforeLlmHelp')}</p>
 
-        <div class="setting-row" class:disabled-toggle={exportLocked} style="margin-top: 0.75rem;">
+        <div class="setting-row" class:disabled-toggle={exportLocked} style="margin-top: var(--space-3);">
           <div class="toggle-label">
             <Toggle checked={settings.default_export_redacted} onchange={(next) => (settings.default_export_redacted = next)} disabled={exportLocked} id="redaction-toggle-label-3" />
             <label class="toggle-text" for="redaction-toggle-label-3">
@@ -337,21 +337,21 @@
   }
 
   .intro-desc {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
     margin: 0;
     line-height: 1.5;
   }
 
   .section-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
   }
 
   .section-desc {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: 0 0 var(--space-4) 0;
   }
@@ -367,19 +367,19 @@
   .perf-note {
     display: flex;
     align-items: flex-start;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     margin: var(--space-2) 0 0 0;
     font-size: var(--font-size-xs);
     color: var(--text-color);
     background: rgba(var(--warning-color-rgb), 0.12);
     border-radius: var(--radius-md);
-    padding: var(--space-2) 0.65rem;
+    padding: var(--space-2) var(--space-2-5);
     line-height: 1.5;
   }
 
   .example-box {
-    margin-top: 0.6rem;
-    padding: 0.6rem var(--space-3);
+    margin-top: var(--space-2-5);
+    padding: var(--space-2-5) var(--space-3);
     background: var(--background-color);
     border: 1px dashed var(--border-color);
     border-radius: var(--radius-md);
@@ -391,14 +391,14 @@
     margin-bottom: var(--space-1);
   }
   .example-text {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .ex-blur {
     filter: blur(5px);
     background: var(--surface-hover);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     user-select: none;
   }
 
@@ -411,8 +411,8 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.4rem 0.7rem;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-pill);
     background: var(--background-color);
@@ -421,13 +421,13 @@
     font-size: var(--font-size-sm);
     user-select: none;
     transition:
-      background-color 0.12s ease,
-      border-color 0.12s ease,
-      color 0.12s ease;
+      background-color var(--duration-fast) ease,
+      border-color var(--duration-fast) ease,
+      color var(--duration-fast) ease;
   }
   .chip.small {
     font-size: var(--font-size-xs);
-    padding: 0.3rem 0.6rem;
+    padding: var(--space-1) var(--space-2-5);
   }
   .chip:hover {
     border-color: var(--primary-color);
@@ -463,7 +463,7 @@
   }
   .lang-icon {
     vertical-align: -2px;
-    margin-right: var(--space-1);
+    margin-inline-end: var(--space-1);
   }
 
   .lang-note {
@@ -472,7 +472,7 @@
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     margin: 0 0 var(--space-3) 0;
     line-height: 1.6;
   }
@@ -503,7 +503,7 @@
     color: var(--text-color);
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
   }
   .disabled-toggle {
     opacity: 0.65;

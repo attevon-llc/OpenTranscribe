@@ -149,8 +149,8 @@
   .discovery-row {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.4rem 0;
+    gap: var(--space-2-5);
+    padding: var(--space-1-5) 0;
   }
 
   .discovery-row-unreachable {

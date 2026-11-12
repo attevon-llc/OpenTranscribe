@@ -105,7 +105,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     cursor: pointer;
   }
   /* Override the global `input { width:100% }` base so checkboxes stay square. */

@@ -231,7 +231,7 @@
   }
 
   .card-title {
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
     margin: 0 0 var(--space-1) 0;
     color: var(--text-color);
@@ -266,7 +266,7 @@
   .sessions-table th,
   .sessions-table td {
     padding: var(--space-1-5) var(--space-2);
-    text-align: left;
+    text-align: start;
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
     white-space: nowrap;
@@ -294,10 +294,10 @@
   }
 
   .current-badge {
-    margin-left: var(--space-1-5);
-    padding: 0.0625rem var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
+    padding: 1px var(--space-1-5);
     border-radius: var(--radius-pill);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;

@@ -529,7 +529,7 @@
   }
 
   .rerun-wizard-button {
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .tab-content {
@@ -568,7 +568,7 @@
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: var(--space-4);
     margin: var(--space-6) 0;
-    text-align: left;
+    text-align: start;
   }
 
   .config-method {
@@ -615,7 +615,7 @@
     border-radius: var(--radius-md);
     padding: var(--space-4);
     margin-top: var(--space-4);
-    text-align: left;
+    text-align: start;
     font-size: var(--font-size-md);
   }
 

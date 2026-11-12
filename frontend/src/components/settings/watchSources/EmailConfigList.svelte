@@ -152,7 +152,7 @@
     background: var(--surface-color);
   }
   .badge {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
     font-weight: var(--font-weight-semibold);
@@ -172,16 +172,16 @@
   .linked-badge {
     background: rgba(var(--primary-color-rgb), 0.15);
     color: var(--primary-on-surface);
-    margin-left: var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
   }
   .email-name {
     font-weight: var(--font-weight-semibold);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
   }
   .email-from {
     color: var(--text-secondary);
-    font-size: 0.85rem;
-    margin-left: var(--space-2);
+    font-size: var(--font-size-md);
+    margin-inline-start: var(--space-2);
   }
   .email-actions {
     display: flex;
@@ -191,7 +191,7 @@
   }
   .muted {
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
   .email-heading {
     display: flex;
@@ -220,13 +220,13 @@
     box-shadow: none;
   }
   .experimental-note {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0 0 var(--space-2-5);
   }
   .email-help {
     border: 1px solid var(--border-color);
-    border-left: 3px solid var(--primary-color);
+    border-inline-start: 3px solid var(--primary-color);
     border-radius: var(--radius-md);
     background: var(--button-hover);
     padding: var(--space-2-5) var(--space-3-5);
@@ -234,11 +234,11 @@
   }
   .email-help h5 {
     margin: 0 0 var(--space-1-5);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
   }
   .email-help p {
     margin: var(--space-1) 0;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.5;
   }

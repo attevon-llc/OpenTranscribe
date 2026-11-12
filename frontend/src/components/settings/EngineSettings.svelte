@@ -321,7 +321,7 @@
     border: 1px solid rgba(var(--primary-color-rgb), 0.3);
     background: rgba(var(--primary-color-rgb), 0.08);
     color: var(--text-color);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     line-height: 1.45;
   }
 
@@ -386,7 +386,7 @@
   }
 
   .help-text {
-    font-size: 0.775rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     line-height: 1.4;
     font-weight: var(--font-weight-regular);

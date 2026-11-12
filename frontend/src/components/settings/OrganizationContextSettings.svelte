@@ -367,7 +367,7 @@
   .char-counter {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    text-align: right;
+    text-align: end;
   }
 
   .char-warning {
@@ -390,7 +390,7 @@
   }
 
   .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   /* Using shared banner */
@@ -476,7 +476,7 @@
     align-items: center;
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -489,7 +489,7 @@
     align-items: center;
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-xl);
-    font-size: 0.625rem;
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.5px;

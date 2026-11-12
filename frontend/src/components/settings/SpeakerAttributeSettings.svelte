@@ -263,7 +263,7 @@
   }
 
   .section-description {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     margin-bottom: var(--space-6);
     line-height: 1.4;
@@ -288,7 +288,7 @@
   }
 
   .setting-row.sub-setting {
-    margin-left: var(--space-6);
+    margin-inline-start: var(--space-6);
     background: var(--surface-color);
   }
 
@@ -297,7 +297,7 @@
   }
 
   .setting-label {
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
     display: block;
@@ -305,14 +305,14 @@
   }
 
   .setting-description {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0;
     line-height: 1.3;
   }
 
   .setting-note {
-    font-size: 0.775rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: var(--space-1-5) 0 0;
     line-height: 1.3;
@@ -331,12 +331,12 @@
   }
 
   .button-group .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   .success-message {
     color: var(--success-text);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     margin-bottom: var(--space-3);
     padding: var(--space-2) var(--space-3);
     background: rgba(var(--success-color-rgb), 0.1);
@@ -345,7 +345,7 @@
 
   @media (max-width: 768px) {
     .setting-row.sub-setting {
-      margin-left: 0;
+      margin-inline-start: 0;
     }
 
     .button-group {
@@ -353,7 +353,7 @@
     }
 
     .button-group .btn-secondary {
-      margin-right: 0;
+      margin-inline-end: 0;
     }
 
     .button-group .btn {

@@ -277,7 +277,7 @@
   }
   .scope-note {
     margin: 0 0 var(--space-3);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     font-style: italic;
   }
@@ -305,13 +305,13 @@
   }
   .link-name {
     font-weight: var(--font-weight-semibold);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
   }
   .unlink {
-    margin-left: auto;
+    margin-inline-start: auto;
   }
   .badge {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     padding: var(--space-0-5) var(--space-2);
     border-radius: var(--radius-xl);
     font-weight: var(--font-weight-semibold);
@@ -330,7 +330,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     cursor: pointer;
   }
   /* Override the global `input { width:100% }` base so checkboxes stay square. */
@@ -348,9 +348,9 @@
     margin-top: var(--space-2);
     padding: var(--space-1-5) var(--space-2-5);
     border-radius: var(--radius-md);
-    border-left: 3px solid var(--warning-color);
+    border-inline-start: 3px solid var(--warning-color);
     background: rgba(var(--warning-color-rgb), 0.1);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
   .link-actions {
@@ -368,7 +368,7 @@
   }
   .muted {
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     margin: 0;
   }
   .modal-title {

@@ -193,7 +193,7 @@
 
   .warning-banner {
     margin: 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     border-radius: var(--radius-md);
     background: rgba(var(--warning-color-rgb), 0.12);

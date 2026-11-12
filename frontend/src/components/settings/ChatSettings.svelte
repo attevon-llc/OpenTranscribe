@@ -181,7 +181,7 @@
 
   .section-description {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     line-height: 1.5;
   }
@@ -189,7 +189,7 @@
   .setting-row {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
   }
 
   .toggle-row {
@@ -200,14 +200,14 @@
   }
 
   .toggle-label {
-    font-size: 0.87rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
     cursor: pointer;
   }
 
   .field-label {
-    font-size: 0.87rem;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-medium);
     color: var(--text-color);
   }
@@ -226,7 +226,7 @@
   }
 
   .hint {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.45;
   }

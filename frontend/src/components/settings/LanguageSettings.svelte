@@ -64,7 +64,7 @@
       box-shadow var(--duration-fast);
     cursor: pointer;
     max-width: 300px;
-    padding-right: var(--space-10);
+    padding-inline-end: var(--space-10);
   }
 
 

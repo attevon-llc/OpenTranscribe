@@ -242,7 +242,7 @@
   .audit-table th,
   .audit-table td {
     padding: var(--space-1-5) var(--space-2);
-    text-align: left;
+    text-align: start;
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text);
     white-space: nowrap;
@@ -278,8 +278,8 @@
 
   .change-type {
     padding: var(--space-0-5) var(--space-1-5);
-    border-radius: 3px;
-    font-size: 0.625rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.025em;

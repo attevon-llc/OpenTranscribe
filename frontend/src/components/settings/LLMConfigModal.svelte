@@ -923,7 +923,7 @@ let _llmConfigModalWasOpen = false;
 
   .model-item {
     width: 100%;
-    text-align: left;
+    text-align: start;
     padding: var(--space-2);
     border: 1px solid var(--border-color);
     background: var(--input-bg);
@@ -1007,7 +1007,7 @@ let _llmConfigModalWasOpen = false;
     cursor: help;
     transition: opacity var(--duration-base) ease;
     position: relative;
-    margin-left: var(--space-2);
+    margin-inline-start: var(--space-2);
   }
 
   .info-tooltip:hover {
@@ -1020,8 +1020,8 @@ let _llmConfigModalWasOpen = false;
     position: fixed;
     left: var(--tooltip-left, 50%);
     top: var(--tooltip-top, 50%);
-    background: #1a1a1a;
-    color: var(--text-on-solid);
+    background: var(--tooltip-bg);
+    color: var(--tooltip-text);
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
@@ -1030,8 +1030,8 @@ let _llmConfigModalWasOpen = false;
     white-space: normal;
     z-index: var(--z-toast);
     line-height: 1.4;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    text-align: left;
+    box-shadow: var(--shadow-lg);
+    text-align: start;
     pointer-events: none;
     transform: translate(-50%, 8px);
   }
@@ -1041,7 +1041,7 @@ let _llmConfigModalWasOpen = false;
     align-items: center;
     justify-content: space-between;
     font-weight: var(--font-weight-medium);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     color: var(--text-color);
     margin-bottom: var(--space-2);
   }

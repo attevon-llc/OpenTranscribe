@@ -66,7 +66,7 @@
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
     border-inline-start: 3px solid;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     line-height: 1.45;
     color: var(--text-color);
     list-style: none;

@@ -268,7 +268,7 @@
 
   .info-content ul {
     margin: 0;
-    padding-left: var(--space-5);
+    padding-inline-start: var(--space-5);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.6;

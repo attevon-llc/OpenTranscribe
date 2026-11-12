@@ -200,7 +200,7 @@
         {$t('settings.speakerAttributes.noFilesToProcess')}
       </div>
       {#if showForceReprocessConfirm}
-        <div class="reextract-confirm" style="margin-top: 0.75rem;">
+        <div class="reextract-confirm" style="margin-top: var(--space-3);">
           <p>{$t('settings.speakerAttributes.forceReprocessConfirm', { count: totalFiles })}</p>
           <div class="confirm-buttons">
             <button class="btn btn-danger" on:click={startForceMigration}>
@@ -212,7 +212,7 @@
           </div>
         </div>
       {:else}
-        <button class="btn btn-secondary" style="margin-top: 0.75rem;" on:click={() => showForceReprocessConfirm = true}>
+        <button class="btn btn-secondary" style="margin-top: var(--space-3);" on:click={() => showForceReprocessConfirm = true}>
           {$t('settings.speakerAttributes.forceReprocess')}
         </button>
       {/if}
@@ -236,21 +236,21 @@
   }
 
   .bulk-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
     margin: 0 0 var(--space-1) 0;
   }
 
   .bulk-description {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     margin: 0 0 var(--space-4) 0;
     line-height: 1.4;
   }
 
   .pending-info {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-secondary);
     margin-bottom: var(--space-3);
     padding: var(--space-2-5) var(--space-3-5);
@@ -260,7 +260,7 @@
   }
 
   .all-processed {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--success-text);
     padding: var(--space-2-5) var(--space-3-5);
     background: rgba(var(--success-color-rgb), 0.08);
@@ -286,7 +286,7 @@
   }
 
   .reextract-confirm p {
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
     margin: 0 0 var(--space-3) 0;
     line-height: 1.4;

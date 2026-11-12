@@ -167,14 +167,14 @@
 
 <style>
   .section-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
 
   .section-desc {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
     line-height: 1.4;
@@ -182,17 +182,17 @@
 
   .status-block {
     margin: 0 0 var(--space-4) 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background-color: var(--background-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .status-item {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
 
@@ -204,7 +204,7 @@
   }
 
   .field-label {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     font-weight: var(--font-weight-medium);
   }
@@ -212,7 +212,7 @@
   .inline-input {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
   }
 
   .hint {
@@ -228,12 +228,12 @@
   }
 
   .run-confirm-text {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .button-row .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   @media (max-width: 768px) {

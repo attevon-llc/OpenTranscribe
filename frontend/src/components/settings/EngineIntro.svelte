@@ -47,7 +47,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background: var(--background-color);
-    font-size: 0.85rem;
+    font-size: var(--font-size-md);
     line-height: 1.5;
     color: var(--text-secondary);
   }
@@ -67,7 +67,7 @@
   }
 
   .engine-intro p.admin-detail {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 

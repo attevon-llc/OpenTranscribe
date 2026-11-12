@@ -256,7 +256,7 @@
   }
 
   .result-section {
-    font-size: 0.72rem;
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 </style>

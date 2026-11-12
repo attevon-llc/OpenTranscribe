@@ -203,7 +203,7 @@
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     color: var(--text-color);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-lg);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-regular);
     line-height: 1.4;
@@ -216,7 +216,7 @@
     width: min(320px, calc(100vw - 2rem));
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-lg);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-lg);
     line-height: 1.5;
   }
 
@@ -240,7 +240,7 @@
 
   .panel :global(ul) {
     margin: var(--space-1-5) 0 0;
-    padding-inline-start: 1.125rem;
+    padding-inline-start: var(--space-5);
   }
 
   .panel :global(li + li) {

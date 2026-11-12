@@ -64,8 +64,8 @@
   .policy-row {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    padding: 0.85rem 0;
+    gap: var(--space-2-5);
+    padding: var(--space-3-5) 0;
     border-top: 1px solid var(--border-color);
   }
   .policy-row:first-child {
@@ -87,7 +87,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2) var(--space-3);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
   .credentials-label,
   .muted {
@@ -96,7 +96,7 @@
   .credential-list {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
     list-style: none;
     margin: 0;
     padding: 0;
@@ -105,7 +105,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
   }
   .credential-name {
     color: var(--text-color);

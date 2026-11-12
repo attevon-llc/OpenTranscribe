@@ -175,11 +175,11 @@
   }
   .auth-mail h5 {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
   }
   .auth-mail-help {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     color: var(--text-secondary);
   }
@@ -197,7 +197,7 @@
     border-radius: var(--radius-md);
     background: var(--warning-bg);
     color: var(--text-color);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     line-height: 1.45;
   }
   .auth-mail-test-help {
@@ -207,7 +207,7 @@
   }
   .auth-mail-active {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--success-text);
   }
 </style>

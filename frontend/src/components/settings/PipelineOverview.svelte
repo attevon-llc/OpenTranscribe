@@ -209,7 +209,7 @@
     padding: var(--space-1) var(--space-3);
     border-radius: var(--radius-pill);
     border: 1px dashed var(--border-color);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -328,7 +328,7 @@
   .step-title {
     flex: 1;
     margin: 0;
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
   }
@@ -336,7 +336,7 @@
   .step-purpose,
   .hint-line {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
@@ -355,11 +355,11 @@
   }
 
   .engine-model {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     background: var(--surface-secondary);
     border-radius: var(--radius-sm);
-    padding: 0.05rem 0.4rem;
+    padding: 1px var(--space-1-5);
   }
 
   .issues {
@@ -385,7 +385,7 @@
     background: none;
     color: var(--primary-on-surface);
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     text-decoration: underline;
     cursor: pointer;
   }

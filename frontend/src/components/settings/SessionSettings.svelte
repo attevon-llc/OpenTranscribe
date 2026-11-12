@@ -291,8 +291,8 @@
 
   .restart-badge {
     display: inline-block;
-    margin-left: var(--space-2);
-    padding: 0.1rem 0.45rem;
+    margin-inline-start: var(--space-2);
+    padding: var(--space-0-5) var(--space-2);
     border: 1px solid var(--color-warning-border);
     border-radius: var(--radius-pill);
     background: var(--color-warning-bg);
@@ -321,7 +321,7 @@
 
   .token-info ul {
     margin: 0;
-    padding-left: var(--space-5);
+    padding-inline-start: var(--space-5);
     color: var(--color-text-secondary);
   }
 

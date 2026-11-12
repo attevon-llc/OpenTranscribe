@@ -503,14 +503,14 @@
 
 <style>
   .section-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     margin: 0;
     color: var(--text-color);
   }
 
   .section-desc {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: var(--space-1) 0 var(--space-4) 0;
   }
@@ -534,7 +534,7 @@
   }
 
   .field-label {
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     font-weight: var(--font-weight-medium);
   }
@@ -542,7 +542,7 @@
   .inline-input {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
   }
 
   .toggle-label {
@@ -582,7 +582,7 @@
   }
 
   .confirm-warning {
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--warning-text);
     margin: 0 0 var(--space-2) 0;
     line-height: 1.4;
@@ -592,10 +592,10 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--text-color);
     cursor: pointer;
-    margin-bottom: 0.65rem;
+    margin-bottom: var(--space-2-5);
     user-select: none;
   }
 
@@ -606,7 +606,7 @@
     height: 16px;
     min-width: 16px;
     border: 2px solid var(--border-color);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background-color: var(--background-color);
     cursor: pointer;
     position: relative;
@@ -625,9 +625,9 @@
     top: 0;
     width: 5px;
     height: 9px;
-    border: 2px solid white;
+    border: 2px solid var(--text-on-solid);
     border-top: none;
-    border-left: none;
+    border-inline-start: none;
     transform: rotate(45deg);
   }
 
@@ -645,24 +645,24 @@
   .status-block {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--space-1);
     margin: var(--space-3) 0;
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-2-5) var(--space-3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background-color: var(--background-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 
   .status-item {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
 
   .run-confirm-text {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
@@ -676,14 +676,14 @@
 
   .preview-empty {
     padding: var(--space-3) var(--space-4);
-    font-size: 0.82rem;
+    font-size: var(--font-size-md);
     color: var(--text-muted);
     margin: 0;
   }
 
   .preview-summary {
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     border-bottom: 1px solid var(--border-color);
     margin: 0;
@@ -697,21 +697,21 @@
   .preview-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.78rem;
+    font-size: var(--font-size-sm);
   }
 
   .preview-table th {
     background-color: var(--background-secondary);
     color: var(--text-muted);
     font-weight: var(--font-weight-semibold);
-    text-align: left;
-    padding: 0.35rem 0.6rem;
+    text-align: start;
+    padding: var(--space-1-5) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
   }
 
   .preview-table td {
-    padding: 0.3rem 0.6rem;
+    padding: var(--space-1) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
     vertical-align: middle;
@@ -725,7 +725,7 @@
   }
 
   .button-row .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   @media (max-width: 768px) {
@@ -752,7 +752,7 @@
     }
 
     .button-row .btn-secondary {
-      margin-right: 0;
+      margin-inline-end: 0;
     }
 
     .button-row .btn {

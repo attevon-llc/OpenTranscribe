@@ -177,7 +177,7 @@
     border-radius: var(--radius-sm);
     padding: var(--space-3);
     margin-top: var(--space-3);
-    text-align: left;
+    text-align: start;
     font-size: var(--font-size-xs);
   }
 

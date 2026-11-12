@@ -245,7 +245,7 @@
     display: inline-flex;
   }
   .lock {
-    margin-inline-end: 0.35rem;
+    margin-inline-end: var(--space-1-5);
     vertical-align: -2px;
   }
   .state {

@@ -197,7 +197,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    margin-bottom: 0.35rem;
+    margin-bottom: var(--space-1-5);
   }
 
   .tester-head h4 {
@@ -224,7 +224,7 @@
   .radio-label {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-1-5);
     font-size: var(--font-size-sm);
     cursor: pointer;
     /* Without this the flex row shrinks each label to its longest word and
@@ -265,13 +265,13 @@
 
   .result {
     margin-top: var(--space-4);
-    padding: 0.85rem;
+    padding: var(--space-3-5);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-bg);
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--space-2-5);
   }
 
   .result-row {
@@ -291,7 +291,7 @@
   .chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: var(--space-1-5);
   }
 
   .muted {

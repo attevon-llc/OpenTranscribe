@@ -285,6 +285,23 @@
       "license_checked_on": "2026-11-08"
     },
     {
+      "name": "NWS Reno snowpack and water supply briefing (31 March 2026)",
+      "collection": "science-briefings",
+      "url": "https://www.weather.gov/rev/",
+      "license": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "NOAA / National Weather Service Reno",
+      "why_allowed": "Owner decision 2026-11-12: the video's own YouTube page declares the Creative Commons Attribution licence, which is narrower than the NWS site's public-domain disclaimer, so this item is recorded as CC-BY-4.0 with the credit line shown wherever it is viewed. Item id nws-reno-snowpack-2026-03-31. Re-read the page when the bundle is built.",
+      "exclusions": [
+        "This one recording only; every other NWS item stays under the NWS disclaimer entries above."
+      ],
+      "shows": [
+        "a CC BY credit line beside the transcript"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": "2026-11-08"
+    },
+    {
       "name": "Redaction showcase: a scripted clip voiced by the project team with invented names, numbers and addresses",
       "collection": "privacy-demo",
       "url": "https://github.com/attevon-llc/OpenTranscribe",

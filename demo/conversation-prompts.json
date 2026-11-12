@@ -1,5 +1,5 @@
 {
-  "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Each `items` entry is an item id in the shipped bundle's manifest (bundle-v1). A question is asked in its own conversation, followed by its follow-ups. At least half of the conversations are cross-file. The privacy-redaction item id is reserved for the scripted clip that the owner still has to record (bundle-v1/privacy-demo/SCRIPT.md); until it exists in the manifest, the generator reports it as missing. Questions that name specifics (dates, topics) are drawn from the items' opening captions (YouTube auto-captions) or page descriptions and must be rechecked against the transcripts once they exist.",
+  "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Each `items` entry is an item id in the shipped bundle's manifest (bundle-v1). A question is asked in its own conversation, followed by its follow-ups. At least half of the conversations are cross-file. The privacy-redaction item id is reserved for the scripted clip that the owner still has to record (bundle-v1/privacy-demo/SCRIPT.md); until it exists in the manifest, the generator reports it as missing. Questions that name specifics (dates, topics) are drawn from the items' opening captions (YouTube auto-captions) or page descriptions and must be rechecked against the transcripts once they exist. Items the bundle does not ship are left out of every prompt: nasa-edu-black-hole-simulation and nasa-earth-from-orbit-2013 had no speech (no_speech) and were dropped, (the Ingenuity item, voa-en-7905637, stays by the owner's decision). A prompt that still names an item missing from the manifest is skipped by the generator (--strict fails instead).",
   "conversations": [
     {
       "id": "news-space-science-reports",
@@ -197,13 +197,12 @@
       "title": "What do the astronomy explainers cover?",
       "items": [
         "nasa-edu-spectroscopy",
-        "nasa-edu-black-hole-simulation",
         "nasa-edu-roman-telescope"
       ],
       "questions": [
         "Summarize each video.",
         "Why does spectroscopy matter if telescopes only capture a smudge of light?",
-        "What do the Roman telescope and black hole videos each want a viewer to take away?"
+        "What does the Roman telescope video want a viewer to take away?"
       ]
     },
     {
@@ -294,13 +293,11 @@
       "title": "What do the NASA Goddard items say about the Sun and Mars?",
       "items": [
         "nasa-escapade-mars-space-weather",
-        "nasa-earth-from-orbit-2013",
         "nasa-briefing-roman-postlaunch"
       ],
       "questions": [
         "Summarize the ESCAPADE video: what happened to Mars's atmosphere and what will the mission measure?",
-        "What does the Earth-from-orbit video show?",
-        "How do these three space items differ in format?"
+        "How do these two space items differ in format?"
       ]
     },
     {

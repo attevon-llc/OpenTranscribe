@@ -704,6 +704,81 @@ class TestPostProcessingOnRealWorkers:
         assert not unfinished, f"post-processing did not settle cleanly: {unfinished}"
         assert tasks["search_indexing"]["state"] == "done", tasks["search_indexing"]
 
+    def test_with_the_llm_on_summary_and_topics_finish_done(
+        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+    ):
+        """With ``mock-gpt`` active, the summary and topic tasks must both end ``done``.
+
+        The settle test above runs with no LLM, where both are ``skipped``; only this one
+        proves the LLM-on path completes on the real workers.
+        """
+        status = _poll_status(api_session, backend_url, uploaded_file)
+        assert status == "completed", f"file did not complete (status={status})"
+        before = _post_processing_when_settled(api_session, backend_url, uploaded_file)
+        earlier_at = max(
+            (float(t.get("at", 0.0)) for t in (before.get("tasks") or {}).values()), default=0.0
+        )
+
+        csrf_token = api_session.cookies.get("csrf_token")
+        assert csrf_token, "api_session has no csrf_token cookie"
+        headers = {"X-CSRF-Token": csrf_token}
+        llm_resp = api_session.post(
+            f"{backend_url}/api/llm-settings",
+            json={
+                "name": f"Mock LLM ok {uploaded_file[:8]}",
+                "provider": "custom",
+                "model_name": "mock-gpt",
+                "base_url": "http://mock-llm:5199/v1",
+                "api_key": "mock-key-not-secret",
+            },
+            headers=headers,
+            timeout=30,
+        )
+        assert llm_resp.status_code == 200, llm_resp.text[:300]
+        llm_config = llm_resp.json()
+        try:
+            active = api_session.post(
+                f"{backend_url}/api/llm-settings/set-active",
+                json={"configuration_id": llm_config["uuid"]},
+                headers=headers,
+                timeout=30,
+            )
+            assert active.status_code == 200, active.text[:300]
+
+            triggered = api_session.post(
+                f"{backend_url}/api/files/{uploaded_file}/reprocess",
+                json={"stages": ["summarization", "topic_extraction"]},
+                headers=headers,
+                timeout=60,
+            )
+            assert triggered.status_code == 200, (
+                f"reprocess refused: {triggered.status_code} {triggered.text[:300]}"
+            )
+
+            tasks: dict = {}
+            for task in ("summary", "topics"):
+                body = _post_processing_when_settled(
+                    api_session,
+                    backend_url,
+                    uploaded_file,
+                    timeout_secs=240,
+                    require_task=task,
+                    newer_than=earlier_at,
+                )
+                tasks = body.get("tasks") or {}
+                assert task in tasks, f"no {task} task was reported: {body}"
+            states = {k: tasks[k]["state"] for k in ("summary", "topics")}
+            assert states == {"summary": "done", "topics": "done"}, (
+                f"with the LLM on both must finish done: {states}; run={tasks}"
+            )
+        finally:
+            with contextlib.suppress(requests.RequestException):
+                api_session.delete(
+                    f"{backend_url}/api/llm-settings/config/{llm_config['uuid']}",
+                    headers=headers,
+                    timeout=30,
+                )
+
     def test_a_failing_llm_reports_the_summary_as_failed(
         self, api_session: requests.Session, backend_url: str, uploaded_file: str
     ):

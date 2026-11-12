@@ -286,6 +286,17 @@ should import `app.api` or `app.services` at module scope.
   registry, so a new task of either kind fails it until decided. Replay needs no `acks_late`
   (it re-sends from its own heartbeat record; `acks_late` would add the broker's redelivery as a
   second path to the same duplicate). Idempotence evidence: `test_user_task_replay_idempotence.py`.
+  A task goes on the list only with a test that runs it twice; unsure means NOT replayable. The
+  non-trivial ones make their side effect idempotent: the speaker merge stamps `merged_from`
+  on the averaged voiceprint in the same write, the speaker update's matching pass skips a row
+  its same match already labeled (`speaker_update._carries_this_match`), and the playlist claims
+  each download with one conditional UPDATE before it sends it (task id, due time and the import's
+  download options in `metadata_raw`). A claim lost before its send is re-sent by `system.health_check` under the same
+  task id once `PLAYLIST_DISPATCH_GRACE_SECONDS` past due; `youtube_processing._starts_claimed_download`
+  starts only one delivery per id. A download has no Task row: its liveness is a
+  `task_liveness` lease keyed `download_run_id(file_uuid)` (`run_heartbeat(..., chained=False)`,
+  so a return releases it and only a Celery retry hands it back as QUEUED), and
+  `identify_stuck_downloading_files` recovers a DOWNLOADING file only when that lease is DEAD.
 - `task_liveness.run_heartbeat` hands the run back as **queued** only on a normal return, a
   Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — a cold-shutdown
   `SystemExit` is deliberately NOT handed back here. On billiard 4.3.0 the cancel ACKED a running

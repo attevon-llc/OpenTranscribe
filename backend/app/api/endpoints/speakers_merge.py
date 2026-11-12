@@ -206,19 +206,32 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target: dict[str, Any]) 
         import numpy as np
 
         from app.services.opensearch_service import add_speaker_embedding
+        from app.services.opensearch_service import get_speaker_document
         from app.services.opensearch_service import get_speaker_embedding
         from app.services.opensearch_service import remove_speaker_embedding
 
-        # Get embeddings for both speakers
-        source_embedding = get_speaker_embedding(str(source_speaker_uuid))
-        target_embedding = get_speaker_embedding(target["uuid"])
+        source_uuid = str(source_speaker_uuid)
+        # The target is read from the index the average is written to, together with the
+        # sources it has already averaged in.
+        target_doc = get_speaker_document(target["uuid"])
+        merged_from = list((target_doc or {}).get("merged_from") or [])
+        if source_uuid in merged_from:
+            # A replay of a merge lost after its average landed (issue #1159): the stamp
+            # was written with the average, so the source is consumed, not averaged again.
+            logger.info(f"Speaker {source_uuid} is already averaged into {target['uuid']}")
+            remove_speaker_embedding(source_uuid)
+            return
+
+        source_embedding = get_speaker_embedding(source_uuid)
+        target_embedding = target_doc["embedding"] if target_doc else None
 
         if source_embedding and target_embedding:
             # Average the embeddings
             embeddings_array = np.array([source_embedding, target_embedding])
             averaged_embedding = np.mean(embeddings_array, axis=0).tolist()
 
-            # Store the averaged embedding in OpenSearch
+            # Store the averaged embedding in OpenSearch. The source is stamped in the SAME
+            # document write, so the average and the record of it land together.
             add_speaker_embedding(
                 speaker_uuid=target["uuid"],
                 speaker_id=target["id"],
@@ -232,11 +245,11 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target: dict[str, Any]) 
                 # The write replaces the whole document: without the file's tenant an org
                 # speaker's voiceprint would come back unstamped, i.e. personal.
                 organization_id=target.get("organization_id"),
+                merged_from=[*merged_from, source_uuid],
             )
             logger.info(f"Updated target speaker {target['id']} with averaged embedding")
-            # Consume the source at once. A replay of a lost merge (issue #1159) finds no
-            # source voiceprint and skips the average, instead of averaging it in twice.
-            remove_speaker_embedding(str(source_speaker_uuid))
+            # Consume the source at once; the stamp above covers a loss before this delete.
+            remove_speaker_embedding(source_uuid)
         else:
             logger.warning("Could not retrieve embeddings for speaker merge")
     except Exception as e:

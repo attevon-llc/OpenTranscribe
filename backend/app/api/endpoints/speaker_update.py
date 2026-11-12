@@ -153,16 +153,19 @@ def _apply_high_confidence_match(
     Returns:
         The speaker's search document.
     """
+    detail = _retroactive_detail(trigger, speaker.confidence)
+    if _carries_this_match(speaker, trigger, detail):
+        # This exact match already labeled the row: a replay of a pass lost with its worker
+        # (issue #1159). Writing it again would only restamp the identity and append a
+        # second "confirmed" history row; the search document is still pushed.
+        return _speaker_sync_document(db, speaker)
+
     previous_display_name = speaker.display_name
     speaker.display_name = trigger["display_name"]
     speaker.verified = True
     # A voiceprint wrote this identity, not a person (issue #1280). Set before the tracker
     # computes the "after" label below, which depends on it while voiceprints are off.
-    record_machine_identity(
-        speaker,
-        previous_display_name=previous_display_name,
-        detail=_retroactive_detail(trigger, speaker.confidence),
-    )
+    record_machine_identity(speaker, previous_display_name=previous_display_name, detail=detail)
 
     if trigger["profile_id"]:
         old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
@@ -177,6 +180,16 @@ def _apply_high_confidence_match(
         f"({speaker.confidence:.1%} confidence)"
     )
     return _speaker_sync_document(db, speaker)
+
+
+def _carries_this_match(speaker: Speaker, trigger: dict[str, Any], detail: dict[str, Any]) -> bool:
+    """Did this same match (trigger, similarity, model) already label and link the row?"""
+    return (
+        speaker.verified is True
+        and speaker.display_name == trigger["display_name"]
+        and speaker.identity_source_detail == detail
+        and (not trigger["profile_id"] or speaker.profile_id == trigger["profile_id"])
+    )
 
 
 def _retroactive_detail(trigger: dict[str, Any], similarity: float | None) -> dict[str, Any]:

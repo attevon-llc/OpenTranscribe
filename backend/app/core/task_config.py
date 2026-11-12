@@ -150,6 +150,11 @@ class TaskRecoveryConfig:
         default_factory=lambda: env_int("TASK_REPLAY_MAX_AGE_SECONDS", 86400, minimum=1)
     )
 
+    # A claimed playlist download still QUEUED this long after it was due is sent again under
+    # its claimed id (issue #1159). A late first message is harmless (the download task starts
+    # only one delivery per id), so this only spaces the re-sends while a download queue drains.
+    PLAYLIST_DISPATCH_GRACE_SECONDS: int = 3600
+
     # OOM retry configuration
     OOM_RETRY_ENABLED: bool = True  # Enable/disable OOM auto-retry
     OOM_BACKOFF_BASE_MINUTES: int = 10  # Base delay for exponential backoff (2^n * this value)

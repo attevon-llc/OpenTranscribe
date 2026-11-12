@@ -173,6 +173,10 @@ def test_a_merged_speakers_averaged_voiceprint_keeps_the_files_organization(
     monkeypatch.setattr(
         "app.services.opensearch_service.get_speaker_embedding", lambda _uuid: [0.01] * DIM
     )
+    monkeypatch.setattr(
+        "app.services.opensearch_service.get_speaker_document",
+        lambda _uuid: {"embedding": [0.01] * DIM, "segment_count": 1, "merged_from": []},
+    )
     plan = speaker_merge_task._load_merge_plan(str(target.uuid))
     assert plan is not None
 

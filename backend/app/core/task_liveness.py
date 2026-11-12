@@ -65,6 +65,16 @@ HEARTBEAT_KEY = "transcription_heartbeat:{task_id}"
 TRANSCRIPTION_TASK_TYPE = "transcription"
 
 
+def download_run_id(file_uuid: str) -> str:
+    """The lease id of a URL download (``download.media_url``) of this file.
+
+    A download keeps no Task row, so its lease is keyed by the file: a Celery retry of it
+    renews the same lease, and the stuck-download check (``identify_stuck_downloading_files``)
+    derives the id from the file it is looking at.
+    """
+    return f"download:{file_uuid}"
+
+
 class RunState(StrEnum):
     """What recovery may conclude about one transcription run."""
 
@@ -210,12 +220,16 @@ def _hand_back(task_id: str) -> None:
 
 
 @contextmanager
-def run_heartbeat(task_id: str) -> Iterator[None]:
+def run_heartbeat(task_id: str, *, chained: bool = True) -> Iterator[None]:
     """Heartbeat this run for as long as the enclosed stage executes.
 
     A daemon thread rather than calls sprinkled through the stage: the GPU decode can sit in
     one native call for minutes, and a heartbeat that depends on the stage's own progress
     callbacks would lapse exactly when the stage is busiest.
+
+    ``chained=False`` is for a run whose normal return publishes no successor (a URL
+    download): only a Celery retry or a requeue hands it back to the queue, and a return
+    releases the lease.
     """
     started_epoch = time.time()
     interval = task_recovery_config.TRANSCRIPTION_HEARTBEAT_INTERVAL
@@ -239,7 +253,7 @@ def run_heartbeat(task_id: str) -> Iterator[None]:
     finally:
         stop.set()
         thread.join(timeout=5)
-        if _hands_back_to_broker(ended_by):
+        if (chained or ended_by is not None) and _hands_back_to_broker(ended_by):
             _hand_back(task_id)
         else:
             _release(task_id)

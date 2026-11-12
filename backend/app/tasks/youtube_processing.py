@@ -14,7 +14,13 @@ from typing import Any
 from typing import TypedDict
 
 from celery.exceptions import Retry
+from sqlalchemy import func
+from sqlalchemy import literal
+from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Session
 
+from app.core import task_liveness
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import DEFAULT_AUDIO_QUALITY
@@ -27,6 +33,8 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.services import youtube_policy
 from app.services.formatting_service import FormattingService
+from app.services.media_download_playlist import DOWNLOAD_STARTED_KEY
+from app.services.media_download_playlist import DOWNLOAD_TASK_ID_KEY
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.transcription import dispatch_transcription_pipeline
 from app.utils import benchmark_timing
@@ -181,6 +189,65 @@ def _load_media_credentials(
         return {}, {"status": "error", "message": reason, "file_id": file_id}
 
 
+def _starts_claimed_download(db: Session, media_file: MediaFile, request: Any) -> bool:
+    """False when this delivery of a claimed playlist download must stand down (issue #1159).
+
+    A playlist claims each download under one Celery task id
+    (``media_playlist_processing._claim_playlist_dispatch``), and the health check sends a
+    stranded claim again under that SAME id. When the first message was only late, two
+    deliveries carry the id: one conditional UPDATE lets the first start and turns the other
+    away. A delivery under any other id (a single-URL import, a recovery retry) is not a claimed
+    dispatch and is never turned away here, and a Celery retry of the one that started carries
+    on (``request.retries``).
+    """
+    meta = media_file.metadata_raw or {}
+    if request.retries or not request.id or meta.get(DOWNLOAD_TASK_ID_KEY) != request.id:
+        return True
+    current = func.coalesce(MediaFile.metadata_raw, literal({}, JSONB))
+    start = (
+        update(MediaFile)
+        .where(
+            MediaFile.id == media_file.id,
+            MediaFile.metadata_raw[DOWNLOAD_TASK_ID_KEY].astext == request.id,
+            ~current.has_key(DOWNLOAD_STARTED_KEY),
+        )
+        .values(
+            metadata_raw=current.op("||", return_type=JSONB)(
+                literal({DOWNLOAD_STARTED_KEY: True}, JSONB)
+            )
+        )
+        .returning(MediaFile.id)
+        .execution_options(synchronize_session=False)
+    )
+    started = db.execute(start).scalar_one_or_none() is not None
+    db.commit()
+    return started
+
+
+def _gate_delivery(
+    db: Session, media_file: MediaFile, request: Any
+) -> YouTubeProcessingResult | None:
+    """The gates that end a delivery before anything is downloaded; the result to return, or None.
+
+    The legal processing gate (the setting may have changed since the route checked, and
+    recovery re-queues this task directly), then the one-start rule of a claimed playlist
+    download (``_starts_claimed_download``).
+    """
+    from app.legal.processing_gate import check_processing_allowed_for_file
+    from app.legal.processing_gate import mark_file_refused
+
+    file_id = int(media_file.id)
+    refusal = check_processing_allowed_for_file(db, media_file)
+    if refusal is not None:
+        mark_file_refused(db, file_id, refusal)
+        logger.info(f"URL import of {media_file.uuid} refused: {refusal.message}")
+        return {"status": "skipped", "message": refusal.message, "file_id": file_id}
+    if not _starts_claimed_download(db, media_file, request):
+        logger.info(f"Playlist download {request.id} for {media_file.uuid} already started")
+        return {"status": "skipped", "message": "Download already started", "file_id": file_id}
+    return None
+
+
 @celery_app.task(
     name="download.media_url",
     bind=True,
@@ -234,8 +301,6 @@ def process_youtube_url_task(
     Raises:
         Exception: Any error during processing will be caught and returned in result dict.
     """
-    from app.legal.processing_gate import check_processing_allowed_for_file
-    from app.legal.processing_gate import mark_file_refused
     from app.services.uuid_helpers import get_file_by_uuid
 
     file_id = None  # Initialize to handle exceptions before file_id is assigned
@@ -269,13 +334,9 @@ def process_youtube_url_task(
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
             file_id = int(media_file.id)
-            # The legal processing gate, BEFORE anything is downloaded: the setting may have
-            # changed since the route checked, and recovery re-queues this task directly.
-            refusal = check_processing_allowed_for_file(db, media_file)
-            if refusal is not None:
-                mark_file_refused(db, file_id, refusal)
-                logger.info(f"URL import of {file_uuid} refused: {refusal.message}")
-                return {"status": "skipped", "message": refusal.message, "file_id": file_id}
+            stopped = _gate_delivery(db, media_file, self.request)
+            if stopped is not None:
+                return stopped
 
         if media_credentials_ref:
             stored, failure = _load_media_credentials(
@@ -295,8 +356,13 @@ def process_youtube_url_task(
             progress=10,
         )
 
-        # Open a new session with fresh state for the main processing work
-        with session_scope() as db:
+        # Open a new session with fresh state for the main processing work. The download holds
+        # a lease for as long as it runs, which is what tells the stuck-download check that it
+        # is alive; a Celery retry hands it back to the queue instead of releasing it.
+        with (
+            task_liveness.run_heartbeat(task_liveness.download_run_id(file_uuid), chained=False),
+            session_scope() as db,
+        ):
             # Get the user and media file records
             user = db.query(User).filter(User.id == user_id).first()
             media_file = get_refreshed_object(db, MediaFile, file_id)

@@ -164,10 +164,8 @@ class GovWorld:
             app.dependency_overrides.pop(get_current_context, None)
 
 
-@pytest.fixture()
-def gov(db_session) -> GovWorld:
+def _build_world(db) -> GovWorld:
     """Org ``org``: ``admin`` (org:admin), ``alice`` and ``bob`` (members); ``outsider`` joins none."""
-    db = db_session
 
     def _org(label: str) -> Organization:
         org = Organization(
@@ -191,3 +189,19 @@ def gov(db_session) -> GovWorld:
     world.join(world.alice)
     world.join(world.bob)
     return world
+
+
+@pytest.fixture()
+def gov(db_session) -> GovWorld:
+    """The governance world on the shared ``db_session``."""
+    return _build_world(db_session)
+
+
+@pytest.fixture()
+def gov_txn(production_txn_session) -> GovWorld:
+    """The governance world on a session whose ``rollback()`` behaves as in production.
+
+    For a test that has to observe a ``rollback()`` (``db_session`` would discard the fixture's
+    own rows with it, see ``tests/fixtures/production_txn.py``).
+    """
+    return _build_world(production_txn_session)

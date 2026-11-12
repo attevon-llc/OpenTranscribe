@@ -12,6 +12,7 @@ from sqlalchemy import ColumnElement
 from sqlalchemy import Subquery
 from sqlalchemy import and_
 from sqlalchemy import case
+from sqlalchemy import exists
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy import select
@@ -274,7 +275,13 @@ class PermissionService:
         shared_stmt = select(CollectionMember.media_file_id).join(
             MediaFile, MediaFile.id == CollectionMember.media_file_id
         )
-        share_where.append(MediaFile.user_id.notin_(owners_pending_removal()))
+        share_where.append(
+            ~exists(
+                owners_pending_removal().where(
+                    ErasureLedgerEntry.subject_user_id == MediaFile.user_id
+                )
+            )
+        )
         if org_pred is not None:
             share_where.append(org_pred)
 

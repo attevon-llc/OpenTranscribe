@@ -318,7 +318,7 @@ class AutoLabelService:
             if not name or not name.strip() or item.get("confidence", 0.0) < threshold:
                 result[f"skipped_{kind}"].append(name)
                 continue
-            # Explicit commit/rollback, not ``with begin_nested()``: see privacy/policy._isolated.
+            # Explicit commit/rollback, not ``with begin_nested()``: see db/savepoint.isolated.
             savepoint = self.db.begin_nested()
             try:
                 outcome = apply_one(name, item.get("confidence", 0.0))

@@ -54,6 +54,11 @@ _RAW_CHANNEL = "websocket_notifications"
 #: to guard") plus the DMCA owner-notice chokepoint itself. A new key here is a new
 #: place quarantine can leak — write the reason like you mean it.
 _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "services/erasure_notifications.py::notify": (
+        1,
+        "erasure_notice to the subject's recipients; the payload carries a ledger uuid, subject "
+        "type, schedule and message, never a MediaFile identity",
+    ),
     "services/trash_service.py::_notify": (
         1,
         "announces the trash state itself (#1101) to the owner, the actor and the org's "

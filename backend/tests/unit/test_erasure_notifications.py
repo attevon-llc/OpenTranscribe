@@ -6,7 +6,6 @@ a reminder 24 hours before, the cancellation and the completion.
 
 from __future__ import annotations
 
-import contextlib
 import uuid
 from datetime import UTC
 from datetime import datetime
@@ -18,6 +17,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import SessionTransaction
 
 from app.core.config import settings
 from app.models.erasure import ErasureLedgerEntry
@@ -65,7 +65,7 @@ def sent(monkeypatch, tmp_path) -> dict[str, list[Any]]:
     )
     monkeypatch.setattr("app.services.email_service.email_service.has_transport", lambda: True)
     fake = _FakeRedis()
-    monkeypatch.setattr(notices, "get_redis", lambda: fake)
+    monkeypatch.setattr(notices, "get_request_redis", lambda: fake)
     monkeypatch.setattr(
         gdpr_erasure_service, "erase_org_member_data", lambda *a, **k: {"complete": True}
     )
@@ -272,7 +272,8 @@ def test_the_executor_runs_the_erasure_when_the_notice_lookup_raises(monkeypatch
     )
     db = create_autospec(Session, instance=True)
     db.get.return_value = entry
-    db.begin_nested.side_effect = contextlib.nullcontext
+    savepoint = create_autospec(SessionTransaction, instance=True)
+    db.begin_nested.return_value = savepoint
 
     def lookup_fails(db: Session, row: ErasureLedgerEntry) -> list[tuple[int, str | None]]:
         raise OperationalError("SELECT", {}, Exception("connection lost"))
@@ -291,3 +292,6 @@ def test_the_executor_runs_the_erasure_when_the_notice_lookup_raises(monkeypatch
     assert scheduled._execute_one(db, entry.id, NOW + timedelta(hours=1)) is True
 
     assert ran == [entry]
+    assert savepoint.rollback.call_count == 2, (
+        "the lookup and the notice each roll their own savepoint back"
+    )

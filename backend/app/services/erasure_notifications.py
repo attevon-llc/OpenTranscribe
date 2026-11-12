@@ -26,7 +26,8 @@ from redis.exceptions import RedisError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
+from app.db.savepoint import isolated
 from app.models.erasure import ErasureLedgerEntry
 from app.models.organization import OrganizationMembership
 from app.models.user import User
@@ -142,8 +143,7 @@ def resolve_recipients_or_none(
     caller's next statement (the erasure run itself) would fail too.
     """
     try:
-        with db.begin_nested():
-            return resolve_recipients(db, entry)
+        return isolated(db, lambda: resolve_recipients(db, entry))
     except SQLAlchemyError:
         logger.warning("Erasure notice: recipients not resolved", exc_info=True)
         return None
@@ -162,18 +162,21 @@ def notify(
     """
     from app.utils.websocket_notify import send_ws_event
 
+    def _build() -> tuple[list[tuple[int, str | None]], str, dict[str, str | None]]:
+        targets = recipients if recipients is not None else resolve_recipients(db, entry)
+        message = _message(kind, entry)
+        payload = {
+            "event": kind.value,
+            "ledger_uuid": str(entry.uuid),
+            "subject_type": entry.subject_type,
+            "scheduled_for": entry.scheduled_for.isoformat() if entry.scheduled_for else None,
+            "status": "warning" if kind is not ErasureNoticeKind.CANCELLED else "completed",
+            "message": message,
+        }
+        return targets, message, payload
+
     try:
-        with db.begin_nested():
-            targets = recipients if recipients is not None else resolve_recipients(db, entry)
-            message = _message(kind, entry)
-            payload = {
-                "event": kind.value,
-                "ledger_uuid": str(entry.uuid),
-                "subject_type": entry.subject_type,
-                "scheduled_for": entry.scheduled_for.isoformat() if entry.scheduled_for else None,
-                "status": "warning" if kind is not ErasureNoticeKind.CANCELLED else "completed",
-                "message": message,
-            }
+        targets, message, payload = isolated(db, _build)
     except SQLAlchemyError:
         logger.warning("Erasure notice %s: recipients not resolved", kind.value, exc_info=True)
         return 0
@@ -223,7 +226,7 @@ def send_due_reminders(db: Session, *, now: datetime | None = None) -> int:
         if entry.scheduled_for is None or entry.scheduled_for - entry.requested_at <= REMINDER_LEAD:
             continue
         try:
-            first = get_redis().set(
+            first = get_request_redis().set(
                 f"erasure:reminder:{entry.uuid}", "1", nx=True, ex=_REMINDER_KEY_TTL_SECONDS
             )
         except (RedisError, OSError):

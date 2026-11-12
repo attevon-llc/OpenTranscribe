@@ -41,6 +41,8 @@ this file fail `rangeSliderStructure.test.ts`.
 ## Design tokens and the style-literal guard
 
 Method of record: `docs/design/frontend_styling_layer_plan.md`. All tokens live in `theme.css`; component-level
+Deprecated aliases (plan 3.9) stay defined in `theme.css` for compatibility, but core code uses the canonical name:
+the guard's `alias` category fails any `var()` of a name in `DEPRECATED_ALIASES` (`scripts/guards/check_style_literals.py`).
 tokens (`--field-*`, `--slider-*`) stay beside their stylesheet and are defined from role tokens, never literals.
 
 Families: colour roles (light on `:root`, dark on `[data-theme='dark']`; status families `error|warning|success|info`

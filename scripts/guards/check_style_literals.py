@@ -32,6 +32,7 @@ Categories (the baseline value is the number counted):
   (loop animations are not counted).
 * ``physical``: ``margin/padding/border-left|right*``, ``left``/``right`` other than ``50%``,
   ``text-align``/``float`` ``left|right``.
+* ``alias``: each ``var()`` reference to a name in ``DEPRECATED_ALIASES`` (use the canonical token).
 
 Length categories skip a declaration that wraps a ``var()`` in ``calc/min/max/clamp``; a literal
 inside ``var(--x, <fallback>)`` is counted once, by ``fallback``, not again by its property.
@@ -73,7 +74,37 @@ CATEGORIES = (
     'z-index',
     'duration',
     'physical',
+    'alias',
 )
+
+#: Deprecated token aliases that are a pure ``var(--canonical)`` in every theme (styling plan 3.9,
+#: Phase 6.1). Core code uses the canonical name; the definitions stay in theme.css (D10) so any
+#: third-party or extension stylesheet that still reads an alias keeps working.
+DEPRECATED_ALIASES = frozenset(
+    {
+        '--accent',
+        '--accent-color',
+        '--bg-hover',
+        '--card-hover',
+        '--color-bg-hover',
+        '--color-border',
+        '--color-primary',
+        '--color-surface',
+        '--color-text',
+        '--color-text-secondary',
+        '--danger-color',
+        '--hover-bg',
+        '--primary-border',
+        '--primary-dark',
+        '--secondary-color',
+        '--text-color-secondary',
+        '--text-light',
+        '--text-muted',
+        '--text-primary',
+        '--text-secondary-color',
+    }
+)
+_ALIAS_REF = re.compile(r'var\(\s*(--[\w-]+)')
 
 _NAMED_COLOURS = frozenset(
     {
@@ -494,6 +525,7 @@ def count_decl(decl: Decl, rel: str) -> dict[str, int]:
         # fallback + colour see the whole value (a literal inside a fallback is a colour too)
         'fallback': _fallback_count(value),
         'colour': _colour_count(prop, value, low, is_custom),
+        'alias': sum(1 for name in _ALIAS_REF.findall(value) if name in DEPRECATED_ALIASES),
     }
     if not is_custom:  # lengths in a custom property are token definitions elsewhere
         counts.update(_sized_category(prop, value, low, _strip_vars(value)))

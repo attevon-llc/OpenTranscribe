@@ -77,6 +77,8 @@ def svelte(style: str = "", markup: str = "", script: str = "") -> dict[str, int
         ("physical", ".a { left: 0; }", 1),
         ("physical", ".a { text-align: right; }", 1),
         ("physical", ".a { float: left; }", 1),
+        ("alias", ".a { color: var(--text-muted); }", 1),
+        ("alias", ".a { border: 1px solid var(--color-border); background: var(--hover-bg); }", 2),
     ],
 )
 def test_category_fires(category: str, css: str, expected: int) -> None:
@@ -118,6 +120,8 @@ def test_category_fires(category: str, css: str, expected: int) -> None:
         ("physical", ".a { margin-inline-start: 0; padding-inline: 0; text-align: start; }"),
         ("physical", ".a { left: 50%; transform: translateX(-50%); }"),
         ("physical", ".a { border-top-left-radius: var(--radius-sm); }"),
+        ("alias", ".a { color: var(--text-secondary); border-color: var(--border-color); }"),
+        ("alias", ".a { background: var(--card-background); }"),  # not a pure alias: kept
     ],
 )
 def test_category_stays_clean(category: str, css: str) -> None:

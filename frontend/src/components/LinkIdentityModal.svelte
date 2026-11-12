@@ -108,7 +108,7 @@
           />
         </FormField>
 
-        <p class="modal-note">{$t('userManagement.linkIdentity.emailNote')}</p>
+        <p class="warning-note">{$t('userManagement.linkIdentity.emailNote')}</p>
       {:else}
         <p class="modal-intro">
           {$t('userManagement.linkIdentity.intro', { name: targetName })}
@@ -141,7 +141,7 @@
           />
         </FormField>
 
-        <p class="modal-note">{$t('userManagement.linkIdentity.note')}</p>
+        <p class="warning-note">{$t('userManagement.linkIdentity.note')}</p>
       {/if}
     </div>
   </form>
@@ -181,17 +181,4 @@
     font-size: var(--font-size-md);
     color: var(--text-secondary);
   }
-
-  .modal-note {
-    margin: 0;
-    padding: var(--space-2-5) var(--space-3);
-    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
-    border-radius: var(--radius-md);
-    background: rgba(var(--warning-color-rgb), 0.12);
-    color: var(--text-color);
-    font-size: var(--font-size-xs);
-    line-height: 1.5;
-  }
-
-
 </style>

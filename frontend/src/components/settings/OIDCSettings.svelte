@@ -223,7 +223,7 @@
       </select>
       <svelte:fragment slot="after-hint">
         {#if selectedPreset?.noteKey}
-          <p class="admission-warning" role="status">{$t(selectedPreset.noteKey)}</p>
+          <p class="warning-note admission-warning" role="status">{$t(selectedPreset.noteKey)}</p>
         {/if}
       </svelte:fragment>
     </FormField>
@@ -354,9 +354,9 @@
       </div>
       <svelte:fragment slot="after-hint">
         {#if callbackUrlIsApiRoute}
-          <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlApiWarning')}</p>
+          <p class="warning-note admission-warning" role="status">{$t('settings.oidc.callbackUrlApiWarning')}</p>
         {:else if callbackUrlUnexpectedPath}
-          <p class="admission-warning" role="status">{$t('settings.oidc.callbackUrlPathWarning')}</p>
+          <p class="warning-note admission-warning" role="status">{$t('settings.oidc.callbackUrlPathWarning')}</p>
         {/if}
       </svelte:fragment>
     </FormField>
@@ -458,7 +458,7 @@
       <svelte:fragment slot="after-hint">
         <p class="form-field-hint">{$t('settings.oidc.groupsSemicolonHelp')}</p>
         {#if allowListOpen}
-          <p class="admission-warning" role="status">{$t('settings.oidc.allowedGroupsEmptyWarning')}</p>
+          <p class="warning-note admission-warning" role="status">{$t('settings.oidc.allowedGroupsEmptyWarning')}</p>
         {/if}
       </svelte:fragment>
     </FormField>
@@ -563,13 +563,6 @@
 
   .admission-warning {
     margin: var(--space-2) 0 0 0;
-    padding: var(--space-2-5) var(--space-3);
-    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
-    border-radius: var(--radius-md);
-    background: rgba(var(--warning-color-rgb), 0.12);
-    color: var(--text-color);
-    font-size: var(--font-size-xs);
-    line-height: 1.5;
   }
 
   .claim-tags {

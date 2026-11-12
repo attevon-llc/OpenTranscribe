@@ -86,7 +86,7 @@ describe('TagsSection editing gate', () => {
     });
 
     expect(container.querySelector('.tags-readonly')).toBeTruthy();
-    expect(getByText('alpha', { selector: '.tags-readonly .tag-chip' })).toBeTruthy();
+    expect(getByText('alpha', { selector: '.tags-readonly .preview-chip' })).toBeTruthy();
     expect(container.querySelector('.tag-remove')).toBeNull();
     expect(container.querySelector('.tag-input')).toBeNull();
     expect(container.querySelector('.tag-add-button')).toBeNull();

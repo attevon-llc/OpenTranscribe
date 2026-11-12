@@ -17,6 +17,8 @@ exec "$SCRIPT_DIR/run-e2e.sh" \
     backend/tests/e2e/test_export_downloads.py \
     backend/tests/e2e/test_media_playback.py \
     backend/tests/e2e/test_nav_menus_and_autocomplete.py \
+    backend/tests/e2e/test_file_detail_menus.py \
+    backend/tests/e2e/test_chat_rendering.py \
     backend/tests/e2e/test_rtl_privacy.py \
     backend/tests/e2e/test_upload_tray_and_notifications.py \
     backend/tests/e2e/test_notification_missed_frames.py \

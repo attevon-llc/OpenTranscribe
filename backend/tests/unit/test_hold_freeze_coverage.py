@@ -454,15 +454,15 @@ ROUTE_DESTROY_GUARDED: dict[str, tuple[str, str]] = {
         _DESTROY + "; an organization hold defers the organization erasure",
     ),
     _r("admin.py::delete_admin_user"): (
-        "services/user_deletion_service.py::_assert_no_held_files",
+        "services/user_deletion_service.py::assert_no_held_files",
         _DESTROY + "; refused while the account owns or commented on a held file",
     ),
     _r("users_admin_edit.py::delete_user"): (
-        "services/user_deletion_service.py::_assert_no_held_files",
+        "services/user_deletion_service.py::assert_no_held_files",
         _DESTROY + "; refused while the account owns or commented on a held file",
     ),
     _r("scim/users.py::delete_user"): (
-        "services/user_deletion_service.py::_assert_no_held_files",
+        "services/user_deletion_service.py::assert_no_held_files",
         _DESTROY + "; refused while the account owns or commented on a held file",
     ),
     _r("privacy.py::purge_my_data"): (

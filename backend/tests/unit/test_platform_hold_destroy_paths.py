@@ -135,10 +135,10 @@ def _retention(gov, f: MediaFile) -> bool:
 
 
 def _account_deletion(gov, f: MediaFile) -> bool:
-    from app.services.user_deletion_service import _assert_no_held_files
+    from app.services.user_deletion_service import assert_no_held_files
 
     try:
-        _assert_no_held_files(gov.db, gov.alice.id)
+        assert_no_held_files(gov.db, gov.alice.id)
     except ConflictError as refused:
         assert refused.status_code == status.HTTP_409_CONFLICT
         assert isinstance(refused.detail, dict) and refused.detail["held_by"] == ["platform"]

@@ -1601,6 +1601,17 @@ None of the above is required. A deployment with `LLM_PROVIDER` empty and
 the default self-hosted configuration.
 :::
 
+## Network exposure, demo mode and usage report
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BACKEND_BIND_HOST` | `127.0.0.1` | Address the API port (5174) listens on in production; `0.0.0.0` exposes it on the network, skipping the HTTPS proxy |
+| `DOCS_BIND_HOST` | loopback | Same for the docs port (5183) |
+| `FRONTEND_BIND_HOST` | loopback when HTTPS is set up, otherwise all interfaces | Same for the plain web UI port (5173) |
+| `CHAT_MAX_CONCURRENT_STREAMS_GLOBAL` | `64` | Chat replies streaming at once across all API processes (0 turns the cap off) |
+| `DEMO_MODE` | `false` | Public read-only demo: refuses writes with `403 demo_read_only`; see [Public demo](../operations/public-demo.md) |
+| `DO_NOT_TRACK` | `1` in the images | Keeps the anonymous usage report off; `0` lets a super admin turn it on, see [Telemetry](../operations/telemetry.md) |
+
 ## Next Steps
 
 - [Authentication Overview](../authentication/overview.md)

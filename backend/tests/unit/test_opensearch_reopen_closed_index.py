@@ -135,12 +135,20 @@ def test_reopen_waits_for_index_health_before_probing(cluster):
     assert "delete" not in fake.calls
 
 
-def test_an_unconfirmed_reopen_never_escalates_to_a_rebuild(cluster):
+def test_an_unconfirmed_reopen_never_escalates_to_a_rebuild(cluster, monkeypatch):
     from app.services.search.index_health import check_and_repair_chunks_index
 
     fake = cluster(_ClosableOpenSearch(closed=True))
     fake.recovering = True
     fake.cluster.health = lambda **kw: {"status": "red", "timed_out": True}
+    rebuilds: list[str] = []
+
+    def spy(*_a: Any, **_k: Any) -> bool:
+        rebuilds.append("rebuild")
+        return True
+
+    monkeypatch.setattr("app.services.search.index_health.rebuild_chunks_index", spy)
 
     assert check_and_repair_chunks_index() == []
+    assert rebuilds == []
     assert "delete" not in fake.calls

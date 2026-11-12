@@ -33,6 +33,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.services.opensearch_service import probe_knn_health
+from app.services.opensearch_service import reopen_index
 from app.services.opensearch_service import reset_knn_health_cache
 from app.services.search.index_admin import ensure_chunks_index_exists
 from app.services.search.index_schema import CHUNKS_ALIAS_NAME
@@ -234,6 +235,21 @@ def rebuild_chunks_index() -> bool:
     return True
 
 
+def _looks_closed(detail: str | None) -> bool:
+    text = (detail or "").lower()
+    return "index_closed_exception" in text or "already_closed" in text
+
+
+def _reopened(index_name: str) -> bool:
+    try:
+        if reopen_index(index_name):
+            logger.warning(f"Index {index_name} answered again after a close/reopen")
+            return True
+    except OpenSearchException as e:
+        logger.error(f"Could not reopen {index_name}: {e}", exc_info=True)
+    return False
+
+
 def check_and_repair_chunks_index() -> list[str]:
     """Probe the chunk plane's vector index and act on the verdict.
 
@@ -260,6 +276,13 @@ def check_and_repair_chunks_index() -> list[str]:
         return []
 
     logger.error(f"Index {index_name} has a corrupted vector plane: {probe.detail}")
+
+    # A closed index (or a shard holding a closed file handle) is cured by reopening it, which
+    # keeps every document; deleting and re-embedding the corpus is for real corruption only.
+    if _looks_closed(probe.detail) and _reopened(index_name):
+        clear_corruption_notice(index_name)
+        return [index_name]
+
     if repair_is_supervised(index_name):
         notify_corruption(index_name, probe)
         return []

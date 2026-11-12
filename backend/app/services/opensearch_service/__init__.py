@@ -66,6 +66,7 @@ from app.services.opensearch_service.profiles import store_profile_embedding_v4
 from app.services.opensearch_service.repair import _repair_index
 from app.services.opensearch_service.repair import check_and_repair_indices
 from app.services.opensearch_service.repair import rebuild_speaker_index
+from app.services.opensearch_service.repair import reopen_index
 from app.services.opensearch_service.speaker_collections import bulk_update_collection_assignments
 from app.services.opensearch_service.speaker_collections import move_speaker_to_profile_collection
 from app.services.opensearch_service.speaker_collections import update_speaker_collections
@@ -161,6 +162,7 @@ __all__ = [
     "msearch_speaker_similarities",
     "opensearch_client",
     "rebuild_speaker_index",
+    "reopen_index",
     "remove_profile_embedding",
     "remove_speaker_embedding",
     "settings",

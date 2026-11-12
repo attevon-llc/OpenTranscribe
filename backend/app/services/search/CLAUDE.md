@@ -380,3 +380,13 @@ plane's mapping additions (`summary_key_path` keyword, `summary_leaf_index` inte
   it, and it would receive **neither** read-time masking treatment (addendum G6). The digest
   leg (`chunk_retrieval.retrieve_digests`, Stage 4) has its own citation shape and masker
   (`chat/redactor.mask_digests`).
+
+## A closed index heals by reopening, never by rebuilding
+
+`opensearch_service.repair.reopen_index` is the only close/reopen: it reopens even when the close
+raised, because a half-applied close or failed reopen left `transcript_chunks` closed and every
+search answering 503 (`index_closed_exception` / `already_closed_exception` on a vector file).
+`index_health.check_and_repair_chunks_index` tries it first when the probe names a closed index,
+and only deletes and re-embeds the corpus for real corruption. Opening an open index is a no-op,
+so the unconditional open is safe. The shard-level cause of the first occurrence (after a bulk
+import) was not reproduced; the self-heal is what makes it recoverable without a hand-run `_open`.

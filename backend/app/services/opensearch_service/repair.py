@@ -52,6 +52,36 @@ def _verify_index_queryable(index_name: str) -> bool:
     return True
 
 
+def reopen_index(index_name: str) -> bool:
+    """Close and reopen *index_name* so its shards re-acquire their file handles.
+
+    The reopen runs even when the close raised or timed out: a close that half-applied, or a
+    failed reopen, would otherwise leave the index closed and every search against it 503
+    (``index_closed_exception``) until someone reopened it by hand. Opening an index that is
+    already open is an acknowledged no-op in OpenSearch, so the unconditional open is safe.
+
+    Args:
+        index_name: Concrete index to cycle.
+
+    Returns:
+        True if the index is open again and answers the kind of query it exists to answer.
+
+    Raises:
+        OpenSearchException: The reopen itself failed (the index may still be closed).
+    """
+    if not _client.opensearch_client:
+        return False
+    indices = _client.opensearch_client.indices
+    try:
+        indices.close(index=index_name)
+    finally:
+        indices.open(index=index_name)
+    if _verify_index_queryable(index_name):
+        _client.reset_knn_health_cache()
+        return True
+    return False
+
+
 def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
     """Attempt to repair a corrupted OpenSearch index.
 
@@ -100,11 +130,8 @@ def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
 
     # Strategy 1: Close and reopen to force re-acquisition of file handles
     try:
-        _client.opensearch_client.indices.close(index=index_name)
-        _client.opensearch_client.indices.open(index=index_name)
-        if _verify_index_queryable(index_name):
+        if reopen_index(index_name):
             logger.info(f"Index {index_name} repaired via close/reopen")
-            _client.reset_knn_health_cache()
             return True
         logger.warning(f"Close/reopen left {index_name} still unable to answer a kNN query")
     except OpenSearchException as e:

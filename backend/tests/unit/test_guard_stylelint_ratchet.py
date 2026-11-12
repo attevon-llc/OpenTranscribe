@@ -174,3 +174,42 @@ def test_real_repo_matches_committed_baseline(capsys):
         pytest.skip("frontend/node_modules not installed")
     code = guard.main(["--root", str(_REPO)])
     assert code == 0, capsys.readouterr().err
+
+
+def _fake_fix(calls, rewrite):
+    def run(argv, **kwargs):
+        calls.append(argv)
+        for name in argv[argv.index("--fix") + 1 :]:
+            if rewrite:
+                (kwargs["cwd"] / name).write_text("fixed")
+
+        class Done:
+            returncode = 0
+
+        return Done()
+
+    return run
+
+
+def test_autofix_runs_on_plain_css_only_and_reports_changed_files(env, monkeypatch):
+    root, _ = env
+    calls: list[list[str]] = []
+    monkeypatch.setattr(guard.subprocess, "run", _fake_fix(calls, rewrite=True))
+    changed = guard.autofix_css(root / "frontend", ["src/a.svelte", "src/b.css"], 5)
+    assert changed == ["src/b.css"]
+    assert calls[0][-1] == "src/b.css" and "src/a.svelte" not in calls[0]
+
+
+def test_autofix_with_nothing_to_fix_reports_nothing(env, monkeypatch):
+    root, _ = env
+    monkeypatch.setattr(guard.subprocess, "run", _fake_fix([], rewrite=False))
+    assert guard.autofix_css(root / "frontend", ["src/b.css"], 5) == []
+    assert guard.autofix_css(root / "frontend", ["src/a.svelte"], 5) == []
+
+
+def test_file_mode_exits_1_when_autofix_rewrote_a_css_file(env, monkeypatch, capsys):
+    root, baseline = env
+    monkeypatch.setattr(guard.subprocess, "run", _fake_fix([], rewrite=True))
+    code = guard.main(["--root", str(root), "--baseline", str(baseline), "frontend/src/b.css"])
+    assert code == 1
+    assert "re-stage" in capsys.readouterr().err

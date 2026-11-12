@@ -184,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     errors = _baseline.compare(violations, baseline, unit='lines', allowlist=allowlist)
+    if not args.tighten and _baseline.self_tighten(args.baseline, errors, violations, baseline):
+        return 1
     if args.tighten:
         changed = _baseline.tighten(args.baseline, violations, baseline)
         sys.stderr.write(f'tightened {changed} baseline line(s)\n')

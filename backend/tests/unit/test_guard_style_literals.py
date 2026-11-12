@@ -282,3 +282,21 @@ def test_write_baseline_requires_a_real_reason(tmp_path: Path) -> None:
 def test_the_real_tree_is_within_its_baseline() -> None:
     """The committed baseline matches the committed tree (the hook's own question)."""
     assert guard.main(["--root", str(_REPO)]) == 0
+
+
+@pytest.mark.unit
+def test_hook_mode_rewrites_lowered_baseline_but_never_on_growth(tmp_path: Path) -> None:
+    css = "frontend/src/components/a.css"
+    root = _repo(tmp_path, {css: ".a { color: #fff; background: #000; }\n"})
+    assert _run(root, "--write-baseline", "--reason", REASON) == 0
+    base = root / "base.txt"
+
+    (root / css).write_text(".a { color: #fff; background: #000; border-color: #111; }\n")
+    grown = base.read_text("utf-8")
+    assert _run(root) == 1
+    assert base.read_text("utf-8") == grown
+
+    (root / css).write_text(".a { color: #fff; }\n")
+    assert _run(root) == 1
+    assert base.read_text("utf-8") != grown
+    assert _run(root) == 0

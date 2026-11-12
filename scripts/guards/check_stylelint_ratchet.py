@@ -8,6 +8,8 @@ syntax error, a parse error, an invalid rule option (it means a rule is silently
 and the disable-comment reports (needless, invalid-scope or description-less disables).
 Output that is not the expected JSON fails closed (exit 2).
 
+With FILES, plain ``.css`` files are first run through ``stylelint --fix`` (never ``.svelte``);
+if that rewrote any, the guard exits 1 so the hook says "re-stage" (prettier's contract).
 With FILES (the pre-commit commit stage passes the staged paths) only those files are linted
 and only their baseline entries are compared. Without FILES the whole ``src/`` tree is.
 
@@ -64,6 +66,27 @@ def _run_stylelint(frontend: Path, targets: list[str], timeout: int) -> str:
             detail = (proc.stderr or proc.stdout).strip()[:500]
             raise bl.ScanError(f'stylelint exited {proc.returncode}: {detail}')
         return report.read_text(encoding='utf-8')
+
+
+def autofix_css(frontend: Path, targets: list[str], timeout: int) -> list[str]:
+    """Run ``stylelint --fix`` over the plain ``.css`` among ``targets``; return those it changed.
+
+    Plain CSS only: ``--fix`` on ``.svelte`` goes through postcss-html and is not trusted to
+    round-trip markup. Returns ``frontend``-relative paths whose bytes differ afterwards.
+    """
+    css = [t for t in targets if t.endswith('.css')]
+    if not css:
+        return []
+    before = {t: (frontend / t).read_bytes() for t in css}
+    argv = ['npx', '--no-install', 'stylelint', '--fix', *css]
+    try:
+        # exit 2 = unfixable findings remain; the ratchet below reports those
+        subprocess.run(
+            argv, cwd=frontend, capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise bl.ScanError(f'stylelint --fix did not run: {exc}') from exc
+    return [t for t in css if (frontend / t).read_bytes() != before[t]]
 
 
 def _rel(source: str, root: Path) -> str:
@@ -142,6 +165,15 @@ def main(argv: list[str] | None = None) -> int:
             scope = {f'frontend/{t}' for t in targets}
         else:
             targets = [_WHOLE_TREE]
+        if scope is not None and not args.stylelint_json:
+            fixed = autofix_css(root / 'frontend', targets, args.timeout)
+            if fixed:
+                print(
+                    'stylelint --fix rewrote these CSS files; re-stage them and commit again:',
+                    file=sys.stderr,
+                )
+                print('\n'.join(f'  frontend/{t}' for t in fixed), file=sys.stderr)
+                return 1
         if args.stylelint_json:
             raw = args.stylelint_json.read_text(encoding='utf-8')
         else:

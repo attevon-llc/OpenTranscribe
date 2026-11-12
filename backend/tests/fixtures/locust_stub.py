@@ -47,7 +47,25 @@ class _Hook:
         return fn
 
 
-class StubUser:
+class _TaskMeta(type):
+    """Mirror of Locust 2.47 ``TaskSetMeta``: ``tasks`` is the bases' tasks, then the class's own.
+
+    Each ``@task`` method is listed ``weight`` times. Subclasses therefore *inherit* every base
+    task, even one they override under the same name with a different body.
+    """
+
+    def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, Any]) -> Any:
+        tasks: list[Any] = []
+        for base in bases:
+            tasks += getattr(base, "tasks", None) or []
+        for item in namespace.values():
+            if hasattr(item, "locust_task_weight"):
+                tasks += [item] * item.locust_task_weight
+        namespace["tasks"] = tasks
+        return super().__new__(mcs, name, bases, namespace)
+
+
+class StubUser(metaclass=_TaskMeta):
     abstract = True
     weight = 1
     fixed_count = 0
@@ -329,16 +347,16 @@ def options(**overrides: Any) -> types.SimpleNamespace:
     return types.SimpleNamespace(**{**base, **overrides})
 
 
-def task_methods(cls: type, exclude_tags: frozenset[str] = frozenset()) -> list[str]:
-    """Names of ``cls``'s tasks Locust would run with ``--exclude-tags`` ``exclude_tags``."""
-    names = []
-    for name in dir(cls):
-        fn = getattr(cls, name)
-        if hasattr(fn, "locust_task_weight") and not (
-            getattr(fn, "locust_tag_set", set()) & exclude_tags
-        ):
-            names.append(name)
-    return names
+def task_methods(cls: type, exclude_tags: frozenset[str] = frozenset()) -> list[Any]:
+    """The task functions Locust would run for ``cls`` with ``--exclude-tags`` ``exclude_tags``.
+
+    Taken from ``cls.tasks`` (base-class tasks included, as in Locust), once each.
+    """
+    funcs: list[Any] = []
+    for fn in getattr(cls, "tasks", []):
+        if fn not in funcs and not (getattr(fn, "locust_tag_set", set()) & exclude_tags):
+            funcs.append(fn)
+    return funcs
 
 
 def run_personas(
@@ -379,9 +397,9 @@ def run_personas(
                 run.stopped.append(name)
                 continue
             for _ in range(rounds):
-                for task_name in task_methods(cls, exclude_tags):
-                    run.client.task = task_name
-                    getattr(user, task_name)()
+                for fn in task_methods(cls, exclude_tags):
+                    run.client.task = fn.__name__
+                    fn(user)
                     if hasattr(user, "_receive_once"):
                         for _frame in range(3):  # what the receive greenlet would read
                             user._receive_once()

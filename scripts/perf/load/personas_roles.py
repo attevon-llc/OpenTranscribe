@@ -131,25 +131,6 @@ class Researcher(CanaryMixin, ChatUser):
             fill = {'collection_uuid': random.choice(self.collection_uuids)}
             self._call('collections.media', fill=fill, params={'page': 1, 'page_size': 20})
 
-    # --- chat: only the researchers inside the budget -------------------------------------
-
-    @task(2)
-    def history(self) -> None:
-        if self.may_chat:
-            super().history()
-
-    @tag('write')
-    @task(3)
-    def chat_turn(self) -> None:
-        if self.may_chat:
-            super().chat_turn()
-
-    @tag('write')
-    @task(1)
-    def long_stream(self) -> None:
-        if self.may_chat:
-            super().long_stream()
-
     def _scope(self) -> dict[str, list[str]]:
         """Mostly a whole collection (how a researcher asks across recordings), else a few files."""
         if self.collection_uuids and random.random() < 0.7:

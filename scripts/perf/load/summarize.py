@@ -175,6 +175,7 @@ def _series(samples: list[dict[str, str]]) -> dict[tuple[str, str], list[tuple[f
 
 def sampler_section(samples: list[dict[str, str]], limits: dict[str, Any], v: Verdict) -> list[str]:
     if not samples:
+        v.check(False, 'samples.csv missing: deadlocks and pool not judged')
         return ['No sampler data (`samples.csv` missing).']
     series = _series(samples)
     lim = limits['sampler']

@@ -286,6 +286,9 @@ class ChatUser(SeededUser):
     fixed_count = 1  # set from --chat-users at start (chat turns are rate limited per address)
     pool = 'chat'
     wait_time = between(20, 60)
+    # Locust merges base-class tasks into every subclass, so a subclass cannot switch chat off by
+    # overriding the task methods; it sets this instead (Researcher: only the chat budget chats).
+    may_chat = True
 
     def on_start(self) -> None:
         super().on_start()
@@ -322,6 +325,8 @@ class ChatUser(SeededUser):
 
     @task(3)
     def history(self) -> None:
+        if not self.may_chat:
+            return
         listing = _items(self._call('chat.list', params={'limit': 30}), 'conversations')
         if listing:
             fill = {'conversation_uuid': random.choice(listing)['uuid']}
@@ -331,11 +336,15 @@ class ChatUser(SeededUser):
     @tag('write')
     @task(3)
     def chat_turn(self) -> None:
+        if not self.may_chat:
+            return
         self._turn('mock-gpt')
 
     @tag('write')
     @task(1)
     def long_stream(self) -> None:
+        if not self.may_chat:
+            return
         self._turn('mock-slow')
 
     def _turn(self, model: str) -> None:

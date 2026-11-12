@@ -255,3 +255,24 @@ def test_a_server_that_answers_the_canary_with_200_makes_it_fail(load):
             rounds=5,
             statuses={r"/api/files/file-[abc]": 200},
         )
+
+
+def test_the_stub_merges_base_class_tasks_as_locust_does(load):
+    # Locust 2.47 task.py: new_tasks += base.tasks. Overriding a task must not hide the base's.
+    researcher = load["locustfile"].USER_CLASSES["Researcher"]
+    chat_user = load["personas_write"].ChatUser
+
+    assert set(chat_user.tasks) <= set(researcher.tasks)
+
+
+def test_a_researcher_outside_the_chat_budget_never_chats_even_with_inherited_tasks(load):
+    locustfile = load["locustfile"]
+    researcher = locustfile.USER_CLASSES["Researcher"]
+    researcher.chat_budget = 0
+    try:
+        run = stub.run_personas(locustfile, personas=("Researcher",), rounds=10)
+    finally:
+        researcher.chat_budget = 3
+
+    assert not [c for c in run.client.calls if c.url.startswith("/api/chat/")]
+    assert not [c for c in run.client.calls if c.method == "POST" and c.url.startswith("/api/llm")]

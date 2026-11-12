@@ -338,3 +338,12 @@ def test_the_slo_values_are_the_ones_the_issue_states():
     assert limits["stream"]["first_token_p95_ms"] == 5000
     assert limits["deadlock"]["max_deadlocks"] == 0
     assert limits["cross_tenant"]["max_hits"] == 0
+
+
+def test_a_run_without_samples_csv_fails_instead_of_passing_vacuously(summarize, tmp_path):
+    run_dir = _run_dir(tmp_path, read_p95=200, failures=0)
+    (run_dir / "samples.csv").unlink()
+
+    _report, verdict = summarize.summarize(run_dir, _limits())
+
+    assert any("samples.csv missing" in f for f in verdict.failures), verdict.failures

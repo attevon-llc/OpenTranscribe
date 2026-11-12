@@ -85,7 +85,7 @@
   .tab-intro {
     margin: 0 0 var(--space-5);
     padding: var(--space-3) var(--space-3-5);
-    border-left: 3px solid var(--primary-color);
+    border-inline-start: 3px solid var(--primary-color);
     border-radius: 0 var(--radius-md) var(--radius-md) 0;
     background-color: rgba(var(--primary-color-rgb), 0.08);
     font-size: var(--font-size-md);

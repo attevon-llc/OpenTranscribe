@@ -157,7 +157,7 @@
   }
   .files-table th,
   .files-table td {
-    text-align: left;
+    text-align: start;
     padding: var(--space-2) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     vertical-align: top;
@@ -197,10 +197,10 @@
   }
   .actions-col {
     white-space: nowrap;
-    text-align: right;
+    text-align: end;
   }
   .actions-col .btn {
-    margin-left: var(--space-1);
+    margin-inline-start: var(--space-1);
   }
   /* Override the global `input { width:100% }` base so checkboxes stay square. */
   .files-table input[type='checkbox'] {

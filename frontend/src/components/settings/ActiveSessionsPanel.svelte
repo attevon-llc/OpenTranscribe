@@ -266,7 +266,7 @@
   .sessions-table th,
   .sessions-table td {
     padding: var(--space-1-5) var(--space-2);
-    text-align: left;
+    text-align: start;
     border-bottom: 1px solid var(--border-color);
     color: var(--text-color);
     white-space: nowrap;
@@ -294,7 +294,7 @@
   }
 
   .current-badge {
-    margin-left: var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
     padding: 1px var(--space-1-5);
     border-radius: var(--radius-pill);
     font-size: var(--font-size-2xs);

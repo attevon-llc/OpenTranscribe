@@ -367,7 +367,7 @@
   .char-counter {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    text-align: right;
+    text-align: end;
   }
 
   .char-warning {
@@ -390,7 +390,7 @@
   }
 
   .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   /* Using shared banner */

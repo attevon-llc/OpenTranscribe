@@ -119,7 +119,7 @@
     font-size: 1.1rem;
     color: var(--text-color);
     margin: 0;
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   .settings-modal-container {
@@ -136,7 +136,7 @@
     flex-direction: column;
     width: 240px;
     background-color: var(--background-color);
-    border-right: 1px solid var(--border-color);
+    border-inline-end: 1px solid var(--border-color);
     overflow: hidden;
     flex-shrink: 0;
   }

@@ -262,7 +262,7 @@
   }
 
   .token-table th {
-    text-align: left;
+    text-align: start;
     padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
@@ -281,7 +281,7 @@
   }
 
   .actions-col {
-    text-align: right;
+    text-align: end;
     white-space: nowrap;
   }
 

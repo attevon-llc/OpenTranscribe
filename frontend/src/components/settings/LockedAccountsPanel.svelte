@@ -228,7 +228,7 @@
   .locked-accounts-table td {
     padding: var(--space-2) var(--space-2);
     border-bottom: 1px solid var(--border-color);
-    text-align: left;
+    text-align: start;
   }
 
   .identifier-cell {

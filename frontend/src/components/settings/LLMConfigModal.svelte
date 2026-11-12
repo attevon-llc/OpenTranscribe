@@ -923,7 +923,7 @@ let _llmConfigModalWasOpen = false;
 
   .model-item {
     width: 100%;
-    text-align: left;
+    text-align: start;
     padding: var(--space-2);
     border: 1px solid var(--border-color);
     background: var(--input-bg);
@@ -1007,7 +1007,7 @@ let _llmConfigModalWasOpen = false;
     cursor: help;
     transition: opacity var(--duration-base) ease;
     position: relative;
-    margin-left: var(--space-2);
+    margin-inline-start: var(--space-2);
   }
 
   .info-tooltip:hover {
@@ -1031,7 +1031,7 @@ let _llmConfigModalWasOpen = false;
     z-index: var(--z-toast);
     line-height: 1.4;
     box-shadow: var(--shadow-lg);
-    text-align: left;
+    text-align: start;
     pointer-events: none;
     transform: translate(-50%, 8px);
   }

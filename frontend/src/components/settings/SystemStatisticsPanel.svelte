@@ -457,7 +457,7 @@
   .cpu-mode-banner {
     background: rgba(var(--warning-color-rgb), 0.08);
     border: 1px solid var(--warning-color);
-    border-left: 4px solid var(--warning-color);
+    border-inline-start: 4px solid var(--warning-color);
     border-radius: var(--radius-md);
     padding: var(--space-3-5) var(--space-5);
     margin-bottom: var(--space-5);
@@ -485,7 +485,7 @@
 
   .cpu-mode-banner-list {
     margin: 0 0 var(--space-2-5) 0;
-    padding-left: var(--space-6);
+    padding-inline-start: var(--space-6);
     font-size: var(--font-size-body);
     line-height: 1.55;
   }
@@ -546,7 +546,7 @@
     align-items: flex-start;
     gap: var(--space-4);
     margin-bottom: var(--space-4);
-    padding-right: var(--space-8);
+    padding-inline-end: var(--space-8);
   }
 
   .section-header-row .section-description {
@@ -763,7 +763,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .gpu-step-btn {
@@ -838,7 +838,7 @@
 
   .data-table th {
     padding: var(--space-2) var(--space-3);
-    text-align: left;
+    text-align: start;
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
@@ -916,7 +916,7 @@
     .section-header-row {
       flex-direction: column;
       align-items: flex-start;
-      padding-right: 0;
+      padding-inline-end: 0;
       gap: var(--space-2);
     }
 

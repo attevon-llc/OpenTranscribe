@@ -308,7 +308,7 @@
     font-size: var(--font-size-base);
   }
   .unlink {
-    margin-left: auto;
+    margin-inline-start: auto;
   }
   .badge {
     font-size: var(--font-size-xs);
@@ -348,7 +348,7 @@
     margin-top: var(--space-2);
     padding: var(--space-1-5) var(--space-2-5);
     border-radius: var(--radius-md);
-    border-left: 3px solid var(--warning-color);
+    border-inline-start: 3px solid var(--warning-color);
     background: rgba(var(--warning-color-rgb), 0.1);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);

@@ -291,7 +291,7 @@
   }
 
   .field.indented {
-    margin-left: var(--space-8);
+    margin-inline-start: var(--space-8);
     max-width: 13rem;
   }
 

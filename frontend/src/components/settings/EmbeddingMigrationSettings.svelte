@@ -669,7 +669,7 @@
 
   .benefit-list {
     margin: var(--space-2) 0;
-    padding-left: var(--space-5);
+    padding-inline-start: var(--space-5);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }

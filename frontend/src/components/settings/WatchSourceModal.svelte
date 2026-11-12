@@ -789,7 +789,7 @@
     align-items: center;
     gap: var(--space-1-5);
     width: 100%;
-    text-align: left;
+    text-align: start;
     background: none;
     border: none;
     box-shadow: none;

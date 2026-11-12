@@ -937,7 +937,7 @@
     z-index: var(--z-toast);
     line-height: 1.4;
     box-shadow: var(--shadow-lg);
-    text-align: left;
+    text-align: start;
     pointer-events: none;
     transform: translate(-50%, 8px);
   }
@@ -1090,7 +1090,7 @@
 
   .detail-row strong {
     color: var(--primary-on-surface);
-    margin-right: var(--space-2);
+    margin-inline-end: var(--space-2);
   }
 
   .prompt-text-container {
@@ -1120,7 +1120,7 @@
 
   /* Shared config styles */
   .config-item.shared {
-    border-left: 3px solid var(--info-color);
+    border-inline-start: 3px solid var(--info-color);
     background: rgba(var(--accent-rgb), 0.04);
   }
 

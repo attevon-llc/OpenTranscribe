@@ -463,7 +463,7 @@
   }
   .lang-icon {
     vertical-align: -2px;
-    margin-right: var(--space-1);
+    margin-inline-end: var(--space-1);
   }
 
   .lang-note {

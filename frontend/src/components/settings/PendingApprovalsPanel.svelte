@@ -179,7 +179,7 @@
   }
 
   .approvals-table th {
-    text-align: left;
+    text-align: start;
     padding: var(--space-1-5) var(--space-2-5);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
@@ -220,14 +220,14 @@
   }
 
   .actions-col {
-    text-align: right;
+    text-align: end;
     white-space: nowrap;
   }
 
   .btn-row {
     padding: var(--space-1) var(--space-3);
     font-size: var(--font-size-xs);
-    margin-left: var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
   }
 
   @media (max-width: 768px) {

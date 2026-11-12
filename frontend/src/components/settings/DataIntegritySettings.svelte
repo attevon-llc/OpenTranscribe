@@ -614,7 +614,7 @@
   .col-total,
   .col-orphans,
   .col-cleaned {
-    text-align: right;
+    text-align: end;
   }
 
   @media (max-width: 768px) {

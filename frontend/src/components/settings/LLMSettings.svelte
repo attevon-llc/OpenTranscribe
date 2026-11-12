@@ -868,7 +868,7 @@
 
   /* Shared config styling */
   .config-item.shared {
-    border-left: 3px solid var(--primary-color);
+    border-inline-start: 3px solid var(--primary-color);
     background: rgba(var(--primary-color-rgb), 0.04);
   }
 
@@ -883,7 +883,7 @@
     letter-spacing: 0.5px;
     background: rgba(var(--accent-rgb), 0.12);
     color: var(--primary-on-surface);
-    margin-left: var(--space-2);
+    margin-inline-start: var(--space-2);
     vertical-align: middle;
   }
 
@@ -902,7 +902,7 @@
     letter-spacing: 0.5px;
     background: rgba(var(--warning-color-rgb), 0.12);
     color: var(--warning-text);
-    margin-left: var(--space-2);
+    margin-inline-start: var(--space-2);
     vertical-align: middle;
   }
 
@@ -990,7 +990,7 @@
   .summary-hint.warning {
     color: var(--warning-text);
     background: rgba(var(--warning-color-rgb), 0.08);
-    border-left: 3px solid var(--warning-color);
+    border-inline-start: 3px solid var(--warning-color);
   }
 
   @media (max-width: 768px) {

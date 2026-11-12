@@ -288,7 +288,7 @@
   }
 
   .mapping-table th {
-    text-align: left;
+    text-align: start;
     padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
@@ -307,7 +307,7 @@
   }
 
   .mapping-table .numeric {
-    text-align: right;
+    text-align: end;
   }
 
   .claim {
@@ -328,12 +328,12 @@
   }
 
   .actions-col {
-    text-align: right;
+    text-align: end;
     white-space: nowrap;
   }
 
   .btn-row {
-    margin-left: var(--space-1-5);
+    margin-inline-start: var(--space-1-5);
   }
 
   @media (max-width: 768px) {

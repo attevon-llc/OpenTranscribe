@@ -293,7 +293,7 @@
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--text-color);
-    text-align: right;
+    text-align: end;
   }
 
   .detail-value.highlight {
@@ -318,7 +318,7 @@
   }
 
   .model-engine-row {
-    padding-left: var(--space-4);
+    padding-inline-start: var(--space-4);
     padding-top: var(--space-1-5);
     padding-bottom: var(--space-1-5);
   }
@@ -388,7 +388,7 @@
     }
 
     .detail-value {
-      text-align: left;
+      text-align: start;
     }
   }
 

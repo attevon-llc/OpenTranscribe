@@ -534,7 +534,7 @@
   }
 
   .form-select {
-    padding-right: var(--space-10);
+    padding-inline-end: var(--space-10);
     cursor: pointer;
   }
 

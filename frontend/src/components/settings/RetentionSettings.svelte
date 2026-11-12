@@ -627,7 +627,7 @@
     height: 9px;
     border: 2px solid var(--text-on-solid);
     border-top: none;
-    border-left: none;
+    border-inline-start: none;
     transform: rotate(45deg);
   }
 
@@ -704,7 +704,7 @@
     background-color: var(--background-secondary);
     color: var(--text-muted);
     font-weight: var(--font-weight-semibold);
-    text-align: left;
+    text-align: start;
     padding: var(--space-1-5) var(--space-2-5);
     border-bottom: 1px solid var(--border-color);
     white-space: nowrap;
@@ -725,7 +725,7 @@
   }
 
   .button-row .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   @media (max-width: 768px) {
@@ -752,7 +752,7 @@
     }
 
     .button-row .btn-secondary {
-      margin-right: 0;
+      margin-inline-end: 0;
     }
 
     .button-row .btn {

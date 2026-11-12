@@ -242,7 +242,7 @@
   .audit-table th,
   .audit-table td {
     padding: var(--space-1-5) var(--space-2);
-    text-align: left;
+    text-align: start;
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text);
     white-space: nowrap;

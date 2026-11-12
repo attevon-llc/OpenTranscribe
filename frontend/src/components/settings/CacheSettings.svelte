@@ -233,7 +233,7 @@
   }
 
   .button-row .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   @media (max-width: 768px) {

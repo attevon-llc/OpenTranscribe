@@ -606,7 +606,7 @@
   }
 
   .section :global(.form-field.indented) {
-    margin-left: var(--space-6);
+    margin-inline-start: var(--space-6);
   }
 
   /*
@@ -645,7 +645,7 @@
   }
 
   .help-text.indented {
-    margin-left: var(--space-6);
+    margin-inline-start: var(--space-6);
     margin-bottom: var(--space-3);
   }
 
@@ -659,7 +659,7 @@
   }
 
   .actions .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   @media (max-width: 768px) {
@@ -673,7 +673,7 @@
     }
 
     .actions .btn-secondary {
-      margin-right: 0;
+      margin-inline-end: 0;
     }
 
     .actions .btn {

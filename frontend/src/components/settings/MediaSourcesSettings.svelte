@@ -456,7 +456,7 @@
   }
 
   .source-card.shared {
-    border-left: 3px solid var(--info-color);
+    border-inline-start: 3px solid var(--info-color);
     background: rgba(var(--accent-rgb), 0.04);
   }
 
@@ -610,7 +610,7 @@
   }
 
   .share-toggle {
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   .share-label {
@@ -710,7 +710,7 @@
     }
 
     .share-toggle {
-      margin-left: 0;
+      margin-inline-start: 0;
     }
 
     .source-actions .btn,

@@ -232,7 +232,7 @@
     font-size: 1.1rem;
   }
   .settings-experimental-badge {
-    margin-left: var(--space-2);
+    margin-inline-start: var(--space-2);
   }
   .form-row > :global(.form-field) {
     flex: 1;

@@ -417,7 +417,7 @@
   }
 
   .help-text.indented {
-    margin-left: var(--space-6);
+    margin-inline-start: var(--space-6);
     margin-bottom: var(--space-3);
   }
 
@@ -432,7 +432,7 @@
 
   .mfa-options {
     margin-top: var(--space-4);
-    padding-left: var(--space-6);
+    padding-inline-start: var(--space-6);
   }
 
   @media (max-width: 768px) {

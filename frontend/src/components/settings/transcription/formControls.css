@@ -17,7 +17,7 @@
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  padding-right: var(--space-10);
+  padding-inline-end: var(--space-10);
 }
 
 .tx-form .form-select:focus {
@@ -106,7 +106,7 @@
   content: '';
   position: absolute;
   top: 2px;
-  left: 2px;
+  inset-inline-start: 2px;
   width: 16px;
   height: 16px;
   background-color: white;
@@ -117,11 +117,6 @@
 
 .tx-form .toggle-input:checked + .toggle-switch {
   background-color: var(--primary-color);
-}
-
-[dir='rtl'] .tx-form .toggle-switch::after {
-  left: auto;
-  right: 2px;
 }
 
 .tx-form .toggle-input:checked + .toggle-switch::after {
@@ -185,13 +180,13 @@
   padding: var(--space-1-5) var(--space-2-5);
   background: var(--warning-bg);
   border-radius: var(--radius-sm);
-  border-left: 3px solid var(--warning-color);
+  border-inline-start: 3px solid var(--warning-color);
 }
 
 .tx-form .capability-warning.warning-subtle {
   color: var(--text-secondary);
   background: var(--surface-color);
-  border-left-color: var(--text-secondary);
+  border-inline-start-color: var(--text-secondary);
 }
 
 .tx-form .disabled-toggle {

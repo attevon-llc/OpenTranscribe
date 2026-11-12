@@ -288,7 +288,7 @@
   }
 
   .setting-row.sub-setting {
-    margin-left: var(--space-6);
+    margin-inline-start: var(--space-6);
     background: var(--surface-color);
   }
 
@@ -331,7 +331,7 @@
   }
 
   .button-group .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   .success-message {
@@ -345,7 +345,7 @@
 
   @media (max-width: 768px) {
     .setting-row.sub-setting {
-      margin-left: 0;
+      margin-inline-start: 0;
     }
 
     .button-group {
@@ -353,7 +353,7 @@
     }
 
     .button-group .btn-secondary {
-      margin-right: 0;
+      margin-inline-end: 0;
     }
 
     .button-group .btn {

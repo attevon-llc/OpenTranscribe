@@ -227,7 +227,7 @@
 
   .form-select {
     width: 100%;
-    padding-right: var(--space-10);
+    padding-inline-end: var(--space-10);
     cursor: pointer;
   }
 
@@ -247,7 +247,7 @@
   }
 
   .form-actions .btn-secondary {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
 
   @media (max-width: 768px) {
@@ -256,7 +256,7 @@
     }
 
     .form-actions .btn-secondary {
-      margin-right: 0;
+      margin-inline-end: 0;
     }
 
     .form-actions .btn {

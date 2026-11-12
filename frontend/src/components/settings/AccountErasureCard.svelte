@@ -295,7 +295,7 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     overflow-wrap: anywhere;
-    text-align: left;
+    text-align: start;
     color: var(--text-color);
   }
 

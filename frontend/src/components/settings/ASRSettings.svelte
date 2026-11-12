@@ -928,7 +928,7 @@
   }
 
   .config-card.shared {
-    border-left: 3px solid var(--info-color);
+    border-inline-start: 3px solid var(--info-color);
     background: rgba(var(--primary-color-rgb), 0.04);
   }
   :global([data-theme='dark']) .config-card.shared { background: rgba(var(--info-color-rgb), 0.06); }
@@ -939,7 +939,7 @@
     font-size: var(--font-size-2xs); font-weight: var(--font-weight-semibold);
     text-transform: uppercase; letter-spacing: 0.5px;
     background: rgba(var(--primary-color-rgb), 0.12); color: var(--primary-on-surface);
-    margin-left: var(--space-2); vertical-align: middle;
+    margin-inline-start: var(--space-2); vertical-align: middle;
   }
   :global([data-theme='dark']) .share-badge { background: rgba(var(--primary-color-rgb), 0.2); }
 

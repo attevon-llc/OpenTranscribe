@@ -489,7 +489,8 @@ def _execute_one(db: Session, entry_id: int, now: datetime) -> bool:
     audit_outbox.deliver_staged(db)
     db.refresh(entry)
     # Before the run: an organization erasure deletes the memberships the admins are found by.
-    recipients = notices.resolve_recipients(db, entry)
+    # A lookup failure only costs the completion notice its recipients, never the run.
+    recipients = notices.resolve_recipients_or_none(db, entry)
     summary = run_entry(db, entry)
     if summary.get("complete"):
         notices.notify(db, entry, notices.ErasureNoticeKind.COMPLETED, recipients)

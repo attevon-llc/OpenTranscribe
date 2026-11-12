@@ -6,14 +6,21 @@ a reminder 24 hours before, the cancellation and the completion.
 
 from __future__ import annotations
 
+import contextlib
+import uuid
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
+from unittest.mock import create_autospec
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.erasure import ErasureLedgerEntry
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.services import audit_outbox
@@ -215,3 +222,72 @@ def test_the_kinds_are_the_four_moments():
         "cancelled",
         "completed",
     }
+
+
+def _failing_lookup(db: Session, entry: ErasureLedgerEntry) -> list[tuple[int, str | None]]:
+    """A real failed statement: on PostgreSQL it aborts the whole transaction."""
+    db.execute(text("SELECT 1 / 0"))
+    return []
+
+
+def test_a_failed_recipient_lookup_leaves_the_transaction_usable(
+    db_session, monkeypatch, sent, admin_user, normal_user, org
+):
+    entry = _schedule(db_session, admin_user, normal_user, org)
+    monkeypatch.setattr(notices, "resolve_recipients", _failing_lookup)
+
+    assert notices.notify(db_session, entry, ErasureNoticeKind.REMINDER) == 0
+
+    assert db_session.execute(text("SELECT 1")).scalar() == 1
+
+
+def test_a_failed_recipient_lookup_never_blocks_the_erasure(
+    db_session, monkeypatch, sent, admin_user, normal_user, org
+):
+    ran: list[int] = []
+    monkeypatch.setattr(
+        gdpr_erasure_service,
+        "erase_org_member_data",
+        lambda db, user_id, *a, **k: _record(ran, user_id) and {"complete": True},
+    )
+    entry = _schedule(db_session, admin_user, normal_user, org)
+    monkeypatch.setattr(notices, "resolve_recipients", _failing_lookup)
+
+    assert scheduled._execute_one(db_session, entry.id, NOW + timedelta(hours=73)) is True
+
+    assert ran == [normal_user.id]
+
+
+def test_the_executor_runs_the_erasure_when_the_notice_lookup_raises(monkeypatch):
+    """The same contract without a database: the lookup's error never reaches the run."""
+    entry = ErasureLedgerEntry(
+        id=1,
+        uuid=uuid.uuid4(),
+        subject_type="file",
+        subject_file_uuid=uuid.uuid4(),
+        status="deferred",
+        deferred_reason="grace_period",
+        scheduled_for=NOW,
+        actor_kind="org_admin",
+    )
+    db = create_autospec(Session, instance=True)
+    db.get.return_value = entry
+    db.begin_nested.side_effect = contextlib.nullcontext
+
+    def lookup_fails(db: Session, row: ErasureLedgerEntry) -> list[tuple[int, str | None]]:
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+    ran: list[ErasureLedgerEntry] = []
+
+    def run(db: Session, row: ErasureLedgerEntry) -> dict[str, Any]:
+        ran.append(row)
+        return {"complete": True}
+
+    monkeypatch.setattr(scheduled, "_stage", lambda *a, **k: None)
+    monkeypatch.setattr(audit_outbox, "deliver_staged", lambda db: None)
+    monkeypatch.setattr(notices, "resolve_recipients", lookup_fails)
+    monkeypatch.setattr(scheduled, "run_entry", run)
+
+    assert scheduled._execute_one(db, entry.id, NOW + timedelta(hours=1)) is True
+
+    assert ran == [entry]

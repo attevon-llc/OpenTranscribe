@@ -123,6 +123,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - Security: a plain admin could restore (reactivate) a removed super_admin account, or undo a removal a super_admin made. `POST /api/admin/removed-members/{ledger_uuid}/restore` now applies the same rule as every other write to an account and answers 403 unless the caller is a super_admin.
 - Restoring a removed member re-reads the scheduled erase under its row lock, so a restore that races the hourly executor answers 409 instead of recording a cancellation for an erase that is already running. The account is switched off in the same commit that schedules its erase and switched back on in the same commit that cancels it, so a failure in between can no longer leave either half done.
 - Restoring a removed member no longer switches on an account that an administrator had already switched off before removing it.
+- A scheduled erasure no longer skips its run when the recipients of its completion notice cannot be looked up, and a failed notice lookup no longer aborts the caller's database transaction (both lookups now run in a SAVEPOINT).
 
 ### Changed
 

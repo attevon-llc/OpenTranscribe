@@ -73,7 +73,7 @@ export async function updateLlmBudget(update: LlmBudgetUpdate): Promise<LlmBudge
 }
 
 export interface LlmUserSpend {
-  user_id: number;
+  user_uuid: string;
   email: string;
   full_name: string | null;
   tokens_today: number;

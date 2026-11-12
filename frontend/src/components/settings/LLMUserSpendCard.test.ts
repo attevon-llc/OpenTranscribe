@@ -31,7 +31,7 @@ const REPORT = {
   rates_verified_on: '2026-08-06',
   users: [
     {
-      user_id: 1,
+      user_uuid: '00000000-0000-4000-8000-000000000001',
       email: 'heavy@example.com',
       full_name: 'Heavy User',
       tokens_today: 1_500,
@@ -40,11 +40,20 @@ const REPORT = {
       cost_incomplete: false,
     },
     {
-      user_id: 2,
+      user_uuid: '00000000-0000-4000-8000-000000000002',
       email: 'local@example.com',
       full_name: null,
       tokens_today: 0,
       tokens_this_month: 40,
+      estimated_cost_usd: 0.25,
+      cost_incomplete: true,
+    },
+    {
+      user_uuid: '00000000-0000-4000-8000-000000000003',
+      email: 'none@example.com',
+      full_name: null,
+      tokens_today: 0,
+      tokens_this_month: 5,
       estimated_cost_usd: null,
       cost_incomplete: true,
     },
@@ -61,12 +70,18 @@ describe('LLMUserSpendCard', () => {
     const { findByTestId } = render(LLMUserSpendCard);
     const table = await findByTestId('llm-user-spend-table');
     const rows = table.querySelectorAll('tbody tr');
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows[0].textContent).toContain('heavy@example.com');
     expect(rows[0].textContent).toContain('1,500');
     expect(rows[0].textContent).toContain('12,345');
     expect(rows[0].textContent).toContain('$1.50');
-    expect(rows[1].textContent).toContain('settings.llmUsage.unpriced');
+    // A partial cost is explained in text, not only by a title tooltip.
+    expect(rows[1].querySelector('.sr-only')?.textContent).toContain(
+      'settings.llmUsage.perUser.partial'
+    );
+    expect(rows[0].querySelector('.sr-only')).toBeNull();
+    expect(rows[2].textContent).toContain('settings.llmUsage.unpriced');
+    expect(rows[2].querySelector('.sr-only')).toBeNull();
   });
 
   it('says so when nobody has used AI this month', async () => {

@@ -98,28 +98,14 @@ def test_an_anonymous_caller_cannot_read_per_user_spend(client):
 def test_an_admin_sees_each_users_tokens_and_estimated_cost(
     client, db_session, admin_token_headers, normal_user
 ):
-    from datetime import UTC
-    from datetime import datetime
-
-    from app.models.llm_token_budget import SCOPE_USER_DAY
-    from app.models.llm_token_budget import LLMTokenBudget
-
-    now = datetime.now(UTC)
-    db_session.add(
-        LLMTokenBudget(
-            scope=SCOPE_USER_DAY,
-            user_id=normal_user.id,
-            period=now.strftime("%Y-%m-%d"),
-            used=1500,
-        )
-    )
-    db_session.commit()
+    # No llm_token_budget row: counters exist only while a limit is set, and unlimited is the
+    # default. Tokens must then come from the recorded usage events.
     _token_event(db_session, normal_user, quantity=1000)
     _token_event(db_session, normal_user, quantity=500, model="no-such-model-xyz")
 
     body = client.get(USERS_URL, headers=admin_token_headers).json()
 
-    row = next(r for r in body["users"] if r["user_id"] == normal_user.id)
+    row = next(r for r in body["users"] if r["user_uuid"] == str(normal_user.uuid))
     assert row["email"] == normal_user.email
     assert row["tokens_today"] == 1500
     assert row["tokens_this_month"] == 1500
@@ -128,9 +114,9 @@ def test_an_admin_sees_each_users_tokens_and_estimated_cost(
     # The unpriced model must be flagged, not counted as $0.
     assert row["cost_incomplete"] is True
     assert body["rates_verified_on"]
-    # Nothing that identifies a conversation, file or prompt is returned.
+    # The internal integer key, and anything identifying a conversation, file or prompt, are absent.
     assert set(row) == {
-        "user_id",
+        "user_uuid",
         "email",
         "full_name",
         "tokens_today",
@@ -138,6 +124,33 @@ def test_an_admin_sees_each_users_tokens_and_estimated_cost(
         "estimated_cost_usd",
         "cost_incomplete",
     }
+
+
+def test_an_enforcement_counter_wins_over_events_for_its_day(
+    client, db_session, admin_token_headers, normal_user
+):
+    from datetime import UTC
+    from datetime import datetime
+
+    from app.models.llm_token_budget import SCOPE_USER_DAY
+    from app.models.llm_token_budget import LLMTokenBudget
+
+    db_session.add(
+        LLMTokenBudget(
+            scope=SCOPE_USER_DAY,
+            user_id=normal_user.id,
+            period=datetime.now(UTC).strftime("%Y-%m-%d"),
+            used=1700,
+        )
+    )
+    db_session.commit()
+    _token_event(db_session, normal_user, quantity=1000)
+
+    body = client.get(USERS_URL, headers=admin_token_headers).json()
+
+    row = next(r for r in body["users"] if r["user_uuid"] == str(normal_user.uuid))
+    assert row["tokens_today"] == 1700
+    assert row["tokens_this_month"] == 1700
 
 
 def test_events_from_a_previous_month_are_not_counted(
@@ -153,4 +166,4 @@ def test_events_from_a_previous_month_are_not_counted(
 
     body = client.get(USERS_URL, headers=admin_token_headers).json()
 
-    assert all(r["user_id"] != normal_user.id for r in body["users"])
+    assert all(r["user_uuid"] != str(normal_user.uuid) for r in body["users"])

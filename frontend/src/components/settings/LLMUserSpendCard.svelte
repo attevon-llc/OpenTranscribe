@@ -45,7 +45,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each report.users as row (row.user_id)}
+        {#each report.users as row (row.user_uuid)}
           <tr>
             <td>
               {#if row.full_name}<span class="name">{row.full_name}</span>{/if}
@@ -57,7 +57,12 @@
               {formatEstimatedCost(row.estimated_cost_usd, $locale) ??
                 $t('settings.llmUsage.unpriced')}
               {#if row.cost_incomplete && row.estimated_cost_usd !== null}
-                <span class="partial" title={$t('settings.llmUsage.perUser.partial')}>*</span>
+                <span class="partial" title={$t('settings.llmUsage.perUser.partial')} aria-hidden="true"
+                  >*</span
+                >
+                <span class="sr-only" data-testid="llm-user-spend-partial">
+                  {$t('settings.llmUsage.perUser.partial')}
+                </span>
               {/if}
             </td>
           </tr>

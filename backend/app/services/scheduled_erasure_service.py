@@ -39,6 +39,7 @@ from app.models.erasure import ErasureLedgerEntry
 from app.models.user import User
 from app.services import audit_outbox
 from app.services import erasure_ledger_service as ledger
+from app.services import erasure_notifications as notices
 from app.services.system_settings_service import get_setting
 from app.utils.uuid7 import uuid7
 
@@ -329,6 +330,7 @@ def schedule(
                 "request_exists", "An erasure of this subject is already scheduled.", entry=existing
             )
         raise ScheduledErasureError("ledger_unavailable", "The request could not be recorded.")
+    notices.notify(db, entry, notices.ErasureNoticeKind.REQUESTED)
     return entry
 
 
@@ -364,6 +366,7 @@ def cancel(
         )
         cancelled = ledger.cancel_request(db, entry, now=current)
         audit_outbox.deliver_staged(db)
+        notices.notify(db, cancelled, notices.ErasureNoticeKind.CANCELLED)
         return cancelled
     if entry.status in ("pending", "deferred", "complete", "failed"):
         raise ScheduledErasureError("already_executing", "The erasure has started.", entry=entry)
@@ -482,7 +485,11 @@ def _execute_one(db: Session, entry_id: int, now: datetime) -> bool:
     db.commit()
     audit_outbox.deliver_staged(db)
     db.refresh(entry)
-    run_entry(db, entry)
+    # Before the run: an organization erasure deletes the memberships the admins are found by.
+    recipients = notices.resolve_recipients(db, entry)
+    summary = run_entry(db, entry)
+    if summary.get("complete"):
+        notices.notify(db, entry, notices.ErasureNoticeKind.COMPLETED, recipients)
     return True
 
 

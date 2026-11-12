@@ -18,6 +18,7 @@ const PINNED_TITLES: [string, string][] = [
   ['transcription_status', 'notifications.transcriptionUpdate'],
   ['download_progress', 'notifications.downloadProgress'],
   ['file_takedown', 'notifications.fileTakedown'],
+  ['erasure_notice', 'notifications.erasureNotice'],
   ['reindex_complete', 'notifications.searchReindexing'],
   ['migration_finalized', 'notifications.embeddingMigration'],
 ];
@@ -76,6 +77,21 @@ describe('composeClientMessage', () => {
     expect(composeClientMessage('file_takedown_released', { filename: 'x.wav' }, echo)).toBe(
       'notifications.fileTakedownReleasedMessage:{"filename":"x.wav"}'
     );
+  });
+
+  it.each([
+    ['requested', 'notifications.erasureRequestedMessage'],
+    ['reminder', 'notifications.erasureReminderMessage'],
+    ['cancelled', 'notifications.erasureCancelledMessage'],
+    ['completed', 'notifications.erasureCompletedMessage'],
+  ])('words a scheduled-erasure %s notice from its event', (event, key) => {
+    const msg = composeClientMessage('erasure_notice', { event }, echo);
+    expect(msg).toBe(`${key}:{"when":""}`);
+    expect(key in english).toBe(true);
+  });
+
+  it('leaves an erasure notice of an unknown event to the backend message', () => {
+    expect(composeClientMessage('erasure_notice', { event: 'other' }, echo)).toBeUndefined();
   });
 });
 

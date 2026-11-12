@@ -70,6 +70,12 @@ recorded and runs after a delay, so a mistaken or hostile request can be stopped
   person's account. A second request for the same member or organization while one is open is
   `409 request_exists`; a member erasure and the same person's own account-erasure request can
   both be open.
+- **Notices.** The organization's admins, and for a member erasure the member, are told at
+  four moments: when it is requested, about 24 hours before it runs (once; skipped when the whole
+  delay is 24 hours or less), when it is cancelled and when it has completed. Each is an in-app
+  notification (kept in the bell until dismissed) and, when a mail transport is configured, an
+  email. A notice that cannot be sent never blocks the erasure. Self-service requests and the
+  super_admin routes are not covered.
 - **Audit.** The organization's audit log shows `gdpr.erasure.scheduled`,
   `gdpr.erasure.cancelled` and `gdpr.erasure.execution_started`, plus `org.owner.change` when the
   owner changes, then the erasure's own

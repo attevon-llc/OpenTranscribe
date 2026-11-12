@@ -270,9 +270,14 @@ def erasure_execute_due() -> dict:
     guarantee, this tick keeps a 72-hour organization erasure from running up to a day late.
     Overlapping runs are safe: the executor locks each entry before flipping it to ``pending``.
     """
+    from app.db.session_utils import session_scope
+    from app.services import erasure_notifications
     from app.services import scheduled_erasure_service as scheduled_erasure
 
-    return {"status": "ok", **scheduled_erasure.execute_due_requests()}
+    result = scheduled_erasure.execute_due_requests()
+    with session_scope() as db:
+        reminders = erasure_notifications.send_due_reminders(db)
+    return {"status": "ok", **result, "reminders": reminders}
 
 
 def notify_hold_released(file: MediaFile) -> None:

@@ -55,6 +55,7 @@ const ICON_BY_TYPE: Partial<Record<NotificationType, IconName>> = {
   collection_access_changed: 'shield',
   file_takedown: 'shield',
   file_takedown_released: 'shield',
+  erasure_notice: 'shield',
   download_progress: 'download',
 };
 

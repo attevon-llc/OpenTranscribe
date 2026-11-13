@@ -1,0 +1,44 @@
+
+
+def x__get_redis_client__mutmut_orig() -> redis.Redis | None:
+    """
+    Get a Redis client connection for lockout storage.
+
+    Returns:
+        Optional[redis.Redis]: Redis client or None if unavailable.
+    """
+    try:
+        client = redis.Redis.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+        )
+        # Test connection
+        client.ping()
+        return client
+    except (redis.RedisError, OSError, ValueError) as e:
+        logger.warning(f"Redis connection failed for lockout storage: {e}", exc_info=True)
+        return None
+
+
+def x__get_redis_client__mutmut_13() -> redis.Redis | None:
+    """
+    Get a Redis client connection for lockout storage.
+
+    Returns:
+        Optional[redis.Redis]: Redis client or None if unavailable.
+    """
+    try:
+        client = redis.Redis.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+        )
+        # Test connection
+        client.ping()
+        return client
+    except (redis.RedisError, OSError, ValueError) as e:
+        logger.warning(None, exc_info=True)
+        return None

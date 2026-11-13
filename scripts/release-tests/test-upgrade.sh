@@ -558,14 +558,14 @@ mkdir -p "$PHASE_DIR"
 TEST_ASSERT_LEDGER="$PHASE_DIR/assertions.ledger"
 export TEST_ASSERT_LEDGER
 (( DO_FORCE == 0 )) || rm -f "$TEST_ASSERT_LEDGER"
-phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; }
+phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; echo "phase $1 done duration_s=$(( SECONDS - ${PHASE_T0:-$SECONDS} ))"; }
 phase_check() { [[ -f "$PHASE_DIR/$1.done" && $DO_FORCE -eq 0 ]]; }
 phase()       { local n="$1"; shift
                 if phase_check "$n"; then
                     echo -e "\033[0;33m[skip]\033[0m phase $n already complete"
                     return
                 fi
-                echo -e "\n\033[1;34m═══ phase $n ═══\033[0m"
+                echo -e "\n\033[1;34m═══ phase $n ═══\033[0m $(date -u +%FT%TZ)"; PHASE_T0=$SECONDS
                 "$@"
                 phase_done "$n"
               }
@@ -655,9 +655,9 @@ phase_01_build_local_images() {
         return
     fi
     gr_log "building local ${LOCAL_IMAGE_TAG} images"
-    docker build -t "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" \
+    docker build -t "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" --label "$GR_REVISION_LABEL" \
         -f "$REPO_ROOT/backend/Dockerfile.prod" "$REPO_ROOT/backend"
-    docker build -t "davidamacey/opentranscribe-frontend:${LOCAL_IMAGE_TAG}" \
+    docker build -t "davidamacey/opentranscribe-frontend:${LOCAL_IMAGE_TAG}" --label "$GR_REVISION_LABEL" \
         -f "$REPO_ROOT/frontend/Dockerfile.prod" "$REPO_ROOT/frontend"
 }
 
@@ -674,7 +674,7 @@ phase_01b_build_docs_image() {
     gr_log "building local docs image ${LOCAL_IMAGE_TAG}"
     # Same build args scripts/docker-build-push.sh:build_docs passes — omitting OT_VERSION
     # renders an empty version badge, omitting DOCS_BASE_URL breaks links behind nginx.
-    docker build -t "davidamacey/opentranscribe-docs:${LOCAL_IMAGE_TAG}" \
+    docker build -t "davidamacey/opentranscribe-docs:${LOCAL_IMAGE_TAG}" --label "$GR_REVISION_LABEL" \
         --build-arg "OT_VERSION=${LOCAL_IMAGE_TAG}" \
         --build-arg DOCS_BASE_URL=/docs/ \
         "$REPO_ROOT/docs-site"
@@ -1526,7 +1526,7 @@ phase_08_start_new() {
     ac_wait_for_health 900
 
     # Tail backend logs for "Alembic upgrade complete" or similar marker
-    docker logs opentranscribe-backend 2>&1 | grep -iE 'alembic|migration' | tail -20 \
+    docker logs "$(gr_service_container backend)" 2>&1 | grep -iE 'alembic|migration' | tail -20 \
         > "$TEST_ROOT/migration-log.txt" || true
 
     # The report is opened HERE now, not in phase 10, because this phase has assertions
@@ -2888,7 +2888,7 @@ echo
 
 phase 00 phase_00_preflight
 phase 01 phase_01_build_local_images
-phase 01b phase_01b_build_docs_image
+phase 01b phase_01b_build_docs_image; gr_assert_release_images_are_the_code_under_test "$LOCAL_IMAGE_TAG" backend frontend docs
 phase 02 phase_02_verify_from_version
 phase 03 phase_03_prepare_v033_compose
 phase 04 phase_04_start_from_stack

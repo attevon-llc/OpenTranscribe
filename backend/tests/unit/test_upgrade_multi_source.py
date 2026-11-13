@@ -451,17 +451,26 @@ def test_dispatcher_tears_down_between_hops_and_waits() -> None:
 
 
 @pytest.mark.unit
-def test_stock_container_label_filter_is_byte_identical_across_the_two_pollers() -> None:
+def test_stock_container_label_filter_is_the_same_question_in_both_pollers() -> None:
+    """Both pollers filter on the compose-project label; the rehearse one takes the project.
+
+    The guardrails poller is the multi-hop upgrade's (always the stock project). The rehearse
+    one is parametrised so Scenario C waits on `ot-reltest-lite`, not on a stack it never ran.
+    """
     guardrails_fn = _extract_function_body(
         _read(GUARDRAILS_SH), "gr_wait_for_stock_containers_gone"
     )
     rehearse_fn = _extract_function_body(_read(REHEARSE_SH), "stock_containers")
 
-    g_match = _STOCK_FILTER_RE.search(guardrails_fn)
-    r_match = _STOCK_FILTER_RE.search(rehearse_fn)
-    assert g_match, "gr_wait_for_stock_containers_gone has no stock-project label filter"
-    assert r_match, "65-rehearse.sh's stock_containers() has no stock-project label filter"
-    assert g_match.group(0) == r_match.group(0)
+    assert _STOCK_FILTER_RE.search(guardrails_fn), "guardrails poller lost the stock label filter"
+    assert "label=com.docker.compose.project=${1:?" in rehearse_fn
+    rehearse_text = _read(REHEARSE_SH)
+    for scenario, project in (
+        ("A", "opentranscribe"),
+        ("B", "opentranscribe"),
+        ("C", "ot-reltest-lite"),
+    ):
+        assert f'teardown_scenario "Scenario {scenario}" {project} ./' in rehearse_text, scenario
 
 
 @pytest.mark.unit

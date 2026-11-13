@@ -316,8 +316,20 @@ lite_teardown_rc=0
 # and `grep -q` closes the pipe on its first match, so `docker ps` can die with SIGPIPE and
 # turn a stack that IS still up into a reported "all clear". Capturing the output has no
 # such failure mode.
+# $1 = the compose project the scenario ran under: `opentranscribe` for A and B, `ot-reltest-lite`
+# for C. Asking about the stock project after C proved nothing about C's containers (STK plan R4).
+# Prints the UTC start and duration_s of whatever it runs (LOOP_SPEED_PLAN M1: the rehearsal had
+# no per-scenario times, so its ~27 min was reconstructed from file mtimes). Returns the command's rc.
+rehearse_timed() {
+    local label="$1" t0=$SECONDS rc=0; shift
+    echo -e "${BLUE}${label} started $(date -u +%FT%TZ)${NC}" >&2
+    "$@" || rc=$?
+    echo -e "${BLUE}${label} done duration_s=$(( SECONDS - t0 )) rc=${rc}${NC}" >&2
+    return "$rc"
+}
+
 stock_containers() {
-    docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}'
+    docker ps -a --filter "label=com.docker.compose.project=${1:?compose project}" --format '{{.Names}}'
 }
 
 # Every scenario ends with its stack UP, deliberately: run standalone, you want to poke at
@@ -332,7 +344,7 @@ stock_containers() {
 # Returns 3 (precondition unmet) when the names do not release, so the caller can skip the
 # next scenario rather than watch it fail for a reason that is not about the release.
 teardown_scenario() {
-    local label="$1"; shift
+    local label="$1" project="$2"; shift 2
     echo -e "${BLUE}Tearing down ${label}'s stack so the next scenario can bind its ports${NC}" >&2
     "$@" --cleanup --yes || {
         echo -e "${YELLOW}${label} cleanup reported a problem; continuing${NC}" >&2
@@ -343,12 +355,12 @@ teardown_scenario() {
     # actually disappear rather than racing them.
     local _
     for _ in $(seq 1 30); do
-        [[ -z "$(stock_containers)" ]] && break
+        [[ -z "$(stock_containers "$project")" ]] && break
         sleep 2
     done
-    if [[ -n "$(stock_containers)" ]]; then
+    if [[ -n "$(stock_containers "$project")" ]]; then
         echo -e "${RED}${label}'s containers did not go away; the next scenario cannot start${NC}" >&2
-        docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '  {{.Names}}\t{{.Status}}' >&2
+        docker ps -a --filter "label=com.docker.compose.project=${project}" --format '  {{.Names}}\t{{.Status}}' >&2
         return 3
     fi
     return 0
@@ -423,15 +435,15 @@ else
 
 
     echo -e "${BLUE}Scenario A — fresh install${NC}" >&2
-    ./scripts/release-tests/test-fresh-install.sh --yes || fresh_rc=$?
+    rehearse_timed "Scenario A" ./scripts/release-tests/test-fresh-install.sh --yes || fresh_rc=$?
     # A has copied (hardlinked or real-copied) what it needed; D's evidence stays, its GB go.
     purge_cold_cache
 
-    teardown_scenario "Scenario A" ./scripts/release-tests/test-fresh-install.sh || upgrade_rc=$?
+    teardown_scenario "Scenario A" opentranscribe ./scripts/release-tests/test-fresh-install.sh || upgrade_rc=$?
 
     if [[ $upgrade_rc -eq 0 ]]; then
         echo -e "${BLUE}Scenario B — upgrade from the previous published release${NC}" >&2
-        REQUIRE_PREVIOUS=1 ./scripts/release-tests/test-upgrade.sh --yes || upgrade_rc=$?
+        REQUIRE_PREVIOUS=1 rehearse_timed "Scenario B" ./scripts/release-tests/test-upgrade.sh --yes || upgrade_rc=$?
     fi
 
     # Scenario C runs regardless of B's assertion verdict but not through a broken teardown:
@@ -441,12 +453,12 @@ else
     if [[ $upgrade_rc -eq 3 ]]; then
         lite_rc=3
     else
-        teardown_scenario "Scenario B" ./scripts/release-tests/test-upgrade.sh || lite_rc=$?
+        teardown_scenario "Scenario B" opentranscribe ./scripts/release-tests/test-upgrade.sh || lite_rc=$?
     fi
 
     if [[ $lite_rc -eq 0 ]]; then
         echo -e "${BLUE}Scenario C — lite (CPU-only) deployment, mocked cloud ASR + mocked LLM${NC}" >&2
-        ./scripts/release-tests/test-lite-mode.sh --yes || lite_rc=$?
+        rehearse_timed "Scenario C" ./scripts/release-tests/test-lite-mode.sh --yes || lite_rc=$?
     fi
 
     # Scenario C must be torn down too, even though it is the last one.
@@ -465,7 +477,7 @@ else
     # versa). It is therefore captured separately and warned about, loudly, with the manual
     # command — the same "cleanup reported a problem; continuing" shape `teardown_scenario`
     # already uses for A and B.
-    teardown_scenario "Scenario C" ./scripts/release-tests/test-lite-mode.sh || lite_teardown_rc=$?
+    teardown_scenario "Scenario C" ot-reltest-lite ./scripts/release-tests/test-lite-mode.sh || lite_teardown_rc=$?
     if [[ $lite_teardown_rc -ne 0 ]]; then
         echo -e "${YELLOW}Scenario C's stack did not tear down cleanly (rc=$lite_teardown_rc).${NC}" >&2
         echo -e "${YELLOW}The NEXT rehearsal will refuse to start until it is gone. Clean up with:${NC}" >&2

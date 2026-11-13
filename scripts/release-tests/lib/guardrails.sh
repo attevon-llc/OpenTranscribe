@@ -344,14 +344,11 @@ gr_check_ports_free() {
 #   the previous one's containers are still going away asynchronously at the docker
 #   level (a container in 'Removing' still holds its port bindings).
 #
-#   ⚠️ The filter string below is BYTE-IDENTICAL to scripts/release/65-rehearse.sh's
-#   own `stock_containers()` on purpose (test_upgrade_multi_source.py asserts this) --
-#   both are asking the exact same question ("is a stock-named opentranscribe-* stack
-#   still around"), and a second, independently-typed copy of that filter string is a
-#   second chance for the two to quietly drift apart. Deliberately NOT shared as a
-#   sourced function: 65-rehearse.sh sources only criteria-lib.sh and has no dependency
-#   on this test-harness library, and giving a release STAGE a dependency on the TEST
-#   HARNESS to save a few lines is the wrong trade.
+#   ⚠️ The stock-project filter below is the same question as scripts/release/65-rehearse.sh's
+#   `stock_containers()`; that one takes the scenario's project so Scenario C waits on
+#   `ot-reltest-lite`, this one is only the multi-hop upgrade's (stock). Deliberately NOT shared:
+#   65-rehearse.sh has no dependency on this test-harness library, and giving a release STAGE
+#   one to save a few lines is the wrong trade.
 #
 #   Captured, never `docker ps ... | grep -q .`: this library runs under
 #   `set -euo pipefail`, and `grep -q` closes the pipe on its first match, so `docker
@@ -916,6 +913,8 @@ gr_assert_image_is_the_code_under_test() {
     gr_ok "$image is built from the code under test (${expected:0:12})"
 }
 
+source "$(dirname "${BASH_SOURCE[0]}")/scenario-targeting.sh"
+
 gr_stamp_owned_resources() {
     local proj="${GR_STOCK_PROJECT:-opentranscribe}"
     local dir
@@ -964,7 +963,8 @@ gr_stamp_owned_resources() {
 # That is an easy claim to make and an easy one to be wrong about, so it is
 # measured rather than asserted: fingerprint before, verify after, fail loudly
 # on any difference.
-GR_REPO_ENV="${GR_REPO_ENV:-/mnt/nvm/repos/transcribe-app/.env}"
+# This checkout's .env, not a fixed path: from a worktree that fingerprinted another checkout's file.
+GR_REPO_ENV="${GR_REPO_ENV:-${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}/.env}"
 GR_REPO_ENV_FINGERPRINT=""
 
 gr_fingerprint_repo_env() {

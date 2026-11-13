@@ -16,6 +16,13 @@ c() { docker ps -q --filter "label=com.docker.compose.project=otfresh-${FRESH}" 
 PG=$(c postgres); B=$(c backend)
 [[ -n "$PG" && -n "$B" ]] || { echo "run_profile: stack otfresh-${FRESH} is not up" >&2; exit 3; }
 PSQL='psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-opentranscribe}"'
+# pg_stat_statements only exists once it is in shared_preload_libraries (PostgreSQL docs, F.32); that is
+# set per stack with ALTER SYSTEM + restart (README "Prepare the stack"), never in a shipped compose file.
+LIBS=$(docker exec "$PG" sh -c "$PSQL -Atc 'show shared_preload_libraries'")
+[[ "$LIBS" == *pg_stat_statements* ]] || {
+  echo "run_profile: pg_stat_statements is not preloaded on otfresh-${FRESH} (shared_preload_libraries='${LIBS}');" \
+       "follow README 'Prepare the stack' (ALTER SYSTEM + restart), then re-run" >&2; exit 3; }
+docker exec "$PG" sh -c "$PSQL -Atc 'create extension if not exists pg_stat_statements'" >/dev/null
 docker exec "$PG" sh -c "$PSQL -Atc 'select pg_stat_statements_reset()'" >/dev/null
 START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 mkdir -p "$OUT"

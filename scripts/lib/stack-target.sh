@@ -49,3 +49,11 @@ st_prepare() {
     [[ -n "${ST_FRESH_NAME:-}" ]] || { echo "stack-target: prepare needs a --fresh target" >&2; return 2; }
     python3 "$_ST_PY" prepare --fresh "$ST_FRESH_NAME" --pg-stat-statements
 }
+
+# st_require_prestart REQ...   (before the stack exists: only env:VAR and asset:NAME can be judged)
+st_require_prestart() {
+    local args=() req rc=0
+    for req in "$@"; do args+=(--require "$req"); done
+    python3 "$_ST_PY" check --no-stack --no-banner "${args[@]}" || rc=$?
+    return "$rc"
+}

@@ -21,6 +21,7 @@ Usage::
     stack_target.py resolve [--fresh NAME | --project P | --stock] [--emit-env] [--print project|json]
     stack_target.py resolve --port-owner PORT         # project publishing a host port
     stack_target.py check   [target] --require REQ [--require REQ ...] [--allow CHECK=REASON]
+    stack_target.py check   --no-stack --require env:VAR --require asset:NAME   # before `start`
     stack_target.py container SERVICE [target]        # first running container of a service
     stack_target.py prepare --fresh NAME --pg-stat-statements
 
@@ -206,6 +207,7 @@ def build_parser() -> argparse.ArgumentParser:
         if name == 'check':
             p.add_argument('--require', action='append', default=[])
             p.add_argument('--allow', action='append', default=[])
+            p.add_argument('--no-stack', action='store_true')
         if name == 'container':
             p.add_argument('service')
         if name == 'prepare':
@@ -225,7 +227,11 @@ def main(argv: list[str] | None = None) -> int:
             return OK if owner else NO_PROJECT
         if args.cmd == 'prepare' and (args.project or args.stock or not args.fresh):
             raise StackError(USAGE, 'prepare requires --fresh NAME (never --project or --stock)')
-        stack = resolve(repo, args.fresh, args.project, args.stock, env)
+        if args.cmd == 'check' and args.no_stack:
+            # Pre-start gate: only env:/asset: can be judged before a stack exists.
+            stack = Stack('(not started)', 'no-stack', repo, [])
+        else:
+            stack = resolve(repo, args.fresh, args.project, args.stock, env)
         if args.cmd == 'prepare':
             print(banner(stack), file=sys.stderr)
             prepare_pgss(stack)

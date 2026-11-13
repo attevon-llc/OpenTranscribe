@@ -47,6 +47,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# shellcheck source=scripts/lib/stack-target.sh
+source "$REPO_ROOT/scripts/lib/stack-target.sh"
+
 VENV_PY="$REPO_ROOT/backend/venv/bin/python"
 [[ -x "$VENV_PY" ]] || {
     err "backend/venv is missing — this leg runs pytest from it (see backend/CLAUDE.md)"
@@ -122,6 +125,14 @@ if ! ./scripts/pki/setup-test-pki.sh; then
     exit $EXIT_GATE
 fi
 
+# What the prod+nginx+PKI overlay needs from the worktree, judged BEFORE a multi-minute image build
+# (both are gitignored, so a fresh worktree has neither; E11): compose reads FLOWER_PASSWORD at `up`
+# and nginx mounts nginx/ssl.
+st_require_prestart env:FLOWER_PASSWORD asset:nginx-ssl || {
+    err "prod+PKI prerequisites missing (see the FAIL line above)"
+    exit $EXIT_PRECONDITION
+}
+
 info "${BLUE}==>${NC} starting the prod+nginx+PKI stack (builds prod images; several minutes)"
 STACK_TOUCHED=true
 if ! ./opentr.sh start prod --build --with-pki; then
@@ -130,12 +141,23 @@ if ! ./opentr.sh start prod --build --with-pki; then
 fi
 
 if [[ $rc -eq 0 ]]; then
-    # nginx terminates mTLS on 5182; wait for it rather than racing the build's tail.
-    info "${BLUE}==>${NC} waiting for the mTLS listener on :5182"
+    # The stack just started must be the one under test: running this checkout's built images and
+    # healthy. `--stock` resolves the one live project (the field was cleared above).
+    if ! st_target --stock || ! st_require code=image healthy; then
+        err "the prod+PKI stack is not this checkout's healthy build (see the FAIL line above)"
+        rc=$EXIT_PRECONDITION
+    fi
+fi
+
+if [[ $rc -eq 0 ]]; then
+    # nginx terminates mTLS on PKI_HTTPS_PORT (docker-compose.pki.yml default 5182); wait for it
+    # rather than racing the build's tail.
+    PKI_PORT="${PKI_HTTPS_PORT:-5182}"
+    info "${BLUE}==>${NC} waiting for the mTLS listener on :${PKI_PORT}"
     deadline=$(( $(date +%s) + 600 ))
-    until curl -sk --max-time 5 "https://localhost:5182/" >/dev/null 2>&1; do
+    until curl -sk --max-time 5 "https://localhost:${PKI_PORT}/" >/dev/null 2>&1; do
         if [[ $(date +%s) -ge $deadline ]]; then
-            err "https://localhost:5182 never answered within 10 min"
+            err "https://localhost:${PKI_PORT} never answered within 10 min"
             rc=$EXIT_GATE
             break
         fi

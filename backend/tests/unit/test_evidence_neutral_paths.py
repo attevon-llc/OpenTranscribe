@@ -50,8 +50,8 @@ def _block() -> str:
     return text[start : text.index("\n", end) + 1]
 
 
-@pytest.fixture
-def repo(tmp_path: Path) -> Path:
+def make_repo(tmp_path: Path) -> Path:
+    """A scratch git repo with one commit, an ignored `.release/` ledger dir and a file `f`."""
     r = tmp_path / "repo"
     r.mkdir()
     _git(r, "init", "-q", ".")
@@ -62,6 +62,11 @@ def repo(tmp_path: Path) -> Path:
     _git(r, "add", "-A")
     _git(r, "commit", "-q", "-m", "base")
     return r
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    return make_repo(tmp_path)
 
 
 def _commit(repo: Path, *rel_paths: str) -> None:

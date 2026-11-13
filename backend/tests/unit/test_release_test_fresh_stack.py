@@ -463,9 +463,21 @@ esac
     assert rc == 0 and log.read_text().strip() == "complete auth=Bearer tok123"
     # A failed login is a warning, not a crash.
     rc, err = _run(
-        "fresh_stack_complete_first_run", tmp_path, {"curl": "exit 22"}, {"STUB_LOG": str(log)}
+        "fresh_stack_complete_first_run",
+        tmp_path,
+        {"curl": "exit 22"},
+        {"STUB_LOG": str(log), "BACKEND_PORT": "5574"},
     )
     assert rc == 0 and "first-run wizard" in err
+
+
+def test_stack_helpers_refuse_to_guess_the_live_backend_port(tmp_path: Path) -> None:
+    """Without the exported offset port the helpers used to fall back to the live :5174."""
+    log = tmp_path / "calls.log"
+    for fn in ("fresh_stack_complete_first_run", "fresh_stack_seed_library"):
+        rc, err = _run(fn, tmp_path, {"curl": "exit 22"}, {"STUB_LOG": str(log)})
+        assert rc != 0 and "BACKEND_PORT" in err, (fn, rc, err)
+        assert "5174" not in log.read_text() if log.exists() else True
 
 
 def test_every_mock_port_read_in_tests_honours_the_resolved_variable() -> None:

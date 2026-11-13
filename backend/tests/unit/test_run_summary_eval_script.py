@@ -7,9 +7,11 @@ invocations, and ``--dry-run`` prints every command and executes none of them.
 
 from __future__ import annotations
 
+import http.server
 import os
 import socket
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -136,3 +138,57 @@ def test_a_resumed_run_does_not_repeat_its_smoke(tmp_path: Path) -> None:
     assert "not repeating it" in result.stdout
     assert "run --inputs smoke" not in result.stdout
     assert "run --inputs gate --runs 5" in result.stdout
+
+
+def _serve_models() -> tuple[http.server.HTTPServer, int]:
+    """A throwaway server answering GET /v1/models, standing in for a running vLLM."""
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *_args: object) -> None:
+            return
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, int(server.server_address[1])
+
+
+def _fake_docker(tmp_path: Path, project: str, port: int) -> str:
+    """A `docker` whose only container is in `project` and publishes `port`; returns PATH."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    row = f"x-llm\\t{project}\\tllm-test-vllm\\trunning\\t/w\\t127.0.0.1:{port}->8000/tcp"
+    (bindir / "docker").write_text(
+        f"#!/bin/bash\n[[ \"$1\" == ps ]] && printf '{row}\\n'\nexit 0\n"
+    )
+    (bindir / "docker").chmod(0o755)
+    return f"{bindir}:{os.environ['PATH']}"
+
+
+def test_a_vllm_owned_by_another_project_is_never_reused(tmp_path: Path) -> None:
+    server, port = _serve_models()
+    try:
+        path = _fake_docker(tmp_path, "transcribe-app", port)
+        result = _run(
+            tmp_path, "--fresh", "sumeval", *ARMS, "--dry-run", PATH=path, LLM_TEST_PORT=str(port)
+        )
+    finally:
+        server.shutdown()
+    assert result.returncode == 3, (result.stdout, result.stderr)
+    assert "owned by 'transcribe-app'" in result.stderr
+
+
+def test_a_vllm_owned_by_the_target_fresh_stack_is_reused(tmp_path: Path) -> None:
+    server, port = _serve_models()
+    try:
+        path = _fake_docker(tmp_path, "otfresh-sumeval", port)
+        result = _run(
+            tmp_path, "--fresh", "sumeval", *ARMS, "--dry-run", PATH=path, LLM_TEST_PORT=str(port)
+        )
+    finally:
+        server.shutdown()
+    assert "belongs to otfresh-sumeval" in result.stdout, (result.stdout, result.stderr)

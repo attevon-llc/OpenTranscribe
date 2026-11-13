@@ -193,14 +193,14 @@ mkdir -p "$PHASE_DIR"
 TEST_ASSERT_LEDGER="$PHASE_DIR/assertions.ledger"
 export TEST_ASSERT_LEDGER
 (( DO_FORCE == 0 )) || rm -f "$TEST_ASSERT_LEDGER"
-phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; }
+phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; echo "phase $1 done duration_s=$(( SECONDS - ${PHASE_T0:-$SECONDS} ))"; }
 phase_check() { [[ -f "$PHASE_DIR/$1.done" && $DO_FORCE -eq 0 ]]; }
 phase()       { local n="$1"; shift
                 if phase_check "$n"; then
                     echo -e "\033[0;33m[skip]\033[0m phase $n already complete"
                     return
                 fi
-                echo -e "\n\033[1;34m═══ phase $n ═══\033[0m"
+                echo -e "\n\033[1;34m═══ phase $n ═══\033[0m $(date -u +%FT%TZ)"; PHASE_T0=$SECONDS
                 "$@"
                 phase_done "$n"
               }
@@ -260,7 +260,7 @@ phase_01_build_lite_images() {
     else
         gr_log "building lite backend image (no CUDA/faster-whisper; carries the ONNX export toolchain)"
         docker build \
-            -t "davidamacey/opentranscribe-backend-lite:${LOCAL_IMAGE_TAG}" \
+            -t "davidamacey/opentranscribe-backend-lite:${LOCAL_IMAGE_TAG}" --label "$GR_REVISION_LABEL" \
             -f "$REPO_ROOT/backend/Dockerfile.lite" \
             "$REPO_ROOT/backend"
     fi
@@ -269,7 +269,7 @@ phase_01_build_lite_images() {
     else
         gr_log "building prod frontend image"
         docker build \
-            -t "davidamacey/opentranscribe-frontend:${LOCAL_IMAGE_TAG}" \
+            -t "davidamacey/opentranscribe-frontend:${LOCAL_IMAGE_TAG}" --label "$GR_REVISION_LABEL" \
             -f "$REPO_ROOT/frontend/Dockerfile.prod" \
             "$REPO_ROOT/frontend"
     fi
@@ -277,6 +277,7 @@ phase_01_build_lite_images() {
         --format 'backend-lite digest: {{.Id}}' | tee "$TEST_ROOT/image-digests.txt"
     docker image inspect "davidamacey/opentranscribe-frontend:${LOCAL_IMAGE_TAG}" \
         --format 'frontend digest: {{.Id}}' | tee -a "$TEST_ROOT/image-digests.txt"
+    gr_assert_release_images_are_the_code_under_test "$LOCAL_IMAGE_TAG" backend-lite frontend
 }
 
 phase_02_run_one_liner() {
@@ -432,7 +433,7 @@ phase_04_start_stack() {
     # lite becomes a real shipped mode. Do not "fix" it by copying their pattern — you
     # would be asking opentranscribe.sh for a chain it has no way to produce.
     gr_log "docker compose up -d (base + prod + lite + mock-asr + mock-llm, CPU-only)"
-    docker compose \
+    docker compose -p "$TEST_PROJECT_NAME" \
         -f docker-compose.yml -f docker-compose.prod.yml \
         -f docker-compose.lite.yml \
         -f docker-compose.diar-native.yml \
@@ -452,7 +453,7 @@ phase_06_topology_check() {
     : > "$report"
 
     local verdict_json
-    if verdict_json=$("$REPO_ROOT/scripts/lite-smoke.sh" --json 2>&1); then
+    if verdict_json=$("$REPO_ROOT/scripts/lite-smoke.sh" --project "$TEST_PROJECT_NAME" --json 2>&1); then
         echo "lite-smoke.sh: PASS" | tee -a "$report"
         echo "$verdict_json" >> "$report"
     else
@@ -467,14 +468,14 @@ phase_06_topology_check() {
     fi
 
     local backend_image
-    backend_image=$(docker inspect opentranscribe-backend --format '{{.Config.Image}}' 2>/dev/null || echo "")
+    backend_image=$(docker inspect "$(gr_service_container backend)" --format '{{.Config.Image}}' 2>/dev/null || echo "")
     [[ "$backend_image" == *-lite* ]] || gr_die "backend image '$backend_image' does not contain '-lite' — lite overlay did not take effect"
     echo "backend image: $backend_image" | tee -a "$report"
 
     local gpu_worker
     gpu_worker=$(docker ps --format '{{.Names}}' \
         --filter "label=com.docker.compose.project=$(compose_project_name)" \
-        --filter 'name=celery-worker-gpu' || true)
+        --filter 'label=com.docker.compose.service=celery-worker-gpu' || true)
     [[ -z "$gpu_worker" ]] || gr_die "GPU worker container present ($gpu_worker) in a lite-mode rehearsal"
     echo "no GPU worker container: confirmed" | tee -a "$report"
 }
@@ -742,7 +743,7 @@ print(len(labels))
             # before it.
             local embedding_dim=0
             for _emb_attempt in $(seq 1 20); do
-                embedding_dim=$(docker exec opentranscribe-opensearch curl -s \
+                embedding_dim=$(docker exec "$(gr_service_container opensearch)" curl -s \
                     'http://localhost:9200/speakers/_search' \
                     -H 'Content-Type: application/json' \
                     -d '{"size":1,"sort":[{"created_at":{"order":"desc"}}],"_source":["embedding"]}' \
@@ -759,7 +760,7 @@ print(len(labels))
 
         # Search for the distinctive token — indexing runs as a follow-on task,
         # so poll briefly rather than asserting immediately after "completed".
-        local found=0
+        local search_hit=0
         for _attempt in $(seq 1 20); do
             local hit_uuids
             hit_uuids=$(ac_search "Zylofenix" 2>/dev/null | python3 -c '
@@ -768,12 +769,12 @@ d = json.load(sys.stdin)
 print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
 ' 2>/dev/null || echo "")
             if [[ ",$hit_uuids," == *",$file_uuid,"* ]]; then
-                found=1
+                search_hit=1
                 break
             fi
             sleep 3
         done
-        as_assert_eq "search for 'Zylofenix' returns this file" "1" "$found"
+        as_assert_eq "search for 'Zylofenix' returns this file" "1" "$search_hit"
 
         # Polled, not checked once: registering+deploying the model can take
         # 30s+ on a cold volume, and a one-shot check here measured a real
@@ -844,7 +845,7 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     fi
 
     local alembic_head expected_head
-    alembic_head=$(docker exec opentranscribe-postgres \
+    alembic_head=$(docker exec "$(gr_service_container postgres)" \
         psql -U postgres -d opentranscribe -tAc \
         "SELECT version_num FROM alembic_version" 2>/dev/null || echo "")
     expected_head=$(ver_alembic_head "$REPO_ROOT/backend")
@@ -859,7 +860,7 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     local target="$TEST_ROOT/install/opentranscribe"
     [[ -d "$target" ]] || target="$TEST_ROOT/install"
     pushd "$target" >/dev/null
-    MOCK_ASR_SCENARIO=error docker compose \
+    MOCK_ASR_SCENARIO=error docker compose -p "$TEST_PROJECT_NAME" \
         -f docker-compose.yml -f docker-compose.prod.yml \
         -f docker-compose.lite.yml \
         -f docker-compose.diar-native.yml \
@@ -907,7 +908,7 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     fi
 
     pushd "$target" >/dev/null
-    MOCK_ASR_SCENARIO=ok docker compose \
+    MOCK_ASR_SCENARIO=ok docker compose -p "$TEST_PROJECT_NAME" \
         -f docker-compose.yml -f docker-compose.prod.yml \
         -f docker-compose.lite.yml \
         -f docker-compose.diar-native.yml \

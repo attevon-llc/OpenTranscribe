@@ -32,6 +32,9 @@ PY="${SUMMARY_EVAL_PY:-$REPO_ROOT/backend/venv/bin/python}"
 BENCH="$REPO_ROOT/scripts/benchmark_summary.py"
 WORK_DIR="${SUMMARY_EVAL_WORK_DIR:-$HOME/ot-cleanup-work/summary-eval}"
 
+# shellcheck source=scripts/lib/stack-target.sh
+source "$REPO_ROOT/scripts/lib/stack-target.sh"
+
 EXIT_MISUSE=2
 EXIT_PRECONDITION=3
 EXIT_NOT_MEASURED=4
@@ -124,7 +127,7 @@ teardown() {
         if $STACK_STARTED_BY_US || [[ -n "$FRESH_NAME" ]]; then
             local c
             c="$(docker ps -a --filter "label=com.docker.compose.project=otfresh-$FRESH_NAME" \
-                 --filter "name=llm-test-vllm" --format '{{.Names}}' 2>/dev/null | head -1)"
+                 --filter "label=com.docker.compose.service=llm-test-vllm" --format '{{.Names}}' 2>/dev/null | head -1)"
             [[ -n "$c" ]] && docker logs --tail 200 "$c" >"$RUN_DIR/diagnostics/vllm.tail" 2>&1
         fi
         [[ -f "$RUN_DIR/records.jsonl" ]] && tail -n 3 "$RUN_DIR/records.jsonl" \
@@ -192,7 +195,16 @@ start_stack() {
         return 0
     fi
     if vllm_up; then
-        say "a vLLM already answers at $LLM_URL: leaving the stack alone"
+        # Only OUR fresh stack's vLLM may be reused: another project's server on this port would
+        # be measured and attributed to this run's stack (E18). Ownership is by compose label.
+        local owner want="otfresh-$FRESH_NAME"
+        owner="$(python3 "$REPO_ROOT/scripts/lib/stack_target.py" resolve --port-owner "$LLM_PORT" 2>/dev/null || true)"
+        if [[ "$owner" != "$want" ]]; then
+            echo "error: a vLLM answers at $LLM_URL but port $LLM_PORT is owned by '${owner:-no compose project}', not '$want'." >&2
+            echo "       Refusing to measure another stack's server. Use --port-offset N, or --llm-base-url to say so deliberately." >&2
+            return "$EXIT_PRECONDITION"
+        fi
+        say "the vLLM at $LLM_URL belongs to $want: leaving the stack alone"
         return 0
     fi
     STACK_STARTED_BY_US=true
@@ -207,6 +219,8 @@ start_stack() {
         sleep 5
     done
     say "vLLM is up"
+    # The stack the run now depends on must resolve as this fresh target (exports its observed ports).
+    st_target --fresh "$FRESH_NAME" || return "$EXIT_PRECONDITION"
 }
 
 # ------------------------------------------------------------------------------ 3/4. measure

@@ -180,14 +180,14 @@ mkdir -p "$PHASE_DIR"
 TEST_ASSERT_LEDGER="$PHASE_DIR/assertions.ledger"
 export TEST_ASSERT_LEDGER
 (( DO_FORCE == 0 )) || rm -f "$TEST_ASSERT_LEDGER"
-phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; }
+phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; echo "phase $1 done duration_s=$(( SECONDS - ${PHASE_T0:-$SECONDS} ))"; }
 phase_check() { [[ -f "$PHASE_DIR/$1.done" && $DO_FORCE -eq 0 ]]; }
 phase()       { local n="$1"; shift
                 if phase_check "$n"; then
                     echo -e "\033[0;33m[skip]\033[0m phase $n already complete"
                     return
                 fi
-                echo -e "\n\033[1;34m═══ phase $n ═══\033[0m"
+                echo -e "\n\033[1;34m═══ phase $n ═══\033[0m $(date -u +%FT%TZ)"; PHASE_T0=$SECONDS
                 "$@"
                 phase_done "$n"
               }
@@ -382,9 +382,7 @@ phase_03_pin_local_image() {
         # was not, on 2026-09-07: a 315-commit-old v0.5.0 was rehearsed and its missing
         # features were reported as product bugs. Hub mode is exempt by design — there the
         # published artifact IS the subject.
-        gr_assert_image_is_the_code_under_test \
-            "davidamacey/opentranscribe-backend:${LOCAL_IMAGE_TAG}" \
-            "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
+        gr_assert_release_images_are_the_code_under_test "$LOCAL_IMAGE_TAG" backend frontend docs
     fi
 
     # Also label the base file's services for cleanup symmetry
@@ -618,7 +616,7 @@ phase_06_api_smoke() {
     # never pinned (the per-service pin list omitted it, so it ran a stale `:latest`),
     # and never asserted. REHEARSAL_ALIGNMENT_PLAN.md finding D.
     local docs_image docs_code
-    docs_image="$(docker inspect opentranscribe-docs --format '{{.Config.Image}}' 2>/dev/null || echo "<not running>")"
+    docs_image="$(docker inspect "$(gr_service_container docs)" --format '{{.Config.Image}}' 2>/dev/null || echo "<not running>")"
     as_assert_eq "docs container runs the version under test" \
         "davidamacey/opentranscribe-docs:${LOCAL_IMAGE_TAG}" "$docs_image"
     if docs_code=$(curl -o /dev/null -s -w '%{http_code}' --max-time 15 \
@@ -820,7 +818,7 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
 
     # Alembic head check (one-liner uses the standard 'opentranscribe-postgres' name)
     local alembic_head expected_head
-    alembic_head=$(docker exec opentranscribe-postgres \
+    alembic_head=$(docker exec "$(gr_service_container postgres)" \
         psql -U postgres -d opentranscribe -tAc \
         "SELECT version_num FROM alembic_version" 2>/dev/null || echo "")
     # Derived from the down_revision graph, not `grep | tail -1`. That old form

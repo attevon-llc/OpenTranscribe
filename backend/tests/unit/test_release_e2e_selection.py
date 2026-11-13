@@ -65,7 +65,9 @@ def test_stage_runs_the_first_run_wizard_e2e_before_anything_dismisses_the_wizar
     text = STAGE.read_text(encoding="utf-8")
     wizard = text.index("scripts/e2e/run-e2e-first-run.sh")
     assert re.search(r"record first-run-wizard-e2e (pass|fail)", text)
-    assert wizard < text.index("run-dev-tests.sh"), "the wizard test must run before the gate"
+    assert wizard < text.index("run-dev-tests.sh --backend-only"), (
+        "the wizard test must run before the gate"
+    )
     assert wizard < text.index("fresh_stack_complete_first_run"), "complete it only afterwards"
     assert "FRESH_STACK_DEFER_FIRST_RUN=1" in text
 
@@ -73,7 +75,8 @@ def test_stage_runs_the_first_run_wizard_e2e_before_anything_dismisses_the_wizar
 def test_the_fresh_stack_defers_wizard_completion_on_request() -> None:
     lib = (REPO_ROOT / "scripts" / "release" / "fresh-stack-lib.sh").read_text(encoding="utf-8")
     assert re.search(
-        r'FRESH_STACK_DEFER_FIRST_RUN:-0\}" == "1" \]\] \|\| fresh_stack_complete', lib
+        r'FRESH_STACK_DEFER_FIRST_RUN:-0\}" == "1" \]\] \|\| (fresh_stack_step "[^"]+" )?fresh_stack_complete',
+        lib,
     )
 
 

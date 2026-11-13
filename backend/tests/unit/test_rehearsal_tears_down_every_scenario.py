@@ -45,7 +45,9 @@ def _text() -> str:
 
 def _teardown_targets() -> set[str]:
     """Scenario scripts handed to ``teardown_scenario``."""
-    return {Path(m).name for m in re.findall(r"teardown_scenario\s+\"[^\"]*\"\s+(\S+)", _text())}
+    return {
+        Path(m).name for m in re.findall(r"teardown_scenario\s+\"[^\"]*\"\s+\S+\s+(\S+)", _text())
+    }
 
 
 def test_the_teardown_helper_is_still_the_mechanism():

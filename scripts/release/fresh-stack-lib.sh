@@ -134,8 +134,8 @@ fresh_stack_up() {
             --opt device=tmpfs --opt "o=size=${spec##*:},mode=1777" "otfresh-${name}_${spec%%:*}" >&2 || return 1
     done
     # The e2e runner and the gate address the app by URL; point them at the offset ports.
-    export E2E_FRONTEND_URL="http://localhost:${FRONTEND_PORT:-5173}"
-    export E2E_BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}"
+    export E2E_FRONTEND_URL="http://localhost:${FRONTEND_PORT:?unset: fresh_stack_up exports the offset ports; no guessing the live 5173}"
+    export E2E_BACKEND_URL="http://localhost:${BACKEND_PORT:?unset: fresh_stack_up exports the offset ports; no guessing the live 5174}"
     fresh_stack_step "seed models" fresh_stack_seed_models "$name" || return 1
     fresh_stack_step "opentr.sh start dev --fresh ${name}" \
         "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" \
@@ -149,7 +149,7 @@ fresh_stack_up() {
 fresh_stack_seed_library() {
     local repo="${REPO_ROOT:-.}"
     [[ -f "$repo/scripts/seed-fresh-deployment.sh" ]] || return 0
-    BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}" bash "$repo/scripts/seed-fresh-deployment.sh" >&2 || true
+    BACKEND_URL="http://localhost:${BACKEND_PORT:?unset: fresh_stack_up exports the offset ports; no guessing the live 5174}" bash "$repo/scripts/seed-fresh-deployment.sh" >&2 || true
     # The caller that runs the first-run wizard e2e (60-test.sh, issue #1366) needs the wizard
     # still pending, and completes it itself once that test has run.
     [[ "${FRESH_STACK_DEFER_FIRST_RUN:-0}" == "1" ]] || fresh_stack_step "first-run completion" fresh_stack_complete_first_run
@@ -164,8 +164,8 @@ fresh_stack_warm_frontend() {
     local repo="${REPO_ROOT:-.}" py="${REPO_ROOT:-.}/backend/venv/bin/python"
     [[ -x "$py" ]] || py="python3"
     "$py" "$repo/scripts/release/warm_frontend.py" \
-        --base "http://localhost:${FRONTEND_PORT:-5173}" \
-        --api "http://localhost:${BACKEND_PORT:-5174}" >&2 \
+        --base "http://localhost:${FRONTEND_PORT:?unset: fresh_stack_up exports the offset ports; no guessing the live 5173}" \
+        --api "http://localhost:${BACKEND_PORT:?unset: fresh_stack_up exports the offset ports; no guessing the live 5174}" >&2 \
         || echo "warning: frontend warm-up failed; the first browser tests may hit a cold dev server" >&2
 }
 
@@ -174,7 +174,7 @@ fresh_stack_warm_frontend() {
 # dismiss it the same way (POST /api/admin/first-run-wizard/complete); do it once here so every
 # phase starts from a configured deployment. Idempotent; a failure is reported, not fatal.
 fresh_stack_complete_first_run() {
-    local base="http://localhost:${BACKEND_PORT:-5174}" token
+    local base="http://localhost:${BACKEND_PORT:?unset: fresh_stack_up exports the offset ports; no guessing the live 5174}" token
     token="$(curl -fsS --max-time 30 -X POST "$base/api/auth/token" \
         -H 'Content-Type: application/x-www-form-urlencoded' \
         --data-urlencode "username=${SEED_EMAIL:-admin@example.com}" \

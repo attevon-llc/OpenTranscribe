@@ -278,7 +278,7 @@ run_in_image() {
 # Whatever ends this script — a deadline, set -e, Ctrl-C — stops the containers it started.
 stop_own_containers() {
     local ids
-    ids="$(docker ps -q --filter "label=$TEST_LABEL" --filter "name=ot-reltest-coldcache-$$-" 2>/dev/null || true)"
+    ids="$(docker ps -q --filter "label=$TEST_LABEL" --filter "name=^ot-reltest-coldcache-$$-" 2>/dev/null || true)"
     [[ -n "$ids" ]] && printf '%s\n' "$ids" | xargs -r docker stop -t 10 >/dev/null 2>&1
     rm -rf "$TEST_ROOT/hardlink" 2>/dev/null || true
 }

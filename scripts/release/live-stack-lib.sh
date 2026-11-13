@@ -18,13 +18,33 @@
 LSL_FAIL_REASON=""; LSL_FAIL_FIX=""; export LSL_FAIL_REASON LSL_FAIL_FIX
 : "${RED:=}"; : "${GREEN:=}"; : "${YELLOW:=}"; : "${BLUE:=}"; : "${NC:=}"
 
-# Both compose project labels (issue #783): a repo clone runs as `transcribe-app`, a one-liner
-# install as `opentranscribe`. Captured, not piped into `grep -q` (SIGPIPE under pipefail).
+# The compose project labels (issue #783): a repo clone runs as `transcribe-app`, a one-liner
+# install as `opentranscribe`. A git worktree's stack is a third live name (STACK_TARGETING_PLAN
+# L8/R1), found by the `project.working_dir` LABEL equal to this checkout, not by guessing a project
+# name from a directory. Captured, not piped into `grep -q` (SIGPIPE under pipefail).
 lsl_live_stack_names() {
     {
         docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}'
         docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}'
+        docker ps --filter "label=com.docker.compose.project.working_dir=${REPO_ROOT}" --format '{{.Names}}'
     } | sort -u
+}
+
+# What is about to be stopped: the compose project and the directory it was started from, so the
+# restore can refuse to start dev from a different checkout (a stack stopped from one worktree
+# and "restored" from another is a different stack under the same name).
+LSL_STOPPED_PROJECT=""; LSL_STOPPED_WORKDIR=""
+lsl_record_what_is_stopping() {
+    local project="" workdir="" filter row
+    for filter in "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" \
+                  "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" \
+                  "label=com.docker.compose.project.working_dir=${REPO_ROOT}"; do
+        row="$(docker ps --filter "$filter" \
+            --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null || true)"
+        row="${row%%$'\n'*}"
+        if [[ "$row" == *"|"* ]]; then project="${row%%|*}"; workdir="${row#*|}"; break; fi
+    done
+    LSL_STOPPED_PROJECT="$project"; LSL_STOPPED_WORKDIR="$workdir"
 }
 
 # $1 = what the stack is being stopped for ("the scenarios", "the Hub install smoke").
@@ -48,6 +68,7 @@ lsl_approved_to_stop() {
 # Returns 0 stopped; 3 otherwise, with LSL_FAIL_REASON / LSL_FAIL_FIX set for `record`.
 lsl_stop_stack() {
     echo -e "${BLUE}Stopping the live stack (data preserved)...${NC}" >&2
+    lsl_record_what_is_stopping
     if ! (cd "$REPO_ROOT" && ./opentr.sh stop >/dev/null 2>&1); then
         LSL_FAIL_REASON="./opentr.sh stop failed"; LSL_FAIL_FIX="stop it by hand, then re-run"
         return 3
@@ -62,7 +83,18 @@ lsl_stop_stack() {
     return 0
 }
 
+# $1 = working_dir the stack was stopped from ("" = unrecorded, e.g. a marker from an older run).
+# Returns 3 with LSL_FAIL_REASON when this checkout is not that directory: starting dev here would
+# bring up a DIFFERENT stack and leave the stopped one down.
 lsl_start_dev_stack() {
+    local recorded_dir="${1:-}"
+    if [[ -n "$recorded_dir" && "$recorded_dir" != "$REPO_ROOT" ]]; then
+        LSL_FAIL_REASON="the stack was stopped from ${recorded_dir}, this checkout is ${REPO_ROOT}"
+        LSL_FAIL_FIX="cd ${recorded_dir} && ./opentr.sh start dev"
+        echo -e "${YELLOW}not restarting: ${LSL_FAIL_REASON}${NC}" >&2
+        echo -e "${YELLOW}  run: ${LSL_FAIL_FIX}${NC}" >&2
+        return 3
+    fi
     echo -e "${BLUE}Restarting the dev stack this release run stopped...${NC}" >&2
     if (cd "$REPO_ROOT" && ./opentr.sh start dev >/dev/null 2>&1); then
         echo -e "${GREEN}dev stack restarted${NC}" >&2
@@ -85,12 +117,20 @@ lsl_restore_after_stage() {
     fi
     if [[ "${RELEASE_DEFER_STACK_RESTORE:-0}" == "1" ]]; then
         mkdir -p "$(dirname "$marker")"
-        date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+        # A later stage that did not itself stop anything must not erase what an earlier one recorded.
+        if [[ -n "$LSL_STOPPED_PROJECT" || ! -f "$marker" ]]; then
+            printf 'stopped_at=%s\nproject=%s\nworking_dir=%s\n' \
+                "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$LSL_STOPPED_PROJECT" "$LSL_STOPPED_WORKDIR" > "$marker"
+        fi
         echo -e "${BLUE}Leaving the dev stack down for the next stage (marker: ${marker})${NC}" >&2
         return 0
     fi
-    rm -f "$marker"
-    lsl_start_dev_stack || true
+    local recorded_dir="$LSL_STOPPED_WORKDIR"
+    [[ -f "$marker" ]] && recorded_dir="$(sed -n 's/^working_dir=//p' "$marker")"
+    # On a refusal the marker stays, so a restore from the right directory still finds it.
+    local start_rc=0
+    lsl_start_dev_stack "$recorded_dir" || start_rc=$?
+    (( start_rc == 3 )) || rm -f "$marker"
     return 0
 }
 

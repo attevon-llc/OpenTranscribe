@@ -371,6 +371,22 @@ def test_env_var_unset_and_absent_from_dotenv_is_27(
     st.check_env(stack, "FLOWER_PASSWORD")
 
 
+def test_prestart_check_judges_env_and_asset_without_a_stack(
+    docker: Callable, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docker([])  # nothing running: a resolving check would be NO_PROJECT (20)
+    monkeypatch.delenv("FLOWER_PASSWORD", raising=False)
+    (repo / ".env").write_text("OTHER=1\n")
+    argv = ["--repo-root", str(repo), "check", "--no-stack", "--no-banner"]
+    assert st.main([*argv, "--require", "env:FLOWER_PASSWORD"]) == st.MISSING_ENV
+    assert st.main([*argv, "--require", "asset:nginx-ssl"]) == st.MISSING_ASSET
+    (repo / ".env").write_text("FLOWER_PASSWORD=x\n")
+    (repo / "nginx/ssl").mkdir(parents=True)
+    (repo / "nginx/ssl/server.crt").write_text("c")
+    (repo / "nginx/ssl/server.key").write_text("k")
+    assert st.main([*argv, "--require", "env:FLOWER_PASSWORD", "--require", "asset:nginx-ssl"]) == 0
+
+
 # ---------------------------------------------------------------- prepare
 
 

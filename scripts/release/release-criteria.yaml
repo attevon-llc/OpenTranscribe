@@ -98,6 +98,17 @@ evidence_neutral_paths:
   build: ["CHANGELOG.md", "docs/**", "*.md", "**/CLAUDE.md", ".claude/skills/**"]
   scan: ["CHANGELOG.md", "docs/**", "*.md", "**/CLAUDE.md", ".claude/skills/**"]
 
+# L1 (owner default 2026-11-13): paths that never reach an image, so a commit touching ONLY these
+# (plus the neutral set above) leaves build/scan/rehearse evidence reusable, but ONLY when 70-tag.sh
+# also proves it: every leg's local image ID equals the one build recorded (legs.tsv) AND
+# scripts/release-tests/** is byte-identical to what the stage ran against. Not a neutral path: the
+# test stage still re-runs. backend/tests is excluded from the image by backend/.dockerignore
+# (`tests/`), asserted by test_evidence_reuse_paths.py. `scripts/**` and `frontend/**` never qualify.
+evidence_reuse_paths:
+  build: ["backend/tests/**"]
+  scan: ["backend/tests/**"]
+  rehearse: ["backend/tests/**"]
+
 stages:
   # ─── Static checks. No Docker, seconds. ─────────────────────────────────
   preflight:

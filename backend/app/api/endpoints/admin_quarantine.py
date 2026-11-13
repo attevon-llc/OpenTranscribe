@@ -22,6 +22,7 @@ from app.schemas.admin import QuarantineRequest
 from app.schemas.admin import ReleaseRequest
 from app.services.admin_file_queries import list_quarantined_files as query_quarantined_files
 from app.services.platform_bypass import audit_metadata_access
+from app.utils.client_ip import known_client_ip
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -37,7 +38,7 @@ router = APIRouter()
 
 def _request_meta(request: Request) -> tuple[str, str]:
     """Extract (source_ip, user_agent) for the takedown audit trail."""
-    ip = request.client.host if request.client else ""
+    ip = known_client_ip(request) or ""
     return ip, request.headers.get("user-agent", "")
 
 

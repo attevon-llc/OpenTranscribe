@@ -65,13 +65,16 @@ def test_the_script_is_executable_and_reaches_the_image() -> None:
     )
 
 
-def test_the_script_keeps_the_proxy_flags_for_every_image(tmp_path: Path) -> None:
+def test_uvicorn_leaves_the_client_and_scheme_to_the_app(tmp_path: Path) -> None:
+    """uvicorn must not rewrite request.client: header_trust judges the real peer.
+
+    The forwarded client and scheme are resolved in the app (test_header_trust_immediate_peer.py).
+    """
     argv, _ = _run_script(tmp_path)
     assert argv[:1] == ["app.main:app"]
-    assert "--proxy-headers" in argv
-    assert argv[argv.index("--forwarded-allow-ips") + 1] == (
-        "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-    )
+    assert "--no-proxy-headers" in argv
+    assert "--proxy-headers" not in argv
+    assert "--forwarded-allow-ips" not in argv
     assert "--workers" not in argv, "the count comes from UVICORN_WORKERS, which uvicorn reads"
 
 
@@ -139,6 +142,7 @@ def test_dev_override_pins_one_process_because_reload_is_single_process() -> Non
     backend = _render("docker-compose.yml", "docker-compose.override.yml")
     assert "--reload" in backend["command"]
     assert "--workers" not in backend["command"]
+    assert "--no-proxy-headers" in backend["command"]
     assert backend["environment"]["UVICORN_WORKERS"] == "1"
 
 

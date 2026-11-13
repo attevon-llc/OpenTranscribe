@@ -38,6 +38,7 @@ from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.local_models import cache as local_model_cache
 from app.services.local_models import worker_report
 from app.services.system_setting_queries import find_system_setting
+from app.utils.client_ip import known_client_ip
 from app.utils.lite_mode import refuse_on_lite
 
 router = APIRouter()
@@ -174,7 +175,7 @@ def set_active_local_model(
         outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
-        source_ip=request.client.host if request.client else None,
+        source_ip=known_client_ip(request),
         details={"setting": "local_whisper_model", "action": "set", "model": model_name},
     )
 

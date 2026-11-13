@@ -26,6 +26,8 @@ from tests.unit.test_compose_file_selection import DEMO_CLOUDFLARE
 from tests.unit.test_compose_file_selection import NGINX
 from tests.unit.test_compose_file_selection import _files
 from tests.unit.test_compose_file_selection import _resolve
+from tests.unit.test_nginx_forwarded_for_overwrite import _forwarded_for_values
+from tests.unit.test_nginx_forwarded_for_overwrite import _nginx_sets
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONF = REPO_ROOT / "nginx" / "cloudflare-real-ip.conf"
@@ -67,10 +69,11 @@ def nginx_is_the_only_trusted_proxy(monkeypatch):
 
 
 def _backend_sees(peer: str, cf_header: str, xff: str | None = None) -> str:
-    """nginx -> backend: nginx appends $remote_addr to the client's X-Forwarded-For."""
+    """nginx -> backend, with the X-Forwarded-For value site.conf.template really sets."""
     conf = CONF.read_text(encoding="utf-8")
     seen = _nginx_client_address(peer, {"CF-Connecting-IP": cf_header}, conf)
-    chain = f"{xff}, {seen}" if xff else seen
+    (expression,) = set(_forwarded_for_values("nginx/site.conf.template"))
+    chain = _nginx_sets(expression, xff, seen)
     return client_ip.resolve_client_ip(_request("172.18.0.5", {"X-Forwarded-For": chain}))
 
 

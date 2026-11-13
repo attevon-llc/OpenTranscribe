@@ -19,6 +19,7 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.services import media_private_hosts
+from app.utils.client_ip import known_client_ip
 from app.utils.media_private_hosts import get_private_hosts as read_private_hosts
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ def put_private_hosts(
         outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
-        source_ip=request.client.host if request.client else None,
+        source_ip=known_client_ip(request),
         details={"area": "media_sources.private_hosts", "hosts": stored},
     )
     logger.info("Super admin %s set %d private media host(s)", current_user.email, len(stored))

@@ -124,7 +124,7 @@ services:
     # --reload is single-process by uvicorn's design ("Not valid with --reload"; its docs
     # list --workers and --reload as alternatives), so dev pins UVICORN_WORKERS=1 below. Dev is
     # not the process model that ships: measure that with a prod build (scripts/perf/load/README.md).
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload --reload-dir app --limit-concurrency ${UVICORN_LIMIT_CONCURRENCY:-512}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --no-proxy-headers --reload --reload-dir app --limit-concurrency ${UVICORN_LIMIT_CONCURRENCY:-512}
     environment:
       <<: *dev-environment
       UVICORN_WORKERS: "1"

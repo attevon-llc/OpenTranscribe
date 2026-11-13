@@ -127,7 +127,9 @@ def immediate_peer_ip(request: RequestLike) -> str:
     """Return the address of the host that opened this connection.
 
     Deliberately NOT ``utils/client_ip.resolve_client_ip`` — see rule 1 in the
-    module docstring.
+    module docstring. ``request.client`` is that host only because uvicorn runs with
+    ``--no-proxy-headers`` (``scripts/api-start.sh``, the dev override): uvicorn's
+    proxy-header handling would replace it with the forwarded end user.
 
     Args:
         request: Starlette/FastAPI request (or any object exposing ``.client``).

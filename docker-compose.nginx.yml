@@ -34,8 +34,12 @@ services:
       # would let any machine on a typical LAN hit the backend port directly and
       # forge its own X-Forwarded-For.
       #
-      # Override in .env when Docker's pool is customised (`default-address-pools`)
-      # or an additional proxy sits in front — .env.example documents the format.
+      # Safe only because nginx OVERWRITES X-Forwarded-For with the address it saw
+      # (nginx/site.conf.template): the Docker gateway, which every host-local request
+      # arrives from, is inside this range, so an appended client value would be walked
+      # past to the forged entry. Override in .env when Docker's pool is customised
+      # (`default-address-pools`). A proxy in front of nginx belongs in nginx's realip
+      # config, not here (Configuration > Environment variables, rate limits note).
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
 
   nginx:

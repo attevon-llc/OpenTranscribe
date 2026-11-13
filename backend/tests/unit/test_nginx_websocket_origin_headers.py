@@ -188,6 +188,8 @@ def test_ws_block_does_not_pass_the_clients_own_forwarding_headers_through(
         assert re.search(r"proxy_set_header\s+X-Real-IP\s+\$remote_addr\s*;", body), (
             f"{where}: /api/ws does not set X-Real-IP — the client's own header passes through"
         )
-        assert re.search(
-            r"proxy_set_header\s+X-Forwarded-For\s+\$proxy_add_x_forwarded_for\s*;", body
-        ), f"{where}: /api/ws does not set X-Forwarded-For from $proxy_add_x_forwarded_for"
+        # Overwritten, not appended: an appended chain still carries the client's own entries
+        # (test_nginx_forwarded_for_overwrite.py).
+        assert re.search(r"proxy_set_header\s+X-Forwarded-For\s+\$remote_addr\s*;", body), (
+            f"{where}: /api/ws does not overwrite X-Forwarded-For with $remote_addr"
+        )

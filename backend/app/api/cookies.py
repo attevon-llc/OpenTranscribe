@@ -14,6 +14,7 @@ from app.core.cookie_names import ACCESS_COOKIE
 from app.core.cookie_names import CSRF_COOKIE
 from app.core.cookie_names import OIDC_STATE_COOKIE
 from app.core.cookie_names import REFRESH_COOKIE
+from app.utils.client_ip import forwarded_proto
 
 # Cookie max-age mirrors JWT expiration settings
 ACCESS_MAX_AGE = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
@@ -55,12 +56,11 @@ def _secure_for_request(request: Request) -> bool:
     browser then attaches the resulting non-`Secure` cookie to a plain-HTTP request
     to the same host too — exactly what `Secure` exists to prevent.
 
-    `Dockerfile.prod` runs uvicorn with `--proxy-headers --forwarded-allow-ips
-    <RFC1918 ranges>`, so `request.url.scheme` already reflects the real
-    client-facing scheme: `https` when a configured, trusted reverse proxy vouches
-    for it via `X-Forwarded-Proto`, the raw connection scheme otherwise. No new
-    trust boundary is introduced here — this reads a value Starlette already
-    resolved through the existing trusted-proxy configuration.
+    The client-facing scheme is `https` when a trusted reverse proxy vouches for it
+    via `X-Forwarded-Proto` (`utils/client_ip.forwarded_proto`, the same
+    `RATE_LIMIT_TRUSTED_PROXIES` rule as the client address), the raw connection
+    scheme otherwise. uvicorn runs with `--no-proxy-headers`, so `request.url.scheme`
+    alone is always the connection's own.
 
     Net effect: Secure on an actually-HTTPS request even with the override on;
     insecure only on an actually-plain-HTTP one — exactly the LAN case the
@@ -70,7 +70,7 @@ def _secure_for_request(request: Request) -> bool:
         return False
     if not _ALLOW_INSECURE:
         return True
-    return bool(request.url.scheme == "https")
+    return (forwarded_proto(request) or request.url.scheme) == "https"
 
 
 def set_auth_cookies(

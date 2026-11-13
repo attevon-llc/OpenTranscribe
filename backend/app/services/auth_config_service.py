@@ -32,6 +32,7 @@ from app.services.auth_config_keys import ENV_TO_CONFIG_MAPPING
 from app.services.auth_config_keys import RESTART_REQUIRED_KEYS
 from app.services.auth_config_keys import RETIRED_KEYS
 from app.services.auth_config_keys import SENSITIVE_KEYS
+from app.utils.client_ip import known_client_ip
 from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
@@ -400,7 +401,7 @@ class AuthConfigService:
             new_value="***REDACTED***" if is_sensitive else str_value,
             changed_by=user_id,
             change_type=change_type,
-            ip_address=request.client.host if request and request.client else None,
+            ip_address=known_client_ip(request),
             user_agent=(
                 (request.headers.get("user-agent") or "")[:512]
                 if request and request.headers
@@ -457,7 +458,7 @@ class AuthConfigService:
             new_value=None,
             changed_by=user_id,
             change_type="delete",
-            ip_address=request.client.host if request and request.client else None,
+            ip_address=known_client_ip(request),
             user_agent=(
                 (request.headers.get("user-agent") or "")[:512]
                 if request and request.headers

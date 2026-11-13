@@ -95,22 +95,20 @@
   let mobileSearchActive = false;
   let settingsSearchIndex: FuzzyIndex<SettingsSearchItem> | null;
 
-  // Browser Back onto a page this modal was open over (it closes itself on every route change)
-  // reopens it on the section it was left on. Here, not in the root layout: the layout's static
-  // size is budgeted, and the modal is mounted whenever a link could have stamped a history entry.
-  afterNavigate(({ type }) => {
+  // The modal closes itself on every route change, then a browser Back onto a page it was open
+  // over reopens it on the section it was left on. Here, not in the root layout: the layout's
+  // static size is budgeted, and the modal is mounted whenever a link could have stamped a history
+  // entry. Driven by afterNavigate, not a `$:` over `page.url`: an imported `page` is not a
+  // tracked dependency of a legacy reactive statement, so that form never re-ran on navigation
+  // and "Open full screen" left Settings floating over the new page. Closing comes first so a
+  // popstate that reopens the modal is not immediately closed by its own path change.
+  let previousPath = page.url.pathname;
+  afterNavigate(({ type, to }) => {
+    const newPath = to?.url.pathname ?? page.url.pathname;
+    if (isOpen && newPath !== previousPath) closeModal();
+    previousPath = newPath;
     if (type === 'popstate') reopenSettingsAfterBack();
   });
-
-  // Close modal when the user navigates to a different page
-  let previousPath = '';
-  function closeOnRouteChange(newPath: string, open: boolean) {
-    if (open && previousPath && newPath !== previousPath) {
-      closeModal();
-    }
-    previousPath = newPath;
-  }
-  $: closeOnRouteChange(page.url.pathname, isOpen);
   $: isAdmin = $userStore?.role === 'admin' || $userStore?.role === 'super_admin';
   $: isSuperAdmin = $userStore?.role === 'super_admin';
 

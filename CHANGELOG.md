@@ -240,6 +240,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - Email: Microsoft 365 rejections report a failed test instead of a 500; outgoing mail carries `Date`, `Message-ID` and a plain-text part.
 
 ### Security
+- **Action (PKI and trusted-header auth):** the backend no longer accepts identity headers from its own default gateway, even when `PKI_TRUSTED_PROXIES` or `PROXY_TRUSTED_PROXIES` covers it. On Docker that address is the host and every client the userland proxy relays, so a DN header sent to the backend port from the host was accepted as any user, admin included. Run the authenticating proxy as a container on the backend's network; a proxy on the host pointed at the published backend port is now refused (the backend logs `this container's default gateway`). `./opentr.sh --with-pki` already does this, and now derives the allowlist as the project subnet without its gateway or loopback.
 
 - **Action: production refuses to start** without a non-default `FLOWER_PASSWORD`, and bundled object-store encryption is on by default (`MINIO_KMS_SECRET_KEY` required; opt out with `MINIO_KMS_AUTO_ENCRYPTION=off` and `ALLOW_UNENCRYPTED_OBJECT_STORE=true`).
 - **Action: LDAP verifies the directory's TLS certificate** by default (`LDAP_CA_CERT_FILE`, `LDAP_TLS_SERVER_NAME`, `LDAP_TLS_SKIP_VERIFY`); referrals are no longer followed.

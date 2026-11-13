@@ -31,6 +31,11 @@ accepted, and only the **immediate peer** is checked — never `X-Forwarded-For`
 can set itself. Use the narrowest range that covers the proxy: this setting gates *identity
 assertion*, so a whole private range such as `10.0.0.0/8` lets any device on that network sign
 in as any address (the same hazard described for [PKI](./pki#trust-configuration--read-this-first)).
+
+The backend's own default gateway is refused even when the list covers it: in Docker it is the
+host and every client the userland proxy relays to a published port, not your proxy. Run the
+proxy as a container on the backend's network, or the backend logs `this container's default
+gateway` and refuses the login.
 :::
 
 ## Configuration reference

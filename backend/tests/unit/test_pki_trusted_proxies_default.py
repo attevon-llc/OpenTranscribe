@@ -41,6 +41,7 @@ being taken on faith.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import shutil
 import stat
@@ -57,8 +58,9 @@ from app.auth.header_trust import parse_trusted_proxies
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GENERATE_TEST_ENV = REPO_ROOT / "scripts" / "pki" / "generate-test-env.sh"
 
-#: Externals the script reaches for before it exits on `--print-trusted-proxies`.
-_REQUIRED_TOOLS = ("dirname", "basename", "tr")
+#: Externals the script reaches for before it exits on `--print-trusted-proxies`. python3
+#: carves the gateway out of the derived subnet (ipaddress `address_exclude`).
+_REQUIRED_TOOLS = ("dirname", "basename", "tr", "python3")
 
 pytestmark = pytest.mark.skipif(
     not GENERATE_TEST_ENV.exists(), reason="scripts/pki/generate-test-env.sh not present"
@@ -126,11 +128,12 @@ def _resolve_allowlist(
 
 
 #: A stub daemon that answers for one network and 404s for anything else, exactly as
-#: `docker network inspect` does.
+#: `docker network inspect` does. It prints `SUBNET|GATEWAY ` per IPAM entry, the shape the
+#: script's `--format` asks for.
 _FAKE_DOCKER = """#!/bin/sh
 if [ "$1" = "network" ] && [ "$2" = "inspect" ]; then
   case "$3" in
-    %(network)s) echo "%(subnet)s "; exit 0 ;;
+    %(network)s) echo "%(subnet)s|%(gateway)s "; exit 0 ;;
     *) echo "Error: No such network: $3" >&2; exit 1 ;;
   esac
 fi
@@ -145,47 +148,80 @@ exit 1
 """
 
 
-def _fake_docker(network: str, subnet: str) -> str:
-    return _FAKE_DOCKER % {"network": network, "subnet": subnet}
+def _fake_docker(network: str, subnet: str, gateway: str = "") -> str:
+    """An empty *gateway* is what an IPAM entry without an explicit one reports."""
+    return _FAKE_DOCKER % {"network": network, "subnet": subnet, "gateway": gateway}
+
+
+def _uncovered(allowlist: str, subnet: str) -> set[str]:
+    """Addresses of *subnet* the allowlist does not trust."""
+    networks = parse_trusted_proxies(allowlist, label="PKI trusted proxy")
+    return {str(a) for a in ipaddress.ip_network(subnet) if not ip_in_networks(str(a), networks)}
+
+
+def _beyond(allowlist: str, subnet: str) -> list[str]:
+    """Allowlist entries reaching outside *subnet*: anything here is a wider trust."""
+    whole = ipaddress.ip_network(subnet)
+    return [
+        str(n)
+        for n in parse_trusted_proxies(allowlist, label="PKI trusted proxy")
+        if int(n.network_address) < int(whole.network_address)
+        or int(n.broadcast_address) > int(whole.broadcast_address)
+    ]
 
 
 # ─── the derived allowlist ──────────────────────────────────────────────────
 
 
 def test_the_allowlist_is_the_projects_own_subnet_not_a_private_range(tmp_path):
-    """#615's measured subnet, derived — not the /16 it sits inside."""
+    """#615's measured subnet, derived — not the /16 it sits inside, and not its gateway."""
     allowlist = _resolve_allowlist(
         tmp_path,
-        docker_script=_fake_docker("opentranscribe_default", "192.168.96.0/20"),
+        docker_script=_fake_docker("opentranscribe_default", "192.168.96.0/20", "192.168.96.1"),
         project_name="opentranscribe",
     )
-    assert allowlist == "127.0.0.1/32,192.168.96.0/20"
+    assert _uncovered(allowlist, "192.168.96.0/20") == {"192.168.96.1"}
+    assert _beyond(allowlist, "192.168.96.0/20") == []
 
 
 def test_a_fresh_deployments_own_network_is_derived_too(tmp_path):
     """`--fresh` exports COMPOSE_PROJECT_NAME before add_pki_overlay runs, so it resolves."""
     allowlist = _resolve_allowlist(
         tmp_path,
-        docker_script=_fake_docker("otfresh-verify593_default", "192.168.128.0/20"),
+        docker_script=_fake_docker(
+            "otfresh-verify593_default", "192.168.128.0/20", "192.168.128.1"
+        ),
         project_name="otfresh-verify593",
     )
-    assert allowlist == "127.0.0.1/32,192.168.128.0/20"
+    assert _uncovered(allowlist, "192.168.128.0/20") == {"192.168.128.1"}
+    assert _beyond(allowlist, "192.168.128.0/20") == []
 
 
-def test_the_measured_non_fresh_gateway_is_still_trusted(tmp_path):
-    """#615 must stay fixed: the PKI nginx's own address has to pass the trust check."""
+def test_the_proxy_container_is_trusted_and_the_gateway_is_not(tmp_path):
+    """#615 must stay fixed for the PKI nginx, a container (.9), while the bridge gateway (.1),
+    which every host-side caller and every userland-proxied client arrives as, is left out."""
     networks = parse_trusted_proxies(
         _resolve_allowlist(
             tmp_path,
-            docker_script=_fake_docker("opentranscribe_default", "192.168.96.0/20"),
+            docker_script=_fake_docker("opentranscribe_default", "192.168.96.0/20", "192.168.96.1"),
             project_name="opentranscribe",
         ),
         label="PKI trusted proxy",
     )
-    # .1 is the bridge gateway (a host-side caller arrives as this); .9 is a container.
-    assert ip_in_networks("192.168.96.1", networks)
     assert ip_in_networks("192.168.96.9", networks)
-    assert ip_in_networks("127.0.0.1", networks)
+    assert not ip_in_networks("192.168.96.1", networks)
+    assert not ip_in_networks("127.0.0.1", networks)
+
+
+def test_an_unreported_gateway_is_dockers_default_first_host(tmp_path):
+    """IPAM entries may omit the gateway; docker then uses the subnet's first host address."""
+    allowlist = _resolve_allowlist(
+        tmp_path,
+        docker_script=_fake_docker("opentranscribe_default", "10.200.0.0/24"),
+        project_name="opentranscribe",
+    )
+    assert _uncovered(allowlist, "10.200.0.0/24") == {"10.200.0.1"}
+    assert _beyond(allowlist, "10.200.0.0/24") == []
 
 
 @pytest.mark.parametrize(
@@ -249,9 +285,10 @@ def test_a_lan_peer_gets_no_identity_out_of_the_real_extractor(tmp_path):
         is None
     )
 
-    # The control: the same call from inside the derived network still authenticates, so the
-    # refusal above is about WHERE the header came from, not a blanket break of DN-only mode.
-    from_the_proxy = _FakeRequest("192.168.96.1", {"X-Client-Cert-DN": admin_dn})
+    # The control: the same call from the PKI nginx's container address inside the derived
+    # network still authenticates, so the refusal above is about WHERE the header came from,
+    # not a blanket break of DN-only mode.
+    from_the_proxy = _FakeRequest("192.168.96.9", {"X-Client-Cert-DN": admin_dn})
     extracted = _extract_user_info_from_request(
         from_the_proxy,
         cert=None,
@@ -281,11 +318,11 @@ def test_the_fallback_is_dockers_own_pool_and_excludes_the_lan(tmp_path, case, d
     allowlist = _resolve_allowlist(
         tmp_path, docker_script=docker_script, project_name="opentranscribe"
     )
-    assert allowlist == "127.0.0.1/32,172.16.0.0/12", case
+    assert allowlist == "172.16.0.0/12", case
 
     networks = parse_trusted_proxies(allowlist, label="PKI trusted proxy")
     assert ip_in_networks("172.20.0.5", networks), case
-    assert ip_in_networks("127.0.0.1", networks), case
+    assert not ip_in_networks("127.0.0.1", networks), case
     assert not ip_in_networks("192.168.1.50", networks), case
     assert not ip_in_networks("10.10.10.20", networks), case
 

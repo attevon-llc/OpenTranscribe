@@ -38,6 +38,13 @@ are both accepted.
 
 **Use the narrowest range that covers the proxy** — its own `/32`, or the container network it
 runs on (`docker network inspect <project>_default --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`).
+
+The backend **never** accepts identity headers from its own default gateway, even inside that
+range. On a Docker bridge the gateway is the host itself: every request a host process sends to
+the backend's published port arrives from it, and so does every client Docker's userland proxy
+relays. The reverse proxy must therefore run as a container on the backend's network (the
+`--with-pki` overlays do this). A proxy installed on the host and pointed at the published
+backend port is refused, and the backend logs `this container's default gateway`.
 Do **not** paste a whole private range. This setting gates *identity assertion*, not just
 `X-Forwarded-For`: with `pki_mode: header` (the default) a DN with no certificate at all is
 accepted from any peer in the list, so `10.0.0.0/8` or `192.168.0.0/16` — the ranges ordinary
@@ -149,13 +156,15 @@ testing style.
 ./scripts/pki/test-pki-auth.sh pkiadmin   # gets admin
 ./scripts/pki/test-pki-auth.sh testuser   # gets user
 
-# or by hand, simulating what the proxy does
-ADMIN_DN=$(openssl x509 -in scripts/pki/test-certs/clients/pkiadmin.crt -noout -subject | sed 's/subject=//')
-curl -X POST http://localhost:5174/api/auth/pki/authenticate \
-  -H "X-Client-Cert-DN: $ADMIN_DN"
+# or by hand, presenting the client certificate to the mTLS nginx
+curl -k -X POST https://localhost:5182/api/auth/pki/authenticate \
+  --cert scripts/pki/test-certs/clients/pkiadmin.crt \
+  --key scripts/pki/test-certs/clients/pkiadmin.key
 ```
 
-This only works with `pki_trusted_proxies` covering the address the request arrives from.
+Both need a running `--with-pki` stack: nginx verifies the certificate and forwards its DN. A
+DN header sent straight to the backend port (5174) is refused, because from the host it arrives
+from the Docker gateway (see the trust note above).
 `POST /api/auth/pki/authenticate` is rate-limited and lockout-tracked like every other auth
 route — it mints real access and refresh tokens.
 

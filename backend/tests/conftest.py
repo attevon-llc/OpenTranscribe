@@ -595,6 +595,20 @@ def run_auth_mail_inline(monkeypatch, db_session):
 
 
 @pytest.fixture(autouse=True)
+def _no_host_default_gateway(monkeypatch):
+    """Give header trust an empty routing table: the test host's gateway is not a test input.
+
+    ``app.auth.header_trust.default_gateways`` refuses this namespace's default gateway as an
+    identity proxy. On a developer machine or a CI runner that is the host's router (10.0.0.1,
+    192.168.1.1, ...), the same literals the trust tests use as proxy addresses, so a test would
+    pass or fail by where it ran. Tests of the gateway rule pass their own table.
+    """
+    from app.auth import header_trust
+
+    monkeypatch.setattr(header_trust, "ROUTE_TABLE", Path(os.devnull))
+
+
+@pytest.fixture(autouse=True)
 def _release_burst_connections():
     """Close the idle connections a concurrent test left in the shared app engine's pool.
 

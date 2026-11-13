@@ -632,8 +632,12 @@ def shared_auth_state(browser, base_url: str):
 
 
 @pytest.fixture
-def gallery_page(browser, shared_auth_state, base_url: str):
-    """A fresh pre-authenticated page on the gallery (no per-test login)."""
+def gallery_page(browser, shared_auth_state, base_url: str, owned_transcribed_file):
+    """A fresh pre-authenticated page on the gallery (no per-test login).
+
+    Depends on ``owned_transcribed_file`` (owned_corpus.py: one admin-owned upload per session,
+    deleted at its end) so the content-only readiness oracle below is met on an empty account.
+    """
     context = browser.new_context(
         storage_state=shared_auth_state,
         viewport={"width": 1920, "height": 1080},
@@ -657,9 +661,8 @@ def gallery_page(browser, shared_auth_state, base_url: str):
     # was ("rows are rendered" instead of "a button group is mounted"). (`.count-chip`
     # looked like a loading-agnostic proxy for this but is driven by a separate fetch
     # that settles independently — verified it does not track the main file-grid
-    # fetch, so it is not a substitute here.) On a genuinely empty library this will
-    # time out; the tests using this fixture already assume ambient content, same as
-    # before this fixture existed.
+    # fetch, so it is not a substitute here.) ``owned_transcribed_file``
+    # keeps the library from being empty, which would otherwise time out here.
     page.wait_for_selector('[data-testid="gallery-files-loaded"]', timeout=APP_SHELL_READY_MS)
     yield page
     page.close()

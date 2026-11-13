@@ -27,14 +27,10 @@ PENDING: dict[tuple[str, str], str] = {
         "live-port-default",
     ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
     ("backend/tests/conftest.py", "live-port-default"): "STK2 (the gate)",
-    ("backend/tests/e2e/conftest.py", "live-port-default"): "STK3 (e2e and UI)",
     (
         "backend/tests/e2e/idp_overlay.py",
         "compose-no-project",
     ): "P5 item 2 (auth e2e and the IdP overlay)",
-    ("backend/tests/e2e/test_pki.py", "live-port-default"): "STK3 (e2e and UI)",
-    ("backend/tests/e2e/test_visual_regression.py", "live-port-default"): "STK3 (e2e and UI)",
-    ("backend/tests/fixtures/search_corpus_stack.py", "live-port-default"): "STK3 (e2e and UI)",
     (
         "backend/tests/integration/deletion_seed.py",
         "live-port-default",
@@ -147,7 +143,6 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/diagnose-file-integrity.sh",
         "hardcoded-container",
     ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/e2e/run-e2e.sh", "live-port-default"): "STK3 (e2e and UI)",
     ("scripts/e2e_bench/config.py", "live-port-default"): "P5 item 5 (benchmarks)",
     ("scripts/gpu-profile-test.sh", "hardcoded-container"): "P5 item 5 (benchmarks)",
     ("scripts/gpu-profile-test.sh", "live-port-default"): "P5 item 5 (benchmarks)",
@@ -246,7 +241,6 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/test-search-indexing-recovery.sh",
         "live-port-default",
     ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/update-a11y-baseline.py", "live-port-default"): "STK3 (e2e and UI)",
 }
 
 # Not defaults for a resolved target; each carries its written reason.
@@ -540,7 +534,7 @@ def test_the_known_wrong_stack_sites_are_detected() -> None:
         ("scripts/lite-smoke.sh", D1),
         ("scripts/gpu-scale-smoke.sh", D1),
         ("scripts/run-mutation-tests.sh", D3),
-        ("backend/tests/fixtures/search_corpus_stack.py", D3),
+        ("scripts/e2e_bench/config.py", D3),
         ("backend/tests/e2e/idp_overlay.py", D4),
     ]:
         assert key in hits or key not in {**PENDING, **EXEMPT}, f"{key} was fixed: drop it"

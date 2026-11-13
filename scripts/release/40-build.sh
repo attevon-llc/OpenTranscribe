@@ -156,8 +156,38 @@ if [[ "${OT_BUILD_REMOTE_CONCURRENT:-false}" == "true" ]]; then
     cat "$remote_log" >&2
     rm -f "$remote_log" "${remote_log}.failed"
 else
+    # B2, OPT-IN and default OFF (the docker root is HDD RAID6: measure before enabling): host-arch
+    # legs run as background jobs, at most OT_BUILD_HOST_JOBS (default 2) at once, each with its own
+    # mktemp log. Every pid is reaped with `wait <pid>`, logs replay in declared order, and the first
+    # failed leg in declared order is named, so every-declared-leg-built stays fail-closed.
+    # docker-build-push.sh was audited for shared mutable state between concurrent calls: its only
+    # temp path is a unique mktemp, per-leg image tags are distinct, builder choice is per-process.
+    if [[ "${OT_BUILD_HOST_CONCURRENT:-false}" == "true" && ${#host_legs[@]} -gt 0 ]]; then
+        host_jobs="${OT_BUILD_HOST_JOBS:-2}"
+        (( host_jobs >= 1 )) || host_jobs=1
+        for ((i = 0; i < ${#host_legs[@]}; i += host_jobs)); do
+            batch_pids=(); batch_logs=(); batch_legs=()
+            for leg in "${host_legs[@]:i:host_jobs}"; do
+                log="$(mktemp -t ot-build-host.XXXXXX)"
+                build_leg "${leg%%|*}" "${leg##*|}" >"$log" 2>&1 &
+                batch_pids+=($!); batch_logs+=("$log"); batch_legs+=("$leg")
+            done
+            for j in "${!batch_pids[@]}"; do
+                if wait "${batch_pids[$j]}"; then
+                    legs_built=$((legs_built + 1))
+                elif [[ -z "$failed_leg" ]]; then
+                    failed_leg="${batch_legs[$j]%%|*} ${batch_legs[$j]##*|}"
+                fi
+                cat "${batch_logs[$j]}" >&2
+                rm -f "${batch_logs[$j]}"
+            done
+            [[ -z "$failed_leg" ]] || break
+        done
+        host_legs=()
+    fi
     for leg in "${host_legs[@]}" "${remote_legs[@]}"; do
         [[ -n "$leg" ]] || continue
+        [[ -z "$failed_leg" ]] || break
         if build_leg "${leg%%|*}" "${leg##*|}"; then
             legs_built=$((legs_built + 1))
         else

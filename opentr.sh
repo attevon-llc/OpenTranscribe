@@ -189,6 +189,8 @@ show_help() {
   echo "  --pull               - Force pull prod images from Docker Hub"
   echo "  --gpu-scale          - Enable multi-GPU worker scaling (multiple workers on one GPU)"
   echo "  --with-gpu-split     - Enable GPU split: separate gpu-transcribe / gpu-diarize workers"
+  echo "  --gpu-scale-default-worker 0|1 - With --gpu-scale: keep (1) or drop (0) the default celery-worker,"
+  echo "                         applied AFTER .env (a pre-exported GPU_SCALE_DEFAULT_WORKER loses to .env)"
   echo "  --gpu-device N       - Run this stack's AI work on host GPU N, overriding .env AFTER it"
   echo "                         is sourced (a pre-exported GPU_DEVICE_ID cannot win — .env clobbers"
   echo "                         it — and editing .env moves the LIVE stack too)."
@@ -2156,6 +2158,7 @@ start_app() {
   GPU_SCALE_FLAG=""
   GPU_SPLIT_FLAG=""
   GPU_DEVICE_OVERRIDE=""
+  GPU_SCALE_DEFAULT_WORKER_OVERRIDE=""
   DIAR_NATIVE_GPU_OVERRIDE=""
   NAS_FLAG=""
   PULL_FLAG=""
@@ -2202,6 +2205,8 @@ start_app() {
         GPU_SPLIT_FLAG="--with-gpu-split"
         shift
         ;;
+      --gpu-scale-default-worker)
+        GPU_SCALE_DEFAULT_WORKER_OVERRIDE="${2:-<none>}"; shift; [ $# -gt 0 ] && shift ;;
       --gpu-device)
         shift
         # A missing value would abort on `set -u`; fail with something readable.
@@ -2594,14 +2599,8 @@ start_app() {
   # `--gpu-device 2 --diar-native-gpu 1` (or the reverse) can express two
   # different cards; --gpu-device alone would have just pinned DIAR_NATIVE_GPU
   # back to the same value as everything else.
-  if [ -n "$DIAR_NATIVE_GPU_OVERRIDE" ]; then
-    if ! [[ "$DIAR_NATIVE_GPU_OVERRIDE" =~ ^[0-9]+$ ]]; then
-      echo "❌ --diar-native-gpu must be a non-negative integer GPU index (got '$DIAR_NATIVE_GPU_OVERRIDE')"
-      exit 1
-    fi
-    export DIAR_NATIVE_GPU="$DIAR_NATIVE_GPU_OVERRIDE"
-    echo "🎯 --diar-native-gpu $DIAR_NATIVE_GPU_OVERRIDE: pinning the diar-native sidecar to host GPU $DIAR_NATIVE_GPU_OVERRIDE (overrides .env)"
-  fi
+  apply_diar_native_gpu_override "${DIAR_NATIVE_GPU_OVERRIDE-}"
+  apply_gpu_scale_default_worker_override "${GPU_SCALE_DEFAULT_WORKER_OVERRIDE-}" "$GPU_SCALE_FLAG"
   warn_ignored_gpu_device_exports
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
@@ -3348,14 +3347,7 @@ reset_and_init() {
   fi
 
   # See start_app()'s identical block for why this must come after --gpu-device.
-  if [ -n "$DIAR_NATIVE_GPU_OVERRIDE" ]; then
-    if ! [[ "$DIAR_NATIVE_GPU_OVERRIDE" =~ ^[0-9]+$ ]]; then
-      echo "❌ --diar-native-gpu must be a non-negative integer GPU index (got '$DIAR_NATIVE_GPU_OVERRIDE')"
-      exit 1
-    fi
-    export DIAR_NATIVE_GPU="$DIAR_NATIVE_GPU_OVERRIDE"
-    echo "🎯 --diar-native-gpu $DIAR_NATIVE_GPU_OVERRIDE: pinning the diar-native sidecar to host GPU $DIAR_NATIVE_GPU_OVERRIDE (overrides .env)"
-  fi
+  apply_diar_native_gpu_override "${DIAR_NATIVE_GPU_OVERRIDE-}"
   warn_ignored_gpu_device_exports
 
   if [ -n "$GPU_SCALE_FLAG" ]; then

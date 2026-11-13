@@ -150,3 +150,36 @@ gpu_device_reservations() {
   done
   printf '%s' "$out"
 }
+
+# `--gpu-scale-default-worker 0|1` — whether the default celery-worker stays up next to the
+# --gpu-scale workers (docker-compose.gpu-scale.yml: `scale: ${GPU_SCALE_DEFAULT_WORKER:-0}`).
+# Applied AFTER .env for the same reason as --gpu-device: .env sets it (1 on some hosts) and
+# clobbers a caller's export, while the cross-card diar-native tests need 0 so the default
+# worker does not consume the gpu queue. Args: value, GPU_SCALE_FLAG. No-op when value is empty.
+apply_gpu_scale_default_worker_override() {
+  local requested="$1" scale_flag="${2:-}"
+  [ -n "$requested" ] || return 0
+  if [ "$requested" != "0" ] && [ "$requested" != "1" ]; then
+    echo "❌ --gpu-scale-default-worker must be 0 or 1 (got '$requested')"
+    exit 2
+  fi
+  if [ -z "$scale_flag" ]; then
+    echo "❌ --gpu-scale-default-worker is only valid together with --gpu-scale"
+    exit 2
+  fi
+  export GPU_SCALE_DEFAULT_WORKER="$requested"
+  echo "🎯 --gpu-scale-default-worker $requested: default celery-worker scale=$requested (overrides .env)"
+}
+
+# `--diar-native-gpu N` — moves only DIAR_NATIVE_GPU, after .env and after --gpu-device.
+# Shared by start and reset. No-op when value is empty.
+apply_diar_native_gpu_override() {
+  local requested="$1"
+  [ -n "$requested" ] || return 0
+  if ! [[ "$requested" =~ ^[0-9]+$ ]]; then
+    echo "❌ --diar-native-gpu must be a non-negative integer GPU index (got '$requested')"
+    exit 1
+  fi
+  export DIAR_NATIVE_GPU="$requested"
+  echo "🎯 --diar-native-gpu $requested: pinning the diar-native sidecar to host GPU $requested (overrides .env)"
+}

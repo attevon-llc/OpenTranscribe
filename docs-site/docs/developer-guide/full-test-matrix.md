@@ -214,6 +214,12 @@ parallel Celery workers pinned to `GPU_SCALE_DEVICE_ID`), which is additive with
 overlays. On a single-GPU host, set `GPU_SCALE_DEVICE_ID` to that GPU and stop `--with-llm-test`'s
 vLLM first — both want VRAM.
 
+`./opentr.sh start dev --gpu-scale --gpu-scale-default-worker 0|1` sets `GPU_SCALE_DEFAULT_WORKER`
+**after** `.env` is sourced, so it wins where a pre-exported value would be silently overwritten
+(`.env` is shared with the live stack and must not be edited). Use `0` for the cross-card
+diar-native tests so the default `celery-worker` does not consume the `gpu` queue. Only `0` or `1`
+are accepted and it requires `--gpu-scale`; misuse exits 2.
+
 Run via `scripts/gpu-scale-smoke.sh`. `docker-compose.gpu-scale.yml` runs exactly ONE celery
 process (`gpu-scaled@%h`) with `--concurrency=GPU_SCALE_WORKERS`, so "N workers register in
 Flower" was never the right pass criterion — it checks the pool's `max-concurrency` on that one

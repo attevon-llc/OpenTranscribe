@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the multi-slice summary rules on a real model (plan: summary_quality_eval_plan.md).
+"""Measure the multi-slice summary rules on a real model (see backend/tests/eval/CLAUDE.md).
 
 Entry point only: the implementation, and the full ``--help`` text, live in the
 ``scripts/summary_bench/`` package.

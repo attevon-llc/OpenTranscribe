@@ -1,7 +1,7 @@
 # Summary-merge quality baselines
 
 Metrics-only results of `scripts/run-summary-eval.sh` (design:
-`docs/design/summary_quality_eval_plan.md`). One subdirectory per run, named
+the "Summary-merge quality gate" section of `backend/tests/eval/CLAUDE.md`). One subdirectory per run, named
 `<date>-<git short sha>`, holding exactly:
 
 | file | contents |

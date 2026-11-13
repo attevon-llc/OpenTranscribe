@@ -78,13 +78,15 @@ Three things to know before touching it:
   `docs-site/docs/developer-guide/rag-evaluation.md`'s "Live chat-RAG HTTP probe" section — read it
   before pointing this at a fresh stack, or the first mutating request 403s with no obvious cause.
 
-## Summary-merge quality gate (`docs/design/summary_quality_eval_plan.md`)
+## Summary-merge quality gate
 
 The instrument for "is the independently written scope/merge rule set at least as good as the current one".
 Pure scorers in `harness/summary_{detectors,scoring,verdict,judge}.py`, run by
 `scripts/benchmark_summary.py` (package `scripts/summary_bench/`) through
 `scripts/run-summary-eval.sh`; the GPU window and the lead's arm files are the only things it
 needs that this repo does not hold.
+
+The real-corpus gold counts `test_summary_gold.py` reproduces (decisions, with linked in parentheses): ES2008 33 decisions (32) and 17 actions (16); Bed003 8 (7); Bmr023 7 (7).
 
 - **Arms are runtime inputs, never repo content.** Rule text lives in JSON files outside the repo
   (`~/ot-cleanup-work/summary-eval/arms/`); a results file holds a SHA-256 and a length.

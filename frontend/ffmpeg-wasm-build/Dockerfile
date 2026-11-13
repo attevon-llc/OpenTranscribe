@@ -10,7 +10,7 @@
 # Build with: `docker buildx build -o dist --target exportor .` from this directory
 # (see build.sh). Produces dist/esm/{ffmpeg-core.js,ffmpeg-core.wasm}.
 
-FROM emscripten/emsdk:3.1.40 AS emsdk-base
+FROM emscripten/emsdk:6.0.13 AS emsdk-base
 ENV INSTALL_DIR=/opt
 ENV FFMPEG_VERSION=n5.1.4
 ENV CFLAGS="-I$INSTALL_DIR/include $CFLAGS"

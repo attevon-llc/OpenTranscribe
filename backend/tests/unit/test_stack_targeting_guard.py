@@ -71,10 +71,6 @@ EXEMPT: dict[tuple[str, str], str] = {
         "live-port-default",
     ): "opentr.sh OWNS the stack: the stock ports are its definition (FRESH_PORT_VARS), not a guess about another stack",
     (
-        "scripts/demo/demo-upgrade.sh",
-        "live-port-default",
-    ): "the demo scripts already assert the stack (health version equals the tag); the plan says leave them",
-    (
         "opentranscribe.sh",
         "live-port-default",
     ): "ships standalone to end users: stock ports and container names are its documented install layout, not a developer stack guess",

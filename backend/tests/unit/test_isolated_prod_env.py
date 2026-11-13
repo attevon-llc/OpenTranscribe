@@ -32,6 +32,7 @@ def fake_repo(tmp_path: Path) -> Path:
         "scripts/release-tests/isolated-prod-env.sh",
         "scripts/release-tests/lib/env-template.sh",
         "scripts/lib/model-cache-dir.sh",
+        "scripts/release/fresh-stack-lib.sh",
     ):
         dest = root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -43,7 +44,13 @@ def fake_repo(tmp_path: Path) -> Path:
         "MINIO_KMS_SECRET_KEY=CHANGE_ME_auto_generated_on_install\n"
         "MODEL_CACHE_DIR=./models\nDEMO_MODE=false\n# ENVIRONMENT=production\n"
     )
-    _write(root / "opentr.sh", f'#!/bin/bash\necho "opentr $*" >> "{log}"\nexit 0\n')
+    # records what the isolated models dir held when `start` ran: the sidecar reads it at boot
+    _write(
+        root / "opentr.sh",
+        f'#!/bin/bash\necho "opentr $*" >> "{log}"\n'
+        f'for d in .fresh/*/diar-native-models; do [ -d "$d" ] && echo "models $d: $(ls $d)" >> "{log}"; done\n'
+        "exit 0\n",
+    )
     _write(root / "scripts" / "generate-ssl-cert.sh", f'#!/bin/bash\necho ssl >> "{log}"\n')
     _write(
         root / "scripts" / "pki" / "setup-test-pki.sh",
@@ -90,7 +97,12 @@ def _git(cwd: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def _run(root: Path, *args: str, cache: Path) -> subprocess.CompletedProcess[str]:
+def _run(
+    root: Path, *args: str, cache: Path, seed: bool = True
+) -> subprocess.CompletedProcess[str]:
+    if seed and args[0] == "run":
+        (cache / "diar-native").mkdir(parents=True, exist_ok=True)
+        (cache / "diar-native" / "segmentation-3.0.onnx").write_text("onnx")
     env = {
         **os.environ,
         **GIT_ENV,
@@ -200,3 +212,23 @@ def test_pki_does_not_restart_when_trust_already_matches(
     assert res.returncode == 0, res.stderr
     calls = (fake_repo / "calls.log").read_text().splitlines()
     assert len([c for c in calls if c.startswith("opentr start")]) == 1, calls
+
+
+def test_run_seeds_the_isolated_diar_native_dir_before_start(
+    fake_repo: Path, tmp_path: Path
+) -> None:
+    """Must fire: an empty .fresh/NAME/diar-native-models crash-loops the sidecar (exit 8)."""
+    res = _run(fake_repo, "run", "pki", "--name", "Seed1", cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+    log = (fake_repo / "calls.log").read_text()
+    assert "diar-native-models: segmentation-3.0.onnx" in log
+
+
+def test_run_refuses_without_a_diar_native_export_to_seed_from(
+    fake_repo: Path, tmp_path: Path
+) -> None:
+    res = _run(fake_repo, "run", "pki", "--name", "Seed2", cache=tmp_path, seed=False)
+    assert res.returncode == 3
+    assert "no diar-native export" in res.stderr
+    log = fake_repo / "calls.log"
+    assert not log.exists() or "opentr start" not in log.read_text()

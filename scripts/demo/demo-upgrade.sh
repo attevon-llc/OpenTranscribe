@@ -28,8 +28,11 @@
 #   DEMO_RESET_CMD       default: demo-reset.sh beside this script
 #   DEMO_STATUS_FILE     default: $DEMO_INSTALL_DIR/demo-status.json (read by the release
 #                        `finish` stage)
+#   DEMO_FRESH_NAME      act on the `--fresh NAME` stack instead of the demo (demo-target.sh)
+# The target compose project is asserted before the first restart or volume delete.
 # Exit: 0 upgraded or already current, 1 upgrade failed (rolled back), 2 misuse,
-#       3 another upgrade/reset holds the lock, 4 rollback ALSO failed (page someone).
+#       3 another upgrade/reset holds the lock, 4 rollback ALSO failed (page someone),
+#       20-28 the target stack failed scripts/lib/stack_target.py (21 = not this install).
 
 set -euo pipefail
 
@@ -37,7 +40,7 @@ DRY_RUN=0
 case "${1:-}" in
     --dry-run) DRY_RUN=1 ;;
     "") ;;
-    -h | --help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,36p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
@@ -68,6 +71,10 @@ run() {
 
 exec 9>"$INSTALL_DIR/.demo.lock"
 flock -n 9 || { echo "another demo upgrade or reset is running" >&2; exit 3; }
+
+# shellcheck source=scripts/demo/demo-target.sh
+source "$SCRIPT_DIR/demo-target.sh"
+demo_assert_target || exit "$?"
 
 resolve_target() {
     if [ -n "${DEMO_TARGET_TAG:-}" ]; then

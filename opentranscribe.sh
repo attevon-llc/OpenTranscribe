@@ -967,7 +967,7 @@ compose_overlay_diar_native() {
     diar_models_dir=$(resolve_diar_native_models_dir)
 
     local diar_weights_present="0"
-    if [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
+    if [ -d "$diar_models_dir" ] && [ -n "$(ls "$diar_models_dir" 2>/dev/null)" ]; then
         diar_weights_present="1"
     fi
     local diar_hf_token=""

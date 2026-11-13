@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.demo_docker_stub import PS_STUB
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "scripts" / "demo" / "demo-reset.sh"
 
@@ -22,13 +24,16 @@ pytestmark = pytest.mark.skipif(shutil.which("flock") is None, reason="needs uti
 
 CHAIN = "-f docker-compose.yml -f docker-compose.lite.yml -f docker-compose.demo.yml"
 
-FAKE_DOCKER = r"""#!/usr/bin/env bash
-args="$*"
+FAKE_DOCKER = (
+    "#!/usr/bin/env bash\n"
+    + PS_STUB
+    + r"""args="$*"
 echo "docker ${args//-f docker-compose.yml -f docker-compose.lite.yml -f docker-compose.demo.yml/CHAIN} workers=${DEMO_WORKER_REPLICAS:-0}" >> "$STUB/calls.log"
 case "$args" in *demo_seed*) [ -f "$STUB/seed-fails" ] && exit 1 ;; esac
 case "$args" in *assert_inert*) [ -f "$STUB/not-inert" ] && exit 1 ;; esac
 exit 0
 """
+)
 
 
 @pytest.fixture
@@ -170,3 +175,44 @@ def test_a_dry_run_does_not_create_the_upgrade_record(stub):
     run(stub, "--dry-run")
 
     assert not (install / "demo-status.json").exists()
+
+
+DESTRUCTIVE = (" down ", " stop ", " up ", " run ", " exec ")
+
+
+def _mutating(calls):
+    return [c for c in calls if any(w in f" {c} " for w in DESTRUCTIVE)]
+
+
+def test_a_project_running_from_another_directory_is_refused_before_any_docker_call(stub, tmp_path):
+    """Must fire: `down -v` against a stack that is not this install deletes someone else's data."""
+    proc, calls = run(stub, STUB_WORKDIR=str(tmp_path / "somewhere-else"))
+
+    assert proc.returncode == 21, proc.stderr
+    assert "refusing" in proc.stderr
+    assert _mutating(calls) == []
+
+
+def test_a_project_with_no_containers_is_refused_before_any_docker_call(stub):
+    proc, calls = run(stub, STUB_NO_STACK="1")
+
+    assert proc.returncode == 20, proc.stderr
+    assert _mutating(calls) == []
+
+
+def test_the_asserted_project_is_the_one_compose_acts_on(stub):
+    """Must stay clean: the matching project proceeds, under the project that was asserted."""
+    install = stub[0]
+    (install / "opentranscribe.sh").write_text(f'#!/usr/bin/env bash\necho "{CHAIN}"\n')
+    proc, calls = run(stub, DEMO_FRESH_NAME="Demo-X")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "target project otfresh-demo-x" in proc.stdout
+    assert _mutating(calls)
+
+
+def test_the_reset_can_target_a_fresh_stack_and_never_the_live_project(stub):
+    proc, _ = run(stub, DEMO_FRESH_NAME="t1", COMPOSE_PROJECT_NAME="opentranscribe")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "otfresh-t1" in proc.stdout and "opentranscribe" not in proc.stdout

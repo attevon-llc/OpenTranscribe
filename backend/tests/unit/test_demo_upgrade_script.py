@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.demo_docker_stub import PS_STUB
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "scripts" / "demo" / "demo-upgrade.sh"
 
@@ -48,6 +50,8 @@ case "$url" in
 esac
 """
 
+FAKE_DOCKER = "#!/usr/bin/env bash\n" + PS_STUB + "exit 0\n"
+
 FAKE_RESET = """#!/usr/bin/env bash
 echo "reset lock_held=${DEMO_LOCK_HELD:-}" >> calls.log
 """
@@ -66,6 +70,7 @@ def stub(tmp_path):
         (install / "opentranscribe.sh", FAKE_OPENTRANSCRIBE),
         (install / "reset.sh", FAKE_RESET),
         (bindir / "curl", FAKE_CURL),
+        (bindir / "docker", FAKE_DOCKER),
     ):
         path.write_text(body)
         path.chmod(0o755)
@@ -195,3 +200,12 @@ def test_a_held_lock_exits_3(stub):
 
     assert proc.returncode == 3
     assert calls == []
+
+
+def test_a_project_from_another_directory_is_refused_before_any_restart(stub, tmp_path):
+    """Must fire: `update` restarts the stack and the reset deletes its volumes."""
+    proc, calls = run(stub, STUB_WORKDIR=str(tmp_path / "elsewhere"))
+
+    assert proc.returncode == 21, proc.stderr
+    assert calls == []
+    assert not (stub[0] / "demo-status.json").exists()

@@ -168,6 +168,9 @@ second client-side exporter believing this exception still applies.
 - **prod**: `frontend/Dockerfile.prod` builds static assets served by **nginx** (`nginx.conf`,
   `nginx-pki.conf`) with CSP/HSTS/security headers. Any change touching `app.html`, asset paths,
   env (`import.meta.env.VITE_*`), or CSP must be verified in BOTH. No secrets in the bundle.
+- **Optional upstreams (docs, flower) go through a variable plus `resolver 127.0.0.11`**: nginx resolves a
+  literal `proxy_pass` host at startup and refuses to start without it (the no-Flower demo crash-looped;
+  dev serves Vite, so only prod builds show it). Enforced by `test_nginx_upstreams_exist_in_every_mode.py`.
 - **No service worker, deliberately.** This is an authenticated always-online SPA, so a worker
   buys nothing and risks plenty: a cache-first worker would cache the app shell _and_ same-origin
   `/s3/` media, and Cache Storage is not cleared by `$lib/session/clearUserState`. Chrome dropped

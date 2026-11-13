@@ -262,6 +262,12 @@ echo "0 0 1 * * certbot renew --quiet && docker compose restart nginx" | sudo te
 | `/s3/` | `minio:9000` | S3 API (presigned URLs) |
 | `/metrics`, `/metrics/queues` | _(none)_ | Answered with 404 at the proxy; Prometheus scrapes the backend over the internal network |
 
+`flower` is optional: the public demo runs none. nginx therefore resolves it per request through
+Docker's DNS (`resolver 127.0.0.11`) instead of at startup, so with no Flower `/flower/` answers
+502 and every other route keeps working. The frontend image does the same for `/docs/`. A custom
+nginx config that names an optional service literally in `proxy_pass` will refuse to start with
+`host not found in upstream` when that service is not running.
+
 ---
 
 ## 4. Database Hardening

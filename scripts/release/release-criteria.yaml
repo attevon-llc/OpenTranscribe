@@ -394,6 +394,14 @@ stages:
         # that killed the previous version of this file.
         severity: blocking
 
+      - id: tested-images-recorded
+        description: >-
+          The service images the gate ran against and a fingerprint of the tested backend
+          (sha256 of `pip freeze --all` and of the git-tracked /app files that survive
+          backend/.dockerignore) are written to .release/<version>/tested-images.tsv and
+          tested-fingerprint.txt, for the tag stage to compare against the shipped backend.
+        severity: blocking
+
       - id: release-e2e-journeys
         description: scripts/e2e/run-e2e-release.sh (the v0.6.0 browser journeys) exits 0 on the same fresh stack
         severity: blocking
@@ -468,6 +476,14 @@ stages:
           overridden and a recorded sha that is HEAD, or an ancestor of HEAD with only
           evidence-neutral paths (evidence_neutral_paths above) changed since — built =
           scanned = rehearsed = tagged. Every stale stage is named. Overridable only via --force-tag with a reason.
+        severity: blocking
+
+      - id: shipped-python-equals-tested
+        description: >-
+          The host-arch backend leg in legs.tsv has the same `pip freeze --all` and the same
+          /app file bytes as the tested-fingerprint.txt the test stage recorded (scripts/release/
+          image_parity.py). Missing record is not-measured. The apt layer legitimately differs
+          and is covered by scan and rehearse. Both fingerprints land in steps/tag.parity.
         severity: blocking
 
       - id: version-consistency-pre-tag

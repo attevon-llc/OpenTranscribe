@@ -97,6 +97,33 @@ PREFLIGHT_WHY="$(fresh_stack_preflight_after "$FRESH_NAME" 2>&1)" \
     || fail_precondition "preflight: ${PREFLIGHT_WHY}" "fix the cause above, then re-run the test stage"
 record dev-stack-up pass
 
+# TR-P: record WHICH images this gate tests and fingerprint the Python bytes, so `tag` can prove the
+# backend that ships has the same pip set and /app files (image_parity.py is the one implementation).
+# Resolved by compose labels, never by container name.
+PARITY_DIR=".release/${VERSION}"; mkdir -p "$PARITY_DIR"
+parity_services="$(mktemp -t ot-tested-services.XXXXXX)"
+parity_fail=""
+while IFS=$'\t' read -r _cid _svc; do
+    [[ -n "$_cid" ]] || continue
+    _img="$(docker inspect --format '{{.Image}}' "$_cid" 2>/dev/null)" || { parity_fail="docker inspect $_svc"; break; }
+    _sha="$(docker exec "$_cid" printenv GIT_SHA 2>/dev/null || true)"
+    printf '%s\t%s\t%s\n' "$_svc" "$_img" "${_sha:-none}" >> "$parity_services"
+done < <(docker ps --filter "label=com.docker.compose.project=${ST_PROJECT}" \
+            --format '{{.ID}}\t{{.Label "com.docker.compose.service"}}')
+backend_cid="$(st_container backend 2>/dev/null)" || backend_cid=""
+backend_image=""
+[[ -n "$backend_cid" ]] && backend_image="$(docker inspect --format '{{.Image}}' "$backend_cid" 2>/dev/null)"
+if [[ -z "$parity_fail" && -n "$backend_image" ]] && python3 "$SCRIPT_DIR/image_parity.py" record-tested \
+        --services "$parity_services" --backend-image "$backend_image" \
+        --tsv "$PARITY_DIR/tested-images.tsv" --fingerprint "$PARITY_DIR/tested-fingerprint.txt" >&2; then
+    record tested-images-recorded pass "$(wc -l < "$PARITY_DIR/tested-images.tsv") service image(s) in $PARITY_DIR/tested-images.tsv"
+else
+    record tested-images-recorded fail "could not record the tested images/fingerprint (${parity_fail:-backend image unresolved or fingerprint failed})" \
+        "docker ps --filter label=com.docker.compose.project=${ST_PROJECT}; python3 scripts/release/image_parity.py record-tested --help"
+    parity_rc=1
+fi
+rm -f "$parity_services"
+
 # First, on the untouched stack: run-e2e.sh excludes the `first_run` marker from every phase and
 # the gates below dismiss the wizard, so this is the only place the wizard itself is exercised.
 wizard_rc=0
@@ -178,6 +205,7 @@ fi
 # Both halves of the contract. Reachable on both outcomes — the gate above always records
 # one — so this cannot convert a test failure (1) into a wiring-misuse exit (2).
 (( wizard_rc != 0 && rc == 0 )) && rc=1
+(( ${parity_rc:-0} != 0 && rc == 0 )) && rc=1
 criteria_assert_all_checked
 
 if [[ "$JSON_OUT" == "true" ]]; then

@@ -29,6 +29,8 @@ source "$SCRIPT_DIR/criteria-lib.sh"
 # next run starts, so every run seeds identically.
 # shellcheck source=scripts/release/fresh-stack-lib.sh
 source "$SCRIPT_DIR/fresh-stack-lib.sh"
+# shellcheck source=scripts/lib/stack-target.sh
+source "$REPO_ROOT/scripts/lib/stack-target.sh"
 FRESH_NAME="$(fresh_stack_name "$VERSION")"
 PORT_OFFSET="${RELEASE_TEST_PORT_OFFSET:-400}"
 
@@ -69,6 +71,14 @@ if ! (exec 3<>/dev/tcp/127.0.0.1/"$POSTGRES_PORT") 2>/dev/null; then
     fail_precondition "nothing answering on 127.0.0.1:${POSTGRES_PORT} after the fresh stack started" \
         "./opentr.sh logs postgres"
 fi
+# The stack the gate will test is the fresh one, at this checkout's schema head, running this
+# checkout's code: a stack that came up on a stale schema or another worktree's bind mount made a
+# whole stage report meaningless failures (exit 3, not 1: nothing was measured).
+st_target --fresh "$FRESH_NAME" || fail_precondition "cannot resolve the fresh stack '${FRESH_NAME}'" \
+    "./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset ${PORT_OFFSET}"
+st_require schema-head code=bind healthy || fail_precondition \
+    "stack-target refused the fresh stack '${FRESH_NAME}' (see the FAIL line above)" \
+    "fix the cause named above, then re-run the test stage"
 PREFLIGHT_WHY="$(fresh_stack_preflight_after "$FRESH_NAME" 2>&1)" \
     || fail_precondition "preflight: ${PREFLIGHT_WHY}" "fix the cause above, then re-run the test stage"
 record dev-stack-up pass

@@ -158,7 +158,7 @@ def throwaway_pg() -> Iterator[dict[str, Any]]:
     password = uuid.uuid4().hex
     port = _free_port()
 
-    live_port = int(os.environ.get("POSTGRES_PORT", "5176"))
+    live_port = int(os.environ.get("POSTGRES_PORT") or 5176)
     # The one guard standing between a bug in this file and the live dev database: if
     # this ever resolves to the dev stack's port, refuse before `docker run` even
     # executes rather than after.

@@ -103,7 +103,7 @@ def throwaway_pg() -> Iterator[dict[str, Any]]:
     name = f"ot-migration-tcp-{uuid.uuid4().hex[:12]}"
     password = uuid.uuid4().hex
     port = free_port()
-    live = {5176, 5276, 5376, int(os.environ.get("POSTGRES_PORT", "5176"))}
+    live = {5176, 5276, 5376, int(os.environ.get("POSTGRES_PORT") or 5176)}
     assert port not in live, f"allocated port {port} collides with a live stack's port"
     try:
         started = _run(

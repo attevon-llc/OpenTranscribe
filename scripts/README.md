@@ -1011,7 +1011,7 @@ orchestrator. They upload files to the live stack and generally do not delete th
 
 | Script | Purpose |
 |--------|---------|
-| `run_benchmark.py`, `collate_benchmark.py`, `compare_baseline.py` | Engine-optimization benchmark orchestrator, master-table collation, and the upload-speed A/B comparison. `run_benchmark.py` runs `docker compose down -v` on project `otbench` and a legacy cleanup aimed at the `transcribe-app` dev project (`--no-cleanup-legacy` suppresses it). |
+| `run_benchmark.py`, `collate_benchmark.py`, `compare_baseline.py` | Engine-optimization benchmark orchestrator, master-table collation, and the upload-speed A/B comparison. `run_benchmark.py` runs `docker compose down -v` on project `otbench` only (its legacy `transcribe-app` cleanup was removed). |
 | `benchmark_e2e.py`, `benchmark_parallel.py`, `benchmark_concurrency_sweep.sh`, `benchmark_concurrent_uploads.py`, `benchmark_upload_baseline.py`, `benchmark_upload_matrix.py`, `benchmark_transcription.sh`, `benchmark-thorough.py`, `benchmark_projection.py` | Pipeline, parallelism, concurrency and upload benchmarks. |
 | `benchmark_engine_compare.py`, `benchmark_engine_queue.py`, `benchmark_engine_single.py` | Engine-vs-pipeline regression gate and Engine throughput/latency benchmarks. |
 | `benchmark-diarization.py`, `benchmark-pyannote-direct.py`, `benchmark-pyannote-mps.py`, `mps-speaker-compare.py`, `profile-mps-ops.py`, `diarization-der.py`, `diarization-der-compare.py`, `diar-native-der-parity.py`, `diar-native-handoff-ab.py`, `diar-openblas-der-ab.py` | Diarization timing and accuracy (DER) measurements, including Apple Silicon (MPS) variants. |

@@ -734,11 +734,10 @@ scan_component() {
     local platform="${2:-}"
     local dockerfile=""
     local image=""
-    # Tag to scan. Defaults to :latest for dev/post-push workflows.
-    # Set IMAGE_TAG=0.4.0 (or any other tag) to scan a release candidate
-    # before pushing it — e.g. the Phase 1 pre-release security scan in
-    # .claude/commands/release.md should pass IMAGE_TAG=X.Y.Z.
+    # Tag to scan. Defaults to :latest for dev/post-push workflows; set IMAGE_TAG=0.4.0 (or any
+    # other tag) to scan a release candidate before pushing it (.claude/commands/release.md).
     local tag="${IMAGE_TAG:-latest}"
+    [ -n "${IMAGE_TAG:-}" ] || print_warning "IMAGE_TAG unset: scanning whatever :${tag} this host holds locally; set IMAGE_TAG=<version> for a release image"
 
     dockerfile="${SCAN_COMPONENT_DOCKERFILE[${component}]:-}"
     local repo="${SCAN_COMPONENT_REPO[${component}]:-}"

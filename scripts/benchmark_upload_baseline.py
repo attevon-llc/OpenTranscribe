@@ -18,8 +18,9 @@ import time
 from pathlib import Path
 
 import requests
+from bench_common import backend_url
 
-BACKEND = os.environ.get('BACKEND_URL', 'http://localhost:5174')
+BACKEND = os.environ.get('BACKEND_URL') or backend_url()
 EMAIL = os.environ.get('BENCHMARK_EMAIL', 'admin@example.com')
 PASSWORD = os.environ.get('BENCHMARK_PASSWORD', 'password')
 POLL_INTERVAL = 3.0

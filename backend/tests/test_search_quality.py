@@ -21,7 +21,6 @@ Set RUN_SEARCH_QUALITY_TESTS=true to run this suite (it is not run in CI, which
 forces SKIP_OPENSEARCH=True).
 """
 
-import os
 import re
 import time
 
@@ -35,13 +34,14 @@ from tests.fixtures.search_corpus import GOLD
 from tests.fixtures.search_corpus import KEYWORD_QUERIES
 from tests.fixtures.search_corpus import SEMANTIC_QUERIES
 from tests.fixtures.search_corpus import SPEAKER_FILE_COUNTS
+from tests.stack_preflight import stack_port
 
 pytestmark = pytest.mark.skipif(
     not gate_enabled("RUN_SEARCH_QUALITY_TESTS"),
     reason="Search quality tests need a live dev stack (set RUN_SEARCH_QUALITY_TESTS=true to run)",
 )
 
-BASE = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api"
+BASE = f"http://localhost:{stack_port('BACKEND_PORT')}/api"
 
 
 @pytest.fixture(scope="module")

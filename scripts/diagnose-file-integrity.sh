@@ -4,12 +4,16 @@
 
 set -e
 
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+st_target || exit $?
+
 echo "=== File Integrity Diagnostic ==="
 echo
 
 # 1. Files stuck in PROCESSING with transcripts (transcription done, but status not updated)
 echo "1. Checking PROCESSING files with transcripts (should be COMPLETED)..."
-docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -t -c "
+docker exec "$(st_container postgres)" psql -U postgres -d opentranscribe -t -c "
 SELECT
     mf.id,
     mf.filename,
@@ -28,7 +32,7 @@ done
 # 2. Files with transcripts but ERROR status
 echo
 echo "2. Checking ERROR files with transcripts (transcription succeeded but marked ERROR)..."
-ERRORCOUNT=$(docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -t -c "
+ERRORCOUNT=$(docker exec "$(st_container postgres)" psql -U postgres -d opentranscribe -t -c "
 SELECT COUNT(DISTINCT mf.id)
 FROM media_file mf
 WHERE mf.status = 'error'
@@ -39,7 +43,7 @@ echo "  Found: $ERRORCOUNT ERROR files with transcripts"
 
 if [ "$ERRORCOUNT" -gt "0" ]; then
     echo "  Sample files:"
-    docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -c "
+    docker exec "$(st_container postgres)" psql -U postgres -d opentranscribe -c "
     SELECT
         mf.id,
         mf.filename,
@@ -56,7 +60,7 @@ fi
 echo
 echo "3. Checking for video files that might be missing from MinIO..."
 echo "  (This requires checking MinIO directly - cannot be done from SQL alone)"
-echo "  Run: docker exec opentranscribe-backend python -c \"
+echo "  Run: docker exec $(st_container backend) python -c \"
 from app.services.minio_service import minio_client
 from app.core.config import settings
 objects = list(minio_client.list_objects(settings.MEDIA_BUCKET_NAME, recursive=True))
@@ -66,7 +70,7 @@ print(f'Total objects in MinIO: {len(objects)}')
 # 4. Summary statistics
 echo
 echo "4. Overall Statistics:"
-docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -c "
+docker exec "$(st_container postgres)" psql -U postgres -d opentranscribe -c "
 SELECT
     status,
     COUNT(*) as files,

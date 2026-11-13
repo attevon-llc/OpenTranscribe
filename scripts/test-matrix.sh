@@ -31,6 +31,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/lib/stack-target.sh
+source "$SCRIPT_DIR/lib/stack-target.sh"
 cd "$REPO_ROOT" || exit 1
 
 EXIT_GATE=1
@@ -263,10 +265,14 @@ service_reachable() {
 }
 
 check_stage2_precondition() {
-    # Canonical dev-stack ports (docker-compose.yml defaults), matching
-    # backend/tests/conftest.py's own TCP-probe approach.
-    service_reachable localhost 5174 || {
+    # The one live dev stack, resolved by compose labels (never a stock-port probe, which a
+    # different stack can answer), and asserted healthy with the schema at this checkout's head.
+    st_target --stock || {
         err "Stage 2 needs the dev stack reachable — start it: ./opentr.sh start dev [overlays for the cycle]"
+        return $EXIT_PRECONDITION
+    }
+    st_require healthy schema-head || {
+        err "Stage 2 needs the dev stack healthy and at this checkout's schema head (see the stack-target line above)"
         return $EXIT_PRECONDITION
     }
     return 0

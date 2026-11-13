@@ -58,6 +58,7 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 # Loaded by path (tests, python3 scripts/lib/stack_target.py): the siblings must be importable.
@@ -181,7 +182,83 @@ __all__ = [
     'WRONG_PROJECT',
     'build_parser',
     'main',
+    'observed_container',
+    'env_setting',
+    'port_setting',
+    'refuse_split',
+    'observed_port',
 ]
+
+
+# --------------------------------------------------------------------------- Python API
+
+
+def observed_port(var: str, env: dict[str, str] | None = None) -> str:
+    """The host port for ``var`` (``BACKEND_PORT``...): an exported value, else the resolved stack's.
+
+    '' when nothing resolves (no docker, no stack, ambiguous): the caller refuses instead of
+    guessing the live stack's stock port, which is what the literal defaults used to do.
+    """
+    env = dict(os.environ if env is None else env)
+    if env.get(var):
+        return env[var]
+    try:
+        return str(resolve(REPO_ROOT, env=env).ports.get(var, ''))
+    except StackError:
+        return ''
+
+
+def refuse_split(env: dict[str, str] | None = None) -> None:
+    """Raise WRONG_PROJECT when exported ports belong to two different compose projects.
+
+    A database of one stack with the backend or Redis of another is how a sweep deletes rows in
+    one place and files in another. A port nobody publishes (a throwaway container) has no
+    project and is ignored.
+    """
+    env = dict(os.environ if env is None else env)
+    owners: dict[str, str] = {}
+    for var in ('POSTGRES_PORT', 'BACKEND_PORT', 'REDIS_PORT', 'MINIO_PORT', 'OPENSEARCH_PORT'):
+        value = env.get(var, '')
+        owner = port_owner(value) if value.isdigit() else ''
+        if owner:
+            owners[var] = owner
+    if len(set(owners.values())) > 1:
+        raise StackError(
+            WRONG_PROJECT,
+            f'the exported ports name two projects: {owners}',
+            'export the *_PORT variables of ONE stack (or none: the resolver picks it)',
+        )
+
+
+def port_setting(name: str, default: str, dotenv_value: str = '') -> str:
+    """A *_PORT for a host tool: exported, else ``default`` (the resolved stack), else .env.
+
+    Refuses (SystemExit) a database and backend of two projects, and never falls back to a
+    literal stock port.
+    """
+    try:
+        refuse_split()
+    except StackError as exc:
+        raise SystemExit(exc.line()) from exc
+    value = os.environ.get(name) or default or observed_port(name) or dotenv_value
+    if not value:
+        raise SystemExit(f'stack-target: no {name} resolved (nothing exported, no stack, no .env)')
+    return value
+
+
+def env_setting(name: str, default: str, dotenv: Mapping[str, str | None]) -> str:
+    """A host tool's setting: ports resolve through ``port_setting``, the rest env, .env, default."""
+    if name.endswith('_PORT'):
+        return port_setting(name, default, str(dotenv.get(name) or ''))
+    return os.environ.get(name) or dotenv.get(name) or default
+
+
+def observed_container(service: str, env: dict[str, str] | None = None) -> str:
+    """First running container of ``service`` in the resolved stack ('' when none resolves)."""
+    try:
+        return resolve(REPO_ROOT, env=dict(os.environ if env is None else env)).first(service)
+    except StackError:
+        return ''
 
 
 # --------------------------------------------------------------------------- CLI

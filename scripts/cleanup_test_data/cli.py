@@ -174,7 +174,7 @@ def main() -> int:
     backend_url = _backend_url()
     db_user = _setting('POSTGRES_USER', 'postgres')
     db_host = _host_setting()
-    db_port = _setting('POSTGRES_PORT', '5176')
+    db_port = _setting('POSTGRES_PORT', '')
     db_name = _setting('POSTGRES_DB', 'opentranscribe')
     print(f'Target: {db_user}@{db_host}:{db_port}/{db_name} + API {backend_url}')
     print(f'Planes: {",".join(args.planes)}')

@@ -28,6 +28,8 @@ from pathlib import Path
 import pytest
 import requests
 
+from tests.stack_preflight import stack_port
+
 # Mirrors tests/e2e/conftest.py's TERMINAL_FAILURE_STATUSES. Not imported from
 # there: tests/e2e is not an importable package (see that conftest's own
 # docstring on why its cross-file imports are absolute-from-rootdir), and this
@@ -38,10 +40,16 @@ TERMINAL_FAILURE_STATUSES = frozenset({"error", "cancelled"})
 # offset (opentr.sh FRESH_MOCK_*_PORT_VARS). The release harness reports the resolved port as
 # OT_RESOLVED_<NAME>, because opentr.sh re-offsets any exported <NAME> itself.
 MOCK_ASR_PORT = int(
-    os.environ.get("OT_RESOLVED_MOCK_ASR_PORT") or os.environ.get("MOCK_ASR_PORT", "5198")
+    os.environ.get("OT_RESOLVED_MOCK_ASR_PORT")
+    or os.environ.get("MOCK_ASR_PORT")
+    or stack_port("MOCK_ASR_PORT")
+    or 0
 )
 MOCK_LLM_PORT = int(
-    os.environ.get("OT_RESOLVED_MOCK_LLM_PORT") or os.environ.get("MOCK_LLM_PORT", "5199")
+    os.environ.get("OT_RESOLVED_MOCK_LLM_PORT")
+    or os.environ.get("MOCK_LLM_PORT")
+    or stack_port("MOCK_LLM_PORT")
+    or 0
 )
 SAMPLE_WAV = Path(__file__).resolve().parents[1] / "fixtures" / "media" / "sample_short.wav"
 CANNED_SEGMENT_COUNT = 7
@@ -142,7 +150,6 @@ def lite_mode_user():
         # `task_media_file_id_fkey` the first time this fired — and would go stale
         # again at the next migration. `DELETE /files/{uuid}/force` is the production
         # purge and reaches MinIO and the search index too, which no row delete can.
-        import os
         import warnings
 
         from app.models.media import MediaFile
@@ -161,13 +168,13 @@ def lite_mode_user():
                 )
                 cleanup = requests.Session()
                 login = cleanup.post(
-                    f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api/auth/token",
+                    f"http://localhost:{stack_port('BACKEND_PORT')}/api/auth/token",
                     data={"username": email, "password": _LITE_MODE_PASSWORD},
                     timeout=30,
                 )
                 if login.status_code == 200:
                     cleanup.headers["X-CSRF-Token"] = cleanup.cookies.get("csrf_token") or ""
-                    base = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}"
+                    base = f"http://localhost:{stack_port('BACKEND_PORT')}"
                     for uuid_str in leftover:
                         _delete_file_until_gone(cleanup, base, uuid_str)
                 db.expire_all()
@@ -196,9 +203,8 @@ def backend_url() -> str:
     ``BACKEND_PORT`` mirrors the ``.env.example`` default and the compose port
     mapping (``docker-compose.yml``: ``${BACKEND_PORT:-5174}:8080``).
     """
-    import os
 
-    port = os.environ.get("BACKEND_PORT", "5174")
+    port = stack_port("BACKEND_PORT")
     return f"http://localhost:{port}"
 
 

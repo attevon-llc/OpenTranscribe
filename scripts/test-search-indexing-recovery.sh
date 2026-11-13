@@ -4,13 +4,17 @@
 
 set -e
 
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+st_target || exit $?
+
 echo "=== Search Indexing Recovery Test ==="
 echo
 echo "This test verifies that files missing search indexes are recovered."
 echo
 
 # Check if backend is running
-if ! curl -s http://localhost:5174/health > /dev/null 2>&1; then
+if ! curl -s http://localhost:${BACKEND_PORT}/health > /dev/null 2>&1; then
     echo "✗ Backend is not running. Start it first:"
     echo "  ./opentr.sh start dev"
     exit 1
@@ -86,9 +90,9 @@ echo
 echo "To test manually:"
 echo "  1. Transcribe a file"
 echo "  2. Delete the search_indexing task record:"
-echo "     docker exec opentranscribe-postgres psql -U postgres -d opentranscribe \\"
+echo "     docker exec $(st_container postgres) psql -U postgres -d opentranscribe \\"
 echo "       -c \"DELETE FROM task WHERE task_type='search_indexing' AND media_file_id=<file_id>;\""
 echo "  3. Wait 30+ minutes for health check to run"
 echo "  4. Check logs:"
-echo "     docker logs opentranscribe-backend | grep 'search indexing'"
+echo "     docker logs $(st_container backend) | grep 'search indexing'"
 echo "  5. Verify file gets re-indexed"

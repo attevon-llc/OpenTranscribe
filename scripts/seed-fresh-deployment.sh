@@ -7,7 +7,7 @@
 # Invoked by `./opentr.sh start dev --fresh <name> --seed-benchmark`, but also
 # runnable standalone:
 #
-#   BACKEND_URL=http://localhost:5174 bash scripts/seed-fresh-deployment.sh
+#   BACKEND_URL=http://localhost:<backend port> bash scripts/seed-fresh-deployment.sh
 #
 # Degrades gracefully: missing files are skipped, a not-yet-ready backend is
 # waited on (bounded), and any failure is non-fatal to the caller.
@@ -49,7 +49,15 @@ for _arg in "$@"; do
   esac
 done
 
-BACKEND_URL="${BACKEND_URL:-http://localhost:5174}"
+# Standalone (no BACKEND_URL from opentr.sh): resolve the one stack through its compose labels
+# instead of assuming the stock port belongs to the stack the operator means.
+if [[ -z "${BACKEND_URL:-}" && "$MANIFEST_ONLY" -eq 0 ]]; then
+  # shellcheck source=scripts/lib/stack-target.sh
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+  st_target || exit $?
+  BACKEND_URL="http://localhost:${BACKEND_PORT}"
+fi
+BACKEND_URL="${BACKEND_URL:-}"
 SEED_EMAIL="${SEED_EMAIL:-admin@example.com}"
 SEED_PASSWORD="${SEED_PASSWORD:-password}"
 WAIT_TIMEOUT="${SEED_WAIT_TIMEOUT:-120}"

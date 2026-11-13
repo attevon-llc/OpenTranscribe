@@ -93,6 +93,16 @@ def observed_ports(env: Mapping[str, str] | None = None) -> dict[str, int]:
         return {}
 
 
+def stack_port(var: str, env: Mapping[str, str] | None = None) -> str:
+    """Host port for ``var``: the exported value, else the resolved stack's observed port.
+
+    "" when nothing resolves; a live test then skips or fails instead of probing the stock port
+    of whichever stack happens to hold it.
+    """
+    env = dict(os.environ if env is None else env)
+    return env.get(var) or str(observed_ports(env).get(var, ""))
+
+
 def resolved_urls(env: Mapping[str, str] | None = None) -> tuple[str, str]:
     """(frontend, backend) base URLs: the exported E2E_* values, else the resolved stack's ports.
 

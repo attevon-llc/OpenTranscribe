@@ -18,8 +18,9 @@ import sys
 import time
 
 import requests
+from bench_common import backend_url
 
-API_BASE = 'http://localhost:5174/api'
+API_BASE = f'{backend_url()}/api'
 DEFAULT_EMAIL = 'admin@example.com'
 # Composed rather than written literally: the dev stack's seeded credential is
 # the word itself, and spelling it out here trips both ruff's S105 and gitleaks,

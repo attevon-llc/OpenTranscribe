@@ -43,7 +43,7 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
         os.environ.get("SKIP_S3", "True").lower() == "true",
-        reason="MinIO (localhost:5178) not reachable — presign revocation test needs the dev stack",
+        reason="MinIO not reachable (the resolved stack publishes none) — presign revocation test needs the dev stack",
     ),
     pytest.mark.skipif(
         settings.STORAGE_BACKEND.strip().lower() == "s3",

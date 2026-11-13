@@ -17,17 +17,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Load .env for connection settings
-if [[ -f "$PROJECT_DIR/.env" ]]; then
-    set -a
-    source "$PROJECT_DIR/.env"
-    set +a
-fi
-
-OPENSEARCH_URL="http://localhost:${OPENSEARCH_PORT:-5180}"
-PG_CONTAINER="opentranscribe-postgres"
-PG_USER="${POSTGRES_USER:-postgres}"
-PG_DB="${POSTGRES_DB:-opentranscribe}"
+# Resolve the stack by compose labels and observed ports; credentials come from env_reader
+# (python-dotenv), never `source .env`.
+# shellcheck source=scripts/lib/stack-target.sh
+source "$SCRIPT_DIR/lib/stack-target.sh"
+st_target || exit $?
+_env_value() {
+    python3 "$SCRIPT_DIR/lib/env_reader.py" "$PROJECT_DIR/.env" "$1" --default "${2:-}"
+}
+OPENSEARCH_URL="http://localhost:${OPENSEARCH_PORT}"
+PG_CONTAINER="$(st_container postgres)"
+PG_USER="${POSTGRES_USER:-$(_env_value POSTGRES_USER postgres)}"
+PG_DB="${POSTGRES_DB:-$(_env_value POSTGRES_DB opentranscribe)}"
 
 DEFAULT_BACKUP_DIR="$PROJECT_DIR/backups/speaker-profiles"
 

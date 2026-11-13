@@ -17,7 +17,10 @@
 
 set -euo pipefail
 
-API_URL="${API_URL:-http://localhost:5174}"
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+if [[ -z "${API_URL:-}" ]]; then st_target || exit $?; fi
+API_URL="${API_URL:-http://localhost:${BACKEND_PORT}}"
 
 # Reference test files (from database, sorted by duration)
 # These are stable UUIDs for completed files at various durations.
@@ -95,7 +98,8 @@ print('  Device Peak = maximum NVML device_used across all steps')
 
 watch_logs() {
   echo "=== Tailing GPU worker logs (Ctrl+C to stop) ==="
-  docker logs -f transcribe-app-celery-worker-gpu-scaled 2>&1 | \
+  [[ -n "${ST_PROJECT:-}" ]] || st_target || exit $?
+  docker logs -f "$(st_container celery-worker-gpu-scaled)" 2>&1 | \
     grep --line-buffered -E "VRAM_PROFILE"
 }
 

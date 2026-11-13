@@ -51,6 +51,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from tests.fixtures.redis_accessors import route_redis_accessors
+from tests.stack_preflight import stack_port
 
 pytestmark = [
     pytest.mark.integration,
@@ -70,7 +71,7 @@ _STALE = 2
 
 def _redis_url() -> str:
     password = os.environ.get("REDIS_PASSWORD", "")
-    port = os.environ.get("REDIS_PORT", "5177")
+    port = stack_port("REDIS_PORT")
     auth = f":{password}@" if password else ""
     return f"redis://{auth}127.0.0.1:{port}/{_TEST_DB}"
 

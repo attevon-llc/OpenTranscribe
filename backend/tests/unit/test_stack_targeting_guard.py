@@ -1,8 +1,8 @@
 """Guard: no script resolves "which stack" by name substring, hardcoded container or live port.
 
-Four detectors over the tracked scripts and the live-stack test helpers. Each finding must be
-fixed or sit in ``PENDING`` keyed to the lane that converts it; ``PENDING`` may only shrink (an
-entry that no longer fires fails the run) and is not an allowlist for fixed sites. See
+Four detectors over the tracked scripts and the live-stack test helpers. Every finding must be
+fixed or sit in ``EXEMPT`` with a written reason; ``PENDING`` is empty and must stay so (an entry
+that no longer fires fails the run). See
 scripts/lib/stack_target.py for the library the fixes use.
 """
 
@@ -20,183 +20,36 @@ REPO = Path(__file__).resolve().parents[3]
 LIBRARY_MARKERS = ("stack-target.sh", "stack_target")
 D1, D2, D3, D4 = "name-substring", "hardcoded-container", "live-port-default", "compose-no-project"
 
-# (path, detector) -> reason naming the lane that converts it. Must reach empty.
-PENDING: dict[tuple[str, str], str] = {
-    (
-        "backend/tests/api/test_ws_origin_gate.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/e2e/idp_overlay.py",
-        "compose-no-project",
-    ): "P5 item 2 (auth e2e and the IdP overlay)",
-    (
-        "backend/tests/integration/deletion_seed.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_celery_queue_depth_live.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_cleanup_test_data_isolated.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_cleanup_test_users_isolated_db.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_deletion_residue_live.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_diar_native_cross_card_placement_live.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_diar_native_multigpu_provider_live.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_lite_mode_mocked_providers.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_media_mirror_live.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_orphaned_delivery_recovery_live.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_presign_revocation.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_v436_lite_settings_migration.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/test_auth_config_integration.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/test_embedding_migration_integration.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/test_search_quality.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/test_selective_reprocess.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "scripts/audit_tests/selftest_cases.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    ("scripts/bench_parallel/config.py", "live-port-default"): "P5 item 5 (benchmarks)",
-    ("scripts/benchmark-diarization.py", "live-port-default"): "P5 item 5 (benchmarks)",
-    ("scripts/benchmark_concurrency_sweep.sh", "hardcoded-container"): "P5 item 5 (benchmarks)",
-    ("scripts/benchmark_engine_queue.py", "live-port-default"): "P5 item 5 (benchmarks)",
-    ("scripts/benchmark_transcription.sh", "compose-no-project"): "P5 item 5 (benchmarks)",
-    ("scripts/benchmark_transcription.sh", "live-port-default"): "P5 item 5 (benchmarks)",
-    ("scripts/benchmark_upload_baseline.py", "live-port-default"): "P5 item 5 (benchmarks)",
-    (
-        "scripts/bulk-processing-cheatsheet.sh",
-        "hardcoded-container",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    (
-        "scripts/bulk-processing-cheatsheet.sh",
-        "live-port-default",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    (
-        "scripts/cleanup-test-users.py",
-        "live-port-default",
-    ): "P5 item 3 (cleanup and auth-config tools)",
-    (
-        "scripts/cleanup_test_data/cli.py",
-        "live-port-default",
-    ): "P5 item 3 (cleanup and auth-config tools)",
-    (
-        "scripts/cleanup_test_data/settings.py",
-        "live-port-default",
-    ): "P5 item 3 (cleanup and auth-config tools)",
-    (
-        "scripts/compare-patch-results.sh",
-        "live-port-default",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    (
-        "scripts/dev-test-auth-config.py",
-        "live-port-default",
-    ): "P5 item 3 (cleanup and auth-config tools)",
-    (
-        "scripts/diagnose-file-integrity.sh",
-        "hardcoded-container",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/e2e_bench/config.py", "live-port-default"): "P5 item 5 (benchmarks)",
-    ("scripts/gpu-profile-test.sh", "hardcoded-container"): "P5 item 5 (benchmarks)",
-    ("scripts/gpu-profile-test.sh", "live-port-default"): "P5 item 5 (benchmarks)",
-    (
-        "scripts/install-offline-package.sh",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "scripts/opentr-offline.sh",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "scripts/pki/generate-test-env.sh",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "scripts/pki/test-pki-auth.sh",
-        "live-port-default",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/run-auth-e2e.sh", "hardcoded-container"): "P5 item 2 (auth e2e and the IdP overlay)",
-    ("scripts/run-auth-e2e.sh", "live-port-default"): "P5 item 2 (auth e2e and the IdP overlay)",
-    ("scripts/run-auth-e2e.sh", "name-substring"): "P5 item 2 (auth e2e and the IdP overlay)",
-    ("scripts/run_benchmark.py", "live-port-default"): "P5 item 5 (benchmarks)",
-    ("scripts/run_benchmark.py", "name-substring"): "P5 item 5 (benchmarks)",
-    ("scripts/seed-fresh-deployment.sh", "live-port-default"): "P5 item 7 (standalone defaults)",
-    (
-        "scripts/soak_seed_audio.py",
-        "live-port-default",
-    ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "scripts/speaker-profiles-backup.sh",
-        "live-port-default",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/test-all-auth.sh", "live-port-default"): "P5 item 6 (legacy test and ops scripts)",
-    (
-        "scripts/test-download-recovery.sh",
-        "hardcoded-container",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    (
-        "scripts/test-download-recovery.sh",
-        "live-port-default",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/test-fedramp.sh", "live-port-default"): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/test-ldap-auth.sh", "live-port-default"): "P5 item 6 (legacy test and ops scripts)",
-    (
-        "scripts/test-playlist-recovery-fix.sh",
-        "hardcoded-container",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    (
-        "scripts/test-search-indexing-recovery.sh",
-        "hardcoded-container",
-    ): "P5 item 6 (legacy test and ops scripts)",
-    (
-        "scripts/test-search-indexing-recovery.sh",
-        "live-port-default",
-    ): "P5 item 6 (legacy test and ops scripts)",
-}
+# Empty by design (P5 exit criterion): every finding is fixed through scripts/lib/stack-target.sh /
+# stack_target.py, or sits in EXEMPT with a written reason. A new finding fails the guard.
+PENDING: dict[tuple[str, str], str] = {}
 
 # Not defaults for a resolved target; each carries its written reason.
 EXEMPT: dict[tuple[str, str], str] = {
+    (
+        "backend/tests/api/test_ws_origin_gate.py",
+        "live-port-default",
+    ): "Origin and Host header values the WebSocket origin gate is fed as test data; nothing connects to those ports",
+    (
+        "backend/tests/test_auth_config_integration.py",
+        "live-port-default",
+    ): "an OIDC callback URL stored and read back as test data (the settings round trip); nothing connects to it",
+    (
+        "scripts/audit_tests/selftest_cases.py",
+        "live-port-default",
+    ): "source text fed to the audit-tests detectors as must-fire cases; it is never executed",
+    (
+        "scripts/install-offline-package.sh",
+        "live-port-default",
+    ): "ships inside the offline install package to end users: the stock URL it prints is the installer's documented layout, not a developer stack guess",
+    (
+        "scripts/opentr-offline.sh",
+        "live-port-default",
+    ): "ships inside the offline install package to end users: the stock URL it prints is the installer's documented layout, not a developer stack guess",
+    (
+        "scripts/pki/generate-test-env.sh",
+        "live-port-default",
+    ): "writes a pki-test.env FILE whose port flags default to the documented PKI ports; it connects to nothing and the stack that reads it is started with opentr.sh",
     (
         "scripts/release-tests/test-fresh-install.sh",
         "live-port-default",
@@ -429,6 +282,13 @@ def test_every_finding_is_fixed_or_pending_with_a_reason() -> None:
     )
 
 
+def test_pending_allowlist_is_empty() -> None:
+    """The exit criterion of the stack-targeting work: nothing is parked behind a lane any more."""
+    assert PENDING == {}, (
+        f"PENDING must stay empty; fix the site or exempt it with a reason: {sorted(PENDING)}"
+    )
+
+
 def test_pending_only_shrinks_and_every_entry_still_fires() -> None:
     stale = stale_entries(scan(), [*PENDING, *EXEMPT])
     assert not stale, f"entries that no longer fire must be deleted: {stale}"
@@ -494,17 +354,15 @@ def test_detector_stays_clean(rel: str, text: str, detector: str) -> None:
     assert detector not in findings_for(rel, text)
 
 
-def test_the_known_wrong_stack_sites_are_detected() -> None:
-    """The red proof: these are the incidents still unfixed behind the guard. If the detectors stop
-    seeing them the guard is passing on nothing, whatever PENDING says."""
-    hits = scan()
-    for key in [
-        ("scripts/run-auth-e2e.sh", D1),
-        ("scripts/e2e_bench/config.py", D3),
-        ("backend/tests/e2e/idp_overlay.py", D4),
-    ]:
-        assert key in hits or key not in {**PENDING, **EXEMPT}, f"{key} was fixed: drop it"
-        assert key in hits, f"detector no longer sees {key}"
+def test_the_historic_wrong_stack_shapes_are_still_detected() -> None:
+    """The red proof, kept alive after the sites were fixed: the three shapes that once pointed a
+    script at the wrong stack (a name-substring filter, a stock-port default, a project-less
+    compose call) are re-fed to the detectors. If they stop firing the guard passes on nothing."""
+    assert D1 in findings_for("a.sh", 'docker ps -q --filter "name=${PKI_CONTAINER_NAME}"\n')
+    assert D3 in findings_for("a.py", "DEFAULT_BACKEND_URL = 'http://localhost:5174'\n")
+    assert D4 in findings_for(
+        "a.py", 'subprocess.run(["docker", "compose", "-f", compose_file, "up", "-d"])\n'
+    )
 
 
 def test_a_pending_key_for_a_clean_site_is_reported_stale() -> None:

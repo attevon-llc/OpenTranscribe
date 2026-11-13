@@ -147,9 +147,11 @@ def redis_client(db: int) -> Any:
 
     import redis
 
+    from tests.stack_preflight import stack_port
+
     return redis.Redis(
         host=os.environ.get("REDIS_HOST", "localhost"),
-        port=int(os.environ.get("REDIS_PORT", "5177")),
+        port=int(stack_port("REDIS_PORT") or 0),
         password=os.environ.get("REDIS_PASSWORD") or None,
         db=db,
         decode_responses=True,

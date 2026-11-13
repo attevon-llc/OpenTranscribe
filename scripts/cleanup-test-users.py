@@ -34,6 +34,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import NamedTuple
 
 from dotenv import dotenv_values
@@ -50,8 +51,15 @@ logger = logging.getLogger(__name__)
 _env = dotenv_values(Path(__file__).resolve().parent.parent / '.env')
 
 
+def _stack_target() -> ModuleType:
+    sys.path.insert(0, str(Path(__file__).resolve().parent / 'lib'))
+    import stack_target
+
+    return stack_target
+
+
 def _setting(name: str, default: str) -> str:
-    return os.environ.get(name) or _env.get(name) or default
+    return str(_stack_target().env_setting(name, default, _env))
 
 
 def _host_setting() -> str:
@@ -300,7 +308,7 @@ def main() -> int:
     db_user = _setting('POSTGRES_USER', 'postgres')
     db_password = _setting('POSTGRES_PASSWORD', 'postgres')
     db_host = _host_setting()
-    db_port = _setting('POSTGRES_PORT', '5176')
+    db_port = _setting('POSTGRES_PORT', '')
     db_name = _setting('POSTGRES_DB', 'opentranscribe')
 
     # First line of ALL output, dry-run or --execute: what this run is about to act

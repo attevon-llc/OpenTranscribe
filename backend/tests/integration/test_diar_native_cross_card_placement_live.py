@@ -59,6 +59,7 @@ import requests
 from tests.compose_project import compose_service_container
 from tests.compose_project import queue_rivals
 from tests.integration.live_file_cleanup import delete_uploaded_file
+from tests.stack_preflight import stack_port
 
 # `multi_gpu`: this file needs a MULTI-WORKER GPU TOPOLOGY (a running
 # celery-worker-gpu-scaled / celery-worker-gpu-diarize, i.e. `--gpu-scale` or
@@ -69,7 +70,7 @@ from tests.integration.live_file_cleanup import delete_uploaded_file
 # visibly not counted) and SELECTS it when the topology is up, so this hides no coverage.
 pytestmark = [pytest.mark.integration, pytest.mark.gpu, pytest.mark.slow, pytest.mark.multi_gpu]
 
-BACKEND_PORT = os.environ.get("BACKEND_PORT", "5174")
+BACKEND_PORT = stack_port("BACKEND_PORT")
 BASE_URL = f"http://localhost:{BACKEND_PORT}/api"
 ADMIN_EMAIL = os.environ.get("OT_TEST_ADMIN_EMAIL", "admin@example.com")
 ADMIN_PASSWORD = os.environ.get("OT_TEST_ADMIN_PASSWORD", "password")

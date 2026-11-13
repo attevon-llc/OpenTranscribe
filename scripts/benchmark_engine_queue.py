@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import redis
+from bench_common import load_redis_url
 from benchmark_table import print_table
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -133,7 +134,7 @@ def _audio_duration_s(audio_path: Path) -> float:
 
 def _build_redis_client() -> Any:
     """Return a Redis client connected to REDIS_URL from the environment."""
-    redis_url = os.getenv('REDIS_URL', 'redis://localhost:5177/0')
+    redis_url = os.getenv('REDIS_URL') or load_redis_url()
     return redis.from_url(redis_url)
 
 

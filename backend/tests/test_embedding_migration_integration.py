@@ -56,6 +56,8 @@ def live_db_session():
     """Database session connected to the live dev database."""
     from dotenv import dotenv_values
 
+    from tests.stack_preflight import stack_port
+
     project_root = Path(__file__).parent.parent.parent
     env_file = project_root / ".env"
     if env_file.exists():
@@ -65,7 +67,7 @@ def live_db_session():
                 os.environ[key] = env_values[key]
 
     os.environ.setdefault("POSTGRES_HOST", "localhost")
-    os.environ.setdefault("POSTGRES_PORT", "5176")
+    os.environ.setdefault("POSTGRES_PORT", stack_port("POSTGRES_PORT"))
 
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker

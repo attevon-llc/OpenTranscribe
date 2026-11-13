@@ -8,6 +8,8 @@ set -e
 source "$(dirname "${BASH_SOURCE[0]}")/lib/log.sh"
 # shellcheck source=scripts/lib/scan-report-dir.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/scan-report-dir.sh"
+# shellcheck source=scripts/lib/builder-select.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/builder-select.sh"
 
 # Configuration
 DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME:-davidamacey}"
@@ -1330,35 +1332,8 @@ main() {
     check_docker
     check_docker_login
 
-    # Select and configure builder based on USE_REMOTE_BUILDER setting
-    if [ "${USE_REMOTE_BUILDER}" = "true" ]; then
-        # Use remote multi-arch builder
-        if ! docker buildx inspect "${REMOTE_BUILDER_NAME}" > /dev/null 2>&1; then
-            print_error "Remote builder '${REMOTE_BUILDER_NAME}' not found!"
-            print_info "Please run: ./scripts/setup-remote-builder.sh setup"
-            print_info "Or set USE_REMOTE_BUILDER=false to use QEMU emulation"
-            exit 1
-        fi
-        print_success "Using remote multi-arch builder: ${REMOTE_BUILDER_NAME}"
-        print_info "This will use native ARM64 builds on your remote machine (much faster!)"
-        docker buildx use "${REMOTE_BUILDER_NAME}"
-        docker buildx inspect --bootstrap
-    else
-        # Use local builder with QEMU emulation (slower but works without setup)
-        if ! docker buildx inspect "${DEFAULT_BUILDER_NAME}" > /dev/null 2>&1; then
-            print_info "Creating local buildx builder (with QEMU emulation)..."
-            docker buildx create --name "${DEFAULT_BUILDER_NAME}" --use
-            docker buildx inspect --bootstrap
-        else
-            print_info "Using existing local buildx builder (with QEMU emulation)"
-            docker buildx use "${DEFAULT_BUILDER_NAME}"
-        fi
-        if [[ "$(effective_platforms_for_target "${BUILD_TARGET}")" == *"arm64"* ]]; then
-            print_warning "Building ARM64 with QEMU emulation (slow)"
-            print_info "For faster builds, set up remote builder: ./scripts/setup-remote-builder.sh"
-            print_info "Then use: USE_REMOTE_BUILDER=true $0"
-        fi
-    fi
+    # Select the builder for THIS process (scripts/lib/builder-select.sh)
+    select_buildx_builder
 
     # Track which components were built for parallel scanning
     BUILT_COMPONENTS=()
@@ -1506,12 +1481,6 @@ main() {
         print_info "NOTE: :latest was NOT moved. Promote it by digest once validated:"
         print_info "  docker buildx imagetools create -t ${REPO_BACKEND}:latest ${REPO_BACKEND}:${VERSION_FULL}"
     fi
-
-    # CRITICAL: Switch back to default builder to prevent interference with local dev builds
-    print_info ""
-    print_info "🔧 Switching back to default Docker builder..."
-    docker buildx use default
-    print_success "✅ Default builder restored. Local development builds will work normally."
 
     # Show build performance info if using emulation. Local mode builds host-arch
     # only, so QEMU is never involved there regardless of the effective platform set.

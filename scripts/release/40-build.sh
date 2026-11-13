@@ -63,43 +63,104 @@ HOST_PLATFORM="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/de
 
 legs_built=0
 legs_declared=0
+failed_leg=""
+
+# One leg, one `docker-build-push.sh` call. Start/end lines carry a UTC timestamp and the
+# duration, so the cost of each leg is readable from the log (RELEASE_SPEED_PLAN R9(2)).
+build_leg() {
+    local component="$1" platform="$2" use_remote leg_start rc=0
+    use_remote="${USE_REMOTE_BUILDER:-false}"
+    [[ "$platform" != "$HOST_PLATFORM" ]] && use_remote=true
+    leg_start=$(date +%s)
+    echo -e "${BLUE}  build leg ${component} ${platform} start $(date -u +%FT%TZ)${NC}" >&2
+    # BUILD_CACHE_REGISTRY passed through (default remains OFF, set by
+    # docker-build-push.sh's build_cache_args -- deliberately not defaulted to true
+    # here). `build_cache_args` scopes this correctly for BUILD_MODE=local when opted
+    # in -- read-only (`--cache-from`), never `--cache-to` (a registry cache WRITE,
+    # which local mode's "publishes nothing" contract forbids) -- and stores it as a
+    # `:buildcache-*` tag in the component's OWN repo, never touching `:vX.Y.Z`/`:latest`.
+    # It stays an unmeasured, explicit opt-in (`BUILD_CACHE_REGISTRY=true
+    # ./scripts/release.sh build ...`) -- see test_build_registry_cache_optin.py's
+    # docstring for why that bar exists. 80-publish.sh no longer builds (issue #938's
+    # "publish repeats this stage's work" is gone: it pushes these legs), so this is the
+    # only build in a release.
+    PLATFORMS="$platform" BUILD_MODE=local PUSH_LATEST=false \
+        SKIP_SECURITY_SCAN=true VERSION="$VERSION" \
+        USE_REMOTE_BUILDER="$use_remote" \
+        BUILD_CACHE_REGISTRY="${BUILD_CACHE_REGISTRY:-false}" \
+        ./scripts/docker-build-push.sh "$component" || rc=$?
+    echo -e "${BLUE}  build leg ${component} ${platform} end $(date -u +%FT%TZ) rc=${rc} duration_s=$(( $(date +%s) - leg_start ))${NC}" >&2
+    return "$rc"
+}
+
+host_legs=()
+remote_legs=()
 while IFS=$'\t' read -r component _capability platforms; do
     # blackwell is never part of a release build (built only on request, publishes no
-    # versioned tag) — same exclusion 50-scan.sh applies.
+    # versioned tag) -- same exclusion 50-scan.sh applies.
     [[ "$component" == "blackwell" ]] && continue
     IFS=',' read -r -a plats <<< "$platforms"
     for platform in "${plats[@]}"; do
         [[ -n "$platform" ]] || continue
         legs_declared=$((legs_declared + 1))
-        echo -e "${BLUE}  building ${component} for ${platform}${NC}" >&2
-        use_remote="${USE_REMOTE_BUILDER:-false}"
-        [[ "$platform" != "$HOST_PLATFORM" ]] && use_remote=true
-        # BUILD_CACHE_REGISTRY passed through (default remains OFF, set by
-        # docker-build-push.sh's build_cache_args -- deliberately not defaulted to true
-        # here). `build_cache_args` scopes this correctly for BUILD_MODE=local when opted
-        # in -- read-only (`--cache-from`), never `--cache-to` (a registry cache WRITE,
-        # which local mode's "publishes nothing" contract forbids) -- and stores it as a
-        # `:buildcache-*` tag in the component's OWN repo, never touching `:vX.Y.Z`/`:latest`.
-        # It stays an unmeasured, explicit opt-in (`BUILD_CACHE_REGISTRY=true
-        # ./scripts/release.sh build ...`) -- see test_build_registry_cache_optin.py's
-        # docstring for why that bar exists. 80-publish.sh no longer builds (issue #938's
-        # "publish repeats this stage's work" is gone: it pushes these legs), so this is the
-        # only build in a release.
-        if ! PLATFORMS="$platform" BUILD_MODE=local PUSH_LATEST=false \
-             SKIP_SECURITY_SCAN=true VERSION="$VERSION" \
-             USE_REMOTE_BUILDER="$use_remote" \
-             BUILD_CACHE_REGISTRY="${BUILD_CACHE_REGISTRY:-false}" \
-                ./scripts/docker-build-push.sh "$component"; then
-            echo -e "${RED}build failed: ${component} ${platform}${NC}" >&2
-            record platform-table-readable pass "$legs_declared leg(s) declared"
-            record every-declared-leg-built fail \
-                "${component} ${platform} failed after ${legs_built} leg(s) built" \
-                "read the build output above; USE_REMOTE_BUILDER=true is required for a non-host arch"
-            build_fail_out 1
+        if [[ "$platform" == "$HOST_PLATFORM" ]]; then
+            host_legs+=("${component}|${platform}")
+        else
+            remote_legs+=("${component}|${platform}")
         fi
-        legs_built=$((legs_built + 1))
     done
 done < <(./scripts/docker-build-push.sh list-platforms)
+
+# R4, OPT-IN and default OFF (measure the arm64 chain's length first; RELEASE_SPEED_PLAN R4):
+# the non-host legs run on the remote builder as one background chain, serial among
+# themselves, while host legs run here. Builder selection is per-process (BUILDX_BUILDER in
+# docker-build-push.sh), so the two chains no longer race on a global `buildx use`. Every
+# leg must still pass: each chain's exit status is reaped and either failure fails closed.
+# Without the opt-in every leg runs serially (host legs first, then non-host), as before.
+if [[ "${OT_BUILD_REMOTE_CONCURRENT:-false}" == "true" ]]; then
+    ordered_host=("${host_legs[@]}")
+    remote_log="$(mktemp -t ot-build-remote.XXXXXX)"
+    (
+        for leg in "${remote_legs[@]}"; do
+            build_leg "${leg%%|*}" "${leg##*|}" || { echo "${leg}" > "${remote_log}.failed"; exit 1; }
+        done
+    ) >"$remote_log" 2>&1 &
+    remote_pid=$!
+    for leg in "${ordered_host[@]}"; do
+        if build_leg "${leg%%|*}" "${leg##*|}"; then
+            legs_built=$((legs_built + 1))
+        else
+            failed_leg="${leg%%|*} ${leg##*|}"
+            break
+        fi
+    done
+    if wait "$remote_pid"; then
+        legs_built=$((legs_built + ${#remote_legs[@]}))
+    elif [[ -z "$failed_leg" ]]; then
+        failed_leg="$(tr '|' ' ' < "${remote_log}.failed" 2>/dev/null || echo 'a remote leg')"
+    fi
+    cat "$remote_log" >&2
+    rm -f "$remote_log" "${remote_log}.failed"
+else
+    for leg in "${host_legs[@]}" "${remote_legs[@]}"; do
+        [[ -n "$leg" ]] || continue
+        if build_leg "${leg%%|*}" "${leg##*|}"; then
+            legs_built=$((legs_built + 1))
+        else
+            failed_leg="${leg%%|*} ${leg##*|}"
+            break
+        fi
+    done
+fi
+
+if [[ -n "$failed_leg" ]]; then
+    echo -e "${RED}build failed: ${failed_leg}${NC}" >&2
+    record platform-table-readable pass "$legs_declared leg(s) declared"
+    record every-declared-leg-built fail \
+        "${failed_leg} failed after ${legs_built} leg(s) built" \
+        "read the build output above; USE_REMOTE_BUILDER=true is required for a non-host arch"
+    build_fail_out 1
+fi
 
 # Zero declared legs is COULD NOT CHECK, never "nothing to build" — the same rule the scan
 # stage applies to an empty platform list. A silently empty table would otherwise let this

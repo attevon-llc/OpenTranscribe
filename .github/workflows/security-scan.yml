@@ -123,7 +123,7 @@ jobs:
           tags: opentranscribe-backend:${{ github.sha }}
           load: true
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
       - name: Trivy report and gate
         uses: ./.github/actions/trivy-report-gate
@@ -190,7 +190,7 @@ jobs:
           tags: opentranscribe-frontend:${{ github.sha }}
           load: true
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
       - name: Trivy report and gate
         uses: ./.github/actions/trivy-report-gate

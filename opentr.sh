@@ -24,6 +24,8 @@ source ./scripts/lib/lite-demo-overlay.sh
 source ./scripts/lib/model-cache-dir.sh
 # shellcheck source=scripts/lib/gpu-device.sh
 source ./scripts/lib/gpu-device.sh
+# shellcheck source=scripts/lib/prod-images.sh
+source ./scripts/lib/prod-images.sh
 
 # .env is gitignored, so a git worktree (e.g. .claude/worktrees/<name>) does not
 # get one automatically -- only the main checkout does. Left alone, every
@@ -387,50 +389,6 @@ resolve_diar_native_models_dir() {
   else
     export DIAR_NATIVE_MODELS_DIR="$standard"
   fi
-}
-
-# Build production images locally (backend + frontend)
-build_prod_images() {
-  local tag="${OT_IMAGE_TAG:-latest}" # a --fresh prod deployment tags its own (fresh_prod_dispatch)
-  echo "🥽 Building production Docker images locally (tag: ${tag})..."
-
-  # Build identity (issue #1273). The backend build context is ./backend, so the repo-root
-  # VERSION file is not in the image: without these args a locally built prod backend reports
-  # "unknown", which silences the About modal's stale-tab warning and its exact source link.
-  # APP_VERSION and GIT_SHA are exported at the top of this script; the frontend takes the
-  # same GIT_SHA so both sides of one build name the same commit.
-  local build_time
-  build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-  echo "🧱 Building backend image (davidamacey/opentranscribe-backend:${tag})..."
-  docker build \
-    --build-arg "APP_VERSION=${APP_VERSION}" \
-    --build-arg "GIT_SHA=${GIT_SHA}" \
-    --build-arg "BUILD_TIME=${build_time}" \
-    -t "davidamacey/opentranscribe-backend:${tag}" -f backend/Dockerfile.prod backend || {
-    echo "❌ Backend image build failed"
-    exit 1
-  }
-
-  echo "🧱 Building frontend image (davidamacey/opentranscribe-frontend:${tag})..."
-  docker build \
-    --build-arg "GIT_SHA=${GIT_SHA}" \
-    -t "davidamacey/opentranscribe-frontend:${tag}" -f frontend/Dockerfile.prod frontend || {
-    echo "❌ Frontend image build failed"
-    exit 1
-  }
-
-  echo "🧱 Building docs image (davidamacey/opentranscribe-docs:${tag})..."
-  # The docs build context is docs-site/, so pass the repo-root VERSION in explicitly —
-  # docusaurus.config.ts cannot read ../VERSION from inside the container.
-  docker build --build-arg DOCS_BASE_URL=/docs/ \
-    --build-arg "OT_VERSION=${APP_VERSION}" \
-    -t "davidamacey/opentranscribe-docs:${tag}" docs-site || {
-    echo "❌ Docs image build failed"
-    exit 1
-  }
-
-  echo "✅ Local production images built successfully"
 }
 
 # Does the Docker daemon expose the NVIDIA container runtime?
@@ -1929,6 +1887,7 @@ fresh_stop() {
   # flag that is no longer recorded still comes down. Safe: the project is
   # isolated by construction, so nothing outside this deployment can be hit.
   # shellcheck disable=SC2086
+  COMPOSE_PROJECT_NAME="$proj" ot_rm_anonymous_volumes down $chain
   COMPOSE_PROJECT_NAME="$proj" COMPOSE_PROFILES="*" docker compose $chain down --remove-orphans 2>/dev/null || true
   echo "✅ Stopped. Volumes preserved — use 'fresh-destroy ${name}' to remove them."
 }
@@ -2391,6 +2350,12 @@ start_app() {
   # collisions resolved via a generated overlay. Real data is never touched.
   FRESH_PROJECT=""
   FRESH_OVERLAY=""
+  # Dev builds are never published, so skip BuildKit's provenance/SBOM attestations (extra
+  # manifest + SBOM scan per build; Docker docs, "Build attestations"). DEV ONLY: prod and the
+  # release path (docker-build-push.sh) keep their default attestations.
+  if [ "$ENVIRONMENT" = "dev" ]; then
+    export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+  fi
   if [ -n "$FRESH_FLAG" ]; then
     if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod" ]; then
       echo "❌ --fresh is only supported in dev and prod mode (./opentr.sh start dev|prod --fresh [name])"
@@ -3879,6 +3844,21 @@ ot_drain_gpu_workers_by_container() {
   done
 }
 
+# Remove the ANONYMOUS volumes of this chain's stopped containers (WASTE_AUDIT W7).
+# `compose down` without -v leaves them behind, so every stop/start leaked one per image
+# VOLUME declaration. `compose rm -fsv` (-f no prompt, -s stop first, -v anonymous volumes
+# only; Compose CLI reference, `docker compose rm`) removes exactly those. It never takes a
+# NAMED volume, and this must never become `down -v` on the plain stop path. Called as
+# `ot_rm_anonymous_volumes <subcommand> <compose -f args...>`: only a `down` stop reaches it.
+# COMPOSE_PROJECT_NAME is inherited from the caller's environment prefix.
+ot_rm_anonymous_volumes() {
+  local sub="$1"
+  shift
+  [ "$sub" = "down" ] || return 0
+  # shellcheck disable=SC2086
+  COMPOSE_PROFILES="*" docker compose "$@" rm -fsv 2>/dev/null || true
+}
+
 stop_all_containers() {
   # Drain CUDA-holding workers before EITHER `down`/stop chain below reaches them
   # (issue #782) -- see ot_drain_gpu_workers_by_container()'s docstring for why this is
@@ -3891,20 +3871,24 @@ stop_all_containers() {
   # diarize}, -gpu-scaled and diar-native were reachable only by the straggler loop below
   # (same fix shape fresh_destroy() already uses for the identical class of profile leak).
   # shellcheck disable=SC2086
-  COMPOSE_PROFILES="*" docker compose -f docker-compose.yml -f docker-compose.override.yml \
+  local dev_chain="-f docker-compose.yml -f docker-compose.override.yml \
     -f docker-compose.gpu.yml -f docker-compose.blackwell.yml \
     -f docker-compose.gpu-scale.yml -f docker-compose.gpu-split.yml \
     -f docker-compose.diar-native.yml \
-    -f docker-compose.nas.yml "$@" 2>/dev/null || true
+    -f docker-compose.nas.yml"
+  ot_rm_anonymous_volumes "$1" $dev_chain
+  COMPOSE_PROFILES="*" docker compose $dev_chain "$@" 2>/dev/null || true
 
   # Prod compose chain. Same N5 fix as the dev chain above.
   # shellcheck disable=SC2086
-  COMPOSE_PROFILES="*" docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  local prod_chain="-f docker-compose.yml -f docker-compose.prod.yml \
     -f docker-compose.local.yml -f docker-compose.gpu.yml \
     -f docker-compose.blackwell.yml -f docker-compose.gpu-scale.yml \
     -f docker-compose.gpu-split.yml -f docker-compose.diar-native.yml \
     -f docker-compose.nas.yml \
-    -f docker-compose.nginx.yml -f docker-compose.pki.yml "$@" 2>/dev/null || true
+    -f docker-compose.nginx.yml -f docker-compose.pki.yml"
+  ot_rm_anonymous_volumes "$1" $prod_chain
+  COMPOSE_PROFILES="*" docker compose $prod_chain "$@" 2>/dev/null || true
 
   # Catch stragglers: containers left over from THIS project's compose chains
   # that a `docker compose down` above didn't reach (e.g. an overlay that
@@ -3927,7 +3911,7 @@ stop_all_containers() {
   for container in $( { docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' 2>/dev/null
                         docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-$(ot_compose_project)}" --format '{{.Names}}' 2>/dev/null
                       } | sort -u ); do
-    docker stop "$container" 2>/dev/null && docker rm "$container" 2>/dev/null || true
+    docker stop "$container" 2>/dev/null && docker rm -v "$container" 2>/dev/null || true
   done
 }
 

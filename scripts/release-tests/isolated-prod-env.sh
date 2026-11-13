@@ -95,7 +95,12 @@ prepare_tree() {
     while IFS= read -r key; do
         set_env "$env" "$key" "$(et_rand_hex 24)"
     done < <(grep -E '^[A-Z_]+=CHANGE_ME' "$env" | cut -d= -f1)
-    while IFS='=' read -r k v; do set_env "$env" "$k" "$v"; done < <(et_service_credentials)
+    # Split on the FIRST '=' by expansion: `IFS='=' read k v` drops a trailing '=' from v,
+    # which strips the base64 padding off MINIO_KMS_SECRET_KEY and MinIO refuses to start.
+    local line
+    while IFS= read -r line; do
+        set_env "$env" "${line%%=*}" "${line#*=}"
+    done < <(et_service_credentials)
     set_env "$env" OPENSEARCH_ADMIN_PASSWORD "Ot-$(et_rand_hex 12)-aA1!"
     set_env "$env" ENVIRONMENT production
     cache="$(resolve_model_cache_dir "$REPO_ROOT")"

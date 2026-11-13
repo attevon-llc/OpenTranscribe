@@ -543,9 +543,10 @@ def filter_shareable_profiles(
             groups.setdefault(scope, []).append(pid)
 
     allowed_groups: set[tuple[int, int | None]] = set()
+    # One batched read for every group; _resolve_many never raises and an error denies.
+    resolved = _resolve_many(db, groups.keys()) if groups else {}
     for (owner, org), group_ids in groups.items():
-        layers = resolve_privacy_policy(db, user_id=owner, organization_id=org)
-        if not layers.voiceprints.enabled:
+        if not resolved[(owner, org)][0].voiceprints.enabled:
             continue
         share = VoiceprintConsentRequest(
             purpose="share",

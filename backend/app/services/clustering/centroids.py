@@ -1,7 +1,10 @@
 """Cluster centroid recompute and speaker embedding lookup."""
 
 import logging
+from collections.abc import Sequence
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
+from typing import Any
 
 import numpy as np
 from sqlalchemy.orm import joinedload
@@ -45,12 +48,45 @@ def cluster_geometry_scores(arr: np.ndarray | None, centroid: np.ndarray) -> tup
     return float(np.mean(normed @ centroid)), float(np.min(sim_matrix[iu]))
 
 
+def _detached_members(members: Sequence[SpeakerClusterMember]) -> list[Any]:
+    """Plain copies of the members and their speakers, safe to read after a commit expires the rows."""
+    return [
+        SimpleNamespace(
+            confidence=m.confidence,
+            speaker=(
+                SimpleNamespace(
+                    id=int(m.speaker.id),
+                    uuid=m.speaker.uuid,
+                    media_file_id=m.speaker.media_file_id,
+                    profile_id=m.speaker.profile_id,
+                )
+                if m.speaker
+                else None
+            ),
+        )
+        for m in members
+    ]
+
+
+def _apply_scores(
+    cluster: SpeakerCluster,
+    quality_score: float,
+    min_similarity: float,
+    best_speaker_id: int | None,
+) -> None:
+    cluster.quality_score = quality_score
+    cluster.min_similarity = min_similarity
+    if best_speaker_id:
+        cluster.representative_speaker_id = best_speaker_id
+
+
 def update_cluster_centroid(
     self: "SpeakerClusteringService",
     cluster: SpeakerCluster,
     user_id: int,
     refresh: str | bool = "wait_for",
     strict: bool = False,
+    release_transaction: bool = False,
 ) -> None:
     """Recalculate and store the cluster centroid embedding.
 
@@ -62,27 +98,47 @@ def update_cluster_centroid(
             centroid untouched when it cannot be rebuilt (no member voiceprint, a
             zero vector, or a failed write). Erasure needs this: a swallowed failure
             leaves the OLD centroid, which still averages in a deleted voiceprint.
+        release_transaction: Commit after the Postgres reads so the OpenSearch reads and
+            the centroid write run with no transaction open (a held one queues every
+            ``ALTER TABLE`` and pins the vacuum horizon). That commits whatever the
+            caller had pending, so only a caller whose pending changes are already final
+            may ask for it. The cluster's score columns are then written by the caller's
+            own next commit, through a fresh short transaction.
     """
-    members = (
+    members: Sequence[Any] = (
         self.db.query(SpeakerClusterMember)
         .options(joinedload(SpeakerClusterMember.speaker))
         .filter(SpeakerClusterMember.cluster_id == cluster.id)
         .all()
     )
+    cluster_uuid = str(cluster.uuid)
+    cluster_label = cluster.label
+    cluster_org_id = int(cluster.organization_id) if cluster.organization_id is not None else None
+    excluded_files = None
+    if release_transaction:
+        # ORM rows expire on commit and a later attribute read would reopen the
+        # transaction, so the middle phase works on plain stand-ins.
+        excluded_files = declined_file_ids(
+            self.db, (m.speaker.media_file_id for m in members if m.speaker)
+        )
+        members = _detached_members(members)
+        self.db.commit()
 
     try:
-        embeddings, valid_members, best_speaker_id = _member_voiceprints(self, members)
+        embeddings, valid_members, best_speaker_id = _member_voiceprints(
+            self, members, excluded_files
+        )
     except OpenSearchUnavailableError as e:
         # A centroid rebuilt from the members that happened to answer is a different
         # voice; leave the stored one as it is.
-        logger.warning("Centroid for cluster %s not rebuilt: %s", cluster.uuid, e)
+        logger.warning("Centroid for cluster %s not rebuilt: %s", cluster_uuid, e)
         if strict:
             raise CentroidRecomputeError(str(e)) from e
         return
 
     if not embeddings:
         if strict:
-            raise CentroidRecomputeError(f"cluster {cluster.uuid} has no member voiceprint")
+            raise CentroidRecomputeError(f"cluster {cluster_uuid} has no member voiceprint")
         return
 
     # Weighted mean centroid: verified/profile-linked speakers get 2x weight
@@ -98,18 +154,16 @@ def update_cluster_centroid(
     else:
         logger.warning(
             "Zero-vector centroid for cluster %s — skipping OpenSearch storage",
-            cluster.uuid,
+            cluster_uuid,
         )
         if strict:
-            raise CentroidRecomputeError(f"cluster {cluster.uuid} centroid is a zero vector")
+            raise CentroidRecomputeError(f"cluster {cluster_uuid} centroid is a zero vector")
         return
 
     quality_score, min_similarity = cluster_geometry_scores(arr, centroid)
-    cluster.quality_score = quality_score
-    cluster.min_similarity = min_similarity
-
-    if best_speaker_id:
-        cluster.representative_speaker_id = best_speaker_id
+    scores = (quality_score, min_similarity, best_speaker_id)
+    if not release_transaction:
+        _apply_scores(cluster, *scores)
 
     # Store in OpenSearch
     try:
@@ -119,11 +173,9 @@ def update_cluster_centroid(
             cluster_uuid=str(cluster.uuid),
             user_id=user_id,
             embedding=centroid.tolist(),
-            label=cluster.label,
+            label=cluster_label,
             refresh=refresh,
-            organization_id=(
-                int(cluster.organization_id) if cluster.organization_id is not None else None
-            ),
+            organization_id=cluster_org_id,
         )
     except Exception as e:
         logger.warning("Could not update cluster centroid in OpenSearch: %s", e)
@@ -132,12 +184,19 @@ def update_cluster_centroid(
     else:
         if strict and not stored:
             raise CentroidRecomputeError(
-                f"OpenSearch refused the centroid write for cluster {cluster.uuid}"
+                f"OpenSearch refused the centroid write for cluster {cluster_uuid}"
             )
+
+    if release_transaction:
+        # The short write phase. The stored document was built from the members read
+        # above, so these scores describe exactly that document.
+        _apply_scores(cluster, *scores)
 
 
 def _member_voiceprints(
-    self: "SpeakerClusteringService", members: list[SpeakerClusterMember]
+    self: "SpeakerClusteringService",
+    members: Sequence[Any],
+    excluded_files: set[int] | None = None,
 ) -> tuple[list[list[float]], list[SpeakerClusterMember], int | None]:
     """The members that have a voiceprint, their vectors, and the most confident one's id.
 
@@ -149,9 +208,10 @@ def _member_voiceprints(
     best_quality = -1.0
     best_speaker_id = None
     # Per-file consent (#1356): a voice from an opted-out file never enters the centroid.
-    excluded_files = declined_file_ids(
-        self.db, (m.speaker.media_file_id for m in members if m.speaker)
-    )
+    if excluded_files is None:
+        excluded_files = declined_file_ids(
+            self.db, (m.speaker.media_file_id for m in members if m.speaker)
+        )
     for m in members:
         speaker = m.speaker
         if not speaker or speaker.media_file_id in excluded_files:

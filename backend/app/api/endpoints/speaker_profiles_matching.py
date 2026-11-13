@@ -210,7 +210,12 @@ def _get_embedding_suggestions(
     if not PrivacyView(db).voiceprints(int(speaker.media_file_id)).enabled:
         return suggestions
 
-    speaker_embedding = get_speaker_embedding(str(speaker.uuid))
+    # Read phase over: end the request transaction so the OpenSearch reads below hold no
+    # Postgres lock (a plain SELECT queues every ALTER TABLE until its transaction ends).
+    speaker_uuid = str(speaker.uuid)
+    db.commit()
+
+    speaker_embedding = get_speaker_embedding(speaker_uuid)
     if speaker_embedding:
         profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
             speaker_embedding,

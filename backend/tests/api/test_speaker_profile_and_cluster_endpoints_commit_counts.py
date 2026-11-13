@@ -31,7 +31,10 @@ def test_profile_create_update_delete_commit_counts(
     )
     assert commits == 1
     commits = endpoint_commits(client, db_session, "DELETE", url, expect=204, headers=headers)
-    assert commits == 1
+    # The delete's own commit, plus the one speaker cleanup now issues to end the read
+    # transaction before it erases the profile's voiceprint document (no transaction across
+    # OpenSearch I/O).
+    assert commits == 2
 
 
 def test_collection_create_commits_once(client, user_token_headers, db_session):

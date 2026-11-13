@@ -377,3 +377,195 @@ def test_summary_status_dials_the_provider_outside_the_transaction(
     assert result["summary_status"] == "failed"
     assert result["llm_available"] is True
     assert result["can_retry"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 3. Speaker cleanup (merge, orphan delete) and the suggestions read — OpenSearch
+#    voiceprint I/O formerly ran with the request / task transaction open.
+#
+#    The three-phase rule (as ``tasks/speaker_merge_task.py`` states it): read and END the
+#    transaction; do the OpenSearch work with none; one short write transaction.
+#    Invariant the split must keep: NO WRITE IS LOST. Every Postgres column the cleanup
+#    owes (member_count, centroid scores, representative speaker, profile embedding_count)
+#    is committed after the OpenSearch phase and describes exactly the document that phase
+#    stored; a profile deleted while OpenSearch ran gets no write and leaves no orphan doc.
+# --------------------------------------------------------------------------- #
+def _watch_opensearch(monkeypatch, tracker: TrackedRequestSession) -> None:
+    """Wrap every seam ``speaker_os_seams`` installed so each call reports the transaction."""
+    from app.services import opensearch_erasure as ose
+
+    targets = [
+        (ose, "_erase_speaker_docs"),
+        (ose, "_erase_cluster_docs"),
+        (ose, "_erase_profile_docs"),
+    ]
+    for module in (
+        "app.services.opensearch_service",
+        "app.services.profile_embedding_service",
+    ):
+        import importlib
+
+        mod = importlib.import_module(module)
+        targets.append((mod, "get_speaker_embedding"))
+    import app.services.opensearch_service as oss
+
+    for name in (
+        "store_cluster_embedding",
+        "store_profile_embedding",
+        "remove_profile_embedding",
+        "update_speaker_profile",
+        "update_speaker_display_name",
+    ):
+        targets.append((oss, name))
+
+    for module_obj, name in targets:
+        original = getattr(module_obj, name)
+
+        def _wrapped(*args, __orig=original, __label=name, **kwargs):
+            tracker.observe(__label)
+            return __orig(*args, **kwargs)
+
+        monkeypatch.setattr(module_obj, name, _wrapped)
+
+
+def _all_opensearch_calls_tx_free(tracker: TrackedRequestSession) -> None:
+    labels = {label for label, _ in tracker.observations}
+    assert labels, "no OpenSearch call was observed: the stubs were bypassed"
+    leaked = [(label, open_) for label, open_ in tracker.observations if open_]
+    assert not leaked, _leak(tracker, f"calls with a transaction open: {leaked}")
+
+
+def _profile_cluster_world(db, user, seams):
+    """A profile and a cluster that both average two speakers' voiceprints."""
+    from tests.fixtures.speaker_cleanup_seams import make_pair
+    from tests.fixtures.speaker_cleanup_seams import make_profile
+
+    _fa, _fb, sa, sb, cluster = make_pair(db, user, seams)
+    profile = make_profile(db, user)
+    sa.profile_id = profile.id
+    sb.profile_id = profile.id
+    db.commit()
+    return sa, sb, cluster, profile
+
+
+def test_merge_cleanup_runs_opensearch_with_no_transaction_open(
+    tracked_db, normal_user, speaker_os_seams, monkeypatch
+):
+    from app.api.endpoints.speakers_merge import _reconcile_speakers_after_merge
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerProfile
+
+    sa, sb, cluster, profile = _profile_cluster_world(tracked_db, normal_user, speaker_os_seams)
+    _watch_opensearch(monkeypatch, tracked_db)
+    cluster_id, profile_id, target_id = cluster.id, profile.id, int(sb.id)
+    source_uuid = str(sa.uuid)
+
+    residual = _reconcile_speakers_after_merge(tracked_db, source_uuid, target_id)
+
+    assert residual == []
+    _all_opensearch_calls_tx_free(tracked_db)
+    # No write lost: the rows were written AFTER the OpenSearch phase, by their own commit.
+    tracked_db.commit()
+    tracked_db.expire_all()
+    row = tracked_db.get(SpeakerCluster, cluster_id)
+    assert row.quality_score is not None and row.min_similarity is not None
+    assert row.representative_speaker_id in {sa.id, sb.id}
+    assert row.member_count == 2
+    # The source's document is erased first, so only the target's voiceprint is averaged.
+    assert tracked_db.get(SpeakerProfile, profile_id).embedding_count == 1
+    assert str(cluster.uuid) in speaker_os_seams["clusters"]
+    assert str(profile.uuid) in speaker_os_seams["profiles"]
+
+
+def test_orphan_cleanup_runs_opensearch_with_no_transaction_open(
+    tracked_db, normal_user, speaker_os_seams, monkeypatch
+):
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerProfile
+    from app.services import speaker_cleanup as sc
+
+    sa, sb, cluster, profile = _profile_cluster_world(tracked_db, normal_user, speaker_os_seams)
+    _watch_opensearch(monkeypatch, tracked_db)
+    cluster_id, profile_id, survivor_uuid = cluster.id, profile.id, str(sb.uuid)
+
+    impact = sc.capture_speaker_impact(tracked_db, [sa.id], removed=True, reindex=False)
+    tracked_db.delete(sa)
+    tracked_db.commit()
+    assert sc.reconcile_speaker_impact(tracked_db, impact) == []
+
+    _all_opensearch_calls_tx_free(tracked_db)
+    tracked_db.expire_all()
+    row = tracked_db.get(SpeakerCluster, cluster_id)
+    assert row.member_count == 1  # the survivor count was committed, not lost
+    assert row.representative_speaker_id is not None
+    assert tracked_db.get(SpeakerProfile, profile_id).embedding_count == 1
+    assert (
+        speaker_os_seams["profiles"][str(profile.uuid)]
+        == speaker_os_seams["voiceprints"][survivor_uuid]
+    )
+
+
+def test_profile_deleted_while_opensearch_ran_gets_no_write_and_no_orphan_document(
+    tracked_db, normal_user, speaker_os_seams, monkeypatch
+):
+    """The write phase re-addresses the row by key: a concurrent delete is neither an error
+    nor a leaked profile document."""
+    from app.models.speaker import SpeakerProfile
+    from app.services import speaker_cleanup as sc
+    from app.services.opensearch_service import store_profile_embedding as recording_store
+
+    sa, sb, _cluster, profile = _profile_cluster_world(tracked_db, normal_user, speaker_os_seams)
+    profile_id, profile_uuid = profile.id, str(profile.uuid)
+    removed: list[str] = []
+
+    def store_then_lose_the_profile(**kwargs):
+        stored = recording_store(**kwargs)
+        # Another request deletes the profile while the vector write is in flight.
+        tracked_db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).delete()
+        tracked_db.commit()
+        return stored
+
+    monkeypatch.setattr(
+        "app.services.opensearch_service.store_profile_embedding", store_then_lose_the_profile
+    )
+    monkeypatch.setattr(
+        "app.services.profile_embedding_service._clear_profile_embedding_from_opensearch",
+        removed.append,
+    )
+    impact = sc.capture_speaker_impact(tracked_db, [sa.id], removed=False, reindex=False)
+
+    sc.reconcile_speaker_impact(tracked_db, impact)
+
+    assert removed == [profile_uuid]
+
+
+def test_suggestions_read_queries_opensearch_with_no_transaction_open(
+    tracked_db, normal_user, speaker_os_seams, monkeypatch
+):
+    from app.api.endpoints import speaker_profiles_matching as matching
+    from app.services.profile_embedding_service import ProfileEmbeddingService
+    from tests.fixtures.speaker_cleanup_seams import make_file
+    from tests.fixtures.speaker_cleanup_seams import make_speaker
+
+    speaker = make_speaker(tracked_db, normal_user, make_file(tracked_db, normal_user))
+    speaker_os_seams["voiceprints"][str(speaker.uuid)] = [1.0, 0.0, 0.0, 0.0]
+    tracked_db.commit()
+    speaker_id = int(speaker.id)
+    _watch_opensearch(monkeypatch, tracked_db)
+
+    def similarity(*args, **kwargs):
+        tracked_db.observe("profile_knn")
+        return []
+
+    monkeypatch.setattr(ProfileEmbeddingService, "calculate_profile_similarity", similarity)
+    tracked_db.query(User).filter(User.id == -1).first()  # the auth dependency's transaction
+
+    matching._get_embedding_suggestions(
+        tracked_db, speaker_id, normal_user, 0.5, accessible_profile_ids=set()
+    )
+
+    assert {label for label, _ in tracked_db.observations} >= {
+        "get_speaker_embedding",
+        "profile_knn",
+    }
+    _all_opensearch_calls_tx_free(tracked_db)

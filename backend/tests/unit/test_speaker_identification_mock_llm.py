@@ -169,8 +169,9 @@ def test_a_provider_that_errors_fails_the_task_with_an_error_code(
 
 
 def test_a_reply_that_is_not_json_writes_no_suggestion(db_session, normal_user, identify):
-    """``mock-gpt`` answers in markdown: the parser must reject it rather than invent names."""
-    identify.model["name"] = "mock-gpt"
+    """``mock-empty`` returns no JSON (``mock-gpt`` now answers this prompt with JSON, #1308):
+    the parser must reject it rather than invent names."""
+    identify.model["name"] = "mock-empty"
     media_file, _ = make_transcribed_file(db_session, normal_user, speakers=2)
 
     result = identify.run(media_file)

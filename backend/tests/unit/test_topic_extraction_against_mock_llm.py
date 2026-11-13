@@ -57,7 +57,16 @@ def test_the_topics_scenario_answers_the_real_extraction_prompt_with_suggestions
     assert [c.name for c in parsed.suggested_collections] == ["Mock Planning Sessions"]
 
 
-def test_the_markdown_chat_scenario_is_not_a_topic_answer(mock_llm_url):
-    # Documents why a topic task must be pointed at ``mock-topics-json``: the chat reply
-    # has no suggestions in it, and the parser must reject it rather than invent any.
-    assert _extract(mock_llm_url, "mock-gpt") is None
+def test_mock_gpt_answers_the_real_topic_prompt_with_suggestions(mock_llm_url):
+    # The app's topic prompt spells out its JSON schema, so mock-gpt answers it the way a
+    # real model would (issue #1308) instead of with the markdown chat reply.
+    parsed = _extract(mock_llm_url, "mock-gpt")
+
+    assert parsed is not None
+    assert [c.name for c in parsed.suggested_collections] == ["Mock Planning Sessions"]
+
+
+def test_a_markdown_chat_reply_is_not_a_topic_answer():
+    # The parser must still reject prose rather than invent suggestions.
+    reply = "Based on the transcript excerpts provided, here is what I found [1]."
+    assert TopicExtractionService()._parse_llm_response(reply, LLMProvider.CUSTOM) is None

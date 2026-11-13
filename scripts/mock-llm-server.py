@@ -43,7 +43,9 @@ MODEL_ID = 'mock-gpt'
 # a failure mode by configuring a provider rather than by patching code — which
 # means the app exercises its REAL error handling, not a mocked branch.
 #
-#   mock-gpt        normal reply with [1]/[2] citations, markdown and a code block
+#   mock-gpt        normal reply with [1]/[2] citations, markdown and a code block; a request
+#                   whose system prompt spells out the topic / speaker-ID / summary JSON schema
+#                   gets that canned JSON instead (STRUCTURED_REQUEST_MARKERS)
 #   mock-echo       echoes the exact prompt it received; lets a test assert what the
 #                   app actually sent (masking applied? prompt layers in order?)
 #   mock-empty      completes with no content — the "model returned nothing" path
@@ -258,6 +260,22 @@ def _topic_from(messages: list[dict]) -> str:
     return 'your question'
 
 
+# A request that quotes one of these output-schema keys is asking for JSON in that shape: the
+# app's topic, speaker-ID and summary prompts each spell their schema out and nothing else
+# sends the key. A real model answers such a request with JSON whatever its name, so mock-gpt
+# does too; a chat turn carries none of them and still gets the markdown reply.
+STRUCTURED_REQUEST_MARKERS = (
+    ('"suggested_tags"', TOPICS_BODY),
+    ('"speaker_predictions"', SPEAKERS_BODY),
+    ('"bluf"', SUMMARY_BODY),
+)
+
+
+def _structured_body(messages: list[dict]) -> dict | None:
+    prompt = '\n'.join(str(m.get('content') or '') for m in messages)
+    return next((body for marker, body in STRUCTURED_REQUEST_MARKERS if marker in prompt), None)
+
+
 def _reply_text(model: str, messages: list[dict], system_sha256: str) -> str:
     """The answer a scenario model gives to ``messages``."""
     if model == 'mock-echo':
@@ -269,6 +287,9 @@ def _reply_text(model: str, messages: list[dict], system_sha256: str) -> str:
         return ''
     if model in JSON_SCENARIO_BODIES:
         return json.dumps({**JSON_SCENARIO_BODIES[model], ECHO_FIELD: system_sha256})
+    structured = _structured_body(messages) if model == MODEL_ID else None
+    if structured is not None:
+        return json.dumps({**structured, ECHO_FIELD: system_sha256})
     return REPLY_TEMPLATE.format(topic=_topic_from(messages))
 
 

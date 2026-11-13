@@ -19,7 +19,7 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
 
 `conftest` defaults `POSTGRES_PORT` to **5176 — the dev stack**, which runs whatever is checked
 out in the *main* repo. A worktree on a feature branch that adds a migration is therefore, by
-default, **testing the branch's code against master's schema**.
+default, **testing the branch's code against master's schema**. This is now refused up front by `tests/stack_preflight.py` (exit 3; `ST_ALLOW='schema-head=<reason>'` overrides; see `scripts/notes/stack-target.md`).
 
 That is not hypothetical. It produced **13 failures** that read as real breakage and were
 reported as pre-existing: 10 in `test_v389_migration_consistency`, 2 ORM-cascade, 1 DDL

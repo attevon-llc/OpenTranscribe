@@ -26,15 +26,10 @@ PENDING: dict[tuple[str, str], str] = {
         "backend/tests/api/test_ws_origin_gate.py",
         "live-port-default",
     ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    ("backend/tests/conftest.py", "live-port-default"): "STK2 (the gate)",
-    ("backend/tests/e2e/conftest.py", "live-port-default"): "STK3 (e2e and UI)",
     (
         "backend/tests/e2e/idp_overlay.py",
         "compose-no-project",
     ): "P5 item 2 (auth e2e and the IdP overlay)",
-    ("backend/tests/e2e/test_pki.py", "live-port-default"): "STK3 (e2e and UI)",
-    ("backend/tests/e2e/test_visual_regression.py", "live-port-default"): "STK3 (e2e and UI)",
-    ("backend/tests/fixtures/search_corpus_stack.py", "live-port-default"): "STK3 (e2e and UI)",
     (
         "backend/tests/integration/deletion_seed.py",
         "live-port-default",
@@ -63,10 +58,6 @@ PENDING: dict[tuple[str, str], str] = {
         "backend/tests/integration/test_diar_native_multigpu_provider_live.py",
         "live-port-default",
     ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_gpu_scale_smoke_live.py",
-        "live-port-default",
-    ): "STK2 (the gate)",
     (
         "backend/tests/integration/test_lite_mode_mocked_providers.py",
         "live-port-default",
@@ -122,7 +113,6 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/bulk-processing-cheatsheet.sh",
         "live-port-default",
     ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/check-schema-drift.py", "live-port-default"): "STK2 (the gate)",
     (
         "scripts/cleanup-test-users.py",
         "live-port-default",
@@ -147,11 +137,9 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/diagnose-file-integrity.sh",
         "hardcoded-container",
     ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/e2e/run-e2e.sh", "live-port-default"): "STK3 (e2e and UI)",
     ("scripts/e2e_bench/config.py", "live-port-default"): "P5 item 5 (benchmarks)",
     ("scripts/gpu-profile-test.sh", "hardcoded-container"): "P5 item 5 (benchmarks)",
     ("scripts/gpu-profile-test.sh", "live-port-default"): "P5 item 5 (benchmarks)",
-    ("scripts/gpu-scale-smoke.sh", "name-substring"): "STK2 (the gate)",
     (
         "scripts/install-offline-package.sh",
         "live-port-default",
@@ -171,9 +159,6 @@ PENDING: dict[tuple[str, str], str] = {
     ("scripts/run-auth-e2e.sh", "hardcoded-container"): "P5 item 2 (auth e2e and the IdP overlay)",
     ("scripts/run-auth-e2e.sh", "live-port-default"): "P5 item 2 (auth e2e and the IdP overlay)",
     ("scripts/run-auth-e2e.sh", "name-substring"): "P5 item 2 (auth e2e and the IdP overlay)",
-    ("scripts/run-dev-tests.sh", "live-port-default"): "STK2 (the gate)",
-    ("scripts/run-integration-tests.sh", "live-port-default"): "STK2 (the gate)",
-    ("scripts/run-mutation-tests.sh", "live-port-default"): "STK2 (the gate)",
     ("scripts/run_benchmark.py", "live-port-default"): "P5 item 5 (benchmarks)",
     ("scripts/run_benchmark.py", "name-substring"): "P5 item 5 (benchmarks)",
     ("scripts/seed-fresh-deployment.sh", "live-port-default"): "P5 item 7 (standalone defaults)",
@@ -208,15 +193,10 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/test-search-indexing-recovery.sh",
         "live-port-default",
     ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/update-a11y-baseline.py", "live-port-default"): "STK3 (e2e and UI)",
 }
 
 # Not defaults for a resolved target; each carries its written reason.
 EXEMPT: dict[tuple[str, str], str] = {
-    (
-        "scripts/opentr-info.sh",
-        "live-port-default",
-    ): "text printers moved out of opentr.sh (which owns the stack): they print the stock URLs a user opens, they resolve nothing",
     (
         "scripts/release-tests/test-fresh-install.sh",
         "live-port-default",
@@ -249,6 +229,10 @@ EXEMPT: dict[tuple[str, str], str] = {
         "opentranscribe.sh",
         "hardcoded-container",
     ): "ships standalone to end users: stock ports and container names are its documented install layout, not a developer stack guess",
+    (
+        "scripts/opentr-info.sh",
+        "live-port-default",
+    ): "display only: print_access_info echoes the URLs from the same *_PORT variables compose interpolates (opentr.sh exports them for --fresh and --port-offset); it connects to nothing",
 }
 
 # Files whose compose invocations are the stack owners (they derive the project themselves).
@@ -511,14 +495,12 @@ def test_detector_stays_clean(rel: str, text: str, detector: str) -> None:
 
 
 def test_the_known_wrong_stack_sites_are_detected() -> None:
-    """The red proof: these are the incidents behind the guard. If the detectors stop
+    """The red proof: these are the incidents still unfixed behind the guard. If the detectors stop
     seeing them the guard is passing on nothing, whatever PENDING says."""
     hits = scan()
     for key in [
         ("scripts/run-auth-e2e.sh", D1),
-        ("scripts/gpu-scale-smoke.sh", D1),
-        ("scripts/run-mutation-tests.sh", D3),
-        ("backend/tests/fixtures/search_corpus_stack.py", D3),
+        ("scripts/e2e_bench/config.py", D3),
         ("backend/tests/e2e/idp_overlay.py", D4),
     ]:
         assert key in hits or key not in {**PENDING, **EXEMPT}, f"{key} was fixed: drop it"

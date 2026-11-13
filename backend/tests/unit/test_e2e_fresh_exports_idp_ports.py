@@ -1,4 +1,4 @@
-"""`run-e2e.sh --fresh <name>` must point the auth fixtures at the offset IdP overlays.
+"""`run-e2e.sh --fresh <name>` must point the auth fixtures at the IdP overlays of THAT stack.
 
 The Keycloak and LLDAP overlays of a `--fresh --port-offset N` stack publish on stock+N
 (issue #347). The runner exported only the app/data ports, and the auth fixture hard-coded
@@ -16,32 +16,57 @@ RUNNER = REPO / "scripts" / "e2e" / "run-e2e.sh"
 LDAP_E2E = REPO / "backend" / "tests" / "e2e" / "test_ldap_oidc.py"
 
 
-def _fresh_block_env(offset: int, tmp_path: Path) -> dict[str, str]:
-    """Run only the runner's `--fresh` parsing and export block, then print the env."""
+STUB_LIB = """\
+st_target() {
+    [ "$1" = "--fresh" ] || return 2
+    export ST_PROJECT="otfresh-$2" E2E_FRONTEND_URL=http://localhost:5273 \
+           E2E_BACKEND_URL=http://localhost:5274 \
+           KEYCLOAK_PORT=8280 LDAP_TEST_UI_PORT=17270 LDAP_TEST_PORT=3990
+}
+"""
+
+
+def _runner_env(tmp_path: Path, stub: str, upto: str) -> subprocess.CompletedProcess[str]:
+    """Run the runner's `--fresh` parsing and target-resolution block against a stubbed
+    stack-target library, then print the environment."""
     text = RUNNER.read_text()
     start = text.index('FRESH_NAME=""')
-    end = text.index("export E2E_FRONTEND_URL E2E_BACKEND_URL")
-    fresh_dir = tmp_path / ".fresh"
-    fresh_dir.mkdir()
-    (fresh_dir / "probe.offset").write_text(f"{offset}\n")
+    end = text.index(upto)
+    lib = tmp_path / "scripts" / "lib"
+    lib.mkdir(parents=True)
+    (lib / "stack-target.sh").write_text(stub)
     script = (
         f'PROJECT_ROOT="{tmp_path}"; RED=""; YELLOW=""; NC=""; set -- --fresh probe\n'
         + text[start:end]
         + "\nenv\n"
     )
     clean = {k: v for k, v in os.environ.items() if "KEYCLOAK" not in k and "LLDAP" not in k}
-    out = subprocess.run(
-        ["bash", "-c", script], capture_output=True, text=True, check=True, env=clean
-    ).stdout
-    return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=clean)
 
 
-def test_fresh_exports_offset_idp_ports(tmp_path: Path) -> None:
-    env = _fresh_block_env(100, tmp_path)
+def test_fresh_exports_the_observed_idp_ports(tmp_path: Path) -> None:
+    proc = _runner_env(tmp_path, STUB_LIB, "# Frontend and backend must be the SAME project")
+    assert proc.returncode == 0, proc.stderr
+    env = dict(line.split("=", 1) for line in proc.stdout.splitlines() if "=" in line)
 
     assert env.get("KEYCLOAK_URL") == "http://localhost:8280"
     assert env.get("LLDAP_URL") == "http://localhost:17270"
     assert env.get("LLDAP_LDAP_PORT") == "3990"
+
+
+def test_an_unresolvable_target_stops_the_runner_with_the_library_exit_code(
+    tmp_path: Path,
+) -> None:
+    """No `.fresh/<name>.offset` fallback to offset 0 (the live stack): the resolver's code wins."""
+    stub = "st_target() { return 21; }\n"
+    proc = _runner_env(tmp_path, stub, "# Hand-given URLs win over the observed ones")
+    assert proc.returncode == 21, proc.stdout + proc.stderr
+
+
+def test_the_runner_does_no_port_arithmetic() -> None:
+    code = RUNNER.read_text()
+    assert "FRESH_OFFSET" not in code
+    assert "5173 +" not in code and "5174 +" not in code
 
 
 def test_the_auth_fixture_takes_keycloak_port_from_keycloak_url() -> None:

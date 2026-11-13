@@ -218,29 +218,6 @@ Refusing to guess the surface names." "$EXIT_PRECONDITION"
         "$EXIT_PRECONDITION"
 }
 
-#: The host ports that mean "the shared dev stack". Read from the SAME constant
-#: the test module refuses to compare against (`_SHARED_STACK_HOSTS`), so the
-#: script and the suite can never disagree about what "shared" means.
-SHARED_PORTS=()
-derive_shared_ports() {
-    local line rest port seen
-    line="$(awk '/^_SHARED_STACK_HOSTS = \(/ { print; exit }' "$TEST_MODULE")"
-    [[ -n "$line" ]] || die "no '_SHARED_STACK_HOSTS = (' tuple in $TEST_MODULE — was it \
-renamed? Refusing to run without knowing which ports are the shared stack's." "$EXIT_PRECONDITION"
-    rest="$line"
-    while [[ "$rest" =~ :([0-9]+) ]]; do
-        port="${BASH_REMATCH[1]}"
-        seen=false
-        for existing in ${SHARED_PORTS[@]+"${SHARED_PORTS[@]}"}; do
-            [[ "$existing" == "$port" ]] && seen=true
-        done
-        $seen || SHARED_PORTS+=("$port")
-        rest="${rest#*:"$port"}"
-    done
-    [[ ${#SHARED_PORTS[@]} -gt 0 ]] || die "_SHARED_STACK_HOSTS parsed no ports" \
-        "$EXIT_PRECONDITION"
-}
-
 #: Base (offset 0) published ports, read out of opentr.sh's own FRESH_*_PORT_VARS
 #: tables. Those tables are already documented as the single source of truth for
 #: what --port-offset moves; a second copy here would be the bug that table's
@@ -284,31 +261,19 @@ FRESH_*_PORT_VARS tables — refusing to fall back to a hardcoded port" "$EXIT_P
 # SAFETY: refuse the shared dev stack. Three independent checks.
 # ---------------------------------------------------------------------------
 
-# 1. The DECLARED intent. `--port-offset 0` is the shared stack's ports by
-#    definition, and a resolved port landing on one of _SHARED_STACK_HOSTS' is
-#    the same thing arrived at by arithmetic.
+# 1. The DECLARED intent. `--port-offset 0` is the shared stack's ports by definition. A resolved
+#    port landing on the shared stack's by arithmetic is no longer judged here: the OBSERVED
+#    ownership (check 3, scripts/lib/stack_target.py) says which project really holds a port.
 #
-# Args: OFFSET FRONTEND_PORT BACKEND_PORT
+# Args: OFFSET
 assert_offset_is_not_the_shared_stack() {
-    local offset="$1" frontend="$2" backend="$3" port collision=""
+    local offset="$1"
 
     if [[ "$offset" == "0" ]]; then
         log "${RED}❌ --port-offset 0 puts the capture stack on the SHARED dev stack's ports.${NC}"
         log "   Baselines captured there record the developer's own library content, which is"
         log "   how this suite's baselines rotted for 28 frontend commits. Use a non-zero offset:"
         log "     $0 --reason \"...\" --port-offset 100"
-        return 1
-    fi
-
-    for port in "$frontend" "$backend"; do
-        for shared in "${SHARED_PORTS[@]}"; do
-            [[ "$port" == "$shared" ]] && collision="$collision $port"
-        done
-    done
-    if [[ -n "$collision" ]]; then
-        log "${RED}❌ Resolved capture ports${collision} are the SHARED dev stack's.${NC}"
-        log "   test_visual_regression.py's _SHARED_STACK_HOSTS names them for the same reason."
-        log "   Pick a different --port-offset."
         return 1
     fi
     return 0
@@ -332,123 +297,34 @@ assert_project_is_not_live() {
     return 0
 }
 
-# 3. The OBSERVATION, run after the stack is up: whatever is actually listening
-#    on the ports we are about to point pytest at must belong to the capture
-#    project. Checks 1 and 2 are statements of intent — this is the only one
-#    that can catch a fresh stack that failed to come up while something else
-#    (an older deployment, an unrelated project) holds the port. Capturing
-#    against that would be silently wrong in exactly the way this file exists
-#    to prevent.
+# 3. The OBSERVATION, run after the stack is up, through the shared resolver
+#    (scripts/lib/stack_target.py via stack-target.sh). `st_target --fresh` takes the ports from
+#    what the otfresh-<name> containers actually publish and refuses (exit 21) when an exported
+#    port belongs to another project, so whatever listens on the ports pytest is pointed at IS
+#    the capture stack. Checks 1 and 2 are statements of intent; this is the only one that can
+#    catch a fresh stack that failed to come up while something else holds the port.
 #
-# Args: PROJECT FRONTEND_PORT BACKEND_PORT
-assert_ports_are_owned_by_the_capture_stack() {
-    local project="$1" frontend="$2" backend="$3" port owner
-    for port in "$frontend" "$backend"; do
-        owner="$(port_owner_project "$port")"
-        if [[ -z "$owner" ]]; then
-            log "${RED}❌ Nothing in a compose project is publishing port ${port}.${NC}"
-            log "   The capture stack is not up, or a non-Docker process holds the port."
-            return 1
-        fi
-        if [[ "$owner" != "$project" ]]; then
-            log "${RED}❌ Port ${port} is owned by compose project '${owner}', not '${project}'.${NC}"
-            log "   Capturing against it would bake THAT deployment's content into the baseline."
-            log "   Stop the other stack, or pick a different --port-offset."
-            return 1
-        fi
-    done
-    return 0
-}
-
-# The compose project of whatever container publishes a host port ("" if none).
+#    The same call proves the stack serves THIS CHECKOUT'S SOURCE (`code=bind`: root CLAUDE.md's
+#    "Local Code vs Docker Hub Images" — a prod/nginx/PKI shaped stack serves published images
+#    and every symptom of success is present while the pixels are of the PUBLISHED UI), that it
+#    is healthy, and that the worktree has its gitignored frontend/static/fonts (a baseline
+#    captured without Poppins is unusable).
 #
-# ⚠️ Deliberately not `docker ps ... | grep ... | head -1`. `docker` queries a
-# daemon, so the gaps between its writes are RPC round-trips: a reader that
-# leaves early SIGPIPEs the producer, and under `set -o pipefail` that 141
-# becomes the pipeline's status — measured at ~1 in 250 on `docker info` in this
-# repo, on 1.6 KB of output. In a CONDITION that inverts a match into a
-# non-match, i.e. it would report the shared stack as safe. Capture, then match
-# in-shell; there is no pipe to break.
-port_owner_project() {
-    local port="$1" listing="" line name ports
-    listing="$(docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null)" || return 0
-    while IFS= read -r line; do
-        [[ -n "$line" ]] || continue
-        name="${line%%|*}"
-        ports="${line#*|}"
-        # "127.0.0.1:5273->5173/tcp" — anchor on the ':' so 15273 cannot match 5273.
-        if [[ "$ports" == *":${port}->"* ]]; then
-            docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' \
-                "$name" 2>/dev/null || true
-            return 0
-        fi
-    done <<< "$listing"
-    return 0
-}
-
-# The first running container of SERVICE in PROJECT ("" if none).
-#
-# Project-scoped on purpose, and NOT compose-project.sh's `overlay_container_name`
-# — that one resolves the LIVE stack by allowlist, which is the opposite of what
-# is wanted here. Same no-pipe discipline as port_owner_project above.
-project_container_name() {
-    local project="$1" service="$2" names=""
-    names="$(docker ps \
-        --filter "label=com.docker.compose.project=${project}" \
-        --filter "label=com.docker.compose.service=${service}" \
-        --filter "status=running" \
-        --format '{{.Names}}' 2>/dev/null)" || return 0
-    printf '%s\n' "${names%%$'\n'*}"
-}
-
-# 4. The stack must be serving THIS CHECKOUT'S SOURCE, not a published image.
-#
-# Root CLAUDE.md's "Local Code vs Docker Hub Images" section: the prod / nginx /
-# PKI overlays run pre-built `davidamacey/opentranscribe-*` images and local
-# changes are invisible until a rebuild. Point this script at a stack of that
-# shape and every symptom of success is present — the stack is up, isolated,
-# seeded, on the right ports — while the images being captured are of the
-# PUBLISHED UI. That is unfalsifiable from the pixels alone, so it is checked
-# structurally instead.
-#
-# The check is the MECHANISM by which local code reaches the container, not a
-# proxy for it: docker-compose.override.yml bind-mounts `./backend:/app` and
-# `./frontend:/app` (Dockerfile.dev + `npm run dev`, i.e. Vite from source). No
-# bind mount of this checkout means the container is running baked code,
-# whatever its tag says.
-#
-# Args: PROJECT
-assert_stack_serves_local_code() {
-    local project="$1" service host_dir container mounts wanted missing=""
-    for service in backend frontend; do
-        host_dir="$REPO_ROOT/$service"
-        container="$(project_container_name "$project" "$service")"
-        if [[ -z "$container" ]]; then
-            log "${RED}❌ No running '${service}' container in project '${project}'.${NC}"
-            return 1
-        fi
-        mounts="$(docker inspect \
-            --format '{{range .Mounts}}{{.Type}}:{{.Source}}->{{.Destination}} {{end}}' \
-            "$container" 2>/dev/null)" || mounts=""
-        wanted="bind:${host_dir}->/app"
-        if [[ "$mounts" == *"$wanted"* ]]; then
-            log "${GREEN}✔ ${service}: serving LOCAL source (${host_dir} bind-mounted at /app)${NC}"
-        else
-            missing="${missing} ${service}"
-        fi
-    done
-
-    if [[ -n "$missing" ]]; then
-        log "${RED}❌ Stack mode: BAKED IMAGE — these services have no bind mount of this"
-        log "   checkout at /app:${missing}${NC}"
-        log "   This looks like a prod / nginx / PKI shaped stack, which serves pre-built"
-        log "   davidamacey/opentranscribe-* images from Docker Hub. Baselines captured there"
-        log "   are pictures of the PUBLISHED UI, not of your branch, and nothing in the"
-        log "   resulting images would say so. Refusing."
-        log "   Capture from a dev-shaped stack: ${OPENTR} start dev --fresh ${FRESH_NAME} …"
-        return 1
+# Args: none (uses FRESH_NAME). Exports the observed *_PORT values on success.
+observe_capture_stack() {
+    local rc=0
+    st_target --fresh "$FRESH_NAME" || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        log "${RED}❌ The capture stack otfresh-${FRESH_NAME} could not be resolved (stack-target exit ${rc}).${NC}"
+        return "$rc"
     fi
-    log "${GREEN}✔ Stack mode: DEV (local source, hot-reloaded) — safe to capture from.${NC}"
+    st_require isolated healthy code=bind asset:frontend-fonts || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        log "${RED}❌ The capture stack failed its checks (stack-target exit ${rc}); refusing to capture.${NC}"
+        log "   Capture from a dev-shaped stack: ${OPENTR} start dev --fresh ${FRESH_NAME} …"
+        return "$rc"
+    fi
+    log "${GREEN}✔ Capture stack ${ST_PROJECT}: ports observed, dev source bind-mounted, fonts present.${NC}"
     return 0
 }
 
@@ -556,8 +432,7 @@ start_capture_stack() {
         OPENSEARCH_PORT=$((BASE_OPENSEARCH_PORT + PORT_OFFSET))
         FRESH_PROJECT="otfresh-${FRESH_NAME}"
 
-        assert_offset_is_not_the_shared_stack "$PORT_OFFSET" "$FRONTEND_PORT" "$BACKEND_PORT" \
-            || exit "$EXIT_MISUSE"
+        assert_offset_is_not_the_shared_stack "$PORT_OFFSET" || exit "$EXIT_MISUSE"
         assert_project_is_not_live "$FRESH_PROJECT" || exit "$EXIT_MISUSE"
 
         start_args=(start dev --fresh "$FRESH_NAME" --port-offset "$PORT_OFFSET"
@@ -1255,9 +1130,10 @@ main() {
 
     # shellcheck source=scripts/lib/compose-project.sh
     source "$REPO_ROOT/scripts/lib/compose-project.sh"
+    # shellcheck source=scripts/lib/stack-target.sh
+    source "$REPO_ROOT/scripts/lib/stack-target.sh"
 
     derive_surfaces
-    derive_shared_ports
     derive_base_ports
     validate_args
     check_preconditions
@@ -1291,9 +1167,7 @@ otfresh-${FRESH_NAME}).${NC}"
 
     # The two OBSERVATIONS. Everything above is a statement of intent; only these
     # can catch a stack that is up but is not the one we think it is.
-    assert_ports_are_owned_by_the_capture_stack \
-        "$FRESH_PROJECT" "$FRONTEND_PORT" "$BACKEND_PORT" || exit "$EXIT_PRECONDITION"
-    assert_stack_serves_local_code "$FRESH_PROJECT" || exit "$EXIT_PRECONDITION"
+    observe_capture_stack || exit "$EXIT_PRECONDITION"
 
     assert_corpus_is_the_seed || die "the library is not exactly the seed corpus — capturing \
 now would record the stack's history, not the UI (see the message above)" "$EXIT_PRECONDITION"

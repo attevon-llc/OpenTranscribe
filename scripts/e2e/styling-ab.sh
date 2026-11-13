@@ -18,8 +18,8 @@
 # A tree whose package-lock.json differs from the checkout's gets its own `npm ci` (log in
 # the run dir); trees with an identical lock share the checkout's node_modules.
 #
-# Refuses unless .fresh/<stack>.offset is non-zero and that stack's backend answers
-# /health, so it can never be pointed at the live stack. Never kills by name: the EXIT
+# Refuses unless the stack resolves to an otfresh-<stack> compose project (stack-target
+# `isolated`, `healthy`) whose backend answers /health, so it can never be pointed at the live stack. Never kills by name: the EXIT
 # trap TERMs only the PIDs this script started.
 #
 # Exit: 0 pass, 1 differences/failures, 2 misuse, 3 precondition unmet.
@@ -32,7 +32,7 @@ NODE_BIN="${STYLING_AB_NODE_BIN:-$HOME/.nvm/versions/node/v26.8.2/bin}"
 WORK_ROOT="${STYLING_AB_WORK_ROOT:-$HOME/ot-cleanup-work/styling/ab}"
 
 LANE="" BASE="" AFTER="WORKTREE" MODE="zero" STACK="" SCREENS="all" VARIANTS=""
-CONTROL="" OFFSET="" SELFCHECK=0 NEGCTL=0
+CONTROL="" SELFCHECK=0 NEGCTL=0
 
 usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
 die() { echo "styling-ab: $*" >&2; exit "${2:-2}"; }
@@ -47,7 +47,6 @@ while [ $# -gt 0 ]; do
     --screens) SCREENS="$2"; shift 2 ;;
     --variants) VARIANTS="$2"; shift 2 ;;
     --control) CONTROL="$2"; shift 2 ;;
-    --offset) OFFSET="$2"; shift 2 ;;
     --selfcheck) SELFCHECK=1; shift ;;
     --negative-control) NEGCTL=1; shift ;;
     -h|--help) usage 0 ;;
@@ -62,20 +61,22 @@ case "$MODE" in zero|intended) ;; *) die "--mode must be zero or intended" ;; es
 case "$LANE" in *[!A-Za-z0-9._-]*|"") die "--lane may contain only letters, digits . _ -" ;; esac
 
 # --- the stack: refuse the live one ----------------------------------------------------
-if [ -z "$OFFSET" ]; then
-  for root in "$REPO_ROOT" "$MAIN_ROOT"; do
-    if [ -f "$root/.fresh/$STACK.offset" ]; then OFFSET="$(tr -d '[:space:]' < "$root/.fresh/$STACK.offset")"; break; fi
-  done
-fi
-[ -n "$OFFSET" ] || die ".fresh/$STACK.offset not found (is '$STACK' a --fresh stack started with --port-offset?)" 3
-case "$OFFSET" in ''|*[!0-9]*) die "offset '$OFFSET' is not a number" 3 ;; esac
-[ "$OFFSET" -gt 0 ] || die "offset 0 is the LIVE dev stack; refusing" 3
-BACKEND_PORT=$((5174 + OFFSET)); MINIO_PORT=$((5178 + OFFSET))
+# Resolved through the shared library (scripts/lib/stack_target.py): the OBSERVED ports of the
+# otfresh-<stack> project, not `5174 + the offset file`. `isolated` refuses any stack that is
+# not a --fresh project, and exported ports belonging to another project exit 21.
+. "$REPO_ROOT/scripts/lib/stack-target.sh"
+st_target --fresh "$STACK"; st_rc=$?
+[ "$st_rc" -eq 0 ] || die "stack otfresh-$STACK could not be resolved (stack-target exit $st_rc); start it: ./opentr.sh start dev --fresh $STACK --port-offset 200 --seed-benchmark --with-mock-llm" 3
+st_require isolated healthy; st_rc=$?
+[ "$st_rc" -eq 0 ] || die "stack otfresh-$STACK failed its checks (stack-target exit $st_rc)" 3
+[ -n "${BACKEND_PORT:-}" ] && [ -n "${MINIO_PORT:-}" ] || die "stack otfresh-$STACK publishes no backend/minio port" 3
 BACKEND="http://localhost:$BACKEND_PORT"
 curl -fsS --max-time 10 "$BACKEND/health" >/dev/null 2>&1 \
-  || die "backend $BACKEND/health does not answer; start the stack: ./opentr.sh start dev --fresh $STACK --port-offset $OFFSET --seed-benchmark --with-mock-llm" 3
+  || die "backend $BACKEND/health does not answer" 3
 
-PORT_BEFORE=$((5291 + OFFSET)); PORT_AFTER=$((5292 + OFFSET))
+# The two Vite servers' ports follow the backend's, which is unique per stack, so two lanes
+# on two stacks cannot collide.
+PORT_BEFORE=$((BACKEND_PORT + 117)); PORT_AFTER=$((BACKEND_PORT + 118))
 port_bound() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 port_bound "$PORT_BEFORE" && die "port $PORT_BEFORE is already bound" 3
 if [ "$SELFCHECK" = 0 ] && [ "$NEGCTL" = 0 ]; then

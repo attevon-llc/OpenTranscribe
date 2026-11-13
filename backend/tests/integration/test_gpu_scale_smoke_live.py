@@ -74,7 +74,11 @@ def _repo_env_value(key: str, default: str) -> str:
 
 
 GPU_SCALE_WORKERS = int(_repo_env_value("GPU_SCALE_WORKERS", "4"))
-FLOWER_PORT = _repo_env_value("FLOWER_PORT", "5175")
+# Ports come from the environment the gate exports (run-integration-tests.sh -> st_target: the
+# OBSERVED ports of the resolved stack). Unresolved reads as port 0, which nothing listens on, so
+# the Flower/backend probes below skip with their "not reachable" reason instead of silently
+# targeting the stock stack's 5175/5174.
+FLOWER_PORT = _repo_env_value("FLOWER_PORT", "0")
 FLOWER_URL_PREFIX = _repo_env_value("FLOWER_URL_PREFIX", "flower")
 FLOWER_USER = _repo_env_value("FLOWER_USER", "admin")
 FLOWER_PASSWORD = _repo_env_value("FLOWER_PASSWORD", "flower")
@@ -83,7 +87,7 @@ FLOWER_MAX_ENTRY_AGE = float(os.environ.get("FLOWER_MAX_ENTRY_AGE", "120"))
 FLOWER_REFRESH_ATTEMPTS = int(os.environ.get("FLOWER_REFRESH_ATTEMPTS", "6"))
 FLOWER_REFRESH_INTERVAL = float(os.environ.get("FLOWER_REFRESH_INTERVAL", "10"))
 
-BACKEND_PORT = _repo_env_value("BACKEND_PORT", "5174")
+BACKEND_PORT = _repo_env_value("BACKEND_PORT", "0")
 BASE_URL = f"http://localhost:{BACKEND_PORT}/api"
 
 

@@ -26,13 +26,17 @@ and `backend/tests/query_budget.py`.
 
 ```bash
 ./opentr.sh fresh-list                                   # pick an unused port offset
-./opentr.sh start dev --fresh perf1337 --port-offset 300
+./opentr.sh start dev --fresh perf1337 --port-offset 300 --no-bindmount --build
 ```
+
+The load scripts assert this stack before they run (`code=image`, schema at head, healthy), so a
+hot-reload stack or one built from another checkout is refused with a `Fix:` line.
 
 Never run this against the dev stack: the seed tool and the driver refuse its ports. Check the host
 is quiet first (`uptime`); concurrent builds or test suites make timings meaningless.
 
-Enable the statistics extensions on this stack only, with one command (it loads
+`build_snapshot.sh` and `run_profile.sh` enable the statistics extensions for you on first use; to do it
+earlier, or by hand, this stack only, one command (it loads
 `pg_stat_statements` and `auto_explain` through `ALTER SYSTEM`, restarts postgres and the backend
 through `./opentr.sh restart-db` / `restart-backend`, creates the extension, and verifies it; it
 refuses the live, stock and `ot-reltest-*` stacks and is a no-op when already loaded):

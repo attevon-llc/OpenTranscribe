@@ -20,6 +20,7 @@
 #
 # Usage:
 #   ./scripts/run-integration-tests.sh                # full gate
+#   ./scripts/run-integration-tests.sh --fresh NAME   # gate an isolated otfresh-NAME stack (or --project P)
 #   ./scripts/run-integration-tests.sh --coverage     # + coverage report
 #   ./scripts/run-integration-tests.sh --e2e-smoke    # + browser smoke tests
 #   ./scripts/run-integration-tests.sh --search-quality  # + corpus relevance harness
@@ -66,8 +67,13 @@ CLEANUP=false
 RUN_GPU=true
 EXPORT_CAPABILITY=false
 OVERLAY_ONLY=false
-for arg in "$@"; do
+TARGET_ARGS=()
+while [ $# -gt 0 ]; do
+    arg="$1"
+    shift
     case "$arg" in
+        --fresh|--project) [ $# -gt 0 ] || { echo -e "${RED}$arg needs a value${NC}"; exit 2; }
+            TARGET_ARGS=("$arg" "$1"); shift ;;
         --coverage) COVERAGE=true ;;
         --e2e-smoke) E2E_SMOKE=true ;;
         --search-quality) SEARCH_QUALITY=true ;;
@@ -93,11 +99,26 @@ if [ ! -x "$VENV_PY" ]; then
 fi
 
 # --- BEGIN stack-probe ---
-# The probed ports follow the same variables the tests read (conftest), so a gate pointed at an
-# isolated stack (POSTGRES_PORT=5876 ...) is not satisfied by whatever listens on the defaults.
-PG_PORT="${POSTGRES_PORT:-5176}"
-S3_PORT="${MINIO_PORT:-5178}"
-OS_PORT="${OPENSEARCH_PORT:-5180}"
+# The stack is RESOLVED through compose labels (scripts/lib/stack_target.py), never guessed from
+# the stock ports: a gate pointed at an isolated stack used to pass this precondition on whatever
+# else listened on 5176 (another project's Postgres) and then ran against the wrong database.
+# `--fresh NAME` / `--project P` pick it explicitly; otherwise COMPOSE_PROJECT_NAME, the owner of
+# an exported POSTGRES_PORT, or the one live project. st_target exports the OBSERVED ports, so
+# every phase below (and conftest) reads the same stack. Codes are the library's (20-28).
+# shellcheck source=lib/stack-target.sh
+source "$SCRIPT_DIR/lib/stack-target.sh"
+_st_rc=0
+st_target "${TARGET_ARGS[@]}" || _st_rc=$?
+if [ "$_st_rc" -ne 0 ]; then
+    echo -e "${RED}Dev stack not resolved (stack-target exit $_st_rc)${NC}"
+    echo -e "Start it with: ${YELLOW}./opentr.sh start dev${NC}, or pass --fresh NAME / --project P"
+    exit "$_st_rc"
+fi
+echo -e "Stack:      ${GREEN}project=$ST_PROJECT${NC}"
+st_require healthy schema-head code=bind || exit $?
+PG_PORT="${POSTGRES_PORT:?st_target observed no Postgres port}"
+S3_PORT="${MINIO_PORT:-}"
+OS_PORT="${OPENSEARCH_PORT:-}"
 MISSING=()
 port_open "$PG_PORT" || MISSING+=("Postgres ($PG_PORT)")
 if [ ${#MISSING[@]} -gt 0 ]; then
@@ -108,17 +129,17 @@ fi
 
 echo -e "Postgres:   ${GREEN}up ($PG_PORT)${NC}"
 STACK_INCOMPLETE=()
-if port_open "$S3_PORT"; then
+if [ -n "$S3_PORT" ] && port_open "$S3_PORT"; then
     echo -e "MinIO:      ${GREEN}up ($S3_PORT) — S3 tests enabled${NC}"
 else
     echo -e "MinIO:      ${YELLOW}down — S3-backed tests cannot run${NC}"
-    STACK_INCOMPLETE+=("MinIO ($S3_PORT)")
+    STACK_INCOMPLETE+=("MinIO (${S3_PORT:-unpublished})")
 fi
-if port_open "$OS_PORT"; then
+if [ -n "$OS_PORT" ] && port_open "$OS_PORT"; then
     echo -e "OpenSearch: ${GREEN}up ($OS_PORT) — search tests enabled${NC}"
 else
     echo -e "OpenSearch: ${YELLOW}down — search-backed tests cannot run${NC}"
-    STACK_INCOMPLETE+=("OpenSearch ($OS_PORT)")
+    STACK_INCOMPLETE+=("OpenSearch (${OS_PORT:-unpublished})")
 fi
 # --- END stack-probe ---
 echo ""
@@ -138,27 +159,12 @@ echo ""
 # suite's memory-path tests assume no Redis, and exporting it to them flips ~10 of those to the
 # Redis path and fails them (measured 2026-10-28: 63 failures instead of 54).
 # --- BEGIN stack-redis-env ---
+# st_target (stack-probe, above) exported the stack's OBSERVED REDIS_PORT and the backend
+# container's REDIS_PASSWORD, so a --fresh stack's port always arrives with its password.
 REDIS_ENV=()
-_proj="${COMPOSE_PROJECT_NAME:-}"
-_label=(--filter "label=com.docker.compose.service=backend")
-[ -n "$_proj" ] && _label+=(--filter "label=com.docker.compose.project=$_proj")
-_backend=""
-if command -v docker >/dev/null 2>&1; then
-    _backend="$(docker ps "${_label[@]}" --format '{{.Names}}' 2>/dev/null | head -1)"
-fi
-_redis_port="${REDIS_PORT:-}"
-_redis_pw="${REDIS_PASSWORD:-}"
-if command -v docker >/dev/null 2>&1; then
-    if [ -z "$_redis_port" ]; then
-        _redis_port="$(docker ps "${_label[@]/backend/redis}" --format '{{.Ports}}' 2>/dev/null \
-            | grep -oE '(127\.0\.0\.1|0\.0\.0\.0):[0-9]+->6379' | head -1 | sed -E 's/.*:([0-9]+)->6379/\1/')"
-    fi
-    if [ -z "$_redis_pw" ] && [ -n "$_backend" ]; then
-        _redis_pw="$(docker exec "$_backend" printenv REDIS_PASSWORD 2>/dev/null)" || _redis_pw=""
-    fi
-fi
-if [ -n "$_redis_port" ]; then
-    REDIS_ENV=(env "REDIS_HOST=${REDIS_HOST:-localhost}" "REDIS_PORT=$_redis_port" "REDIS_PASSWORD=$_redis_pw")
+_backend="$(st_container backend)" || _backend=""
+if [ -n "${REDIS_PORT:-}" ]; then
+    REDIS_ENV=(env "REDIS_HOST=${REDIS_HOST:-localhost}" "REDIS_PORT=$REDIS_PORT" "REDIS_PASSWORD=${REDIS_PASSWORD:-}")
 else
     echo -e "${YELLOW}⚠ could not resolve the stack's Redis host port; tests needing Redis will fail${NC}"
 fi
@@ -213,11 +219,24 @@ source "$SCRIPT_DIR/lib/diar-native-expected.sh"
 
 FAILED_PHASES=()
 SKIPPED_PHASES=()   # phases that exited 4 = NOT MEASURED (verified nothing, but did not fail)
+# Every phase is timed (LOOP_SPEED_PLAN M1): a UTC start stamp under the banner and a
+# `duration_s=` line at the end, so where a gate's minutes went is read from the log instead of
+# reconstructed from junit timestamps and file mtimes. Banner/title text is unchanged.
+phase_clock_start() {
+    PHASE_T0=$SECONDS
+    echo "started $(date -u +%FT%TZ)"
+}
+phase_clock_end() {
+    echo "duration_s=$((SECONDS - PHASE_T0))"
+}
+
 run_phase() {
     local title=$1; shift
     local rc=0
     echo -e "${BLUE}--- $title ---${NC}"
+    phase_clock_start
     "$@" || rc=$?
+    phase_clock_end
     # Exit 4 is "NOT MEASURED", distinct from both pass and fail. Only the mutation ratchet
     # emits it today: it skips modules with no run log on purpose (a measurement is 30-90
     # minutes and stays opt-in), but with no logs at all it was exiting 0 and this function
@@ -425,10 +444,12 @@ run_phase_watching_skips() {
     # so a genuinely failing phase was recorded as neither failed nor skipped.
     # Caught by this function's own self-test; disable errexit around the pipe
     # instead, which leaves PIPESTATUS intact.
+    phase_clock_start
     set +e
     "$@" 2>&1 | tee "$out"
     rc=${PIPESTATUS[0]}
     set -e
+    phase_clock_end
 
     local skipped
     skipped=$(grep -oE '[0-9]+ skipped' "$out" | tail -1 | grep -oE '^[0-9]+' || echo 0)
@@ -616,7 +637,7 @@ else
             [ -n "$_mid" ] || _mid_why="the stack reports no active embedding model"
         fi
         if [ -n "$_mid" ]; then
-            _mjson="$(curl -sS --max-time 15 "http://localhost:${OPENSEARCH_PORT:-5180}/_plugins/_ml/models/$_mid" 2>/dev/null)" || _mjson=""
+            _mjson="$(curl -sS --max-time 15 "http://localhost:${OPENSEARCH_PORT:?}/_plugins/_ml/models/$_mid" 2>/dev/null)" || _mjson=""
             _mcheck="$(printf '%s' "$_mjson" | python3 -c 'import json,sys
 try:
     d = json.load(sys.stdin)

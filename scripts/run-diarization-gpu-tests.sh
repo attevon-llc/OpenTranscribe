@@ -54,6 +54,18 @@ if ! docker image inspect "${BASE_IMAGE}" >/dev/null 2>&1; then
     exit 3
 fi
 
+# The base image is the code under test: this run bakes it into the test image, so a stale
+# `opentranscribe-backend:latest` measures an artifact nobody is shipping and still exits 0. Same
+# rule as the release rehearsal (an image built from an ancestor of HEAD with no change under
+# backend/frontend/docs-site passes; anything else is a refusal). Run in a subshell:
+# gr_die exits, and the exit contract here is 3 = nothing was measured.
+# shellcheck source=scripts/release-tests/lib/guardrails.sh
+source "${PROJECT_ROOT}/scripts/release-tests/lib/guardrails.sh"
+if ! ( REPO_ROOT="${PROJECT_ROOT}" gr_assert_image_is_the_code_under_test "${BASE_IMAGE}" \
+        "$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || true)" ); then
+    exit 3
+fi
+
 if [[ ! -f "${AUDIO_FIXTURE}" ]]; then
     echo -e "${RED}FAIL: benchmark audio fixtures are missing.${NC}"
     echo "      Expected: ${AUDIO_FIXTURE}"

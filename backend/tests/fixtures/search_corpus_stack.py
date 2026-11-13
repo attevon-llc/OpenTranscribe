@@ -17,7 +17,13 @@ import uuid
 import pytest
 import requests
 
-BASE = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api"
+# The backend this run targets: run-e2e.sh exports E2E_BACKEND_URL from the resolved compose
+# project. BACKEND_PORT used to default to the LIVE stack's port, so a fixture run with only
+# E2E_BACKEND_URL set talked to the wrong stack; refuse instead of guessing.
+_BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "")
+if not _BACKEND_URL and os.environ.get("BACKEND_PORT"):
+    _BACKEND_URL = f"http://localhost:{os.environ['BACKEND_PORT']}"
+BASE = f"{_BACKEND_URL}/api"
 SEARCH_CORPUS_PASSWORD = "search-quality-fixture-pw-1"  # throwaway test user only
 
 

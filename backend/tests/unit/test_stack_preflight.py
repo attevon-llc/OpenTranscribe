@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -76,3 +78,156 @@ def test_no_compose_owner_is_not_applicable(
     install("transcribe-app", "v468_a")
     assert stack_preflight.run_preflight({"POSTGRES_PORT": "5999"}, root) is None
     assert "not applicable" in capsys.readouterr().err
+
+
+def test_resolved_port_env_follows_the_resolved_stack_not_the_stock_default(
+    stack: Stack, tmp_path: Path
+) -> None:
+    _, _ = stack
+    pg = mk("otfresh-x-postgres-1", "otfresh-x", "postgres", "127.0.0.1:5976->5432/tcp")
+    (tmp_path / "model.json").write_text(json.dumps({"containers": [pg]}))
+    env = {"COMPOSE_PROJECT_NAME": "otfresh-x", "POSTGRES_PORT": "5432"}
+    assert stack_preflight.resolved_port_env(env)["POSTGRES_PORT"] == "5976"
+
+
+def test_resolved_port_env_is_empty_when_no_single_stack_resolves(
+    stack: Stack, tmp_path: Path
+) -> None:
+    _, _ = stack
+    (tmp_path / "model.json").write_text(json.dumps({"containers": []}))
+    assert stack_preflight.resolved_port_env({}) == {}
+
+
+def _drift_script() -> ModuleType:
+    path = Path(__file__).resolve().parents[3] / "scripts" / "check-schema-drift.py"
+    spec = importlib.util.spec_from_file_location("drift_under_test", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_schema_drift_reports_a_schema_behind_head_as_that_not_as_drift(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, install = stack
+    install("transcribe-app", "v0_old_revision")
+    for var in ("POSTGRES_PORT", "COMPOSE_PROJECT_NAME", "ST_ALLOW"):
+        monkeypatch.delenv(var, raising=False)
+    assert _drift_script()._resolve_stack() == 22
+    err = capsys.readouterr().err
+    assert "SCHEMA(22)" in err and "NOT model drift" in err
+
+
+def test_schema_drift_refuses_a_port_nothing_publishes_instead_of_the_stock_one(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, install = stack
+    install("transcribe-app", "v471_b")
+    monkeypatch.setenv("POSTGRES_PORT", "5999")
+    monkeypatch.delenv("COMPOSE_PROJECT_NAME", raising=False)
+    assert _drift_script()._resolve_stack() == 20
+
+
+# ---------------------------------------------------------------- e2e (plan P3)
+
+HEALTH = {"State": {"Status": "running", "Health": {"Status": "healthy"}}}
+
+
+def _e2e_model(tmp_path: Path, project: str, src: Path, other: str | None = None) -> None:
+    """`project` publishes 5273/5274 and bind-mounts `src`; `other` (listed FIRST) owns 5173/5174."""
+    containers = []
+    if other:
+        containers += [
+            mk(f"{other}-frontend", other, "frontend", "127.0.0.1:5173->5173/tcp", inspect=HEALTH),
+            mk(f"{other}-backend", other, "backend", "127.0.0.1:5174->8080/tcp", inspect=HEALTH),
+        ]
+    for svc, host, cport in (("frontend", 5273, 5173), ("backend", 5274, 8080)):
+        mounts = [{"Type": "bind", "Source": f"{src}/{svc}", "Destination": "/app"}]
+        containers.append(
+            mk(
+                f"{project}-{svc}",
+                project,
+                svc,
+                f"127.0.0.1:{host}->{cport}/tcp",
+                inspect={**HEALTH, "Mounts": mounts},
+            )
+        )
+    (tmp_path / "model.json").write_text(json.dumps({"containers": containers}))
+
+
+E2E_ENV = {"ST_ALLOW": "healthy=http probe is not faked", "ST_HEALTH_TIMEOUT": "1"}
+
+
+def test_e2e_urls_published_by_two_projects_are_refused(stack: Stack, tmp_path: Path) -> None:
+    _e2e_model(tmp_path, "otfresh-demo", tmp_path, other="transcribe-app")
+    problem = stack_preflight.e2e_stack_problem(
+        "http://localhost:5173", "http://localhost:5274", E2E_ENV
+    )
+    assert problem is not None and "WRONG_PROJECT(21)" in problem
+    assert "transcribe-app" in problem and "otfresh-demo" in problem
+
+
+def test_e2e_urls_of_one_project_without_fonts_are_refused(stack: Stack, tmp_path: Path) -> None:
+    """The fonts are gitignored, so a bare worktree has none: refuse before the capture runs."""
+    src = tmp_path / "bare-worktree"
+    (src / "frontend" / "static" / "fonts").mkdir(parents=True)
+    _e2e_model(tmp_path, "otfresh-demo", src, other="transcribe-app")
+    problem = stack_preflight.e2e_stack_problem(
+        "http://localhost:5273", "http://localhost:5274", E2E_ENV
+    )
+    assert problem is not None and "MISSING_ASSET(26)" in problem
+
+
+def test_e2e_urls_of_one_project_with_fonts_pass(stack: Stack, tmp_path: Path) -> None:
+    src = tmp_path / "setup-checkout"
+    fonts = src / "frontend" / "static" / "fonts"
+    fonts.mkdir(parents=True)
+    (fonts / "Poppins-Regular.woff2").write_text("x")
+    _e2e_model(tmp_path, "otfresh-demo", src, other="transcribe-app")
+    assert (
+        stack_preflight.e2e_stack_problem("http://localhost:5273", "http://localhost:5274", E2E_ENV)
+        is None
+    )
+
+
+def test_a_url_nobody_publishes_is_not_judged(stack: Stack, tmp_path: Path) -> None:
+    _e2e_model(tmp_path, "otfresh-demo", tmp_path)
+    assert (
+        stack_preflight.e2e_stack_problem("http://localhost:9", "http://localhost:10", E2E_ENV)
+        is None
+    )
+
+
+def test_isolation_is_decided_by_the_owning_project_not_by_the_port(
+    stack: Stack, tmp_path: Path
+) -> None:
+    """The visual suite used to compare against the literals 5173/5174; a live stack on any
+    other port, or a --fresh one ON 5174, was misjudged."""
+    _e2e_model(tmp_path, "otfresh-demo", tmp_path, other="transcribe-app")
+    assert stack_preflight.is_isolated_stack("http://localhost:5274") is True
+    assert stack_preflight.is_isolated_stack("http://localhost:5174") is False
+    assert stack_preflight.is_isolated_stack("http://localhost:9") is False
+
+
+def test_observed_ports_name_the_stack_the_environment_selects(
+    stack: Stack, tmp_path: Path
+) -> None:
+    _e2e_model(tmp_path, "otfresh-demo", tmp_path, other="transcribe-app")
+    ports = stack_preflight.observed_ports({"COMPOSE_PROJECT_NAME": "otfresh-demo"})
+    assert ports["BACKEND_PORT"] == 5274 and ports["FRONTEND_PORT"] == 5273
+    assert stack_preflight.observed_ports({"COMPOSE_PROJECT_NAME": "nothing-here"}) == {}
+
+
+def test_the_search_corpus_fixture_takes_its_backend_from_the_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    monkeypatch.setenv("E2E_BACKEND_URL", "http://localhost:5274")
+    monkeypatch.delenv("BACKEND_PORT", raising=False)
+    module = importlib.import_module("tests.fixtures.search_corpus_stack")
+    module = importlib.reload(module)
+    assert module.BASE == "http://localhost:5274/api"
+    monkeypatch.delenv("E2E_BACKEND_URL")
+    assert importlib.reload(module).BASE == "/api"  # never a guessed live port

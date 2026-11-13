@@ -128,3 +128,41 @@ def test_the_not_measured_code_is_translated_not_swallowed():
         "the stage no longer records not-measured at all; NOT MEASURED must stay distinct "
         "from both pass and fail (it is blocking, but it is not a failure)"
     )
+
+
+def test_the_stage_asks_run_dev_tests_for_its_overlay_flags_and_never_spells_them():
+    """T2: one overlay set for the whole stage, owned by the orchestrator.
+
+    A literal ``--with-mock-*`` in the stage is the second copy of the overlay knowledge this
+    module's docstring warns about; asking ``--print-overlay-flags`` keeps one owner. The stage
+    also hands the answer to ``fresh_stack_up``, so both run-dev-tests.sh calls find the overlays
+    up and recreate nothing.
+    """
+    text = _stage()
+    code = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+    assert "--print-overlay-flags" in code
+    assert "--with-" not in code, "the stage spells an overlay flag itself"
+    assert re.search(r'fresh_stack_up "\$FRESH_NAME" "\$PORT_OFFSET" \$\{OVERLAY_FLAGS', code)
+    for phases in ("--backend-only --e2e-smoke --export-capability", "--e2e-release"):
+        assert phases in code, f"the overlay union omits the {phases!r} run"
+
+
+def test_print_overlay_flags_prints_what_list_overlays_would_start():
+    """Both are read-only views of ``OVERLAYS_NEEDED``; the flag line must equal the plan."""
+    import os
+    import subprocess
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COMPOSE_", "POSTGRES_"))}
+    args = ["--backend-only", "--e2e-smoke", "--export-capability"]
+
+    def run(extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(DEV_TESTS), *args, extra], capture_output=True, text=True, env=env, timeout=120
+        )
+
+    printed = run("--print-overlay-flags")
+    listed = run("--list-overlays")
+    assert printed.returncode == 0 and listed.returncode == 0, printed.stderr + listed.stderr
+    assert printed.stdout.count("\n") == 1, "stdout must be exactly one line of flags"
+    plan = re.findall(r"^\s+(--with-\S+)\s+\[", listed.stdout, re.M)
+    assert printed.stdout.split() == plan

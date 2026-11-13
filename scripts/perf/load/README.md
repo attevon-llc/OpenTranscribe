@@ -51,13 +51,18 @@ export DEV_RATE_LIMIT_AUTH_PER_MINUTE=100000          # every simulated user log
 export DEV_RATE_LIMIT_DIRECTORY_PER_MINUTE=100000      # GET /files/owners, per IP
 export DEV_RATE_LIMIT_AUTH_METHODS_PER_MINUTE=100000
 export DEV_RATE_LIMIT_SEARCH_PER_MINUTE=100000         # per user; think time keeps it low anyway
-./opentr.sh start dev --fresh perf1337 --port-offset 300 --with-mock-llm
+./opentr.sh start dev --fresh perf1337 --port-offset 300 --with-mock-llm --no-bindmount --build
 ```
 
-Load the statement statistics `run_profile.sh` reads, once per stack and before seeding:
-`python3 scripts/lib/stack_target.py prepare --fresh perf1337 --pg-stat-statements` (the `ALTER SYSTEM`
-block lives there; see `docs-site/docs/developer-guide/performance-testing.md` section 1).
-`run_profile.sh` refuses to run without it and creates the extension.
+The stack must be built this way: `run.sh` asserts the image is this checkout's code (`code=image`),
+the schema is at head, the services are healthy and the backend container has the raised limit
+(`cenv:backend:RATE_LIMIT_AUTH_PER_MINUTE=100000`), and exits with the library's code (22 to 25;
+`scripts/CLAUDE.md`) and a `Fix:` line otherwise.
+
+`pg_stat_statements` needs no manual step: `build_snapshot.sh` and `run_profile.sh` run
+`python3 scripts/lib/stack_target.py prepare --fresh perf1337 --pg-stat-statements` for you on first
+use (the `ALTER SYSTEM` block lives there; see `docs-site/docs/developer-guide/performance-testing.md`
+section 1). It is a no-op once loaded. You can run that command yourself to do it earlier.
 The setting lives in the data volume's `postgresql.auto.conf`, so a `pg_restore` of a snapshot keeps it.
 
 Seed it with the flags the personas need (cached waveforms are off in the query review's

@@ -194,7 +194,9 @@ def test_writes_clean_up_after_themselves(run):
         ("collections.add_media", "collections.remove_media"),
         ("speakers.create", "speakers.merge"),
         ("files.hide", "files.unhide"),
-        ("files.prepare", "files.purge"),
+        # a prepared row is deleted (an abandoned one is destroyed outright, an uploaded one then
+        # purged: the purge pair is the files.upload line below)
+        ("files.prepare", "files.delete"),
         ("files.upload", "files.purge real upload"),
         ("llm.create", "llm.delete"),
         ("chat.create", "chat.delete"),

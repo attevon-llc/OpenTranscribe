@@ -57,6 +57,7 @@ ROUTES: dict[str, tuple[str, str]] = {
     'speakers.cross_media': ('GET', '/api/speakers/{speaker_uuid}/cross-media'),
     'collections.shares': ('GET', '/api/collections/{collection_uuid}/shares'),
     'summary.export': ('GET', '/api/files/{file_uuid}/summary/export'),
+    'files.export_document': ('POST', '/api/files/{file_uuid}/export/document'),
     'tasks.list': ('GET', '/api/tasks'),
     'tasks.active': ('GET', '/api/tasks/progress/active'),
     'my_files.status': ('GET', '/api/my-files/status'),

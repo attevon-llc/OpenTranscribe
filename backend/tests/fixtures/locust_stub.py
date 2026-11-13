@@ -289,6 +289,8 @@ class RecordingClient:
             assert kwargs["headers"].get("X-CSRF-Token") == "token", f"{method} {url} lacks CSRF"
         # A correct server refuses the cross-tenant canary (a file the caller does not own).
         default = 404 if "canary" in kwargs["name"] else 200
+        if method == "POST" and url.endswith("/export/document"):
+            default = 202  # queued, as the real endpoint answers
         status = next((st for pat, st in self.statuses.items() if re.fullmatch(pat, url)), default)
         return _Response(status, self._body(method, url))
 

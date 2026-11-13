@@ -139,7 +139,8 @@ class SeededUser(FastHttpUser):
             return
         fill = {'collection_uuid': resp.json()['uuid']}
         members = {'media_file_ids': random.sample(self.file_uuids, 2)}
-        self._call('collections.add_media', fill=fill, json=members)
+        # 409 is the app's correct answer for a file under a legal hold (content hold).
+        self._call('collections.add_media', fill=fill, json=members, expect=(200, 409))
         self._call('collections.media', fill=fill, params={'page': 1, 'page_size': 20})
         self._call('collections.remove_media', fill=fill, json=members)
         self._call('collections.delete', fill=fill, expect=(200, 204))

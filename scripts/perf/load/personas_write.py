@@ -378,8 +378,10 @@ class ChatUser(SeededUser):
         """Send one question and read the answer's server-sent events to the end.
 
         Records ``SSE <model> first token`` and ``SSE <model> whole answer``. The slow model
-        stalls past the app's first-token watchdog, so its ``error`` frame is the designed
-        outcome and is not a failure; for ``mock-gpt`` it is.
+        sleeps ``SLOW_FIRST_TOKEN_DELAY_S`` (45 s) before its first token, which is below the
+        app's 90 s first-token watchdog, so a token (or the ``done`` frame) normally arrives
+        and the ``error`` frame is also accepted; for ``mock-gpt`` an error is a failure. The
+        summary judges the slow row as the designed delay plus the first-token limit.
         """
         started = time.perf_counter()
         events: list[str] = []

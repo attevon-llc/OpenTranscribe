@@ -302,7 +302,10 @@ def test_the_api_connection_query_names_the_container_and_the_app_name(sampler):
     assert sampler.parse_ips("x'; DROP") == []  # nothing but an address reaches the SQL
 
 
-@pytest.mark.parametrize(("env", "want"), [("20 40", 60.0), ("5 0", 5.0), (" ", 60.0)])
+@pytest.mark.parametrize(
+    ("env", "want"),
+    [("20 40", 61.0), ("5 0", 6.0), (" ", 61.0), ("15 15 2", 62.0), ("20 40 2", 122.0)],
+)
 def test_the_pool_capacity_comes_from_the_containers_env(sampler, env, want):
     assert sampler.parse_pool_capacity(env) == want
 
@@ -347,3 +350,90 @@ def test_a_run_without_samples_csv_fails_instead_of_passing_vacuously(summarize,
     _report, verdict = summarize.summarize(run_dir, _limits())
 
     assert any("samples.csv missing" in f for f in verdict.failures), verdict.failures
+
+
+# --- pool capacity, holders, host pressure, memory slope, mock-slow -----------------------------
+
+
+def test_two_workers_each_own_a_pool_so_capacity_is_per_worker(sampler):
+    assert sampler.parse_pool_capacity("15 15 2") == 62.0
+
+
+def test_only_checked_out_connections_are_counted_against_capacity(sampler):
+    sql = sampler.API_CONN_SQL.format(app=sampler.API_APP_NAME, ips="172.18.0.5")
+
+    assert "state IS DISTINCT FROM 'idle'" in sql
+
+
+def test_thirty_connections_of_two_workers_are_not_saturated(summarize, tmp_path):
+    run_dir = _run_dir(tmp_path, read_p95=200, failures=0, api_connections=30)
+    rows = [[1.0 + 5 * i, "pgapi", "capacity", 62] for i in range(2)]
+    samples: list[list[object]] = [
+        list(r) for r in _read_rows(run_dir / "samples.csv") if r[2] != "capacity"
+    ]
+    _write(run_dir / "samples.csv", ["ts", "source", "name", "value"], samples + rows)
+
+    report, verdict = summarize.summarize(run_dir, _limits())
+
+    assert verdict.failures == []
+    assert "0.0% of 2 samples had the API at pool capacity" in report
+
+
+def _read_rows(path: Path) -> list[list[str]]:
+    with path.open(newline="") as fh:
+        return [row for i, row in enumerate(csv.reader(fh)) if i]
+
+
+def test_holders_are_parsed_with_pid_query_and_blockers(sampler):
+    text = '4242,opentranscribe-api,172.18.0.5,idle in transaction,Client:ClientRead,3.5,,"SELECT 1, 2"\n'
+
+    [row] = sampler.parse_holders(text)
+
+    assert row["pid"] == "4242"
+    assert row["xact_age_s"] == "3.5"
+    assert row["query"] == "SELECT 1, 2"
+    assert "pg_blocking_pids" in sampler.HOLDERS_SQL
+    assert "xact_start" in sampler.HOLDERS_SQL
+
+
+def test_host_pressure_and_load_become_rows(sampler):
+    psi = "some avg10=1.50 avg60=0.5 avg300=0.1 total=900\nfull avg10=0.25 avg60=0 avg300=0 total=70\n"
+
+    assert ("host", "psi_io_some_avg10", 1.5) in sampler.parse_pressure("io", psi)
+    assert ("host", "psi_io_full_total", 70.0) in sampler.parse_pressure("io", psi)
+    assert sampler.parse_loadavg("27.1 30.2 31.3 4/900 123")[0] == ("host", "loadavg_1m", 27.1)
+
+
+def test_warm_up_then_flat_memory_is_not_a_leak(summarize):
+    values = [1000.0, 1500.0, 1900.0, 2000.0] + [2000.0] * 8
+
+    assert summarize.second_half_growth(values) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_memory_still_rising_in_the_second_half_is_a_leak(summarize):
+    values = [1000.0] * 4 + [1000.0 + 100 * i for i in range(8)]
+
+    verdict = summarize.Verdict()
+    got = summarize.memory_verdict("mem_bytes:backend", values, _limits()["sampler"], verdict)
+
+    assert got == "**FAIL**"
+    assert "second half" in verdict.failures[0]
+
+
+def test_too_few_memory_samples_are_reported_not_passed(summarize):
+    verdict = summarize.Verdict()
+
+    got = summarize.memory_verdict("mem_bytes:x", [1.0, 9.0], _limits()["sampler"], verdict)
+
+    assert got == "too few"
+    assert verdict.failures == []
+
+
+def test_the_slow_stream_is_judged_after_its_designed_delay(summarize):
+    limits = _limits()
+
+    slow = summarize.limits_for("stream", "mock-slow first token", limits)
+    fast = summarize.limits_for("stream", "mock-gpt first token", limits)
+
+    assert fast == {"p95_ms": 5000}
+    assert slow == {"p95_ms": 5000 + limits["stream"]["slow_first_token_delay_ms"]}

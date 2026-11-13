@@ -76,7 +76,7 @@ people behind one address, with the rate limits left on), `leak` (20 minutes, me
 connections) and `soak-8h` / `soak-24h`. The long soaks are ready but not routinely run; the
 short profiles are the default, and every long shape can be shortened to minutes for a check.
 Pass and fail limits are the project's targets: page reads p95 300 ms, keyword search 800 ms,
-hybrid search 1.5 s, writes 500 ms, chat first token 5 s, errors under 0.1%, no deadlocks and no
+hybrid search 1.5 s, writes 500 ms, chat first token 5 s (`mock-slow` is judged after its designed 45 s delay), errors under 0.1%, no deadlocks and no
 cross-tenant hit. To watch Postgres, Redis and each container during a run, start the fresh stack with `--with-monitoring` and `COMPOSE_PROFILES=load-monitoring`.
 
 ### Before v0.7.0 (one API process, pool 20 + 40)

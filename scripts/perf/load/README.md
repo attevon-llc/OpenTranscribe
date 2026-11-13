@@ -91,6 +91,19 @@ A run that hits 429s is measuring the rate limiter; the scenario reports those a
 20 a minute **per client address** in the code (not configurable), so the chat users are a fixed
 count (`--chat-users`, default 8, 1 in smoke) rather than a share of the crowd.
 
+The team lead also queues a PDF or DOCX transcript export (`files.export_document`, tagged
+`write`, weight 1) because each one is a render on the download worker; the load is the queued
+job, and the job stream is not opened.
+
+### What the seed does not give a route
+
+Each of these changes which code path a route runs, so read a result with them in mind: the seed
+does not set `search.opensearch_model_id` (set it after the restore or neural search is not
+measured); seeded files have no analytics or `summary_data`, so the first `files.detail` of each
+computes and writes them; seeded speakers have no voiceprints in the index, so every
+`get_speaker_embedding` is a 404; files under a legal hold answer `collections.add_media` with
+409, which the persona accepts.
+
 ### Seeded files have no media objects (quiet the background repair first)
 
 The seed writes rows only; no MinIO object exists behind a seeded file. Background tasks that
@@ -264,7 +277,9 @@ python3 scripts/perf/load/summarize.py "$RUN"                                   
 | `locust_stats.csv` | per endpoint (route name + label): count, failures, p50 / p95 / p99. Streams are `SSE` rows (`mock-gpt first token`, `... whole answer`), the socket `WS` rows (`connect`, `echo round trip`, `notification <type>`), the pipeline a `PIPELINE upload->completed` row |
 | `locust_failures.csv` | failures by cause: `rate limited (429)`, `session lost (401)`, `HTTP <code>`, `no response` |
 | `locust_stats_history.csv` | percentiles over time (`--csv-full-history`) |
-| `samples.csv` | every 5 s: `pg_stat_activity` by state, connections idle in a transaction for over 1 s, the oldest transaction, the API's own connections against its pool capacity (`pgapi`, from Postgres), `db_pool_*` and `http_requests_in_flight` (from the API, so missing when it is saturated), every Celery queue's depth, CPU and memory of each container of this stack (by compose project label), memory and utilisation of the sampled GPUs |
+| `samples.csv` | every 5 s: `pg_stat_activity` by state, connections idle in a transaction for over 1 s, the oldest transaction, the API's own connections against its pool capacity (`pgapi`, from Postgres), `db_pool_*` and `http_requests_in_flight` (from the API, so missing when it is saturated), every Celery queue's depth, CPU and memory of each container of this stack (by compose project label), memory and utilisation of the sampled GPUs, and the host's load average and `/proc/pressure` (PSI) |
+| `holders.csv` | who holds a transaction open for over a second or waits on a lock: pid, application, client address, wait event, transaction age, `pg_blocking_pids`, the first 200 characters of the query |
+| `pgss.csv`, `<service>.log.gz` | (`tools/run_profile.sh`) the top 40 statements with `queryid` and the full query; the backend log and every worker, beat and OpenSearch log of the run window |
 | `summary.md` | the report: verdict, per-endpoint table with limits, failures by cause, percentile history, sampler min/mean/max, pool saturation, memory growth |
 | `report.html`, `locust.log`, `sampler.log` | Locust's own report and both logs |
 
@@ -273,7 +288,7 @@ keyword search 800 ms, hybrid search 1.5 s, writes 500 ms, chat first token 5 s,
 no deadlock (`pg_stat_database.deadlocks`, last sample minus first), no cross-tenant canary
 hit (and the canary must have run), no connection idle in a transaction for over a second, the
 pool saturated in at most 5% of samples, at least 80% of sampler sweeps producing data, memory
-growth under 25% across a soak. Change them there, in review.
+growth under 25% along the second half of the run (a fitted line, so warm-up is not a leak; fewer than 8 samples print `too few` and are not a pass). `mock-slow` sleeps 45 s by design, so its first token is judged as that delay plus 5 s. The pool limit is judged against `UVICORN_WORKERS x (DB_POOL_SIZE + DB_MAX_OVERFLOW + 1)` and counts only connections that are not idle. Change them there, in review.
 
 ## Reading the result
 

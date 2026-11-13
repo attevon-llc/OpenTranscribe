@@ -78,19 +78,6 @@ def _duplicate(route: Route) -> None:
     route.fulfill(json={"file_id": str(uuid.uuid4()), "is_duplicate": True})
 
 
-def _wait_until_parked(page: Page, held: list[Route], timeout_ms: int = 15000) -> None:
-    """Wait for the route handler to have been called.
-
-    The tray shows "preparing" before the stepper has issued the request (it hashes or reads
-    the file first), and the sync API runs a route handler only while it is pumping events, so
-    counting ``held`` right after the status assertion races the request.
-    """
-    waited = 0
-    while not held and waited < timeout_ms:
-        page.wait_for_timeout(100)
-        waited += 100
-
-
 def _status(page: Page) -> Any:
     return page.locator(f"{ROW} .upload-icon")
 
@@ -101,12 +88,12 @@ class TestUploadTray:
     ) -> None:
         held: list[Route] = held_routes.of(tray_page)
         tray_page.route("**/api/files/prepare", lambda route: held.append(route))
-        _submit_upload(tray_page, sample_audio)
+        with tray_page.expect_request("**/api/files/prepare"):
+            _submit_upload(tray_page, sample_audio)
 
         expect(_status(tray_page)).to_have_attribute("data-status", "preparing", timeout=15000)
         expect(tray_page.locator(f"{ROW} .upload-cancel-btn")).to_be_visible()
         expect(tray_page.locator(f"{ROW} .upload-name")).to_have_text(sample_audio.name)
-        _wait_until_parked(tray_page, held)
         assert len(held) == 1  # the request is genuinely parked, not raced
 
         _duplicate(held[0])
@@ -140,10 +127,10 @@ class TestUploadTray:
     ) -> None:
         held: list[Route] = held_routes.of(tray_page)
         tray_page.route("**/api/files/prepare", lambda route: held.append(route))
-        _submit_upload(tray_page, sample_audio)
+        with tray_page.expect_request("**/api/files/prepare"):
+            _submit_upload(tray_page, sample_audio)
         expect(_status(tray_page)).to_have_attribute("data-status", "preparing", timeout=15000)
 
-        _wait_until_parked(tray_page, held)
         tray_page.locator(f"{ROW} .upload-cancel-btn").click()
         expect(_status(tray_page)).to_have_attribute("data-status", "cancelled", timeout=15000)
         assert held[0].request.method == "POST"

@@ -19,6 +19,7 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
@@ -34,6 +35,7 @@ from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_REJECTED
 from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED
 from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_PASSWORD_CHANGE_REQUIRED
 from app.core.config import settings
+from app.core.exceptions import DomainError
 from tests.unit.auth_dependencies._helpers import ORDINARY_PATH
 from tests.unit.auth_dependencies._helpers import _real_request
 from tests.unit.auth_dependencies._helpers import _request
@@ -104,8 +106,8 @@ class TestBannerRequirementFallsBackOnAnUnusableSession:
         degrade to the ``.env`` value rather than raising.
 
         This does NOT kill ``x__banner_requirement__mutmut_1`` (``or`` -> ``and``
-        in the guard) — confirmed EQUIVALENT by ``--verify`` after this test was
-        written and still reported SURVIVED. Proof: ``hasattr(None, "query")`` is
+        in the guard); ``TestBannerRequirementCacheAndFallback`` does (a populated cache
+        separates them; the proof below assumed an empty cache). Reasoning: ``hasattr(None, "query")`` is
         already ``False``, so ``db is None`` is a strict subset of
         ``not hasattr(db, "query")`` — the first disjunct never adds a case the
         second does not already cover. Three cases, all identical either way:
@@ -497,3 +499,250 @@ class TestGetClientInfoResolvesThroughTrustedProxies:
         )
 
         assert gates_module._get_client_info(request) == ("203.0.113.9", "pytest-agent")
+
+
+# ── MUTKB (#1373): survivors of the first whole-module measurement of lifecycle_gates ──
+#
+# 61 survivors at wave-d 48318538d. The ones below are killed; the rest are EQUIVALENT and
+# listed with their proof in scripts/mutation-baselines.tsv (lifecycle_gates row).
+
+
+def _fake_banner_db() -> Any:
+    return SimpleNamespace(query=lambda *a, **k: None)
+
+
+@pytest.fixture
+def _banner_cache(monkeypatch):
+    """A clean process cache and last-read memo, restored afterwards."""
+    from app.core.process_auth_settings import clear_process_auth_settings_cache
+
+    clear_process_auth_settings_cache()
+    monkeypatch.setattr(gates_module, "_last_banner_read", None)
+    yield
+    clear_process_auth_settings_cache()
+
+
+def _no_read(*_a, **_k):
+    raise AssertionError("the config table must not be read")
+
+
+class TestAdmittedOnOptionalAuth:
+    @staticmethod
+    def _gates(monkeypatch, *, refuse: str | None = None) -> list[tuple]:
+        """Stub every gate clean except *refuse*; return the recorded calls."""
+        calls: list[tuple] = []
+
+        def spy(name, answer):
+            def _fn(*args):
+                calls.append((name, *args))
+                return answer if name == refuse else None if name != "pw" else False
+
+            return _fn
+
+        monkeypatch.setattr(
+            external_token_module, "_enforce_proxy_identity_consistency", spy("proxy", None)
+        )
+        monkeypatch.setattr(gates_module, "_approval_refusal", spy("approval", ("c", "m")))
+        monkeypatch.setattr(gates_module, "_expired_at", spy("expiry", datetime.now(UTC)))
+        monkeypatch.setattr(gates_module, "_banner_refusal_reason", spy("banner", "never"))
+        monkeypatch.setattr(gates_module, "_password_change_owed", spy("pw", True))
+        return calls
+
+    def test_every_gate_is_asked_with_the_real_user_request_and_session(self, monkeypatch):
+        calls = self._gates(monkeypatch)
+        user, request, db = _user(), _request(), object()
+
+        assert gates_module.admitted_on_optional_auth(user, request, db) is True
+
+        assert calls == [
+            ("proxy", user, request, db),
+            ("approval", user, db),
+            ("expiry", user),
+            ("banner", user, request, db),
+            ("pw", user, request),
+        ]
+
+    @pytest.mark.parametrize("gate", ["approval", "expiry", "banner", "pw"])
+    def test_any_single_refusing_gate_refuses(self, monkeypatch, gate):
+        self._gates(monkeypatch, refuse=gate)
+
+        assert gates_module.admitted_on_optional_auth(_user(), _request(), object()) is False
+
+    def test_an_inactive_account_is_refused_before_any_gate_runs(self, monkeypatch):
+        calls = self._gates(monkeypatch)
+
+        assert (
+            gates_module.admitted_on_optional_auth(_user(is_active=False), _request(), object())
+            is False
+        )
+        assert calls == []
+
+    def test_a_user_with_no_is_active_attribute_is_refused_not_a_crash(self, monkeypatch):
+        self._gates(monkeypatch)
+
+        assert (
+            gates_module.admitted_on_optional_auth(SimpleNamespace(), _request(), object()) is False
+        )
+
+    @pytest.mark.parametrize("error", [HTTPException(status_code=403), DomainError("x")])
+    def test_a_refusal_the_strict_path_would_raise_serves_as_anonymous(self, monkeypatch, error):
+        self._gates(monkeypatch)
+
+        def _raises(*_a):
+            raise error
+
+        monkeypatch.setattr(external_token_module, "_enforce_proxy_identity_consistency", _raises)
+
+        assert gates_module.admitted_on_optional_auth(_user(), _request(), object()) is False
+
+
+class TestApprovalRefusalUnrecognisedStatus:
+    def test_an_unrecognised_status_is_refused_as_a_rejection(self):
+        refusal = gates_module._approval_refusal(_user(approval_status="bogus"), object())
+
+        assert refusal is not None
+        assert refusal[0] == ERROR_CODE_ACCOUNT_REJECTED
+
+
+class TestAttributesAreReadWithSafeDefaults:
+    def test_the_audit_record_degrades_for_a_user_with_no_id_or_email(self, monkeypatch):
+        recorded: list[dict] = []
+        monkeypatch.setattr(gates_module.audit_logger, "log", lambda **kw: recorded.append(kw))
+
+        gates_module._audit_lifecycle_denial(
+            gates_module.AuditEventType.AUTH_ACCOUNT_EXPIRED,
+            SimpleNamespace(),
+            _request(),
+            error_code="X",
+            details={},
+        )
+
+        assert recorded[0]["user_id"] is None
+        assert recorded[0]["username"] == ""
+
+    def test_no_expiry_attribute_means_not_expired(self):
+        assert gates_module._expired_at(SimpleNamespace()) is None
+
+    def test_no_must_change_password_attribute_owes_nothing(self):
+        assert gates_module._password_change_owed(SimpleNamespace(), _request()) is False
+
+    def test_no_banner_acknowledged_attribute_reads_as_never_acknowledged(self, monkeypatch):
+        monkeypatch.setattr(gates_module, "_banner_requirement", lambda db: (True, None))
+
+        reason = gates_module._banner_refusal_reason(SimpleNamespace(), _request(), object())
+
+        assert reason == "never_acknowledged"
+
+
+class TestBannerRequirementCacheAndFallback:
+    def test_a_cache_hit_is_returned_without_reading_the_table(self, monkeypatch, _banner_cache):
+        import app.services.auth_config_queries as queries
+        from app.core.process_auth_settings import LOGIN_BANNER_STATE_KEY
+        from app.core.process_auth_settings import publish_process_auth_setting
+
+        changed = datetime(2026, 1, 2, tzinfo=UTC)
+        publish_process_auth_setting(LOGIN_BANNER_STATE_KEY, (True, changed))
+        monkeypatch.setattr(queries, "get_configs_by_keys", _no_read)
+
+        assert gates_module._banner_requirement(_fake_banner_db()) == (True, changed)
+
+    def test_a_session_without_query_ignores_the_cache_and_uses_env(
+        self, monkeypatch, _banner_cache
+    ):
+        from app.core.process_auth_settings import LOGIN_BANNER_STATE_KEY
+        from app.core.process_auth_settings import publish_process_auth_setting
+
+        publish_process_auth_setting(LOGIN_BANNER_STATE_KEY, (True, datetime.now(UTC)))
+        monkeypatch.setattr(settings, "LOGIN_BANNER_ENABLED", False)
+
+        assert gates_module._banner_requirement(SimpleNamespace()) == (False, None)
+
+    def test_a_database_read_is_published_under_the_banner_key(self, monkeypatch, _banner_cache):
+        import app.services.auth_config_queries as queries
+        from app.core.process_auth_settings import LOGIN_BANNER_STATE_KEY
+        from app.core.process_auth_settings import lookup_process_auth_setting
+
+        changed = datetime(2026, 3, 4, tzinfo=UTC)
+        rows = {
+            "login_banner_enabled": SimpleNamespace(config_value="true"),
+            "login_banner_text": SimpleNamespace(updated_at=changed),
+        }
+        monkeypatch.setattr(queries, "get_configs_by_keys", lambda db, keys: rows)
+
+        assert gates_module._banner_requirement(_fake_banner_db()) == (True, changed)
+        assert lookup_process_auth_setting(LOGIN_BANNER_STATE_KEY) == (True, changed)
+
+    def test_a_failed_read_warns_with_the_setting_name_and_traceback(
+        self, monkeypatch, caplog, _banner_cache
+    ):
+        import app.services.auth_config_queries as queries
+
+        def _boom(db, keys):
+            raise RuntimeError("connection reset")
+
+        monkeypatch.setattr(queries, "get_configs_by_keys", _boom)
+        monkeypatch.setattr(settings, "LOGIN_BANNER_ENABLED", False)
+
+        with caplog.at_level("WARNING", logger=gates_module.logger.name):
+            assert gates_module._banner_requirement(_fake_banner_db()) == (False, None)
+
+        record = next(r for r in caplog.records if "'login_banner'" in r.getMessage())
+        assert "using the last value read, else the .env value." in record.getMessage()
+        assert record.exc_info is not None and record.exc_info[0] is RuntimeError
+
+    def test_a_failed_read_keeps_a_banner_the_last_read_enabled(self, monkeypatch, _banner_cache):
+        import app.services.auth_config_queries as queries
+
+        def _boom(db, keys):
+            raise RuntimeError("connection reset")
+
+        monkeypatch.setattr(queries, "get_configs_by_keys", _boom)
+        monkeypatch.setattr(settings, "LOGIN_BANNER_ENABLED", False)
+        monkeypatch.setattr(gates_module, "_last_banner_read", (True, None))
+
+        assert gates_module._banner_requirement(_fake_banner_db()) == (True, None)
+
+    def test_a_database_overload_propagates_instead_of_falling_back(
+        self, monkeypatch, _banner_cache
+    ):
+        from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+
+        import app.services.auth_config_queries as queries
+
+        def _overloaded(db, keys):
+            raise PoolTimeoutError("pool exhausted")
+
+        monkeypatch.setattr(queries, "get_configs_by_keys", _overloaded)
+
+        with pytest.raises(PoolTimeoutError):
+            gates_module._banner_requirement(_fake_banner_db())
+
+
+class TestLifecycleDiagnosticsAreLogged:
+    def test_an_unresolvable_client_is_logged_with_a_traceback_and_degrades(
+        self, monkeypatch, caplog
+    ):
+        def _boom(request):
+            raise RuntimeError("odd request")
+
+        monkeypatch.setattr(gates_module, "_get_client_info", _boom)
+
+        with caplog.at_level("DEBUG", logger=gates_module.logger.name):
+            assert gates_module._lifecycle_client_info(_request()) == ("unknown", "unknown")
+
+        record = next(r for r in caplog.records if "client info" in r.getMessage())
+        assert record.getMessage() == "Could not resolve client info for lifecycle audit"
+        assert record.exc_info is not None and record.exc_info[0] is RuntimeError
+
+    def test_a_banner_refusal_logs_the_user_and_the_reason(self, monkeypatch, caplog):
+        monkeypatch.setattr(gates_module, "_banner_requirement", lambda db: (True, None))
+
+        with (
+            caplog.at_level("DEBUG", logger=gates_module.logger.name),
+            pytest.raises(HTTPException),
+        ):
+            gates_module._enforce_banner_acknowledgment(_user(), _request(), object())
+
+        assert "Banner acknowledgment required for user 9001 (never_acknowledged)" in [
+            r.getMessage() for r in caplog.records
+        ]

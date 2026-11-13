@@ -17,8 +17,8 @@ test-quality auditor was written for.
 
 What is asserted, and why each one is a separate test rather than a comment:
 
-* the shared dev stack is refused three independent ways — by declared offset, by
-  resolved port, and by the compose project that actually owns those ports
+* the shared dev stack is refused three independent ways — by declared offset, by the
+  compose project name, and by the project that OBSERVABLY owns the capture ports
 * a stack serving a **baked** image (prod / nginx / PKI, which run published
   ``davidamacey/opentranscribe-*`` images) is refused, because a capture there
   photographs the PUBLISHED UI while looking exactly like a successful run
@@ -36,6 +36,7 @@ reports a crash instead of a refusal.
 from __future__ import annotations
 
 import ast
+import json
 import os
 import shutil
 import subprocess
@@ -44,61 +45,33 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.test_stack_target import FAKE_DOCKER
+from tests.unit.test_stack_target import mk
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "scripts" / "e2e" / "update-visual-baselines.sh"
 TEST_MODULE = REPO_ROOT / "backend" / "tests" / "e2e" / "test_visual_regression.py"
 SCRIPT_REL = "scripts/e2e/update-visual-baselines.sh"
 
-#: A fake `docker` that answers only what the script's two observation checks ask.
-#: Driven entirely by env vars so a test declares a stack shape as data.
-FAKE_DOCKER = """\
-#!/bin/bash
-case "$1" in
-  ps)
-    fmt=""; svc=""
-    shift
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        --format) fmt="$2"; shift 2 ;;
-        --filter) case "$2" in *com.docker.compose.service=*) svc="${2##*=}" ;; esac; shift 2 ;;
-        *) shift ;;
-      esac
-    done
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      name="${line%%|*}"
-      [[ -n "$svc" && "$name" != *"-$svc" ]] && continue
-      if [[ "$fmt" == '{{.Names}}' ]]; then printf '%s\\n' "$name"
-      else printf '%s\\n' "$line"; fi
-    done <<< "${FAKE_PS:-}"
-    ;;
-  inspect)
-    fmt=""; name=""
-    shift
-    while [[ $# -gt 0 ]]; do
-      case "$1" in --format) fmt="$2"; shift 2 ;; *) name="$1"; shift ;; esac
-    done
-    var_p="FAKE_PROJECT_${name//-/_}"
-    var_m="FAKE_MOUNTS_${name//-/_}"
-    if [[ "$fmt" == *"com.docker.compose.project"* ]]; then printf '%s\\n' "${!var_p:-}"
-    else printf '%s\\n' "${!var_m:-}"; fi
-    ;;
-  info) echo "fake docker info" ;;
-  *) exit 0 ;;
-esac
-"""
 
+@pytest.fixture
+def fake_docker_dir(tmp_path: Path) -> Path:
+    """A directory to prepend to PATH holding the SAME fake docker test_stack_target.py uses.
 
-@pytest.fixture(scope="module")
-def fake_docker_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A directory to prepend to PATH so `docker` is ours, not the daemon's."""
-    # Annotated because pytest's `mktemp` resolves as `Any` here; naming the type keeps
-    # every use below checked rather than widening this fixture's return to `Any`.
-    d: Path = tmp_path_factory.mktemp("fake-docker-bin")
-    binary = d / "docker"
+    The script's observation check now goes through scripts/lib/stack_target.py, so its fake is
+    the library's: containers are declared as data in ``$FAKE_DOCKER_MODEL`` (JSON).
+    """
+    binary = tmp_path / "docker"
     binary.write_text(FAKE_DOCKER, encoding="utf-8")
     binary.chmod(0o755)
-    return d
+    (tmp_path / "docker.log").write_text("")
+    return tmp_path
+
+
+def stack_model(tmp_path: Path, containers: list[dict]) -> dict[str, str]:
+    model = tmp_path / "model.json"
+    model.write_text(json.dumps({"containers": containers}), encoding="utf-8")
+    return {"FAKE_DOCKER_MODEL": str(model), "FAKE_DOCKER_LOG": str(tmp_path / "docker.log")}
 
 
 def run_check(
@@ -123,17 +96,16 @@ def run_check(
         set -uo pipefail
         REPO_ROOT={REPO_ROOT!s}
         source "$REPO_ROOT/scripts/lib/compose-project.sh"
+        source "$REPO_ROOT/scripts/lib/stack-target.sh"
         source "$REPO_ROOT/{SCRIPT_REL}"
         set +e   # the script turns on `set -e` at source time
-        for fn in derive_surfaces assert_gpu_device_allowed port_owner_project \\
-                  assert_stack_serves_local_code; do
+        for fn in derive_surfaces assert_gpu_device_allowed observe_capture_stack; do
             if [[ "$(type -t "$fn")" != "function" ]]; then
                 echo "SCRIPT_NOT_SOURCED: $fn is not defined"
                 exit 97
             fi
         done
         derive_surfaces
-        derive_shared_ports
         derive_base_ports
         {call}
         echo "RC=$?"
@@ -185,29 +157,6 @@ def test_the_script_parses() -> None:
 # would be correct today and silently wrong later — the same failure the script
 # avoids by deriving them in the first place.
 # ---------------------------------------------------------------------------
-def test_the_shared_ports_are_read_from_the_suites_own_constant() -> None:
-    """The script and the suite must not be able to disagree about "shared"."""
-    proc = run_check('printf "PORTS=%s\\n" "${SHARED_PORTS[*]}"; true')
-    assert rc_of(proc) == 0
-    derived = next(
-        line.removeprefix("PORTS=").split()
-        for line in proc.stdout.splitlines()
-        if line.startswith("PORTS=")
-    )
-    source = TEST_MODULE.read_text(encoding="utf-8")
-    tuple_line = next(
-        line for line in source.splitlines() if line.startswith("_SHARED_STACK_HOSTS")
-    )
-    expected = sorted(
-        {part.split(":")[1].strip('",)') for part in tuple_line.split() if ":" in part}
-    )
-    assert sorted(set(derived)) == expected, (
-        f"the script derived shared ports {sorted(set(derived))} but "
-        f"_SHARED_STACK_HOSTS names {expected}. A script that thinks the shared "
-        f"stack is somewhere else will happily capture against it."
-    )
-
-
 def test_the_surface_list_is_read_from_the_suites_own_constant() -> None:
     proc = run_check('printf "S=%s\\n" "${ALL_SURFACES[*]}"; true')
     assert rc_of(proc) == 0
@@ -234,7 +183,7 @@ def test_the_surface_list_is_read_from_the_suites_own_constant() -> None:
 # ---------------------------------------------------------------------------
 def test_port_offset_zero_is_refused() -> None:
     """Offset 0 IS the shared dev stack's ports, by definition."""
-    proc = run_check("assert_offset_is_not_the_shared_stack 0 5173 5174")
+    proc = run_check("assert_offset_is_not_the_shared_stack 0")
     assert rc_of(proc) == 1, (
         "the script accepted --port-offset 0, which points the capture at the "
         "shared dev stack. Baselines taken there record the developer's library."
@@ -245,15 +194,9 @@ def test_port_offset_zero_is_refused() -> None:
     )
 
 
-def test_a_resolved_shared_port_is_refused_even_at_a_nonzero_offset() -> None:
-    """Arriving at 5174 by arithmetic is the same mistake as declaring it."""
-    proc = run_check("assert_offset_is_not_the_shared_stack 1 5174 5175")
-    assert rc_of(proc) == 1
-
-
 def test_an_isolated_offset_is_accepted() -> None:
     """The must-stay-clean control. Without it, a check that refuses EVERYTHING passes."""
-    proc = run_check("assert_offset_is_not_the_shared_stack 100 5273 5274")
+    proc = run_check("assert_offset_is_not_the_shared_stack 100")
     assert rc_of(proc) == 0, (
         "the refusal fires on a legitimately isolated stack, so the only way to "
         "use the tool would be to bypass it"
@@ -276,148 +219,96 @@ def test_the_fresh_capture_project_is_accepted() -> None:
 # The OBSERVATION checks. The two above are statements of intent; only these can
 # catch a stack that is up but is not the one the operator thinks it is.
 # ---------------------------------------------------------------------------
-def test_ports_owned_by_the_live_stack_are_refused(fake_docker_dir: Path) -> None:
-    proc = run_check(
-        "assert_ports_are_owned_by_the_capture_stack otfresh-visual 5273 5274",
-        fake_docker=fake_docker_dir,
-        env={
-            "FAKE_PS": (
-                "opentranscribe-frontend|127.0.0.1:5273->5173/tcp\n"
-                "opentranscribe-backend|127.0.0.1:5274->8080/tcp"
-            ),
-            "FAKE_PROJECT_opentranscribe_frontend": "opentranscribe",
-            "FAKE_PROJECT_opentranscribe_backend": "opentranscribe",
-        },
-    )
-    assert rc_of(proc) == 1, (
-        "the offset ports were held by the LIVE stack and the script proceeded. "
-        "This is the case the two declared-intent checks structurally cannot see: "
-        "the operator asked for an isolated stack and got somebody else's."
-    )
+def _fresh_stack(project: str = "otfresh-visual", bind_root: str | None = None) -> list[dict]:
+    src = bind_root if bind_root is not None else str(REPO_ROOT)
+    mounts = [{"Type": "bind", "Source": f"{src}/backend", "Destination": "/app"}]
+    fmounts = [{"Type": "bind", "Source": f"{src}/frontend", "Destination": "/app"}]
+    health = {"State": {"Status": "running", "Health": {"Status": "healthy"}}}
+    return [
+        mk(
+            f"{project}-backend",
+            project,
+            "backend",
+            "127.0.0.1:5274->8080/tcp",
+            inspect={**health, "Mounts": mounts},
+        ),
+        mk(
+            f"{project}-frontend",
+            project,
+            "frontend",
+            "127.0.0.1:5273->5173/tcp",
+            inspect={**health, "Mounts": fmounts},
+        ),
+        mk(f"{project}-postgres", project, "postgres", "127.0.0.1:5276->5432/tcp", inspect=health),
+        mk(f"{project}-redis", project, "redis", "", inspect=health),
+    ]
 
 
-def test_ports_owned_by_the_capture_stack_are_accepted(fake_docker_dir: Path) -> None:
-    proc = run_check(
-        "assert_ports_are_owned_by_the_capture_stack otfresh-visual 5273 5274",
-        fake_docker=fake_docker_dir,
-        env={
-            "FAKE_PS": (
-                "otfresh-visual-frontend|127.0.0.1:5273->5173/tcp\n"
-                "otfresh-visual-backend|127.0.0.1:5274->8080/tcp"
-            ),
-            "FAKE_PROJECT_otfresh_visual_frontend": "otfresh-visual",
-            "FAKE_PROJECT_otfresh_visual_backend": "otfresh-visual",
-        },
-    )
-    assert rc_of(proc) == 0
-
-
-def test_an_unpublished_port_is_refused(fake_docker_dir: Path) -> None:
-    """Nothing listening is not "fine" — it means the capture stack is not up."""
-    proc = run_check(
-        "assert_ports_are_owned_by_the_capture_stack otfresh-visual 5273 5274",
-        fake_docker=fake_docker_dir,
-        env={"FAKE_PS": ""},
-    )
-    assert rc_of(proc) == 1
-
-
-def test_port_matching_is_anchored_so_15273_is_not_5273(fake_docker_dir: Path) -> None:
-    """A substring match on the port number would find the wrong container."""
-    proc = run_check(
-        'printf "OWNER=[%s]\\n" "$(port_owner_project 5273)"; true',
-        fake_docker=fake_docker_dir,
-        env={
-            "FAKE_PS": "other-app|127.0.0.1:15273->5173/tcp",
-            "FAKE_PROJECT_other_app": "someone-else",
-        },
-    )
-    assert rc_of(proc) == 0
-    assert "OWNER=[]" in proc.stdout, (
-        "port 15273 was matched as port 5273, so the ownership check would report "
-        "an unrelated project's container as the owner of our port"
-    )
-
-
-# ---------------------------------------------------------------------------
-# The stack must be serving THIS CHECKOUT'S SOURCE, not a published image.
-# ---------------------------------------------------------------------------
-def _mounts_env(backend: str, frontend: str) -> dict[str, str]:
-    return {
-        "FAKE_PS": "otfresh-visual-backend|\notfresh-visual-frontend|",
-        "FAKE_MOUNTS_otfresh_visual_backend": backend,
-        "FAKE_MOUNTS_otfresh_visual_frontend": frontend,
+def _observe(
+    tmp_path: Path, containers: list[dict], fake_docker_dir: Path
+) -> subprocess.CompletedProcess[str]:
+    # The HTTP readiness probe of `healthy` has no fake here (test_stack_target.py owns it), so
+    # it is bounded to 1 s and overridden (recorded on stderr by the library). The override is
+    # applied AFTER the check runs, so without the bound it would wait the full 300 s first.
+    env = {
+        **stack_model(tmp_path, containers),
+        "ST_ALLOW": "healthy=http probe is not faked",
+        "ST_HEALTH_TIMEOUT": "1",
     }
-
-
-def test_a_dev_stack_bind_mounting_this_checkout_is_accepted(fake_docker_dir: Path) -> None:
-    """docker-compose.override.yml's ./backend:/app and ./frontend:/app."""
-    proc = run_check(
-        "assert_stack_serves_local_code otfresh-visual",
+    # Gitignored fonts are present in a fully set-up checkout and absent from a bare worktree;
+    # the check is exercised on its own in test_stack_target.py, so give it a fonts dir here.
+    return run_check(
+        "FRESH_NAME=visual OPENTR=/bin/true; observe_capture_stack",
         fake_docker=fake_docker_dir,
-        env=_mounts_env(
-            f"bind:{REPO_ROOT}/backend->/app volume:x->/app/venv ",
-            f"bind:{REPO_ROOT}/frontend->/app volume:y->/app/node_modules ",
-        ),
+        env=env,
     )
-    assert rc_of(proc) == 0, (
-        "a normal dev-shaped capture stack was refused, which would make the tool "
-        "unusable and push people straight back to the raw env var"
-    )
-    assert "DEV" in proc.stderr, "the detected stack mode must be printed either way"
 
 
-def test_a_baked_image_stack_is_refused(fake_docker_dir: Path) -> None:
-    """prod / nginx / PKI overlays run published images; local changes are invisible.
+def test_a_stack_whose_ports_belong_to_the_live_project_is_refused(
+    tmp_path: Path, fake_docker_dir: Path
+) -> None:
+    """The case the declared-intent checks cannot see: the offset ports are somebody else's.
 
-    Every symptom of success is present — stack up, isolated, seeded, right
-    ports — while the pixels are of the PUBLISHED UI. Unfalsifiable from the
-    image alone, so it must be refused structurally.
+    The LIVE project's containers are listed first, and otfresh-visual publishes nothing, so any
+    first-match resolution would report the live stack as the capture stack.
     """
-    proc = run_check(
-        "assert_stack_serves_local_code otfresh-visual",
-        fake_docker=fake_docker_dir,
-        env=_mounts_env(
-            "volume:data->/data ",
-            "volume:z->/usr/share/nginx/html ",
-        ),
+    live = _fresh_stack("transcribe-app")
+    proc = _observe(tmp_path, live, fake_docker_dir)
+    assert rc_of(proc) != 0, (
+        "the capture ports were held by the LIVE stack and observe_capture_stack accepted it"
     )
-    assert rc_of(proc) == 1, (
-        "a stack running pre-built davidamacey/opentranscribe-* images was accepted. "
-        "The baselines it produces are pictures of the published UI, and nothing in "
-        "them would say so."
+
+
+def test_a_dev_stack_bind_mounting_this_checkout_is_accepted(
+    tmp_path: Path, fake_docker_dir: Path
+) -> None:
+    fonts = REPO_ROOT / "frontend" / "static" / "fonts"
+    has_fonts = fonts.is_dir() and any(fonts.iterdir())
+    proc = _observe(tmp_path, _fresh_stack(), fake_docker_dir)
+    # The fonts are a gitignored, worktree-only asset: a bare worktree must be REFUSED (26),
+    # a set-up checkout accepted. Either way nothing else about this stack may fail.
+    assert rc_of(proc) == (0 if has_fonts else 26), proc.stderr
+
+
+def test_a_baked_image_stack_is_refused(tmp_path: Path, fake_docker_dir: Path) -> None:
+    """A prod/nginx/PKI shaped stack photographs the PUBLISHED UI while looking like success."""
+    stack = _fresh_stack()
+    for container in stack:
+        container["inspect"]["Mounts"] = []
+    proc = _observe(tmp_path, stack, fake_docker_dir)
+    assert rc_of(proc) == 23, proc.stderr  # STALE_CODE
+
+
+def test_a_bind_mount_of_another_checkout_is_refused(tmp_path: Path, fake_docker_dir: Path) -> None:
+    proc = _observe(
+        tmp_path, _fresh_stack(bind_root="/mnt/nvm/repos/some-other-checkout"), fake_docker_dir
     )
-    assert "BAKED" in proc.stderr
+    assert rc_of(proc) == 23, proc.stderr
 
 
-def test_a_half_baked_stack_is_refused(fake_docker_dir: Path) -> None:
-    """Backend from source, frontend from an image, is still a wrong picture."""
-    proc = run_check(
-        "assert_stack_serves_local_code otfresh-visual",
-        fake_docker=fake_docker_dir,
-        env=_mounts_env(
-            f"bind:{REPO_ROOT}/backend->/app ",
-            "volume:z->/usr/share/nginx/html ",
-        ),
-    )
-    assert rc_of(proc) == 1
-
-
-def test_a_bind_mount_of_another_checkout_is_refused(fake_docker_dir: Path) -> None:
-    """Having *a* bind mount is not the property; having THIS checkout's is.
-
-    A second worktree's stack is local code — just not the code the operator is
-    looking at, which produces a baseline attributed to the wrong branch.
-    """
-    proc = run_check(
-        "assert_stack_serves_local_code otfresh-visual",
-        fake_docker=fake_docker_dir,
-        env=_mounts_env(
-            "bind:/some/other/checkout/backend->/app ",
-            "bind:/some/other/checkout/frontend->/app ",
-        ),
-    )
-    assert rc_of(proc) == 1
+def test_an_absent_stack_is_refused(tmp_path: Path, fake_docker_dir: Path) -> None:
+    proc = _observe(tmp_path, [], fake_docker_dir)
+    assert rc_of(proc) == 20, proc.stderr  # NO_PROJECT, never a pass
 
 
 # ---------------------------------------------------------------------------
@@ -452,8 +343,7 @@ def test_a_nonzero_gpu_override_is_allowed() -> None:
     [
         "assert_offset_is_not_the_shared_stack",
         "assert_project_is_not_live",
-        "assert_ports_are_owned_by_the_capture_stack",
-        "assert_stack_serves_local_code",
+        "observe_capture_stack",
         "assert_gpu_device_allowed",
     ],
 )

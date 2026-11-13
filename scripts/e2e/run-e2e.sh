@@ -9,16 +9,15 @@
 #   ./scripts/e2e/run-e2e.sh -m upload           # one marker (upload/search/...)
 #   ./scripts/e2e/run-e2e.sh --headed            # visible browser (DISPLAY=:11)
 #   ./scripts/e2e/run-e2e.sh tests/e2e/test_search.py -v   # pytest passthrough
-#   ./scripts/e2e/run-e2e.sh --fresh myname      # target an isolated `--fresh --port-offset`
-#                                                 # deployment (offset read from .fresh/myname.offset)
+#   ./scripts/e2e/run-e2e.sh --fresh myname      # target the isolated `otfresh-myname` deployment
 #
-# E2E_FRONTEND_URL / E2E_BACKEND_URL (or --fresh <name>) point this runner at an
-# isolated stack instead of the live dev one (issue #965). Without either, it targets
-# http://localhost:5173 / :5174, same as always. `--fresh <name>` also exports
-# POSTGRES_PORT/OPENSEARCH_PORT/MINIO_PORT for the handful of fixtures that talk to
-# those services directly rather than through the backend's HTTP API — set them by hand
-# (matching your own `--port-offset`) if you point this at a fresh stack via the env vars
-# instead of `--fresh <name>`, or those fixtures will silently read the main dev stack.
+# The target is resolved by scripts/lib/stack_target.py from the compose project's OBSERVED
+# ports (issue #965), then checked (healthy, code=bind, the fonts asset) before any phase; a
+# failure exits with its stack-target code (20-28, scripts/CLAUDE.md). With no flag it targets
+# COMPOSE_PROJECT_NAME or the one live project; E2E_FRONTEND_URL + E2E_BACKEND_URL name a
+# stack by hand (the project is whatever publishes the backend port). The resolver also
+# exports POSTGRES_PORT/OPENSEARCH_PORT/MINIO_PORT/REDIS_PORT for the fixtures that talk to
+# those services directly, so they follow the same project.
 
 set -euo pipefail
 
@@ -55,51 +54,6 @@ while [[ $# -gt 0 ]]; do
 done
 set -- "${_RUN_E2E_FILTERED_ARGS[@]}"
 
-if [[ -n "$FRESH_NAME" ]]; then
-    FRESH_OFFSET_FILE="$PROJECT_ROOT/.fresh/${FRESH_NAME}.offset"
-    if [[ -f "$FRESH_OFFSET_FILE" ]]; then
-        FRESH_OFFSET="$(cat "$FRESH_OFFSET_FILE")"
-    else
-        FRESH_OFFSET=0
-        echo -e "${YELLOW}--fresh ${FRESH_NAME}: no ${FRESH_OFFSET_FILE} found (no --port-offset" \
-            "recorded for this deployment) -- assuming offset 0${NC}" >&2
-    fi
-    if ! [[ "$FRESH_OFFSET" =~ ^[0-9]+$ ]]; then
-        echo -e "${RED}--fresh ${FRESH_NAME}: ${FRESH_OFFSET_FILE} does not contain a plain" \
-            "integer offset (got: '${FRESH_OFFSET}')${NC}" >&2
-        exit 1
-    fi
-    export E2E_FRONTEND_URL="http://localhost:$((5173 + FRESH_OFFSET))"
-    export E2E_BACKEND_URL="http://localhost:$((5174 + FRESH_OFFSET))"
-    # POSTGRES_PORT/OPENSEARCH_PORT/MINIO_PORT: fixtures that talk to those services
-    # DIRECTLY (never through the backend's HTTP API — e.g. owned_corpus.py's
-    # _wait_for_chunks_indexed polling OpenSearch, or cleanup-test-data.py's Postgres
-    # sweep) resolve their target from these env vars via backend/tests/conftest.py,
-    # completely independent of E2E_FRONTEND_URL/E2E_BACKEND_URL above. Without them a
-    # `--fresh --port-offset` run's HTTP traffic correctly hits the isolated stack while
-    # every direct-connection fixture silently hits the MAIN dev stack's Postgres/
-    # OpenSearch instead — a mixed-stack read that manufactured 48 spurious `owned_*`
-    # fixture failures (fanning out from one shared session fixture) when this was
-    # missing, even though #965's frontend/backend URL fix worked correctly. conftest.py
-    # already special-cases these exact three names for exactly this scenario ("this
-    # brings MinIO/OpenSearch in line" with POSTGRES_PORT's existing behaviour) — this
-    # was the missing wiring on the `--fresh <name>` convenience path, not a new contract.
-    export POSTGRES_PORT="$((5176 + FRESH_OFFSET))"
-    export OPENSEARCH_PORT="$((5180 + FRESH_OFFSET))"
-    export MINIO_PORT="$((5178 + FRESH_OFFSET))"
-    # The test IdP overlays are isolated and offset too (issue #347), so the auth fixtures
-    # must follow them; otherwise they reach whatever owns the stock ports on this host.
-    export KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:$((8180 + FRESH_OFFSET))}"
-    export LLDAP_URL="${LLDAP_URL:-http://localhost:$((17170 + FRESH_OFFSET))}"
-    export LLDAP_LDAP_PORT="${LLDAP_LDAP_PORT:-$((3890 + FRESH_OFFSET))}"
-fi
-
-# Same defaults conftest.py's FRONTEND_URL/BACKEND_URL constants use, so a bare
-# invocation with neither --fresh nor an env var behaves exactly as before.
-E2E_FRONTEND_URL="${E2E_FRONTEND_URL:-http://localhost:5173}"
-E2E_BACKEND_URL="${E2E_BACKEND_URL:-http://localhost:5174}"
-export E2E_FRONTEND_URL E2E_BACKEND_URL
-
 # Pure bash URL host/port extraction (no python dependency for this early check).
 # Assumes the simple `scheme://host[:port]` shape every URL this script deals with has.
 url_host() {
@@ -116,6 +70,71 @@ url_port() {
         echo "$2"
     fi
 }
+
+# The target stack comes from the shared resolver (scripts/lib/stack_target.py), never from
+# port arithmetic: it reads the OBSERVED published ports of one compose project, so a missing
+# `.fresh/<name>.offset` can no longer silently mean "offset 0 = the live stack" (plan P3,
+# issue #965's mixed-stack failure). It exports COMPOSE_PROJECT_NAME, every *_PORT the stack
+# publishes (POSTGRES/OPENSEARCH/MINIO/REDIS/BACKEND, the IdP and mock-LLM ports),
+# OT_RESOLVED_MOCK_*_PORT and E2E_FRONTEND_URL/E2E_BACKEND_URL, and refuses (exit 21) when an
+# already-exported port belongs to a different project.
+# shellcheck source=scripts/lib/stack-target.sh
+source "$PROJECT_ROOT/scripts/lib/stack-target.sh"
+EXPLICIT_FRONTEND_URL="${E2E_FRONTEND_URL:-}"
+EXPLICIT_BACKEND_URL="${E2E_BACKEND_URL:-}"
+st_rc=0
+if [[ -n "$FRESH_NAME" ]]; then
+    st_target --fresh "$FRESH_NAME" || st_rc=$?
+elif [[ -n "$EXPLICIT_BACKEND_URL" ]]; then
+    # URLs given by hand: the project is whatever publishes the backend's port.
+    _backend_owner="$(python3 "$PROJECT_ROOT/scripts/lib/stack_target.py" resolve \
+        --port-owner "$(url_port "$EXPLICIT_BACKEND_URL" 80)")" || _backend_owner=""
+    if [[ -z "$_backend_owner" ]]; then
+        echo -e "${RED}stack-target: no compose project publishes ${EXPLICIT_BACKEND_URL}." \
+            "Start the stack (./opentr.sh start dev) or pass --fresh <name>.${NC}" >&2
+        exit 20
+    fi
+    st_target --project "$_backend_owner" || st_rc=$?
+else
+    st_target || st_rc=$?
+fi
+if [[ "$st_rc" -ne 0 ]]; then
+    echo -e "${RED}E2E target stack could not be resolved safely (stack-target exit ${st_rc}).${NC}" >&2
+    exit "$st_rc"
+fi
+# Hand-given URLs win over the observed ones, but only after the ownership cross-check below.
+[[ -z "$EXPLICIT_FRONTEND_URL" ]] || E2E_FRONTEND_URL="$EXPLICIT_FRONTEND_URL"
+[[ -z "$EXPLICIT_BACKEND_URL" ]] || E2E_BACKEND_URL="$EXPLICIT_BACKEND_URL"
+: "${E2E_FRONTEND_URL:?stack-target resolved no frontend port for project $ST_PROJECT}"
+: "${E2E_BACKEND_URL:?stack-target resolved no backend port for project $ST_PROJECT}"
+export E2E_FRONTEND_URL E2E_BACKEND_URL
+
+# The test IdP overlays are isolated and offset too (issue #347), so the auth fixtures follow
+# the ports the resolver observed; without an overlay running they keep their own defaults.
+[[ -z "${KEYCLOAK_PORT:-}" ]] || export KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}"
+[[ -z "${LDAP_TEST_UI_PORT:-}" ]] || export LLDAP_URL="${LLDAP_URL:-http://localhost:${LDAP_TEST_UI_PORT}}"
+[[ -z "${LDAP_TEST_PORT:-}" ]] || export LLDAP_LDAP_PORT="${LLDAP_LDAP_PORT:-${LDAP_TEST_PORT}}"
+
+# Frontend and backend must be the SAME project: a hand-given pair can name two stacks.
+for _url in "$E2E_FRONTEND_URL" "$E2E_BACKEND_URL"; do
+    _owner="$(python3 "$PROJECT_ROOT/scripts/lib/stack_target.py" resolve \
+        --port-owner "$(url_port "$_url" 80)")" || _owner=""
+    if [[ "$_owner" != "$ST_PROJECT" ]]; then
+        echo -e "${RED}stack-target: ${_url} is published by '${_owner:-nothing}', not by the" \
+            "target project '${ST_PROJECT}' (a mixed-stack run, issue #965).${NC}" >&2
+        exit 21
+    fi
+done
+
+# `healthy` and the gitignored fonts (a WORKTREE-only asset: the visual and a11y captures
+# refuse to run without Poppins) are checked once here, before any phase. `code=bind` proves a
+# dev stack serves THIS checkout; set E2E_REQUIRE_CODE=any for an image-based stack (it then
+# accepts a bind OR an image whose sha is HEAD). ST_ALLOW='<check>=<reason>' overrides, recorded.
+st_rc=0
+st_require healthy asset:frontend-fonts "code=${E2E_REQUIRE_CODE:-bind}" || st_rc=$?
+if [[ "$st_rc" -ne 0 ]]; then
+    exit "$st_rc"
+fi
 
 FRONTEND_HOST="$(url_host "$E2E_FRONTEND_URL")"
 FRONTEND_PORT="$(url_port "$E2E_FRONTEND_URL" 80)"

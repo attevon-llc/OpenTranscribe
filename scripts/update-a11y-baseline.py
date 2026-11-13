@@ -20,7 +20,7 @@ committing the allowlist to a human.
 Usage::
 
     python3 scripts/update-a11y-baseline.py
-    python3 scripts/update-a11y-baseline.py --base-url http://localhost:5173
+    python3 scripts/update-a11y-baseline.py --fresh visual
 
 Requirements: dev stack running (``./opentr.sh start dev``), and ``backend/venv`` activated with
 playwright + axe-playwright-python installed (``backend/requirements-dev.txt``).
@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 E2E_DIR = REPO_ROOT / 'backend' / 'tests' / 'e2e'
 sys.path.insert(0, str(E2E_DIR))
+sys.path.insert(0, str(REPO_ROOT / 'scripts' / 'lib'))
 
 from a11y_lib import (  # noqa: E402 - importable only after the sys.path insert above
     BACKLOG_PREFIX,
@@ -149,22 +150,55 @@ def _admin_token(backend_url: str) -> str | None:
     return str(resp.json()['access_token'])
 
 
+def _resolve_target(args: argparse.Namespace) -> tuple[str, str] | int:
+    """(frontend, backend) URLs of the target stack, or a stack-target exit code.
+
+    Resolved from compose labels and observed ports (scripts/lib/stack_target.py), never from
+    the live stack's literal ports, then checked: healthy, and the gitignored fonts the axe
+    scan's screenshots depend on (a worktree has none until copied).
+    """
+    import stack_target as st
+
+    try:
+        stack = st.resolve(REPO_ROOT, fresh=args.fresh)
+        failures = st.run_checks(stack, ['healthy', 'asset:frontend-fonts'], {})
+    except st.StackError as exc:
+        print(exc.line(), file=sys.stderr)
+        return int(exc.code)
+    if failures:
+        print(failures[0].line(), file=sys.stderr)
+        return int(failures[0].code)
+    ports = stack.ports
+    base = args.base_url or f'http://localhost:{ports["FRONTEND_PORT"]}'
+    backend = args.backend_url or f'http://localhost:{ports["BACKEND_PORT"]}'
+    return base, backend
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
+        '--fresh',
+        help='Target the isolated otfresh-NAME stack (default: COMPOSE_PROJECT_NAME or the one '
+        'live project, resolved from observed ports)',
+    )
+    parser.add_argument(
         '--base-url',
-        default=os.environ.get('E2E_FRONTEND_URL', 'http://localhost:5173'),
-        help='Frontend base URL (default: E2E_FRONTEND_URL env var or http://localhost:5173)',
+        default=os.environ.get('E2E_FRONTEND_URL'),
+        help='Frontend base URL (default: E2E_FRONTEND_URL, else the resolved stack)',
     )
     parser.add_argument(
         '--backend-url',
-        default=os.environ.get('E2E_BACKEND_URL', 'http://localhost:5174'),
+        default=os.environ.get('E2E_BACKEND_URL'),
         help='Backend base URL, for the file-detail scan only '
-        '(default: E2E_BACKEND_URL env var or http://localhost:5174)',
+        '(default: E2E_BACKEND_URL, else the resolved stack)',
     )
     args = parser.parse_args()
+    resolved = _resolve_target(args)
+    if isinstance(resolved, int):
+        return resolved
+    args.base_url, args.backend_url = resolved
 
     print('# Paste-ready a11y-allowlist.txt lines — review EVERY reason before committing.')
     print(f'# Generated against {args.base_url}\n')

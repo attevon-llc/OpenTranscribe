@@ -6,6 +6,7 @@ stack-target.sh; proves the generated .env, the fresh-project start line and the
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import subprocess
@@ -85,6 +86,21 @@ def test_prepare_generates_production_grade_env(fake_repo: Path, tmp_path: Path)
     assert "ENVIRONMENT=production" in text
     flower = next(line for line in text.splitlines() if line.startswith("FLOWER_PASSWORD="))
     assert len(flower.split("=", 1)[1]) >= 16
+
+
+def test_prepare_keeps_the_kms_key_padding(fake_repo: Path, tmp_path: Path) -> None:
+    """MinIO refuses a key whose base64 lost its trailing '=' (illegal base64 at byte 40)."""
+    res = _run(fake_repo, "prepare", "pki", cache=tmp_path / "models")
+    assert res.returncode == 0, res.stderr
+    tree = Path(res.stdout.strip().splitlines()[-1])
+    line = next(
+        line
+        for line in (tree / ".env").read_text().splitlines()
+        if line.startswith("MINIO_KMS_SECRET_KEY=")
+    )
+    name, _, b64 = line.split("=", 1)[1].partition(":")
+    assert name == "opentranscribe-key"
+    assert len(base64.b64decode(b64, validate=True)) == 32
 
 
 def test_run_pki_starts_fresh_project_and_stops_it(fake_repo: Path, tmp_path: Path) -> None:

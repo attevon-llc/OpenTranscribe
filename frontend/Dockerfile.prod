@@ -132,6 +132,7 @@ RUN chmod 0755 /docker-entrypoint.d/15-flower-basic-auth.sh && \
     printf 'proxy_set_header Authorization "";\n' \
       > /etc/nginx/flower-auth/authorization.conf && \
     chown -R nginx:nginx /etc/nginx/flower-auth && \
+    chmod 0700 /etc/nginx/flower-auth && chmod 0600 /etc/nginx/flower-auth/authorization.conf && \
     chown -R nginx:nginx /var/cache/nginx && \
     mkdir -p /var/log/nginx && \
     chown -R nginx:nginx /var/log/nginx && \

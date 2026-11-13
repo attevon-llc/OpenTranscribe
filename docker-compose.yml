@@ -574,8 +574,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      backend:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -769,8 +767,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      backend:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -826,8 +822,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      backend:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -874,13 +868,11 @@ services:
       retries: 3
       start_period: 40s
       start_interval: 5s  # fast probes during start_period only (W8)
-    # Wait for backend (migrations applied) like every other worker, so the nlp
-    # worker doesn't race the schema on first start.
+    # No backend dependency (EFFC B1): migrate completing guarantees the schema, and this
+    # worker never reads the diar-native export the backend lifespan writes at boot.
     depends_on:
       migrate:
         condition: service_completed_successfully
-      backend:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -945,8 +937,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      backend:
-        condition: service_healthy
       redis:
         condition: service_healthy
 

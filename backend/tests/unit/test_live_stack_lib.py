@@ -18,7 +18,9 @@ REPO = Path(__file__).resolve().parents[3]
 LIB = REPO / "scripts" / "release" / "live-stack-lib.sh"
 
 
-def _harness(tmp_path: Path, *, live: bool = True, stays_up: bool = False):
+def _harness(
+    tmp_path: Path, *, live: bool = True, stays_up: bool = False, workdir: str | None = None
+):
     root = tmp_path / "repo"
     (root / ".release" / "v1").mkdir(parents=True, exist_ok=True)
     bindir = tmp_path / "bin"
@@ -31,7 +33,9 @@ def _harness(tmp_path: Path, *, live: bool = True, stays_up: bool = False):
     # docker ps lists a container until opentr.sh stop ran (or forever when stays_up).
     (bindir / "docker").write_text(
         '#!/bin/bash\necho "docker $*" >> "$FAKE_LOG"\n'
-        f'if [[ "$1" == ps && ( ! -e {stopped} || -n "{int(stays_up) or ""}" ) ]]; then echo live-backend; fi\nexit 0\n'
+        f'if [[ "$1" == ps && ( ! -e {stopped} || -n "{int(stays_up) or ""}" ) ]]; then\n'
+        f'  if [[ "$*" == *working_dir* ]]; then echo "transcribe-app|{workdir or root}"; '
+        "else echo live-backend; fi\nfi\nexit 0\n"
     )
     (root / "opentr.sh").write_text(
         f'#!/bin/bash\necho "opentr $*" >> "$FAKE_LOG"\n[[ "$1" == stop ]] && touch {stopped}\n'
@@ -125,3 +129,46 @@ def test_smoke_and_rehearse_share_the_one_implementation():
         assert "lsl_stop_stack" in text and "lsl_approved_to_stop" in text, name
         code = [ln for ln in text.splitlines() if not ln.lstrip().startswith("#")]
         assert not [ln for ln in code if "opentr.sh stop >" in ln], name
+
+
+def _marker(root: Path) -> Path:
+    return root / ".release" / "v1" / "stack-stopped-by-release"
+
+
+def test_the_marker_records_the_project_and_directory_that_were_stopped(tmp_path):
+    proc, _, root = _run(
+        tmp_path,
+        "lsl_stop_stack && RELEASE_DEFER_STACK_RESTORE=1 lsl_restore_after_stage v1 true",
+        workdir="/elsewhere/checkout",
+    )
+    text = _marker(root).read_text()
+    assert "project=transcribe-app" in text and "working_dir=/elsewhere/checkout" in text, text
+
+
+def test_restore_from_a_different_checkout_refuses_and_names_the_right_directory(tmp_path):
+    body = (
+        "lsl_stop_stack && RELEASE_DEFER_STACK_RESTORE=1 lsl_restore_after_stage v1 true\n"
+        "lsl_restore_if_marked v1"
+    )
+    proc, calls, root = _run(tmp_path, body, workdir="/elsewhere/checkout")
+    assert calls == ["opentr stop"], f"must not start dev from the wrong checkout: {calls}"
+    assert "cd /elsewhere/checkout && ./opentr.sh start dev" in proc.stderr
+    assert _marker(root).is_file(), "the marker must survive so the right checkout can restore"
+
+
+def test_restore_from_the_recorded_checkout_still_starts(tmp_path):
+    root = tmp_path / "repo"
+    body = (
+        "lsl_stop_stack && RELEASE_DEFER_STACK_RESTORE=1 lsl_restore_after_stage v1 true\n"
+        "lsl_restore_if_marked v1"
+    )
+    proc, calls, _ = _run(tmp_path, body, workdir=str(root))
+    assert calls == ["opentr stop", "opentr start dev"], calls
+    assert not _marker(root).exists()
+
+
+def test_live_stack_names_include_the_current_worktrees_own_project(tmp_path):
+    root, bindir, log = _harness(tmp_path)
+    _run(tmp_path, "lsl_live_stack_names >/dev/null")
+    asked = log.read_text()
+    assert "label=com.docker.compose.project=repo" in asked, asked

@@ -40,5 +40,8 @@ class DemoAwareCelery(Celery):
     def send_task(self, name: str, *args: Any, **kwargs: Any) -> Any:
         """Publish ``name``, unless this is the read-only demo."""
         if settings.DEMO_MODE:
+            from app.core import metrics
+
+            metrics.celery_publish_refused_total.inc()
             raise DemoPublishRefusedError(f"read-only demo: task {name!r} was not published")
         return super().send_task(name, *args, **kwargs)

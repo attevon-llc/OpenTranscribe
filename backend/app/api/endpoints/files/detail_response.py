@@ -202,15 +202,19 @@ def set_file_urls(db_file: MediaFile, bypass: PlatformBypass = PlatformBypass.no
 
 
 def _get_or_compute_analytics(
-    db: Session, file_id: int, file_status: FileStatus
+    db: Session, file_id: int, file_status: FileStatus, file_uuid: str | None = None
 ) -> Analytics | None:
     """
-    Get analytics for a file, computing them on-demand if needed.
+    Get stored analytics for a file; queue the computation when a completed file has none.
+
+    A GET must not write, so a missing row is computed by the CPU-queue task and this returns
+    None (``analytics: null`` on the wire) until it lands.
 
     Args:
         db: Database session
         file_id: File ID
         file_status: Current status of the file
+        file_uuid: File UUID, needed to queue the computation
 
     Returns:
         Analytics object or None
@@ -218,20 +222,15 @@ def _get_or_compute_analytics(
     analytics = get_file_analytics(db, file_id)
 
     # Enum comparison — the old str-based form compared "FileStatus.COMPLETED"
-    # against "completed" and was always True, so the on-demand computation
-    # below never ran (issue #272).
-    if analytics or file_status != FileStatus.COMPLETED:
+    # against "completed" and was always True (issue #272).
+    if analytics or file_status != FileStatus.COMPLETED or not file_uuid:
         return analytics
 
-    # Compute analytics on-demand for completed files
-    from app.services.analytics_service import AnalyticsService
+    from app.tasks.analytics_dispatch import dispatch_analytics
 
-    logger.info(f"Computing missing analytics on-demand for file {file_id}")
-    success = AnalyticsService.compute_and_save_analytics(db, file_id)
-    if success:
-        analytics = get_file_analytics(db, file_id)
-
-    return analytics
+    logger.info(f"Queueing missing analytics for file {file_id}")
+    dispatch_analytics(file_uuid)
+    return None
 
 
 def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -> None:
@@ -455,10 +454,8 @@ def get_media_file_detail(
             db, file_id, current_user.id, organization_id=organization_id
         )
 
-        # Get analytics (compute on-demand if needed). First, because computing them is
-        # the read path's one legitimate write and commits — which expires every loaded
-        # instance, including the speakers decorated below (#1152).
-        analytics = _get_or_compute_analytics(db, file_id, db_file.status)
+        # Stored analytics, or None while the queued computation runs (a GET never writes).
+        analytics = _get_or_compute_analytics(db, file_id, db_file.status, str(db_file.uuid))
 
         speakers = _load_file_speakers(db, file_id)
 

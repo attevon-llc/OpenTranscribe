@@ -77,6 +77,8 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Changed
 
+- `PUT /api/transcripts/segments/{uuid}/speaker` no longer recomputes analytics inline, and `GET /api/files/{uuid}` (and `/analytics`) no longer computes and INSERTs a missing row: both queue `analytics.analyze_transcript` on the CPU queue, debounced per file via Redis, and a GET answers `analytics: null` until the task stores the row.
+
 - The release gate runs its four stack-independent tail phases (dependency parity, session lifetime, collection determinism, mutation ratchet) beside the live integration lane (T4), no longer runs three `integration and gpu` tests twice (G1b), sweeps test data once at entry when run through `run-dev-tests.sh` (SW1), records each pytest phase's argv for `scripts/rerun-failed.sh` (D4), and refuses `--testmon`/`--lf`/`--sw`-style selection in args or `PYTEST_ADDOPTS` with `-p no:testmon -p no:stepwise` on every gate pytest call.
 - Dev-loop only: `scripts/run-backend-tests.sh --affected` (pytest-testmon 2.3.0, MIT) runs just the tests whose code changed and never writes evidence artifacts; `-n auto` is sized to the file count when up to four test files are named.
 - The gpu-scale smoke test no longer waits ~132 s (twice per gate) for a `gpu-scaled@` Flower worker on a stack started without `--gpu-scale`; the six read-only lite-mode happy-path tests share one upload instead of six (~135 s saved).

@@ -23,6 +23,7 @@ from fastapi import status
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.analytics_service import AnalyticsService
 
 
 def _make_file_with_segment(db_session, owner, *, text: str) -> tuple[MediaFile, TranscriptSegment]:
@@ -58,17 +59,13 @@ def test_editing_segment_text_updates_the_word_count(
 ):
     media_file, segment = _make_file_with_segment(db_session, normal_user, text="one two three")
 
-    # This first GET is what materialises the analytics row (on-demand compute,
-    # issue #272) — asserting it exists BEFORE the edit is what makes the second
-    # GET's comparison meaningful. Without it, a fixture with no analytics row
-    # yet would let _get_or_compute_analytics compute fresh on the second GET
-    # too, and the test would pass whether or not the edit-path fix exists —
-    # the exact "assertion that passed against an empty index" shape the repo's
-    # own test-quality auditors watch for.
+    # Materialise the row up front (a GET no longer computes it, #A6): asserting it exists
+    # BEFORE the edit is what makes the second GET's comparison meaningful.
+    AnalyticsService.compute_and_save_analytics(db_session, media_file.id)
     before = client.get(
         f"/api/files/{media_file.uuid}/analytics", headers=user_token_headers
     ).json()["analytics"]
-    assert before is not None, "the on-demand compute must have materialised a row"
+    assert before is not None, "the up-front compute must have materialised a row"
     assert before["overall_analytics"]["word_count"] == 3
 
     edit_response = client.put(
@@ -119,6 +116,7 @@ def test_a_non_text_edit_does_not_refresh_analytics(
     refresh — a start_time-only edit must not recompute analytics."""
     media_file, segment = _make_file_with_segment(db_session, normal_user, text="one two three")
 
+    AnalyticsService.compute_and_save_analytics(db_session, media_file.id)
     before = client.get(
         f"/api/files/{media_file.uuid}/analytics", headers=user_token_headers
     ).json()["analytics"]

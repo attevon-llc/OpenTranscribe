@@ -390,7 +390,7 @@ def get_file_analytics(
     )
     # Enum comparison (issue #272) — str(status) never matched "completed",
     # so this endpoint could also never compute analytics on demand.
-    analytics = _get_or_compute_analytics(db, db_file.id, db_file.status)
+    analytics = _get_or_compute_analytics(db, db_file.id, db_file.status, str(db_file.uuid))
     return {
         "analytics": AnalyticsSchema.model_validate(analytics) if analytics else None,
     }

@@ -850,7 +850,7 @@ if [[ "$RUN_E2E" == "true" ]]; then
     export E2E_ARTIFACT_DIR="$REPORT_DIR/e2e-xml"
     if $OVERLAY_ONLY; then
         run_phase "e2e (run-e2e.sh -m overlay_gated)" \
-            "$REPO_ROOT/scripts/e2e/run-e2e.sh" -m overlay_gated
+            env E2E_CUSTOM_SKIP_CEILING=0 "$REPO_ROOT/scripts/e2e/run-e2e.sh" -m overlay_gated
     else
         run_phase "e2e (run-e2e.sh, full suite)" \
             "$REPO_ROOT/scripts/e2e/run-e2e.sh"

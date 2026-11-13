@@ -373,6 +373,8 @@ INTEGRATION_SELECTION="${INTEGRATION_SELECTION:-integration$MULTI_GPU_FILTER$OPT
 #: gate is already run by the release `test` stage, which is the point of the mode.
 if $OVERLAY_ONLY; then
     INTEGRATION_SELECTION="integration and overlay_gated"
+    # These tests run only to execute against their overlays: a skip is a vacuous pass.
+    INTEGRATION_SKIP_CEILING=0
 fi
 GPU_SELECTION="${GPU_SELECTION:-gpu$MULTI_GPU_FILTER}"
 

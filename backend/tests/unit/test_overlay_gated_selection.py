@@ -95,3 +95,45 @@ def test_the_selection_is_not_empty_in_both_pytest_roots() -> None:
 )
 def test_the_scripts_select_by_the_marker(path: str, needle: str) -> None:
     assert needle in (_REPO / path).read_text(encoding="utf-8")
+
+
+def _run_e2e_skip_check(tmp_path: Path, skipped: int) -> int:
+    """Run run-e2e.sh's own ``skips_exceed_ceiling`` (extracted verbatim) on a junit report."""
+    import re
+    import subprocess
+    import sys
+
+    src = (_REPO / "scripts/e2e/run-e2e.sh").read_text(encoding="utf-8")
+    funcs = []
+    for name in ("phase_skipped", "skips_exceed_ceiling"):
+        match = re.search(rf"^{name}\(\) \{{\n.*?^\}}\n", src, re.S | re.M)
+        assert match, f"{name} missing from run-e2e.sh"
+        funcs.append(match.group(0))
+    xml = tmp_path / "r.xml"
+    xml.write_text(
+        f'<testsuites><testsuite tests="1" skipped="{skipped}"/></testsuites>', encoding="utf-8"
+    )
+    script = (
+        f'VENV_PY="{sys.executable}"\n' + "\n".join(funcs) + f'\nskips_exceed_ceiling "{xml}" 0\n'
+    )
+    return subprocess.run(["bash", "-c", script], check=False).returncode
+
+
+def test_an_overlay_only_e2e_skip_fails_the_phase(tmp_path: Path) -> None:
+    assert _run_e2e_skip_check(tmp_path, skipped=1) == 0, "a skipped test must exceed ceiling 0"
+
+
+def test_an_overlay_only_e2e_run_without_skips_passes(tmp_path: Path) -> None:
+    assert _run_e2e_skip_check(tmp_path, skipped=0) != 0
+
+
+@pytest.mark.parametrize(
+    ("path", "needle"),
+    [
+        ("scripts/run-dev-tests.sh", "E2E_CUSTOM_SKIP_CEILING=0"),
+        ("scripts/e2e/run-e2e.sh", 'exit "$EXIT_NOT_MEASURED"'),
+        ("scripts/run-integration-tests.sh", "    INTEGRATION_SKIP_CEILING=0\n"),
+    ],
+)
+def test_overlay_only_pins_the_skip_ceiling_to_zero(path: str, needle: str) -> None:
+    assert needle in (_REPO / path).read_text(encoding="utf-8")

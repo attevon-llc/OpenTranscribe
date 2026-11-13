@@ -46,6 +46,8 @@ cd "$REPO_ROOT"
 source "$SCRIPT_DIR/release-tests/lib/versions.sh"
 # shellcheck source=release/patch-lib.sh
 source "$SCRIPT_DIR/release/patch-lib.sh"
+# shellcheck source=release/live-stack-lib.sh
+source "$SCRIPT_DIR/release/live-stack-lib.sh"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
 
@@ -83,6 +85,10 @@ ledger_record() {
         echo "when=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "operator=${USER:-unknown}"
         echo "sha=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+        # R9: run_stage sets these (dynamic scope) so every number in the speed plan is
+        # measurable next time. Readers use `grep -m1 '^status='`, so extra lines are safe.
+        if [[ -n "${LEDGER_STARTED:-}" ]]; then echo "started=$LEDGER_STARTED"; fi
+        if [[ -n "${LEDGER_DURATION_S:-}" ]]; then echo "duration_s=$LEDGER_DURATION_S"; fi
         # `[[ -n "$detail" ]] && echo ...` would make this group return 1 when
         # detail is empty (the common case), and under `set -e` that aborted the
         # whole run immediately after a SUCCESSFUL stage — the success line never
@@ -236,7 +242,12 @@ run_stage() {
 
     log "── $stage ──"
     local rc=0
+    # Read by ledger_record below (dynamic scope); local so parallel stages never share them.
+    local LEDGER_STARTED LEDGER_DURATION_S
+    LEDGER_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    local started_epoch; started_epoch="$(date +%s)"
     RELEASE_VERSION="$version" JSON_OUT="${JSON_OUT:-false}" "$script" "$version" || rc=$?
+    LEDGER_DURATION_S=$(( $(date +%s) - started_epoch ))
 
     case $rc in
         0)
@@ -334,10 +345,11 @@ patch_prepare() {
     fi
 }
 
+to_run=()
 cmd_run() {
     local version="$1"; shift
     patch_prepare "$version"
-    local -a to_run=()
+    to_run=()
     local started=false
 
     for stage in "${STAGES[@]}"; do
@@ -355,10 +367,107 @@ cmd_run() {
     [[ ${#to_run[@]} -gt 0 ]] || { err "no stages selected"; return $EXIT_MISUSE; }
 
     log "stages: ${to_run[*]}"
-    for stage in "${to_run[@]}"; do
+
+    # R6: when `rehearse` and `smoke` both run, the dev stack is stopped once for rehearse and
+    # restarted once after smoke, not bounced in between. Opt out: RELEASE_DEFER_STACK_RESTORE=0.
+    # If the run ends early, the EXIT trap restores a stack the release stopped (marker file),
+    # never one the operator stopped by hand.
+    if [[ " ${to_run[*]} " == *" rehearse "* && " ${to_run[*]} " == *" smoke "* ]]; then
+        export RELEASE_DEFER_STACK_RESTORE="${RELEASE_DEFER_STACK_RESTORE:-1}"
+    fi
+    RUN_VERSION_FOR_TRAP="$version"
+    trap 'lsl_restore_if_marked "$RUN_VERSION_FOR_TRAP"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    local rc=0
+    if [[ "$SERIAL" != "true" && "${DRY_RUN:-false}" != "true" \
+          && " ${to_run[*]} " == *" test "* && " ${to_run[*]} " == *" build "* ]]; then
+        run_stages_overlapped "$version" "${to_run[@]}" || rc=$?
+    else
+        local stage
+        for stage in "${to_run[@]}"; do
+            run_stage "$version" "$stage" || { rc=$?; break; }
+        done
+    fi
+    [[ $rc -eq 0 ]] || return $rc
+    ok "all selected stages complete"
+}
+
+# R2: `test` (fresh stack, GPU 1) runs beside `build -> scan` (docker build, scanners). The docs
+# have always allowed that overlap and fresh-stack-lib.sh's competitor check exempts build/scan.
+# Same stage scripts, same arguments; only the schedule changes.
+#
+#   pre stages (preflight bump verify)  serial
+#   test  ||  build -> scan (+ R7: scenario D right after build, beside scan)
+#   post stages (rehearse tag ...)      serial, only after BOTH branches finished
+#
+# Both branches always run to completion and every failure is reported, not just the first;
+# nothing is killed on failure. `wait <pid>` returns the job's own status (GNU Bash manual,
+# "Job Control Builtins"). `--serial` / RELEASE_SERIAL=1 restores the old strictly-ordered run.
+run_stages_overlapped() {
+    local version="$1"; shift
+    local -a pre=() chain=() post=()
+    local have_test=false have_chain=false stage
+    for stage in "$@"; do
+        case "$stage" in
+            test) have_test=true ;;
+            build|scan) chain+=("$stage"); have_chain=true ;;
+            *) if $have_test || $have_chain; then post+=("$stage"); else pre+=("$stage"); fi ;;
+        esac
+    done
+
+    local rc=0
+    for stage in "${pre[@]}"; do
         run_stage "$version" "$stage" || return $?
     done
-    ok "all selected stages complete"
+
+    local logdir; logdir="$(ledger_dir "$version")/logs"
+    mkdir -p "$logdir"
+    log "overlap: test (log: $logdir/test.log) beside ${chain[*]}"
+
+    local test_rc=0 chain_rc=0 test_pid
+    COLD_EARLY_PID=""
+    if [[ "${JSON_OUT:-false}" == "true" ]]; then
+        run_stage "$version" test > "$logdir/test.json" 2> "$logdir/test.log" &
+    else
+        run_stage "$version" test > "$logdir/test.log" 2>&1 &
+    fi
+    test_pid=$!
+
+    for stage in "${chain[@]}"; do
+        run_stage "$version" "$stage" || { chain_rc=$?; break; }
+        if [[ "$stage" == "build" ]]; then start_cold_cache_early "$version" "$logdir"; fi
+    done
+    # Advisory: rehearse reuses the evidence only if valid, else runs D itself.
+    if [[ -n "$COLD_EARLY_PID" ]]; then wait "$COLD_EARLY_PID" || warn "early scenario D exited non-zero (see $logdir/cold-cache.log); rehearse will re-run it"; fi
+
+    wait "$test_pid" || test_rc=$?
+    log "test finished (exit $test_rc); its output is in $logdir/test.log"
+    tail -n 15 "$logdir/test.log" >&2 || true
+
+    if (( test_rc != 0 )); then err "test failed (exit $test_rc)"; rc=$test_rc; fi
+    if (( chain_rc != 0 )); then err "${chain[*]} failed (exit $chain_rc)"; (( rc != 0 )) || rc=$chain_rc; fi
+    (( rc == 0 )) || return $rc
+
+    for stage in "${post[@]}"; do
+        run_stage "$version" "$stage" || return $?
+    done
+}
+
+# R7: Scenario D needs only the built backend image and binds no stock port, so it runs beside
+# `scan` instead of inside `rehearse`. Sets COLD_EARLY_PID (a child of THIS shell, so `wait`
+# works; not via $(...)). Its failure is advisory here: `rehearse` reuses the evidence only when
+# the image ID still matches and the oracle passes, and otherwise runs D itself.
+COLD_EARLY_PID=""
+start_cold_cache_early() {
+    local version="$1" logdir="$2"
+    [[ -z "${OT_PATCH_SKIP_REASON:-}" ]] || return 0
+    [[ " ${to_run[*]} " == *" rehearse "* ]] || return 0
+    log "scenario D starts now, beside scan (log: $logdir/cold-cache.log)"
+    RELEASE_VERSION="$version" "$SCRIPT_DIR/release/65-rehearse.sh" --cold-cache-only "$version" \
+        > "$logdir/cold-cache.log" 2>&1 &
+    COLD_EARLY_PID=$!
 }
 
 # ───────────────────────────────────────────────────────────── arg parsing
@@ -367,6 +476,8 @@ COMMAND="${1:-}"; shift || true
 
 SKIP_STAGES=""; ONLY_STAGES=""; FROM_STAGE=""
 DRY_RUN=false; JSON_OUT=false; ASSUME_YES=false; PATCH_MODE=false
+SERIAL="${RELEASE_SERIAL:-false}"
+if [[ "$SERIAL" == "1" ]]; then SERIAL=true; fi
 POSITIONAL=()
 # stage -> the reason its failure was accepted. Consulted by run_stage.
 declare -A FORCE_REASON=()
@@ -380,6 +491,7 @@ while (( $# > 0 )); do
         --json)    JSON_OUT=true; shift ;;
         --yes)     ASSUME_YES=true; shift ;;
         --patch)   PATCH_MODE=true; shift ;;
+        --serial)  SERIAL=true; shift ;;
         # --force-<stage> "reason". The reason is REQUIRED: an override with no
         # recorded justification is the thing this whole mechanism exists to
         # prevent, so there is deliberately no bare --force.

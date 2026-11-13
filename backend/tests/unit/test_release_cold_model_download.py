@@ -451,6 +451,7 @@ def _scratch(tmp_path: Path, cold_body: str) -> tuple[Path, Path]:
     release_dir.mkdir(parents=True)
     shutil.copy(REHEARSE_SH, release_dir / "65-rehearse.sh")
     shutil.copy(CRITERIA_LIB_SH, release_dir / "criteria-lib.sh")
+    shutil.copy(CRITERIA_LIB_SH.with_name("live-stack-lib.sh"), release_dir / "live-stack-lib.sh")
     shutil.copy(CRITERIA_YAML, release_dir / "release-criteria.yaml")
     shutil.copy(ORACLE, tests_dir / "lib" / "cold-model-download.py")
     markers = tmp_path / "markers"

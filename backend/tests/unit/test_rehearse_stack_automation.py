@@ -21,6 +21,7 @@ pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REHEARSE = REPO_ROOT / "scripts" / "release" / "65-rehearse.sh"
+STACK_LIB = REPO_ROOT / "scripts" / "release" / "live-stack-lib.sh"
 
 #: The decision, lifted verbatim in shape from 65-rehearse.sh. Kept in sync by
 #: ``test_the_decision_here_matches_the_shipped_one``.
@@ -91,9 +92,11 @@ def test_the_restart_is_guarded_and_runs_even_on_failure_or_interrupt():
     assert "trap 'exit 130' INT\n" in source, "Ctrl-C must exit, so the EXIT trap restores"
     assert "trap 'exit 143' TERM\n" in source, "SIGTERM must exit, so the EXIT trap restores"
     assert "STACK_STOPPED_BY_US=false" in source
-    assert '[[ "$STACK_STOPPED_BY_US" == "true" ]] || return 0' in source, (
+    assert 'lsl_restore_after_stage "$VERSION" "$stopped_by_us"' in source
+    lib = STACK_LIB.read_text(encoding="utf-8")
+    assert '[[ "$stopped_by_us" != "true" && ! -f "$marker" ]]' in lib, (
         "restore must be guarded: starting a stack the operator had deliberately stopped "
-        "is its own surprise"
+        "is its own surprise (only 'we stopped it' or a release marker permits a start)"
     )
 
 
@@ -107,7 +110,8 @@ def test_it_never_reaches_for_kill():
     """
     code_lines = [
         line
-        for line in REHEARSE.read_text(encoding="utf-8").splitlines()
+        for path in (REHEARSE, STACK_LIB)
+        for line in path.read_text(encoding="utf-8").splitlines()
         if not line.lstrip().startswith("#")
     ]
 
@@ -274,7 +278,7 @@ def test_the_teardown_runs_before_the_dev_stack_restart():
     restore = _extract_function("restore_live_stack")
 
     teardown_at = restore.index("teardown_scenario_stack_on_interrupt")
-    restart_at = restore.index("./opentr.sh start dev")
+    restart_at = restore.index("lsl_restore_after_stage")
     assert teardown_at < restart_at, (
         "the dev stack is restarted before the scenario containers are stopped — they "
         "hold 5173-5180, so the restart races them for the ports"
@@ -283,13 +287,13 @@ def test_the_teardown_runs_before_the_dev_stack_restart():
 
 def test_the_decision_here_matches_the_shipped_one():
     """Guard against this file's copy of the decision drifting from the real one."""
-    source = REHEARSE.read_text(encoding="utf-8")
+    source = STACK_LIB.read_text(encoding="utf-8")
 
     assert (
         'if [[ "${ASSUME_YES:-false}" == "true" || '
         '"${RELEASE_AUTO_STOP_STACK:-false}" == "true" ]]; then' in source
     ), (
-        "the approval condition in 65-rehearse.sh no longer matches the one exercised "
+        "the approval condition in live-stack-lib.sh no longer matches the one exercised "
         "above, so these tests would be asserting against a decision that is not shipped"
     )
     assert "elif [[ -t 0 ]]; then" in source

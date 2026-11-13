@@ -316,6 +316,13 @@ stages:
           transcription with the cause visible only in a torn-down database.
         severity: blocking
 
+      - id: arm64-web-legs-run
+        description: >-
+          The frontend and docs arm64 legs execute (`nginx -t`) on the arm64 host before
+          anything is pushed. Until now they were scanned and manifest-checked but never
+          run before Docker Hub. No `remote-arm64` context is not-measured (a warning).
+        severity: warn
+
   # ─── Version bump. Writes files and commits; publishes nothing. ─────────
   bump:
     description: Promote every version source to the target, verify, and commit

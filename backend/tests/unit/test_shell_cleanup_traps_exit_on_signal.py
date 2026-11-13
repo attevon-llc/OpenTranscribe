@@ -23,7 +23,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _TRAP_LINE = re.compile(r"^\s*(trap\s.*)$")
 
 _CASES = (
-    ("scripts/release/85-smoke.sh", "cleanup_install_smoke"),
+    ("scripts/release/85-smoke.sh", "smoke_exit"),
     ("scripts/release/65-rehearse.sh", "restore_live_stack"),
     ("scripts/e2e/styling-ab.sh", "cleanup"),
     ("scripts/verify-diar-native-e2e.sh", "restore_models"),

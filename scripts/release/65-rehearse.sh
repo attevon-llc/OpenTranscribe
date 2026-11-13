@@ -40,6 +40,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT" || exit 2
 
+# `--cold-cache-only` runs Scenario D alone (R7): release.sh starts it right after `build`,
+# beside `scan`, and a later full `rehearse` reuses the evidence when it is still valid. It
+# stops no stack, records no criteria and exits 0 only when D's own run exited 0.
+COLD_ONLY=false
+if [[ "${1:-}" == "--cold-cache-only" ]]; then COLD_ONLY=true; shift; fi
+
 VERSION="${1:-${RELEASE_VERSION:-}}"
 JSON_OUT="${JSON_OUT:-false}"
 # Set by release.sh's patch_prepare() (scripts/release/patch-lib.sh) when
@@ -57,6 +63,8 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC
 export STAGE_ID=rehearse
 # shellcheck source=scripts/release/criteria-lib.sh
 source "$SCRIPT_DIR/criteria-lib.sh"
+# shellcheck source=scripts/release/live-stack-lib.sh
+source "$SCRIPT_DIR/live-stack-lib.sh"
 
 # Filter by compose project label, not a name prefix -- see 10-preflight.sh's
 # live-stack check for why a naive prefix match false-positives on unrelated
@@ -76,10 +84,7 @@ source "$SCRIPT_DIR/criteria-lib.sh"
 # Captured rather than piped into `grep -q`: under `set -o pipefail`, grep -q closes the
 # pipe on its first match and `docker ps` can die with SIGPIPE, turning "the stack IS up"
 # into a reported all-clear.
-live_stack_names="$( {
-    docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}'
-    docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}'
-} | sort -u)"
+live_stack_names="$(lsl_live_stack_names)"
 # Set when THIS run stopped the stack, so the trap below puts it back exactly as found.
 # Never set when the stack was already down: restoring a stack the operator had
 # deliberately stopped is its own surprise.
@@ -140,17 +145,11 @@ restore_live_stack() {
     # ports the dev stack wants, so starting dev first would race it.
     teardown_scenario_stack_on_interrupt
 
-    [[ "$STACK_STOPPED_BY_US" == "true" ]] || return 0
+    # Deferred restores (RELEASE_DEFER_STACK_RESTORE=1) leave the stack down for `smoke`; see
+    # live-stack-lib.sh. A stack the operator stopped by hand is never started here.
+    local stopped_by_us="$STACK_STOPPED_BY_US"
     STACK_STOPPED_BY_US=false   # idempotent: EXIT fires after an explicit call
-    echo -e "${BLUE}Restarting the dev stack this run stopped...${NC}" >&2
-    if (cd "$REPO_ROOT" && ./opentr.sh start dev >/dev/null 2>&1); then
-        echo -e "${GREEN}dev stack restarted${NC}" >&2
-    else
-        # Never fail the rehearsal over this. The scenarios' verdict is a fact about the
-        # RELEASE; whether this host came back up is a fact about the HOST, and conflating
-        # them would report a bad release for a local restart hiccup.
-        echo -e "${YELLOW}could not restart the dev stack — run: ./opentr.sh start dev${NC}" >&2
-    fi
+    lsl_restore_after_stage "$VERSION" "$stopped_by_us"
 }
 # On EXIT so an aborted or failed scenario still puts the host back. INT/TERM too: a
 # Ctrl-C mid-rehearsal used to leave the operator's stack down with no hint why.
@@ -169,23 +168,83 @@ cold_rc=0
 COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-}"
 COLD_CACHE_ORACLE="$REPO_ROOT/scripts/release-tests/lib/cold-model-download.py"
 
+COLD_STATE_DIR="$REPO_ROOT/.release/${VERSION:-unknown}"
+COLD_ROOT_FILE="$COLD_STATE_DIR/cold-cache-root"
+COLD_IMAGE_FILE="$COLD_STATE_DIR/cold-cache-image-id"
+BACKEND_IMAGE="${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${VERSION}"
+
+# The image ID Scenario D ran (or would run) against. Empty when docker cannot say, and an
+# empty ID is never a match: reuse requires positive proof it is the same bytes.
+backend_image_id() { docker image inspect --format '{{.Id}}' "$BACKEND_IMAGE" 2>/dev/null || true; }
+
+# --- BEGIN cold-cache-scenario ---
+# Runs Scenario D into COLD_CACHE_ROOT and seeds A only from a cache that passed EVERY D
+# criterion: a run whose downloads exited 0 but left weights missing, or whose nltk tree is
+# suspect, would hand A the gap. Sets cold_rc and, on all-pass, OT_COLD_CACHE_SEED.
+scenario_d_run() {
+    echo -e "${BLUE}Scenario D — cold-cache model download (CPU, empty cache, the image under test)${NC}" >&2
+    COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-/mnt/nvm/opentranscribe-test-runs/ot-reltest-coldcache-$(date +%Y%m%d-%H%M%S)}"
+    TEST_ROOT="$COLD_CACHE_ROOT" ./scripts/release-tests/test-cold-model-download.sh --yes || cold_rc=$?
+    local cold_all_pass=true cold_criterion cold_seen
+    for cold_criterion in download weights nltk-hardlink; do
+        cold_seen="$(python3 "$COLD_CACHE_ORACLE" outcome --root "$COLD_CACHE_ROOT" --criterion "$cold_criterion" || true)"
+        [[ "${cold_seen%%$'\t'*}" == "pass" ]] || cold_all_pass=false
+    done
+    if [[ "$cold_all_pass" == "true" ]]; then
+        export OT_COLD_CACHE_SEED="$COLD_CACHE_ROOT/cache"
+        echo -e "${GREEN}Scenario A will seed its model cache from Scenario D's cold download${NC}" >&2
+    fi
+}
+# --- END cold-cache-scenario ---
+
+# R7: a `--cold-cache-only` run (release.sh starts it right after `build`) left its root and the
+# image ID it ran against under .release/<v>/. The full rehearse reuses that evidence ONLY when
+# (1) the recorded image ID equals the current image's, and (2) the oracle passes all three
+# criteria. Otherwise it runs D itself, exactly as before. The criteria are still recorded by
+# this stage, from the same oracle, so nothing is waived.
+cold_evidence_reusable() {
+    [[ -z "${COLD_CACHE_ROOT:-}" && -f "$COLD_ROOT_FILE" && -f "$COLD_IMAGE_FILE" ]] || return 1
+    local root recorded current criterion seen
+    root="$(<"$COLD_ROOT_FILE")"; recorded="$(<"$COLD_IMAGE_FILE")"; current="$(backend_image_id)"
+    [[ -n "$recorded" && "$recorded" == "$current" && -d "$root" ]] || return 1
+    for criterion in download weights nltk-hardlink; do
+        seen="$(python3 "$COLD_CACHE_ORACLE" outcome --root "$root" --criterion "$criterion" || true)"
+        [[ "${seen%%$'\t'*}" == "pass" ]] || return 1
+    done
+    COLD_CACHE_ROOT="$root"
+    return 0
+}
+
+if [[ "$COLD_ONLY" == "true" ]]; then
+    # No stack is touched, so none of the EXIT/INT machinery above may fire: its purge would
+    # delete the cache this run exists to leave behind.
+    trap - EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if [[ -n "$PATCH_SKIP_REASON" ]]; then
+        echo -e "${YELLOW}--patch: Scenario D waived; nothing to run early${NC}" >&2
+        exit 0
+    fi
+    mkdir -p "$COLD_STATE_DIR"
+    rm -f "$COLD_ROOT_FILE" "$COLD_IMAGE_FILE"   # never leave a stale pair beside a new run
+    cold_image_before="$(backend_image_id)"
+    scenario_d_run
+    if [[ $cold_rc -eq 0 && -n "$cold_image_before" ]]; then
+        printf '%s\n' "$COLD_CACHE_ROOT" > "$COLD_ROOT_FILE"
+        printf '%s\n' "$cold_image_before" > "$COLD_IMAGE_FILE"
+    fi
+    exit $cold_rc
+fi
+
 if [[ -n "$live_stack_names" ]]; then
     # Automating the stop/restart dance, but NOT the decision. Taking someone's deployment
     # down stays a human call -- it is just no longer a manual two-step. Approval comes from
     # `--yes` (the pipeline's existing "I mean it" signal), an explicit
     # RELEASE_AUTO_STOP_STACK=true, or an interactive prompt. With none of those and no tty,
     # the original refusal stands, so an unattended caller can never silently stop a stack.
+    # (the decision itself lives in live-stack-lib.sh, shared with 85-smoke.sh)
     auto_stop=false
-    if [[ "${ASSUME_YES:-false}" == "true" || "${RELEASE_AUTO_STOP_STACK:-false}" == "true" ]]; then
-        auto_stop=true
-    elif [[ -t 0 ]]; then
-        echo -e "${YELLOW}The live stack is running; the scenarios cannot run beside it.${NC}" >&2
-        echo -e "${YELLOW}  $(echo "$live_stack_names" | wc -l) container(s). Stopping PRESERVES all data,${NC}" >&2
-        echo -e "${YELLOW}  and this run will restart it when the scenarios finish.${NC}" >&2
-        echo -e "${RED}  ⚠ Any transcription in flight will be interrupted.${NC}" >&2
-        read -r -p "Stop the stack, rehearse, then restart it? [y/N] " reply
-        [[ "$reply" == "y" || "$reply" == "Y" ]] && auto_stop=true
-    fi
+    lsl_approved_to_stop "$live_stack_names" "the scenarios" && auto_stop=true
 
     if [[ "$auto_stop" != "true" ]]; then
         record live-stack-stopped fail "the live stack is running" "./opentr.sh stop"
@@ -201,51 +260,25 @@ if [[ -n "$live_stack_names" ]]; then
 fi
 
 # Scenario D runs HERE: after the stop was approved, before anything is stopped. It binds no
-# port and uses no stock container name, so its ~10 minutes are not downtime for the live
-# stack. Scenario A, later, installs from what it produced.
-# --- BEGIN cold-cache-scenario ---
+# port and uses no stock container name, so its minutes are not downtime for the live
+# stack. Scenario A, later, installs from what it produced. (--cold-cache-only ran it earlier.)
 if [[ -z "$PATCH_SKIP_REASON" ]]; then
-    echo -e "${BLUE}Scenario D — cold-cache model download (CPU, empty cache, the image under test)${NC}" >&2
-    COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-/mnt/nvm/opentranscribe-test-runs/ot-reltest-coldcache-$(date +%Y%m%d-%H%M%S)}"
-    TEST_ROOT="$COLD_CACHE_ROOT" ./scripts/release-tests/test-cold-model-download.sh --yes || cold_rc=$?
-    # Seed A only from a cache that passed EVERY D criterion: a run whose downloads exited 0
-    # but left weights missing, or whose nltk tree is suspect, would hand A the gap.
-    cold_all_pass=true
-    for cold_criterion in download weights nltk-hardlink; do
-        cold_seen="$(python3 "$COLD_CACHE_ORACLE" outcome --root "$COLD_CACHE_ROOT" --criterion "$cold_criterion" || true)"
-        [[ "${cold_seen%%$'\t'*}" == "pass" ]] || cold_all_pass=false
-    done
-    if [[ "$cold_all_pass" == "true" ]]; then
+    if cold_evidence_reusable; then
+        echo -e "${GREEN}Scenario D: reusing the cold-cache run from ${COLD_CACHE_ROOT} (same image, every criterion passed)${NC}" >&2
         export OT_COLD_CACHE_SEED="$COLD_CACHE_ROOT/cache"
-        echo -e "${GREEN}Scenario A will seed its model cache from Scenario D's cold download${NC}" >&2
+    else
+        scenario_d_run
     fi
 fi
-# --- END cold-cache-scenario ---
 
 if [[ -n "$live_stack_names" ]]; then
-    echo -e "${BLUE}Stopping the live stack (data preserved), will restart afterwards...${NC}" >&2
-    # ./opentr.sh stop, never docker kill/pkill: a SIGKILLed CUDA context does not always
-    # release the device, and that has required a full machine restart here twice.
-    if ! (cd "$REPO_ROOT" && ./opentr.sh stop >/dev/null 2>&1); then
-        record live-stack-stopped fail "./opentr.sh stop failed" "stop it by hand, then re-run"
-        echo -e "${RED}./opentr.sh stop failed; not proceeding.${NC}" >&2
+    # ./opentr.sh stop, never docker kill/pkill: see live-stack-lib.sh.
+    if ! lsl_stop_stack; then
+        record live-stack-stopped fail "$LSL_FAIL_REASON" "$LSL_FAIL_FIX"
+        echo -e "${RED}${LSL_FAIL_REASON}; not proceeding (${LSL_FAIL_FIX}).${NC}" >&2
         exit 3
     fi
     STACK_STOPPED_BY_US=true
-
-    # Verify rather than trust: `stop` returning 0 is not the same as the ports being free,
-    # and the whole reason this precondition exists is that a survivor collides with the
-    # scenarios' stock names/ports minutes later, reported as a confusing port error.
-    still_up="$( {
-        docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}'
-        docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}'
-    } | sort -u)"
-    if [[ -n "$still_up" ]]; then
-        record live-stack-stopped fail "containers survived ./opentr.sh stop" "investigate: $still_up"
-        echo -e "${RED}Still running after stop: ${still_up}${NC}" >&2
-        exit 3
-    fi
-    echo -e "${GREEN}live stack stopped${NC}" >&2
 fi
 
 # The label check above only knows the two stock compose projects. An `otfresh-*` fresh stack
@@ -440,6 +473,46 @@ else
     fi
 fi
 
+# Gap 2 (RELEASE_SPEED_PLAN section 6): the frontend/docs arm64 legs were scanned and
+# manifest-checked but never EXECUTED before Docker Hub; `smoke` probes only lite arm64, after
+# publish. Run `nginx -t` in each of them on the arm64 host (`docker --context <ctx> run`), so an
+# exec-format or wrong-base defect is caught before the push. The leg is a name in the LOCAL
+# daemon (built with --load), so it is streamed to the remote daemon first (small nginx
+# images). Prints "<outcome><TAB><detail>"; never exits the stage by itself.
+arm64_web_legs_outcome() {
+    local ctx="${REMOTE_ARM64_CONTEXT:-remote-arm64}"
+    local legs="$REPO_ROOT/.release/${VERSION}/legs.tsv"
+    local component platform tag checked=0
+    local -a failed=()
+    if [[ -n "$PATCH_SKIP_REASON" ]]; then
+        printf 'not-measured\t%s\n' "$PATCH_SKIP_REASON"; return
+    fi
+    if ! docker context inspect "$ctx" >/dev/null 2>&1; then
+        printf "not-measured\tno '%s' docker context\n" "$ctx"; return
+    fi
+    if [[ ! -f "$legs" ]]; then
+        printf 'not-measured\tno %s (run the build stage first)\n' "$legs"; return
+    fi
+    while IFS=$'\t' read -r component _ platform tag _; do
+        [[ "$platform" == "linux/arm64" ]] || continue
+        [[ "$component" == "frontend" || "$component" == "docs" ]] || continue
+        checked=$((checked + 1))
+        if ! docker save "$tag" | docker --context "$ctx" load >/dev/null 2>&1; then
+            failed+=("${tag}: could not be loaded onto ${ctx}"); continue
+        fi
+        if ! docker --context "$ctx" run --rm "$tag" nginx -t >/dev/null 2>&1; then
+            failed+=("${tag}: nginx -t failed on arm64")
+        fi
+    done < "$legs"
+    if (( ${#failed[@]} )); then
+        printf 'fail\t%s\n' "${failed[*]}"
+    elif (( checked == 0 )); then
+        printf 'not-measured\tlegs.tsv lists no frontend/docs arm64 leg\n'
+    else
+        printf 'pass\t%d arm64 web leg(s) ran nginx -t\n' "$checked"
+    fi
+}
+
 # Record each scenario against its declared criterion.
 #
 # `not-measured` is the right word for a scenario that never ran because an earlier
@@ -512,6 +585,11 @@ if [[ -z "$PATCH_SKIP_REASON" && $cold_rc -eq 0 ]]; then
     cold_rc=$cold_derived
 fi
 # --- END cold-cache-record ---
+
+# Gap 2: warn-severity (like smoke's lite-arm64-checked): it needs the arm64 host's context.
+arm64_line="$(arm64_web_legs_outcome)"
+record arm64-web-legs-run "${arm64_line%%$'\t'*}" "${arm64_line#*$'\t'}" \
+    "docker context create remote-arm64 ...; then ./scripts/release.sh rehearse ${VERSION}" "${PATCH_SKIP_REASON:+waived}"
 
 # Both halves of the contract: every declared criterion was recorded above.
 criteria_assert_all_checked

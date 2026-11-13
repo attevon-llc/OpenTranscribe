@@ -196,6 +196,28 @@ def search_index_maintenance_task() -> dict[str, Any]:
     return _run_search_maintenance()
 
 
+#: Lock key for the index self-heal that request and task paths request instead of repairing
+#: inline (``opensearch_service.repair.request_index_selfheal``).
+INDEX_SELFHEAL_LOCK_KEY = "opensearch_index_selfheal"
+
+
+@celery_app.task(name="search_index_selfheal", priority=UtilityPriority.OPERATIONAL)
+@with_task_lock(INDEX_SELFHEAL_LOCK_KEY, timeout=900)
+def search_index_selfheal_task() -> list[str]:
+    """Probe the speaker, legacy and chunk indices and repair only what the probe finds damaged.
+
+    The same two checks the startup and periodic health check run (issue #540), behind their own
+    lock so a burst of requests produces one pass.
+
+    Returns:
+        Names of the indices repaired, or ``with_task_lock``'s skipped dict via the decorator.
+    """
+    from app.services.opensearch_service import check_and_repair_indices
+    from app.services.search.index_health import check_and_repair_chunks_index
+
+    return check_and_repair_indices() + check_and_repair_chunks_index()
+
+
 #: Lock key for the neural-search bootstrap self-heal (issue #625). The recovery arm can
 #: block up to ~420s inside ``ensure_model_deployed``, so the lock timeout must exceed that
 #: worst case by a wide margin — see NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS's docstring in

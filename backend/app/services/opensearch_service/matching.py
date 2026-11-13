@@ -14,7 +14,7 @@ from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.client import query_embedding_dimension_mismatch
 from app.services.opensearch_service.indices import ensure_indices_exist
-from app.services.opensearch_service.repair import _repair_index
+from app.services.opensearch_service.repair import request_index_selfheal
 from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
@@ -150,21 +150,9 @@ def find_matching_speaker(
     except Exception as e:
         if _is_index_corruption_error(e):
             logger.warning(
-                "Index corruption detected during speaker matching, attempting repair..."
+                "Index corruption detected during speaker matching, requesting self-heal"
             )
-            if _repair_index(get_active_speaker_index()):
-                try:
-                    response = _client.opensearch_client.search(
-                        index=get_active_speaker_index(), body=query
-                    )
-                    return _top_hit_match(response, threshold)
-                except Exception as retry_err:
-                    logger.error(f"Retry after repair failed for speaker matching: {retry_err}")
-                    if strict:
-                        raise OpenSearchUnavailableError(
-                            "retry after refreshing the index also failed"
-                        ) from retry_err
-                    return None
+            request_index_selfheal(get_active_speaker_index())
         logger.error(f"Error finding matching speaker: {e}")
         if strict:
             raise OpenSearchUnavailableError("speaker kNN failed") from e

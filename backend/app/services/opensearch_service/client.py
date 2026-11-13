@@ -15,6 +15,7 @@ these answers to decide whether to create, alias, or *delete* an index.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -483,26 +484,81 @@ def _supports_ann_search(index_name: str) -> bool:
 _ANN_UNSUPPORTED_MARKER = "not built for ann search"
 
 
-def _is_index_corruption_error(error: Exception) -> bool:
-    """Check if an exception indicates OpenSearch index corruption or wrong mapping.
+#: OpenSearch error types that name a damaged shard or vector segment. Anything else, including
+#: a closed index, a 503 or a missing document, is a different fault and never a repair trigger.
+_CORRUPTION_ERROR_TYPES = frozenset(
+    {"already_closed_exception", "no_shard_available_action_exception"}
+)
 
-    ``index_closed_exception`` is included beside the pre-existing
-    ``already_closed``: they are the same fault reported by two different layers
-    (the coordinating node vs. the shard), and the existing close/reopen repair
-    strategy fixes both. Without it a closed index fell through to "unknown" and
-    no repair was ever attempted.
+#: Reason text of the wrong-mapping rejection (the type is a generic ``illegal_argument_exception``).
+_WRONG_MAPPING_REASON = "not knn_vector type"
+
+
+def _error_types_and_reasons(error: Exception) -> tuple[set[str], list[str]]:
+    """Collect every ``type`` and ``reason`` in an OpenSearch error body.
+
+    Walks ``error.type``, ``root_cause`` and the ``caused_by`` chain of ``TransportError.info``.
     """
-    error_str = str(error).lower()
-    return any(
-        indicator in error_str
-        for indicator in [
-            "503",
-            "search_phase_execution_exception",
-            "already_closed",
-            "index_closed_exception",
-            "no_shard_available",
-            "not knn_vector type",
-        ]
+    info = getattr(error, "info", None)
+    node = info.get("error") if isinstance(info, dict) else None
+    types: set[str] = set()
+    reasons: list[str] = []
+    # opensearch-py's _raise_error stores the body's error TYPE as ``.error`` when the body parsed.
+    top = getattr(error, "error", None)
+    if isinstance(top, str) and re.fullmatch(r"[a-z_]+_exception", top):
+        types.add(top)
+    pending = [node] if isinstance(node, dict) else []
+    while pending:
+        current = pending.pop()
+        if current.get("type"):
+            types.add(str(current["type"]))
+        if current.get("reason"):
+            reasons.append(str(current["reason"]).lower())
+        for child in (*current.get("root_cause", []), current.get("caused_by")):
+            if isinstance(child, dict):
+                pending.append(child)
+    return types, reasons
+
+
+def _is_index_corruption_error(error: Exception) -> bool:
+    """Check if an exception reports a damaged shard or a wrong embedding mapping.
+
+    Classified on the structured body (``error.info["error"]`` types and reasons), never on
+    ``str(error)``: a substring match read a ``NotFoundError`` whose body held a document id as
+    corruption, and read a transient ``index_closed_exception`` or bare 503 the same way, which
+    sent request paths into close/open/forcemerge against the live index. A missing document, a
+    closed index and an unreachable cluster are unavailability, not corruption.
+    """
+    if getattr(error, "status_code", None) == 404:
+        return False
+    types, reasons = _error_types_and_reasons(error)
+    if types & _CORRUPTION_ERROR_TYPES:
+        return True
+    return any(_WRONG_MAPPING_REASON in reason for reason in reasons)
+
+
+def _is_unhealthy_index_error(error: Exception) -> bool:
+    """Check if a health probe's failure means the index needs the self-heal.
+
+    Wider than :func:`_is_index_corruption_error` on purpose: the periodic probe is the one
+    place a closed index or a 5xx on a vector query is acted on (it reopens, never guesses),
+    and it is serialized behind a lock. Still decided on status and error type, never on
+    ``str(error)``, and a 404 is never unhealthy.
+    """
+    status = getattr(error, "status_code", None)
+    if status == 404:
+        return False
+    if _is_index_corruption_error(error):
+        return True
+    types, _ = _error_types_and_reasons(error)
+    return (
+        status == 503
+        or "index_closed_exception" in types
+        or (
+            "search_phase_execution_exception" in types
+            and isinstance(status, int)
+            and status >= 500
+        )
     )
 
 
@@ -620,7 +676,7 @@ def probe_knn_health(index_name: str) -> KnnProbeResult:
         # benign would report a closed index as serviceable.
         if _ANN_UNSUPPORTED_MARKER in str(e).lower():
             return KnnProbeResult("unsupported", detail=str(e))
-        if _is_index_corruption_error(e):
+        if _is_unhealthy_index_error(e):
             return KnnProbeResult("corrupt", detail=str(e))
         logger.warning(f"kNN probe of '{index_name}' was inconclusive: {e}", exc_info=True)
         return KnnProbeResult("unknown", detail=str(e))

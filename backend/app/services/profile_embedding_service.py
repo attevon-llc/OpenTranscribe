@@ -202,7 +202,7 @@ def _check_profiles_exist_in_opensearch(
 ) -> bool:
     """Check if any profile documents exist for the user/scope in OpenSearch."""
     from app.services.opensearch_service import _is_index_corruption_error
-    from app.services.opensearch_service import _repair_index
+    from app.services.opensearch_service import request_index_selfheal
 
     # Build filter based on scope
     user_filter: dict[str, Any]
@@ -230,20 +230,8 @@ def _check_profiles_exist_in_opensearch(
             return False
     except _OPENSEARCH_ERRORS as e:
         if _is_index_corruption_error(e):
-            logger.warning(f"Index corruption during profile check, attempting repair: {e}")
-            if _repair_index(index_name):
-                try:
-                    profile_check = opensearch_client.search(
-                        index=index_name, body=profile_check_query
-                    )
-                    if profile_check["hits"]["total"]["value"] == 0:
-                        logger.info(
-                            f"No profile documents found for user/scope {user_id} after repair"
-                        )
-                        return False
-                    return True
-                except _OPENSEARCH_ERRORS as retry_err:
-                    logger.exception(f"Profile check retry after repair failed: {retry_err}")
+            logger.warning(f"Index corruption during profile check, requesting self-heal: {e}")
+            request_index_selfheal(index_name)
         logger.warning(
             f"Profile document check failed: {e}, proceeding with KNN query", exc_info=True
         )
@@ -264,8 +252,8 @@ def _execute_knn_search(
 ) -> list[dict]:
     """Execute KNN search and return matches above threshold (``strict``: raise on failure)."""
     from app.services.opensearch_service import _is_index_corruption_error
-    from app.services.opensearch_service import _repair_index
     from app.services.opensearch_service import _speaker_org_filter_clauses
+    from app.services.opensearch_service import request_index_selfheal
 
     if accessible_profile_ids is not None:
         filters = [
@@ -299,13 +287,8 @@ def _execute_knn_search(
         response = opensearch_client.search(index=index_name, body=query)
     except _OPENSEARCH_ERRORS as e:
         if _is_index_corruption_error(e):
-            logger.warning(f"Index corruption during KNN search, attempting repair: {e}")
-            if _repair_index(index_name):
-                try:
-                    response = opensearch_client.search(index=index_name, body=query)
-                    return _extract_matches_from_response(response, threshold)
-                except _OPENSEARCH_ERRORS as retry_err:
-                    logger.exception(f"KNN search retry after repair failed: {retry_err}")
+            logger.warning(f"Index corruption during KNN search, requesting self-heal: {e}")
+            request_index_selfheal(index_name)
         logger.error(f"Error in OpenSearch KNN search: {e}")
         if strict:
             raise OpenSearchUnavailableError("profile kNN failed") from e

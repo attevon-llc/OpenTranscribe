@@ -13,7 +13,7 @@ from app.core.embedding_models import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_speaker_embedding_dimension
 from app.services.opensearch_service.aliases import invalidate_active_speaker_index_cache
-from app.services.opensearch_service.client import _is_index_corruption_error
+from app.services.opensearch_service.client import _is_unhealthy_index_error
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.search.availability_field import AVAILABILITY_FIELD
 from app.services.search.availability_field import AVAILABILITY_MAPPING
@@ -52,6 +52,50 @@ def _verify_index_queryable(index_name: str) -> bool:
     return True
 
 
+#: Socket timeout for the post-reopen health wait; must exceed the server's 30 s default wait.
+REOPEN_HEALTH_REQUEST_TIMEOUT_SECONDS = 60
+
+#: Minimum gap between self-heal dispatches. One failing request per second must not queue one
+#: probe per second: the heal runs under its own lock, and this bounds how often it is asked.
+INDEX_SELFHEAL_COOLDOWN_SECONDS = 300
+INDEX_SELFHEAL_COOLDOWN_KEY = "opensearch_index_selfheal:cooldown"
+
+
+def request_index_selfheal(index_name: str) -> bool:
+    """Ask the serialized index self-heal to run, from a request or task path.
+
+    Request and task paths never close, open or force-merge an index themselves: they report the
+    failure and call this. It dispatches ``search_index_selfheal`` (the issue #540 check, which
+    probes before it repairs and runs under a Redis lock), at most once per
+    ``INDEX_SELFHEAL_COOLDOWN_SECONDS``.
+
+    Args:
+        index_name: The index whose failure prompted the request (logged only).
+
+    Returns:
+        True if a heal was dispatched; False if one was requested recently or Redis/the broker
+        is unavailable (the periodic health check still covers it).
+    """
+    from kombu.exceptions import OperationalError as BrokerUnavailableError
+    from redis.exceptions import RedisError
+
+    from app.core.redis import get_redis
+
+    try:
+        if not get_redis().set(
+            INDEX_SELFHEAL_COOLDOWN_KEY, index_name, nx=True, ex=INDEX_SELFHEAL_COOLDOWN_SECONDS
+        ):
+            return False
+        from app.core.celery import celery_app
+
+        celery_app.send_task("search_index_selfheal")
+    except (RedisError, BrokerUnavailableError) as e:
+        logger.warning(f"Could not request index self-heal for {index_name}: {e}")
+        return False
+    logger.warning(f"Index self-heal requested after a failure on {index_name}")
+    return True
+
+
 def reopen_index(index_name: str) -> bool:
     """Close and reopen *index_name* so its shards re-acquire their file handles.
 
@@ -78,8 +122,14 @@ def reopen_index(index_name: str) -> bool:
         indices.open(index=index_name)
     # open() answers shards_acknowledged=false on its 30 s timeout instead of raising, and a
     # recovering index fails the probe like a corrupt one: wait for health before judging.
+    # `timeout="60s"` is not a server-side wait here: opensearch-py's Transport pops "timeout"
+    # from the query params as the SOCKET timeout (transport.py `_resolve_request_args`), where
+    # the string "60s" raises ValueError. Pass a numeric request_timeout that outlasts the
+    # server's default 30 s wait instead.
     health = _client.opensearch_client.cluster.health(
-        index=index_name, wait_for_status="yellow", timeout="60s"
+        index=index_name,
+        wait_for_status="yellow",
+        request_timeout=REOPEN_HEALTH_REQUEST_TIMEOUT_SECONDS,
     )
     if isinstance(health, dict) and health.get("timed_out"):
         return False
@@ -670,7 +720,7 @@ def check_and_repair_indices() -> list[str]:
             )
             logger.info(f"Index health check passed: {index_name}")
         except OpenSearchException as e:
-            if _is_index_corruption_error(e):
+            if _is_unhealthy_index_error(e):
                 logger.warning(
                     f"Index {index_name} unhealthy, attempting repair: {e}", exc_info=True
                 )

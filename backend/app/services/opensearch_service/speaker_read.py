@@ -15,7 +15,7 @@ from app.services.opensearch_service.aliases import get_active_speaker_index
 from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.indices import ensure_indices_exist
-from app.services.opensearch_service.repair import _repair_index
+from app.services.opensearch_service.repair import request_index_selfheal
 from app.services.search.availability_field import exclude_unavailable_clause
 
 logger = logging.getLogger(__name__)
@@ -114,24 +114,7 @@ def get_speaker_embedding(speaker_uuid: str, *, strict: bool = False) -> list[fl
             logger.warning(
                 f"Index corruption detected getting speaker {speaker_uuid}, attempting repair..."
             )
-            active_index = get_active_speaker_index()
-            if _repair_index(active_index):
-                try:
-                    response = _client.opensearch_client.get(
-                        index=active_index, id=str(speaker_uuid)
-                    )
-                    if response and "_source" in response:
-                        embedding = response["_source"].get("embedding")
-                        if embedding is not None:
-                            return list(embedding)
-                except Exception as retry_err:
-                    logger.error(
-                        f"Retry after repair failed for speaker {speaker_uuid}: {retry_err}"
-                    )
-                    if strict:
-                        raise OpenSearchUnavailableError(
-                            "retry after refreshing the index also failed"
-                        ) from retry_err
+            request_index_selfheal(get_active_speaker_index())
             if strict:
                 raise OpenSearchUnavailableError("speaker index unreadable") from e
             return None

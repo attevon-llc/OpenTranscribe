@@ -22,7 +22,7 @@ from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.indices import ensure_indices_exist
-from app.services.opensearch_service.repair import _repair_index
+from app.services.opensearch_service.repair import request_index_selfheal
 from app.services.privacy.consent import has_voiceprint_consent_hooks
 from app.services.privacy.policy import assert_voiceprint_write_allowed
 from app.services.privacy.policy import declined_file_ids
@@ -455,37 +455,9 @@ def add_speaker_embedding(
                 e = retry_err
         if _is_index_corruption_error(e):
             logger.warning(
-                f"Index corruption detected indexing speaker {speaker_uuid}, attempting repair..."
+                f"Index corruption detected indexing speaker {speaker_uuid}, requesting self-heal"
             )
-            if _repair_index(index_name):
-                try:
-                    doc = _speaker_document(
-                        speaker_id=speaker_id,
-                        speaker_uuid=speaker_uuid,
-                        user_id=user_id,
-                        name=name,
-                        embedding=embedding,
-                        profile_id=profile_id,
-                        profile_uuid=profile_uuid,
-                        collection_ids=collection_ids,
-                        media_file_id=media_file_id,
-                        segment_count=segment_count,
-                        display_name=display_name,
-                        organization_id=organization_id,
-                        merged_from=merged_from,
-                        states=availability_by_file({media_file_id}),
-                    )
-                    response = _client.opensearch_client.index(
-                        index=index_name,
-                        body=doc,
-                        id=str(speaker_uuid),
-                    )
-                    logger.info(f"Retry succeeded: indexed speaker {speaker_uuid} after repair")
-                    return response
-                except (OpenSearchException, SQLAlchemyError) as retry_err:
-                    logger.exception(
-                        f"Retry after repair failed for speaker {speaker_uuid}: {retry_err}"
-                    )
+            request_index_selfheal(index_name)
         else:
             logger.error(
                 f"Error indexing speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {e}",

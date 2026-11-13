@@ -113,6 +113,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - The environment variables listed under Changed that never had an effect.
 
 ### Fixed
+- OpenSearch errors are classified by status and error type, never by substring of the message: a missing speaker document (404) whose id contained `503` was read as index corruption and sent request threads into close, open and force-merge of the live speaker index (503s for concurrent readers, failed merges). Request and task paths no longer repair indices inline; they request the locked `search_index_selfheal` task (5 minute cooldown), and `reopen_index` passes a numeric `request_timeout` instead of `timeout="60s"`, which opensearch-py turned into a `ValueError` socket timeout.
 
 - `DELETE /api/files/{uuid}` destroyed any PENDING file at once, including one whose upload had completed and one put back to pending by retry, reprocess or recovery with its transcript intact, bypassing the trash (#1101). Only an unfinished upload (no object landed in storage and no processing history) is still destroyed, with its multipart aborted; everything else is trashed and restorable. Storage doubt also trashes. The load-test personas no longer purge an upload that was destroyed outright.
 

@@ -56,7 +56,20 @@ def fake_repo(tmp_path: Path) -> Path:
     env = {**os.environ, **GIT_ENV}
     subprocess.run(["git", "init", "-q"], cwd=root, check=True, env=env)
     subprocess.run(["git", "add", "-A"], cwd=root, check=True, env=env)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "init"],
+        cwd=root,
+        check=True,
+        env=env,
+    )
     return root
+
+
+def _git(cwd: Path, *args: str) -> str:
+    env = {**os.environ, **GIT_ENV}
+    return subprocess.run(
+        ["git", *args], cwd=cwd, env=env, capture_output=True, text=True, check=True
+    ).stdout.strip()
 
 
 def _run(root: Path, *args: str, cache: Path) -> subprocess.CompletedProcess[str]:
@@ -101,6 +114,24 @@ def test_prepare_keeps_the_kms_key_padding(fake_repo: Path, tmp_path: Path) -> N
     name, _, b64 = line.split("=", 1)[1].partition(":")
     assert name == "opentranscribe-key"
     assert len(base64.b64decode(b64, validate=True)) == 32
+
+
+def test_prepared_tree_is_an_attributable_checkout_of_head(fake_repo: Path, tmp_path: Path) -> None:
+    """opentr.sh stamps GIT_SHA from git in the built tree; a plain copy stamps 'unknown'."""
+    res = _run(fake_repo, "prepare", "pki", cache=tmp_path / "models")
+    assert res.returncode == 0, res.stderr
+    tree = Path(res.stdout.strip().splitlines()[-1])
+    assert _git(tree, "rev-parse", "HEAD") == _git(fake_repo, "rev-parse", "HEAD")
+    # generated .env and certs must not make opentr.sh stamp the build "-dirty"
+    assert _git(tree, "status", "--porcelain") == ""
+
+
+def test_uncommitted_tracked_change_refuses_with_exit_3(fake_repo: Path, tmp_path: Path) -> None:
+    with (fake_repo / ".env.example").open("a") as fh:
+        fh.write("EXTRA=1\n")
+    res = _run(fake_repo, "prepare", "pki", cache=tmp_path / "models")
+    assert res.returncode == 3, res.stdout + res.stderr
+    assert "uncommitted" in res.stderr
 
 
 def test_run_pki_starts_fresh_project_and_stops_it(fake_repo: Path, tmp_path: Path) -> None:

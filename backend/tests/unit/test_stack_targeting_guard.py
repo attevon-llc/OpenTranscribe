@@ -26,7 +26,6 @@ PENDING: dict[tuple[str, str], str] = {
         "backend/tests/api/test_ws_origin_gate.py",
         "live-port-default",
     ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    ("backend/tests/conftest.py", "live-port-default"): "STK2 (the gate)",
     (
         "backend/tests/e2e/idp_overlay.py",
         "compose-no-project",
@@ -59,10 +58,6 @@ PENDING: dict[tuple[str, str], str] = {
         "backend/tests/integration/test_diar_native_multigpu_provider_live.py",
         "live-port-default",
     ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    (
-        "backend/tests/integration/test_gpu_scale_smoke_live.py",
-        "live-port-default",
-    ): "STK2 (the gate)",
     (
         "backend/tests/integration/test_lite_mode_mocked_providers.py",
         "live-port-default",
@@ -118,7 +113,6 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/bulk-processing-cheatsheet.sh",
         "live-port-default",
     ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/check-schema-drift.py", "live-port-default"): "STK2 (the gate)",
     (
         "scripts/cleanup-test-users.py",
         "live-port-default",
@@ -146,7 +140,6 @@ PENDING: dict[tuple[str, str], str] = {
     ("scripts/e2e_bench/config.py", "live-port-default"): "P5 item 5 (benchmarks)",
     ("scripts/gpu-profile-test.sh", "hardcoded-container"): "P5 item 5 (benchmarks)",
     ("scripts/gpu-profile-test.sh", "live-port-default"): "P5 item 5 (benchmarks)",
-    ("scripts/gpu-scale-smoke.sh", "name-substring"): "STK2 (the gate)",
     (
         "scripts/install-offline-package.sh",
         "live-port-default",
@@ -203,9 +196,6 @@ PENDING: dict[tuple[str, str], str] = {
     ("scripts/run-auth-e2e.sh", "hardcoded-container"): "P5 item 2 (auth e2e and the IdP overlay)",
     ("scripts/run-auth-e2e.sh", "live-port-default"): "P5 item 2 (auth e2e and the IdP overlay)",
     ("scripts/run-auth-e2e.sh", "name-substring"): "P5 item 2 (auth e2e and the IdP overlay)",
-    ("scripts/run-dev-tests.sh", "live-port-default"): "STK2 (the gate)",
-    ("scripts/run-integration-tests.sh", "live-port-default"): "STK2 (the gate)",
-    ("scripts/run-mutation-tests.sh", "live-port-default"): "STK2 (the gate)",
     ("scripts/run-summary-eval.sh", "name-substring"): "STK4 (release and rehearsal)",
     ("scripts/run_benchmark.py", "live-port-default"): "P5 item 5 (benchmarks)",
     ("scripts/run_benchmark.py", "name-substring"): "P5 item 5 (benchmarks)",
@@ -527,13 +517,11 @@ def test_detector_stays_clean(rel: str, text: str, detector: str) -> None:
 
 
 def test_the_known_wrong_stack_sites_are_detected() -> None:
-    """The red proof: these five are the incidents behind the guard. If the detectors stop
+    """The red proof: these are the incidents still unfixed behind the guard. If the detectors stop
     seeing them the guard is passing on nothing, whatever PENDING says."""
     hits = scan()
     for key in [
         ("scripts/lite-smoke.sh", D1),
-        ("scripts/gpu-scale-smoke.sh", D1),
-        ("scripts/run-mutation-tests.sh", D3),
         ("scripts/e2e_bench/config.py", D3),
         ("backend/tests/e2e/idp_overlay.py", D4),
     ]:

@@ -46,11 +46,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 JSON=0
 CHECK_ONLY=0
-for arg in "$@"; do
-    case "$arg" in
+TARGET_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --json) JSON=1 ;;
         --check-only) CHECK_ONLY=1 ;;
+        --fresh|--project) TARGET_ARGS=("$1" "${2:?$1 needs a value}"); shift ;;
     esac
+    shift
 done
 
 fail() {
@@ -71,13 +74,21 @@ read_env() {
     python3 "$REPO_ROOT/scripts/lib/env_reader.py" "$REPO_ROOT/.env" "$1"
 }
 
+# The stack is RESOLVED (scripts/lib/stack_target.py), not guessed from `.env` ports and a
+# container-name substring: st_target exports the OBSERVED FLOWER_PORT/BACKEND_PORT of the one
+# project this run targets (--fresh NAME, --project P, COMPOSE_PROJECT_NAME, else the live one).
+# shellcheck source=lib/stack-target.sh
+source "$REPO_ROOT/scripts/lib/stack-target.sh"
+st_rc=0
+st_target "${TARGET_ARGS[@]}" || st_rc=$?
+[[ "$st_rc" -eq 0 ]] || fail "no stack resolved (stack-target exit $st_rc): ./opentr.sh start dev --gpu-scale, or pass --fresh NAME / --project P" 4
+
 GPU_SCALE_WORKERS="${GPU_SCALE_WORKERS:-$(read_env GPU_SCALE_WORKERS)}"
 [[ -n "$GPU_SCALE_WORKERS" ]] || GPU_SCALE_WORKERS=4
 GPU_SCALE_DEFAULT_WORKER="${GPU_SCALE_DEFAULT_WORKER:-$(read_env GPU_SCALE_DEFAULT_WORKER)}"
 [[ -n "$GPU_SCALE_DEFAULT_WORKER" ]] || GPU_SCALE_DEFAULT_WORKER=0
 
-FLOWER_PORT="${FLOWER_PORT:-$(read_env FLOWER_PORT)}"
-[[ -n "$FLOWER_PORT" ]] || FLOWER_PORT=5175
+[[ -n "${FLOWER_PORT:-}" ]] || fail "project $ST_PROJECT publishes no Flower port" 4
 FLOWER_URL_PREFIX="${FLOWER_URL_PREFIX:-$(read_env FLOWER_URL_PREFIX)}"
 [[ -n "$FLOWER_URL_PREFIX" ]] || FLOWER_URL_PREFIX=flower
 FLOWER_USER="${FLOWER_USER:-$(read_env FLOWER_USER)}"
@@ -208,21 +219,16 @@ fi
 UPLOAD_HELPER="$REPO_ROOT/backend/tests/fixtures/search_corpus_stack.py"
 [[ -f "$UPLOAD_HELPER" ]] || fail "no upload fixture found to drive concurrent uploads" 4
 
-# Captured whole, then trimmed to the first line — NOT `docker ps ... | head -1`. This script
-# runs under `set -euo pipefail`, and the filter is an unanchored SUBSTRING match against a
-# scaled worker topology, so more than one name is the expected case: `head -1` exits after
-# the first, `docker ps` takes SIGPIPE (141), `pipefail` makes that the pipeline's status, and
-# the ASSIGNMENT aborts the smoke test with no message at all.
-GPU_CONTAINER="$(docker ps --filter "name=celery-worker-gpu-scaled" --format '{{.Names}}')"
-GPU_CONTAINER="${GPU_CONTAINER%%$'\n'*}"
-[[ -n "$GPU_CONTAINER" ]] || fail "no running celery-worker-gpu-scaled container" 4
+# Label-scoped to the resolved project (an exact match): the old unanchored `name=` substring
+# filter also matched another stack's scaled worker.
+GPU_CONTAINER="$(st_container celery-worker-gpu-scaled)" || GPU_CONTAINER=""
+[[ -n "$GPU_CONTAINER" ]] || fail "no running celery-worker-gpu-scaled container in project $ST_PROJECT" 4
 
 N_UPLOADS=$((GPU_SCALE_WORKERS >= 3 ? GPU_SCALE_WORKERS : 3))
 START_TIME="$(date -u +%Y-%m-%dT%H:%M:%S)"
 
 echo "Dispatching $N_UPLOADS concurrent uploads against the live stack (see backend/tests/CLAUDE.md for the upload contract this reuses)..." >&2
-BACKEND_PORT="${BACKEND_PORT:-$(read_env BACKEND_PORT)}"
-[[ -n "$BACKEND_PORT" ]] || BACKEND_PORT=5174
+[[ -n "${BACKEND_PORT:-}" ]] || fail "project $ST_PROJECT publishes no backend port" 4
 BASE_URL="http://localhost:${BACKEND_PORT}/api"
 
 TOKEN="$(curl -fsS -X POST "$BASE_URL/auth/login" \

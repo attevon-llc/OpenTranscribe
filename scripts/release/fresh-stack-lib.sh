@@ -118,6 +118,12 @@ fresh_stack_seed_models() {
 # run), exports the offset ports + COMPOSE_PROJECT_NAME for the gate, then starts it.
 fresh_stack_up() {
     local name="$1" offset="$2" repo="${REPO_ROOT:-.}" kv spec
+    shift 2
+    # Remaining args are extra `opentr.sh start` flags (the stage's overlay set, LOOP_SPEED_PLAN
+    # T2): the stack comes up with every overlay once, so the gate's own run-dev-tests.sh finds
+    # them up and recreates nothing (a second `up` with a changed overlay set recreated every
+    # app container, twice, ~3-4 min).
+    local extra_flags=("$@")
     fresh_stack_step "teardown ${name}" fresh_stack_teardown "$name"
     while IFS= read -r kv; do
         [[ -n "$kv" ]] && declare -gx "$kv"
@@ -132,7 +138,8 @@ fresh_stack_up() {
     export E2E_BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}"
     fresh_stack_step "seed models" fresh_stack_seed_models "$name" || return 1
     fresh_stack_step "opentr.sh start dev --fresh ${name}" \
-        "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" >&2 || return 1
+        "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" \
+        ${extra_flags[@]+"${extra_flags[@]}"} >&2 || return 1
     fresh_stack_step "seed library and first run" fresh_stack_seed_library
 }
 

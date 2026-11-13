@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -76,6 +78,55 @@ def test_no_compose_owner_is_not_applicable(
     install("transcribe-app", "v468_a")
     assert stack_preflight.run_preflight({"POSTGRES_PORT": "5999"}, root) is None
     assert "not applicable" in capsys.readouterr().err
+
+
+def test_resolved_port_env_follows_the_resolved_stack_not_the_stock_default(
+    stack: Stack, tmp_path: Path
+) -> None:
+    _, _ = stack
+    pg = mk("otfresh-x-postgres-1", "otfresh-x", "postgres", "127.0.0.1:5976->5432/tcp")
+    (tmp_path / "model.json").write_text(json.dumps({"containers": [pg]}))
+    env = {"COMPOSE_PROJECT_NAME": "otfresh-x", "POSTGRES_PORT": "5432"}
+    assert stack_preflight.resolved_port_env(env)["POSTGRES_PORT"] == "5976"
+
+
+def test_resolved_port_env_is_empty_when_no_single_stack_resolves(
+    stack: Stack, tmp_path: Path
+) -> None:
+    _, _ = stack
+    (tmp_path / "model.json").write_text(json.dumps({"containers": []}))
+    assert stack_preflight.resolved_port_env({}) == {}
+
+
+def _drift_script() -> ModuleType:
+    path = Path(__file__).resolve().parents[3] / "scripts" / "check-schema-drift.py"
+    spec = importlib.util.spec_from_file_location("drift_under_test", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_schema_drift_reports_a_schema_behind_head_as_that_not_as_drift(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, install = stack
+    install("transcribe-app", "v0_old_revision")
+    for var in ("POSTGRES_PORT", "COMPOSE_PROJECT_NAME", "ST_ALLOW"):
+        monkeypatch.delenv(var, raising=False)
+    assert _drift_script()._resolve_stack() == 22
+    err = capsys.readouterr().err
+    assert "SCHEMA(22)" in err and "NOT model drift" in err
+
+
+def test_schema_drift_refuses_a_port_nothing_publishes_instead_of_the_stock_one(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, install = stack
+    install("transcribe-app", "v471_b")
+    monkeypatch.setenv("POSTGRES_PORT", "5999")
+    monkeypatch.delenv("COMPOSE_PROJECT_NAME", raising=False)
+    assert _drift_script()._resolve_stack() == 20
 
 
 # ---------------------------------------------------------------- e2e (plan P3)

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import re
-import stat
 import subprocess
 from pathlib import Path
 
@@ -30,33 +29,19 @@ def _block() -> str:
 
 
 def _resolve(tmp_path: Path, **exported: str) -> str:
-    """Run the block with a fake docker (port 5577, password ``stackpw``); return REDIS_ENV."""
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    docker = bin_dir / "docker"
-    docker.write_text(
-        "#!/bin/bash\n"
-        'if [ "$1" = "ps" ]; then\n'
-        '  case "$*" in\n'
-        '    *service=redis*) echo "127.0.0.1:5577->6379/tcp" ;;\n'
-        '    *) echo "fake-backend" ;;\n'
-        "  esac\n"
-        "  exit 0\n"
-        "fi\n"
-        'if [ "$1" = "exec" ]; then echo stackpw; exit 0; fi\n'
-        "exit 0\n",
-        encoding="utf-8",
-    )
-    docker.chmod(docker.stat().st_mode | stat.S_IEXEC)
+    """Run the block with a stub library; return REDIS_ENV.
+
+    ``st_target`` (the real one, tested in test_stack_target.py) exports REDIS_PORT and the
+    backend container's REDIS_PASSWORD; the stub does the same from ``exported``.
+    """
     snippet = f"""
 set -uo pipefail
 YELLOW=''; NC=''
-COMPOSE_PROJECT_NAME=otfresh-fake
+st_container() {{ echo fake-backend; }}
 {_block()}
 echo "REDIS_ENV=${{REDIS_ENV[*]:-}}"
 """
     env = {k: v for k, v in os.environ.items() if not k.startswith("REDIS_")}
-    env["PATH"] = f"{bin_dir}:{os.environ['PATH']}"
     env.update(exported)
     proc = subprocess.run(["bash", "-c", snippet], capture_output=True, text=True, env=env)
     assert proc.returncode == 0, proc.stderr
@@ -65,23 +50,30 @@ echo "REDIS_ENV=${{REDIS_ENV[*]:-}}"
 
 
 @pytest.mark.unit
-def test_nothing_exported_resolves_port_and_password_from_the_stack(tmp_path: Path) -> None:
-    assert _resolve(tmp_path) == ("env REDIS_HOST=localhost REDIS_PORT=5577 REDIS_PASSWORD=stackpw")
-
-
-@pytest.mark.unit
-def test_an_exported_port_alone_still_gets_the_stacks_password(tmp_path: Path) -> None:
-    """The P3.2 shell: REDIS_PORT exported for a --fresh stack, no password."""
-    assert _resolve(tmp_path, REDIS_PORT="5977") == (
-        "env REDIS_HOST=localhost REDIS_PORT=5977 REDIS_PASSWORD=stackpw"
+def test_the_observed_port_and_password_become_the_redis_env(tmp_path: Path) -> None:
+    assert _resolve(tmp_path, REDIS_PORT="5577", REDIS_PASSWORD="stackpw") == (
+        "env REDIS_HOST=localhost REDIS_PORT=5577 REDIS_PASSWORD=stackpw"
     )
 
 
 @pytest.mark.unit
-def test_every_exported_value_wins(tmp_path: Path) -> None:
-    assert _resolve(tmp_path, REDIS_HOST="h", REDIS_PORT="1", REDIS_PASSWORD="mine") == (
-        "env REDIS_HOST=h REDIS_PORT=1 REDIS_PASSWORD=mine"
+def test_a_fresh_stacks_port_arrives_with_its_password(tmp_path: Path) -> None:
+    """The P3.2 shell: a --fresh port with no password used to reach the e2e fixtures bare."""
+    assert _resolve(tmp_path, REDIS_PORT="5977", REDIS_PASSWORD="freshpw") == (
+        "env REDIS_HOST=localhost REDIS_PORT=5977 REDIS_PASSWORD=freshpw"
     )
+
+
+@pytest.mark.unit
+def test_no_observed_port_leaves_the_env_empty_and_warns(tmp_path: Path) -> None:
+    assert _resolve(tmp_path) == ""
+
+
+@pytest.mark.unit
+def test_the_block_asks_the_library_never_docker_directly() -> None:
+    block = _block()
+    assert "docker " not in block.replace("# ", "")
+    assert "st_container backend" in block
 
 
 def _phase_command(title: str) -> str:

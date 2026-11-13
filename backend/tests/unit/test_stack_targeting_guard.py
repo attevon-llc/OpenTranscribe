@@ -156,7 +156,6 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/install-offline-package.sh",
         "live-port-default",
     ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    ("scripts/lite-smoke.sh", "name-substring"): "STK4 (release and rehearsal)",
     (
         "scripts/opentr-offline.sh",
         "live-port-default",
@@ -165,53 +164,16 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/pki/generate-test-env.sh",
         "live-port-default",
     ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    ("scripts/pki/run-pki-e2e-leg.sh", "live-port-default"): "STK4 (release and rehearsal)",
     (
         "scripts/pki/test-pki-auth.sh",
         "live-port-default",
     ): "P5 item 6 (legacy test and ops scripts)",
-    (
-        "scripts/release-tests/lib/feature-checks.sh",
-        "live-port-default",
-    ): "STK4 (release and rehearsal)",
-    (
-        "scripts/release-tests/test-cold-model-download.sh",
-        "name-substring",
-    ): "STK4 (release and rehearsal)",
-    (
-        "scripts/release-tests/test-fresh-install.sh",
-        "hardcoded-container",
-    ): "STK4 (release and rehearsal)",
-    (
-        "scripts/release-tests/test-fresh-install.sh",
-        "live-port-default",
-    ): "STK4 (release and rehearsal)",
-    (
-        "scripts/release-tests/test-lite-mode.sh",
-        "compose-no-project",
-    ): "STK4 (release and rehearsal)",
-    (
-        "scripts/release-tests/test-lite-mode.sh",
-        "hardcoded-container",
-    ): "STK4 (release and rehearsal)",
-    (
-        "scripts/release-tests/test-lite-mode.sh",
-        "live-port-default",
-    ): "STK4 (release and rehearsal)",
-    ("scripts/release-tests/test-lite-mode.sh", "name-substring"): "STK4 (release and rehearsal)",
-    (
-        "scripts/release-tests/test-upgrade.sh",
-        "hardcoded-container",
-    ): "STK4 (release and rehearsal)",
-    ("scripts/release-tests/test-upgrade.sh", "live-port-default"): "STK4 (release and rehearsal)",
-    ("scripts/release/fresh-stack-lib.sh", "live-port-default"): "STK4 (release and rehearsal)",
     ("scripts/run-auth-e2e.sh", "hardcoded-container"): "P5 item 2 (auth e2e and the IdP overlay)",
     ("scripts/run-auth-e2e.sh", "live-port-default"): "P5 item 2 (auth e2e and the IdP overlay)",
     ("scripts/run-auth-e2e.sh", "name-substring"): "P5 item 2 (auth e2e and the IdP overlay)",
     ("scripts/run-dev-tests.sh", "live-port-default"): "STK2 (the gate)",
     ("scripts/run-integration-tests.sh", "live-port-default"): "STK2 (the gate)",
     ("scripts/run-mutation-tests.sh", "live-port-default"): "STK2 (the gate)",
-    ("scripts/run-summary-eval.sh", "name-substring"): "STK4 (release and rehearsal)",
     ("scripts/run_benchmark.py", "live-port-default"): "P5 item 5 (benchmarks)",
     ("scripts/run_benchmark.py", "name-substring"): "P5 item 5 (benchmarks)",
     ("scripts/seed-fresh-deployment.sh", "live-port-default"): "P5 item 7 (standalone defaults)",
@@ -251,6 +213,26 @@ PENDING: dict[tuple[str, str], str] = {
 
 # Not defaults for a resolved target; each carries its written reason.
 EXEMPT: dict[tuple[str, str], str] = {
+    (
+        "scripts/opentr-info.sh",
+        "live-port-default",
+    ): "text printers moved out of opentr.sh (which owns the stack): they print the stock URLs a user opens, they resolve nothing",
+    (
+        "scripts/release-tests/test-fresh-install.sh",
+        "live-port-default",
+    ): "the rehearsal installs the ONE-LINER layout: its ports are the installer's stock ports by design, and guardrails refuses to start while anything holds them",
+    (
+        "scripts/release-tests/test-lite-mode.sh",
+        "live-port-default",
+    ): "the rehearsal installs the ONE-LINER layout: its ports are the installer's stock ports by design, and guardrails refuses to start while anything holds them",
+    (
+        "scripts/release-tests/test-upgrade.sh",
+        "live-port-default",
+    ): "the rehearsal installs the ONE-LINER layout: its ports are the installer's stock ports by design, and guardrails refuses to start while anything holds them",
+    (
+        "scripts/release-tests/lib/feature-checks.sh",
+        "live-port-default",
+    ): "sourced only by the rehearsal scenarios; the default is overridden by their TEST_FRONTEND_PORT, which is the installer's stock port by design",
     (
         "opentr.sh",
         "live-port-default",
@@ -529,11 +511,11 @@ def test_detector_stays_clean(rel: str, text: str, detector: str) -> None:
 
 
 def test_the_known_wrong_stack_sites_are_detected() -> None:
-    """The red proof: these five are the incidents behind the guard. If the detectors stop
+    """The red proof: these are the incidents behind the guard. If the detectors stop
     seeing them the guard is passing on nothing, whatever PENDING says."""
     hits = scan()
     for key in [
-        ("scripts/lite-smoke.sh", D1),
+        ("scripts/run-auth-e2e.sh", D1),
         ("scripts/gpu-scale-smoke.sh", D1),
         ("scripts/run-mutation-tests.sh", D3),
         ("backend/tests/fixtures/search_corpus_stack.py", D3),

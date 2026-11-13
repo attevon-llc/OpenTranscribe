@@ -530,3 +530,45 @@ def test_shell_compose_project_name_follows_an_exported_postgres_port(
         check=True,
     ).stdout.strip()
     assert out == "otfresh-demo"
+
+
+# ---------------------------------------------------------------- python API for scripts
+
+
+def test_observed_port_prefers_the_exported_value_and_needs_no_docker(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", "/nonexistent")  # docker is unreachable
+    assert st.observed_port("BACKEND_PORT", {"BACKEND_PORT": "6111"}) == "6111"
+
+
+def test_observed_port_reads_the_resolved_project_not_the_stock_port(
+    docker: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docker(stacks())
+    assert st.observed_port("BACKEND_PORT", {"COMPOSE_PROJECT_NAME": "otfresh-demo"}) == "5374"
+    assert st.observed_container("postgres", {"COMPOSE_PROJECT_NAME": "otfresh-demo"}) == (
+        "otfresh-demo-postgres"
+    )
+
+
+def test_observed_port_is_empty_when_nothing_resolves(
+    docker: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docker([], down=True)
+    assert st.observed_port("BACKEND_PORT", {}) == ""
+    assert st.observed_container("postgres", {}) == ""
+
+
+def test_refuse_split_names_a_database_and_backend_of_two_projects(docker: Callable) -> None:
+    docker(stacks())
+    assert code_of(lambda: st.refuse_split({"POSTGRES_PORT": "5176", "BACKEND_PORT": "5374"})) == (
+        st.WRONG_PROJECT
+    )
+
+
+def test_refuse_split_accepts_one_project_and_a_throwaway_port(docker: Callable) -> None:
+    docker(stacks())
+    assert st.refuse_split({"POSTGRES_PORT": "5376", "BACKEND_PORT": "5374"}) is None
+    # nobody publishes 49321 (a throwaway container), so it names no project
+    assert st.refuse_split({"POSTGRES_PORT": "49321", "BACKEND_PORT": "5174"}) is None

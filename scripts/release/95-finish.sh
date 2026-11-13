@@ -310,6 +310,11 @@ assets=("${present_sboms[@]}" "${checksum_assets[@]}")
 [[ -f "${checksum_dir}/SHA256SUMS" ]] && assets+=("${checksum_dir}/SHA256SUMS")
 # --- END release-assets ---
 
+# The documented hand-off of scan reports into tracked security-reports/ (left uncommitted for
+# scripts/push-security-reports.sh); nothing before this stage writes there.
+published_reports="$(release_assets_publish_reports "$scan_dir")"
+echo "  copied ${published_reports} scan report(s) into security-reports/ (uncommitted)" >&2
+
 # ─────────────────────────────────── "Latest" is a POLICY decision, not a constant (G4) ──
 #
 # `--latest` was passed unconditionally. `90-promote.sh` already refuses to move Docker

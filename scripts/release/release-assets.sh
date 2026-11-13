@@ -185,7 +185,7 @@ release_assets_checksum_dir() {
 #
 # Preference order: the marker 50-scan.sh actually wrote for THIS version, then the
 # OT_SCAN_DIR env var (an operator's own override, e.g. re-running finish in a fresh shell),
-# then the same ./security-reports default 50-scan.sh itself falls back to.
+# then the same .release/<version>/scan-reports default 50-scan.sh itself falls back to.
 #
 # Args: $1 = version (e.g. "v0.5.0")
 release_assets_resolve_scan_dir() {
@@ -195,5 +195,22 @@ release_assets_resolve_scan_dir() {
         head -n1 "$marker"
         return 0
     fi
-    printf '%s\n' "${OT_SCAN_DIR:-./security-reports}"
+    printf '%s\n' "${OT_SCAN_DIR:-./.release/${version}/scan-reports}"
+}
+
+# The ONLY place scan output enters tracked security-reports/ (50-scan.sh stages it under
+# .release/<version>/scan-reports so a scan never dirties the tree). Copies exactly the human-readable
+# set .gitignore tracks; the machine blobs (*-trivy.json, *-grype.json, *-sbom.json) stay staged.
+# Args: $1 = staging dir, $2 = destination (default ./security-reports)
+release_assets_publish_reports() {
+    local src="$1" dest="${2:-./security-reports}" f n=0
+    mkdir -p "$dest"
+    for f in "$src"/*; do
+        [[ -f "$f" ]] || continue
+        case "$f" in
+            *-trivy.json|*-grype.json|*-sbom.json) continue ;;
+        esac
+        cp -f "$f" "$dest/" && n=$((n + 1))
+    done
+    echo "$n"
 }

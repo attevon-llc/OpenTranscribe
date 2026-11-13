@@ -153,14 +153,14 @@ declare -A MODULE_TESTS=(
     # the module nor its helpers -- they drive it over HTTP and through the provider
     # registry -- so nothing static could derive them. The coverage pre-flight below
     # measures the property directly instead.
-    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py tests/api/test_proxy_auth_endpoint.py tests/test_cloud_seams.py tests/unit/test_proxy_identity_consistency.py tests/unit/test_lifecycle_denial_audit_records.py tests/unit/test_optional_current_user.py tests/unit/test_external_token_auth.py tests/unit/test_external_session_absolute_timeout.py tests/unit/auth_dependencies/test_dependencies_survivor_mutants.py tests/unit/auth_dependencies/test_dependencies_enforcement_mutants.py tests/unit/auth_dependencies/test_privileged_dependency_mutants.py tests/unit/test_dependencies_session_plane_mutants.py"
+    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py tests/api/test_proxy_auth_endpoint.py tests/test_cloud_seams.py tests/unit/test_proxy_identity_consistency.py tests/unit/test_lifecycle_denial_audit_records.py tests/unit/test_optional_current_user.py tests/unit/test_external_token_auth.py tests/unit/test_external_session_absolute_timeout.py tests/unit/auth_dependencies/test_dependencies_survivor_mutants.py tests/unit/auth_dependencies/test_dependencies_enforcement_mutants.py tests/unit/auth_dependencies/test_privileged_dependency_mutants.py tests/unit/test_dependencies_session_plane_mutants.py tests/unit/auth_dependencies/test_dependencies_call_contracts.py"
     # Coverage pre-flight caught this list at 56% of the module on its first real run:
     # it omitted test_lockout_atomicity.py (named for the module it tests) and
     # test_auth_config_behaviour.py, both of which import app.auth.lockout directly, plus
     # the login path that drives it end to end. Now 80.4%.
-    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py tests/unit/test_lockout_admin_listing.py"
-    [lockout_store]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_store_mutants.py"
-    [lockout_admin]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py tests/unit/test_lockout_admin_listing.py tests/test_admin_security.py"
+    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_inmemory_store_bounded.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py tests/unit/test_lockout_admin_listing.py"
+    [lockout_store]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_inmemory_store_bounded.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_store_mutants.py"
+    [lockout_admin]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_inmemory_store_bounded.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py tests/unit/test_lockout_admin_listing.py tests/test_admin_security.py"
     # HISTORY, kept because the reasoning still applies to the next target like it:
     # this entry used to warn that ~every OIDCStateStore mutant would survive, because
     # `store_state`/`get_state`/`delete_state` had no test at all and the target
@@ -313,6 +313,7 @@ finalize_run_evidence() {
         echo "$SUMMARY_END key=$key mutants=$total survived=$survived not_checked=$notchecked" \
              "run_mutants=${run_total:-?} run_survived=${run_surv:-?} ==="
     } >> "$log"
+    survivor_locations "$key" "$log" >> "$log" || true  # after END: check_baseline never reads past it
 
     tsha=$(module_tests_sha "$key" || true)
     {
@@ -602,9 +603,8 @@ MODULE=""
 DRY_RUN=false
 SHOW_ID=""
 PARALLEL=false
-FRESH_NAME=""
-PAR_MODULES=""
-PAR_JOBS=3
+# exported: read only by the sourced lib/mutation-stack.sh, which shellcheck does not follow (SC2034)
+export FRESH_NAME="" PAR_MODULES="" PAR_JOBS=3
 COMPARE_A=""
 COMPARE_B=""
 

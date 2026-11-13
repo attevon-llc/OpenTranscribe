@@ -69,3 +69,73 @@ def test_judge_does_not_pass_survivors_that_fell_below_baseline(iso, tmp_path):
     assert rc == 4 and "IMPROVED UNDER --parallel" in msg
     assert iso.judge("spans", log, 5, accept_improved=True)[0] == 0
     assert iso.judge("spans", log, 0, accept_improved=False)[0] == 0
+
+
+def _empty_log(path: Path, body: str) -> str:
+    path.write_text(
+        body
+        + "\n=== OT-MUTATION-SUMMARY BEGIN key=lockout path=x.py ===\n"
+        + "=== OT-MUTATION-SUMMARY END key=lockout mutants=0 survived=0 not_checked=0 run_mutants=? run_survived=? ===\n"
+    )
+    return str(path)
+
+
+STATS_FAIL = (
+    "____________ test_lockout_threshold_locks_on_the_configured_attempt ____________\n"
+    "mutmut.runners.harness.BadTestExecutionCommandsException: Failed to run pytest"
+)
+
+
+def test_zero_mutants_is_a_failure_naming_module_and_test_not_an_improvement(iso, tmp_path):
+    log = _empty_log(tmp_path / "a", STATS_FAIL)
+    for accept in (False, True):
+        rc, msg = iso.judge("lockout", log, 38, accept_improved=accept)
+        assert rc == 1, msg
+        assert "lockout" in msg and "test_lockout_threshold_locks_on_the_configured_attempt" in msg
+        assert "IMPROVED" not in msg
+
+
+def test_zero_mutants_without_stats_text_still_fails(iso, tmp_path):
+    rc, msg = iso.judge(
+        "lockout", _empty_log(tmp_path / "a", "nothing useful"), 38, accept_improved=True
+    )
+    assert rc == 1 and "lockout" in msg
+
+
+def test_stats_failure_with_mutants_present_still_fails(iso, tmp_path):
+    log = _log(tmp_path / "a", BASE)
+    p = Path(log)
+    p.write_text("failed to collect stats\n" + p.read_text())
+    assert iso.judge("spans", log, 5, accept_improved=True)[0] == 1
+
+
+def test_a_healthy_log_stays_clean(iso, tmp_path):
+    assert iso.judge("spans", _log(tmp_path / "a", BASE), 1, accept_improved=False)[0] == 0
+
+
+def test_survivor_lines_map_a_mutant_to_its_source_line(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(_LIB))
+    sys.modules.pop("mutation_survivor_lines", None)
+    msl = importlib.import_module("mutation_survivor_lines")
+    be = tmp_path / "backend"
+    (be / "mutants" / "app").mkdir(parents=True)
+    (be / "app").mkdir()
+    src = "import os\n\n\ndef f(a):\n    x = a + 1\n    return x\n"
+    (be / "app" / "m.py").write_text(src)
+    gen = (
+        "\n\ndef x_f__mutmut_orig(a):\n    x = a + 1\n    return x\n\n"
+        "\n\ndef x_f__mutmut_1(a):\n    x = a - 1\n    return x\n"
+    )
+    (be / "mutants" / "app" / "m.py").write_text(gen)
+    (be / "mutants" / "app" / "m.py.spans").write_text(
+        '{"version": 1, "spans": {"x_f__mutmut_orig": [1, 5], "x_f__mutmut_1": [7, 11]}}'
+    )
+    line, text = msl.locate(be, "app/m.py", "x_f__mutmut_1")
+    assert (line, text) == (5, "x = a - 1")  # source line 5 is `x = a + 1`
+    assert msl.locate(be, "app/m.py", "x_f__mutmut_9") == (None, "")
+    log = tmp_path / "l.log"
+    log.write_text(
+        "=== OT-MUTATION-SUMMARY BEGIN key=m path=app/m.py ===\n"
+        "app.m.x_f__mutmut_1: survived\n=== OT-MUTATION-SUMMARY END key=m mutants=1 survived=1 ===\n"
+    )
+    assert msl.survivors_in_log(log) == ["app.m.x_f__mutmut_1"]

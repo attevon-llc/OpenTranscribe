@@ -156,3 +156,12 @@ mutation_parallel_run() {
     done
     return "$rc"
 }
+
+# file:line for each survivor of module $1 in log $2, from mutmut's own <path>.spans index
+# (scripts/lib/mutation_survivor_lines.py). Never fails a run: a mutant it cannot place prints `:?`.
+survivor_locations() {
+    local key=$1 log=$2
+    echo "=== OT-MUTATION-SURVIVOR-LOCATIONS key=$key (mutant<TAB>file:line<TAB>mutated line) ==="
+    python3 "$SCRIPT_DIR/lib/mutation_survivor_lines.py" --backend "$BACKEND" --log "$log" \
+        --module-path "${MODULE_PATH[$key]}"
+}

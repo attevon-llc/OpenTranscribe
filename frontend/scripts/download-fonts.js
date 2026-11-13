@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -35,6 +35,12 @@ const fontWeights = {
   },
 };
 
+// A font already on disk with content is kept (same idea as build-ffmpeg.js isValid), so repeat
+// builds and offline builds need no network.
+function isValid(path) {
+  return existsSync(path) && statSync(path).size > 0;
+}
+
 // Download a file from URL using native fetch (Node.js 18+)
 async function downloadFile(url) {
   try {
@@ -61,10 +67,13 @@ async function downloadFonts() {
       const fontFileName = `Poppins-${fontInfo.name}.woff2`;
       const localPath = join(fontsDir, fontFileName);
 
-      console.log(`Downloading ${fontFileName}...`);
       try {
-        const fontData = await downloadFile(fontInfo.url);
-        writeFileSync(localPath, fontData);
+        if (isValid(localPath)) {
+          console.log(`Skipping ${fontFileName} (already present)`);
+        } else {
+          console.log(`Downloading ${fontFileName}...`);
+          writeFileSync(localPath, await downloadFile(fontInfo.url));
+        }
 
         // Add @font-face rule
         cssContent += `\n@font-face {\n`;

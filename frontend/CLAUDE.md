@@ -177,7 +177,8 @@ second client-side exporter believing this exception still applies.
   busts `/theme.js` with a `?v=` content digest (`%sveltekit.env.PUBLIC_THEME_VERSION%`, computed in
   `vite.config.ts`); a new unhashed asset needs the same treatment. `static/fonts/` and
   `static/ffmpeg/` are gitignored and populated by the `prebuild` scripts (`download-fonts.js`,
-  `build-ffmpeg.js`) — a clean checkout must still produce a complete image. `static/ffmpeg/` is
+  `build-ffmpeg.js`) — a clean checkout must still produce a complete image.
+  `download-fonts.js` skips a font already on disk with content (no network on repeat builds). `static/ffmpeg/` is
   no longer fetched from a CDN: `build-ffmpeg.js` compiles a minimal, LGPL-2.1+-only FFmpeg.wasm
   core via `ffmpeg-wasm-build/` (issue #473 — the published `@ffmpeg/core` is GPL 2+, not just
   license-ambiguous). `Dockerfile.prod` compiles the same core as its own build stage, so prod
@@ -385,3 +386,12 @@ caveat: `src/components/ui/CLAUDE.md`.
   This bites hardest on releases that touch a lot of copy at once, and on any long-lived branch:
   every locale file is a shared edit surface, so a branch that sits unmerged collects conflicts in
   all 12 at the same time.
+
+## Image build rules (v0.7.0 build-efficiency)
+
+`Dockerfile.dev`/`Dockerfile.prod`/`docs-site/Dockerfile`: `npm ci` runs under an npm cache mount
+(dev: `/home/node/.npm` uid 1000 because dev installs as `USER node`, then returns to `USER root` for
+the entrypoint, so the image's `node_modules` is already uid 1000 and a fresh volume needs no
+`chown -R`; prod/docs: `/root/.npm`). nginx html is owned via `COPY --chown`, never a later
+`chown -R` layer. No apk build tools (python3/make/g++/git): the lockfile has no install script that
+needs them on Linux. Guards: `backend/tests/unit/test_frontend_docker_build_efficiency.py`.

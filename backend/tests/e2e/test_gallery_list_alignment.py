@@ -3,8 +3,9 @@
 In selection mode every header label was shifted 24px right of its column (and wrongly in
 RTL). jsdom cannot cascade the scoped CSS, so this measures real bounding boxes.
 
-Read-only: switches the view mode in localStorage of a throwaway context and enters/leaves
-selection mode; it creates and changes nothing.
+Switches the view mode in localStorage of a throwaway context and enters/leaves selection
+mode. The only thing it creates is the session's ``owned_transcribed_file`` (a list has no rows to
+measure on an empty library), which is deleted at session end.
 """
 
 from __future__ import annotations
@@ -28,7 +29,9 @@ _MEASURE_JS = """
   const edges = {};
   for (const name of columns) {
     const h = header.querySelector('.list-cell-' + name);
-    const r = row.querySelector('.list-cell-' + name);
+    // The row's checkbox cell is FileSelectCheckbox (`.file-selector.row`), a sibling of the
+    // link that holds the other cells; only the header cell is a `.list-cell-checkbox`.
+    const r = row.querySelector(name === 'checkbox' ? '.file-selector.row' : '.list-cell-' + name);
     if (!h || !r || getComputedStyle(h).display === 'none') continue;
     const hb = h.getBoundingClientRect();
     const rb = r.getBoundingClientRect();
@@ -62,7 +65,7 @@ _OVERFLOW_JS = """
 
 
 @pytest.fixture
-def list_view_page(browser: Browser, shared_auth_state, base_url: str):
+def list_view_page(browser: Browser, shared_auth_state, base_url: str, owned_transcribed_file):
     """Pre-authenticated gallery page forced into list view (per-test throwaway context)."""
     pages: list = []
 

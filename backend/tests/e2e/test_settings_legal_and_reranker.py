@@ -23,7 +23,7 @@ def test_legal_tab_lists_documents_and_the_reader_opens_and_closes(
     authenticated_page: Page,
 ) -> None:
     page = authenticated_page
-    open_settings_section(page, "Legal")
+    open_settings_section(page, "Legal", exact=True)
     rows = page.locator('[data-testid="legal-doc-list"] .legal-row')
     expect(rows.first).to_be_visible(timeout=PAGE_READY_MS)
     assert rows.count() >= 1

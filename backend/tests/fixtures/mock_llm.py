@@ -44,6 +44,7 @@ import contextlib
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from collections.abc import Iterator
@@ -51,6 +52,7 @@ from pathlib import Path
 
 import pytest
 import requests
+from filelock import FileLock
 
 from tests.fixtures.net import free_port
 from tests.fixtures.net import tcp_reachable
@@ -209,8 +211,25 @@ def mock_llm_completion(mock_llm_url: str):
     return _call
 
 
+#: Cross-process lock around the account's ACTIVE LLM configuration. That pointer is one global
+#: per user, so two xdist workers that each activate a mock scenario overwrite each other: the
+#: later one captures the earlier one's mock as its "prior" active config and restores to it
+#: (or to a config the other worker has already deleted), and every upload's automatic
+#: summary/topic task in the meantime runs against a scenario meant for another test.
+ACTIVE_LLM_CONFIG_LOCK = Path(tempfile.gettempdir()) / "ot-e2e-active-llm-config.lock"
+
+#: Longest a test waits for another worker's activation to be undone. A mock-backed
+#: summary/speaker test holds it for up to its own result timeout (180 s).
+ACTIVE_LLM_CONFIG_LOCK_TIMEOUT_S = 1800
+
+
 @pytest.fixture
 def register_mock_llm_provider(mock_llm_base_url_for_backend: str):
+    """Pytest wrapper around :func:`mock_llm_registrar` (a fixture cannot be called directly)."""
+    yield from mock_llm_registrar(mock_llm_base_url_for_backend)
+
+
+def mock_llm_registrar(mock_llm_base_url_for_backend: str) -> Iterator:
     """Point the app's ``custom`` provider at the mock and make it the ACTIVE configuration.
 
     Takes an authenticated ``requests.Session`` (a cookie session or one carrying a bearer
@@ -221,11 +240,17 @@ def register_mock_llm_provider(mock_llm_base_url_for_backend: str):
     Everything is undone afterwards, pass or fail: the configurations are deleted and the one
     that was active before the first registration is made active again. The suite must never
     persist changes to dev data, and the active pointer is dev data.
+
+    The first registration takes ``ACTIVE_LLM_CONFIG_LOCK`` and teardown releases it after the
+    restore, so tests that flip the shared pointer run one at a time across xdist workers.
     """
     created: list[tuple] = []
     prior_active: list[str | None] = []
+    lock = FileLock(str(ACTIVE_LLM_CONFIG_LOCK), timeout=ACTIVE_LLM_CONFIG_LOCK_TIMEOUT_S)
 
     def _register(session, api_base: str, model: str = "mock-gpt", name: str = "Mock LLM (test)"):
+        if not lock.is_locked:
+            lock.acquire()
         headers = {"X-CSRF-Token": session.cookies.get("csrf_token")}
         if not prior_active:
             status = session.get(f"{api_base}/llm-settings/status", headers=headers, timeout=30)
@@ -258,20 +283,23 @@ def register_mock_llm_provider(mock_llm_base_url_for_backend: str):
         activate.raise_for_status()
         return config
 
-    yield _register
-
-    # Cleanup must never fail an otherwise-passing test.
-    for session, api_base, config_uuid, headers in created:
-        with contextlib.suppress(Exception):
-            session.delete(
-                f"{api_base}/llm-settings/config/{config_uuid}", headers=headers, timeout=30
-            )
-    if created and prior_active and prior_active[0]:
-        session, api_base, _uuid, headers = created[0]
-        with contextlib.suppress(Exception):
-            session.post(
-                f"{api_base}/llm-settings/set-active",
-                json={"configuration_id": prior_active[0]},
-                headers=headers,
-                timeout=30,
-            )
+    try:
+        yield _register
+    finally:
+        # Cleanup must never fail an otherwise-passing test.
+        for session, api_base, config_uuid, headers in created:
+            with contextlib.suppress(Exception):
+                session.delete(
+                    f"{api_base}/llm-settings/config/{config_uuid}", headers=headers, timeout=30
+                )
+        if created and prior_active and prior_active[0]:
+            session, api_base, _uuid, headers = created[0]
+            with contextlib.suppress(Exception):
+                session.post(
+                    f"{api_base}/llm-settings/set-active",
+                    json={"configuration_id": prior_active[0]},
+                    headers=headers,
+                    timeout=30,
+                )
+        if lock.is_locked:
+            lock.release()

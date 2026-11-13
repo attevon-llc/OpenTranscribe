@@ -307,7 +307,7 @@ _APP = (
             r"fixture:/api/chat/conversations/[0-9a-f-]+/messages|chat_messages_rendered_answer.json",
             "reload:page",
             "wait:.chat-markdown pre .code-header",
-            "wait:.chat-markdown .katex",
+            "wait:.chat-markdown :is(.chat-math, .chat-math-display) math",
         ),
         ready='[data-testid="chat-composer-input"]',
         notes=(

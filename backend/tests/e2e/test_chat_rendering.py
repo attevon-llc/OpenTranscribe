@@ -112,12 +112,17 @@ def test_answer_renders_markdown_and_a_code_block_with_a_copy_button(
 
 
 @pytest.mark.parametrize("mock_chat_config", ["mock-echo"], indirect=True)
-def test_answer_renders_math_with_katex(
+def test_answer_renders_math_as_mathml(
     gallery_page: Page, base_url: str, conversation: str
 ) -> None:
-    """``mock-echo`` returns the prompt it was sent, which carries the question's TeX."""
+    """``mock-echo`` returns the prompt it was sent, which carries the question's TeX.
+
+    KaTeX runs with ``output: 'mathml'`` (chatMarkdownExtensions.ts), so the formula is a native
+    ``<math>`` inside ``.chat-math`` / ``.chat-math-display``; there is no ``.katex`` wrapper.
+    """
     answer = _ask(gallery_page, base_url, conversation, "Show $$x^2 + y^2 = z^2$$ please")
-    expect(answer.locator(".chat-markdown .katex").first).to_be_visible(timeout=30_000)
+    formula = answer.locator(".chat-markdown :is(.chat-math, .chat-math-display) math")
+    expect(formula.first).to_be_visible(timeout=30_000)
 
 
 def test_the_answer_length_setting_is_what_the_app_sends_as_max_tokens(

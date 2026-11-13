@@ -58,6 +58,11 @@ pytestmark = pytest.mark.gallery
 # stack instead (issue #431).
 
 
+def _wait_for_gallery_rows(page: Page) -> None:
+    """Wait until the gallery has rendered real content (the testid is content-only)."""
+    page.wait_for_selector('[data-testid="gallery-files-loaded"]', timeout=APP_SHELL_READY_MS)
+
+
 def _click_select_all_and_verify(page: Page) -> None:
     """Click `.select-all-btn` and confirm it actually selected something.
 
@@ -352,8 +357,9 @@ class TestSelectionModeButtons:
     """Tests for selection mode toolbar buttons."""
 
     @pytest.fixture(autouse=True)
-    def enter_selection_mode(self, gallery_page: Page):
-        """Enter selection mode before each test."""
+    def enter_selection_mode(self, gallery_page: Page, api_owned_file_uuid: str):
+        """Enter selection mode once the gallery lists the module's owned file."""
+        _wait_for_gallery_rows(gallery_page)
         gallery_page.click(".select-btn")
         gallery_page.wait_for_selector(".select-all-btn", timeout=5000)
         self.page = gallery_page
@@ -594,10 +600,11 @@ class TestBulkActions:
     """Tests for bulk actions with actual file selection and backend interaction."""
 
     @pytest.fixture(autouse=True)
-    def setup_selection(self, gallery_page: Page, api_token: str):
-        """Enter selection mode and prepare for bulk action tests."""
+    def setup_selection(self, gallery_page: Page, api_token: str, api_owned_file_uuid: str):
+        """Enter selection mode; select-all needs the module's owned file to exist."""
         self.page = gallery_page
         self.token = api_token
+        _wait_for_gallery_rows(gallery_page)
         gallery_page.click(".select-btn")
         gallery_page.wait_for_selector(".select-all-btn", timeout=5000)
         yield

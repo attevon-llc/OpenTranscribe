@@ -788,8 +788,6 @@ def _volatile_regions(page: Page, surface: str) -> list[Any]:
     ]
 
 
-@pytest.mark.parametrize("theme", THEMES)
-@pytest.mark.parametrize("surface", SURFACES)
 def _open_fixed_chat_answer(page: Page, base_url: str) -> None:
     """Render the canned assistant answer (bold, list, quote, KaTeX, fenced code) with no LLM.
 
@@ -812,10 +810,12 @@ def _open_fixed_chat_answer(page: Page, base_url: str) -> None:
     )
     page.goto(f"{base_url}/chat/00000000-0000-4000-8000-000000001282")
     page.wait_for_selector(".chat-markdown pre .code-header", timeout=30000)
-    page.wait_for_selector(".chat-markdown .katex", timeout=30000)
+    page.wait_for_selector(".chat-markdown :is(.chat-math, .chat-math-display) math", timeout=30000)
     _stabilize(page)
 
 
+@pytest.mark.parametrize("theme", THEMES)
+@pytest.mark.parametrize("surface", SURFACES)
 def test_visual_regression(
     browser: Any,
     theme: str,

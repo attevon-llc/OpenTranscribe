@@ -10,9 +10,10 @@ agrees, and the state survives a reload.
 Runs as the throwaway ``second_user`` and restores in a ``finally`` (``voiceprints_restored``),
 so the shared admin account is never toggled.
 
-Enter is asserted as a NON-event: the control is a native checkbox with ``role="switch"``,
-and the WAI-ARIA switch pattern requires Space only (Enter is optional). Pinning it keeps a
-future change from making Enter submit the surrounding Settings form unnoticed.
+Enter is asserted as a SECOND activation key: ``Toggle.svelte`` adds it deliberately (the
+WAI-ARIA switch pattern requires Space and lists Enter as optional; a native checkbox ignores
+it) and ``Toggle.test.ts`` pins the same behaviour in jsdom. The server must agree, and the
+Settings dialog must stay open (Enter must not submit a surrounding form).
 """
 
 from __future__ import annotations
@@ -118,7 +119,7 @@ def test_space_toggles_the_switch_and_it_persists(
     assert _server_voiceprints(backend_url, user_headers) is True
 
 
-def test_enter_does_not_toggle_the_switch(
+def test_enter_toggles_the_switch(
     themed_page: Page,
     backend_url: str,
     user_headers: dict[str, str],
@@ -131,13 +132,10 @@ def test_enter_does_not_toggle_the_switch(
 
     switch.focus()
     page.keyboard.press("Enter")
-    # Positive twin below (Space) proves the control would have reacted within this window.
-    page.wait_for_timeout(1500)
-    expect(switch).to_be_checked()
-    assert _server_voiceprints(backend_url, user_headers) is True
-
-    page.keyboard.press("Space")
     expect(switch).not_to_be_checked(timeout=10_000)
+    assert _server_voiceprints(backend_url, user_headers) is False
+    # The Settings dialog is still open: Enter activated the switch, it did not submit a form.
+    expect(page.locator(".settings-modal")).to_be_visible()
 
 
 def test_keyboard_focus_survives_a_toggle(themed_page: Page, voiceprints_restored: None) -> None:

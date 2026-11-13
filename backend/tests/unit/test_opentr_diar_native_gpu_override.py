@@ -58,11 +58,11 @@ def test_diar_native_gpu_override_is_applied_after_gpu_device_override() -> None
     right back to the same value as every other GPU_DEVICE_VARS entry."""
     body = _start_app_body(_source())
     gpu_device_pos = body.find('apply_gpu_device_override "$GPU_DEVICE_OVERRIDE"')
-    diar_native_pos = body.find('export DIAR_NATIVE_GPU="$DIAR_NATIVE_GPU_OVERRIDE"')
+    diar_native_pos = body.find('apply_diar_native_gpu_override "${DIAR_NATIVE_GPU_OVERRIDE-}"')
 
     assert gpu_device_pos != -1, "apply_gpu_device_override(...) call not found in start_app()"
     assert diar_native_pos != -1, (
-        "start_app() no longer exports DIAR_NATIVE_GPU from DIAR_NATIVE_GPU_OVERRIDE -- "
+        "start_app() no longer applies DIAR_NATIVE_GPU_OVERRIDE via apply_diar_native_gpu_override -- "
         "the --diar-native-gpu flag would be parsed but never take effect"
     )
     assert gpu_device_pos < diar_native_pos, (
@@ -82,15 +82,13 @@ def test_diar_native_gpu_override_only_touches_diar_native_gpu() -> None:
     assert match, "GPU_DEVICE_VARS array not found in scripts/lib/gpu-device.sh"
     gpu_device_vars = match.group(1)
 
-    body = _start_app_body(source)
-    diar_block_match = re.search(
-        r'if \[ -n "\$DIAR_NATIVE_GPU_OVERRIDE" \]; then(.*?)'
-        r"pinning the diar-native sidecar",
-        body,
-        re.DOTALL,
+    helper_match = re.search(
+        r"^apply_diar_native_gpu_override\(\)\s*\{(.*?)^\}",
+        lib,
+        re.DOTALL | re.MULTILINE,
     )
-    assert diar_block_match, "no DIAR_NATIVE_GPU_OVERRIDE conditional block found in start_app()"
-    diar_block = diar_block_match.group(1)
+    assert helper_match, "apply_diar_native_gpu_override() not found in scripts/lib/gpu-device.sh"
+    diar_block = helper_match.group(1)
 
     exported_vars = set(re.findall(r"export\s+([A-Z_]+)=", diar_block))
     assert exported_vars == {"DIAR_NATIVE_GPU"}, (

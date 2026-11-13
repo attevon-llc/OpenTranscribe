@@ -84,6 +84,7 @@ repos:
           - cryptography==50.0.2
           - deepgram-sdk==7.16.0
           - fastapi==0.136.3
+          - filelock==4.2.4
           - httpx==0.28.1
           - httpx2==2.16.0
           - huggingface-hub==1.17.0

@@ -202,3 +202,30 @@ def test_a_failing_call_is_logged_too(mock_llm_url):
     assert response.status_code == 500
     logged = requests.get(f"{root}/_mock/requests", timeout=10).json()["requests"]
     assert [entry["model"] for entry in logged] == ["mock-error"]
+
+
+# ------------------------------- mock-gpt answers a structured request with JSON (issue #1308)
+
+
+def test_mock_gpt_answers_the_topic_prompt_with_json_the_parser_accepts(mock_llm_url):
+    content = _content(mock_llm_url, "mock-gpt", system='Reply as {"suggested_tags": []}')
+
+    parsed = TopicExtractionService()._parse_llm_response(content, LLMProvider.CUSTOM)
+
+    assert parsed is not None
+    assert [t.name for t in parsed.suggested_tags] == ["mock-planning", "mock-schedule"]
+
+
+def test_mock_gpt_answers_the_speaker_prompt_with_predictions(mock_llm_url):
+    content = _content(mock_llm_url, "mock-gpt", system='Respond with {"speaker_predictions": []}')
+
+    predictions = json.loads(content)["speaker_predictions"]
+    assert [p["speaker_label"] for p in predictions] == ["SPEAKER_00", "SPEAKER_01"]
+
+
+def test_mock_gpt_still_answers_a_chat_turn_in_markdown(mock_llm_url):
+    content = _content(mock_llm_url, "mock-gpt", system="You answer questions about transcripts.")
+
+    assert "[1]" in content
+    with pytest.raises(ValueError):
+        json.loads(content)

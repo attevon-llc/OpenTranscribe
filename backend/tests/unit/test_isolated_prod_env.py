@@ -232,3 +232,17 @@ def test_run_refuses_without_a_diar_native_export_to_seed_from(
     assert "no diar-native export" in res.stderr
     log = fake_repo / "calls.log"
     assert not log.exists() or "opentr start" not in log.read_text()
+
+
+def test_demo_seed_runs_with_demo_mode_off_for_that_process_only(
+    fake_repo: Path, tmp_path: Path
+) -> None:
+    """The seeder refuses under DEMO_MODE; demo-reset.sh passes `-e DEMO_MODE=false` (S6HB)."""
+    log = fake_repo / "calls.log"
+    _write(fake_repo / "bin" / "docker", f'#!/bin/bash\necho "docker $*" >> "{log}"\nexit 0\n')
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    res = _run(fake_repo, "run", "demo", "--name", "Seed3", "--bundle", str(bundle), cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+    seed = [x for x in log.read_text().splitlines() if "demo_seed import" in x]
+    assert len(seed) == 1 and "exec -e DEMO_MODE=false" in seed[0], seed

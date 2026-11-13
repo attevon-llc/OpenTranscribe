@@ -99,3 +99,16 @@ def test_a_get_that_would_scan_redaction_claims_nothing_in_demo(demo_on, monkeyp
     redaction_gate._lazy_dispatch_redaction(db=MagicMock(), db_file=MagicMock())
 
     assert claims == []
+
+
+def test_refusal_series_exists_at_zero_and_counts_each_refusal(celery_app, demo_on):
+    from prometheus_client import REGISTRY
+
+    def value() -> float | None:
+        return REGISTRY.get_sample_value("celery_publish_refused_total")
+
+    before = value()
+    assert before is not None, "series must be exported before the first refusal"
+    with pytest.raises(DemoPublishRefusedError):
+        celery_app.send_task("system.update_gpu_stats")
+    assert value() == before + 1

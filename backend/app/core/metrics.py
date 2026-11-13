@@ -102,6 +102,7 @@ cache_operations_total: Counter
 security_state_degraded_total: Counter
 celery_queue_depth: Gauge
 celery_tasks_published_total: Counter
+celery_publish_refused_total: Counter
 celery_queue_reserved: Gauge
 celery_queue_orphaned: Gauge
 celery_queue_oldest_unacked_age_seconds: Gauge
@@ -143,6 +144,7 @@ def _register() -> None:
     global security_state_degraded_total
     global celery_queue_depth
     global celery_tasks_published_total
+    global celery_publish_refused_total
     global celery_queue_reserved
     global celery_queue_orphaned
     global celery_queue_oldest_unacked_age_seconds
@@ -256,6 +258,13 @@ def _register() -> None:
         "this is background work started by requests. task='"
         "opentranscribe.inert.probe' is the inertness checker's self-test, not real work.",
         ["task"],
+    )
+    # Label-less on purpose: a labelled prometheus_client counter exports no series until
+    # ``labels()`` is first called, so an alert or a proof reads "absent" instead of 0. The
+    # refusal path never reaches ``before_task_publish``, so it is counted here, not above.
+    celery_publish_refused_total = Counter(
+        "celery_publish_refused_total",
+        "Celery publishes refused because DEMO_MODE is on (issue #628).",
     )
     celery_queue_reserved = Gauge(
         "celery_queue_reserved",

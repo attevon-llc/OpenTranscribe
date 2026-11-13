@@ -173,7 +173,8 @@ def test_the_local_image_branch_actually_calls_the_check():
     if not FRESH_INSTALL.is_file():
         pytest.skip("test-fresh-install.sh is not in this checkout")
     source = FRESH_INSTALL.read_text(encoding="utf-8")
-    assert "gr_assert_image_is_the_code_under_test" in source, (
+    # directly, or through the per-image helper that loops over every image the scenario runs
+    assert re.search(r"gr_assert_(image|release_images)_(is|are)_the_code_under_test", source), (
         "test-fresh-install.sh never calls gr_assert_image_is_the_code_under_test, so "
         "pull_policy=never still runs whatever image happens to carry the tag"
     )
@@ -194,7 +195,9 @@ def test_the_check_is_not_applied_to_hub_mode():
         re.S,
     )
     assert hub_branch, "the USE_HUB_IMAGES branch has moved; re-point this guard"
-    assert "gr_assert_image_is_the_code_under_test" not in hub_branch.group("hub"), (
+    assert not re.search(
+        r"gr_assert_(image|release_images)_(is|are)_the_code_under_test", hub_branch.group("hub")
+    ), (
         "the revision check is inside the Docker Hub branch. There the published image IS "
         "the subject of the test and its revision legitimately differs, so this would "
         "refuse every hub-mode rehearsal."

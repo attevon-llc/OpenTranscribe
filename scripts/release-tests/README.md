@@ -287,3 +287,7 @@ See the dedicated section in the planning doc and the `Edge Cases & Mitigations`
   `lib/alembic-head.py` computes the single head from the `down_revision` graph —
   including for the FROM release, from that release's own worktree — and phase 10
   asserts measured-equals-derived. There is no table to keep up to date.
+
+## Isolated prod checks
+
+`release-tests/isolated-prod-env.sh {prepare|run} {pki|demo} [--name N] [--port-offset N] [--keep-stack] [--bundle DIR] [-- <start flags>]`: builds a temp tree of the tracked files with a GENERATED production-grade `.env` (never the operator's, which in a worktree is a symlink the prod backend rightly refuses), starts `./opentr.sh start prod --build --fresh N` with `--with-pki` or `--lite --demo`, asserts via `stack_target.py`, runs `test_pki.py` or `demo_seed import`, and stops it. Pass `-- --with-mock-llm` for the mock LLM. Test: `backend/tests/unit/test_isolated_prod_env.py`.

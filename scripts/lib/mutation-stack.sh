@@ -165,3 +165,12 @@ survivor_locations() {
     python3 "$SCRIPT_DIR/lib/mutation_survivor_lines.py" --backend "$BACKEND" --log "$log" \
         --module-path "${MODULE_PATH[$key]}"
 }
+
+# survivor_locations, printed AND appended to the module log. Appending alone is how the block
+# went unseen: it lands after the OT-MUTATION-SUMMARY END marker (so check_baseline never reads
+# it) and never reached the console, so a reader of the run output or of the summary's bare
+# `<mutant>: survived` lines saw no file:line (MUTKD, #1373). Never fails a run.
+report_survivor_locations() {
+    local key=$1 log=$2
+    survivor_locations "$key" "$log" | tee -a "$log" || true
+}

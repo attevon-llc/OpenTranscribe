@@ -789,3 +789,78 @@ class TestTheCurrentPasswordIsRefusedFromTheLiveColumn:
         db = _HistoryDB([], current_hash=get_password_hash(password))
 
         assert history_service.check_password_against_history(cast(Any, db), 1, password) is True
+
+
+class TestTheDegradationReportTellsTheOperatorWhatToDo:
+    """The reuse control going blind is alertable only if the line says so (issue #324, #1373).
+
+    Pinned by level, logger name and stable key phrases, never the full sentence: a reword
+    that keeps the meaning must not break these, a blanked or case-mangled fragment must.
+    """
+
+    LOGGER = "app.auth.password_policy"
+
+    @staticmethod
+    def _flaky(fail_for: str):
+        """Raises for one stored hash, answers normally for the rest."""
+
+        def verify(plain: str, hashed: str) -> bool:
+            if hashed == fail_for:
+                raise ValueError("unreadable")
+            return hashed == _fake_hash(plain)
+
+        return verify
+
+    def _report(self, caplog, level: int):
+        recs = [
+            r
+            for r in caplog.records
+            if r.name == self.LOGGER
+            and r.levelno == level
+            and "Password-history check was" in r.getMessage()
+        ]
+        assert len(recs) == 1, [r.getMessage() for r in caplog.records]
+        return recs[0].getMessage()
+
+    def test_a_blind_check_says_so_and_how_to_investigate(self, reuse_enforced, caplog):
+        caplog.set_level(logging.DEBUG, logger=self.LOGGER)
+        _check("Brand-New-Pass-9", [_fake_hash("Older-1")], _Verifier(raises=True))
+
+        msg = self._report(caplog, logging.CRITICAL)
+        assert "Password-history check was completely blind" in msg
+        assert "1 of 1 entries could not be verified" in msg
+        assert "The reuse control is NOT being enforced" in msg
+        assert "Inspect those password_history rows" in msg
+        assert "something is stored there that this build's password context cannot parse" in msg
+        assert "non-passlib sentinel" in msg
+        assert "Changing FIPS_MODE is NOT a cause" in msg
+        assert "every scheme is registered for verification in both modes" in msg
+
+    def test_a_partly_readable_history_is_an_error_not_a_blind_spot(self, reuse_enforced, caplog):
+        caplog.set_level(logging.DEBUG, logger=self.LOGGER)
+        unreadable, readable = _fake_hash("Older-1"), _fake_hash("Older-2")
+
+        assert _check("Brand-New-Pass-9", [unreadable, readable], self._flaky(unreadable)) is True
+
+        msg = self._report(caplog, logging.ERROR)
+        assert "Password-history check was degraded" in msg
+        assert "1 of 2 entries could not be verified" in msg
+        assert "The reuse control is partially enforced" in msg
+        assert "completely blind" not in msg
+        assert not [r for r in caplog.records if r.levelno == logging.CRITICAL]
+
+    def test_each_unreadable_entry_logs_its_traceback_by_name(self, reuse_enforced, caplog):
+        caplog.set_level(logging.DEBUG, logger=self.LOGGER)
+        _check("Brand-New-Pass-9", [_fake_hash("Older-1")], _Verifier(raises=True))
+
+        entry = [
+            r
+            for r in caplog.records
+            if "Could not verify a password-history entry" in r.getMessage()
+        ]
+        assert len(entry) == 1
+        assert entry[0].getMessage().startswith("Could not verify")
+        assert entry[0].getMessage().endswith("password-history entry")
+        assert entry[0].name == self.LOGGER
+        assert entry[0].levelno == logging.ERROR
+        assert entry[0].exc_info and entry[0].exc_info[0] is ValueError

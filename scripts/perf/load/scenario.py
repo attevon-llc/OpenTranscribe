@@ -6,12 +6,14 @@ never load inside the backend test process). The route table lives in ``routes.p
 reason.
 
 The guard reuses the isolation rule of ``scripts/seed-query-review.sh``: the target is a
-``./opentr.sh --fresh NAME`` stack, its port comes from ``.fresh/NAME.offset``, and the shared
-dev stack's ports are refused. There is no override and no remote mode.
+``./opentr.sh --fresh NAME`` stack, its port is the OBSERVED ``BACKEND_PORT`` that ``run.sh``
+exports from ``scripts/lib/stack_target.py`` (never ``5174 + offset``), and the shared dev
+stack's ports are refused. There is no override and no remote mode.
 """
 
 from __future__ import annotations
 
+import os
 import struct
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -19,7 +21,6 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-BASE_BACKEND_PORT = 5174  # BACKEND_PORT in .env.example; a --fresh stack adds its offset
 LIVE_DEV_PORTS = frozenset({5174, 5175, 5176, 5177, 5178, 5179, 5180})
 
 PASSWORD = 'loadtest-password'
@@ -61,7 +62,10 @@ class Target:
 
 
 def resolve_target(
-    fresh: str | None, host: str | None = None, repo_root: Path = REPO_ROOT
+    fresh: str | None,
+    host: str | None = None,
+    repo_root: Path = REPO_ROOT,
+    backend_port: str | None = None,
 ) -> Target:
     """Return the ``--fresh NAME`` stack's backend URL, or raise ``NotIsolatedError``.
 
@@ -69,6 +73,7 @@ def resolve_target(
         fresh: The ``./opentr.sh --fresh`` deployment name.
         host: A ``--host`` the operator also passed; it must equal the derived URL.
         repo_root: Checkout holding ``.fresh/`` (overridable for tests).
+        backend_port: The stack's observed backend port; defaults to the exported ``BACKEND_PORT``.
     """
     if not fresh:
         raise NotIsolatedError(
@@ -81,7 +86,15 @@ def resolve_target(
     raw = offset_file.read_text().strip()
     if not raw.isdigit() or int(raw) == 0:
         raise NotIsolatedError(f"'{fresh}' has port offset {raw!r}; it would share the dev ports.")
-    port = BASE_BACKEND_PORT + int(raw)
+    raw_port = (
+        backend_port if backend_port is not None else os.environ.get('BACKEND_PORT', '')
+    ).strip()
+    if not raw_port.isdigit():
+        raise NotIsolatedError(
+            'BACKEND_PORT is not exported: run through scripts/perf/load/run.sh, which resolves '
+            f"the '{fresh}' stack's observed port with scripts/lib/stack_target.py."
+        )
+    port = int(raw_port)
     if port in LIVE_DEV_PORTS:
         raise NotIsolatedError(f'Port {port} belongs to the shared dev stack.')
     base_url = f'http://localhost:{port}'

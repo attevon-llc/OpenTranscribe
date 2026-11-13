@@ -199,17 +199,21 @@ does the right thing; the tests below are what was missing.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+import redis
 
 from app.auth import session as session_module
 from app.auth.session import OIDC_STATE_PREFIX
 from app.auth.session import InMemoryStore
 from app.auth.session import OIDCStateStore
+from app.core.config import settings
 
 #: Issue #810 order-dependence hygiene. This file previously restored the cached-state
 #: globals it dirties only via `teardown_method` on one class (`TestGetStoreColdBoot`), which
@@ -722,3 +726,175 @@ class TestStoreStatePropagatesItsOwnTtl:
 
         assert collected == [f"{OIDC_STATE_PREFIX}a", f"{OIDC_STATE_PREFIX}b"]
         assert all(isinstance(k, str) for k in collected)
+
+
+# ── get_redis_client: what it asks redis-py for, and how it reports failure ──────
+#
+# Written from the 2026-11-13 all-module mutation run (issue #1373, lane MUTKC).
+
+
+@pytest.mark.unit
+class TestGetRedisClientConnectionParameters:
+    def test_the_client_is_built_from_the_configured_url_with_str_decoding_and_5s_timeouts(self):
+        """``decode_responses`` and both timeouts are load-bearing: this client serves an
+        unauthenticated route, so an unset timeout lets a dead Redis hold a request open
+        forever, and bytes responses break every ``json.loads``/``startswith`` downstream."""
+        client = MagicMock()
+        with patch.object(session_module.redis.Redis, "from_url", return_value=client) as build:
+            result = session_module.get_redis_client()
+
+        assert result is client
+        build.assert_called_once_with(
+            settings.REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+        )
+        client.ping.assert_called_once_with()
+
+
+@pytest.mark.unit
+class TestGetRedisClientFailureReport:
+    def test_an_unreachable_redis_returns_none_and_logs_the_cause_with_its_traceback(self, caplog):
+        boom = redis.ConnectionError("boom-cause-7731")
+        with (
+            caplog.at_level(logging.DEBUG, logger="app.auth.session"),
+            patch.object(session_module.redis.Redis, "from_url", side_effect=boom),
+        ):
+            result = session_module.get_redis_client()
+
+        assert result is None
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "boom-cause-7731" in warnings[0].getMessage()
+        assert warnings[0].exc_info, "the traceback is the only trace of WHY Redis was skipped"
+
+
+# ── InMemoryStore.delete: its return value mirrors Redis DEL ─────────────────────
+
+
+@pytest.mark.unit
+class TestInMemoryStoreDeleteReturnValue:
+    def test_delete_reports_one_for_a_removed_key_and_zero_for_a_missing_one(self):
+        store = InMemoryStore()
+        store.set("k", "v")
+
+        assert store.delete("k") == 1
+        assert store.delete("k") == 0
+        assert store.get("k") is None
+
+
+# ── _cleanup_oldest_states: default batch, and when it warns ─────────────────────
+
+
+@pytest.mark.unit
+class TestCleanupOldestStates:
+    def _populated(self, n: int) -> OIDCStateStore:
+        store = OIDCStateStore(max_states=1000)
+        store._store = InMemoryStore()
+        for i in range(n):
+            store._store.set(f"{OIDC_STATE_PREFIX}s{i}", "{}")
+        return store
+
+    def test_the_default_batch_removes_exactly_one_hundred(self):
+        store = self._populated(150)
+
+        assert store._cleanup_oldest_states() == 100
+        assert len(store._store.keys(f"{OIDC_STATE_PREFIX}*")) == 50
+
+    def test_it_stays_silent_when_nothing_was_removed(self, caplog):
+        store = self._populated(0)
+
+        with caplog.at_level(logging.DEBUG, logger="app.auth.session"):
+            assert store._cleanup_oldest_states() == 0
+
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+    def test_it_warns_with_the_count_when_a_single_state_was_removed(self, caplog):
+        store = self._populated(1)
+
+        with caplog.at_level(logging.DEBUG, logger="app.auth.session"):
+            assert store._cleanup_oldest_states() == 1
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "Cleaned up 1 " in warnings[0]
+
+
+# ── SCAN arguments: the batch hint is part of the contract ───────────────────────
+
+
+@pytest.mark.unit
+class TestScanIsAskedForTheDocumentedBatchSize:
+    """``count=500`` bounds the work per Redis round trip on an unauthenticated route;
+    dropping it (server default 10) turns one guard into dozens of round trips and a
+    larger one makes each stall the shared Redis (also the Celery broker) longer."""
+
+    PATTERN = f"{OIDC_STATE_PREFIX}*"
+
+    def test_count_states_scans_its_prefix_in_batches_of_500(self):
+        scan = _PatternSensitiveScanStore(matching=[f"{OIDC_STATE_PREFIX}a"], foreign=[])
+        store = OIDCStateStore(max_states=10)
+        store._store = scan
+
+        store._count_states()
+
+        assert scan.calls == [(self.PATTERN, 500)]
+
+    def test_scan_keys_scans_its_pattern_in_batches_of_500(self):
+        scan = _PatternSensitiveScanStore(matching=[f"{OIDC_STATE_PREFIX}a"], foreign=[])
+        store = OIDCStateStore(max_states=10)
+        store._store = scan
+
+        store._scan_keys(self.PATTERN, limit=5)
+
+        assert scan.calls == [(self.PATTERN, 500)]
+
+
+# ── logs never carry more than 8 characters of a state value ────────────────────
+
+
+@pytest.mark.unit
+class TestStateValueIsTruncatedInLogs:
+    """The ``state`` value is the CSRF secret of an in-flight login. Logs keep the first
+    eight characters so a line can be correlated, and no more; each record must also
+    still say WHICH state it is about."""
+
+    def _records(self, caplog) -> list[str]:
+        return [r.getMessage() for r in caplog.records if r.name == "app.auth.session"]
+
+    def _assert_only_the_prefix_is_logged(self, messages: list[str]) -> None:
+        assert messages, "expected a log record"
+        for message in messages:
+            assert STATE[:8] in message
+            assert STATE[:9] not in message
+            assert STATE not in message
+
+    def test_storing_a_state_logs_only_its_prefix(self, caplog):
+        store = OIDCStateStore()
+        store._store = InMemoryStore()
+
+        with caplog.at_level(logging.DEBUG, logger="app.auth.session"):
+            assert store.store_state(STATE, STATE_DATA) is True
+
+        self._assert_only_the_prefix_is_logged(self._records(caplog))
+
+    def test_redeeming_a_state_logs_only_its_prefix(self, caplog):
+        store = OIDCStateStore()
+        store._store = InMemoryStore()
+        store.store_state(STATE, STATE_DATA)
+
+        with caplog.at_level(logging.DEBUG, logger="app.auth.session"):
+            assert store.get_state(STATE) == STATE_DATA
+
+        self._assert_only_the_prefix_is_logged(self._records(caplog))
+
+    def test_a_missing_state_warns_with_only_its_prefix(self, caplog):
+        store = OIDCStateStore()
+        store._store = InMemoryStore()
+
+        with caplog.at_level(logging.DEBUG, logger="app.auth.session"):
+            assert store.get_state(STATE) is None
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        self._assert_only_the_prefix_is_logged(warnings)

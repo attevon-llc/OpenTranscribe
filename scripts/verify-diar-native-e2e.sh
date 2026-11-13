@@ -44,7 +44,16 @@ cd "$REPO_ROOT" || exit 1
 # shellcheck source=lib/compose-project.sh
 source "$REPO_ROOT/scripts/lib/compose-project.sh"
 
+# shellcheck source=lib/stack-target.sh
+source "$REPO_ROOT/scripts/lib/stack-target.sh"
+st_target || exit $?
+
 SCENARIO="${1:-current}"
+# fresh/upgrade move the model set aside and restart the backend: only ever on an isolated
+# (otfresh-*) stack. OK_TO_MUTATE_LIVE_MODELS=1 is the explicit override below.
+if [ "$SCENARIO" != "current" ] && [ "${OK_TO_MUTATE_LIVE_MODELS:-0}" != "1" ]; then
+    st_require isolated || exit $?
+fi
 LIVE_MODELS_DIR="$REPO_ROOT/models/diar-native"
 MODELS_DIR="${MODELS_DIR:-$LIVE_MODELS_DIR}"
 # Anchor the stash beside the target, not beside the live tree — a stash written into

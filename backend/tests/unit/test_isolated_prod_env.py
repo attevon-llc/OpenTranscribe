@@ -1,0 +1,102 @@
+"""scripts/release-tests/isolated-prod-env.sh builds a generated prod config, never the operator's .env.
+
+Drives the REAL script inside a throwaway git repo with stub ``opentr.sh``, cert scripts and
+stack-target.sh; proves the generated .env, the fresh-project start line and the teardown.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+SCRIPT = REPO_ROOT / "scripts" / "release-tests" / "isolated-prod-env.sh"
+GIT_ENV = {"GIT_CONFIG_GLOBAL": "/dev/null", "HOME": "/nonexistent"}
+
+
+def _write(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body)
+    path.chmod(0o755)
+
+
+@pytest.fixture
+def fake_repo(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    for rel in (
+        "scripts/release-tests/isolated-prod-env.sh",
+        "scripts/release-tests/lib/env-template.sh",
+        "scripts/lib/model-cache-dir.sh",
+    ):
+        dest = root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO_ROOT / rel, dest)
+    log = root / "calls.log"
+    (root / ".env.example").write_text(
+        "POSTGRES_PASSWORD=CHANGE_ME_auto_generated_on_install\n"
+        "FLOWER_PASSWORD=CHANGE_ME_auto_generated_on_install\n"
+        "MINIO_KMS_SECRET_KEY=CHANGE_ME_auto_generated_on_install\n"
+        "MODEL_CACHE_DIR=./models\nDEMO_MODE=false\n# ENVIRONMENT=production\n"
+    )
+    _write(root / "opentr.sh", f'#!/bin/bash\necho "opentr $*" >> "{log}"\nexit 0\n')
+    _write(root / "scripts" / "generate-ssl-cert.sh", f'#!/bin/bash\necho ssl >> "{log}"\n')
+    _write(root / "scripts" / "pki" / "setup-test-pki.sh", f'#!/bin/bash\necho pki >> "{log}"\n')
+    _write(
+        root / "scripts" / "lib" / "stack-target.sh",
+        "st_target() { return 0; }\nst_require() { return 0; }\nst_container() { echo c; }\n",
+    )
+    # the operator's .env: must never be copied into the isolated tree
+    (root / ".env").write_text("FLOWER_PASSWORD=OPERATOR_SENTINEL\n")
+    (root / ".gitignore").write_text(".env\ncalls.log\n")
+    env = {**os.environ, **GIT_ENV}
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, env=env)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, env=env)
+    return root
+
+
+def _run(root: Path, *args: str, cache: Path) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, **GIT_ENV, "MODEL_CACHE_DIR": str(cache)}
+    return subprocess.run(
+        ["bash", str(root / "scripts/release-tests/isolated-prod-env.sh"), *args],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+
+def test_prepare_generates_production_grade_env(fake_repo: Path, tmp_path: Path) -> None:
+    cache = tmp_path / "models"
+    res = _run(fake_repo, "prepare", "demo", cache=cache)
+    assert res.returncode == 0, res.stderr
+    tree = Path(res.stdout.strip().splitlines()[-1])
+    text = (tree / ".env").read_text()
+    assert "OPERATOR_SENTINEL" not in text
+    assert "CHANGE_ME" not in text
+    assert "MINIO_KMS_AUTO_ENCRYPTION=on" in text
+    assert "DEMO_MODE=true" in text
+    assert f"MODEL_CACHE_DIR={cache}" in text
+    assert "ENVIRONMENT=production" in text
+    flower = next(line for line in text.splitlines() if line.startswith("FLOWER_PASSWORD="))
+    assert len(flower.split("=", 1)[1]) >= 16
+
+
+def test_run_pki_starts_fresh_project_and_stops_it(fake_repo: Path, tmp_path: Path) -> None:
+    res = _run(fake_repo, "run", "demo", "--name", "t1", "--", "--with-mock-llm", cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+    calls = (fake_repo / "calls.log").read_text().splitlines()
+    # the tree copy has its own stubs but the log path is absolute, so both land in one file
+    start = next(c for c in calls if c.startswith("opentr start"))
+    assert "prod --build --fresh t1" in start
+    assert "--lite --demo" in start and "--with-mock-llm" in start
+    assert "opentr stop --fresh t1" in calls
+
+
+def test_misuse_is_exit_2(fake_repo: Path, tmp_path: Path) -> None:
+    assert _run(fake_repo, "run", "bogus", cache=tmp_path).returncode == 2

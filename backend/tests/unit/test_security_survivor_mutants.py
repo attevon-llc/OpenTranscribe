@@ -183,6 +183,7 @@ from __future__ import annotations
 
 import time
 from datetime import timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -554,3 +555,43 @@ class TestVerifyTokenLegacyAlgorithmAuditRecord:
         details = audited[0]["details"]
         assert details["used_algorithm"] == "HS256"
         assert details["required_algorithm"] == "HS512"
+
+
+# ── authenticate_user: before_hash is handed the loaded user row ────────────────
+
+
+class TestAuthenticateUserBeforeHashReceivesTheUser:
+    """``before_hash(user)`` -> ``before_hash(None)``: the login path passes
+    ``session_utils.end_read_transaction``, which needs the row to release the
+    connection it is attached to. Handing it ``None`` would release nothing, and the
+    pooled connection would be held across PBKDF2 again. A recording hook proves the
+    hook runs with the user, and before the password is checked."""
+
+    def _db_returning(self, user):
+        from unittest.mock import MagicMock
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = user
+        return db
+
+    def test_the_hook_is_called_once_with_the_loaded_user(self):
+        from types import SimpleNamespace
+
+        from app.core.auth_types import AUTH_TYPE_LOCAL
+
+        user: Any = SimpleNamespace(
+            auth_type=AUTH_TYPE_LOCAL,
+            allow_local_fallback=False,
+            hashed_password=security.get_password_hash(PROBE_PASSWORD),
+        )
+        seen: list[object] = []
+
+        result = security.authenticate_user(
+            self._db_returning(user),
+            "someone@example.com",
+            PROBE_PASSWORD,
+            before_hash=seen.append,
+        )
+
+        assert result is user
+        assert seen == [user]

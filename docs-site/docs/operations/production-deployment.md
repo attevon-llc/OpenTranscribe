@@ -257,7 +257,7 @@ echo "0 0 1 * * certbot renew --quiet && docker compose restart nginx" | sudo te
 | `/api/ws` | `backend:8080` | WebSocket notifications |
 | `/api/` | `backend:8080` | REST API |
 | `/docs/` | `docs:8080` | Embedded documentation site |
-| `/flower/` | `flower:5555` | Celery monitoring dashboard (admin and super admin only: nginx checks the session with `auth_request` before proxying) |
+| `/flower/` | `flower:5555` | Celery monitoring dashboard (admin and super admin only: nginx checks the session with `auth_request`, then sends Flower's own Basic credential from `FLOWER_USER`/`FLOWER_PASSWORD`) |
 | `/minio/` | `minio:9001` | MinIO console |
 | `/s3/` | `minio:9000` | S3 API (presigned URLs) |
 | `/metrics`, `/metrics/queues` | _(none)_ | Answered with 404 at the proxy; Prometheus scrapes the backend over the internal network |

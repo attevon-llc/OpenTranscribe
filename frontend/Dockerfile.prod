@@ -119,9 +119,20 @@ COPY --from=build --chown=nginx:nginx /app/dist /usr/share/nginx/html
 # Copy the nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Writes Flower's Basic credential at container start from FLOWER_USER/FLOWER_PASSWORD; the
+# /flower/ locations include its output. The placeholder lets `nginx -t` run without the
+# entrypoint (the rehearsal's arm64 check), and the directory is the nginx user's because the
+# script runs as that user.
+COPY docker-entrypoint.d/15-flower-basic-auth.sh /docker-entrypoint.d/15-flower-basic-auth.sh
+
 # Create non-root user and configure permissions for nginx
 # Note: nginx user already exists in base image, just configure permissions
-RUN chown -R nginx:nginx /var/cache/nginx && \
+RUN chmod 0755 /docker-entrypoint.d/15-flower-basic-auth.sh && \
+    mkdir -p /etc/nginx/flower-auth && \
+    printf 'proxy_set_header Authorization "";\n' \
+      > /etc/nginx/flower-auth/authorization.conf && \
+    chown -R nginx:nginx /etc/nginx/flower-auth && \
+    chown -R nginx:nginx /var/cache/nginx && \
     mkdir -p /var/log/nginx && \
     chown -R nginx:nginx /var/log/nginx && \
     touch /var/run/nginx.pid && \

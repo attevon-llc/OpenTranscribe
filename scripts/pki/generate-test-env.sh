@@ -107,13 +107,25 @@ ADMIN_CERTS=()
 # safe by construction: Docker's IPAM refuses a pool that overlaps an existing
 # host route, so a subnet it allocated cannot be the LAN this host sits on.
 #
+# NEVER THE GATEWAY. The subnet contains the network's gateway, which is the
+# host's own address on the bridge. Every connection the host opens to the
+# backend arrives from it, and so does every client Docker's userland proxy
+# relays to a published port (docker/docs#17312; Docker docs "Port publishing
+# and mapping"). Trusting it let a forged DN sent to the backend's published
+# port from the host sign in as admin. Only the PKI nginx, a container on this
+# network, may vouch, so the derived list is the subnet MINUS its gateway, and
+# loopback is not in it (inside the backend container 127.0.0.1 is only that
+# container itself). The backend refuses its default gateway as well
+# (backend/app/auth/header_trust.py), so the fallback below, which cannot know
+# the gateway, is no hole either.
+#
 # FALLBACK. When the daemon can't be reached, or the project's network does not
 # exist yet (a first-ever `--with-pki` start creates it only during `up`), we
 # fall back to Docker's default pool and say so loudly. On a host crowded
 # enough for #615's spill, that first start can still fail the fail-closed
 # trust check; the second one works, because the network exists by then. Pass
 # --trusted-proxies to skip the guessing entirely.
-PKI_TRUSTED_PROXIES_FALLBACK="127.0.0.1/32,172.16.0.0/12"
+PKI_TRUSTED_PROXIES_FALLBACK="172.16.0.0/12"
 TRUSTED_PROXIES=""
 TRUSTED_PROXIES_EXPLICIT=""
 TRUSTED_PROXIES_SOURCE=""
@@ -241,13 +253,32 @@ derive_docker_subnets() {
     seen="${seen},${name}"
     out=""
     out="$(docker network inspect "$name" \
-      --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2> /dev/null)" || continue
+      --format '{{range .IPAM.Config}}{{.Subnet}}|{{.Gateway}} {{end}}' 2> /dev/null)" || continue
     for subnet in $out; do
       case ",${all}," in *",${subnet},"*) continue ;; esac
       all="${all:+${all},}${subnet}"
     done
   done
-  printf '%s' "$all"
+  [ -n "$all" ] || return 0
+  without_gateways "$all"
+}
+
+# `SUBNET|GATEWAY,...` -> the CIDRs covering each subnet minus its gateway
+# (Python's ipaddress `address_exclude`). An empty gateway is docker IPAM's
+# default, the subnet's first host address. A value that does not parse is an
+# error, not a silently wider allowlist.
+without_gateways() {
+  python3 -I -c '
+import ipaddress, sys
+out = []
+for item in sys.argv[1].split(","):
+    subnet, _, gateway = item.partition("|")
+    network = ipaddress.ip_network(subnet, strict=False)
+    host = ipaddress.ip_address(gateway) if gateway else next(network.hosts())
+    excluded = ipaddress.ip_network(f"{host}/{host.max_prefixlen}")
+    out.extend(str(n) for n in sorted(network.address_exclude(excluded)))
+print(",".join(out))
+' "$1"
 }
 
 resolve_trusted_proxies() {
@@ -260,11 +291,8 @@ resolve_trusted_proxies() {
   local derived
   derived="$(derive_docker_subnets)"
   if [ -n "$derived" ]; then
-    # Loopback stays in the list because a host-side caller that reaches the
-    # published port over 127.0.0.1 may arrive either as the bridge gateway
-    # (inside the derived subnet) or as loopback itself, depending on whether
-    # docker's userland proxy handled the connection.
-    TRUSTED_PROXIES="127.0.0.1/32,${derived}"
+    # No loopback and no gateway: see "NEVER THE GATEWAY" above.
+    TRUSTED_PROXIES="${derived}"
     TRUSTED_PROXIES_SOURCE="docker network"
     return 0
   fi

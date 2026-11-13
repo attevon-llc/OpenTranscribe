@@ -2,8 +2,14 @@
 #
 # Test PKI Authentication
 #
-# Tests the PKI authentication endpoint using generated certificates.
-# Simulates what Nginx would do in production (passing cert DN via headers).
+# Tests the PKI authentication endpoint using generated certificates, through the
+# mTLS nginx (PKI_E2E_URL, written by generate-test-env.sh; default
+# https://localhost:${PKI_HTTPS_PORT:-5182}). curl presents the client certificate and
+# nginx forwards the DN it verified, exactly as a browser login does.
+#
+# It no longer sends a DN header straight to the backend port: that request arrives
+# from the docker gateway, which the backend never trusts to vouch for an identity
+# (backend/app/auth/header_trust.py), because anyone on the host could forge one.
 #
 # Usage: ./scripts/pki/test-pki-auth.sh [username]
 #        ./scripts/pki/test-pki-auth.sh testuser
@@ -18,6 +24,11 @@ PKI_DIR="${SCRIPT_DIR}/test-certs"
 source "${SCRIPT_DIR}/../lib/stack-target.sh"
 if [[ -z "${API_URL:-}" ]]; then st_target || exit $?; fi
 API_URL="${API_URL:-http://localhost:${BACKEND_PORT}/api}"
+# The fragment generate-test-env.sh wrote for the running --with-pki stack knows its port.
+if [[ -z "${PKI_E2E_URL:-}" && -f "${PKI_DIR}/pki-test.env" ]]; then
+    PKI_E2E_URL="$(sed -n "s/^PKI_E2E_URL='\(.*\)'\$/\1/p" "${PKI_DIR}/pki-test.env")"
+fi
+PKI_URL="${PKI_E2E_URL:-https://localhost:${PKI_HTTPS_PORT:-5182}}"
 
 # Colors
 RED='\033[0;31m'
@@ -37,6 +48,7 @@ fi
 test_pki_auth() {
     local cert_name=$1
     local cert_file="${PKI_DIR}/clients/${cert_name}.crt"
+    local key_file="${PKI_DIR}/clients/${cert_name}.key"
 
     if [ ! -f "$cert_file" ]; then
         echo -e "${RED}Certificate not found: ${cert_file}${NC}"
@@ -52,13 +64,13 @@ test_pki_auth() {
     echo -e "  DN: ${dn}"
     echo ""
 
-    # Make the API call (simulating Nginx passing the DN header)
-    echo -e "${YELLOW}Calling: POST ${API_URL}/auth/pki/authenticate${NC}"
-    echo -e "  Header: X-Client-Cert-DN: ${dn}"
+    # -k: the test server certificate is a self-signed localhost one (docker-compose.pki.yml
+    # setup step 2). The client certificate is what this exercises, and nginx verifies it.
+    echo -e "${YELLOW}Calling: POST ${PKI_URL}/api/auth/pki/authenticate (mTLS)${NC}"
     echo ""
 
-    response=$(curl -s -w "\n%{http_code}" -X POST "${API_URL}/auth/pki/authenticate" \
-        -H "X-Client-Cert-DN: ${dn}" \
+    response=$(curl -s -w "\n%{http_code}" -X POST "${PKI_URL}/api/auth/pki/authenticate" \
+        --cert "$cert_file" --key "$key_file" -k \
         -H "Content-Type: application/json")
 
     # Split response body and status code

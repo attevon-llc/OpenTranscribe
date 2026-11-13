@@ -41,8 +41,10 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import logging
+import struct
 from collections.abc import Mapping
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Protocol
 
 logger = logging.getLogger(__name__)
@@ -123,6 +125,52 @@ def ip_in_networks(ip: str, networks: Sequence[TrustedNetwork]) -> bool:
     return any(parsed in network for network in networks)
 
 
+#: Linux's IPv4 routing table for this network namespace (proc(5), ``/proc/net/route``).
+ROUTE_TABLE = Path("/proc/net/route")
+
+#: ``RTF_GATEWAY`` from ``linux/route.h``: the route goes through a gateway.
+_RTF_GATEWAY = 0x0002
+
+
+def default_gateways(route_table: Path | None = None) -> frozenset[str]:
+    """IPv4 default gateways of this process's network namespace.
+
+    In a container on a Docker bridge network the default gateway is the host's own address on
+    that bridge (Docker docs, "Port publishing and mapping": an address is assigned to the bridge
+    so host processes can reach the network). Every connection the host opens to the container,
+    and every connection Docker's userland proxy relays to a published port, arrives from it:
+    the proxy opens a new connection whose source is the gateway (docker/docs issue #17312). So
+    that address stands for "the host, or anyone the host relayed", never for the reverse proxy
+    that terminated authentication, which reaches the backend from its own container address.
+
+    Args:
+        route_table: The kernel table to read; :data:`ROUTE_TABLE` when omitted, looked
+            up at call time so a test can point it elsewhere. One header line, then
+            whitespace-separated ``Iface Destination Gateway Flags ...``, the addresses as
+            hex of their in-memory (network-order) bytes, so they unpack in native order.
+
+    Returns:
+        The gateway addresses of every default route, or an empty set when the table cannot be
+        read (not Linux), which leaves the allowlist exactly as configured.
+    """
+    try:
+        rows = (route_table or ROUTE_TABLE).read_text(encoding="ascii").splitlines()[1:]
+    except OSError:
+        return frozenset()
+    gateways: set[str] = set()
+    for row in rows:
+        fields = row.split()
+        if len(fields) < 4 or fields[1] != "00000000":
+            continue
+        try:
+            gateway, flags = int(fields[2], 16), int(fields[3], 16)
+        except ValueError:
+            continue
+        if flags & _RTF_GATEWAY and gateway:
+            gateways.add(str(ipaddress.IPv4Address(struct.pack("=I", gateway))))
+    return frozenset(gateways)
+
+
 def immediate_peer_ip(request: RequestLike) -> str:
     """Return the address of the host that opened this connection.
 
@@ -143,15 +191,32 @@ def immediate_peer_ip(request: RequestLike) -> str:
     return UNKNOWN_PEER
 
 
-def header_source_is_trusted(request: RequestLike, networks: Sequence[TrustedNetwork]) -> bool:
+def header_source_is_trusted(
+    request: RequestLike, networks: Sequence[TrustedNetwork], *, secret_vouched: bool = False
+) -> bool:
     """Whether the peer that delivered *request* may assert identity headers.
 
     One rule, with no environment-dependent relaxation: the immediate peer must be
-    in the configured allowlist. An empty allowlist trusts nobody.
+    in the configured allowlist, and must not be this container's default gateway
+    (:func:`default_gateways`). The gateway sits inside the very container subnet an
+    operator allow-lists for the proxy, yet it is the host, and every client Docker's
+    userland proxy relays to a published port. Trusting it let anyone who could reach
+    the backend's port sign in as any DN. An empty allowlist trusts nobody.
+
+    Args:
+        request: The incoming request.
+        networks: Parsed trusted-proxy allowlist.
+        secret_vouched: The request carried a configured shared secret that matched
+            (:func:`shared_secret_matches`, constant time). The secret then authenticates
+            the hop itself, so a proxy run on the host may reach the backend from the
+            gateway. Only trusted-header auth has a secret; PKI never passes this.
     """
     if not networks:
         return False
-    return ip_in_networks(immediate_peer_ip(request), networks)
+    peer = immediate_peer_ip(request)
+    if not ip_in_networks(peer, networks):
+        return False
+    return secret_vouched or peer not in default_gateways()
 
 
 def header_assertion_permitted(
@@ -161,6 +226,7 @@ def header_assertion_permitted(
     asserted: bool,
     method: str,
     setting_name: str,
+    secret_vouched: bool = False,
 ) -> bool:
     """Decide whether to accept identity headers on *request*.
 
@@ -171,11 +237,12 @@ def header_assertion_permitted(
             headers. When it does not there is nothing to refuse.
         method: Auth-method name, for the log line (``pki`` / ``proxy``).
         setting_name: The allowlist setting an operator would fix.
+        secret_vouched: See :func:`header_source_is_trusted`.
 
     Returns:
         True to continue (trusted peer, or nothing asserted), False to refuse.
     """
-    if header_source_is_trusted(request, networks):
+    if header_source_is_trusted(request, networks, secret_vouched=secret_vouched):
         return True
 
     if not asserted:
@@ -184,7 +251,17 @@ def header_assertion_permitted(
         return True
 
     peer = immediate_peer_ip(request)
-    if networks:
+    if peer in default_gateways():
+        logger.warning(
+            "%s identity headers received from %s, this container's default gateway: the "
+            "address the host and Docker's userland proxy connect from, so it vouches for "
+            "nobody even where %s covers it. Send them through the reverse-proxy container "
+            "on the compose network, or, for trusted-header auth, set a shared secret.",
+            method,
+            peer,
+            setting_name,
+        )
+    elif networks:
         logger.warning(
             "%s identity headers received from untrusted immediate peer %s (the socket "
             "peer, not necessarily the originating client). This may indicate a header "

@@ -206,6 +206,7 @@ fi
 hygiene_dirty=()
 hygiene_unchecked=()
 hygiene_clean=0
+hygiene_not_built=()   # non-host legs a host-arch-only build never made: nothing to inspect
 while IFS=$'\t' read -r comp capability platforms; do
     [[ "$comp" == "blackwell" ]] && continue
     [[ -n "${REPO_FOR_COMPONENT[$comp]:-}" ]] || continue
@@ -213,6 +214,10 @@ while IFS=$'\t' read -r comp capability platforms; do
     for platform in "${plats[@]}"; do
         [[ -n "$platform" ]] || continue
         leg="${REPO_FOR_COMPONENT[$comp]}:${VERSION}-${capability}-${platform#linux/}"
+        if [[ "$HOST_ONLY" == "true" && "$platform" != "$HOST_PLATFORM" ]]; then
+            hygiene_not_built+=("$leg")
+            continue
+        fi
         h_rc=0
         h_out=$(./scripts/check-image-hygiene.sh "$leg" 2>&1) || h_rc=$?
         case "$h_rc" in
@@ -234,6 +239,13 @@ elif (( ${#hygiene_unchecked[@]} > 0 || hygiene_clean == 0 )); then
         "could not inspect: ${hygiene_unchecked[*]:-no legs derived}" \
         "./scripts/check-image-hygiene.sh <leg tag>"
     rc=1
+elif (( ${#hygiene_not_built[@]} > 0 )); then
+    # Same exception as every-arch-leg-scanned below: legs that were never built cannot be
+    # inspected. Every BUILT leg was inspected and is clean; waived (warn), never a pass, and
+    # publish refuses a host-arch-only build.
+    record images-carry-no-dev-artifacts not-measured \
+        "host-arch-only: ${hygiene_clean} built leg(s) clean, ${#hygiene_not_built[@]} non-host legs not built, not inspected (${hygiene_not_built[*]})" \
+        "build without --host-arch-only before publishing" waived
 else
     record images-carry-no-dev-artifacts pass "${hygiene_clean} leg(s) clean"
 fi

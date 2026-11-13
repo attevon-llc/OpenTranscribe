@@ -87,11 +87,15 @@ BACKEND_PORT = _repo_env_value("BACKEND_PORT", "5174")
 BASE_URL = f"http://localhost:{BACKEND_PORT}/api"
 
 
-def _flower_workers_refreshed() -> dict | None:
+def _flower_workers_refreshed(wanted_prefixes: tuple[str, ...] = ("gpu-scaled@",)) -> dict | None:
     """Fetch /api/workers?refresh=1, retrying because a refresh landing while the
     boot-time inspect is still in flight de-duplicates onto that stale task, and a
     threads-pool GPU worker mid preload/mid-transcription can hold the GIL long
-    enough to miss even a widened reply deadline."""
+    enough to miss even a widened reply deadline.
+
+    Returns as soon as EVERY prefix in ``wanted_prefixes`` has a registered worker,
+    so a stack that cannot have a ``gpu-scaled@`` worker does not wait for one
+    (an empty tuple accepts the first OK reply)."""
     for _ in range(FLOWER_REFRESH_ATTEMPTS):
         try:
             resp = requests.get(
@@ -102,7 +106,7 @@ def _flower_workers_refreshed() -> dict | None:
             )
             if resp.ok:
                 data: dict = resp.json()
-                if any(name.startswith("gpu-scaled@") for name in data):
+                if all(any(name.startswith(p) for name in data) for p in wanted_prefixes):
                     return data
         except requests.RequestException:
             pass
@@ -177,7 +181,12 @@ def flower_workers() -> dict:
     if not _flower_port_open():
         pytest.skip(f"Flower not reachable at {FLOWER_BASE} -- is --gpu-scale up?")
 
-    data = _flower_workers_refreshed()
+    wanted = (
+        ("gpu-scaled@", "gpu-transcription@")
+        if _gpu_scaled_container_running()
+        else ("gpu-transcription@",)
+    )
+    data = _flower_workers_refreshed(wanted)
     if not data:
         pytest.skip(f"Flower returned no worker data at {FLOWER_BASE}")
         raise AssertionError("unreachable")  # pytest.skip is NoReturn at runtime

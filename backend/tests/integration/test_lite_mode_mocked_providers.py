@@ -289,8 +289,7 @@ def _last_mock_asr_request() -> dict:
     return dict(resp.json())
 
 
-@pytest.fixture
-def uploaded_file(api_session: requests.Session, backend_url: str, mock_asr_config):
+def _upload_and_delete(api_session: requests.Session, backend_url: str):
     """Upload sample_short.wav through the mock ASR pipeline; delete on teardown."""
     import uuid as uuid_pkg
 
@@ -308,6 +307,22 @@ def uploaded_file(api_session: requests.Session, backend_url: str, mock_asr_conf
         yield file_uuid
     finally:
         _delete_file_until_gone(api_session, backend_url, file_uuid)
+
+
+@pytest.fixture
+def uploaded_file(api_session: requests.Session, backend_url: str, mock_asr_config):
+    """Function-scoped upload for tests that mutate state; delete on teardown."""
+    yield from _upload_and_delete(api_session, backend_url)
+
+
+@pytest.fixture(scope="class")
+def happy_path_file(
+    api_session: requests.Session, backend_url: str, register_mock_gladia_asr_config_for_class
+):
+    """One upload shared by the read-only ``TestMockedAsrHappyPath`` tests (each used to
+    pay a ~27 s upload+process+delete). Only for tests that never mutate the file."""
+    register_mock_gladia_asr_config_for_class(api_session, f"{backend_url}/api")
+    yield from _upload_and_delete(api_session, backend_url)
 
 
 def _wait_for_indexed(
@@ -475,12 +490,12 @@ class TestMockedAsrHappyPath:
     """Upload through the real pipeline against the mock Gladia server."""
 
     def test_file_completes_with_canned_transcript(
-        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+        self, api_session: requests.Session, backend_url: str, happy_path_file: str
     ):
-        status = _poll_status(api_session, backend_url, uploaded_file)
+        status = _poll_status(api_session, backend_url, happy_path_file)
         assert status == "completed", f"file did not complete (status={status})"
 
-        segments = _segments_when_redaction_settled(api_session, backend_url, uploaded_file)
+        segments = _segments_when_redaction_settled(api_session, backend_url, happy_path_file)
         assert len(segments) == CANNED_SEGMENT_COUNT, (
             f"expected {CANNED_SEGMENT_COUNT} canned segments, got {len(segments)}"
         )
@@ -489,7 +504,7 @@ class TestMockedAsrHappyPath:
         )
 
     def test_processing_steps_record_what_each_stage_ran(
-        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+        self, api_session: requests.Session, backend_url: str, happy_path_file: str
     ):
         """The file's ``processing_steps`` (#1229) name the provider each stage really used.
 
@@ -498,10 +513,10 @@ class TestMockedAsrHappyPath:
         the voiceprints run on this server afterwards (they are recorded by a later stage, so
         the test waits for that row rather than assuming it is there at ``completed``).
         """
-        status = _poll_status(api_session, backend_url, uploaded_file)
+        status = _poll_status(api_session, backend_url, happy_path_file)
         assert status == "completed", f"file did not complete (status={status})"
 
-        rows = _processing_rows_when_voiceprints_recorded(api_session, backend_url, uploaded_file)
+        rows = _processing_rows_when_voiceprints_recorded(api_session, backend_url, happy_path_file)
 
         transcription = rows["transcription"]
         assert transcription["status"] == "done", transcription
@@ -521,12 +536,12 @@ class TestMockedAsrHappyPath:
         assert voiceprints["where"] == "server", voiceprints
 
     def test_two_distinct_speakers_via_segments_and_speakers_api(
-        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+        self, api_session: requests.Session, backend_url: str, happy_path_file: str
     ):
-        status = _poll_status(api_session, backend_url, uploaded_file)
+        status = _poll_status(api_session, backend_url, happy_path_file)
         assert status == "completed", f"file did not complete (status={status})"
 
-        segments = _segments_when_redaction_settled(api_session, backend_url, uploaded_file)
+        segments = _segments_when_redaction_settled(api_session, backend_url, happy_path_file)
         labels = {seg["speaker_label"] for seg in segments if seg.get("speaker_label")}
         assert len(labels) == CANNED_SPEAKER_COUNT, f"expected 2 distinct speakers, got {labels}"
 
@@ -534,9 +549,9 @@ class TestMockedAsrHappyPath:
         assert speakers_resp.status_code == 200
 
     def test_app_sent_correct_request_shape_to_mock(
-        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+        self, api_session: requests.Session, backend_url: str, happy_path_file: str
     ):
-        status = _poll_status(api_session, backend_url, uploaded_file)
+        status = _poll_status(api_session, backend_url, happy_path_file)
         assert status == "completed", f"file did not complete (status={status})"
 
         last_request = _last_mock_asr_request()
@@ -545,9 +560,9 @@ class TestMockedAsrHappyPath:
         assert transcription_request["diarization"] is True
 
     def test_real_wav_audio_bytes_reached_the_mock(
-        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+        self, api_session: requests.Session, backend_url: str, happy_path_file: str
     ):
-        status = _poll_status(api_session, backend_url, uploaded_file)
+        status = _poll_status(api_session, backend_url, happy_path_file)
         assert status == "completed", f"file did not complete (status={status})"
 
         with wave.open(str(SAMPLE_WAV), "rb") as wf:
@@ -562,14 +577,14 @@ class TestMockedAsrHappyPath:
         )
 
     def test_search_finds_the_distinctive_token(
-        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+        self, api_session: requests.Session, backend_url: str, happy_path_file: str
     ):
-        status = _poll_status(api_session, backend_url, uploaded_file)
+        status = _poll_status(api_session, backend_url, happy_path_file)
         assert status == "completed", f"file did not complete (status={status})"
 
-        found = _wait_for_indexed(api_session, backend_url, uploaded_file)
+        found = _wait_for_indexed(api_session, backend_url, happy_path_file)
         assert found, (
-            f"file {uploaded_file} not found searching for {DISTINCTIVE_TOKEN!r} within 60s"
+            f"file {happy_path_file} not found searching for {DISTINCTIVE_TOKEN!r} within 60s"
         )
 
 

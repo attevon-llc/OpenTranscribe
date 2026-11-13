@@ -452,20 +452,41 @@ class TestTagManagerTools:
         tags_page.get_by_title("Clear search").click()
         expect(_tag_rows(tags_page)).to_have_count(before)
 
-    def test_sorting_by_name_reorders_without_refetching(self, tags_page: Page, tag_api):
-        tag_api.post("/api/tags", {"name": _unique_tag_name()})
+    def test_sorting_by_name_reorders_without_refetching(
+        self, tags_page: Page, tag_api, owned_transcribed_file: dict
+    ):
+        """Usage order and name order must visibly differ for the suite's own two tags.
+
+        The default order is usage desc, then name, so with every tag unused it is already
+        name order and a sort could never be seen to act. One tag is attached to an owned
+        file (usage 1) and carries the name that sorts LAST; the other is unused and sorts
+        FIRST. Their relative position flips between the two orders regardless of what
+        other tags the library holds.
+        """
+        used = f"{TAG_PREFIX}zzzz-{uuid.uuid4().hex[:8]}"
+        unused = f"{TAG_PREFIX}0000-{uuid.uuid4().hex[:8]}"
+        tag_api.post(f"/api/tags/files/{owned_transcribed_file['uuid']}/tags", {"name": used})
+        tag_api.post("/api/tags", {"name": unused})
         _reload_tags(tags_page)
 
-        first_by_usage = _tag_rows(tags_page).first.inner_text()
+        def position(name: str) -> int:
+            names = [t.strip() for t in _tag_rows(tags_page).all_inner_texts()]
+            matches = [i for i, text in enumerate(names) if name in text]
+            assert matches, f"{name} is not listed: {names}"
+            return matches[0]
+
+        count_by_usage = _tag_rows(tags_page).count()
+        assert position(used) < position(unused), "usage order puts the used tag first"
+
         # Scoped to the modal: the gallery behind it has its own "Sort by"
         # control, and an unscoped label match hits both.
         sort_select = tags_page.locator(".tags-manager").locator(".sort-select")
         sort_select.select_option("name")
         expect(sort_select).to_have_value("name")
-        first_by_name = _tag_rows(tags_page).first.inner_text()
 
+        assert position(unused) < position(used), "name order puts the unused tag first"
         # Sorting is client-side over the loaded list, so the count cannot move.
-        assert first_by_usage != first_by_name or _tag_rows(tags_page).count() <= 1
+        assert _tag_rows(tags_page).count() == count_by_usage
 
 
 class TestTagFileList:

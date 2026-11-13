@@ -6,9 +6,12 @@ that called them keeps its own transaction boundary exactly where it was.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from typing import Any
 
+import urllib3
+from minio.error import S3Error
 from sqlalchemy import func
 from sqlalchemy import text
 from sqlalchemy.orm import Query
@@ -32,6 +35,8 @@ from app.services.permission_service import PermissionService
 from app.services.tag_scope import tenant_bound_or_system
 from app.utils.db_helpers import org_stamp_is
 from app.utils.db_helpers import owned_in_tenant
+
+_logger = logging.getLogger(__name__)
 
 
 def get_file_by_id(db: Session, file_id: int) -> MediaFile | None:
@@ -84,6 +89,32 @@ def get_pending_upload(
         )
         .first()
     )
+
+
+def is_unfinished_upload(db: Session, db_file: MediaFile) -> bool:
+    """True only when no finished upload or processing exists for this PENDING row.
+
+    A prepared row (or an in-progress multipart upload) has no storage object yet;
+    ``/complete`` and the legacy upload route both run only after the
+    bytes landed. Any doubt (storage error, history present) reads as finished, so
+    the file is trashed rather than destroyed.
+    """
+    from app.services.minio_service import object_exists_and_size
+
+    if db_file.thumbnail_path or db_file.playback_path or db_file.completed_at:
+        return False
+    has_segments = (
+        db.query(TranscriptSegment.id).filter(TranscriptSegment.media_file_id == db_file.id).first()
+    )
+    if has_segments is not None:
+        return False
+    if not db_file.storage_path:
+        return True
+    try:
+        return object_exists_and_size(str(db_file.storage_path)) is None
+    except (S3Error, urllib3.exceptions.HTTPError, OSError):
+        _logger.warning("Could not confirm upload state for %s; trashing", db_file.uuid)
+        return False
 
 
 def withdraw_pending_redaction(db: Session, file_id: int, previous_status: str | None) -> int:

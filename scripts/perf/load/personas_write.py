@@ -120,7 +120,10 @@ class _Uploads(SpeakerWork):
             self._fire('PIPELINE', 'upload->completed', started, len(body), error)
         fill = {'file_uuid': file_uuid}
         self._call('files.delete', fill=fill, expect=(200, 204), label='real upload')
-        self._call('files.purge', fill=fill, expect=(200, 202, 204), label='real upload')
+        if uploaded.status_code == 200:
+            # An upload that never landed is destroyed by the delete itself (nothing to
+            # purge); a finished one goes to the trash first.
+            self._call('files.purge', fill=fill, expect=(200, 202, 204), label='real upload')
 
     def _wait_for_terminal(
         self, file_uuid: str, started: float, deadline_s: float, poll_s: float
@@ -249,8 +252,9 @@ class Editor(_Uploads):
         file_uuid = resp.json().get('file_id')
         if file_uuid and not resp.json().get('is_duplicate'):
             fill = {'file_uuid': file_uuid}
+            # A prepared row with no bytes is an unfinished upload: DELETE destroys it
+            # outright, so there is nothing in the trash to purge.
             self._call('files.delete', fill=fill, expect=(200, 204))
-            self._call('files.purge', fill=fill, expect=(200, 202, 204))
 
     @tag('write', 'gpu')
     @task(1)

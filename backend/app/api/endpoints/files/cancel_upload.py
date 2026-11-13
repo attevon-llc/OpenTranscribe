@@ -13,6 +13,7 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.services.file_route_queries import get_pending_upload
+from app.services.file_route_queries import is_unfinished_upload
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -29,12 +30,15 @@ def cancel_upload(
     ctx: RequestContext = Depends(get_current_context),
 ) -> None:
     """
-    Cancel an in-progress upload, or move a file to the trash.
+    Cancel an unfinished upload, or move any other file to the trash.
 
-    PENDING files owned by the caller get the cancel cleanup, which destroys them at once
-    (an aborted upload has nothing to recover). Anything else is moved to the trash
-    (issue #1101): recoverable until its window ends or someone deletes it forever with
-    ``DELETE /files/{uuid}/purge``. Both flows share this route — this router registers
+    Only a genuinely unfinished upload is destroyed at once: a PENDING file owned by the
+    caller whose bytes never landed in object storage (a prepared row or an in-progress
+    multipart upload) and that has no processing history. Everything else, including a
+    PENDING file whose upload completed (queued, or put back by retry, reprocess or
+    recovery with its transcript intact), goes to the trash (issue #1101): recoverable
+    until its window ends or someone deletes it forever with
+    ``DELETE /files/{uuid}/purge``. Both flows share this route: this router registers
     DELETE /{file_uuid} first, so a separate delete route would be unreachable.
     """
     # Reject a malformed UUID up front. Without this, the unparametrized
@@ -56,8 +60,11 @@ def cancel_upload(
     # rows; personal scope only org-less rows — mirrors scope_to_context).
     db_file = get_pending_upload(db, file_uuid, user_id=current_user.id, organization_id=ctx.org_id)
 
+    if db_file is not None and not is_unfinished_upload(db, db_file):
+        db_file = None
+
     if not db_file:
-        # Not a pending upload owned by the caller: move it to the trash.
+        # Not an unfinished upload owned by the caller: move it to the trash.
         from app.api.endpoints.files.crud import delete_media_file
 
         delete_media_file(

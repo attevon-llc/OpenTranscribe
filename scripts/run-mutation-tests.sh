@@ -313,6 +313,7 @@ finalize_run_evidence() {
         echo "$SUMMARY_END key=$key mutants=$total survived=$survived not_checked=$notchecked" \
              "run_mutants=${run_total:-?} run_survived=${run_surv:-?} ==="
     } >> "$log"
+    survivor_locations "$key" "$log" >> "$log" || true  # after END: check_baseline never reads past it
 
     tsha=$(module_tests_sha "$key" || true)
     {
@@ -602,8 +603,7 @@ MODULE=""
 DRY_RUN=false
 SHOW_ID=""
 PARALLEL=false
-# exported because their only readers are in the sourced lib/mutation-stack.sh, which shellcheck
-# does not follow without -x (SC2034).
+# exported: read only by the sourced lib/mutation-stack.sh, which shellcheck does not follow (SC2034)
 export FRESH_NAME="" PAR_MODULES="" PAR_JOBS=3
 COMPARE_A=""
 COMPARE_B=""

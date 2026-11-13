@@ -28,4 +28,4 @@ Release stages keep their own contract: `st_require ... || exit 3`. There is no 
 test docs point at it); it refuses the live, stock and `ot-reltest-*` projects and restarts through
 `./opentr.sh restart-db --fresh NAME`. The guard `backend/tests/unit/test_stack_targeting_guard.py`
 fails on a name-substring filter, a hardcoded stock container, a live-port default or a
-project-less `docker compose -f`; its `PENDING` list may only shrink.
+project-less `docker compose -f`; `PENDING` is empty; new findings fail; exemptions need a reason (`EXEMPT`, written next to the site's key). Python scripts use `stack_target.observed_port(VAR)` / `observed_container(SERVICE)` / `refuse_split()`; pytest modules use `tests.stack_preflight.stack_port(VAR)`.

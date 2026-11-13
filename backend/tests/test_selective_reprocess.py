@@ -21,6 +21,8 @@ from pathlib import Path
 import pytest
 import requests
 
+from tests.stack_preflight import stack_port
+
 logger = logging.getLogger(__name__)
 
 # `completed_file` is module-scoped and shares one GPU pipeline (upload -> transcribe ->
@@ -34,7 +36,7 @@ logger = logging.getLogger(__name__)
 # `backend/tests/CLAUDE.md`'s documented rule for exactly this shape.
 pytestmark = [pytest.mark.integration, pytest.mark.xdist_group("selective_reprocess")]
 
-BASE_URL = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api"
+BASE_URL = f"http://localhost:{stack_port('BACKEND_PORT')}/api"
 LOGIN_EMAIL = "admin@example.com"
 LOGIN_PASSWORD = "password"
 

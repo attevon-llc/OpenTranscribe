@@ -68,6 +68,7 @@ from tests.integration.deletion_seed import new_tag
 from tests.integration.deletion_seed import seed_citing_chat
 from tests.integration.deletion_seed import seed_complete_file
 from tests.integration.deletion_seed import seed_shared_cluster
+from tests.stack_preflight import stack_port
 
 _STACK_ABSENT = (
     os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
@@ -93,7 +94,8 @@ ADMIN_PASSWORD = os.environ.get("OT_TEST_ADMIN_PASSWORD", "password")
 
 def _live_backend_url() -> str:
     return os.environ.get(
-        "DELETION_RESIDUE_BACKEND_URL", os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+        "DELETION_RESIDUE_BACKEND_URL",
+        os.environ.get("E2E_BACKEND_URL") or f"http://localhost:{stack_port('BACKEND_PORT')}",
     ).rstrip("/")
 
 

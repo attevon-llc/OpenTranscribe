@@ -31,6 +31,7 @@ from kombu import Queue
 from app.core.celery_metrics import queue_snapshot
 from app.utils.stats_helpers import get_queue_depths
 from tests.fixtures.redis_accessors import route_redis_accessors
+from tests.stack_preflight import stack_port
 
 # ``xdist_group`` is the ONLY isolation available here, and it is required.
 #
@@ -78,7 +79,7 @@ def _repo_env_value(key: str, default: str = "") -> str:
 
 def _redis_url() -> str:
     password = _repo_env_value("REDIS_PASSWORD")
-    port = _repo_env_value("REDIS_PORT", "5177")
+    port = stack_port("REDIS_PORT")
     auth = f":{password}@" if password else ""
     return f"redis://{auth}localhost:{port}/{_TEST_DB}"
 

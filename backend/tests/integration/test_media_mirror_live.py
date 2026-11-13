@@ -29,7 +29,7 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
         os.environ.get("SKIP_S3", "True").lower() == "true",
-        reason="MinIO (localhost:5178) not reachable — live mirror test needs the dev stack",
+        reason="MinIO not reachable (the resolved stack publishes none) — live mirror test needs the dev stack",
     ),
 ]
 

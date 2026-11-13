@@ -166,7 +166,7 @@ def throwaway_pg() -> Iterator[dict[str, Any]]:
     password = uuid.uuid4().hex
     port = _free_port()
 
-    live_port = int(os.environ.get("POSTGRES_PORT", "5176"))
+    live_port = int(os.environ.get("POSTGRES_PORT") or 5176)
     assert port not in {5176, live_port}, (
         f"allocated port {port} collides with the live dev stack's port ({live_port}) — "
         "refusing to start a throwaway container that could be mistaken for it"

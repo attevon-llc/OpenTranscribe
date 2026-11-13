@@ -88,7 +88,8 @@ class TestUploadTray:
     ) -> None:
         held: list[Route] = held_routes.of(tray_page)
         tray_page.route("**/api/files/prepare", lambda route: held.append(route))
-        _submit_upload(tray_page, sample_audio)
+        with tray_page.expect_request("**/api/files/prepare"):
+            _submit_upload(tray_page, sample_audio)
 
         expect(_status(tray_page)).to_have_attribute("data-status", "preparing", timeout=15000)
         expect(tray_page.locator(f"{ROW} .upload-cancel-btn")).to_be_visible()
@@ -126,7 +127,8 @@ class TestUploadTray:
     ) -> None:
         held: list[Route] = held_routes.of(tray_page)
         tray_page.route("**/api/files/prepare", lambda route: held.append(route))
-        _submit_upload(tray_page, sample_audio)
+        with tray_page.expect_request("**/api/files/prepare"):
+            _submit_upload(tray_page, sample_audio)
         expect(_status(tray_page)).to_have_attribute("data-status", "preparing", timeout=15000)
 
         tray_page.locator(f"{ROW} .upload-cancel-btn").click()

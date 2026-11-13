@@ -98,6 +98,7 @@ AUTH_CONFIG_CLI="$REPO_ROOT/scripts/dev-test-auth-config.py"
 
 RUN_BACKEND=false
 RUN_E2E=false
+E2E_RELEASE=false
 RUN_FRONTEND=false
 E2E_SMOKE=false
 E2E_ONLY_EXPLICIT=false
@@ -149,6 +150,8 @@ Usage:
   scripts/run-dev-tests.sh --fast           backend gate (+e2e-smoke) + frontend check
   scripts/run-dev-tests.sh --backend-only   just scripts/run-integration-tests.sh
   scripts/run-dev-tests.sh --e2e-only       just the full e2e suite
+  scripts/run-dev-tests.sh --e2e-release    just the release journeys (run-e2e-release.sh), with the
+                      same overlays (mock-llm) the full e2e suite gets
   scripts/run-dev-tests.sh --frontend-only  just the frontend check
 
 Mode flags are composable (pass more than one to union their phases).
@@ -232,6 +235,7 @@ while [[ $# -gt 0 ]]; do
         --fast)          RUN_BACKEND=true; RUN_FRONTEND=true; E2E_SMOKE=true ;;
         --backend-only)  RUN_BACKEND=true ;;
         --e2e-only)      RUN_E2E=true; E2E_ONLY_EXPLICIT=true ;;
+        --e2e-release)   RUN_E2E=true; E2E_RELEASE=true; E2E_ONLY_EXPLICIT=true ;;
         --frontend-only) RUN_FRONTEND=true ;;
         --all-overlays)  ALL_OVERLAYS=true ;;
         --overlay-only)  OVERLAY_ONLY=true ;;
@@ -851,6 +855,9 @@ if [[ "$RUN_E2E" == "true" ]]; then
     if $OVERLAY_ONLY; then
         run_phase "e2e (run-e2e.sh -m overlay_gated)" \
             env E2E_CUSTOM_SKIP_CEILING=0 "$REPO_ROOT/scripts/e2e/run-e2e.sh" -m overlay_gated
+    elif $E2E_RELEASE; then
+        run_phase "e2e (run-e2e-release.sh, release journeys)" \
+            "$REPO_ROOT/scripts/e2e/run-e2e-release.sh"
     else
         run_phase "e2e (run-e2e.sh, full suite)" \
             "$REPO_ROOT/scripts/e2e/run-e2e.sh"

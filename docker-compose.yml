@@ -405,6 +405,7 @@ services:
       # users doing their first in-place upgrade enough headroom while still
       # failing fast on a genuinely broken backend.
       start_period: 600s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -512,6 +513,7 @@ services:
       retries: 3
       # Cold first-run WhisperX + PyAnnote preload (and HF download) can exceed 40s.
       start_period: 120s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -568,6 +570,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -681,6 +684,7 @@ services:
       retries: 3
       # PRELOAD_CPU_WHISPER model load can exceed 40s on first run.
       start_period: 120s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -761,6 +765,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -817,6 +822,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -867,6 +873,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+      start_interval: 5s  # fast probes during start_period only (W8)
     # Wait for backend (migrations applied) like every other worker, so the nlp
     # worker doesn't race the schema on first start.
     depends_on:
@@ -934,6 +941,7 @@ services:
       retries: 3
       # Embedding model load can exceed 40s on first run.
       start_period: 120s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -993,6 +1001,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -1081,6 +1090,7 @@ services:
       retries: 3
       # Cold GPU model preload can exceed 40s on first run.
       start_period: 120s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -1152,6 +1162,7 @@ services:
       retries: 3
       # Cold GPU model preload can exceed 40s on first run.
       start_period: 120s
+      start_interval: 5s  # fast probes during start_period only (W8)
     depends_on:
       migrate:
         condition: service_completed_successfully

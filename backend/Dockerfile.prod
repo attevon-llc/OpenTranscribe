@@ -143,11 +143,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip to latest version first (security fix for CVE-2025-8869). ABOVE the requirements
+# COPY so a requirements edit does not re-run it (W14a). The pip cache mount below is never
+# committed to a layer (Docker docs, "Optimize cache usage": cache mounts persist on the builder,
+# not in the image), so --no-cache-dir is dropped where the mount replaces it (W4).
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --user --upgrade pip
+
 # Copy only requirements first for better layer caching
 COPY requirements.txt requirements-nodeps.txt ./
-
-# Upgrade pip to latest version first (security fix for CVE-2025-8869)
-RUN pip install --user --no-cache-dir --upgrade pip
 
 # Install Python dependencies. `requirements.txt` is fully PINNED (issue #492):
 # every spec is `==` or a direct URL, so this image and a local venv built from the
@@ -160,13 +164,15 @@ RUN pip install --user --no-cache-dir --upgrade pip
 #
 # All packages use cuDNN 9 for CUDA 12.8 compatibility.
 # --user installs to /root/.local, which the final stage copies.
-RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --user --no-warn-script-location -r requirements.txt
 
 # WhisperX, faster-whisper, and gliner all need --no-deps — see requirements-nodeps.txt
 # for why. This exact command is also what a local venv setup runs (see
 # backend/CLAUDE.md); it must never diverge into a Dockerfile-only inline install.
 # WhisperX 3.8.1 has native pyannote-audio>=4.0.0 support — no monkey patches needed.
-RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps -r requirements-nodeps.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --user --no-warn-script-location --no-deps -r requirements-nodeps.txt
 
 # Content redaction: Presidio needs a spaCy pipeline for tokenization. Use the small
 # English model (~12 MB) — PII NER is handled by GLiNER + Presidio's regex recognizers,
@@ -225,49 +231,6 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
       org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.source="https://github.com/attevon-llc/OpenTranscribe" \
       org.opencontainers.image.documentation="https://github.com/attevon-llc/OpenTranscribe/blob/master/README.md"
-
-# Install only runtime dependencies.
-# `apt-get upgrade -y` pulls the latest security patches for system libs
-# (libssl, libexpat, libpng, libgdk-pixbuf, etc.) on every image build, so
-# we pick up Debian security updates without having to bump the base image
-# tag manually. This is important because the base image (python:3.13-slim-
-# trixie) may have been built before the latest security advisories landed.
-#
-# gcc/g++ removed from runtime: they were added in Phase 6.1 to unblock
-# torch.compile's Inductor JIT, which emits C++ kernels. torch.compile is now
-# opt-in only (production uses eager PyTorch). Without gcc and triton, a
-# torch_compile=True caller gets an eager fallback. Saves ~150 MB.
-#
-# gnupg: `backup_service.run_pg_dump` shells out to `gpg --symmetric` when the
-# scheduled/S3 backup feature's `backup.encrypt` setting is on (issue #604). Without
-# it, `pg_dump` succeeds and the `gpg` step then fails with FileNotFoundError, so an
-# encrypted backup silently never completes. postgresql-client (above) does NOT pull
-# gnupg in as a dependency — they are unrelated packages.
-#
-# ⚠️ "on every image build" above was NOT true, and that is how CVEs accumulated.
-# Docker caches this RUN by its command string, so once the layer existed it was
-# reused verbatim and `apt-get upgrade` never ran again — the image kept shipping
-# whatever Debian had published the day the layer was FIRST built. Measured on the
-# v0.5.0 scan (2026-09-13): 16 CRITICAL / 264 HIGH in backend-amd64, 15 of the 16
-# fixable and every one of them an OS package (perl, libxml2, libglib2.0,
-# libmbedcrypto) — none from our own dependency tree.
-#
-# APT_SECURITY_REFRESH is the cache key. Changing it invalidates THIS layer and
-# nothing above it, so today's security patches come in without `--no-cache`
-# re-running the multi-GB pip/CUDA install. scripts/docker-build-push.sh passes the
-# build date; the default keeps a bare `docker build` reproducible.
-ARG APT_SECURITY_REFRESH=unset
-RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
-    && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-    curl \
-    ffmpeg \
-    libsndfile1 \
-    libimage-exiftool-perl \
-    libgomp1 \
-    postgresql-client \
-    gnupg \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
 
 # diar-native's only extra system dependency: libopenblas0 (linked by diar-server itself,
 # per `ldd`). libgfortran5 is openblas's own dependency but is ALREADY present in this
@@ -333,6 +296,55 @@ COPY --from=fonts /fonts/ /usr/share/fonts/opentranscribe/
 # permission differs.
 COPY --from=deno-bin /deno /usr/local/bin/deno
 RUN chmod +x /usr/local/bin/deno
+
+
+# W13: this security-refresh layer sits BELOW the multi-GB `COPY --from=builder`, so bumping
+# APT_SECURITY_REFRESH (a base-only refresh) re-runs apt and the layers after it, and no longer
+# re-copies the Python site-packages. apt never touches /home/appuser/.local, the fonts dir or
+# /usr/local/bin/deno. appuser is created above, before apt, exactly as before.
+
+# Install only runtime dependencies.
+# `apt-get upgrade -y` pulls the latest security patches for system libs
+# (libssl, libexpat, libpng, libgdk-pixbuf, etc.) on every image build, so
+# we pick up Debian security updates without having to bump the base image
+# tag manually. This is important because the base image (python:3.13-slim-
+# trixie) may have been built before the latest security advisories landed.
+#
+# gcc/g++ removed from runtime: they were added in Phase 6.1 to unblock
+# torch.compile's Inductor JIT, which emits C++ kernels. torch.compile is now
+# opt-in only (production uses eager PyTorch). Without gcc and triton, a
+# torch_compile=True caller gets an eager fallback. Saves ~150 MB.
+#
+# gnupg: `backup_service.run_pg_dump` shells out to `gpg --symmetric` when the
+# scheduled/S3 backup feature's `backup.encrypt` setting is on (issue #604). Without
+# it, `pg_dump` succeeds and the `gpg` step then fails with FileNotFoundError, so an
+# encrypted backup silently never completes. postgresql-client (above) does NOT pull
+# gnupg in as a dependency — they are unrelated packages.
+#
+# ⚠️ "on every image build" above was NOT true, and that is how CVEs accumulated.
+# Docker caches this RUN by its command string, so once the layer existed it was
+# reused verbatim and `apt-get upgrade` never ran again — the image kept shipping
+# whatever Debian had published the day the layer was FIRST built. Measured on the
+# v0.5.0 scan (2026-09-13): 16 CRITICAL / 264 HIGH in backend-amd64, 15 of the 16
+# fixable and every one of them an OS package (perl, libxml2, libglib2.0,
+# libmbedcrypto) — none from our own dependency tree.
+#
+# APT_SECURITY_REFRESH is the cache key. Changing it invalidates THIS layer and
+# nothing above it, so today's security patches come in without `--no-cache`
+# re-running the multi-GB pip/CUDA install. scripts/docker-build-push.sh passes the
+# build date; the default keeps a bare `docker build` reproducible.
+ARG APT_SECURITY_REFRESH=unset
+RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
+    && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    libimage-exiftool-perl \
+    libgomp1 \
+    postgresql-client \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # diar-native binary + ONNX Runtime provider libs (task #59). Deliberately EXCLUDES
 # libonnxruntime_providers_tensorrt.so — TensorRT is never installed in this image, so
@@ -442,6 +454,8 @@ COPY --chown=appuser:appuser . .
 # silences AboutModal's version-mismatch warning.
 # check-version-consistency.py asserts ARG APP_VERSION still exists here.
 #
+# (GIT_SHA/BUILD_TIME now live at the very end of this file, below the last RUN; only
+# APP_VERSION, which is constant per release, stays here.)
 # ⚠️ POSITION IS LOAD-BEARING — keep this block BELOW every apt/pip/COPY-from-builder
 # layer. GIT_SHA and BUILD_TIME change on EVERY build, and an ENV layer invalidates the
 # whole remainder of its stage. Sitting at the top of the runtime stage (where this used
@@ -463,10 +477,6 @@ ENV APP_VERSION=${APP_VERSION}
 # their CMD replaced — a per-service compose entry would have to be repeated on a dozen
 # services and would silently miss the next one added.
 ENV CUDA_DEVICE_ORDER=PCI_BUS_ID
-ARG GIT_SHA=unknown
-ENV GIT_SHA=${GIT_SHA}
-ARG BUILD_TIME=unknown
-ENV BUILD_TIME=${BUILD_TIME}
 
 # Reserve the pipeline's shared-volume mount point. A named volume inherits the image
 # directory's ownership at creation, so without this it lands root-owned and the non-root
@@ -527,6 +537,14 @@ RUN rm -rf /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.* \
 
 # Switch to non-root user
 USER appuser
+
+# GIT_SHA / BUILD_TIME change on EVERY build and an ENV layer invalidates every layer after it,
+# so they sit below the last RUN (W2): a new commit now rebuilds only metadata, no RUN re-executes.
+# Consumed at RUNTIME by app/core/version.py.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+ARG BUILD_TIME=unknown
+ENV BUILD_TIME=${BUILD_TIME}
 
 # Expose application port
 EXPOSE 8080

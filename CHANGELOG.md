@@ -50,6 +50,8 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Changed
 
+- Backend image builds are cheaper: pip uses a BuildKit cache mount (a `requirements.txt` edit no longer re-downloads every wheel), `pip` self-upgrade sits above the requirements COPY, `GIT_SHA`/`BUILD_TIME` sit below the last `RUN` (a new commit no longer re-runs any layer), the apt security-refresh layer sits below the site-packages `COPY`, the dev stack builds the shared backend image from one service instead of thirteen, and healthchecks probe every 5 s during `start_period`.
+
 - **Action: migrations run in a one-shot `migrate` service** that `backend` and the Celery workers wait for; the shipped production, lite and offline files set `RUN_MIGRATIONS_ON_STARTUP=false`. A lock that is never released now times out after `MIGRATION_LOCK_TIMEOUT_S` (900 s) and exits with code 3.
 - **Action: production ports bind to loopback.** The API (5174) and docs (5183) ports, and the web UI port when HTTPS is set up, listen on `127.0.0.1`; use `BACKEND_BIND_HOST`, `DOCS_BIND_HOST` and `FRONTEND_BIND_HOST` to widen. The offline file publishes docs on `DOCS_PORT` (5183, was 3030).
 - **Action: Celery pool sizing.** `WORKER_DB_MAX_OVERFLOW` defaults to 0 and a new `THREADED_WORKER_DB_MAX_OVERFLOW` (3) covers threads-pool workers. Remove a stale `WORKER_DB_MAX_OVERFLOW=3` from `.env`.

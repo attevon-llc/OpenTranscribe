@@ -62,6 +62,9 @@ services:
   # second run finds the schema at head under the advisory lock and costs a second or two.
   migrate:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    # Keeps `build:` (identical to backend's): test_compose_migrate_service.py requires migrate to
+    # track backend's image/build/pull_policy in every overlay chain (blackwell, pki-dev). W5 drops
+    # the other twelve builders.
     build:
       <<: *backend-build
     volumes:
@@ -161,10 +164,9 @@ services:
 
   celery-worker:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -175,10 +177,9 @@ services:
 
   celery-download-worker:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -187,10 +188,9 @@ services:
 
   celery-cpu-worker:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -200,10 +200,9 @@ services:
 
   celery-redaction:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -212,30 +211,27 @@ services:
 
   celery-cloud-asr-worker:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   celery-nlp-worker:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   celery-embedding-worker:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -243,10 +239,9 @@ services:
 
   celery-beat:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -276,13 +271,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+      start_interval: 5s  # fast probes during start_period only (W8)
 
   flower:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       # Flower only needs persistent DB storage, not hot-reload source code.
       # Mounted at /app/temp, never /app: a named volume over the image's code
@@ -304,10 +299,9 @@ services:
   # GPU Scaled Worker - Development build (only active with --gpu-scale flag)
   celery-worker-gpu-scaled:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -322,10 +316,9 @@ services:
   # only supply the local image/build/volumes (mirrors celery-worker-gpu-scaled).
   celery-worker-gpu-transcribe:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -337,10 +330,9 @@ services:
 
   celery-worker-gpu-diarize:
     image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    pull_policy: never  # built once by the `backend` service (W5)
     environment:
       <<: *dev-environment
-    build:
-      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why

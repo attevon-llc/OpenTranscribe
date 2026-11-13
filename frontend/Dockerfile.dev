@@ -27,10 +27,10 @@ COPY . .
 # Ensure the fonts directory has the correct permissions
 RUN chmod -R 755 static/fonts
 
-# Own the dirs docker-compose.override.yml mounts anonymous volumes over, so a NEW volume (which
-# Docker populates from the image) starts out owned by `node`. Volumes that already exist keep
-# their old root ownership; the entrypoint repairs those (issue #1372).
-RUN mkdir -p .svelte-kit && chown -R node:node node_modules .svelte-kit
+# Ownership of node_modules and .svelte-kit (anonymous volumes in docker-compose.override.yml) is
+# set by the entrypoint at start, not here: a chown in a build layer copies every node_modules file
+# into a new layer (30+ min on a busy disk), while on the volume it only updates metadata (#1372).
+RUN mkdir -p .svelte-kit
 
 COPY docker-entrypoint.dev.sh /usr/local/bin/docker-entrypoint.dev.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.dev.sh

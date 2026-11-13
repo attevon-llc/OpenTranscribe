@@ -29,7 +29,7 @@
 #
 # SAFETY
 #
-# - Requires the dev stack ONLY for Postgres (5176) and Redis (5177); it never uploads,
+# - Requires the dev stack ONLY for Postgres and Redis (resolved: lib/mutation-stack.sh); it never uploads,
 #   never touches MinIO or OpenSearch, and every DB write goes through the suite's
 #   savepoint rollback.
 # - It does NOT touch the GPU. It is CPU-only and will happily saturate every core, so
@@ -776,6 +776,9 @@ fi
 # ---------------------------------------------------------------------------
 port_open() { (exec 3<>"/dev/tcp/localhost/$1") 2>/dev/null && exec 3>&- && return 0 || return 1; }
 
+# shellcheck source=lib/mutation-stack.sh
+source "$SCRIPT_DIR/lib/mutation-stack.sh"
+
 check_preconditions() {
     local ok=true
 
@@ -793,20 +796,7 @@ check_preconditions() {
         echo -e "${GREEN}✓ mutmut $("$VENV_BIN/mutmut" version 2>/dev/null || echo '(version unknown)')${NC}"
     fi
 
-    # Postgres is the only hard service dependency: the root conftest points the suite at
-    # localhost:5176 and the auth modules' tests need real rows. MinIO/OpenSearch tests
-    # auto-skip, which is fine — none of the target modules touch them.
-    if port_open 5176; then
-        echo -e "${GREEN}✓ Postgres up (5176)${NC}"
-    else
-        echo -e "${RED}✗ Postgres not reachable on 5176 — ./opentr.sh start dev${NC}"; ok=false
-    fi
-    if port_open 5177; then
-        echo -e "${GREEN}✓ Redis up (5177) — lockout/session mutants need it${NC}"
-    else
-        echo -e "${YELLOW}! Redis not reachable on 5177 — the lockout/session modules will${NC}"
-        echo -e "${YELLOW}  report false survivors. Fine for --module spans.${NC}"
-    fi
+    mutation_check_stack || ok=false
 
     # A mutation run must be SERIAL. pyproject's addopts carry `-n auto`; every mutant
     # would otherwise fork one xdist worker per core against a single shared Postgres,

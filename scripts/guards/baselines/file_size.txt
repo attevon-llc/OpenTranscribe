@@ -4,5 +4,5 @@ scripts/e2e/update-visual-baselines.sh	1326	oversize: split by concern planned
 scripts/fetch-rag-eval-data.sh	1282	oversize: split by concern planned
 scripts/release-tests/lib/guardrails.sh	1267	oversize: split by concern planned
 scripts/release-tests/test-upgrade.sh	2926	oversize: split by concern planned
-scripts/run-mutation-tests.sh	1177	oversize: split by concern planned; +4 for the INT/TERM exit traps
+scripts/run-mutation-tests.sh	1167	oversize: split by concern planned; +4 for the INT/TERM exit traps
 scripts/security-scan.sh	1165	oversize: split by concern planned

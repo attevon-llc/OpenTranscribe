@@ -36,6 +36,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 import uuid
 from pathlib import Path
@@ -296,28 +297,39 @@ def probe(modules: list[str]) -> list[str]:
     finally:
         ra.delete(token)
 
-    for key, row in planned.items():
-        env = _child_env(key, int(row.redis_index))
-        code = (
-            'from urllib.parse import urlsplit;import redis;from app.core.config import settings;'
-            f'assert settings.DATABASE_URL.endswith("/{row.db}"), "DATABASE_URL";'
-            'kw=redis.Redis.from_url(settings.REDIS_URL).connection_pool.connection_kwargs;'
-            f'assert kw["db"]=={row.redis_index}, "redis db"'
-        )
-        r = subprocess.run(
-            [sys.executable, '-c', code],
-            cwd=Path(__file__).resolve().parents[2] / 'backend',
-            env={**os.environ, **env},
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if r.returncode != 0:
-            raise IsolationError(
-                f'probe: Settings does not honour the isolation env for {key}: {r.stderr[-300:]}'
-            )
+    _check_settings_honour_env(planned)
     log.append('settings: DATABASE_URL and REDIS_URL honour the per-module env for every module')
     return log
+
+
+def _check_settings_honour_env(planned) -> None:
+    """Import app Settings in a host subprocess per module and assert it honours the isolation env.
+
+    Settings.__init__ mkdirs TEMP_DIR (default /app/temp, a container path), which fails on the
+    host, so the child gets a throwaway TEMP_DIR. The app default is deliberately unchanged.
+    """
+    with tempfile.TemporaryDirectory(prefix='ot-mutprobe-') as tmp:
+        for key, row in planned.items():
+            env = {**_child_env(key, int(row.redis_index)), 'TEMP_DIR': str(Path(tmp) / 'temp')}
+            code = (
+                'from urllib.parse import urlsplit;import redis;from app.core.config import settings;'
+                f'assert settings.DATABASE_URL.endswith("/{row.db}"), "DATABASE_URL";'
+                'kw=redis.Redis.from_url(settings.REDIS_URL).connection_pool.connection_kwargs;'
+                f'assert kw["db"]=={row.redis_index}, "redis db"'
+            )
+            r = subprocess.run(
+                [sys.executable, '-c', code],
+                cwd=Path(__file__).resolve().parents[2] / 'backend',
+                env={**os.environ, **env},
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if r.returncode != 0:
+                raise IsolationError(
+                    f'probe: Settings does not honour the isolation env for {key} '
+                    f'(rc={r.returncode}): {(r.stderr or r.stdout)[-2000:]}'
+                )
 
 
 def _child_env(key: str, index: int) -> dict[str, str]:

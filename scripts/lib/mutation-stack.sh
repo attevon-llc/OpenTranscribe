@@ -3,8 +3,8 @@
 # colour variables and `port_open`.
 #
 # Postgres is the only hard service dependency (MinIO/OpenSearch tests auto-skip). The stack is
-# RESOLVED (scripts/lib/stack_target.py), not assumed to be on 5176/5177: an exported
-# POSTGRES_PORT or COMPOSE_PROJECT_NAME for a --fresh stack is honoured, and a schema behind this
+# RESOLVED (scripts/lib/stack_target.py), not assumed to be on 5176/5177: `--fresh NAME` (the
+# caller's FRESH_NAME), else an exported POSTGRES_PORT or COMPOSE_PROJECT_NAME, is honoured, and a schema behind this
 # checkout is refused, because mutants would "survive" against the wrong schema.
 
 # shellcheck source=stack-target.sh
@@ -13,7 +13,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/stack-target.sh"
 # mutation_check_stack -> 0 when the target stack is usable. Exports POSTGRES_PORT/REDIS_PORT.
 mutation_check_stack() {
     local st_rc=0 ok=true
-    st_target || st_rc=$?
+    st_target ${FRESH_NAME:+--fresh "$FRESH_NAME"} || st_rc=$?
     if [[ "$st_rc" -ne 0 ]]; then
         echo -e "${RED}✗ no stack resolved (stack-target exit $st_rc) — ./opentr.sh start dev${NC}"
         return 1
@@ -30,6 +30,26 @@ mutation_check_stack() {
     else
         echo -e "${YELLOW}! Redis not reachable on ${REDIS_PORT:-unpublished}: lockout/session modules${NC}"
         echo -e "${YELLOW}  will report false survivors. Fine for --module spans.${NC}"
+    fi
+    $ok
+}
+
+# mutation_check_tooling -> 0 when the venv and mutmut are usable. Uses the caller's VENV_BIN.
+mutation_check_tooling() {
+    local ok=true
+
+    if [[ ! -x "$VENV_BIN/python" ]]; then
+        echo -e "${RED}✗ backend/venv missing — create it per CLAUDE.md${NC}"; ok=false
+    else
+        echo -e "${GREEN}✓ backend/venv${NC}"
+    fi
+
+    if [[ ! -x "$VENV_BIN/mutmut" ]]; then
+        echo -e "${RED}✗ mutmut not installed${NC}"
+        echo -e "  ${YELLOW}$VENV_BIN/pip install 'mutmut>=3.2.0'${NC}  (it is in backend/requirements-dev.txt)"
+        ok=false
+    else
+        echo -e "${GREEN}✓ mutmut $("$VENV_BIN/mutmut" version 2>/dev/null || echo '(version unknown)')${NC}"
     fi
     $ok
 }

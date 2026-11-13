@@ -1967,5 +1967,8 @@ print_help_commands() {
   echo "   - Stop all services: ./opentr.sh stop"
   echo "   - View logs: ./opentr.sh logs [service_name]"
   echo "   - Restart backend: ./opentr.sh restart-backend"
-  echo "   - Rebuild after code changes: ./opentr.sh rebuild-backend or ./opentr.sh rebuild-frontend"
+  echo "   - Backend code: hot-reloads (API); celery workers: ./opentr.sh restart-backend"
+  echo "   - Frontend code: hot-reloads (Vite)"
+  echo "   - Rebuild only after requirements*.txt, package-lock.json or Dockerfile changes:"
+  echo "     ./opentr.sh rebuild-backend / ./opentr.sh rebuild-frontend"
 }

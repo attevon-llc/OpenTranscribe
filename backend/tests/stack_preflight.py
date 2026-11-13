@@ -20,8 +20,25 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_STACK_TARGET_PATH = _REPO_ROOT / "scripts" / "lib" / "stack_target.py"
+_MARKER = Path("scripts") / "lib" / "stack_target.py"
+
+
+def find_repo_root(start: Path) -> Path:
+    """Nearest ancestor of ``start`` holding ``scripts/lib/stack_target.py``.
+
+    A fixed ``parents[N]`` is wrong for the copy mutmut 3 runs the suite from
+    (``backend/mutants/tests/``, see ``[tool.mutmut]`` in pyproject.toml): it lands on ``backend/``.
+    Searching upward is correct from the normal tree, ``backend/mutants/`` and a ``git archive``
+    tree alike.
+    """
+    for parent in start.resolve().parents:
+        if (parent / _MARKER).is_file():
+            return parent
+    raise FileNotFoundError(f"no ancestor of {start} contains {_MARKER}")
+
+
+_REPO_ROOT = find_repo_root(Path(__file__))
+_STACK_TARGET_PATH = _REPO_ROOT / _MARKER
 THROWAWAY_PREFIX = "opentranscribe-pytest-"
 EXIT_CODE = 3
 

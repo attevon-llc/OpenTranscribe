@@ -4,7 +4,7 @@ An arm is a JSON file the lead writes OUTSIDE the repo (``{"name", "scope_rules"
 "merge_rules"}``), or the shorthand ``@module``, which reads the two constants from the imported
 module. Both strings are concatenated straight after a sentence, so each must start with a space.
 
-The arm-isolation rule (plan section 0): the harness never contains, prints or writes rule text.
+The no-leak rule (plan section 0): the harness never contains, prints or writes rule text.
 :class:`Arm` keeps the text out of ``repr`` and :meth:`Arm.as_record` returns only a name, a
 SHA-256 and a length per string; ``test_no_arm_text_in_artifacts`` pins that.
 """

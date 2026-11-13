@@ -1,7 +1,7 @@
 #!/bin/bash
 # Measure the multi-slice summary scope and merge rules on a real local model: the quality gate
 # for the rewrite of SECTION_SCOPE_RULES / SECTION_MERGE_RULES.
-# Design and the reasons for every step: docs/design/summary_quality_eval_plan.md.
+# Design and the reasons for every step: the "Summary-merge quality gate" section of backend/tests/eval/CLAUDE.md.
 #
 #   scripts/run-summary-eval.sh --fresh sumeval \
 #     --arm old=@module --arm new=~/ot-cleanup-work/summary-eval/arms/new.json \

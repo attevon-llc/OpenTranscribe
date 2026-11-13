@@ -12,7 +12,7 @@ verified_against: attevon-llc/OpenTranscribe master @ 107cd925 (2026-10-20)
 
 <!--
 DRAFT. Engineering-authored, not reviewed by counsel, not legal advice.
-This is NOT the hosted-service privacy policy (opentranscribe-cloud/privacy-policy.md).
+This is not the privacy policy of any hosted service.
 Every factual statement about the software must be re-verified against the code before each
 release; SOURCE-MAP.md lists what was checked.
 -->

@@ -193,7 +193,7 @@ class TestIcsiLayout:
 
 @pytest.mark.skipif(not NAS.is_dir(), reason="benchmark corpora not mounted at " + str(NAS))
 class TestRealCorpusCounts:
-    """The counts quoted in docs/design/summary_quality_eval_plan.md section 3.2."""
+    """The gold-item counts documented in the eval guide (backend/tests/eval/CLAUDE.md, Summary-merge quality gate)."""
 
     @staticmethod
     def _tally(layout: CorpusLayout, meetings: list[str], layer: str) -> tuple[int, int, int]:

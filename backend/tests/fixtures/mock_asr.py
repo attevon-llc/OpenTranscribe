@@ -121,8 +121,7 @@ def mock_asr_base_url_for_backend() -> str:
     return f"http://{CONTAINER_HOSTNAME}:{CONTAINER_PORT}"
 
 
-@pytest.fixture
-def register_mock_gladia_asr_config(mock_asr_base_url_for_backend: str):
+def _mock_gladia_registrar(mock_asr_base_url_for_backend: str):
     """Configure a real ``gladia`` ASR config pointed at the mock, then clean up.
 
     Takes an authenticated ``requests.Session`` so a test can drive the real API
@@ -167,3 +166,16 @@ def register_mock_gladia_asr_config(mock_asr_base_url_for_backend: str):
             session.delete(
                 f"{api_base}/asr-settings/config/{uuid_str}", headers=headers, timeout=30
             )
+
+
+@pytest.fixture
+def register_mock_gladia_asr_config(mock_asr_base_url_for_backend: str):
+    """Function-scoped: see :func:`_mock_gladia_registrar`."""
+    yield from _mock_gladia_registrar(mock_asr_base_url_for_backend)
+
+
+@pytest.fixture(scope="class")
+def register_mock_gladia_asr_config_for_class(mock_asr_base_url_for_backend: str):
+    """Same registrar, torn down once per test class, for classes whose tests share
+    one processed upload (pytest fixture scopes: docs.pytest.org/en/stable/how-to/fixtures.html)."""
+    yield from _mock_gladia_registrar(mock_asr_base_url_for_backend)

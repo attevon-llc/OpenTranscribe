@@ -127,9 +127,9 @@ LEGS=(
     # Stage "pre" keeps them out of stages 1-4 and `all` (leg 2a already runs the whole of this
     # once), so they run only under `test-matrix.sh pre-release`. `release.sh test` runs the
     # backend gate + smoke e2e + export capability + first-run + journeys; these two add what it
-    # lacks. 2a-overlays still contains the backend gate (run-dev-tests.sh has no flag to run only
-    # the overlay-dependent phases), which is why it is NOT part of the stage-2 loop.
-    "2a-overlays|pre|Pre-release — backend gate with --all-overlays (watch, mock-asr) + --search-quality|scripts/run-dev-tests.sh --backend-only --all-overlays --search-quality|standard"
+    # lacks. 2a-overlays runs only the `overlay_gated` tests (watch, mock-asr) plus the search
+    # harness, not the whole backend gate again, so it is safe to keep out of the stage-2 loop.
+    "2a-overlays|pre|Pre-release — overlay-gated tests (watch, mock-asr) + --search-quality|scripts/run-dev-tests.sh --overlay-only --search-quality|standard"
     "2a-auth|pre|Pre-release — auth e2e (LDAP, Keycloak, Authentik)|scripts/run-auth-e2e.sh --cleanup --skip-pki|standard"
     "2b|2|Cycle 2B — GPU scaling|scripts/gpu-scale-smoke.sh|smoke"
     "2c|2|Cycle 2C — diarization providers|scripts/diar-native-smoke.sh|smoke"

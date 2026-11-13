@@ -25,6 +25,7 @@
 #   ./scripts/run-integration-tests.sh --search-quality  # + corpus relevance harness
 #   ./scripts/run-integration-tests.sh --cleanup      # + orphaned test-user dry run
 #   ./scripts/run-integration-tests.sh --skip-gpu     # drop the GPU phase
+#   ./scripts/run-integration-tests.sh --overlay-only # ONLY the overlay_gated integration tests (needs --with-mock-asr/--with-mock-llm up)
 #   ./scripts/run-integration-tests.sh --export-capability  # + real diar-native model export (~150s, needs HUGGINGFACE_TOKEN)
 
 set -euo pipefail
@@ -64,6 +65,7 @@ SEARCH_QUALITY=false
 CLEANUP=false
 RUN_GPU=true
 EXPORT_CAPABILITY=false
+OVERLAY_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --coverage) COVERAGE=true ;;
@@ -72,6 +74,7 @@ for arg in "$@"; do
         --cleanup) CLEANUP=true ;;
         --skip-gpu) RUN_GPU=false ;;
         --export-capability) EXPORT_CAPABILITY=true ;;
+        --overlay-only) OVERLAY_ONLY=true ;;
         -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo -e "${RED}Unknown option: $arg${NC}"; exit 2 ;;
     esac
@@ -364,6 +367,13 @@ else
     OPT_IN_FILTER=" and not opt_in_gate"
 fi
 INTEGRATION_SELECTION="${INTEGRATION_SELECTION:-integration$MULTI_GPU_FILTER$OPT_IN_FILTER}"
+#: --overlay-only selects by the `overlay_gated` marker (backend/pyproject.toml), never by a file
+#: list, so a new overlay-gated test is picked up the moment it carries the marker and
+#: tests/unit/test_overlay_gated_selection.py fails when it forgets to. Every other phase of this
+#: gate is already run by the release `test` stage, which is the point of the mode.
+if $OVERLAY_ONLY; then
+    INTEGRATION_SELECTION="integration and overlay_gated"
+fi
 GPU_SELECTION="${GPU_SELECTION:-gpu$MULTI_GPU_FILTER}"
 
 # Like run_phase, but a phase that SKIPPED more than the ceiling is NOT MEASURED.
@@ -463,6 +473,7 @@ else
         "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-data.py" --execute-unambiguous
 fi
 
+if ! $OVERLAY_ONLY; then
 # 1. The main suite (default config: -n auto, -m 'not integration and not gpu')
 #
 # ⚠️ `run_phase_watching_skips`, not `run_phase`. This is 13,622 of the gate's ~14,200 tests and
@@ -483,6 +494,7 @@ run_phase_watching_skips "Unit/API suite" "$UNIT_SKIP_CEILING" \
 run_phase_watching_skips "Security suites (FIPS_MODE=true)" "$FIPS_SKIP_CEILING" \
     "${UNIT_ENV[@]}" FIPS_MODE=true "$VENV_PY" -m pytest "${FIPS_MODE_SUITES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short \
     "${SKIP_REASONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/gated-fips-on.xml"
+fi
 
 # 3. Integration-marked tests (need the live stack)
 #
@@ -650,6 +662,10 @@ except Exception:
     # printed after `wait` rather than interleaved with the live lane's stream.
     SC_DIR="$RUN_SCRATCH/self-contained"
     mkdir -p "$SC_DIR"
+    SC_PID=""
+    # No self-contained module carries `overlay_gated` (they start no overlay), so the lane would
+    # collect nothing and exit 5 under --overlay-only.
+    if ! $OVERLAY_ONLY; then
     (
         FAILED_PHASES=()
         SKIPPED_PHASES=()
@@ -662,16 +678,19 @@ except Exception:
         printf '%s\n' "${SKIPPED_PHASES[@]}" >"$SC_DIR/skipped"
     ) >"$SC_DIR/out" 2>&1 &
     SC_PID=$!
+    fi
     run_phase_watching_skips "Integration-marked tests" "$INTEGRATION_SKIP_CEILING" \
         "${REDIS_ENV[@]}" "${INTEGRATION_ENV[@]}" "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         "${INTEGRATION_LIVE_IGNORES[@]}" \
         -o addopts="" -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
         --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
         "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/integration.xml"
-    wait "$SC_PID" || true
-    cat "$SC_DIR/out"
+    [ -n "$SC_PID" ] && wait "$SC_PID" || true
+    [ -n "$SC_PID" ] && cat "$SC_DIR/out"
     # An absent result file means the lane died before reporting: that is a failure, never a pass.
-    if [ ! -f "$SC_DIR/failed" ]; then
+    if [ -z "$SC_PID" ]; then
+        :
+    elif [ ! -f "$SC_DIR/failed" ]; then
         FAILED_PHASES+=("Integration-marked tests (self-contained) (no result)")
     else
         while IFS= read -r _l; do [ -n "$_l" ] && FAILED_PHASES+=("$_l"); done <"$SC_DIR/failed" || true
@@ -679,6 +698,7 @@ except Exception:
     fi
 fi
 
+if ! $OVERLAY_ONLY; then
 # 3b. The venv this gate runs in must install what the image ships (#492).
 #
 # Every requirements file is exactly pinned, so the venv and the container are two
@@ -858,6 +878,7 @@ run_phase "Collection determinism (two processes, same test ids)" \
 # that is a gate you can actually pass.
 run_phase "Mutation ratchet (last run vs baselines)" \
     "$SCRIPT_DIR/run-mutation-tests.sh" --check-baseline
+fi
 
 # 8. Optional: corpus-dependent search relevance harness
 #

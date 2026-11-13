@@ -92,6 +92,7 @@ generalized:
 
 ```bash
 ./scripts/run-dev-tests.sh --all-overlays    # also bring up --with-watch / --with-mock-asr
+./scripts/run-dev-tests.sh --overlay-only    # ONLY the overlay_gated tests, with their overlays up
 ./scripts/run-dev-tests.sh --with-gpu-scale  # exercise the multi-GPU worker topology;
                                               # auto-skips with a clear message on a
                                               # single-GPU deployment — never auto-started

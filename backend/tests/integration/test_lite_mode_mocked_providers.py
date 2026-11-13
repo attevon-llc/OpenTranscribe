@@ -61,6 +61,7 @@ def _mocks_running() -> bool:
 
 pytestmark = [
     pytest.mark.integration,
+    pytest.mark.overlay_gated,
     pytest.mark.skipif(
         not _mocks_running(),
         reason=(

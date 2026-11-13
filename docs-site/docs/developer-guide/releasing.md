@@ -192,7 +192,7 @@ at an ancestor with only evidence-neutral changes since.
 release images. Only `rehearse` runs the release images, with a feature subset, and only `smoke` runs what
 was pulled from Docker Hub (amd64 install; the lite arm64 probe runs over the remote context).
 `rehearse` also runs `nginx -t` in the frontend and docs arm64 legs on the arm64 host before anything is
-pushed (criterion `arm64-web-legs-run`, a warning when no `remote-arm64` context exists).
+pushed (criterion `arm64-web-legs-run`, blocking: with no reachable `remote-arm64` context it fails with a clear message and the recorded way past it is `--force-rehearse "reason"`).
 
 ## Running the test stage
 

@@ -532,7 +532,7 @@ Stage 4 happens naturally as part of an actual `release.sh run` — don't schedu
 `release.sh run` already runs Stage 1 (`preflight`/`verify`), the backend gate and smoke e2e (`test`),
 Stage 3's rehearsal (`rehearse`) and Stage 4's scan (`scan`). `scripts/test-matrix.sh pre-release` runs only
 the rest: `2a-overlays` (backend gate with `--all-overlays --search-quality`; it still contains the backend
-gate because `run-dev-tests.sh` has no flag for just the overlay phases), `2a-auth`, `2b`, `2c`, `2d` and
+gate because `run-dev-tests.sh` has no flag for just the overlay phases; it is the only run with the watch and mock-asr overlays up, so overlay-gated tests execute there and skip in `release.sh test`), `2a-auth`, `2b`, `2c`, `2d` and
 `3-pki`. Those two `2a-*` legs carry stage `pre`, so `all` and stage 2 do not run them a second time.
 
 ## Anti-staleness

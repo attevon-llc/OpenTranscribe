@@ -206,11 +206,11 @@ group must be covered by a persona or excluded with a reason, and every write mu
 gives each persona the data it uses, and `test_load_sampler_summary.py` covers the sampler and
 the verdict.
 
-The sampler judges pool saturation from `pg_stat_activity` (the API container's connections, asked
-of Postgres directly), because the API's own `/metrics` goes missing exactly when the pool is
+The sampler judges pool saturation from `pg_stat_activity` (the API container's non-idle connections, asked
+of Postgres directly, against `UVICORN_WORKERS x (pool + overflow + 1)`), because the API's own `/metrics` goes missing exactly when the pool is
 saturated. `summarize.py` also fails a run when fewer than `min_sample_coverage` (0.8) of the
 sampler's sweeps produced those rows, so a run that sampled almost nothing cannot pass. The side
 tools that make a recorded run repeatable are in `scripts/perf/load/tools/` (`chain.sh`,
 `run_profile.sh`, `pg_probe.sh`, `report_table.py`, `ramp_stages.py`, `access_stats.py`,
-`build_snapshot.sh`). To turn results into a sizing decision, see
+`build_snapshot.sh`). `holders.csv` names who holds a transaction or waits on a lock, and the run directory keeps the worker logs and host pressure so a stall can be attributed. Memory is judged along the second half of the run, not first against last. To turn results into a sizing decision, see
 [Scaling and Sizing](../operations/scaling-and-sizing.md).

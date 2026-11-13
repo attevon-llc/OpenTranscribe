@@ -135,7 +135,6 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/cleanup_test_data/settings.py",
         "live-port-default",
     ): "P5 item 3 (cleanup and auth-config tools)",
-    ("scripts/common.sh", "live-port-default"): "STK2 (the gate)",
     (
         "scripts/compare-patch-results.sh",
         "live-port-default",
@@ -405,6 +404,13 @@ def findings_for(rel: str, text: str) -> set[str]:
     return found
 
 
+def stale_entries(
+    hits: dict[tuple[str, str], bool], entries: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
+    """Entries whose site no longer fires: PENDING and EXEMPT may only shrink."""
+    return sorted(k for k in entries if k not in hits)
+
+
 def tracked_files() -> list[str]:
     out = subprocess.run(
         [
@@ -458,8 +464,7 @@ def test_every_finding_is_fixed_or_pending_with_a_reason() -> None:
 
 
 def test_pending_only_shrinks_and_every_entry_still_fires() -> None:
-    hits = scan()
-    stale = sorted(k for k in [*PENDING, *EXEMPT] if k not in hits)
+    stale = stale_entries(scan(), [*PENDING, *EXEMPT])
     assert not stale, f"entries that no longer fire must be deleted: {stale}"
 
 
@@ -536,3 +541,17 @@ def test_the_known_wrong_stack_sites_are_detected() -> None:
     ]:
         assert key in hits or key not in {**PENDING, **EXEMPT}, f"{key} was fixed: drop it"
         assert key in hits, f"detector no longer sees {key}"
+
+
+def test_a_pending_key_for_a_clean_site_is_reported_stale() -> None:
+    """Must-fire and must-stay-clean for the shrink-only rule itself."""
+    live = ("scripts/a.sh", D1)
+    fixed = ("scripts/b.sh", D1)
+    assert stale_entries({live: True}, [live, fixed]) == [fixed]
+    assert stale_entries({live: True, fixed: True}, [live, fixed]) == []
+
+
+def test_every_exemption_names_a_reason_of_substance() -> None:
+    assert EXEMPT, "the exemption table is empty: this test would pass on nothing"
+    for key, reason in EXEMPT.items():
+        assert len(reason.split()) >= 6, f"{key} needs a written reason"

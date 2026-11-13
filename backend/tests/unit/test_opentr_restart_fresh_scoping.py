@@ -28,6 +28,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OPENTR = REPO_ROOT / "opentr.sh"
+LIB = REPO_ROOT / "scripts" / "lib" / "restart-services.sh"
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +53,6 @@ NEEDED_FUNCS = (
     "fresh_compose_chain",
     "restart_resolve_target",
     "restart_compose",
-    "restart_backend",
     "restart_frontend",
     "restart_all",
 )
@@ -95,7 +95,19 @@ def harness_prelude() -> str:
         'no `: "${VAR:=...}"` defaults found in opentr.sh -- was the prologue block moved '
         "or reshaped? These tests run the extracted functions under `set -u` and depend on it"
     )
-    return defaults + "\n\n" + "\n\n".join(_extract(name, source) for name in NEEDED_FUNCS)
+    # restart_backend and its --only parsing live in the sourced lib (EFFC D3), not opentr.sh.
+    lib = LIB.read_text(encoding="utf-8")
+    lib_funcs = "\n\n".join(
+        _extract(n, lib)
+        for n in ("restart_backend_services", "restart_parse_only", "restart_backend")
+    )
+    return (
+        defaults
+        + "\n\n"
+        + "\n\n".join(_extract(name, source) for name in NEEDED_FUNCS)
+        + "\n\n"
+        + lib_funcs
+    )
 
 
 def _run(
@@ -279,3 +291,49 @@ def test_opentr_shellcheck_clean() -> None:
         ["shellcheck", "-S", "warning", str(OPENTR)], capture_output=True, text=True, timeout=180
     )
     assert proc.returncode == 0, f"shellcheck findings in opentr.sh:\n{proc.stdout}"
+
+
+def _restart_argvs(proc) -> list[str]:
+    return [
+        line.split("ARGS=", 1)[1]
+        for line in proc.stdout.splitlines()
+        if line.startswith("PROJECT=") and " restart " in line
+    ]
+
+
+def test_only_restarts_exactly_the_named_service(harness_prelude, tmp_path):
+    proc = _run(harness_prelude, tmp_path, "restart_backend --only celery-nlp-worker")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    argvs = _restart_argvs(proc)
+    assert len(argvs) == 1 and argvs[0].endswith(" celery-nlp-worker"), proc.stdout
+    for other in ("flower", "celery-beat", " backend ", "celery-worker "):
+        assert other not in argvs[0], proc.stdout
+
+
+def test_only_accepts_a_comma_list_and_composes_with_fresh(harness_prelude, tmp_path):
+    proc = _run(
+        harness_prelude, tmp_path, "restart_backend --fresh test1 --only celery-beat,flower"
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    argvs = _restart_argvs(proc)
+    assert len(argvs) == 1 and argvs[0].endswith(" celery-beat flower"), proc.stdout
+    assert "PROJECT=otfresh-test1" in proc.stdout
+
+
+def test_only_unknown_service_exits_2_and_runs_nothing(harness_prelude, tmp_path):
+    proc = _run(harness_prelude, tmp_path, "restart_backend --only postgres")
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "postgres" in proc.stderr and "Valid:" in proc.stderr
+    assert "docker was never invoked" in proc.stdout
+
+
+def test_no_only_restarts_the_full_list_unchanged(harness_prelude, tmp_path):
+    proc = _run(harness_prelude, tmp_path, "restart_backend")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    argvs = _restart_argvs(proc)
+    assert len(argvs) == 2, proc.stdout
+    assert argvs[0].endswith(
+        " backend celery-worker celery-download-worker celery-cpu-worker celery-redaction"
+        " celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat flower"
+    )
+    assert argvs[1].endswith(" celery-worker-gpu-scaled")

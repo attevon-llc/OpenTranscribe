@@ -664,9 +664,9 @@ ensure_nltk_corpora() {
     return 1
   fi
 
-  if ! docker image inspect davidamacey/opentranscribe-backend:latest > /dev/null 2>&1; then
+  if ! docker image inspect "$(resolve_backend_image)" > /dev/null 2>&1; then
     echo "   Backend Docker image not found locally - pulling from Docker Hub..."
-    if ! docker pull davidamacey/opentranscribe-backend:latest > /dev/null 2>&1; then
+    if ! docker pull "$(resolve_backend_image)" > /dev/null 2>&1; then
       echo "⚠️  Warning: Could not pull backend image - NLTK will be fetched at runtime"
       return 1
     fi
@@ -683,7 +683,7 @@ ensure_nltk_corpora() {
       -v "$(realpath "$nltk_dir"):/nltk_data" \
       -v "./scripts/download-models.py:/app/download-models.py:ro" \
       -v "./scripts/model_download:/app/model_download:ro" \
-      davidamacey/opentranscribe-backend:latest \
+      "$(resolve_backend_image)" \
       python /app/download-models.py --only nltk 2>&1 | { grep -E "(Downloading|Downloaded|ERROR|WARNING|Success)" || true; } || _nltk_rc="${PIPESTATUS[0]}"
 
   if [ "$_nltk_rc" -ne 0 ]; then

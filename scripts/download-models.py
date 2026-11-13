@@ -14,8 +14,12 @@ downloaders live in the sibling ``model_download`` package; this file keeps ``ma
 """
 
 import argparse
+import json
 import os
+import subprocess
 import sys
+import tempfile
+import threading
 from pathlib import Path
 
 
@@ -46,6 +50,76 @@ print_error, print_header, print_info, print_success, print_warning = (
 )
 
 
+def _pump_prefixed(stream, prefix):
+    """Copy a child's output line by line, tagged so overlapping output stays attributable."""
+    for line in stream:
+        print(f'{prefix} {line}', end='', flush=True)
+
+
+def _start_diar_native_child(results_path):
+    """Run the diar-native group as a child of this script, exactly the per-group path
+    release scenario D proves (``--only diar-native``), so it overlaps the other groups
+    without sharing torch patches or globals with this process."""
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            '--only',
+            'diar-native',
+            '--results-out',
+            results_path,
+            '--no-manifest',
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    pump = threading.Thread(target=_pump_prefixed, args=(proc.stdout, '[diar-native]'), daemon=True)
+    pump.start()
+    return proc, pump
+
+
+def _run_groups(selected):
+    """Run the selected groups; return the merged per-model results.
+
+    diar-native exports from the pyannote weights, so when both are selected pyannote runs
+    first and diar-native then overlaps every remaining group. A child that dies without
+    writing results is reported as a failed diar-native entry (the exit-1 contract holds).
+    """
+    results = {}
+    overlap = 'pyannote' in selected and 'diar-native' in selected
+    child = None
+    results_path = None
+    if overlap:
+        for group in selected:
+            if group == 'pyannote':
+                results.update(DOWNLOAD_GROUPS[group]())
+        fd, results_path = tempfile.mkstemp(prefix='diar-native-', suffix='.json')
+        os.close(fd)
+        child = _start_diar_native_child(results_path)
+    for group in selected:
+        if overlap and group in ('pyannote', 'diar-native'):
+            continue
+        results.update(DOWNLOAD_GROUPS[group]())
+    if child:
+        proc, pump = child
+        rc = proc.wait()
+        pump.join()
+        try:
+            child_results = json.loads(Path(results_path).read_text())
+        except (OSError, ValueError):
+            child_results = {}
+        finally:
+            Path(results_path).unlink(missing_ok=True)
+        if rc != 0 and not any(v.get('status') == 'failed' for v in child_results.values()):
+            child_results['diar-native'] = {
+                'status': 'failed',
+                'error': f'diar-native subprocess exited {rc} without a failed result',
+            }
+        results.update(child_results)
+    return results
+
+
 def main():
     """Main execution"""
     parser = argparse.ArgumentParser(description='Download OpenTranscribe model assets')
@@ -54,6 +128,12 @@ def main():
         action='append',
         choices=sorted(DOWNLOAD_GROUPS),
         help='Fetch only this group; repeatable. Default: every group.',
+    )
+    parser.add_argument(
+        '--results-out', help='Write the per-model results as JSON to this path (internal).'
+    )
+    parser.add_argument(
+        '--no-manifest', action='store_true', help='Skip the manifest (internal; parent writes it).'
     )
     args = parser.parse_args()
 
@@ -72,13 +152,13 @@ def main():
         print_info('Get your token at: https://huggingface.co/settings/tokens')
         sys.exit(1)
 
-    results = {}
+    results = _run_groups(selected)
 
-    for group in selected:
-        results.update(DOWNLOAD_GROUPS[group]())
+    if args.results_out:
+        Path(args.results_out).write_text(json.dumps(results))
 
-    # Create manifest
-    manifest = create_manifest(results)
+    # Create manifest (a child run by the parent leaves it to the parent: one manifest)
+    manifest = {'cache': {'total_size_gb': 0}} if args.no_manifest else create_manifest(results)
 
     # Summary
     print_header('Download Summary')

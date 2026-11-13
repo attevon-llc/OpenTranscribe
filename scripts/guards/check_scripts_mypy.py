@@ -41,7 +41,7 @@ def _mypy_env(root: Path) -> dict[str, str]:
     ``MYPYPATH`` names those roots; see mypy docs, "Running mypy and managing imports" >
     "How imports are found" (https://mypy.readthedocs.io/en/stable/running_mypy.html).
     """
-    roots = [root / 'scripts', root / 'scripts' / 'guards']
+    roots = [root / 'scripts', root / 'scripts' / 'guards', root / 'scripts' / 'lib']
     existing = os.environ.get('MYPYPATH')
     parts = [str(p) for p in roots] + ([existing] if existing else [])
     return {**os.environ, 'MYPYPATH': os.pathsep.join(parts)}

@@ -54,12 +54,10 @@ export DEV_RATE_LIMIT_SEARCH_PER_MINUTE=100000         # per user; think time ke
 ./opentr.sh start dev --fresh perf1337 --port-offset 300 --with-mock-llm
 ```
 
-Load the statement statistics `run_profile.sh` reads. Nothing in a compose file preloads them
-(production must not), so, once per stack and before seeding, run the `ALTER SYSTEM SET
-shared_preload_libraries = pg_stat_statements, auto_explain;` block of
-`docs-site/docs/developer-guide/performance-testing.md` section 1 (unquoted list), restart with
-`./opentr.sh stop --fresh perf1337` then the same start command, and confirm
-`show shared_preload_libraries`. `run_profile.sh` refuses to run without it and creates the extension.
+Load the statement statistics `run_profile.sh` reads, once per stack and before seeding:
+`python3 scripts/lib/stack_target.py prepare --fresh perf1337 --pg-stat-statements` (the `ALTER SYSTEM`
+block lives there; see `docs-site/docs/developer-guide/performance-testing.md` section 1).
+`run_profile.sh` refuses to run without it and creates the extension.
 The setting lives in the data volume's `postgresql.auto.conf`, so a `pg_restore` of a snapshot keeps it.
 
 Seed it with the flags the personas need (cached waveforms are off in the query review's

@@ -129,3 +129,24 @@ service_cmd_run() {
     restart_compose exec "$svc" /bin/sh
   fi
 }
+
+# Restart ONLY postgres of a --fresh deployment (stack_target.py prepare uses it to load
+# shared_preload_libraries). Refused without --fresh: restarting the live database from a
+# script is never wanted, so there is no default-deployment form of this command.
+restart_db() {
+  local _has_fresh=0 _a
+  for _a in "$@"; do [ "$_a" = "--fresh" ] && _has_fresh=1; done
+  if [ "$_has_fresh" -ne 1 ]; then
+    echo "❌ restart-db requires --fresh <name>: it never restarts the live database." >&2
+    return 2
+  fi
+  restart_resolve_target "$@" || return $?
+  echo "🔄 Restarting postgres on ${RESTART_LABEL}..."
+  local rc=0
+  restart_compose restart postgres || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "❌ Postgres restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
+    return "$rc"
+  fi
+  echo "✅ Postgres restarted on ${RESTART_LABEL}."
+}

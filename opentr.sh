@@ -274,6 +274,8 @@ show_help() {
   echo "                      - Restart backend, all celery workers, celery-beat & flower without database reset"
   echo "  restart-frontend [--fresh <name>]"
   echo "                      - Restart frontend without affecting backend services"
+  echo "  restart-db --fresh <name>"
+  echo "                      - Restart only the postgres of a --fresh deployment (refused without --fresh)"
   echo "  restart-all [--fresh <name>]"
   echo "                      - Restart all services without resetting database"
   echo "                        (--fresh targets an isolated deployment; without it, the default stack)"
@@ -4210,6 +4212,11 @@ case "$1" in
   restart-all)
     shift
     restart_all "$@"
+    ;;
+
+  restart-db)
+    shift
+    restart_db "$@"
     ;;
 
   rebuild-backend)

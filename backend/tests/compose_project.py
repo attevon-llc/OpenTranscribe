@@ -34,31 +34,48 @@ derived from that, never from a directory name:
    the answer unambiguous with several stacks up. ``scripts/lib/compose-project.sh`` resolves
    the same question with ``head -1`` over every running ``postgres`` container, which on this
    host currently matches two.
-3. Exactly one ``postgres`` service container running anywhere -> its project. No ambiguity
-   to resolve.
-4. The checkout's directory basename, the shell lib's documented last resort.
+3. The checkout's directory basename, the shell lib's documented last resort.
 
-Steps 3 and 4 are reached only when 2 found nothing, and both FAIL SAFE: a wrong project
+There is deliberately no "the only postgres anywhere" step: on a host that runs other
+applications it picked an unrelated project's postgres. Step 3 FAILS SAFE: a wrong project
 matches no container, the caller gets ``None`` and its test skips as NOT MEASURED. Ambiguity
-must never silently resolve to some other operator's stack.
+must never silently resolve to some other operator's stack. The decision rule itself lives in
+``scripts/lib/stack_target.py`` (``project_from_env``); this module only supplies the docker data.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+from types import ModuleType
 
 #: ``backend/tests/compose_project.py`` -> the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+#: Fixed at import: tests re-point ``_REPO_ROOT`` at a tmp dir to model a worktree.
+_STACK_TARGET_PATH = _REPO_ROOT / "scripts" / "lib" / "stack_target.py"
 
 #: Mirrors the root ``conftest.py`` default, which is the dev stack's published port.
 _DEFAULT_POSTGRES_PORT = "5176"
 
 _DOCKER_TIMEOUT = 15
+
+
+def _stack_target() -> ModuleType:
+    """Load scripts/lib/stack_target.py (not a package) the way test_target_guard.py does."""
+    path = _STACK_TARGET_PATH
+    spec = importlib.util.spec_from_file_location("stack_target", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("stack_target", module)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _docker_ps(filters: list[str], fmt: str) -> list[str]:
@@ -97,23 +114,13 @@ def compose_project_name() -> str:
     See the module docstring for the four-step resolution order and why the port is what
     disambiguates it.
     """
-    explicit = os.environ.get("COMPOSE_PROJECT_NAME")
-    if explicit:
-        return explicit
-
     port = os.environ.get("POSTGRES_PORT") or _DEFAULT_POSTGRES_PORT
-    by_port = _project_label(
-        f"publish={port}",
-        "label=com.docker.compose.service=postgres",
+    owners = (
+        []
+        if os.environ.get("COMPOSE_PROJECT_NAME")
+        else _project_label(f"publish={port}", "label=com.docker.compose.service=postgres")
     )
-    if len(by_port) == 1:
-        return by_port[0]
-
-    any_postgres = _project_label("label=com.docker.compose.service=postgres")
-    if len(any_postgres) == 1:
-        return any_postgres[0]
-
-    return _REPO_ROOT.name
+    return _stack_target().project_from_env(dict(os.environ), owners) or _REPO_ROOT.name
 
 
 def compose_service_containers(service: str) -> list[str]:

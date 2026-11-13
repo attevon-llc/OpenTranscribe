@@ -27,52 +27,31 @@ VERSION = "v9.9.9"
 LEG_TAG = "davidamacey/opentranscribe-backend:v9.9.9-cuda-amd64"
 IMAGE_ID = "sha256:aaaa"
 
+from tests.unit.test_evidence_neutral_paths import _block
+from tests.unit.test_evidence_neutral_paths import _commit
+from tests.unit.test_evidence_neutral_paths import _git
+from tests.unit.test_evidence_neutral_paths import make_repo
+
 pytestmark = [pytest.mark.unit, pytest.mark.skipif(shutil.which("git") is None, reason="needs git")]
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        [GIT, "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
-
-
-def _block() -> str:
-    text = TAG_SH.read_text(encoding="utf-8")
-    start = text.index("# --- BEGIN artifacts-match-tagged-commit ---")
-    end = text.index("# --- END artifacts-match-tagged-commit ---", start)
-    return text[start : text.index("\n", end) + 1]
-
-
-def _commit(repo: Path, *rel_paths: str) -> None:
-    for rel in rel_paths:
-        target = repo / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(target.read_text() + "x" if target.exists() else "x")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "delta")
 
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    r = tmp_path / "repo"
-    r.mkdir()
-    _git(r, "init", "-q", ".")
-    _git(r, "config", "user.email", "t@example.invalid")
-    _git(r, "config", "user.name", "t")
-    (r / ".gitignore").write_text(".release/\n")
-    (r / "scripts/release-tests").mkdir(parents=True)
-    (r / "scripts/release-tests/t.sh").write_text("1")
-    _git(r, "add", "-A")
-    _git(r, "commit", "-q", "-m", "base")
-    base = _git(r, "rev-parse", "--short", "HEAD")
-    steps = r / ".release" / VERSION / "steps"
+    """The sibling's scratch repo plus a release-tests tree, a ledger at its HEAD and legs.tsv."""
+    repo = make_repo(tmp_path)
+    (repo / "scripts/release-tests").mkdir(parents=True)
+    (repo / "scripts/release-tests/t.sh").write_text("1")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "release-tests")
+    base = _git(repo, "rev-parse", "--short", "HEAD")
+    steps = repo / ".release" / VERSION / "steps"
     steps.mkdir(parents=True)
     for stage in ("test", "build", "scan", "rehearse"):
         (steps / stage).write_text(f"status=done\nsha={base}\n")
-    (r / ".release" / VERSION / "legs.tsv").write_text(
+    (repo / ".release" / VERSION / "legs.tsv").write_text(
         f"backend\tdavidamacey/opentranscribe-backend\tlinux/amd64\t{LEG_TAG}\t{IMAGE_ID}\n"
     )
-    return r
+    return repo
 
 
 def _run(repo: Path, local_image_id: str = IMAGE_ID) -> tuple[int, str]:

@@ -25,8 +25,12 @@
 #   scripts/run-dev-tests.sh --full --all-overlays      # + watch + mock-asr overlays too
 #   scripts/run-dev-tests.sh --full --with-gpu-scale    # + multi-GPU worker topology (auto-skips
 #                                                        #   on a single-project-GPU host)
+#   scripts/run-dev-tests.sh --full --fresh NAME        # test the otfresh-NAME stack (or --project P);
+#                                                        #   default: COMPOSE_PROJECT_NAME / the live one
 #   scripts/run-dev-tests.sh --full --no-overlays       # assume the stack is already configured
 #   scripts/run-dev-tests.sh --full --list-overlays     # print the resolved overlay set, start nothing
+#   scripts/run-dev-tests.sh --e2e-release --print-overlay-flags  # ONLY the --with-<x> words this run
+#                                                        #   needs, one line on stdout; starts nothing
 #   scripts/run-dev-tests.sh --full --dry-run           # + the exact opentr.sh command, start nothing
 #   scripts/run-dev-tests.sh --with-gpu-diarization     # + the 3 container-only GPU diarization
 #                                                        #   suites (run-diarization-gpu-tests.sh);
@@ -96,6 +100,7 @@ mkdir -p "$REPORT_DIR"
 VENV_PY="$REPO_ROOT/backend/venv/bin/python"
 AUTH_CONFIG_CLI="$REPO_ROOT/scripts/dev-test-auth-config.py"
 
+TARGET_ARGS=()
 RUN_BACKEND=false
 RUN_E2E=false
 E2E_RELEASE=false
@@ -107,6 +112,7 @@ OVERLAY_ONLY=false
 WITH_GPU_SCALE=false
 NO_OVERLAYS=false
 LIST_OVERLAYS=false
+PRINT_OVERLAY_FLAGS=false
 DRY_RUN=false
 WITH_GPU_DIARIZATION=false
 WITH_MUTATION_TESTS=false
@@ -246,11 +252,15 @@ while [[ $# -gt 0 ]]; do
         --no-coverage)   NO_COVERAGE=true ;;
         --no-overlays)   NO_OVERLAYS=true ;;
         --list-overlays) LIST_OVERLAYS=true ;;
+        --print-overlay-flags) LIST_OVERLAYS=true; PRINT_OVERLAY_FLAGS=true ;;
         --dry-run)       DRY_RUN=true ;;
         --with-gpu-diarization) WITH_GPU_DIARIZATION=true ;;
         --with-mutation-tests)  WITH_MUTATION_TESTS=true ;;
         --with-pipeline-smoke)  WITH_PIPELINE_SMOKE=true ;;
         --with-summary-eval)    WITH_SUMMARY_EVAL=true ;;
+        --fresh|--project)
+            [[ $# -ge 2 ]] || { echo -e "${RED}error:${NC} $1 needs a value" >&2; exit "$EXIT_MISUSE"; }
+            TARGET_ARGS=("$1" "$2"); shift ;;
         -h|--help)       usage; exit 0 ;;
         *) echo -e "${RED}error:${NC} unknown option: $1" >&2; usage; exit "$EXIT_MISUSE" ;;
     esac
@@ -282,6 +292,10 @@ if ! $RUN_BACKEND && ! $RUN_E2E && ! $RUN_FRONTEND && ! $WITH_GPU_DIARIZATION &&
     fi
 fi
 
+# Resolve the stack ONCE, before anything reads a project name or a port (see the lib).
+# shellcheck source=scripts/lib/dev-test-stack.sh
+source "$REPO_ROOT/scripts/lib/dev-test-stack.sh"
+dev_tests_resolve_stack
 
 # shellcheck source=scripts/lib/dev-test-overlays.sh
 source "$REPO_ROOT/scripts/lib/dev-test-overlays.sh"
@@ -314,6 +328,15 @@ tds_sweep_at_exit "$VENV_PY" "$REPO_ROOT" _rdt_exit_cleanup
 
 
 # ---------------------------------------------------------------------------- --list-overlays
+if $PRINT_OVERLAY_FLAGS; then
+    # The ONE source of "which --with-* flags does this phase set need" for callers that start the
+    # stack themselves (scripts/release/60-test.sh): stdout is ONLY the flag words, one line, so
+    # the stack comes up with every overlay once and no later run-dev-tests.sh recreates it.
+    # Diagnostics ("not needed on this deployment") go to stderr.
+    resolve_needed_overlays >&2
+    printf '%s\n' "$(for _f in ${OVERLAYS_NEEDED[@]+"${OVERLAYS_NEEDED[@]}"}; do printf -- '--with-%s ' "$_f"; done | sed 's/ $//')"
+    exit 0
+fi
 if $LIST_OVERLAYS || $DRY_RUN; then
     resolve_needed_overlays
     if ! $NO_OVERLAYS && [[ ${#OVERLAYS_NEEDED[@]} -gt 0 ]]; then
@@ -352,8 +375,8 @@ fi
 resolve_needed_overlays
 
 if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" || "$WITH_GPU_DIARIZATION" == "true" || "$WITH_MUTATION_TESTS" == "true" || "$WITH_PIPELINE_SMOKE" == "true" || "$WITH_SUMMARY_EVAL" == "true" ]]; then
-    if ! curl -sf http://localhost:${BACKEND_PORT:-5174}/health >/dev/null 2>&1; then
-        echo -e "${RED}error:${NC} dev backend not reachable at :${BACKEND_PORT:-5174} — run ./opentr.sh start dev first" >&2
+    if ! curl -sf "http://localhost:${BACKEND_PORT:?}/health" >/dev/null 2>&1; then
+        echo -e "${RED}error:${NC} dev backend not reachable at :${BACKEND_PORT} — run ./opentr.sh start dev first" >&2
         exit "$EXIT_PRECONDITION"
     fi
 
@@ -393,8 +416,8 @@ sys.exit(2)
     setup_overlays
 fi
 if [[ ( "$RUN_E2E" == "true" && "$E2E_SMOKE" == "false" ) || "$WITH_PIPELINE_SMOKE" == "true" ]]; then
-    if ! curl -sf http://localhost:${FRONTEND_PORT:-5173} >/dev/null 2>&1; then
-        echo -e "${RED}error:${NC} dev frontend not reachable at :${FRONTEND_PORT:-5173} — run ./opentr.sh start dev first" >&2
+    if ! curl -sf "http://localhost:${FRONTEND_PORT:?}" >/dev/null 2>&1; then
+        echo -e "${RED}error:${NC} dev frontend not reachable at :${FRONTEND_PORT} — run ./opentr.sh start dev first" >&2
         exit "$EXIT_PRECONDITION"
     fi
 fi
@@ -600,8 +623,10 @@ import requests
 budget = float(sys.argv[1])
 repo_root = pathlib.Path(sys.argv[2])
 deadline = time.monotonic() + budget
-backend_url = os.environ.get("E2E_BACKEND_URL", "http://localhost:" + os.environ.get("BACKEND_PORT", "5174"))
-opensearch = "http://localhost:" + os.environ.get("OPENSEARCH_PORT", "5180")
+backend_url = os.environ.get("E2E_BACKEND_URL") or "http://localhost:" + os.environ.get("BACKEND_PORT", "0")
+# st_target exports the OBSERVED ports; port 0 (unreachable) makes a stack that publishes none
+# read as "NOT SETTLED" below instead of silently probing the live stack's stock port.
+opensearch = "http://localhost:" + os.environ.get("OPENSEARCH_PORT", "0")
 failed = False
 
 conftest = (repo_root / "backend/tests/e2e/conftest.py").resolve()
@@ -680,7 +705,7 @@ else:
 # Vite is made to do the transform HERE, on the quiesce's budget, instead of inside a test's
 # 30 s fixture. Requiring two consecutive FAST responses distinguishes "compiled and cached"
 # from "answered once, slowly, while still compiling".
-frontend = "http://localhost:" + os.environ.get("FRONTEND_PORT", "5173")
+frontend = "http://localhost:" + os.environ.get("FRONTEND_PORT", "0")
 # Shared with conftest.py's session preflight -- ONE detector, deliberately. `sys.path`
 # already carries backend/tests/e2e from the `_await_stable_backend` load above; import it
 # defensively anyway, because that load is in a try/except and may not have run. A failure

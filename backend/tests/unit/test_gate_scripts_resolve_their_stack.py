@@ -55,9 +55,10 @@ def test_run_dev_tests_refuses_when_no_stack_resolves(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_run_dev_tests_resolves_before_it_sources_the_overlay_library() -> None:
     text = (SCRIPTS / "run-dev-tests.sh").read_text(encoding="utf-8")
-    assert text.index('st_target "${TARGET_ARGS[@]}"') < text.index(
+    assert text.index("dev_tests_resolve_stack\n") < text.index(
         'source "$REPO_ROOT/scripts/lib/dev-test-overlays.sh"'
     )
+    assert "st_target" in (SCRIPTS / "lib" / "dev-test-stack.sh").read_text(encoding="utf-8")
 
 
 @pytest.mark.unit

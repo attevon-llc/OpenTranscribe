@@ -82,6 +82,8 @@ def _harness(body: str) -> str:
         set -euo pipefail
         BLUE='' GREEN='' RED='' YELLOW='' NC=''
         FAILED_PHASES=(); SKIPPED_PHASES=()
+        {_extract("phase_clock_start")}
+        {_extract("phase_clock_end")}
         {_extract("run_phase_watching_skips")}
     """) + textwrap.dedent(body)
 
@@ -301,3 +303,24 @@ def test_the_gate_refuses_the_phase_outright_when_a_service_is_down():
 
     guard_at = source.index("if [ ${#STACK_INCOMPLETE[@]} -gt 0 ]")
     assert guard_at < dispatch_at, "the dispatch is not behind the reachability guard"
+
+
+def test_every_phase_dispatcher_prints_a_start_stamp_and_its_duration():
+    """LOOP_SPEED_PLAN M1: the gate's minutes must be readable from its own log."""
+    source = GATE.read_text(encoding="utf-8")
+    for fn in ("run_phase", "run_phase_watching_skips"):
+        body = source.split(f"\n{fn}() {{", 1)[1].split("\n}\n", 1)[0]
+        assert "phase_clock_start" in body and "phase_clock_end" in body, fn
+    harness = textwrap.dedent(f"""
+        set -euo pipefail
+        BLUE='' GREEN='' RED='' YELLOW='' NC=''
+        FAILED_PHASES=(); SKIPPED_PHASES=()
+        {_extract("phase_clock_start")}
+        {_extract("phase_clock_end")}
+        {_extract("run_phase")}
+        run_phase "stand-in" sleep 1
+    """)
+    out = _bash(harness)
+    assert out.returncode == 0, out.stderr
+    assert re.search(r"^started \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", out.stdout, re.M)
+    assert re.search(r"^duration_s=[1-9]\d*$", out.stdout, re.M)

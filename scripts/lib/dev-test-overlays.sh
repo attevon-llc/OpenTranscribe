@@ -43,9 +43,13 @@ start_stack_or_die() {
     case "$project" in
         otfresh-?*) fresh_args=(--fresh "${project#otfresh-}") ;;
     esac
+    local t0=$SECONDS
+    echo "==> $what: opentr.sh start dev started $(date -u +%FT%TZ)" >&2
     if "$REPO_ROOT/opentr.sh" start dev ${fresh_args[@]+"${fresh_args[@]}"} "$@" >"$log" 2>&1; then
+        echo "==> $what: up, duration_s=$((SECONDS - t0))" >&2
         return 0
     fi
+    echo "==> $what: FAILED after duration_s=$((SECONDS - t0))" >&2
     echo -e "${RED}error:${NC} failed to bring up ${what}" >&2
     echo "--- last 40 lines of $log ---" >&2
     tail -40 "$log" >&2
@@ -53,7 +57,10 @@ start_stack_or_die() {
     # Which container is unhealthy is the first question every time, and compose's own
     # output does not always name it.
     echo "--- containers not running/healthy ---" >&2
-    docker ps -a --format '{{.Names}}\t{{.Status}}' | grep -Ev 'Up .*healthy|Up [0-9]' >&2 || true
+    # Scoped by the compose project LABEL (an exact match), so another stack's containers never
+    # appear here: this used to list every container on the host.
+    docker ps -a --filter "label=com.docker.compose.project=${ST_PROJECT:-$project}" \
+        --format '{{.Names}}\t{{.Status}}' | grep -Ev 'Up .*healthy|Up [0-9]' >&2 || true
     exit "$EXIT_PRECONDITION"
 }
 

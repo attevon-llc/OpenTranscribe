@@ -117,6 +117,16 @@ def test_up_destroys_stale_state_first_and_is_isolated(tmp_path: Path) -> None:
     assert all("--fresh" in c or c.startswith("fresh-destroy") for c in calls)
 
 
+def test_up_passes_the_stages_overlay_flags_to_the_one_start(tmp_path: Path) -> None:
+    """T2: every overlay is in the FIRST `start`, so no later run recreates the app tier."""
+    repo = _stub_repo(tmp_path)
+    log = tmp_path / "calls.log"
+    _bash("fresh_stack_up rel-x 400 --with-mock-llm --with-mock-asr", repo, {"STUB_LOG": str(log)})
+    starts = [c for c in log.read_text().splitlines() if c.startswith("start dev")]
+    assert len(starts) == 1
+    assert "--port-offset 400 --with-mock-llm --with-mock-asr" in starts[0]
+
+
 def test_fast_volumes_are_created_tmpfs_before_start_and_removed_at_teardown(
     tmp_path: Path,
 ) -> None:
@@ -199,10 +209,12 @@ def test_stage_uses_the_lib_and_never_probes_the_dev_stack() -> None:
 def test_dev_tests_probe_the_offset_ports_not_the_stock_ones() -> None:
     """A fresh stack lives on offset ports; a hard-coded :5174 probe reports it unreachable."""
     text = (REPO_ROOT / "scripts" / "run-dev-tests.sh").read_text(encoding="utf-8")
-    probes = [ln for ln in text.splitlines() if "curl -sf http://localhost:" in ln]
+    probes = [ln for ln in text.splitlines() if re.search(r'curl -sf "?http://localhost:', ln)]
     assert probes, "run-dev-tests.sh no longer probes the stack"
     for ln in probes:
-        assert "${BACKEND_PORT" in ln or "${FRONTEND_PORT" in ln, f"hard-coded port in probe: {ln}"
+        assert not re.search(r"localhost:\d", ln), f"hard-coded port in probe: {ln}"
+    assert any("${BACKEND_PORT" in ln for ln in probes)
+    assert any("${FRONTEND_PORT" in ln for ln in probes)
 
 
 def test_models_are_seeded_into_the_isolated_dir_before_start(tmp_path: Path) -> None:
@@ -403,7 +415,10 @@ def test_stage_runs_preflight_before_the_build_and_after_the_stack_is_up() -> No
     before = code.index("fresh_stack_preflight_before")
     up = code.index("fresh_stack_up ")
     after = code.index("fresh_stack_preflight_after")
-    gate = code.index("run-dev-tests.sh")
+    # The gate invocation, not the earlier `--print-overlay-flags` queries (which run before `up`).
+    gate_call = re.search(r"run-dev-tests\.sh --backend-only[^\n]*\|\| rc", code)
+    assert gate_call, "the stage no longer invokes the gate through run-dev-tests.sh"
+    gate = gate_call.start()
     assert before < up < after < gate, "preflight must bracket stack start and precede the gate"
 
 

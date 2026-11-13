@@ -801,3 +801,30 @@ def test_an_absent_block_is_never_reported_as_dropped():
         budget_chars=0,
     )
     assert dropped == ()
+
+
+def test_prior_assistant_turn_citation_markers_are_not_replayed():
+    """Excerpt ids restart at 1 each turn, so old [n] markers must not reach the model.
+
+    Left in, the model saw its earlier "[3][6]" disagree with this turn's excerpt
+    numbering and appended "Correction to my earlier answer" to the reply.
+    """
+    history = [
+        {"role": "user", "content": "Who is Edison? [1] is in my notes"},
+        {
+            "role": "assistant",
+            "content": "Edison was an inventor [3][6]. He built a telegraph [1].",
+        },
+    ]
+    messages, _ = build_messages(
+        system_prompt="sys",
+        chunks=[],
+        history=history,
+        question="And Goddard?",
+        context_window=8192,
+        response_tokens=512,
+    )
+    assistant = [m for m in messages if m["role"] == "assistant"]
+    assert [m["content"] for m in assistant] == ["Edison was an inventor. He built a telegraph."]
+    # User turns are the user's own words: never rewritten.
+    assert messages[1]["content"] == "Who is Edison? [1] is in my notes"

@@ -40,6 +40,15 @@ publish_fail_out() {
     exit "$rc"
 }
 
+# A host-arch-only build (RELEASE_HOST_ARCH_ONLY) has no arm64 legs: publishing it would push a
+# partial manifest. Refuse before anything else.
+HOST_ONLY_MARKER="$(dirname "${OT_LEGS_FILE:-.release/${VERSION}/legs.tsv}")/host-arch-only"
+if [[ -f "$HOST_ONLY_MARKER" ]]; then
+    echo -e "${RED}the build for ${VERSION} was host-arch-only ($(cat "$HOST_ONLY_MARKER")) -- refusing to publish a partial manifest${NC}" >&2
+    echo "  rebuild every leg: ./scripts/release.sh build ${VERSION}" >&2
+    publish_fail_out 3 '"./scripts/release.sh build '"$VERSION"'"'
+fi
+
 if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
     record remote-builder-available fail "buildx builder '$BUILDER' does not exist" \
         "./scripts/setup-remote-builder.sh setup"

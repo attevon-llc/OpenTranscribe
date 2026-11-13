@@ -492,6 +492,9 @@ while (( $# > 0 )); do
         --yes)     ASSUME_YES=true; shift ;;
         --patch)   PATCH_MODE=true; shift ;;
         --serial)  SERIAL=true; shift ;;
+        # Recorded exception: build/scan/rehearse the host-arch legs only. Publish and promote
+        # refuse a build made this way. Same switch as RELEASE_HOST_ARCH_ONLY=1.
+        --host-arch-only) export RELEASE_HOST_ARCH_ONLY=1; shift ;;
         # --force-<stage> "reason". The reason is REQUIRED: an override with no
         # recorded justification is the thing this whole mechanism exists to
         # prevent, so there is deliberately no bare --force.

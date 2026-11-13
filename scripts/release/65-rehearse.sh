@@ -479,6 +479,11 @@ fi
 # exec-format or wrong-base defect is caught before the push. The leg is a name in the LOCAL
 # daemon (built with --load), so it is streamed to the remote daemon first (small nginx
 # images). Prints "<outcome><TAB><detail>"; never exits the stage by itself.
+HOST_ONLY=0
+if [[ "${RELEASE_HOST_ARCH_ONLY:-}" == "1" || "${RELEASE_HOST_ARCH_ONLY:-}" == "true" \
+      || -f "$REPO_ROOT/.release/${VERSION}/host-arch-only" ]]; then
+    HOST_ONLY=1
+fi
 arm64_web_legs_outcome() {
     local ctx="${REMOTE_ARM64_CONTEXT:-remote-arm64}"
     local legs="$REPO_ROOT/.release/${VERSION}/legs.tsv"
@@ -486,6 +491,9 @@ arm64_web_legs_outcome() {
     local -a failed=()
     if [[ -n "$PATCH_SKIP_REASON" ]]; then
         printf 'not-measured\t%s\n' "$PATCH_SKIP_REASON"; return
+    fi
+    if (( HOST_ONLY )); then
+        printf 'not-measured\thost-arch-only build: no arm64 legs to run\n'; return
     fi
     if ! docker context inspect "$ctx" >/dev/null 2>&1; then
         printf "not-measured\tno '%s' docker context\n" "$ctx"; return
@@ -588,8 +596,10 @@ fi
 
 # Gap 2: blocking. An unreachable arm64 host blocks; the recorded override is --force-rehearse "reason".
 arm64_line="$(arm64_web_legs_outcome)"
+arm64_waiver="${PATCH_SKIP_REASON:+waived}"
+(( HOST_ONLY )) && arm64_waiver=waived
 record arm64-web-legs-run "${arm64_line%%$'\t'*}" "${arm64_line#*$'\t'}" \
-    "make the arm64 host reachable (docker context remote-arm64) and re-run rehearse, or --force-rehearse \"reason\" (recorded in the ledger)" "${PATCH_SKIP_REASON:+waived}"
+    "make the arm64 host reachable (docker context remote-arm64) and re-run rehearse, or --force-rehearse \"reason\" (recorded in the ledger)" "$arm64_waiver"
 
 # Both halves of the contract: every declared criterion was recorded above.
 criteria_assert_all_checked

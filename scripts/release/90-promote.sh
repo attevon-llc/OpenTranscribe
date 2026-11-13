@@ -25,6 +25,18 @@ export STAGE_ID=promote
 # shellcheck source=scripts/release/criteria-lib.sh
 source "$SCRIPT_DIR/criteria-lib.sh"
 
+# :latest must never be copied from a host-arch-only build (RELEASE_HOST_ARCH_ONLY): its
+# manifests were never published with every leg.
+HOST_ONLY_MARKER="$(dirname "${OT_LEGS_FILE:-.release/${VERSION}/legs.tsv}")/host-arch-only"
+if [[ -f "$HOST_ONLY_MARKER" ]]; then
+    echo -e "${RED}the build for ${VERSION} was host-arch-only ($(cat "$HOST_ONLY_MARKER")) -- refusing to promote${NC}" >&2
+    if [[ "$JSON_OUT" == "true" ]]; then
+        printf '{"stage":"promote","version":"%s","status":"fail","criteria":[],"next":["./scripts/release.sh build %s"]}\n' \
+            "$VERSION" "$VERSION"
+    fi
+    exit 3
+fi
+
 digest_of() {
     docker buildx imagetools inspect "$1" --format '{{println .Manifest.Digest}}' 2>/dev/null | head -1
 }

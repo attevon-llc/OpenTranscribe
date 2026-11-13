@@ -12,6 +12,11 @@
 # Asserts the build-arg contract afterwards: an image reporting version "unknown"
 # is a release-process failure, not a cosmetic one (issues #411).
 #
+# RELEASE_HOST_ARCH_ONLY=1 (`release.sh --host-arch-only`): build only the legs matching
+# this host's architecture and never contact the remote builder. A recorded exception, not a
+# pass: every-declared-leg-built is not-measured+waived (warn) and .release/<v>/host-arch-only
+# is written beside legs.tsv so 80-publish.sh / 90-promote.sh refuse a partial release.
+#
 # Exit: 0 built · 1 build or verification failed
 
 set -uo pipefail
@@ -111,6 +116,15 @@ while IFS=$'\t' read -r component _capability platforms; do
     done
 done < <(./scripts/docker-build-push.sh list-platforms)
 
+HOST_ONLY=false
+[[ "${RELEASE_HOST_ARCH_ONLY:-}" == "1" || "${RELEASE_HOST_ARCH_ONLY:-}" == "true" ]] && HOST_ONLY=true
+skipped_remote=0
+if [[ "$HOST_ONLY" == "true" ]]; then
+    skipped_remote=${#remote_legs[@]}
+    remote_legs=()
+    echo -e "${BLUE}host-arch-only: ${skipped_remote} non-host leg(s) will NOT be built; this release cannot be published${NC}" >&2
+fi
+
 # R4, OPT-IN and default OFF (measure the arm64 chain's length first; RELEASE_SPEED_PLAN R4):
 # the non-host legs run on the remote builder as one background chain, serial among
 # themselves, while host legs run here. Builder selection is per-process (BUILDX_BUILDER in
@@ -174,7 +188,13 @@ if (( legs_declared == 0 )); then
     build_fail_out 1
 fi
 record platform-table-readable pass "$legs_declared leg(s) declared"
-record every-declared-leg-built pass "$legs_built leg(s) built"
+if [[ "$HOST_ONLY" == "true" ]]; then
+    record every-declared-leg-built not-measured \
+        "host-arch-only: ${skipped_remote} non-host legs not built" \
+        "run ./scripts/release.sh build ${VERSION} without --host-arch-only before publish" waived
+else
+    record every-declared-leg-built pass "$legs_built leg(s) built"
+fi
 echo -e "${GREEN}built ${legs_built} architecture leg(s)${NC}" >&2
 
 # ── The bare repo:vX.Y.Z tag must name the HOST leg ──────────────────────────────────
@@ -288,6 +308,7 @@ while IFS=$'\t' read -r component capability platforms; do
     IFS=',' read -r -a leg_plats <<< "$platforms"
     for leg_platform in "${leg_plats[@]}"; do
         [[ -n "$leg_platform" ]] || continue
+        [[ "${HOST_ONLY:-false}" == "true" && "$leg_platform" != "${HOST_PLATFORM:-}" ]] && continue
         leg_arch="${leg_platform#linux/}"
         leg_tag="${leg_repo}:${VERSION}-${capability}-${leg_arch}"
         leg_id="$(docker image inspect "$leg_tag" --format '{{.Id}}' 2>/dev/null)"
@@ -317,6 +338,15 @@ else
     record leg-image-ids-recorded pass "${#leg_rows[@]} leg image ID(s) -> ${LEGS_FILE}"
 fi
 # --- END leg-image-ids ---
+
+# Every failure above exited, so legs.tsv was just written. The marker is the ledger evidence
+# 80-publish.sh / 90-promote.sh read to refuse a partial release; a full build clears it.
+HOST_ONLY_MARKER="$(dirname "$LEGS_FILE")/host-arch-only"
+if [[ "$HOST_ONLY" == "true" ]]; then
+    echo "host-arch-only: ${skipped_remote} non-host legs not built" > "$HOST_ONLY_MARKER"
+else
+    rm -f "$HOST_ONLY_MARKER"
+fi
 
 # The image must be able to state what it is. This is the check that would have
 # caught the build-arg omission in the documented `docker build` commands.

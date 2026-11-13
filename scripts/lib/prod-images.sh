@@ -2,8 +2,11 @@
 # Sourced by opentr.sh: build_prod_images (backend + frontend + docs, concurrently).
 # Needs APP_VERSION and GIT_SHA exported by the caller.
 
-# Build production images locally (backend + frontend)
+# Build production images locally (backend + frontend + docs; plus backend-lite when $1 is --lite).
+# A --lite stack runs davidamacey/opentranscribe-backend-lite, not the full backend, so without
+# building it here that image is whatever was pulled earlier and reports GIT_SHA=unknown (S6v3).
 build_prod_images() {
+  local lite_flag="${1:-}"
   local tag="${OT_IMAGE_TAG:-latest}" # a --fresh prod deployment tags its own (fresh_prod_dispatch)
   echo "🥽 Building production Docker images locally (tag: ${tag})..."
 
@@ -36,16 +39,30 @@ build_prod_images() {
     >"$logdir/frontend.log" 2>&1 &
   pids+=("$!")
 
+  if [ -n "$lite_flag" ]; then
+    docker build \
+      --build-arg "APP_VERSION=${APP_VERSION}" \
+      --build-arg "GIT_SHA=${GIT_SHA}" \
+      --build-arg "BUILD_TIME=${build_time}" \
+      -t "davidamacey/opentranscribe-backend-lite:${tag}" -f backend/Dockerfile.lite backend \
+      >"$logdir/backend-lite.log" 2>&1 &
+    pids+=("$!")
+  fi
+
   # The docs build context is docs-site/, so pass the repo-root VERSION in explicitly --
   # docusaurus.config.ts cannot read ../VERSION from inside the container.
   docker build --build-arg DOCS_BASE_URL=/docs/ \
     --build-arg "OT_VERSION=${APP_VERSION}" \
+    --build-arg "GIT_SHA=${GIT_SHA}" \
     -t "davidamacey/opentranscribe-docs:${tag}" docs-site \
     >"$logdir/docs.log" 2>&1 &
   pids+=("$!")
 
   local failed=0 name i=0
-  for name in backend frontend docs; do
+  local names=(backend frontend)
+  [ -n "$lite_flag" ] && names+=(backend-lite)
+  names+=(docs)
+  for name in "${names[@]}"; do
     if wait "${pids[$i]}"; then
       echo "✅ ${name} image built"
     else

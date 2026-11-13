@@ -12,6 +12,10 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Added
 
+- `scripts/lib/stack_target.py` (with the sourced `scripts/lib/stack-target.sh`): one library that resolves a stack through compose labels and the ports its containers actually publish, then asserts schema at head, code under test (bind mount or image revision), health, `pg_stat_statements`, container env, gitignored assets and required env, with stable exit codes 20-28 and a one-line `Fix:` reason. `prepare --fresh NAME --pg-stat-statements` loads the extension on a fresh stack (refused for the live, stock and `ot-reltest-*` projects); `./opentr.sh restart-db --fresh NAME` is the supported restart it uses.
+- `backend/tests/stack_preflight.py`: pytest refuses to start (exit 3) when the database on `POSTGRES_PORT` belongs to a compose stack whose Alembic version is not this checkout's head; `ST_ALLOW='schema-head=<reason>'` overrides it on the record.
+- A guard test (`test_stack_targeting_guard.py`) fails on a Docker name-substring filter, a hardcoded stock container, a live-port default or a project-less `docker compose -f`; the unconverted sites sit in a reasoned `PENDING` list keyed to the lane that converts each.
+- Timestamps and `duration_s` for every `--fresh` setup step (teardown, volumes, model seeding, start, library seed, first run, warm-up).
 - `run-dev-tests.sh --overlay-only` runs only the tests marked `overlay_gated` (watch-sources e2e, mock-ASR lite mode) with their overlays up, and the pre-release matrix leg `2a-overlays` uses it instead of repeating the whole backend gate.
 - `release.sh --host-arch-only` (`RELEASE_HOST_ARCH_ONLY=1`) builds, scans and rehearses only the host-arch legs as a recorded exception; `publish` and `promote` refuse such a build.
 - E2E for the mobile drawer's focus (enters on open, trapped, returns to the toggle on close and on Escape), the gallery Process and Organize menus at 1180 and 390 px, and `search` and `chat_answer` visual-regression surfaces (baselines come with the screenshot pass) (#1282).
@@ -82,6 +86,10 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - The environment variables listed under Changed that never had an effect.
 
 ### Fixed
+
+- `compose_project_name` (`scripts/lib/compose-project.sh`) ignored an exported `POSTGRES_PORT`, so a target chosen by exporting ports resolved the LIVE project; it now resolves the project publishing that port. The pytest twin lost its "the only postgres anywhere" step, which could pick an unrelated application's database.
+- From a git worktree, the model-cache helpers in `scripts/common.sh` worked on `<worktree>/models` instead of the exported `MODEL_CACHE_DIR`, re-downloading NLTK and OpenSearch models on every worktree `--fresh` start, and `fresh_stack_seed_models` looked for the diar-native export in the worktree, so the backend re-exported it cold (~140 s) at startup.
+- The `opentr.sh start` quick-reference told operators to rebuild images after code changes; the dev stack hot-reloads the API and Vite, celery needs `restart-backend`, and a rebuild is only for dependency or Dockerfile changes.
 - Load test: `build_snapshot.sh` now runs the migrate step after `pg_restore` and fails unless the schema is at head; `run_profile.sh` refuses a stack without `pg_stat_statements` preloaded and creates the extension (README documents the per-stack `ALTER SYSTEM` step).
 - Multi-turn chat no longer appends "Correction to my earlier answer" notes: excerpt numbers restart at [1] every turn, so the `[n]` markers in earlier assistant turns are now removed from the history sent to the model (stored messages and the citations shown in the UI are unchanged).
 - Shared-collection access checks exclude files of members pending removal with a correlated `NOT EXISTS` again instead of `NOT IN (SELECT ...)`, which PostgreSQL cannot plan as an anti-join (#1337 regression).

@@ -723,6 +723,9 @@ class TmpPlane:
         return not path.exists()
 
 
+_DOCKER_GONE_MARKERS = ('No such container', 'No such network', 'No such object')
+
+
 class DockerPlane:
     """Labelled throwaway containers/networks. Tier B only: never removed automatically.
 
@@ -752,6 +755,21 @@ class DockerPlane:
             labels = data.get('Labels') or {}
         return name, labels, _parse_docker_time(data.get('Created'))
 
+    def _inspect_or_none(
+        self, kind: str, ref: str
+    ) -> tuple[str, dict[str, str], float | None] | None:
+        """``_inspect``, but ``None`` for a ref removed since it was listed.
+
+        The daemon is shared, so a throwaway can vanish between ``ps`` and ``inspect``;
+        that is "already gone", not a failure. Any other docker error still raises.
+        """
+        try:
+            return self._inspect(kind, ref)
+        except RuntimeError as exc:
+            if any(marker in str(exc) for marker in _DOCKER_GONE_MARKERS):
+                return None
+            raise
+
     def _ids(self, kind: str) -> set[str]:
         ids: set[str] = set()
         filters = [f'label={label}' for label in sorted(TEST_DOCKER_LABELS)]
@@ -769,7 +787,10 @@ class DockerPlane:
         findings = []
         for kind in ('container', 'network'):
             for ref in sorted(self._ids(kind)):
-                name, labels, created = self._inspect(kind, ref)
+                inspected = self._inspect_or_none(kind, ref)
+                if inspected is None:
+                    continue
+                name, labels, created = inspected
                 finding = classify_docker(kind, name, labels, created, cutoff)
                 # Compose-labelled containers from every OTHER project are read only to be
                 # rejected; do not even print them.
@@ -779,7 +800,10 @@ class DockerPlane:
 
     def delete_one(self, finding: Finding, cutoff: int, *, include_tier_b: bool) -> bool:
         kind = finding.plane
-        name, labels, created = self._inspect(kind, finding.name)
+        inspected = self._inspect_or_none(kind, finding.name)
+        if inspected is None:
+            return True
+        name, labels, created = inspected
         if name != finding.name:
             return False
         if not selected(

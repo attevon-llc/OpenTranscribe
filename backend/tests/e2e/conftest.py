@@ -71,6 +71,7 @@ if _backend_dir not in sys.path:
 # so its own fixtures / its own `pytest_plugins` entries don't leak into this rootdir.
 from frontend_warm import find_entry_modules
 from stack_urls import mixed_stack_problem
+from store_importers import store_importer_candidates
 from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
@@ -274,13 +275,7 @@ def _fetch_store_importers(base_url: str) -> dict[str, str]:
     if not frontend.is_dir():
         return {}
 
-    candidates = [
-        path
-        for pattern in ("src/**/*.svelte", "src/**/*.ts")
-        for path in frontend.glob(pattern)
-        if not path.name.endswith((".test.ts", ".spec.ts"))
-        and "$stores/" in path.read_text(encoding="utf-8", errors="ignore")
-    ]
+    candidates = store_importer_candidates(frontend)
 
     sources: dict[str, str] = {}
     with requests.Session() as session:

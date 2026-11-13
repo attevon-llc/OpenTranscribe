@@ -677,3 +677,55 @@ def test_the_red_check_tree_shape_is_swept_only_when_exactly_named_and_old() -> 
     assert sweep.classify_tmp("ot-redcheck.aB3dE9", me + 1, _OLD, _LATE, me).tier is None
     assert sweep.classify_tmp("ot-redcheck.aB3dE9extra", me, _OLD, _LATE, me).tier is None
     assert sweep.classify_tmp("redcheck907", me, _OLD, _LATE, me).tier is None
+
+
+# ---------------------------------------------------------------------------------------------
+# Docker plane: a ref removed between `ps` and `inspect` is "already gone"
+# ---------------------------------------------------------------------------------------------
+
+
+def _vanishing_docker(tmp_path: Path, *, inspect_error: str) -> str:
+    """A stub ``docker``: ``ps`` lists two ids; ``inspect`` of ``vanished`` fails."""
+    script = tmp_path / "docker"
+    script.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        '  ps) printf "keep\\nvanished\\n" ;;\n'
+        "  network) exit 0 ;;\n"
+        "  container)\n"
+        "    for last; do :; done\n"
+        '    if [ "$last" = vanished ]; then\n'
+        f'      echo "{inspect_error}" >&2; exit 1\n'
+        "    fi\n"
+        '    echo \'{"Name":"/ot-testdb-keep","Config":{"Labels":{}},"Created":"2020-01-01T00:00:00Z"}\' ;;\n'
+        "esac\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    return str(script)
+
+
+@pytest.mark.unit
+def test_a_container_removed_between_list_and_inspect_is_skipped(tmp_path: Path) -> None:
+    docker = _vanishing_docker(
+        tmp_path, inspect_error="Error response from daemon: No such container: vanished"
+    )
+
+    findings = sweep.DockerPlane(docker).list_findings(_LATE)
+
+    assert [f.name for f in findings] == ["ot-testdb-keep"]
+
+
+@pytest.mark.unit
+def test_a_vanished_container_counts_as_already_deleted(tmp_path: Path) -> None:
+    docker = _vanishing_docker(tmp_path, inspect_error="Error: No such container: vanished")
+    finding = sweep.Finding("container", "vanished", sweep.TIER_B, "x")
+
+    assert sweep.DockerPlane(docker).delete_one(finding, _LATE, include_tier_b=True) is True
+
+
+@pytest.mark.unit
+def test_any_other_inspect_error_still_raises(tmp_path: Path) -> None:
+    docker = _vanishing_docker(tmp_path, inspect_error="permission denied while connecting")
+
+    with pytest.raises(RuntimeError, match="permission denied"):
+        sweep.DockerPlane(docker).list_findings(_LATE)

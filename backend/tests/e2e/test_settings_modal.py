@@ -197,6 +197,9 @@ class TestSettingsModal:
     def test_switching_sections_renders_each(self, app_page: Page) -> None:
         """Switching between sections renders each one without new console errors."""
         _open_settings_modal(app_page)
+        # Wait for the sidebar to render before counting: count() does not wait, so a
+        # transient reload would read as "section not available".
+        expect(app_page.locator(".settings-sidebar .nav-item").nth(2)).to_be_visible(timeout=10000)
 
         switched = 0
         for nav_label, expected_title in SECTIONS_TO_SWITCH:
@@ -233,6 +236,7 @@ class TestSettingsModal:
 def _open_section(page: Page, nav_label: str) -> None:
     """Open the Settings modal and switch to the given sidebar section."""
     _open_settings_modal(page)
+    expect(page.locator(".settings-sidebar .nav-item").nth(2)).to_be_visible(timeout=10000)
     nav_item = page.locator(".settings-sidebar .nav-item", has_text=nav_label)
     if nav_item.count() == 0:
         pytest.skip(f"Settings section '{nav_label}' not available for this user")

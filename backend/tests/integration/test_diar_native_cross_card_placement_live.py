@@ -57,6 +57,7 @@ import pytest
 import requests
 
 from tests.compose_project import compose_service_container
+from tests.compose_project import queue_rivals
 from tests.integration.live_file_cleanup import delete_uploaded_file
 
 # `multi_gpu`: this file needs a MULTI-WORKER GPU TOPOLOGY (a running
@@ -79,7 +80,8 @@ SAMPLE_AUDIO = os.path.join(
 
 SIDECAR_SERVICE = "diar-native"
 WORKER_SERVICE = "celery-worker-gpu-scaled"
-RIVAL_SERVICE = "celery-worker-gpu-diarize"
+#: Queues whose consumers can diarize; two consumers of one make a result unattributable.
+DIARIZE_QUEUES = {"gpu", "gpu-diarize"}
 
 
 def _docker(*args: str) -> str:
@@ -193,12 +195,12 @@ def test_sidecar_and_gpu_scaled_worker_land_on_different_physical_gpus() -> None
     assert sidecar_container is not None
     assert worker_container is not None
 
-    if compose_service_container(RIVAL_SERVICE) is not None:
-        pytest.skip(
-            f"'{RIVAL_SERVICE}' is also running alongside '{WORKER_SERVICE}' -- both "
-            "diarize-capable queues are live, so a job's outcome cannot be attributed "
-            "to one topology (issue #711); bring up exactly one diarizing topology"
-        )
+    rivals = queue_rivals(worker_container, DIARIZE_QUEUES)
+    assert not rivals, (
+        f"another worker consumes the gpu queue ({', '.join(rivals)}), so the broker, not "
+        "this test, picks which worker diarizes and the result is unattributable (issue "
+        "#711): set GPU_SCALE_DEFAULT_WORKER=0 for this measurement"
+    )
 
     sidecar_pid = _main_pid(sidecar_container)
     worker_pid = _main_pid(worker_container, cmd_substring="gpu-scaled@")
@@ -240,11 +242,12 @@ def test_diarization_still_reaches_native_sidecar_across_cards(admin_token: str)
         )
     assert worker_container is not None
 
-    if compose_service_container(RIVAL_SERVICE) is not None:
-        pytest.skip(
-            f"'{RIVAL_SERVICE}' is also running -- broker, not this test, would pick the "
-            "worker; result would be unattributable (issue #711)"
-        )
+    rivals = queue_rivals(worker_container, DIARIZE_QUEUES)
+    assert not rivals, (
+        f"another worker consumes the gpu queue ({', '.join(rivals)}), so the broker, not "
+        "this test, picks which worker diarizes and the result is unattributable (issue "
+        "#711): set GPU_SCALE_DEFAULT_WORKER=0 for this measurement"
+    )
 
     if not os.path.isfile(SAMPLE_AUDIO):
         pytest.skip(f"no sample audio fixture at {SAMPLE_AUDIO}")

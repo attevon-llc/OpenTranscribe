@@ -219,6 +219,8 @@ if [[ "$MODE" == pki ]]; then
 elif [[ -n "$BUNDLE" ]]; then
     ctr="$(st_container backend)" || exit 3
     docker cp "$BUNDLE" "$ctr:/tmp/demo-bundle" || exit 1
-    docker exec "$ctr" python -m app.scripts.demo_seed import --bundle /tmp/demo-bundle || exit 1
+    # Same as scripts/demo/demo-reset.sh (`run --rm -e DEMO_MODE=false ... demo_seed import`): the
+    # seeder refuses to run with DEMO_MODE on, and only this one process is switched off.
+    docker exec -e DEMO_MODE=false "$ctr" python -m app.scripts.demo_seed import --bundle /tmp/demo-bundle || exit 1
 fi
 exit 0

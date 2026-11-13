@@ -575,17 +575,89 @@ def test_every_personal_speaker_search_carries_the_organization_file_exclusion(
         assert '"media_file_id": [901, 902]' in _filters_of(body), body
 
 
-def _explain(gov, stmt) -> str:
+def _explain(gov, stmt) -> dict:
+    """The root plan node of ``EXPLAIN (FORMAT JSON)`` for ``stmt``."""
+    import json
+
     from sqlalchemy import text
 
     compiled = stmt.compile(
         dialect=gov.db.get_bind().dialect, compile_kwargs={"literal_binds": True}
     )
-    return "\n".join(r[0] for r in gov.db.execute(text(f"EXPLAIN {compiled}")))
+    raw = gov.db.execute(text(f"EXPLAIN (FORMAT JSON) {compiled}")).scalar_one()
+    document: list[dict] = json.loads(raw) if isinstance(raw, str) else raw
+    root: dict = document[0]["Plan"]
+    return root
+
+
+def _has_subplan(node: dict) -> bool:
+    """True if any node is a per-row SubPlan (PostgreSQL docs 14.1.1: it re-runs per outer row).
+
+    An InitPlan runs once, so it is not the regression this guards.
+    """
+    if node.get("Parent Relationship") == "SubPlan":
+        return True
+    return any(_has_subplan(child) for child in node.get("Plans", []))
+
+
+_JOIN_NODES = {"Nested Loop", "Hash Join", "Merge Join"}
+
+
+def _sublink_became_a_join(node: dict) -> bool:
+    """True if a join node sits under the ModifyTable: the ANY sublink was pulled up into a join.
+
+    Which strategy wins (semi, unique-ified inner, hash, nested loop) is a cost choice that
+    follows table statistics, so only "a join" is asserted (subselect.c
+    convert_ANY_sublink_to_join; joinpath.c JOIN_UNIQUE_OUTER/INNER).
+    """
+    if node.get("Node Type") in _JOIN_NODES:
+        return True
+    return any(_sublink_became_a_join(child) for child in node.get("Plans", []))
+
+
+def _scan(rel: str, relationship: str = "Outer") -> dict:
+    return {"Node Type": "Index Scan", "Relation Name": rel, "Parent Relationship": relationship}
+
+
+_UNIQUE_JOIN_PLAN = {
+    "Node Type": "ModifyTable",
+    "Plans": [
+        {
+            "Node Type": "Nested Loop",
+            "Plans": [
+                {
+                    "Node Type": "Unique",
+                    "Parent Relationship": "Outer",
+                    "Plans": [_scan("speaker_match")],
+                },
+                _scan("speaker_match", "Inner"),
+            ],
+        }
+    ],
+}
+_OR_SUBPLAN_PLAN = {
+    "Node Type": "ModifyTable",
+    "Plans": [
+        {
+            "Node Type": "Seq Scan",
+            "Plans": [
+                {"Node Type": "Index Scan", "Parent Relationship": "SubPlan"},
+            ],
+        }
+    ],
+}
+
+
+def test_plan_helpers_accept_a_join_and_reject_a_subplan():
+    """Must-fire cases for the structural assertions, with no database."""
+    assert not _has_subplan(_UNIQUE_JOIN_PLAN)
+    assert _sublink_became_a_join(_UNIQUE_JOIN_PLAN)
+    assert _has_subplan(_OR_SUBPLAN_PLAN)
+    assert not _sublink_became_a_join(_OR_SUBPLAN_PLAN)
 
 
 def test_cross_scope_match_delete_plans_without_a_subplan(gov, index, speaker_os_seams):
-    """The either-side speaker_match delete is a UNION of two semi-joins, not an OR of subqueries.
+    """The either-side speaker_match delete is a UNION under a join, not an OR of subqueries.
 
     The control is the OLD shape written inline: it must plan WITH a SubPlan, otherwise the
     assertion on the new shape could not tell the two apart.
@@ -604,10 +676,10 @@ def test_cross_scope_match_delete_plans_without_a_subplan(gov, index, speaker_os
     old_shape = delete(SpeakerMatch).where(
         or_(SpeakerMatch.speaker1_id.in_(in_scope), SpeakerMatch.speaker2_id.in_(in_scope))
     )
-    assert "SubPlan" in _explain(gov, old_shape), "control: the OR shape must plan a SubPlan"
+    assert _has_subplan(_explain(gov, old_shape)), "control: the OR shape must plan a SubPlan"
 
     plan = _explain(
         gov, delete(SpeakerMatch).where(SpeakerMatch.id.in_(matches_touching(in_scope)))
     )
-    assert "SubPlan" not in plan, plan
-    assert "Semi Join" in plan or "Hash Join" in plan, plan
+    assert not _has_subplan(plan), plan
+    assert _sublink_became_a_join(plan), plan

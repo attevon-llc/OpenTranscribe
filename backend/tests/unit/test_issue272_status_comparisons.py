@@ -23,32 +23,25 @@ class TestAnalyticsOnDemandGate:
     def test_completed_file_without_analytics_computes_on_demand(self):
         """The on-demand path was dead pre-fix: the str-compare gate always
         early-returned. A COMPLETED file with no stored analytics must trigger
-        computation now."""
+        a queued computation now (a GET never computes inline)."""
         db = _db_returning_analytics(None)
-        with patch(
-            "app.services.analytics_service.AnalyticsService.compute_and_save_analytics",
-            return_value=False,
-        ) as compute:
-            result = _get_or_compute_analytics(db, 123, FileStatus.COMPLETED)
-        compute.assert_called_once_with(db, 123)
-        assert result is None  # compute reported failure; nothing to fetch
+        with patch("app.tasks.analytics_dispatch.dispatch_analytics") as dispatch:
+            result = _get_or_compute_analytics(db, 123, FileStatus.COMPLETED, "file-uuid")
+        dispatch.assert_called_once_with("file-uuid")
+        assert result is None  # nothing stored yet
 
     def test_incomplete_file_never_computes(self):
         db = _db_returning_analytics(None)
-        with patch(
-            "app.services.analytics_service.AnalyticsService.compute_and_save_analytics"
-        ) as compute:
+        with patch("app.tasks.analytics_dispatch.dispatch_analytics") as compute:
             for status in (FileStatus.PENDING, FileStatus.PROCESSING, FileStatus.ERROR):
-                assert _get_or_compute_analytics(db, 123, status) is None
+                assert _get_or_compute_analytics(db, 123, status, "file-uuid") is None
         compute.assert_not_called()
 
     def test_existing_analytics_short_circuits(self):
         existing = MagicMock()
         db = _db_returning_analytics(existing)
-        with patch(
-            "app.services.analytics_service.AnalyticsService.compute_and_save_analytics"
-        ) as compute:
-            assert _get_or_compute_analytics(db, 123, FileStatus.COMPLETED) is existing
+        with patch("app.tasks.analytics_dispatch.dispatch_analytics") as compute:
+            assert _get_or_compute_analytics(db, 123, FileStatus.COMPLETED, "file-uuid") is existing
         compute.assert_not_called()
 
 

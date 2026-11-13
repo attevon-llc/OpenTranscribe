@@ -7,7 +7,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -155,7 +154,7 @@ def _handle_speaker_change(
     """
     Handle side effects of speaker assignment change.
 
-    Cleans up orphaned speakers, refreshes analytics, and dispatches
+    Cleans up orphaned speakers, queues an analytics refresh, and dispatches
     a background task to update speaker embeddings.
 
     Args:
@@ -195,16 +194,11 @@ def _handle_speaker_change(
     if original_speaker_id:
         orphan_deleted, cleanup_residual = _cleanup_orphaned_speaker(db, original_speaker_id)
 
-    try:
-        from app.services.analytics_service import AnalyticsService
+    # Analytics are recomputed by the CPU-queue task, never inline in the request.
+    if media_file_uuid:
+        from app.tasks.analytics_dispatch import dispatch_analytics
 
-        AnalyticsService.refresh_analytics(db, media_file_id)
-        logger.info(f"Refreshed analytics for file {media_file_id} after segment speaker change")
-    except SQLAlchemyError as e:
-        # Don't fail the operation if analytics refresh fails
-        logger.warning(
-            f"Failed to refresh analytics after segment speaker change: {e}", exc_info=True
-        )
+        dispatch_analytics(media_file_uuid)
 
     # Dispatch background task to update speaker embeddings. It stays on the
     # GPU-preferred route (issue #1083 review): unlike recluster it runs the neural

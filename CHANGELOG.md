@@ -82,6 +82,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - The environment variables listed under Changed that never had an effect.
 
 ### Fixed
+- Load test: `build_snapshot.sh` now runs the migrate step after `pg_restore` and fails unless the schema is at head; `run_profile.sh` refuses a stack without `pg_stat_statements` preloaded and creates the extension (README documents the per-stack `ALTER SYSTEM` step).
 - Multi-turn chat no longer appends "Correction to my earlier answer" notes: excerpt numbers restart at [1] every turn, so the `[n]` markers in earlier assistant turns are now removed from the history sent to the model (stored messages and the citations shown in the UI are unchanged).
 - Shared-collection access checks exclude files of members pending removal with a correlated `NOT EXISTS` again instead of `NOT IN (SELECT ...)`, which PostgreSQL cannot plan as an anti-join (#1337 regression).
 - The standalone `frontend/ffmpeg-wasm-build/Dockerfile` (used by the dev `prebuild` and the CI cache) pinned emsdk 3.1.40 while the shipped `Dockerfile.prod` used 6.0.13; both are now 6.0.13 and a unit test fails on drift.

@@ -3160,6 +3160,7 @@ reset_and_init() {
   GPU_SCALE_FLAG=""
   GPU_SPLIT_FLAG=""
   GPU_DEVICE_OVERRIDE=""
+  GPU_SCALE_DEFAULT_WORKER_OVERRIDE=""
   DIAR_NATIVE_GPU_OVERRIDE=""
   NAS_FLAG=""
   PULL_FLAG=""
@@ -3203,6 +3204,8 @@ reset_and_init() {
         GPU_SPLIT_FLAG="--with-gpu-split"
         shift
         ;;
+      --gpu-scale-default-worker)
+        GPU_SCALE_DEFAULT_WORKER_OVERRIDE="${2:-<none>}"; shift; [ $# -gt 0 ] && shift ;;
       --gpu-device)
         shift
         # A missing value would abort on `set -u`; fail with something readable.
@@ -3214,14 +3217,8 @@ reset_and_init() {
         shift
         ;;
       --diar-native-gpu)
-        shift
-        if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
-          echo "❌ --diar-native-gpu requires a GPU index (e.g. --diar-native-gpu 1)"
-          exit 1
-        fi
-        DIAR_NATIVE_GPU_OVERRIDE="$1"
-        shift
-        ;;
+        # apply_diar_native_gpu_override rejects a missing or non-numeric index.
+        DIAR_NATIVE_GPU_OVERRIDE="${2:-<none>}"; shift; [ $# -gt 0 ] && shift ;;
       --nas)
         NAS_FLAG="--nas"
         shift
@@ -3348,6 +3345,7 @@ reset_and_init() {
 
   # See start_app()'s identical block for why this must come after --gpu-device.
   apply_diar_native_gpu_override "${DIAR_NATIVE_GPU_OVERRIDE-}"
+  apply_gpu_scale_default_worker_override "${GPU_SCALE_DEFAULT_WORKER_OVERRIDE-}" "$GPU_SCALE_FLAG"
   warn_ignored_gpu_device_exports
 
   if [ -n "$GPU_SCALE_FLAG" ]; then

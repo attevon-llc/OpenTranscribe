@@ -484,6 +484,26 @@ class TestAMismatchRevokesAndReports:
 
         assert _live_sessions(db_session, proxy_user) == 0
 
+    def test_the_revocation_names_its_reason(
+        self, db_session, proxy_enabled, audited, proxy_user, monkeypatch
+    ):
+        """``reason`` is the revocation's only label in the session-service logs and
+        the one string an operator greps for after a proxy mismatch."""
+        from app.services import account_security_service
+
+        real = account_security_service.revoke_all_sessions
+        reasons: list[object] = []
+
+        def _record(db, user, *, reason):
+            reasons.append(reason)
+            return real(db, user, reason=reason)
+
+        monkeypatch.setattr(account_security_service, "revoke_all_sessions", _record)
+
+        self._mismatch(db_session, proxy_user)
+
+        assert reasons == ["proxy_identity_mismatch"]
+
     def test_the_revocation_is_committed(self, db_session, proxy_enabled, audited, proxy_user):
         """The request ends in an exception, so an uncommitted revocation is no
         revocation at all — the session would survive the very check that killed it."""

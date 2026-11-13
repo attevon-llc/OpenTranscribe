@@ -395,3 +395,5 @@ Harness layout, corpora, qrels, metrics and `runinfo.json`: `backend/tests/eval/
 ## Chat suites, mock LLM, mock cloud ASR, document export fixtures
 
 Chat suites (issue #52), the mock LLM provider (`--with-mock-llm`, scenario models `mock-gpt`/`mock-echo`/`mock-empty`/`mock-error`/`mock-slow`/`mock-reasoning`, plus the JSON-shaped `mock-summary-json`/`mock-topics-json`/`mock-speakers-json`), the mock cloud ASR provider (`--with-mock-asr`) and the document export fixtures (#1278): `backend/tests/fixtures/CLAUDE.md`.
+
+**Dev-loop speed aids (never evidence):** `run-backend-tests.sh --affected` (testmon), `scripts/rerun-failed.sh`, `-n0`; never in a gate (refused, `-p no:testmon`): `backend/tests/notes/dev-loop-speed.md`.

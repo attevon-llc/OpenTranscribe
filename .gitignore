@@ -399,3 +399,7 @@ pipreports/
 
 # Scan output of local / dev-tag builds (docker-build-push.sh scan_report_dir); never release evidence.
 .security-reports-local/
+
+# pytest-testmon data (per checkout; never ships)
+.testmondata*
+backend/.testmondata*

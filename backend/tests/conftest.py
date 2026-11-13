@@ -268,6 +268,25 @@ def _register_live_test_run(config: pytest.Config) -> None:
     config.stash[_LIVE_RUN_MARKER] = LiveRunMarker(default_testruns_dir(_project_root))
 
 
+def pytest_xdist_auto_num_workers(config: pytest.Config) -> int | None:
+    """D2: do not spawn ``-n auto`` (one worker per core) for a handful of named test files.
+
+    Worker start-up and per-worker collection dominate a one-file run. Defers (returns None) to
+    ``PYTEST_XDIST_AUTO_NUM_WORKERS`` when set, since this hook outranks that variable
+    (pytest-xdist "Running tests across multiple CPUs" docs), and to xdist's default whenever a
+    directory is given or there are more than four files.
+    """
+    if os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS"):
+        return None
+    args = [a for a in config.args if not a.startswith("-")]
+    if not args:
+        return None
+    files = {a.split("::", 1)[0] for a in args}
+    if any(not f.endswith(".py") for f in files) or len(files) > 4:
+        return None
+    return max(1, len(files))
+
+
 def pytest_sessionstart(session: pytest.Session) -> None:
     """Refuse a stack whose schema is not this checkout's head (controller only; see
     ``tests/stack_preflight.py``). Override with ``ST_ALLOW='schema-head=<reason>'``."""

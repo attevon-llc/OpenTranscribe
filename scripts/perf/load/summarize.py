@@ -62,6 +62,8 @@ def limits_for(kind: str, name: str, limits: dict[str, Any]) -> dict[str, float]
     """The ``p95_ms`` / ``p99_ms`` limits of one row (a stream's first token has its own)."""
     section = limits.get(kind, {})
     if kind == 'stream' and name.endswith('first token'):
+        if 'mock-slow' in name:
+            return {'p95_ms': section['first_token_p95_ms'] + section['slow_first_token_delay_ms']}
         return {'p95_ms': section['first_token_p95_ms']}
     if name == 'search' or name.startswith('search '):
         # An unlabelled search is the API's default mode, hybrid.
@@ -191,18 +193,41 @@ def sampler_section(samples: list[dict[str, str]], limits: dict[str, Any], v: Ve
                 max(values) <= lim['max_idle_in_transaction'],
                 f'{max(values):.0f} connections idle in a transaction for over 1 s',
             )
-        if source == 'container' and name.startswith('mem_bytes:') and values[0] > 0:
-            growth = values[-1] / values[0] - 1
-            verdict = v.check(
-                growth <= lim['max_memory_growth_share'],
-                f'{name} grew {growth:.0%} from the first sample to the last',
-            )
+        if source == 'container' and name.startswith('mem_bytes:'):
+            verdict = memory_verdict(name, values, lim, v)
         lines.append(
             f'| {source} | {name} | {min(values):.1f} | {statistics.fmean(values):.1f} | '
             f'{max(values):.1f} | {values[-1]:.1f} | {verdict} |'
         )
     lines += ['', *pool_saturation(series, samples, lim, v), *deadlock_section(series, limits, v)]
     return lines
+
+
+def second_half_growth(values: list[float]) -> float | None:
+    """Growth share along the least-squares line through the second half of ``values``.
+
+    First-against-last measures warm-up (caches, pools and models filling), which every healthy
+    run does; a leak is memory still rising once the run has warmed up. ``None`` when the half
+    has no usable line (flat at zero).
+    """
+    half = values[len(values) // 2 :]
+    slope, intercept = statistics.linear_regression(range(len(half)), half)
+    start = intercept
+    if start <= 0:
+        return None
+    return slope * (len(half) - 1) / start
+
+
+def memory_verdict(name: str, values: list[float], lim: dict[str, Any], v: Verdict) -> str:
+    if len(values) < lim['min_memory_samples']:
+        return 'too few'
+    growth = second_half_growth(values)
+    if growth is None:
+        return 'n/a'
+    return v.check(
+        growth <= lim['max_memory_growth_share'],
+        f'{name} grew {growth:.0%} along the second half of the run',
+    )
 
 
 def sweep_coverage(

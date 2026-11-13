@@ -33,6 +33,9 @@ exempt_profiles = ["smoke", "steady", "ramp", "spike", "soak", "pipeline", "herd
 
 [stream]                 # SSE rows: a chat answer read to its end
 first_token_p95_ms = 5000
+# mock-slow sleeps this long by design (scripts/mock-llm-server.py SLOW_FIRST_TOKEN_DELAY_S), so its
+# first token is judged as delay + first_token_p95_ms; the 5 s limit still binds the app's own part.
+slow_first_token_delay_ms = 45000
 p95_ms = 60000           # mock-slow holds a stream for most of a minute by design
 
 [socket]                 # WS rows: connect and the echo round trip
@@ -45,4 +48,5 @@ p95_ms = 600000
 max_idle_in_transaction = 0      # connections idle in a transaction for over 1 s, any sample
 max_pool_saturated_share = 0.05  # share of samples with the API's pg_stat_activity connections >= pool capacity
 min_sample_coverage = 0.8        # share of sampler sweeps that must yield pg and pg_stat_activity API rows
-max_memory_growth_share = 0.25   # per container: last sample vs first (the soak's leak check)
+max_memory_growth_share = 0.25   # per container: growth over the SECOND half of the run (least-squares line), not first vs last
+min_memory_samples = 8           # fewer samples than this cannot show a slope: reported, not passed

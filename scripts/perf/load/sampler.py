@@ -12,11 +12,16 @@ sent SIGTERM or SIGINT (``run.sh`` does that when Locust exits), or ``--duration
   IP, or ``application_name='opentranscribe-api'``) and the pool capacity they are judged
   against. Asked of Postgres, so it still answers when the API is saturated;
 - ``pool``: the API's ``db_pool_*`` gauges and ``http_requests_in_flight`` from ``/metrics``;
+- ``host``: the host's load average and ``/proc/pressure`` (PSI) for cpu, io and memory;
 - ``queue``: each Celery queue's depth in Redis (all priority levels summed);
 - ``container``: CPU percent and memory bytes of every container of this stack only, found by
   its compose project label (``otfresh-NAME``), never by a name grep;
 - ``gpu``: memory used and utilisation of the ``--gpus`` cards only. GPU 0 is refused: it runs
   unrelated work on this host.
+
+``holders.csv`` records WHO holds a transaction open over a second or waits on a lock (pid,
+application, client address, wait event, age, ``pg_blocking_pids``, the first 200 characters of
+the query), so a lock wait is attributed rather than inferred.
 
 Standard library only, and it never reads a secret: the Postgres user and the Redis password
 are expanded inside their own containers.
@@ -71,9 +76,36 @@ PG_SQL = (
 API_APP_NAME = 'opentranscribe-api'
 API_CONN_SQL = (
     'SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() '
+    "AND state IS DISTINCT FROM 'idle' "
     "AND (application_name = '{app}' OR client_addr = ANY (string_to_array('{ips}', ',')::inet[]))"
 )
 DEFAULT_POOL_CAPACITY = 20 + 40  # DB_POOL_SIZE + DB_MAX_OVERFLOW (core/settings_capacity.py)
+DEFAULT_WORKERS = 1
+HOLDER_FIELDS = (
+    'pid',
+    'application_name',
+    'client_addr',
+    'state',
+    'wait_event',
+    'xact_age_s',
+    'blocked_by',
+    'query',
+)
+# Holders of a transaction over 1 s, and anything waiting on a lock: who, doing what, for how long.
+HOLDERS_SQL = (
+    "SELECT pid, application_name, coalesce(client_addr::text, ''), state, "
+    "coalesce(wait_event_type || ':' || wait_event, ''), "
+    'coalesce(extract(epoch FROM now() - xact_start), 0)::float8, '
+    "array_to_string(pg_blocking_pids(pid), ' '), "
+    "left(regexp_replace(coalesce(query, ''), '\\s+', ' ', 'g'), 200) "
+    'FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() '
+    "AND ((state LIKE 'idle in transaction%' AND now() - xact_start > interval '1 second') "
+    "OR wait_event_type = 'Lock')"
+)
+PG_CSV_SHELL = (
+    'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-opentranscribe}" --csv -t -c "$0"'
+)
+PRESSURE_FILES = ('cpu', 'io', 'memory')
 _IP_RE = re.compile(r'^[0-9a-fA-F:.]+$')
 PG_SHELL = 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-opentranscribe}" -AtF, -c "$0"'
 # kombu's Redis transport keeps a priority queue as NAME plus NAME\x06\x16<1..9>.
@@ -131,12 +163,53 @@ def parse_ips(text: str) -> list[str]:
 
 
 def parse_pool_capacity(text: str) -> float:
-    """``DB_POOL_SIZE DB_MAX_OVERFLOW`` as printed by the container; unset values use the default."""
-    size, overflow = (text.split() + ['', ''])[:2]
+    """``DB_POOL_SIZE DB_MAX_OVERFLOW UVICORN_WORKERS`` as printed by the container.
+
+    Every uvicorn worker owns its own pool (``DB_POOL_SIZE + DB_MAX_OVERFLOW`` checked-out
+    connections at most) plus one readiness probe connection, so the API's ceiling is
+    ``workers x (size + overflow + 1)`` (docker-compose.yml, the comment on ``UVICORN_WORKERS``).
+    An unset value uses its default.
+    """
+    size, overflow, workers = (text.split() + ['', '', ''])[:3]
     try:
-        return float(int(size) + int(overflow))
+        per_worker = int(size) + int(overflow)
     except ValueError:
-        return float(DEFAULT_POOL_CAPACITY)
+        per_worker = DEFAULT_POOL_CAPACITY
+    try:
+        count = int(workers)
+    except ValueError:
+        count = DEFAULT_WORKERS
+    return float(count * (per_worker + 1))
+
+
+def parse_holders(text: str) -> list[dict[str, str]]:
+    """Rows of :data:`HOLDERS_SQL` printed by ``psql --csv -t``, keyed by :data:`HOLDER_FIELDS`."""
+    return [
+        dict(zip(HOLDER_FIELDS, row, strict=True))
+        for row in csv.reader(text.splitlines())
+        if len(row) == len(HOLDER_FIELDS)
+    ]
+
+
+def parse_pressure(name: str, text: str) -> list[Row]:
+    """``/proc/pressure/<name>``: ``some avg10=0.00 avg60=0.00 avg300=0.00 total=N`` per line."""
+    rows: list[Row] = []
+    for line in text.splitlines():
+        kind, _, rest = line.partition(' ')
+        for pair in rest.split():
+            key, _, value = pair.partition('=')
+            if kind in ('some', 'full') and key in ('avg10', 'total'):
+                rows.append(('host', f'psi_{name}_{kind}_{key}', float(value)))
+    return rows
+
+
+def parse_loadavg(text: str) -> list[Row]:
+    one, five, fifteen = text.split()[:3]
+    return [
+        ('host', 'loadavg_1m', float(one)),
+        ('host', 'loadavg_5m', float(five)),
+        ('host', 'loadavg_15m', float(fifteen)),
+    ]
 
 
 def parse_metrics(text: str) -> list[Row]:
@@ -247,7 +320,14 @@ class Sampler:
                 ]
             )
             env = _run(
-                ['docker', 'exec', backend, 'sh', '-c', 'echo "$DB_POOL_SIZE $DB_MAX_OVERFLOW"']
+                [
+                    'docker',
+                    'exec',
+                    backend,
+                    'sh',
+                    '-c',
+                    'echo "$DB_POOL_SIZE $DB_MAX_OVERFLOW $UVICORN_WORKERS"',
+                ]
             )
             self._api_ips = ','.join(parse_ips(ips))
             self._capacity = parse_pool_capacity(env)
@@ -278,6 +358,7 @@ class Sampler:
         if self.pg:
             pg = self.pg
             out['pg'] = lambda: parse_pg(_run(['docker', 'exec', pg, 'sh', '-c', PG_SHELL, PG_SQL]))
+        out['host'] = self._host
         if self.pg and self.backend:
             out['pgapi'] = self._api_connections
         if self.redis:
@@ -292,6 +373,23 @@ class Sampler:
         sql = API_CONN_SQL.format(app=API_APP_NAME, ips=ips)
         out = _run(['docker', 'exec', str(self.pg), 'sh', '-c', PG_SHELL, sql])
         return parse_api_connections(out, capacity)
+
+    def _host(self) -> list[Row]:
+        """Host pressure (PSI) and load: what a stall with no app-side cause is attributed to."""
+        rows = parse_loadavg(Path('/proc/loadavg').read_text())
+        for name in PRESSURE_FILES:
+            path = Path('/proc/pressure') / name
+            if path.is_file():
+                rows += parse_pressure(name, path.read_text())
+        return rows
+
+    def holders(self) -> list[dict[str, str]]:
+        """Who holds a transaction open over 1 s, and who waits on a lock, right now."""
+        if not self.pg:
+            return []
+        return parse_holders(
+            _run(['docker', 'exec', self.pg, 'sh', '-c', PG_CSV_SHELL, HOLDERS_SQL])
+        )
 
     def _metrics(self) -> str:
         with urllib.request.urlopen(f'{self.base_url}/metrics', timeout=COMMAND_TIMEOUT_S) as resp:
@@ -341,16 +439,25 @@ def main(argv: list[str] | None = None) -> int:
     sampler = Sampler(target.base_url, containers, gpus)
     args.out.mkdir(parents=True, exist_ok=True)
     path = args.out / 'samples.csv'
+    holders_path = args.out / 'holders.csv'
     started = time.monotonic()
-    with path.open('a', newline='') as fh:
+    with path.open('a', newline='') as fh, holders_path.open('a', newline='') as hfh:
         writer = csv.writer(fh)
+        holder_writer = csv.DictWriter(hfh, fieldnames=('ts', *HOLDER_FIELDS))
         if fh.tell() == 0:
             writer.writerow(('ts', 'source', 'name', 'value'))
+        if hfh.tell() == 0:
+            holder_writer.writeheader()
         while not stop and not (args.duration and time.monotonic() - started >= args.duration):
             tick = time.monotonic()
             now = time.time()
             writer.writerows((f'{now:.1f}', *row) for row in sampler.sweep())
+            try:
+                holder_writer.writerows({'ts': f'{now:.1f}', **h} for h in sampler.holders())
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                writer.writerow((f'{now:.1f}', 'error', f'holders:{type(exc).__name__}', 1.0))
             fh.flush()
+            hfh.flush()
             while not stop and time.monotonic() - tick < args.interval:
                 time.sleep(0.2)
     return 0

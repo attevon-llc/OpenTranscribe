@@ -19,6 +19,7 @@ replace the base rules or turn off the redaction posture.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from app.services.chat.prompt_blocks import _MIN_TRUNCATED_EXCERPT_CHARS
@@ -27,6 +28,14 @@ from app.services.chat.prompt_sanitize import _sanitize_body_text
 from app.services.chat.redactor import MaskedChunk
 
 logger = logging.getLogger(__name__)
+
+# Bracketed excerpt numbers ([1], [2][3]) in a PRIOR assistant turn. Excerpt ids
+# are numbered afresh from 1 every turn, so in replayed history they point at an
+# excerpt set the model no longer sees; left in, the model finds its old numbers
+# disagreeing with this turn's excerpts and "corrects" its earlier answers.
+# Only the copy sent to the model is stripped; stored messages and the UI's
+# citations are untouched.
+_HISTORY_CITATION_RE = re.compile(r"[ \t]*\[\d{1,3}\]")
 
 # Immutable layer 1. Concatenated ahead of every user-supplied layer.
 #
@@ -404,6 +413,8 @@ def build_messages(
         role = turn.get("role")
         content = turn.get("content") or ""
         if role in ("user", "assistant") and content:
+            if role == "assistant":
+                content = _HISTORY_CITATION_RE.sub("", content)
             messages.append({"role": role, "content": content})
 
     overhead = len(system_prompt) + sum(len(m["content"]) for m in messages[1:]) + len(question)

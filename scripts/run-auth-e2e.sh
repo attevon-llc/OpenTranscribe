@@ -174,6 +174,20 @@ wait_for_port() {
     return 1
 }
 
+wait_for_http() {
+    local url=$1 max_wait=$2 label=$3
+    log_step "Waiting for $label..."
+    for _i in $(seq 1 "$max_wait"); do
+        if curl -sf -o /dev/null "$url" 2>/dev/null; then
+            log_ok "$label is ready"
+            return 0
+        fi
+        sleep 1
+    done
+    log_err "$label not ready within ${max_wait}s ($url)"
+    return 1
+}
+
 get_admin_token() {
     local resp
     resp=$(curl -sf -X POST "${BACKEND_URL}/api/auth/token" \
@@ -536,7 +550,9 @@ phase_2_ldap_keycloak() {
     wait_for_port "${LDAP_TEST_LDAPS_PORT:-6360}" 30 "LLDAP (LDAPS)" || return 1
     wait_for_port 17170 30 "LLDAP (Web UI)" || return 1
     wait_for_port 8180 120 "Keycloak" || return 1
-    sleep 5  # Keycloak serves its port before the realm endpoints are ready
+    # Keycloak serves its port before the realm endpoints are ready: poll the master realm's
+    # discovery document (bounded) instead of a fixed sleep.
+    wait_for_http "http://localhost:8180/realms/master/.well-known/openid-configuration" 60 "Keycloak realm endpoints" || return 1
 
     # Run LDAP/Keycloak E2E tests
     # The test file's session-scoped fixtures handle user creation and auth config

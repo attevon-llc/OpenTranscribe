@@ -449,7 +449,8 @@ def test_the_loop_still_stops_and_removes_whatever_it_selects(
     assert ["stop", f"{primary}-straggler"] in calls, (
         f"the loop selected a straggler but never stopped it: {calls!r}"
     )
-    assert ["rm", f"{primary}-straggler"] in calls, (
+    # `rm -v` also drops the container's anonymous volumes (WASTE_AUDIT W7); never named ones.
+    assert ["rm", "-v", f"{primary}-straggler"] in calls, (
         f"the loop stopped a straggler but never removed it: {calls!r}"
     )
 

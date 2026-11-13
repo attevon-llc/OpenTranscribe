@@ -50,6 +50,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Changed
 
+- Build and release scripts: `docker-build-push.sh` scopes its builder per process (`BUILDX_BUILDER`, never `docker buildx use`) and builds host-arch `--load` legs on the `docker` driver; `release.sh build` logs per-leg start/end/duration (opt-in `OT_BUILD_REMOTE_CONCURRENT=true` runs non-host legs concurrently); `opentr.sh build_prod_images` builds backend/frontend/docs concurrently; `opentr.sh stop` removes stopped containers' anonymous volumes (never named); dev starts skip BuildKit attestations; auth e2e polls Keycloak instead of `sleep 5`; PR image scan uses `cache-to mode=min`; CI caches the FFmpeg.wasm core.
 - **Action: migrations run in a one-shot `migrate` service** that `backend` and the Celery workers wait for; the shipped production, lite and offline files set `RUN_MIGRATIONS_ON_STARTUP=false`. A lock that is never released now times out after `MIGRATION_LOCK_TIMEOUT_S` (900 s) and exits with code 3.
 - **Action: production ports bind to loopback.** The API (5174) and docs (5183) ports, and the web UI port when HTTPS is set up, listen on `127.0.0.1`; use `BACKEND_BIND_HOST`, `DOCS_BIND_HOST` and `FRONTEND_BIND_HOST` to widen. The offline file publishes docs on `DOCS_PORT` (5183, was 3030).
 - **Action: Celery pool sizing.** `WORKER_DB_MAX_OVERFLOW` defaults to 0 and a new `THREADED_WORKER_DB_MAX_OVERFLOW` (3) covers threads-pool workers. Remove a stale `WORKER_DB_MAX_OVERFLOW=3` from `.env`.

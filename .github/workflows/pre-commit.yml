@@ -117,6 +117,18 @@ jobs:
           restore-keys: |
             mypy-${{ matrix.stage }}-${{ runner.os }}-
 
+      # The compiled FFmpeg.wasm core (frontend/static/ffmpeg, gitignored). The push-stage
+      # `frontend-build` hook runs `prebuild` -> build-ffmpeg.js, which compiles it in Docker
+      # unless the files already exist and pass its size check, so a hit skips the compile.
+      # Keyed on its whole build directory plus the script (actions/cache docs: key on the
+      # files that determine the content), so any source/toolchain change rebuilds.
+      - name: Cache FFmpeg.wasm core
+        if: matrix.stage == 'pre-push'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: frontend/static/ffmpeg
+          key: ffmpeg-wasm-${{ runner.os }}-${{ hashFiles('frontend/ffmpeg-wasm-build/**', 'frontend/scripts/build-ffmpeg.js') }}
+
       - name: Run pre-commit (pre-commit stage)
         if: matrix.stage == 'pre-commit'
         run: pre-commit run --all-files --show-diff-on-failure

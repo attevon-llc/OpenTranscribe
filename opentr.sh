@@ -24,6 +24,8 @@ source ./scripts/lib/fresh-prod.sh
 source ./scripts/lib/lite-demo-overlay.sh
 # shellcheck source=scripts/lib/model-cache-dir.sh
 source ./scripts/lib/model-cache-dir.sh
+# shellcheck source=scripts/lib/restart-services.sh
+source ./scripts/lib/restart-services.sh
 # shellcheck source=scripts/lib/gpu-device.sh
 source ./scripts/lib/gpu-device.sh
 # shellcheck source=scripts/lib/prod-images.sh
@@ -272,7 +274,7 @@ show_help() {
   echo "                  (.sql, .dump, .sql.gpg, or .dump.gpg; --from-s3 fetches by name first) — destructive"
   echo ""
   echo "Development Commands:"
-  echo "  restart-backend [--fresh <name>]"
+  echo "  restart-backend [--fresh <name>] [--only <svc>[,<svc>]]"
   echo "                      - Restart backend, all celery workers, celery-beat & flower without database reset"
   echo "  restart-frontend [--fresh <name>]"
   echo "                      - Restart frontend without affecting backend services"
@@ -3675,41 +3677,6 @@ restart_compose() {
     # the default path is unchanged by this fix.
     docker compose "$@"
   fi
-}
-
-restart_backend() {
-  restart_resolve_target "$@" || return $?
-  echo "🔄 Restarting backend services on ${RESTART_LABEL} (backend, all celery workers, celery-beat, flower)..."
-
-  # -t "$OT_STOP_GRACE_GPU" (issue #782): compose v2.29.7's `restart` passes only
-  # options.Timeout, so a container created before docker-compose.yml carried
-  # stop_grace_period (StopTimeout still null) needs it spelled out here too.
-  local rc=0
-  restart_compose restart -t "$OT_STOP_GRACE_GPU" backend \
-    celery-worker \
-    celery-download-worker \
-    celery-cpu-worker \
-    celery-redaction \
-    celery-cloud-asr-worker \
-    celery-nlp-worker \
-    celery-embedding-worker \
-    celery-beat \
-    flower || rc=$?
-
-  # celery-worker-gpu-scaled is optional (scale: 0 unless --gpu-scale), so its
-  # absence is genuinely not an error — unlike everything above.
-  restart_compose restart -t "$OT_STOP_GRACE_GPU" celery-worker-gpu-scaled 2>/dev/null || true
-
-  if [ "$rc" -ne 0 ]; then
-    echo "❌ Backend restart FAILED on ${RESTART_LABEL} (docker compose exit ${rc})." >&2
-    echo "   Nothing above was necessarily restarted — do not read this as a success." >&2
-    return "$rc"
-  fi
-  echo "✅ Backend services restarted successfully on ${RESTART_LABEL}."
-
-  # Display container status
-  echo "📊 Container status:"
-  restart_compose ps
 }
 
 # Function to restart frontend only

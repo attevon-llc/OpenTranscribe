@@ -151,6 +151,34 @@ fi
 record artifacts-match-tagged-commit pass
 # --- END artifacts-match-tagged-commit ---
 
+# TR-P: the Python bytes the gate tested are the Python bytes that ship. The test stage recorded the
+# tested pip set and /app tree (tested-fingerprint.txt); the host-arch backend leg from legs.tsv is
+# fingerprinted by the same image_parity.py and must match. `test` is never reused (L1), so after a
+# test-only fix the NEW record is compared against the reused build, consistent by construction
+# (backend/tests/** never reaches the image: .dockerignore). Missing record = not measured.
+parity_dir="$REPO_ROOT/.release/$VERSION"
+host_arch="$(docker version --format '{{.Server.Arch}}' 2>/dev/null || echo amd64)"
+parity_image=""
+while IFS=$'\t' read -r _pc _pr _pp _pt _pid; do
+    [[ "$_pc" == "backend" && "$_pp" == "linux/${host_arch}" ]] && parity_image="$_pid"
+done < "$parity_dir/legs.tsv" 2>/dev/null
+if [[ ! -s "$parity_dir/tested-fingerprint.txt" || -z "$parity_image" ]]; then
+    record shipped-python-equals-tested not-measured \
+        "no tested-fingerprint.txt or no host-arch backend leg in legs.tsv" \
+        "./scripts/release.sh test $VERSION && ./scripts/release.sh build $VERSION"
+    echo -e "${RED}cannot prove shipped Python == tested Python${NC}" >&2
+    fail_out 1
+fi
+if ! python3 "$SCRIPT_DIR/image_parity.py" check-shipped --image "$parity_image" \
+        --fingerprint "$parity_dir/tested-fingerprint.txt" --out "$parity_dir/steps/tag.parity" >&2; then
+    record shipped-python-equals-tested fail \
+        "the shipped backend leg differs from what the gate tested (see $parity_dir/steps/tag.parity)" \
+        "re-run test and build on HEAD; override only with --force-tag \"reason\""
+    echo -e "${RED}refusing to tag: shipped backend Python differs from the tested bytes${NC}" >&2
+    fail_out 1
+fi
+record shipped-python-equals-tested pass "pip freeze and /app match the tested record (steps/tag.parity)"
+
 if ! python3 scripts/release/check-version-consistency.py --mode pre-tag; then
     record version-consistency-pre-tag fail "check-version-consistency.py --mode pre-tag refused" \
         "python3 scripts/release/check-version-consistency.py --mode pre-tag"

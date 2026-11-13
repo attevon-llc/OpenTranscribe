@@ -20,10 +20,15 @@ cd "$REPO_ROOT" || exit 2
 
 VERSION="${1:-${RELEASE_VERSION:-}}"
 JSON_OUT="${JSON_OUT:-false}"
-OUT_DIR="${OT_SCAN_DIR:-./security-reports}"
 BLUE='\033[0;34m'; NC='\033[0m'
 
 : "${VERSION:?50-scan.sh needs a version}"
+
+# Reports are staged in a gitignored dir under .release/, NEVER in tracked security-reports/: a scan
+# that rewrote tracked files made every later build in this checkout `<sha>-dirty` and stack_target
+# refused it (STALE_CODE). Only 95-finish.sh copies the publishable reports into security-reports/.
+OUT_DIR="${OT_SCAN_DIR:-./.release/${VERSION}/scan-reports}"
+mkdir -p "$OUT_DIR"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'
 

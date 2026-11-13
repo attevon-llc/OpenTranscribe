@@ -156,6 +156,8 @@ export TEST_FRONTEND_PORT TEST_BACKEND_PORT TEST_FLOWER_PORT TEST_POSTGRES_PORT 
 # ─── Source library ─────────────────────────────────────────────────────────
 # shellcheck source=lib/guardrails.sh
 source "$LIB_DIR/guardrails.sh"
+# shellcheck source=lib/demo-leg.sh
+source "$LIB_DIR/demo-leg.sh"
 # shellcheck source=lib/compose-patch.sh
 source "$LIB_DIR/compose-patch.sh"
 # shellcheck source=lib/api-client.sh
@@ -981,6 +983,7 @@ phase 06 phase_06_topology_check
 phase 06b phase_06b_sidecar_check
 phase 07 phase_07_pipeline_assertions
 phase 07b phase_07b_feature_checks
+phase 07d demo_leg_phase
 phase 07c phase_07c_summary
 phase 08 phase_08_finish
 

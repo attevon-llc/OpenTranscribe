@@ -20,6 +20,7 @@ import pyotp
 import pytest
 
 from app.core.config import settings
+from tests.fixtures.redis_fakes import RedisDownExceptFor
 
 
 @pytest.fixture(autouse=True)
@@ -29,12 +30,8 @@ def enable_mfa_settings():
         yield
 
 
-class _SetNxRedis:
-    """In-memory SET NX, the one Redis command the TOTP replay guard uses.
-
-    Every other command behaves like an unreachable Redis, so callers take their
-    documented fallback rather than an AttributeError.
-    """
+class _SetNxRedis(RedisDownExceptFor):
+    """In-memory SET NX, the one Redis command the TOTP replay guard uses."""
 
     def __init__(self):
         self.keys: dict[str, str] = {}
@@ -44,14 +41,6 @@ class _SetNxRedis:
             return None
         self.keys[key] = value
         return True
-
-    def __getattr__(self, name):
-        from redis.exceptions import ConnectionError as RedisConnectionError
-
-        def _down(*_args, **_kwargs):
-            raise RedisConnectionError(f"fake redis: {name} unavailable")
-
-        return _down
 
 
 @pytest.fixture(autouse=True)
@@ -320,7 +309,7 @@ class TestMFALoginFlow:
         ):
             # First verify succeeds
             totp = pyotp.TOTP(secret)
-            code = totp.now()
+            code = _next_step_code(totp)
             first_verify = client.post(
                 "/api/auth/mfa/verify",
                 json={"mfa_token": mfa_token, "code": code},
@@ -334,6 +323,8 @@ class TestMFALoginFlow:
                 json={"mfa_token": mfa_token, "code": code2},
             )
             assert second_verify.status_code == 401
+            # Token replay, not code replay (which says "Invalid MFA code").
+            assert second_verify.json()["detail"] == "MFA token has already been used"
 
 
 class TestMFADisable:

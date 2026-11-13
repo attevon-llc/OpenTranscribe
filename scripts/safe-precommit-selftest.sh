@@ -4,6 +4,10 @@
 # makes the wrapper report what it WOULD run instead.
 set -euo pipefail
 
+# Hooks export GIT_DIR and friends (githooks(5)); a scratch `git init` would otherwise act on the
+# REAL repository. Names come from `git rev-parse --local-env-vars`.
+while read -r _git_local_var; do unset "$_git_local_var"; done < <(git rev-parse --local-env-vars)
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WRAPPER="$SCRIPT_DIR/safe-precommit.sh"
 

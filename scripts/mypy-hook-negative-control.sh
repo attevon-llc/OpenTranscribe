@@ -68,6 +68,10 @@ git -C "$REPO_ROOT" rev-parse --verify --quiet "$REF^{commit}" > /dev/null || {
   exit 2
 }
 
+# Hooks export GIT_DIR and friends (githooks(5)); a scratch `git init` would otherwise act on the
+# REAL repository. Names come from `git rev-parse --local-env-vars`.
+while read -r _git_local_var; do unset "$_git_local_var"; done < <(git rev-parse --local-env-vars)
+
 RED="$(mktemp -d -t ot-redcheck.XXXXXX)"
 cleanup() {
   # Only ever our own mktemp dir, and only if it still has the shape we made.

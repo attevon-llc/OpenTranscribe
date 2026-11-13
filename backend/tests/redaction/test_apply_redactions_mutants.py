@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.services.redaction.spans import MalformedSpanError
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import apply_redactions
 from app.services.redaction.spans import build_word_offsets
@@ -154,3 +155,39 @@ def test_a_genuinely_missing_word_still_degrades_to_a_point() -> None:
 
     assert offsets[0] == (0, 4)
     assert offsets[1][0] == offsets[1][1], "a missing token must collapse to a point"
+
+
+# ── _coerce: a half-formed span must fail closed, with its documented error ──────
+#
+# A dict naming only ONE end of the range claims a character range but cannot be
+# read. Dropping it would send the text it covered out unmasked, so it must raise.
+# The `and` in `"char_start" not in span and "char_end" not in span` is what makes a
+# one-ended dict raise rather than be skipped as "not a span at all".
+
+
+@pytest.mark.parametrize(
+    "half_span",
+    [
+        {"char_start": 0, "category": "pii", "entity_type": "NAME"},
+        {"char_end": 4, "category": "pii", "entity_type": "NAME"},
+    ],
+    ids=["only-char_start", "only-char_end"],
+)
+def test_a_span_with_only_one_end_of_its_range_fails_closed(half_span) -> None:
+    with pytest.raises(MalformedSpanError):
+        apply_redactions("Dana called.", [half_span])
+
+
+def test_a_dict_with_no_range_at_all_is_skipped_not_raised() -> None:
+    """Control: a score blob carries no range and is foreign data, not a bad span."""
+    blob = {"toxicity": 0.9}
+
+    assert apply_redactions("Dana called.", [blob]) == ("Dana called.", [])
+
+
+def test_the_malformed_span_error_carries_its_documented_message() -> None:
+    with pytest.raises(MalformedSpanError) as caught:
+        apply_redactions("Dana called.", [{"char_start": 0}])
+
+    assert str(caught.value) == "unreadable cached redaction span"
+    assert caught.value.__cause__ is not None

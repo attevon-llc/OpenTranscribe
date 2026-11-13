@@ -98,6 +98,8 @@ from speaker_clusters_seed import wait_for_clustered_speakers
 from styling_screens import load_fixture
 from timeouts import APP_SHELL_READY_MS
 
+from tests.stack_preflight import is_isolated_stack
+
 pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet stack)
 
 # This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
@@ -685,13 +687,6 @@ def _pin_masked_geometry(page: Page, surface: str) -> None:
     page.wait_for_timeout(300)
 
 
-#: Host:port pairs that mean "the shared dev stack", not an isolated `--fresh`
-#: deployment. Matches conftest's own `FRONTEND_URL`/`BACKEND_URL` defaults
-#: (``localhost:5173``/``localhost:5174``) — the same signal the module
-#: docstring's issue #451 section already names as the isolation requirement,
-#: just not previously enforced anywhere.
-_SHARED_STACK_HOSTS = ("localhost:5173", "localhost:5174", "127.0.0.1:5173", "127.0.0.1:5174")
-
 #: Surfaces where masking cannot fully remove non-determinism — row/page-height
 #: drift from a changing card/cluster count, or (`file_detail`) two runs simply
 #: picking a different newest file. These need an isolated, seeded stack to be
@@ -721,7 +716,7 @@ def _skip_unless_isolated_stack(surface: str, base_url: str, backend_url: str) -
     """
     if surface not in _NEEDS_ISOLATED_STACK:
         return
-    if any(host in base_url or host in backend_url for host in _SHARED_STACK_HOSTS):
+    if not (is_isolated_stack(base_url) and is_isolated_stack(backend_url)):
         pytest.skip(
             f"'{surface}' visual capture needs an isolated, seeded stack — the shared dev "
             f"stack's file/cluster counts change between runs and cannot be fully masked "

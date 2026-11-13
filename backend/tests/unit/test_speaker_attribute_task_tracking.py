@@ -27,6 +27,7 @@ import time
 
 from app.models.media import MediaFile
 from app.tasks import speaker_attribute_task as sat
+from tests.fixtures.redis_fakes import RedisDownExceptFor
 from tests.fixtures.speaker_attribute_tracking import make_file_with_speech
 from tests.fixtures.speaker_attribute_tracking import task_row_for
 
@@ -93,7 +94,7 @@ def test_duplicate_in_progress_skip_path_creates_skipped_task_row(
     """(c) The Redis dedup guard must also leave an honest, visible Task row."""
     media_file, _ = make_file_with_speech(db_session, normal_user)
 
-    class _FakeRedis:
+    class _FakeRedis(RedisDownExceptFor):
         def set(self, *args, **kwargs):
             return False  # simulate: another dispatch already holds the lock
 

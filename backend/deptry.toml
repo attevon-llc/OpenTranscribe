@@ -97,6 +97,7 @@ DEP002 = [
   "proto-plus",  # via rb=[google-api-core, google-cloud-speech
   "mmh3",  # via rb=[imohash
   "pyspnego",  # via rb=[smbprotocol
+  "humanize",  # via rb=[flower
   "idna",  # via rb=[anyio, email-validator, httpx, httpx2, requests, tldextract, yarl
   "argon2-cffi-bindings",  # via rb=[argon2-cffi
   "narwhals",  # via rb=[scikit-learn

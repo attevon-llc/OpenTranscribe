@@ -1,0 +1,4 @@
+=== OT-MUTATION-SUMMARY BEGIN key=lockout_store path=app/auth/lockout_store.py ===
+app.auth.lockout_store.x__get_redis_client__mutmut_12: killed
+app.auth.lockout_store.x__get_redis_client__mutmut_13: survived
+=== OT-MUTATION-SUMMARY END key=lockout_store mutants=111 survived=28 not_checked=0 run_mutants=111 run_survived=28 ===

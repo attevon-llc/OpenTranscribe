@@ -9,6 +9,8 @@
 
 # shellcheck source=stack-target.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/stack-target.sh"
+# shellcheck source=mutation-report.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mutation-report.sh"
 
 # mutation_check_stack -> 0 when the target stack is usable. Exports POSTGRES_PORT/REDIS_PORT.
 mutation_check_stack() {
@@ -143,34 +145,24 @@ mutation_parallel_run() {
         ) &
     done <<<"$plan_tsv"
     wait
+    mutation_parallel_report "$rc_dir" "${keys[@]}"
+}
 
-    local rc=0 crc jrc base
-    for key in "${keys[@]}"; do
+# mutation_parallel_report RC_DIR KEY... -> the run's exit status. Per module: the judge's verdict,
+# then the survivors' file:line. The children's own output goes to <key>.console, which nobody
+# watches, so this is the only console a --parallel operator reads (#1373: MUTRUN4 saw bare counts).
+mutation_parallel_report() {
+    local rc_dir=$1 rc=0 crc jrc base key
+    shift
+    for key in "$@"; do
         crc=$(cat "$rc_dir/$key" 2>/dev/null || echo 4)
         base=$(grep -P "^${key}\t" "$REPO_ROOT/scripts/mutation-baselines.tsv" | cut -f2)
         jrc=0; _mut_iso judge --module "$key" --log "$OUT_DIR/$key.log" ${base:+--baseline "$base"} || jrc=$?
         echo "  child exit $crc, judge exit $jrc ($key)"
+        logged_survivor_locations "$key" "$OUT_DIR/$key.log"
         (( crc == 4 || jrc == 4 )) && rc=4
         (( rc != 4 && ( crc == 1 || jrc == 1 ) )) && rc=1
         (( rc == 0 && crc != 0 )) && rc=$crc
     done
     return "$rc"
-}
-
-# file:line for each survivor of module $1 in log $2, from mutmut's own <path>.spans index
-# (scripts/lib/mutation_survivor_lines.py). Never fails a run: a mutant it cannot place prints `:?`.
-survivor_locations() {
-    local key=$1 log=$2
-    echo "=== OT-MUTATION-SURVIVOR-LOCATIONS key=$key (mutant<TAB>file:line<TAB>mutated line) ==="
-    python3 "$SCRIPT_DIR/lib/mutation_survivor_lines.py" --backend "$BACKEND" --log "$log" \
-        --module-path "${MODULE_PATH[$key]}"
-}
-
-# survivor_locations, printed AND appended to the module log. Appending alone is how the block
-# went unseen: it lands after the OT-MUTATION-SUMMARY END marker (so check_baseline never reads
-# it) and never reached the console, so a reader of the run output or of the summary's bare
-# `<mutant>: survived` lines saw no file:line (MUTKD, #1373). Never fails a run.
-report_survivor_locations() {
-    local key=$1 log=$2
-    survivor_locations "$key" "$log" | tee -a "$log" || true
 }

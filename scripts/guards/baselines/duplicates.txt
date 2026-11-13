@@ -342,5 +342,3 @@ frontend/src/stores/auth.sessionProbe.test.ts	1	pre-existing duplicated blocks o
 frontend/src/stores/websocket.notificationActions.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/websocket.retention.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/stores/websocket.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-scripts/audit_tests/cli.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-scripts/session_lifetime_audit/cli.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

@@ -72,7 +72,7 @@ def _world(tmp_path: Path, hygiene: dict[str, int]) -> tuple[Path, dict[str, str
     )
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    _exe(bindir / "docker", "exit 0\n")
+    _exe(bindir / "docker", '[ "$1" = version ] && echo linux/amd64\nexit 0\n')
     env = {
         **os.environ,
         "PATH": f"{bindir}:{os.environ['PATH']}",
@@ -82,8 +82,12 @@ def _world(tmp_path: Path, hygiene: dict[str, int]) -> tuple[Path, dict[str, str
     return repo, env
 
 
-def _run(tmp_path: Path, hygiene: dict[str, int]) -> tuple[int, dict, list[str]]:
+def _run(
+    tmp_path: Path, hygiene: dict[str, int], host_only: bool = False
+) -> tuple[int, dict, list[str]]:
     repo, env = _world(tmp_path, hygiene)
+    if host_only:
+        env["RELEASE_HOST_ARCH_ONLY"] = "1"
     proc = subprocess.run(
         ["bash", "scripts/release/50-scan.sh", VERSION],
         cwd=repo,
@@ -120,3 +124,28 @@ def test_could_not_inspect_is_not_measured_and_blocks(tmp_path: Path):
     assert rc == 1
     assert (crit["outcome"], crit["status"]) == ("not-measured", "fail")
     assert LEGS[0] in crit["detail"]
+
+
+HOST_LEGS = LEGS[:2]
+NON_HOST_LEG = LEGS[2]
+
+
+def test_host_arch_only_does_not_inspect_unbuilt_legs_and_is_waived_not_passed(tmp_path: Path):
+    # The stub fails any arm64 inspection the way a missing local image would (exit 2).
+    _, crit, checked = _run(tmp_path, {NON_HOST_LEG: 2}, host_only=True)
+    assert sorted(checked) == sorted(HOST_LEGS)
+    assert (crit["outcome"], crit["status"]) == ("not-measured", "warn")
+    assert NON_HOST_LEG in crit["detail"] and "not built" in crit["detail"]
+
+
+def test_host_arch_only_still_fails_a_dirty_built_leg(tmp_path: Path):
+    rc, crit, _ = _run(tmp_path, {LEGS[0]: 1}, host_only=True)
+    assert rc == 1
+    assert (crit["outcome"], crit["status"]) == ("fail", "fail")
+
+
+def test_host_arch_only_still_blocks_when_a_built_leg_cannot_be_inspected(tmp_path: Path):
+    rc, crit, _ = _run(tmp_path, {LEGS[1]: 2}, host_only=True)
+    assert rc == 1
+    assert (crit["outcome"], crit["status"]) == ("not-measured", "fail")
+    assert LEGS[1] in crit["detail"]

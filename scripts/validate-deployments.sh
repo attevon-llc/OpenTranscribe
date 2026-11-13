@@ -139,12 +139,25 @@ else
     echo -e "${YELLOW}  (a temporary ./.env was created for compose's per-service env_file; removed on exit)${NC}" >&2
 fi
 
+# opentr.sh refuses a prod+nginx chain when ./nginx/ssl/server.{crt,key} are absent, and
+# those are gitignored (present only on a machine that generated them). The chain does not
+# depend on their content, so point the launcher at empty stand-ins it already honours.
+TMP_CERT_DIR="$(mktemp -d -t ot-validate-certs.XXXXXX)"
+: > "$TMP_CERT_DIR/server.crt"
+: > "$TMP_CERT_DIR/server.key"
+export NGINX_CERT_FILE="$TMP_CERT_DIR/server.crt" NGINX_CERT_KEY="$TMP_CERT_DIR/server.key"
+
 cleanup() {
+    rm -f "$TMP_CERT_DIR/server.crt" "$TMP_CERT_DIR/server.key"
+    rmdir "$TMP_CERT_DIR" 2>/dev/null || true
     [[ -n "$TMP_ENV" ]] && rm -f "$TMP_ENV"
     # Only ever removes a .env this script created itself.
     [[ "$CREATED_REPO_ENV" == "true" ]] && rm -f .env
     # --dry-run creates only the generated fresh overlay, never containers.
+    [[ ${#PKI_CREATED[@]} -gt 0 ]] && rm -f "${PKI_CREATED[@]}"
     rm -f ".fresh/${FRESH_NAME}.yml" ".fresh/${FRESH_NAME}.offset" ".fresh/${FRESH_NAME}.aux"
+    # rmdir only removes an empty dir, so a real deployment's .fresh/ is never touched.
+    rmdir .fresh 2>/dev/null || true
     return 0
 }
 trap cleanup EXIT
@@ -167,6 +180,40 @@ resolve_chain() {
     printf '%s\n' "$out" \
         | sed -n '/Compose files:/,/Command that WOULD run/p' \
         | sed -n 's/^[[:space:]]*-[[:space:]]*\(.*\)$/\1/p'
+}
+
+# ------------------------------------------------- dry-run-generated chain files
+#
+# `opentr.sh --dry-run` is side-effect free, so it lists two overlays in the chain that
+# a real start would have written first. A fresh worktree (or CI) has neither, which
+# made every permutation using them "chain references a missing file". Both are
+# materialised here, from the same generators the launcher uses, and only those two:
+# any OTHER missing file is still a broken chain.
+#
+#   .fresh/<name>.yml                           a container_name overlay; an empty
+#                                               `services` stub is enough for compose to
+#                                               resolve the chain (its content is covered
+#                                               by test_opentr_fresh_*).
+#   scripts/pki/test-certs/pki-test.compose.yml written by scripts/pki/generate-test-env.sh,
+#                                               together with the pki-test.env it references.
+PKI_FRAGMENTS=(scripts/pki/test-certs/pki-test.compose.yml scripts/pki/test-certs/pki-test.env)
+PKI_CREATED=()
+
+materialize_generated() {
+    case "$1" in
+        ".fresh/${FRESH_NAME}.yml")
+            mkdir -p .fresh
+            printf 'services: {}\n' > "$1"
+            ;;
+        scripts/pki/test-certs/pki-test.compose.yml)
+            local f
+            for f in "${PKI_FRAGMENTS[@]}"; do
+                [[ -e "$f" ]] || PKI_CREATED+=("$f")
+            done
+            ./scripts/pki/generate-test-env.sh --quiet >/dev/null 2>&1 || true
+            ;;
+    esac
+    [[ -f "$1" ]]
 }
 
 # --------------------------------------------------------------------- checks
@@ -239,7 +286,7 @@ validate_one() {
 
     for file in "${chain[@]}"; do
         [[ -n "$file" ]] || continue
-        if [[ ! -f "$file" ]]; then
+        if [[ ! -f "$file" ]] && ! materialize_generated "$file"; then
             as_record FAIL "$name" "chain references a missing file: $file"
             return 1
         fi

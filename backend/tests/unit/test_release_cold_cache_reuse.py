@@ -134,7 +134,7 @@ def _arm64_fn() -> str:
     return "\n".join(lines[start : end + 1])
 
 
-def _arm64(tmp_path: Path, legs: str | None, docker_body: str, patch: str = ""):
+def _arm64(tmp_path: Path, legs: str | None, docker_body: str, patch: str = "", host_only: int = 0):
     root = tmp_path / "r"
     (root / ".release" / VERSION).mkdir(parents=True)
     if legs is not None:
@@ -144,7 +144,7 @@ def _arm64(tmp_path: Path, legs: str | None, docker_body: str, patch: str = ""):
     log = tmp_path / "d.log"
     (bindir / "docker").write_text(f'#!/bin/bash\necho "$*" >> {log}\n{docker_body}\n')
     (bindir / "docker").chmod(0o755)
-    script = f'set -uo pipefail\nREPO_ROOT="{root}"; VERSION={VERSION}; PATCH_SKIP_REASON="{patch}"\n{_arm64_fn()}\narm64_web_legs_outcome'
+    script = f'set -uo pipefail\nREPO_ROOT="{root}"; VERSION={VERSION}; PATCH_SKIP_REASON="{patch}"; HOST_ONLY={host_only}\n{_arm64_fn()}\narm64_web_legs_outcome'
     out = subprocess.run(
         ["bash", "-c", script],
         capture_output=True,
@@ -187,6 +187,12 @@ def test_a_missing_context_or_legs_file_is_not_measured_never_a_pass(tmp_path):
     assert out.startswith("not-measured\t") and "docker context" in out
     out2, _ = _arm64(tmp_path / "b", None, "exit 0")
     assert out2.startswith("not-measured\t")
+
+
+def test_a_host_arch_only_build_is_not_measured_and_never_touches_a_remote_daemon(tmp_path):
+    out, calls = _arm64(tmp_path, LEGS, "exit 0", host_only=1)
+    assert out.startswith("not-measured\thost-arch-only build")
+    assert calls == ""
 
 
 def test_a_patch_waiver_is_not_measured(tmp_path):

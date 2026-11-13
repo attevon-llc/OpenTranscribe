@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.demo_docker_stub import PS_STUB
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "scripts" / "demo" / "demo-upgrade.sh"
 
@@ -48,18 +50,7 @@ case "$url" in
 esac
 """
 
-FAKE_DOCKER = r"""#!/usr/bin/env bash
-# `docker ps` is how scripts/lib/stack_target.py resolves the target: answer it from the stub
-# (the project asked for, running from $STUB_WORKDIR) and never log it.
-if [ "$1" = ps ]; then
-  proj=""; for a in "$@"; do case "$a" in label=com.docker.compose.project=*) proj="${a#label=com.docker.compose.project=}";; esac; done
-  [ -n "$proj" ] && [ -z "${STUB_NO_STACK:-}" ] && printf '%s-backend-1\t%s\tbackend\trunning\t%s\t\n' "$proj" "$proj" "${STUB_WORKDIR:-$STUB}"
-  exit 0
-fi
-# stack-target's read-only probes (password lookup, inspect) are not part of the contract.
-if [ "$1" = inspect ] || { [ "$1" = exec ] && [ "$3" = printenv ]; }; then exit 0; fi
-exit 0
-"""
+FAKE_DOCKER = "#!/usr/bin/env bash\n" + PS_STUB + "exit 0\n"
 
 FAKE_RESET = """#!/usr/bin/env bash
 echo "reset lock_held=${DEMO_LOCK_HELD:-}" >> calls.log

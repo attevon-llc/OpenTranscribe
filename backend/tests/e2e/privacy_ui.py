@@ -16,6 +16,8 @@ which is only true of the deployment-wide card):
 
 from __future__ import annotations
 
+import re
+
 import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -45,10 +47,15 @@ def open_settings(page: Page) -> None:
     expect(page.locator(".settings-modal")).to_be_visible(timeout=10000)
 
 
-def open_settings_section(page: Page, nav_label: str) -> None:
-    """Open Settings and switch to the sidebar entry whose text contains *nav_label*."""
+def open_settings_section(page: Page, nav_label: str, *, exact: bool = False) -> None:
+    """Open Settings and switch to the sidebar entry whose text contains *nav_label*.
+
+    ``exact`` matches the whole label: "Legal" is a substring of "Legal holds", which sits
+    earlier in the sidebar, so the substring match opens the wrong section.
+    """
     open_settings(page)
-    nav = page.locator(".settings-sidebar .nav-item", has_text=nav_label)
+    label = re.compile(rf"^\s*{re.escape(nav_label)}\s*$") if exact else nav_label
+    nav = page.locator(".settings-sidebar .nav-item", has_text=label)
     expect(nav.first).to_be_visible(timeout=10000)
     nav.first.click()
     expect(page.locator(".settings-content .section-title").first).to_be_visible(timeout=10000)

@@ -96,6 +96,9 @@ def test_statement_statistics_are_preloaded_per_stack_never_in_a_shipped_compose
 
     assert "shared_preload_libraries" in run_profile
     assert "create extension if not exists pg_stat_statements" in run_profile
-    assert "ALTER SYSTEM SET" in readme
+    # The ALTER SYSTEM block has one home (stack_core.PGSS_SETTINGS); the README points at the command.
+    assert "stack_target.py prepare --fresh" in readme
+    core = (ROOT / "scripts" / "lib" / "stack_core.py").read_text()
+    assert "ALTER SYSTEM SET shared_preload_libraries = pg_stat_statements" in core
     for compose in ROOT.glob("docker-compose*.yml"):
         assert "shared_preload_libraries" not in compose.read_text(), compose.name

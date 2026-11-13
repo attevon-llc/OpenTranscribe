@@ -135,6 +135,12 @@ scripts/voiceprint-backup.py	optional,exec
 # (issue #628; docs: Operations > Public demo). `optional`: older releases have none.
 scripts/demo/demo-upgrade.sh	optional,exec
 scripts/demo/demo-reset.sh	optional,exec
+scripts/demo/demo-target.sh	optional
+# The demo scripts assert their compose project (stack-target) before `down -v`.
+scripts/lib/stack-target.sh	optional
+scripts/lib/stack_target.py	optional
+scripts/lib/stack_checks.py	optional
+scripts/lib/stack_core.py	optional
 scripts/demo/refresh-cloudflare-ips.sh	optional,exec
 nginx/cloudflare-real-ip.conf	optional
 docker-compose.demo-cloudflare.yml	optional

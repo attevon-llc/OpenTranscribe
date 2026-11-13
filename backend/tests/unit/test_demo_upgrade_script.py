@@ -48,6 +48,19 @@ case "$url" in
 esac
 """
 
+FAKE_DOCKER = r"""#!/usr/bin/env bash
+# `docker ps` is how scripts/lib/stack_target.py resolves the target: answer it from the stub
+# (the project asked for, running from $STUB_WORKDIR) and never log it.
+if [ "$1" = ps ]; then
+  proj=""; for a in "$@"; do case "$a" in label=com.docker.compose.project=*) proj="${a#label=com.docker.compose.project=}";; esac; done
+  [ -n "$proj" ] && [ -z "${STUB_NO_STACK:-}" ] && printf '%s-backend-1\t%s\tbackend\trunning\t%s\t\n' "$proj" "$proj" "${STUB_WORKDIR:-$STUB}"
+  exit 0
+fi
+# stack-target's read-only probes (password lookup, inspect) are not part of the contract.
+if [ "$1" = inspect ] || { [ "$1" = exec ] && [ "$3" = printenv ]; }; then exit 0; fi
+exit 0
+"""
+
 FAKE_RESET = """#!/usr/bin/env bash
 echo "reset lock_held=${DEMO_LOCK_HELD:-}" >> calls.log
 """
@@ -66,6 +79,7 @@ def stub(tmp_path):
         (install / "opentranscribe.sh", FAKE_OPENTRANSCRIBE),
         (install / "reset.sh", FAKE_RESET),
         (bindir / "curl", FAKE_CURL),
+        (bindir / "docker", FAKE_DOCKER),
     ):
         path.write_text(body)
         path.chmod(0o755)
@@ -195,3 +209,12 @@ def test_a_held_lock_exits_3(stub):
 
     assert proc.returncode == 3
     assert calls == []
+
+
+def test_a_project_from_another_directory_is_refused_before_any_restart(stub, tmp_path):
+    """Must fire: `update` restarts the stack and the reset deletes its volumes."""
+    proc, calls = run(stub, STUB_WORKDIR=str(tmp_path / "elsewhere"))
+
+    assert proc.returncode == 21, proc.stderr
+    assert calls == []
+    assert not (stub[0] / "demo-status.json").exists()

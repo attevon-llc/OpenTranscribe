@@ -22,7 +22,11 @@
 #   DEMO_INSTALL_DIR  install directory (default: cwd)
 #   DEMO_SEED_BUNDLE  host path of the seed bundle directory (required)
 #   DEMO_UP_TIMEOUT   seconds for each `up --wait`, default 900
-# Exit: 0 reset, 1 failed (nginx stopped), 2 misuse, 3 another reset/upgrade holds the lock.
+#   DEMO_FRESH_NAME   act on the `--fresh NAME` stack (project otfresh-NAME) instead of the demo
+#   COMPOSE_PROJECT_NAME  override the project (default: .env, else the install dir's name)
+# The target project is asserted (demo-target.sh) before anything is stopped or deleted.
+# Exit: 0 reset, 1 failed (nginx stopped), 2 misuse, 3 another reset/upgrade holds the lock,
+#       20-28 the target stack failed scripts/lib/stack_target.py (21 = not this install).
 
 set -euo pipefail
 
@@ -30,7 +34,7 @@ DRY_RUN=0
 case "${1:-}" in
     --dry-run) DRY_RUN=1 ;;
     "") ;;
-    -h | --help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
@@ -56,7 +60,16 @@ if [ -z "${DEMO_LOCK_HELD:-}" ]; then
     flock -n 9 || { echo "another demo reset or upgrade is running" >&2; exit 3; }
 fi
 
+# Before any docker mutation: `down -v` below deletes every volume of the project compose picks.
+# shellcheck source=scripts/demo/demo-target.sh
+source "$(dirname "${BASH_SOURCE[0]}")/demo-target.sh"
+demo_assert_target || exit "$?"
+
 read -r -a FILES <<<"$(./opentranscribe.sh compose-files)"
+if [ -n "${DEMO_FRESH_NAME:-}" ]; then
+    # opentr.sh's generated overlay re-pins container names and ports for the isolated stack.
+    [ ! -f ".fresh/${DEMO_FRESH_NAME}.yml" ] || FILES+=(-f ".fresh/${DEMO_FRESH_NAME}.yml")
+fi
 case " ${FILES[*]} " in
     *" docker-compose.demo.yml "*) ;;
     *) echo "the demo overlay is not in the compose chain (is DEMO_MODE=true in .env?)" >&2; exit 2 ;;

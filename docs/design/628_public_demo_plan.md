@@ -168,7 +168,7 @@ Runs on the demo host from the install directory (a normal `setup-opentranscribe
    `./opentranscribe.sh update-full` (config files of that tag).
 5. `scripts/demo/demo-reset.sh` (fresh seed against the new schema, D6).
 6. Health: `/health` 200 **and** a content assertion: `GET /api/files` as the demo user returns
-   at least `DEMO_MIN_FILES` items, and `GET /api/version` (or the About payload) reports the
+   at least one item (there is no `DEMO_MIN_FILES` setting: the seed bundle's manifest is the count), and `GET /api/version` (or the About payload) reports the
    target tag.
 7. On failure: `./opentranscribe.sh update --rollback`, `update-full`, reset again, health again;
    exit 1 either way so the timer's `OnFailure=` alerts.

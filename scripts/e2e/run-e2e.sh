@@ -262,6 +262,33 @@ else
     fi
 fi
 
+# Skipped-test count for one phase, read from its junit XML rather than grepped out of the
+# terminal output. The XML is the record that survives the run, and "could not count" must
+# never read as zero — an unreadable/absent report exits non-zero here and the caller treats
+# that as NOT MEASURED rather than as a clean phase.
+phase_skipped() {
+    "$VENV_PY" - "$1" <<'PYEOF'
+import sys
+import xml.etree.ElementTree as ET
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except Exception as exc:  # absent, empty, or truncated by a crashed worker
+    print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+    sys.exit(1)
+suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
+print(sum(int(s.get("skipped", 0)) for s in suites))
+PYEOF
+}
+
+# Succeeds (status 0) when the report is unreadable or holds more skips than the ceiling: both
+# mean the selection did not measure what it was asked to.
+skips_exceed_ceiling() {
+    local skipped
+    skipped=$(phase_skipped "$1" 2>/dev/null) || return 0
+    [[ "$skipped" -gt "$2" ]]
+}
+
 # Parallelize across files by default (loadfile keeps each file's tests
 # serial on one worker, preserving module-scoped fixtures and intra-file
 # ordering). Visual-regression tests are screenshot comparisons and need a
@@ -291,6 +318,15 @@ if $HAS_CUSTOM || [[ "$WORKERS" == "0" ]]; then
     "$VENV_PY" -m pytest "${SKIP_REASONS[@]}" \
         --base-url "$E2E_FRONTEND_URL" --backend-url "$E2E_BACKEND_URL" \
         --junitxml="$E2E_ARTIFACT_DIR/e2e-custom.xml" "${ARGS[@]}" || custom_rc=$?
+    # E2E_CUSTOM_SKIP_CEILING (set by run-dev-tests.sh --overlay-only) turns a skip into NOT
+    # MEASURED, the same verdict the whole-tree phases give via enforce_skip_ceiling: those tests
+    # run only to execute overlay-gated tests, so a skip proves nothing.
+    if [[ $custom_rc -eq 0 && -n "${E2E_CUSTOM_SKIP_CEILING:-}" ]]; then
+        if skips_exceed_ceiling "$E2E_ARTIFACT_DIR/e2e-custom.xml" "$E2E_CUSTOM_SKIP_CEILING"; then
+            echo -e "${YELLOW}⊘ custom selection NOT MEASURED: skipped past ceiling ${E2E_CUSTOM_SKIP_CEILING}, or report unreadable (see -rs output above)${NC}" >&2
+            exit "$EXIT_NOT_MEASURED"
+        fi
+    fi
     if [[ $custom_rc -eq $EXIT_NOT_MEASURED ]]; then
         echo -e "${RED}pytest exited ${custom_rc} — a USAGE ERROR, not a measurement." \
             "Reporting it as a failure so it cannot be read as NOT MEASURED.${NC}" >&2
@@ -344,25 +380,6 @@ resolve_phase() {
         echo -e "${YELLOW}${phase}: no matching tests in the selected files — phase skipped.${NC}" >&2
         echo 0
     fi
-}
-
-# Skipped-test count for one phase, read from its junit XML rather than grepped out of the
-# terminal output. The XML is the record that survives the run, and "could not count" must
-# never read as zero — an unreadable/absent report exits non-zero here and the caller treats
-# that as NOT MEASURED rather than as a clean phase.
-phase_skipped() {
-    "$VENV_PY" - "$1" <<'PYEOF'
-import sys
-import xml.etree.ElementTree as ET
-
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-except Exception as exc:  # absent, empty, or truncated by a crashed worker
-    print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
-    sys.exit(1)
-suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
-print(sum(int(s.get("skipped", 0)) for s in suites))
-PYEOF
 }
 
 # Records a phase as NOT MEASURED when it PASSED but skipped past its ceiling.

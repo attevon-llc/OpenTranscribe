@@ -133,6 +133,14 @@ declare -A OVERLAY_NEED_PREDICATE=(
 #: Fixed iteration order for resolve_needed_overlays/print_overlay_plan — associative-array key
 #: order is unspecified, and a stable order makes the printed plan/report reproducible.
 OVERLAY_ORDER=(mock-llm keycloak-test ldap-test watch mock-asr diar-native)
+#: Overlays a test marked `overlay_gated` can need — the only ones --overlay-only starts, each
+#: with the reason. keycloak/ldap serve the auth e2e suites and diar-native a gate phase, none of
+#: which --overlay-only runs, so starting them would only cost startup time.
+declare -A OVERLAY_ONLY_NEEDED=(
+    [mock-llm]="test_lite_mode_mocked_providers.py needs the mock LLM beside the mock ASR"
+    [mock-asr]="test_lite_mode_mocked_providers.py"
+    [watch]="test_watch_sources_e2e.py"
+)
 declare -A OVERLAY_DESC=(
     [mock-llm]="mock LLM — e2e chat suites and the summarize / speaker-ID actions in test_gallery_actions.py"
     [keycloak-test]="Keycloak/OIDC — test_auth_buttons.py::TestOIDCLogin, test_ldap_oidc.py (~60-90s to healthy)"
@@ -212,6 +220,9 @@ resolve_needed_overlays() {
             backend) $RUN_BACKEND && phase_ok=true ;;
         esac
         $phase_ok || continue
+        if $OVERLAY_ONLY && [[ -z "${OVERLAY_ONLY_NEEDED[$flag]:-}" ]]; then
+            continue
+        fi
         # auto tier always runs when its phase is selected; all-overlays tier only under
         # --all-overlays (recreates app containers / needs a dedicated mock provider — costlier,
         # not needed for a bare --full).

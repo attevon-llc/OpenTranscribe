@@ -12,6 +12,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Added
 
+- `run-dev-tests.sh --overlay-only` runs only the tests marked `overlay_gated` (watch-sources e2e, mock-ASR lite mode) with their overlays up, and the pre-release matrix leg `2a-overlays` uses it instead of repeating the whole backend gate.
 - E2E for the mobile drawer's focus (enters on open, trapped, returns to the toggle on close and on Escape), the gallery Process and Organize menus at 1180 and 390 px, and `search` and `chat_answer` visual-regression surfaces (baselines come with the screenshot pass) (#1282).
 - CI caches apt archives and the mypy cache and skips the frontend-only pre-commit hooks on a PR that does not touch the frontend (#1099).
 - The release `test` stage runs the first-run wizard e2e on its fresh stack before anything dismisses the wizard, as the blocking criterion `first-run-wizard-e2e` (#1366).

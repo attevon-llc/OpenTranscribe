@@ -38,7 +38,7 @@ TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 #: The local-source stepper walkthroughs need the watch overlay's host-folder mount
 #: (see local_watch_capability below) — this marker is how scripts/run-dev-tests.sh's
 #: overlay table (issue #630) knows this file needs `--with-watch`.
-pytestmark = pytest.mark.watch
+pytestmark = [pytest.mark.watch, pytest.mark.overlay_gated]
 
 
 @pytest.fixture(scope="module")

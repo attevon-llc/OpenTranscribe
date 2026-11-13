@@ -102,6 +102,7 @@ RUN_FRONTEND=false
 E2E_SMOKE=false
 E2E_ONLY_EXPLICIT=false
 ALL_OVERLAYS=false
+OVERLAY_ONLY=false
 WITH_GPU_SCALE=false
 NO_OVERLAYS=false
 LIST_OVERLAYS=false
@@ -151,6 +152,12 @@ Usage:
   scripts/run-dev-tests.sh --frontend-only  just the frontend check
 
 Mode flags are composable (pass more than one to union their phases).
+
+  scripts/run-dev-tests.sh --overlay-only   ONLY the tests marked `overlay_gated` (backend
+                      integration + e2e), with their overlays up. Standalone: it replaces the
+                      mode flags rather than adding to them. For callers that already ran the
+                      rest of the gate (the pre-release matrix after `release.sh test`).
+                      --search-quality may be added; it is a corpus harness, not overlay-gated.
 
 Overlay flags:
   --all-overlays     also bring up --with-watch / --with-mock-asr (needed for full
@@ -227,6 +234,7 @@ while [[ $# -gt 0 ]]; do
         --e2e-only)      RUN_E2E=true; E2E_ONLY_EXPLICIT=true ;;
         --frontend-only) RUN_FRONTEND=true ;;
         --all-overlays)  ALL_OVERLAYS=true ;;
+        --overlay-only)  OVERLAY_ONLY=true ;;
         --with-gpu-scale) WITH_GPU_SCALE=true ;;
         --search-quality) SEARCH_QUALITY=true ;;
         --export-capability) EXPORT_CAPABILITY=true ;;
@@ -244,6 +252,15 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+if $OVERLAY_ONLY; then
+    if $RUN_BACKEND || $RUN_E2E || $RUN_FRONTEND; then
+        echo -e "${RED}error:${NC} --overlay-only is standalone; it cannot be combined with" \
+            "--full/--fast/--backend-only/--e2e-only/--frontend-only" >&2
+        exit "$EXIT_MISUSE"
+    fi
+    RUN_BACKEND=true; RUN_E2E=true; ALL_OVERLAYS=true; NO_COVERAGE=true
+fi
 
 # --e2e-only always wants the full suite, even under --fast's smoke default.
 if $E2E_ONLY_EXPLICIT; then
@@ -804,6 +821,7 @@ PYEOF
 
 if [[ "$RUN_BACKEND" == "true" ]]; then
     backend_flags=(--cleanup)
+    $OVERLAY_ONLY && backend_flags=(--overlay-only "${backend_flags[@]}")
     if [[ "$E2E_SMOKE" == "true" ]]; then
         backend_flags=(--e2e-smoke "${backend_flags[@]}")
     elif [[ "$NO_COVERAGE" != "true" ]]; then
@@ -830,8 +848,13 @@ if [[ "$RUN_E2E" == "true" ]]; then
     # run_phase above already renders as NOT MEASURED. So the e2e phase reaches the same
     # verdict the backend phase does, without a second copy of the rule living here.
     export E2E_ARTIFACT_DIR="$REPORT_DIR/e2e-xml"
-    run_phase "e2e (run-e2e.sh, full suite)" \
-        "$REPO_ROOT/scripts/e2e/run-e2e.sh"
+    if $OVERLAY_ONLY; then
+        run_phase "e2e (run-e2e.sh -m overlay_gated)" \
+            env E2E_CUSTOM_SKIP_CEILING=0 "$REPO_ROOT/scripts/e2e/run-e2e.sh" -m overlay_gated
+    else
+        run_phase "e2e (run-e2e.sh, full suite)" \
+            "$REPO_ROOT/scripts/e2e/run-e2e.sh"
+    fi
 fi
 
 if [[ "$RUN_FRONTEND" == "true" ]]; then

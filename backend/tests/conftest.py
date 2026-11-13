@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -23,6 +24,47 @@ from sqlalchemy.orm import sessionmaker
 
 if TYPE_CHECKING:
     from tests.testrun_marker import LiveRunMarker
+
+# git exports GIT_DIR and the other repository-local variables to every hook (githooks(5):
+# "git sets GIT_DIR ... environment variables"). A test that runs `git init`/`git add` in a scratch
+# dir from inside a pre-commit/pre-push hook would otherwise act on the REAL repository.
+# The list comes from `git rev-parse --local-env-vars` (git-rev-parse(1)); the fallback is the
+# same list as printed by git 2.43.
+_GIT_LOCAL_ENV_FALLBACK = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+)
+
+
+def _git_local_env_vars() -> tuple[str, ...]:
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--local-env-vars"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return _GIT_LOCAL_ENV_FALLBACK
+    return tuple(out.split()) or _GIT_LOCAL_ENV_FALLBACK
+
+
+for _git_var in _git_local_env_vars():
+    os.environ.pop(_git_var, None)
 
 # Shell tests run opentr.sh from the checkout root; without this it links the main checkout's
 # .env into a worktree and leaves the link behind (see tests/unit/test_opentr_dry_run_and_identity.py).

@@ -170,3 +170,21 @@ def test_absent_docker_reports_nothing_instead_of_raising(
     monkeypatch.setattr(compose_project, "shutil", types.SimpleNamespace(which=lambda _: None))
 
     assert compose_project.compose_service_container("diar-native") is None
+
+
+def test_default_worker_running_follows_deployed_containers(
+    fake_docker: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dual-GPU mode comes from the stack's containers, never the test process's env."""
+    monkeypatch.setenv("GPU_SCALE_DEFAULT_WORKER", "1")  # stale env must not matter
+    monkeypatch.setenv("COMPOSE_PROJECT_NAME", "transcribe-app")
+    assert compose_project.default_worker_running() is False  # must-fire: absent worker
+
+    _FAKE_CONTAINERS.insert(0, _Container("x-celery-worker", "otfresh-demo", "celery-worker"))
+    try:
+        # another project's default worker must not count (scoped by label)
+        assert compose_project.default_worker_running() is False
+        _FAKE_CONTAINERS.insert(0, _Container("t-celery-worker", "transcribe-app", "celery-worker"))
+        assert compose_project.default_worker_running() is True  # must-stay-clean
+    finally:
+        _FAKE_CONTAINERS[:] = [c for c in _FAKE_CONTAINERS if "celery-worker" not in c.name]

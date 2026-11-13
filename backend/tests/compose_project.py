@@ -144,6 +144,16 @@ def compose_service_container(service: str) -> str | None:
     return containers[0] if containers else None
 
 
+def default_worker_running() -> bool:
+    """Whether the project under test runs the default ``celery-worker`` container.
+
+    This is the deployed truth for "dual-GPU mode". ``GPU_SCALE_DEFAULT_WORKER`` as read
+    by a test process (``.env`` or host env) is not: ``./opentr.sh start --gpu-scale
+    --gpu-scale-default-worker 0`` overrides ``.env`` after the fact.
+    """
+    return bool(compose_service_containers("celery-worker"))
+
+
 _QUEUE_FLAG = re.compile(r"(?:^|\s)(?:-Q|--queues)(?:=|\s+)(\S+)")
 
 

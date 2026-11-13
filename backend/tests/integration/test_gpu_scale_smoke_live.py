@@ -41,6 +41,7 @@ import requests
 from dotenv import dotenv_values
 
 from tests.compose_project import compose_service_containers
+from tests.compose_project import default_worker_running
 
 # ⚠️ `multi_gpu` goes on the TESTS THAT NEED THE TOPOLOGY, not on the module.
 #
@@ -73,7 +74,6 @@ def _repo_env_value(key: str, default: str) -> str:
 
 
 GPU_SCALE_WORKERS = int(_repo_env_value("GPU_SCALE_WORKERS", "4"))
-GPU_SCALE_DEFAULT_WORKER = _repo_env_value("GPU_SCALE_DEFAULT_WORKER", "0")
 FLOWER_PORT = _repo_env_value("FLOWER_PORT", "5175")
 FLOWER_URL_PREFIX = _repo_env_value("FLOWER_URL_PREFIX", "flower")
 FLOWER_USER = _repo_env_value("FLOWER_USER", "admin")
@@ -210,24 +210,27 @@ def test_gpu_scaled_worker_is_registered_with_expected_concurrency(flower_worker
     )
 
 
-@pytest.mark.skipif(
-    GPU_SCALE_DEFAULT_WORKER != "1", reason="GPU_SCALE_DEFAULT_WORKER != 1 (single-GPU mode)"
-)
 def test_default_worker_is_registered_in_dual_gpu_mode(flower_workers: dict) -> None:
     """The default single-GPU worker's real Celery hostname is `gpu-transcription@%h`
     (docker-compose.yml's celery-worker service) -- it has never been `celery@%h`;
     that stale assumption made the bash script's version of this check fail
-    unconditionally, even against a correctly running deployment."""
+    unconditionally, even against a correctly running deployment.
+
+    Dual-GPU mode is read from the deployment (a running ``celery-worker`` container in
+    the project under test), not from this process's env: the stack's
+    ``--gpu-scale-default-worker`` flag overrides ``.env``."""
+    if not default_worker_running():
+        pytest.skip("no default celery-worker container in this deployment (single-GPU mode)")
     concurrency, fresh = _worker_pool_concurrency_and_freshness(
         flower_workers, "gpu-transcription@"
     )
 
     assert concurrency is not None or fresh is not None, (
-        "GPU_SCALE_DEFAULT_WORKER=1 (dual-GPU mode) but no gpu-transcription@* "
+        "default celery-worker container is running (dual-GPU mode) but no gpu-transcription@* "
         "default worker is registered"
     )
     assert fresh, (
-        "GPU_SCALE_DEFAULT_WORKER=1 (dual-GPU mode) but the gpu-transcription@* entry "
+        "default celery-worker container is running (dual-GPU mode) but the gpu-transcription@* entry "
         f"in Flower is stale (older than {FLOWER_MAX_ENTRY_AGE}s, issue #609)"
     )
 

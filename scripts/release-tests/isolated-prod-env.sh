@@ -19,7 +19,8 @@
 # otfresh-NAME project, own volumes; the live data is unreachable), is asserted with
 # scripts/lib/stack_target.py via stack-target.sh, and is stopped with ./opentr.sh stop.
 # MODEL_CACHE_DIR points at the host's shared cache, resolved by scripts/lib/model-cache-dir.sh
-# (no download). The operator's .env is never read.
+# (no download), and the isolated diar-native models dir is seeded from that cache's export.
+# The operator's .env is never read.
 #
 # Usage:
 #   scripts/release-tests/isolated-prod-env.sh prepare <pki|demo> [--dir DIR]
@@ -149,6 +150,21 @@ if [[ "$ACTION" == prepare ]]; then echo "$TREE"; exit 0; fi
 cd "$TREE" || exit 3
 # shellcheck source=scripts/lib/stack-target.sh
 source "$TREE/scripts/lib/stack-target.sh"
+
+# The isolated stack's own diar-native models dir (.fresh/NAME/diar-native-models) starts empty and
+# the generated .env has no HUGGINGFACE_TOKEN to provision it, so the sidecar would exit 8 forever
+# (restart: unless-stopped). Seed it from the host's verified export, the same copy the release
+# `test` stage makes (fresh-stack-lib.sh); never DIAR_ALLOW_UNVERIFIED_MODELS. RELEASE_TEST_DIAR_MODELS_SRC
+# overrides the source.
+# shellcheck source=scripts/release/fresh-stack-lib.sh
+source "$TREE/scripts/release/fresh-stack-lib.sh"
+DIAR_SRC="${RELEASE_TEST_DIAR_MODELS_SRC:-$(resolve_model_cache_dir "$REPO_ROOT")/diar-native}"
+if [[ -z "$(ls "$DIAR_SRC" 2>/dev/null)" ]]; then
+    err "no diar-native export at $DIAR_SRC to seed the isolated stack from (set RELEASE_TEST_DIAR_MODELS_SRC)"
+    exit 3
+fi
+REPO_ROOT="$TREE" RELEASE_TEST_DIAR_MODELS_SRC="$DIAR_SRC" fresh_stack_seed_models "$NAME" \
+    || { err "could not seed diar-native models from $DIAR_SRC"; exit 3; }
 
 START=(./opentr.sh start prod --build --fresh "$NAME")
 [[ -n "$OFFSET" ]] && START+=(--port-offset "$OFFSET")

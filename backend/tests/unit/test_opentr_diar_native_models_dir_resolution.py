@@ -53,7 +53,10 @@ def _resolve(tmp_path: Path, *, env: dict[str, str]) -> str:
     the function's own `./models` fallback is relative-to-cwd by design, not a bug.
     """
     fake_legacy = tmp_path / "fake-legacy"
-    body = _function_body(OPENTR.read_text(encoding="utf-8"), "resolve_diar_native_models_dir")
+    text = OPENTR.read_text(encoding="utf-8")
+    body = _function_body(text, "diar_native_models_present") + _function_body(
+        text, "resolve_diar_native_models_dir"
+    )
     assert "/mnt/" not in body, "a machine-specific path crept back into the resolver"
 
     full_env = {
@@ -134,3 +137,23 @@ def test_an_unset_legacy_variable_means_no_legacy_probe(tmp_path: Path):
     resolved = _resolve(tmp_path, env={"HOME": str(tmp_path), "DIAR_NATIVE_LEGACY_MODELS_DIR": ""})
 
     assert resolved == str(tmp_path / "models" / "diar-native")
+
+
+def test_a_directory_holding_only_the_provision_lock_is_not_an_export(tmp_path: Path):
+    """The crash loop of 2026-11-13: the backend writes `.provision.lock` before provisioning can
+    fail, so the next `start` saw a non-empty dir, auto-loaded the sidecar and it exited 8 forever."""
+    standard = tmp_path / "models" / "diar-native"
+    standard.mkdir(parents=True)
+    (standard / ".provision.lock").write_text("")
+    legacy = tmp_path / "fake-legacy"
+    legacy.mkdir(parents=True)
+    (legacy / "segmentation-3.0.onnx").write_bytes(b"onnx")
+
+    assert _resolve(tmp_path, env={"HOME": str(tmp_path)}) == str(legacy)
+
+
+def test_the_sidecar_auto_load_gate_uses_the_same_presence_test():
+    text = OPENTR.read_text(encoding="utf-8")
+    gate = text[text.index('if [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ]; then') :][:400]
+
+    assert 'diar_native_models_present "$DIAR_NATIVE_MODELS_DIR"' in gate

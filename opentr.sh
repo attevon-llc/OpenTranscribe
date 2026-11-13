@@ -370,6 +370,15 @@ show_help() {
 # This probe is dev-only on purpose: opentr.sh is deliberately not shipped
 # (test_opentr_sh_is_not_shipped_and_the_shipped_script_covers_it), and
 # opentranscribe.sh resolves the standard location only.
+# True when DIR holds a model export. Dotfiles do not count: native_provision.py creates
+# `.provision.lock` in the directory BEFORE it can fail (no HUGGINGFACE_TOKEN), so a directory
+# holding only that lock is not an export. Counting it made the next `start` of an isolated stack
+# (the PKI re-start in isolated-prod-env.sh) auto-load the sidecar, which exits 8 on an empty dir
+# and crash-looped under `restart: unless-stopped`.
+diar_native_models_present() {
+  [ -d "$1" ] && [ -n "$(ls "$1" 2>/dev/null)" ]
+}
+
 resolve_diar_native_models_dir() {
   if [ -n "${DIAR_NATIVE_MODELS_DIR:-}" ]; then
     export DIAR_NATIVE_MODELS_DIR
@@ -386,7 +395,7 @@ resolve_diar_native_models_dir() {
   # restart-looped on "File at /models/segmentation-3.0.onnx does not exist" the moment
   # an empty ./models/diar-native existed. Matches opentranscribe.sh's own
   # `[ -d ... ] && [ -n "$(ls -A ...)" ]` non-emptiness check.
-  if [ -d "$standard" ] && [ -n "$(ls -A "$standard" 2>/dev/null)" ]; then
+  if diar_native_models_present "$standard"; then
     export DIAR_NATIVE_MODELS_DIR="$standard"
   elif [ -n "$legacy" ] && [ -d "$legacy" ]; then
     export DIAR_NATIVE_MODELS_DIR="$legacy"
@@ -743,28 +752,12 @@ add_diar_native_overlay() {
       # `--fresh` stack with a token configured is precisely the fresh-install rehearsal
       # this auto-load exists to cover, not a case to skip.
       #
-      # Lite is NO LONGER excluded. It used to be, on the premise that the lite image had
-      # no Python exporter toolchain, so /models could never fill itself in and loading the
-      # overlay would crash-loop diar-server against an empty --models-dir under
-      # `restart: unless-stopped` (`diar-server serve` with an empty DIAR_MODELS_DIR exits
-      # 8 — that part is still true and still what the gate below protects against).
-      #
-      # The premise was wrong in a way that removed the feature it was protecting. The
-      # ONNX/PLDA graphs are non-redistributable derivatives of gated weights, so a
-      # deployment that cannot export cannot obtain them AT ALL — excluding lite did not
-      # avoid a broken sidecar, it guaranteed lite had no local voiceprint path whatsoever
-      # (SpeakerEmbeddingService refuses when the sidecar is unusable, and lite runs cloud
-      # ASR, so speaker embeddings are the ONE local model job it still has).
-      #
-      # `diar-server` carries the export itself — its five Python scripts are compiled into
-      # the binary, which Dockerfile.lite copies in and which runs there. Only the packages
-      # those scripts import were missing; requirements-lite.txt now installs the four the
-      # binary's own preflight names (pyannote.audio, onnxscript, onnxslim,
-      # onnxconverter-common). So lite provisions itself on first boot exactly as the full
-      # image does, and falls through to the same gate as every other deployment: models
-      # present, or a token configured to produce them.
+      # Lite is NOT excluded: it provisions its own export on first boot exactly like the full
+      # image (the ONNX/PLDA graphs are non-redistributable, so excluding lite would leave it
+      # with no local voiceprint path at all), then falls through to the same gate: models
+      # present, or a token configured to produce them. An empty --models-dir still exits 8.
       if [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ]; then
-        if [ -d "$DIAR_NATIVE_MODELS_DIR" ] && [ -n "$(ls -A "$DIAR_NATIVE_MODELS_DIR" 2>/dev/null)" ]; then
+        if diar_native_models_present "$DIAR_NATIVE_MODELS_DIR"; then
           WITH_DIAR_NATIVE_FLAG="auto"
           echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
         elif [ -n "${HUGGINGFACE_TOKEN:-}" ]; then

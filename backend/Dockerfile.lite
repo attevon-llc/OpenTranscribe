@@ -115,15 +115,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Upgrade pip to latest version first (security fix for CVE-2025-8869). ABOVE the requirements
+# COPY so a requirements edit does not re-run it (W14a). The pip cache mount below is never
+# committed to a layer (Docker docs, "Optimize cache usage": cache mounts persist on the builder,
+# not in the image), so --no-cache-dir is dropped where the mount replaces it (W4).
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --user --upgrade pip
+
 # Copy only requirements first for better layer caching
 COPY requirements-lite.txt .
 
-# Upgrade pip to latest version first (security fix for CVE-2025-8869)
-RUN pip install --user --no-cache-dir --upgrade pip
-
 # Install Python dependencies (CPU-only, no CUDA packages)
 # Use --user to install to /root/.local which we'll copy to final stage
-RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements-lite.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --user --no-warn-script-location -r requirements-lite.txt
 
 # -----------------------------------------------------------------------------
 # Fonts for DOCX / PDF transcript export (issue #1278)
@@ -173,34 +178,6 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend Lite" \
       org.opencontainers.image.source="https://github.com/attevon-llc/OpenTranscribe" \
       org.opencontainers.image.documentation="https://github.com/attevon-llc/OpenTranscribe/blob/master/README.md"
 
-# Install only runtime dependencies (no build tools, no CUDA libraries)
-#
-# ⚠️ `apt-get upgrade -y` was MISSING here entirely — Dockerfile.prod has carried it
-# since it was written, this file never did. So the lite image had no mechanism to
-# receive Debian security patches at all: it shipped exactly what
-# python:3.13-slim-trixie contained at the pinned tag, forever. Measured on the
-# v0.5.0 scan (2026-09-13): 16 CRITICAL / 254 HIGH on lite-amd64 and 19 / 257 on
-# lite-arm64, against 0 CRITICAL for frontend and docs.
-#
-# That matters more here than anywhere else: `opentranscribe.sh` defaults arm64 hosts
-# to DEPLOYMENT_MODE=lite, so lite-arm64 — the worst of the three — is the ONLY
-# backend an arm64 user can install.
-#
-# APT_SECURITY_REFRESH is the cache key; see Dockerfile.prod's copy for why a plain
-# RUN is not enough (Docker caches by command string, so the upgrade would run once
-# and never again).
-ARG APT_SECURITY_REFRESH=unset
-RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
-    && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-    curl \
-    ffmpeg \
-    libsndfile1 \
-    libimage-exiftool-perl \
-    libgomp1 \
-    libpq5 \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
 # diar-native's only extra system dependency: libopenblas0 (linked by diar-server itself,
 # per `ldd` — see Dockerfile.prod). Its own dependency libgfortran5 is pulled in
 # transitively by apt automatically if not already present; unlike the full image, this
@@ -247,6 +224,40 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 # An image built FROM this one inherits them; one built from its own Dockerfile must copy the
 # `fonts` stage too, or PDF jobs end with `fonts_unavailable` (loud, never a fontless PDF).
 COPY --from=fonts /fonts/ /usr/share/fonts/opentranscribe/
+
+
+# W13: this security-refresh layer sits BELOW the multi-GB `COPY --from=builder`, so bumping
+# APT_SECURITY_REFRESH (a base-only refresh) re-runs apt and the layers after it, and no longer
+# re-copies the Python site-packages. apt never touches /home/appuser/.local, the fonts dir or
+# /usr/local/bin/deno. appuser is created above, before apt, exactly as before.
+
+# Install only runtime dependencies (no build tools, no CUDA libraries)
+#
+# ⚠️ `apt-get upgrade -y` was MISSING here entirely — Dockerfile.prod has carried it
+# since it was written, this file never did. So the lite image had no mechanism to
+# receive Debian security patches at all: it shipped exactly what
+# python:3.13-slim-trixie contained at the pinned tag, forever. Measured on the
+# v0.5.0 scan (2026-09-13): 16 CRITICAL / 254 HIGH on lite-amd64 and 19 / 257 on
+# lite-arm64, against 0 CRITICAL for frontend and docs.
+#
+# That matters more here than anywhere else: `opentranscribe.sh` defaults arm64 hosts
+# to DEPLOYMENT_MODE=lite, so lite-arm64 — the worst of the three — is the ONLY
+# backend an arm64 user can install.
+#
+# APT_SECURITY_REFRESH is the cache key; see Dockerfile.prod's copy for why a plain
+# RUN is not enough (Docker caches by command string, so the upgrade would run once
+# and never again).
+ARG APT_SECURITY_REFRESH=unset
+RUN echo "apt security refresh: ${APT_SECURITY_REFRESH}" \
+    && apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    libimage-exiftool-perl \
+    libgomp1 \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # diar-native binary + ONNX Runtime CPU-provider libs (#660). Adapted from
 # Dockerfile.prod's equivalent block — read that one first, this is NOT a blind copy:
@@ -327,6 +338,8 @@ COPY --chown=appuser:appuser . .
 # lite image reported GIT_SHA=unknown, BUILD_TIME=unknown from GET /version. Dockerfile.prod
 # has carried all three since #680.
 #
+# (GIT_SHA/BUILD_TIME now live at the very end of this file, below the last RUN; only
+# APP_VERSION, which is constant per release, stays here.)
 # ⚠️ POSITION IS LOAD-BEARING — keep this AFTER the `COPY . .` above, never at the top of
 # the runtime stage where APP_VERSION used to sit. GIT_SHA and BUILD_TIME change on EVERY
 # build, and an ENV layer invalidates the whole remainder of its stage. Higher up, they
@@ -336,10 +349,6 @@ COPY --chown=appuser:appuser . .
 # placement relative to the app COPY, as backend/Dockerfile.prod.
 ARG APP_VERSION=unknown
 ENV APP_VERSION=${APP_VERSION}
-ARG GIT_SHA=unknown
-ENV GIT_SHA=${GIT_SHA}
-ARG BUILD_TIME=unknown
-ENV BUILD_TIME=${BUILD_TIME}
 
 # Reserve the pipeline's shared-volume mount point so a freshly created named volume
 # inherits appuser rather than root — see Dockerfile.prod for the full note (issue #661 E2:
@@ -368,6 +377,14 @@ RUN rm -rf /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.* \
 
 # Switch to non-root user
 USER appuser
+
+# GIT_SHA / BUILD_TIME change on EVERY build and an ENV layer invalidates every layer after it,
+# so they sit below the last RUN (W2): a new commit now rebuilds only metadata, no RUN re-executes.
+# Consumed at RUNTIME by app/core/version.py.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+ARG BUILD_TIME=unknown
+ENV BUILD_TIME=${BUILD_TIME}
 
 # Expose application port
 EXPOSE 8080

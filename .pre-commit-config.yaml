@@ -222,6 +222,7 @@ repos:
   # with language: system + entry: hadolint, which exec'd a local binary that
   # isn't installed in CI — failing every run with "Executable hadolint not
   # found" (the Pre-commit workflow was red on master since Oct 2025 for this).
+  # v2.14.0, not 2.12.0: only >= 2.14 treats a pip BuildKit cache mount as the DL3042 remedy.
   # Picks up the repo-root .hadolint.yaml; types:[file] + files matches the
   # Dockerfile.<stage> naming that identify doesn't tag as 'dockerfile'.
   - repo: local
@@ -229,7 +230,7 @@ repos:
       - id: hadolint
         name: Lint Dockerfiles
         language: docker_image
-        entry: hadolint/hadolint:v2.12.0 hadolint
+        entry: hadolint/hadolint:v2.14.0 hadolint
         files: Dockerfile.*
         types: [file]
 

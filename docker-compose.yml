@@ -1228,6 +1228,13 @@ services:
     security_opt:
       - no-new-privileges:true
     # Note: ports, healthcheck, and NODE_ENV defined in override files (dev vs prod)
+    environment:
+      # Flower's own --basic_auth credential, with the flower service's exact defaults. The
+      # prod nginx sends it on /flower/ only after auth_request admits an admin
+      # (frontend/docker-entrypoint.d/15-flower-basic-auth.sh); the dev Vite proxy reads
+      # the same two values.
+      - FLOWER_USER=${FLOWER_USER:-admin}
+      - FLOWER_PASSWORD=${FLOWER_PASSWORD:-flower}
     depends_on:
       backend:
         condition: service_healthy

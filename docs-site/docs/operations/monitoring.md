@@ -382,8 +382,10 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 Flower provides real-time monitoring of all Celery workers and tasks.
 
-**Access:** `http://localhost:5175/flower`
-**Credentials:** user `admin` (set `FLOWER_USER` to change it) and the password in `FLOWER_PASSWORD` in `.env`. The installer generates a random one. There is no default password: a production install will not start while `FLOWER_PASSWORD` is unset or a known default such as `flower`.
+**Access:** `/flower/` on the web UI (the **Queue Dashboard** button), or `http://localhost:5175/flower` on the host.
+**Credentials:** through the web UI, none: nginx checks that your session is an admin's (`auth_request`) and then sends Flower its own Basic credential for you, so no browser password prompt appears and a non-admin gets 401. On the host port, Flower asks for user `admin` (set `FLOWER_USER` to change it) and the password in `FLOWER_PASSWORD` in `.env`. The installer generates a random one. There is no default password: a production install will not start while `FLOWER_PASSWORD` is unset or a known default such as `flower`.
+
+The frontend container reads `FLOWER_USER` and `FLOWER_PASSWORD` when it starts and writes the header nginx sends (`frontend/docker-entrypoint.d/15-flower-basic-auth.sh`); the value is never part of the image. After changing `FLOWER_PASSWORD`, recreate both `flower` and `frontend`, or `/flower/` answers 401 from Flower until they agree.
 
 ### What to Monitor in Flower
 

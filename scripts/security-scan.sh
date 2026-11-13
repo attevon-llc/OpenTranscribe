@@ -23,6 +23,8 @@ FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-true}"
 # caller's cwd (the release pipeline invokes it from the repo root, docker-build-push.sh from
 # scripts/, and a developer from anywhere).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/scan-db.sh
+source "${SCRIPT_DIR}/lib/scan-db.sh"
 
 # Exit codes. THREE outcomes, not two (issue #681).
 #
@@ -793,8 +795,9 @@ scan_component() {
     local status_dir
     status_dir=$(mktemp -d)
 
-    # === PARALLEL PHASE 1: Hadolint + Dockle + SBOM ===
-    # These have no dependencies on each other
+    # === ALL TOOLS START TOGETHER (R5) ===
+    # Only grype needs the SBOM, so it alone waits, on the syft pid. Trivy used to sit behind
+    # a barrier that waited for syft: 4.8 of the 8.5 minutes of the backend leg.
 
     # NOTE on `|| rc=$?` in every sub-scan below — this is load-bearing, not style.
     #
@@ -812,7 +815,7 @@ scan_component() {
     # Hadolint (fast - Dockerfile only)
     if [ -f "${dockerfile}" ]; then
         (
-            rc=0; lint_dockerfile "${dockerfile}" "${label}" || rc=$?
+            rc=0; timed "${label}" hadolint lint_dockerfile "${dockerfile}" "${label}" || rc=$?
             echo "${rc}" > "${status_dir}/hadolint.status"
         ) &
     else
@@ -821,7 +824,7 @@ scan_component() {
 
     # Dockle (medium speed)
     (
-        rc=0; { check_dockle && run_dockle "${image}" "${label}"; } || rc=$?
+        rc=0; { check_dockle && timed "${label}" dockle run_dockle "${image}" "${label}"; } || rc=$?
         echo "${rc}" > "${status_dir}/dockle.status"
     ) &
 
@@ -832,40 +835,30 @@ scan_component() {
     # syft would otherwise write that alias into metadata.component.version, which
     # 95-finish.sh then rejects as "describes another version". See generate_sbom's header.
     (
-        rc=0; generate_sbom "${image}" "${label}" "${repo}" "${tag}" > "${status_dir}/sbom_path.txt" || rc=$?
+        rc=0; timed "${label}" syft generate_sbom "${image}" "${label}" "${repo}" "${tag}" > "${status_dir}/sbom_path.txt" || rc=$?
         echo "${rc}" > "${status_dir}/sbom.status"
     ) &
+    local syft_pid=$!
 
-    # Wait for Phase 1 to complete
-    wait
-    print_info "Phase 1 complete (Hadolint, Dockle, SBOM)"
+    # Trivy needs neither the SBOM nor any other tool.
+    (
+        rc=0; timed "${label}" trivy scan_trivy "${image}" "${label}" || rc=$?
+        echo "${rc}" > "${status_dir}/trivy.status"
+    ) &
 
-    # Get SBOM path for Grype
+    # `|| true`: a failed syft is read from its status file below; set -e must not end main.
+    wait "${syft_pid}" || true
     local sbom_file=""
     if [ -f "${status_dir}/sbom_path.txt" ]; then
         sbom_file=$(cat "${status_dir}/sbom_path.txt")
     fi
-
-    # === PARALLEL PHASE 2: Trivy + Grype ===
-    # Both vulnerability scanners run in parallel
-
-    print_info "Phase 2: Running Trivy and Grype in parallel..."
-
-    # Trivy scan
     (
-        rc=0; scan_trivy "${image}" "${label}" || rc=$?
-        echo "${rc}" > "${status_dir}/trivy.status"
-    ) &
-
-    # Grype scan (uses SBOM for speed)
-    (
-        rc=0; scan_grype "${image}" "${label}" "${sbom_file}" || rc=$?
+        rc=0; timed "${label}" grype scan_grype "${image}" "${label}" "${sbom_file}" || rc=$?
         echo "${rc}" > "${status_dir}/grype.status"
     ) &
 
-    # Wait for Phase 2 to complete
     wait
-    print_info "Phase 2 complete (Trivy, Grype)"
+    print_info "All tools complete (Hadolint, Dockle, SBOM, Trivy, Grype)"
 
     # Collect results.
     #
@@ -920,7 +913,9 @@ scan_component() {
         jq -n --arg exit_code "${exit_code}" \
               --arg severity_threshold "${SEVERITY_THRESHOLD}" \
               --arg fail_on_critical "${FAIL_ON_CRITICAL}" \
-            '{exit_code: $exit_code, severity_threshold: $severity_threshold, fail_on_critical: $fail_on_critical}' \
+              --arg trivy_db "$(trivy_db_version)" \
+              --arg grype_db "$(grype_db_version)" \
+            '{exit_code: $exit_code, severity_threshold: $severity_threshold, fail_on_critical: $fail_on_critical, trivy_db_updated_at: $trivy_db, grype_db_built: $grype_db}' \
             > "${OUTPUT_DIR}/${label}-scan-verdict.json" 2>/dev/null || \
             print_warning "${label}: could not write scan-verdict.json -- a future run will re-scan rather than reuse"
     fi
@@ -1065,6 +1060,9 @@ main() {
     echo ""
 
     case "${SCAN_TARGET}" in
+        pin-dbs)  # fetch-only entry for 50-scan.sh: one DB download per stage
+            install_trivy; install_grype; pin_vuln_dbs; exit $?
+            ;;
         install)
             install_all_tools
             exit 0
@@ -1080,6 +1078,7 @@ main() {
             install_syft
             install_hadolint
             check_dockle
+            pin_vuln_dbs || exit "${EXIT_COULD_NOT_SCAN}"
 
             # Run the component scans in parallel so total wall time is roughly
             # max(components) instead of the sum. Each sub-scan logs
@@ -1134,6 +1133,7 @@ main() {
             install_syft
             install_hadolint
             check_dockle
+            pin_vuln_dbs || exit "${EXIT_COULD_NOT_SCAN}"
 
             exit_code=0
             scan_target_component "${SCAN_TARGET}" || exit_code=$?

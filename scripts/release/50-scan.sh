@@ -111,13 +111,51 @@ rc=0
 components_attempted=0
 could_not_scan=()      # components whose scanner reported exit >= 2 (never looked)
 findings_in=()         # components scanned that reported findings (exit 1)
-for component in "${!REPO_FOR_COMPONENT[@]}"; do
-    comp_rc=0
-    SCAN_SOURCE=local \
-    FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-true}" \
-    OUTPUT_DIR="$OUT_DIR" \
-    IMAGE_TAG="$VERSION" \
-        ./scripts/security-scan.sh "$component" || comp_rc=$?
+# Fetch the vulnerability DBs ONCE and pin every component and leg to that snapshot (R5):
+# the children inherit SCAN_DB_PINNED and skip their own fetch. A failed fetch is COULD NOT
+# SCAN (exit 1 here, like any scan that could not run), never a scan against an unknown DB.
+if ! SCAN_SOURCE=local "$REPO_ROOT/scripts/security-scan.sh" pin-dbs; then
+    echo -e "${RED}vulnerability DB fetch failed - nothing was scanned${NC}" >&2
+    exit 1
+fi
+export TRIVY_SKIP_DB_UPDATE=true GRYPE_DB_AUTO_UPDATE=false SCAN_DB_PINNED=1
+# Trivy's default fs cache is one bbolt file with an exclusive lock; concurrent processes
+# must not share it. Overridable; the coordinator proves it (R5 step 4).
+(( ${SCAN_JOBS:-3} > 1 )) && export TRIVY_CACHE_BACKEND="${TRIVY_CACHE_BACKEND:-memory}"
+
+# Components run as background jobs, at most SCAN_JOBS at a time, each with its own log that
+# is replayed in component order. Every exit code is collected exactly as the serial loop did.
+SCAN_JOBS="${SCAN_JOBS:-3}"
+[[ "$SCAN_JOBS" =~ ^[1-9][0-9]*$ ]] || SCAN_JOBS=3
+scan_log_dir="$(mktemp -d -t ot-scan-stage.XXXXXX)"
+components=("${!REPO_FOR_COMPONENT[@]}")
+declare -A job_pid=()
+pending=()
+reap() {   # reap <component>: collect its exit code
+    local c="$1" comp_rc=0
+    wait "${job_pid[$c]}" || comp_rc=$?
+    echo "$comp_rc" > "$scan_log_dir/$c.rc"
+}
+for component in "${components[@]}"; do
+    while (( ${#pending[@]} >= SCAN_JOBS )); do
+        reap "${pending[0]}"; pending=("${pending[@]:1}")
+    done
+    (
+        SCAN_SOURCE=local \
+        FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-true}" \
+        OUTPUT_DIR="$OUT_DIR" \
+        IMAGE_TAG="$VERSION" \
+            exec ./scripts/security-scan.sh "$component"
+    ) > "$scan_log_dir/$component.log" 2>&1 &
+    job_pid[$component]=$!
+    pending+=("$component")
+done
+for c in "${pending[@]}"; do reap "$c"; done
+
+for component in "${components[@]}"; do
+    echo "=== scan output: ${component} ===" >&2
+    cat "$scan_log_dir/$component.log" >&2
+    comp_rc=$(cat "$scan_log_dir/$component.rc" 2>/dev/null || echo 2)   # no rc file = never reported = could not scan
     components_attempted=$((components_attempted + 1))
     if (( comp_rc >= 2 )); then
         could_not_scan+=("$component")
@@ -126,6 +164,7 @@ for component in "${!REPO_FOR_COMPONENT[@]}"; do
     fi
     (( comp_rc > rc )) && rc=$comp_rc
 done
+rm -rf "$scan_log_dir"
 
 # Recorded BEFORE the flattening below, which is the only place the two outcomes are still
 # distinguishable. `could-not-scan` and `findings-present` become the same exit code here on

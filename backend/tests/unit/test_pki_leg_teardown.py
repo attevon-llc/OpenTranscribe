@@ -56,6 +56,15 @@ def fake_repo(tmp_path: Path) -> Path:
         "else\n  echo STUB-PYTEST-RUNNING\nfi\n"
         '[[ -n "${STUB_PYTEST_FAIL:-}" ]] && exit 1\nexit 0\n',
     )
+    # The real library is covered by test_stack_target.py; here it only has to answer, and to be
+    # told to refuse, so the leg's own ordering and cleanup can be driven.
+    _write(
+        root / "scripts" / "lib" / "stack-target.sh",
+        f"""st_require_prestart() {{ echo "prestart $*" >> "{log}"; [[ -z "${{STUB_PRESTART_FAIL:-}}" ]]; }}
+st_target() {{ echo "target $*" >> "{log}"; ST_PROJECT=stub; }}
+st_require() {{ echo "require $*" >> "{log}"; [[ -z "${{STUB_REQUIRE_FAIL:-}}" ]]; }}
+""",
+    )
     stubs = root / "stubs"
     _write(stubs / "docker", "#!/bin/bash\nexit 0\n")
     _write(stubs / "curl", "#!/bin/bash\nexit 0\n")
@@ -145,3 +154,23 @@ def test_setup_failure_never_touches_the_stack(fake_repo: Path) -> None:
     out, _ = proc.communicate(timeout=60)
     assert proc.returncode == 1, out
     assert not any(c.startswith("opentr") for c in _calls(fake_repo))
+
+
+def test_missing_prerequisites_refuse_before_the_image_build(fake_repo: Path) -> None:
+    proc = _run(fake_repo, STUB_PRESTART_FAIL="1")
+    out, _ = proc.communicate(timeout=60)
+    assert proc.returncode == 3, out
+    calls = _calls(fake_repo)
+    assert "prestart env:FLOWER_PASSWORD asset:nginx-ssl" in calls, calls
+    assert not any(c.startswith("opentr start") for c in calls), calls
+
+
+def test_an_unhealthy_or_stale_stack_is_a_precondition_failure_and_is_stopped(
+    fake_repo: Path,
+) -> None:
+    proc = _run(fake_repo, STUB_REQUIRE_FAIL="1")
+    out, _ = proc.communicate(timeout=60)
+    assert proc.returncode == 3, out
+    calls = _calls(fake_repo)
+    assert "require code=image healthy" in calls and "opentr stop" in calls, calls
+    assert "pytest" not in calls, calls

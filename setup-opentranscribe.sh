@@ -1013,9 +1013,9 @@ _write_hardware_settings() {
 
     _upsert_env "DETECTED_DEVICE" "${DETECTED_DEVICE}"
     _upsert_env "USE_NVIDIA_RUNTIME" "${USE_GPU_RUNTIME}"
-    # FORCE_CPU_MODE: persisted opt-out signal read by opentranscribe.sh at
-    # start/restart time. When "true", the management script skips GPU overlays
-    # even if Docker reports an nvidia runtime.
+    # Stored so that opentranscribe.sh honours a --cpu install on every later start or
+    # restart: when FORCE_CPU_MODE is "true" it loads no GPU overlay, even on a host whose
+    # Docker has the nvidia runtime.
     _upsert_env "FORCE_CPU_MODE" "${FORCE_CPU}"
 
     # DEPLOYMENT_MODE: which backend IMAGE this install runs. Only written when --lite was

@@ -46,11 +46,12 @@ _FAKE_DOCKER = r"""#!/bin/bash
 case "$1" in
   version) echo linux/amd64 ;;
   tag) exit 0 ;;
-  run) echo "$FAKE_VERSION" ;;
+  run) echo "docker run must not be used to probe the baked version" >> "$FAKE_LOG"; exit 1 ;;
   image)
     tag="$3"; arch="${tag##*-}"
     case "$arch" in amd64|arm64) ;; *) arch=amd64 ;; esac
     case "$*" in
+      *Config.Env*) echo "PATH=/usr/bin"; echo "APP_VERSION=$FAKE_VERSION" ;;
       *Architecture*) echo "$arch" ;;
       *) echo "sha256:id-$tag" ;;
     esac ;;

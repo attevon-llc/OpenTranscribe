@@ -496,13 +496,25 @@ class TestBootstrapAdminPassword:
         assert response.status_code == 200, response.text
 
     def test_the_minimum_age_still_applies_after_that_first_change(self, client, db_session, seed):
-        """The control: backdating the seed must not switch the rule off for the account."""
+        """The control: backdating the seed must not switch the rule off for the account.
+
+        The second change signs in again with the new password. A password change stamps the
+        user's revocation epoch (whole seconds, ``issued_at < epoch``), so the first token is
+        refused (401) whenever the change lands in a later second than the sign-in: that is the
+        control working, and it made this test fail at random under load.
+        """
         user = seed(ORIGINAL_PASSWORD, False)
-        headers = _headers(client, user)
-        first = _change_own_password(client, headers, REPLACEMENT_PASSWORD, ORIGINAL_PASSWORD)
+        first = _change_own_password(
+            client, _headers(client, user), REPLACEMENT_PASSWORD, ORIGINAL_PASSWORD
+        )
         assert first.status_code == 200, first.text
 
-        second = _change_own_password(client, headers, "Third-Pass-Word-9!", REPLACEMENT_PASSWORD)
+        second = _change_own_password(
+            client,
+            _headers(client, user, REPLACEMENT_PASSWORD),
+            "Third-Pass-Word-9!",
+            REPLACEMENT_PASSWORD,
+        )
 
         assert second.status_code == 400, second.text
         assert "changed too recently" in second.json()["detail"]

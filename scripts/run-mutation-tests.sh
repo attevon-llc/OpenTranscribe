@@ -1013,16 +1013,7 @@ $DRY_RUN && exit 0
 echo -e "${BLUE}========================================${NC}"
 "$VENV_BIN/mutmut" results || true
 echo
-echo -e "${BLUE}How to read this${NC}"
-echo -e "  ${GREEN}killed${NC}    a test noticed the edit — the line is genuinely checked"
-echo -e "  ${RED}survived${NC}  THE FINDING: the suite runs that line but asserts nothing about it."
-echo -e "            Inspect the diff ($0 --show <id>), then either add the missing"
-echo -e "            assertion or conclude the line is dead and delete it."
-echo -e "  ${YELLOW}timeout${NC}   the edit caused a hang; counts as killed, but check it is not a"
-echo -e "            real infinite loop the tests were papering over"
-echo -e "  ${YELLOW}suspicious${NC} much slower than baseline — usually a mutated retry/sleep bound"
-echo
-echo -e "Logs: $OUT_DIR/"
+mutation_run_footer "$0" "${MODULES[@]}"
 if [[ ${#STALE_CACHE[@]} -gt 0 ]]; then
     echo -e "${RED}⚠ RESULTS FOR THESE TARGETS MIX TWO TEST SETS: ${STALE_CACHE[*]}${NC}"
     echo -e "${RED}  Their MODULE_TESTS changed since the cache was written. Run --clean, then${NC}"

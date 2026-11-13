@@ -864,3 +864,49 @@ class TestTheDegradationReportTellsTheOperatorWhatToDo:
         assert entry[0].name == self.LOGGER
         assert entry[0].levelno == logging.ERROR
         assert entry[0].exc_info and entry[0].exc_info[0] is ValueError
+
+    @staticmethod
+    def _unreadable_for(*fail_for: str):
+        """Raises for every listed stored hash, answers normally for the rest."""
+
+        def verify(plain: str, hashed: str) -> bool:
+            if hashed in fail_for:
+                raise ValueError("unreadable")
+            return hashed == _fake_hash(plain)
+
+        return verify
+
+    def test_every_unreadable_entry_is_counted(self, reuse_enforced, caplog):
+        """The count is how the operator learns the whole window is corrupt, not one stray row."""
+        caplog.set_level(logging.DEBUG, logger=self.LOGGER)
+        first, second = _fake_hash("Older-1"), _fake_hash("Older-2")
+
+        _check("Brand-New-Pass-9", [first, second], self._unreadable_for(first, second))
+
+        assert "2 of 2 entries could not be verified" in self._report(caplog, logging.CRITICAL)
+
+    def test_every_readable_entry_is_counted(self, reuse_enforced, caplog):
+        """The total is every entry examined: a counter stuck at one under-reports the window."""
+        caplog.set_level(logging.DEBUG, logger=self.LOGGER)
+        unreadable = _fake_hash("Older-1")
+        history = [unreadable, _fake_hash("Older-2"), _fake_hash("Older-3")]
+
+        _check("Brand-New-Pass-9", history, self._unreadable_for(unreadable))
+
+        assert "1 of 3 entries could not be verified" in self._report(caplog, logging.ERROR)
+
+
+class TestAReuseAttemptIsLogged:
+    """A refused reuse is a security event (FedRAMP IA-5): the operator's only record of it is
+    this WARNING. Pinned by level, logger name and the start and end of the line."""
+
+    def test_a_refused_reuse_logs_a_warning_by_name(self, reuse_enforced, caplog):
+        caplog.set_level(logging.DEBUG, logger="app.auth.password_policy")
+
+        assert _check("Reused-Pass-9", [_fake_hash("Reused-Pass-9")], _Verifier()) is False
+
+        (rec,) = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert rec.name == "app.auth.password_policy"
+        assert rec.getMessage().startswith("Password reuse detected")
+        assert rec.getMessage().endswith("in history check")
+        assert "Reused-Pass-9" not in rec.getMessage()

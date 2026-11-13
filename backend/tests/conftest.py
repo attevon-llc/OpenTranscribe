@@ -89,7 +89,7 @@ def _observed_stack_ports() -> dict[str, str]:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    observed: dict[str, str] = module.observed_ports()
+    observed: dict[str, str] = module.resolved_port_env()
     return observed
 
 

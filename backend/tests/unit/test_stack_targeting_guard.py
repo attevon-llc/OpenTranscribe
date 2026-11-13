@@ -26,14 +26,10 @@ PENDING: dict[tuple[str, str], str] = {
         "backend/tests/api/test_ws_origin_gate.py",
         "live-port-default",
     ): "P5 item 8 (not in the plan inventory: triage while emptying this list)",
-    ("backend/tests/e2e/conftest.py", "live-port-default"): "STK3 (e2e and UI)",
     (
         "backend/tests/e2e/idp_overlay.py",
         "compose-no-project",
     ): "P5 item 2 (auth e2e and the IdP overlay)",
-    ("backend/tests/e2e/test_pki.py", "live-port-default"): "STK3 (e2e and UI)",
-    ("backend/tests/e2e/test_visual_regression.py", "live-port-default"): "STK3 (e2e and UI)",
-    ("backend/tests/fixtures/search_corpus_stack.py", "live-port-default"): "STK3 (e2e and UI)",
     (
         "backend/tests/integration/deletion_seed.py",
         "live-port-default",
@@ -141,7 +137,6 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/diagnose-file-integrity.sh",
         "hardcoded-container",
     ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/e2e/run-e2e.sh", "live-port-default"): "STK3 (e2e and UI)",
     ("scripts/e2e_bench/config.py", "live-port-default"): "P5 item 5 (benchmarks)",
     ("scripts/gpu-profile-test.sh", "hardcoded-container"): "P5 item 5 (benchmarks)",
     ("scripts/gpu-profile-test.sh", "live-port-default"): "P5 item 5 (benchmarks)",
@@ -236,7 +231,6 @@ PENDING: dict[tuple[str, str], str] = {
         "scripts/test-search-indexing-recovery.sh",
         "live-port-default",
     ): "P5 item 6 (legacy test and ops scripts)",
-    ("scripts/update-a11y-baseline.py", "live-port-default"): "STK3 (e2e and UI)",
 }
 
 # Not defaults for a resolved target; each carries its written reason.
@@ -245,10 +239,6 @@ EXEMPT: dict[tuple[str, str], str] = {
         "opentr.sh",
         "live-port-default",
     ): "opentr.sh OWNS the stack: the stock ports are its definition (FRESH_PORT_VARS), not a guess about another stack",
-    (
-        "scripts/opentr-info.sh",
-        "live-port-default",
-    ): "text printers moved out of opentr.sh (528e4c532): the same stock-port banner opentr.sh OWNS, not a guess about another stack",
     (
         "scripts/demo/demo-upgrade.sh",
         "live-port-default",
@@ -261,6 +251,10 @@ EXEMPT: dict[tuple[str, str], str] = {
         "opentranscribe.sh",
         "hardcoded-container",
     ): "ships standalone to end users: stock ports and container names are its documented install layout, not a developer stack guess",
+    (
+        "scripts/opentr-info.sh",
+        "live-port-default",
+    ): "display only: print_access_info echoes the URLs from the same *_PORT variables compose interpolates (opentr.sh exports them for --fresh and --port-offset); it connects to nothing",
 }
 
 # Files whose compose invocations are the stack owners (they derive the project themselves).
@@ -528,7 +522,7 @@ def test_the_known_wrong_stack_sites_are_detected() -> None:
     hits = scan()
     for key in [
         ("scripts/lite-smoke.sh", D1),
-        ("backend/tests/fixtures/search_corpus_stack.py", D3),
+        ("scripts/e2e_bench/config.py", D3),
         ("backend/tests/e2e/idp_overlay.py", D4),
     ]:
         assert key in hits or key not in {**PENDING, **EXEMPT}, f"{key} was fixed: drop it"

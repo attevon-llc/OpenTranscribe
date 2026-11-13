@@ -303,12 +303,28 @@ def test_the_target_must_be_a_fresh_stack(load, tmp_path, offset, host, expected
         (tmp_path / ".fresh").mkdir()
         (tmp_path / ".fresh" / "perf1337.offset").write_text(offset + "\n")
     if expected is None:
-        target = scenario.resolve_target("perf1337", host, repo_root=tmp_path)
+        target = scenario.resolve_target("perf1337", host, repo_root=tmp_path, backend_port="5474")
         assert target.base_url == "http://localhost:5474"
         assert target.compose_project == "otfresh-perf1337"
     else:
         with pytest.raises(scenario.NotIsolatedError, match=expected):
-            scenario.resolve_target("perf1337", host, repo_root=tmp_path)
+            scenario.resolve_target("perf1337", host, repo_root=tmp_path, backend_port="5474")
+
+
+def test_the_port_is_the_observed_one_never_derived_from_the_offset(load, tmp_path, monkeypatch):
+    scenario = load["scenario"]
+    (tmp_path / ".fresh").mkdir()
+    (tmp_path / ".fresh" / "perf1337.offset").write_text("300\n")
+    monkeypatch.setenv("BACKEND_PORT", "5999")
+    assert (
+        scenario.resolve_target("perf1337", None, repo_root=tmp_path).base_url
+        == "http://localhost:5999"
+    )
+    monkeypatch.delenv("BACKEND_PORT")
+    with pytest.raises(scenario.NotIsolatedError, match="BACKEND_PORT is not exported"):
+        scenario.resolve_target("perf1337", None, repo_root=tmp_path)
+    with pytest.raises(scenario.NotIsolatedError, match="shared dev stack"):
+        scenario.resolve_target("perf1337", None, repo_root=tmp_path, backend_port="5174")
 
 
 def test_no_fresh_name_is_refused(load):

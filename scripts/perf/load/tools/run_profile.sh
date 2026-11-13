@@ -3,31 +3,26 @@
 # OUT_ROOT/NAME, then keep the top statements and the backend log of the run window beside it.
 #
 # Usage: run_profile.sh FRESH_NAME OUT_ROOT NAME run.sh-args...
-# Environment: LOCUST (path to the locust binary, optional). The rate limits the dev stack
-# applies are raised for the run only (see docs-site/docs/developer-guide/performance-testing.md).
-set -uo pipefail
+# Environment: LOCUST (path to the locust binary, optional). The stack must be the one run.sh
+# asserts (`start dev --fresh NAME --no-bindmount --build` with the raised rate limits exported;
+# docs-site/docs/developer-guide/performance-testing.md). pg_stat_statements is prepared here
+# on first use (fresh stacks only; scripts/lib/stack_target.py prepare).
+set -euo pipefail
 FRESH="${1:?fresh deployment name}"; OUT_ROOT="${2:?runs directory}"; NAME="${3:?run name}"; shift 3
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 OUT="${OUT_ROOT}/${NAME}"
-export DEV_RATE_LIMIT_AUTH_PER_MINUTE=100000 DEV_RATE_LIMIT_DIRECTORY_PER_MINUTE=100000 \
-       DEV_RATE_LIMIT_AUTH_METHODS_PER_MINUTE=100000 DEV_RATE_LIMIT_SEARCH_PER_MINUTE=100000
-c() { docker ps -q --filter "label=com.docker.compose.project=otfresh-${FRESH}" \
-        --filter "label=com.docker.compose.service=$1"; }
-PG=$(c postgres); B=$(c backend)
-[[ -n "$PG" && -n "$B" ]] || { echo "run_profile: stack otfresh-${FRESH} is not up" >&2; exit 3; }
+source "${REPO}/scripts/lib/stack-target.sh"
+st_target --fresh "$FRESH"
+# ext:...+prepare loads the library (ALTER SYSTEM + restart, once per stack), creates the extension
+# and verifies it; the restart is why this runs before run.sh's own checks.
+st_require healthy:postgres,backend ext:pg_stat_statements+prepare
+PG=$(st_container postgres); B=$(st_container backend)
 PSQL='psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-opentranscribe}"'
-# pg_stat_statements only exists once it is in shared_preload_libraries (PostgreSQL docs, F.32); that is
-# set per stack with ALTER SYSTEM + restart (README "Prepare the stack"), never in a shipped compose file.
-LIBS=$(docker exec "$PG" sh -c "$PSQL -Atc 'show shared_preload_libraries'")
-[[ "$LIBS" == *pg_stat_statements* ]] || {
-  echo "run_profile: pg_stat_statements is not preloaded on otfresh-${FRESH} (shared_preload_libraries='${LIBS}');" \
-       "follow README 'Prepare the stack' (ALTER SYSTEM + restart), then re-run" >&2; exit 3; }
-docker exec "$PG" sh -c "$PSQL -Atc 'create extension if not exists pg_stat_statements'" >/dev/null
 docker exec "$PG" sh -c "$PSQL -Atc 'select pg_stat_statements_reset()'" >/dev/null
 START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 mkdir -p "$OUT"
-"${REPO}/scripts/perf/load/run.sh" --fresh "$FRESH" --out "$OUT" "$@" > "$OUT/console.log" 2>&1
-RC=$?
+RC=0
+"${REPO}/scripts/perf/load/run.sh" --fresh "$FRESH" --out "$OUT" "$@" > "$OUT/console.log" 2>&1 || RC=$?
 echo "run.sh rc=$RC" >> "$OUT/console.log"
 docker exec "$PG" sh -c "$PSQL --csv -c \"select calls, round(total_exec_time::numeric,1) total_ms, round(mean_exec_time::numeric,2) mean_ms, round(max_exec_time::numeric,1) max_ms, rows, shared_blks_hit, shared_blks_read, left(regexp_replace(query, '\\s+', ' ', 'g'), 400) query from pg_stat_statements order by total_exec_time desc limit 40\"" > "$OUT/pgss.csv"
 docker logs --since "$START" "$B" > "$OUT/backend.log" 2>&1

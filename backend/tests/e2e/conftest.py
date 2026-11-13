@@ -12,8 +12,7 @@ They test real user flows through the browser.
 
 Requirements:
 - Dev environment running: ./opentr.sh start dev
-- Frontend at localhost:5173
-- Backend at localhost:5174
+- The stack is resolved from its compose project (scripts/lib/stack_target.py)
 
 Run E2E tests only:
     pytest backend/tests/e2e/ -v
@@ -75,6 +74,10 @@ from store_importers import store_importer_candidates
 from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
+from tests.stack_preflight import e2e_stack_problem
+from tests.stack_preflight import missing_stack_problem
+from tests.stack_preflight import resolved_urls
+
 importlib.import_module("tests.conftest")  # side effects only, see above
 
 # ``tests/conftest.py`` registers ``search_corpus``/``search_corpus_token``/``neural_available``
@@ -111,13 +114,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--backend-url",
         action="store",
         default=None,
-        help="Backend API base URL (default: $E2E_BACKEND_URL, else http://localhost:5174)",
+        help="Backend API base URL (default: $E2E_BACKEND_URL, else the resolved stack)",
     )
 
 
-# Default URLs for dev environment
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+FRONTEND_URL, BACKEND_URL = resolved_urls()
 
 
 @pytest.hookimpl(trylast=True)
@@ -145,7 +146,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
     resolved_base = config.getoption("base_url", default=None) or FRONTEND_URL
     resolved_backend = config.getoption("backend_url", default=None) or BACKEND_URL
-    problem = mixed_stack_problem(str(resolved_base), str(resolved_backend))
+    problem = missing_stack_problem(resolved_base, resolved_backend) or mixed_stack_problem(
+        str(resolved_base), str(resolved_backend)
+    )
     if problem:
         pytest.exit(f"E2E preflight: {problem}", returncode=3)
 
@@ -214,11 +217,9 @@ def backend_url(request: pytest.FixtureRequest) -> str:
 # ---------------------------------------------------------------------------
 # Stack preflight
 #
-# ``scripts/e2e/run-e2e.sh`` checks only that ports 5173/5174 are OPEN. A
-# published container port stays open while the process behind it is restarting,
-# so that check cannot tell a healthy stack from a broken one — and every failure
-# below was first seen as a pile of unrelated per-test timeouts rather than as
-# "the stack is not ready".
+# An open published port says nothing about the process behind it (it stays open while
+# the container restarts); every failure below was first seen as a pile of unrelated
+# per-test timeouts rather than as "the stack is not ready".
 # ---------------------------------------------------------------------------
 
 #: Vite's dev server appends an HMR cache-buster (``?t=<ms>``) to every module URL
@@ -487,6 +488,9 @@ def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
     stack_problem = mixed_stack_problem(base_url, backend_url)
     if stack_problem:
         pytest.exit(f"E2E preflight: {stack_problem}", returncode=3)
+
+    if target_problem := e2e_stack_problem(base_url, backend_url):
+        pytest.exit(f"E2E preflight: {target_problem}", returncode=3)
 
     problem = _await_stable_backend(backend_url)
     if problem:

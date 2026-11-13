@@ -25,6 +25,7 @@ import pytest
 from playwright.sync_api import Page
 
 from tests.env_gate import gate_enabled
+from tests.stack_preflight import observed_ports
 
 # Skip entire module unless PKI E2E is explicitly enabled
 pytestmark = pytest.mark.skipif(
@@ -32,8 +33,10 @@ pytestmark = pytest.mark.skipif(
     reason="PKI E2E tests require RUN_PKI_E2E=true and PKI overlay running",
 )
 
-# PKI HTTPS URL (default port from docker-compose.pki.yml)
-PKI_URL = os.environ.get("PKI_E2E_URL", "https://localhost:5182")
+# PKI HTTPS URL: PKI_E2E_URL, else the PKI_HTTPS_PORT the resolved stack publishes. No literal
+# default: stock 5182 is the live stack's PKI listener, not a safe guess for another project.
+_pki_port = observed_ports().get("PKI_HTTPS_PORT") if gate_enabled("RUN_PKI_E2E") else None
+PKI_URL = os.environ.get("PKI_E2E_URL") or (f"https://localhost:{_pki_port}" if _pki_port else "")
 
 # Test certificate paths
 _project_root = Path(__file__).resolve().parents[3]

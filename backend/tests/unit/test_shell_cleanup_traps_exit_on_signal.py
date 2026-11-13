@@ -63,7 +63,7 @@ def test_interrupt_runs_cleanup_then_ends_the_script(script: str, handler: str):
 
 
 def test_mutation_verify_trap_restores_the_file_then_ends(tmp_path: Path):
-    source = (_REPO_ROOT / "scripts/run-mutation-tests.sh").read_text(encoding="utf-8")
+    source = (_REPO_ROOT / "scripts/lib/mutation-verify.sh").read_text(encoding="utf-8")
     all_traps = [ln.strip() for ln in source.splitlines() if ln.strip().startswith("trap ")]
     start = next(i for i, line in enumerate(all_traps) if "cp '$backup'" in line)
     trap_lines = all_traps[start : start + 3]

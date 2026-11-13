@@ -277,8 +277,10 @@ create_required_dirs() {
 # Fix model cache permissions for non-root container user
 fix_model_cache_permissions() {
   # Read MODEL_CACHE_DIR from .env if it exists
-  local MODEL_CACHE_DIR=""
-  if [ -f .env ]; then
+  # An exported MODEL_CACHE_DIR wins (opentr.sh resolves it worktree-aware; same in the three
+  # helpers below). Re-reading the raw .env value made them work on <worktree>/models instead.
+  local MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-}"
+  if [ -z "$MODEL_CACHE_DIR" ] && [ -f .env ]; then
     MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR .env)
   fi
 
@@ -365,8 +367,8 @@ fix_model_cache_permissions() {
 # Content is preserved exactly (`cp -p` then atomic `mv`); only the inode changes.
 # Safe and idempotent: a cache with no multiply-linked files is a no-op.
 ensure_nltk_data_unlinked() {
-  local MODEL_CACHE_DIR=""
-  if [ -f .env ]; then
+  local MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-}"
+  if [ -z "$MODEL_CACHE_DIR" ] && [ -f .env ]; then
     MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR .env)
   fi
   MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"
@@ -509,8 +511,8 @@ resolve_backend_image() {
 # Ensure OpenSearch neural models are downloaded for offline capability
 ensure_opensearch_models() {
   # Read MODEL_CACHE_DIR from .env if it exists
-  local MODEL_CACHE_DIR=""
-  if [ -f .env ]; then
+  local MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-}"
+  if [ -z "$MODEL_CACHE_DIR" ] && [ -f .env ]; then
     MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR .env)
   fi
 
@@ -634,8 +636,8 @@ ensure_opensearch_models() {
 # which is why the `--only nltk` selector exists on the downloader.
 ensure_nltk_corpora() {
   # Read MODEL_CACHE_DIR from .env if it exists
-  local MODEL_CACHE_DIR=""
-  if [ -f .env ]; then
+  local MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-}"
+  if [ -z "$MODEL_CACHE_DIR" ] && [ -f .env ]; then
     MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR .env)
   fi
   MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"

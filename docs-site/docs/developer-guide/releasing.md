@@ -323,6 +323,18 @@ guidance this rehearsal is meant to keep accurate.
 ./scripts/release-tests/test-lite-mode.sh
 ```
 
+### Scenario C's demo leg (`lite-demo-overlay`)
+
+After its feature checks, Scenario C starts the public-demo overlay (`docker-compose.demo.yml`,
+layered last) on the lite stack's own images: `up -d --no-build --pull never`, so nothing is
+rebuilt or pulled. It asserts the frontend and backend are healthy, `/api/health` is 200 through
+the frontend, and a write is refused with `demo_read_only`. This is its own blocking criterion,
+`lite-demo-overlay`, so a red demo names itself instead of failing `lite-mode`. It proves what no
+other step does, that the overlay starts and serves on shipped bytes: the static
+`test_nginx_upstreams_exist_in_every_mode.py` reads configs, and only a start caught the demo
+frontend crash-looping on a Flower upstream scaled to 0. A run that wrote no verdict is
+`not-measured`, never a pass.
+
 ### Scenario D: the downloader from an empty cache
 
 v0.6.0 shipped a `scripts/download-models.py` whose `pyannote` group exits 1 from an empty cache

@@ -73,9 +73,15 @@ server {
     client_body_buffer_size 256k;
 
     # Common proxy settings applied to all locations
+    # X-Forwarded-For is OVERWRITTEN with $remote_addr, never appended ($proxy_add_x_forwarded_for):
+    # nginx is the edge, so anything already in the header was typed by the client, and the backend
+    # trusts this hop's chain (RATE_LIMIT_TRUSTED_PROXIES). Appending let one client pick a new
+    # rate-limit bucket per request. A trusted hop in front (Cloudflare, a load balancer) is handled
+    # by the realip module, which sets $remote_addr from it (nginx.org ngx_http_realip_module;
+    # MDN X-Forwarded-For, "Security and privacy concerns").
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-Host $host;
 
@@ -121,7 +127,7 @@ server {
         # comparison is against a browser Origin that carries one.
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host $http_host;
 
@@ -242,7 +248,7 @@ server {
 
         # MinIO requires these for proper console operation
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
 
         # WebSocket support for MinIO console

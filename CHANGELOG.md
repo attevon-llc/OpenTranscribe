@@ -244,6 +244,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - Request bodies are limited (`MAX_REQUEST_BODY_BYTES`, 1 MiB, 413); password-reset and verification requests take the same path whether or not the account exists; user text is escaped in HTML email; SMTP never sends credentials over an unencrypted connection.
 - An OCSP response from a delegated responder needs the OCSP-signing key usage and a valid period; logout revokes tokens signed before a `JWT_ALGORITHM` change; authentication settings that fall back to `.env` are logged and counted (`security_state_degraded_total`); LLM calls are refused with `llm_budget_unavailable` when limits cannot be read.
 - GitHub Actions are pinned to commit SHAs with least-privilege permissions.
+- **Action: a forged `X-Forwarded-For` no longer escapes per-client rate limits.** The bundled nginx configs appended the client's own header, so a client whose address sat inside `RATE_LIMIT_TRUSTED_PROXIES` (every host-local request arrives from the Docker gateway) got a new rate-limit bucket per request; nginx now replaces the header with the address it saw. A load balancer in front of nginx now goes in nginx's realip config, not `RATE_LIMIT_TRUSTED_PROXIES` (Configuration > Environment variables).
 - Managed editions: deleting an account now hands organization content to an administrator, so code that creates organizations must call `set_owner`.
 
 ## [0.6.1] - 2026-11-03

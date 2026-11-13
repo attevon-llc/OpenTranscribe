@@ -206,9 +206,17 @@ show the visitor's real address (compare with `curl -s https://www.cloudflare.co
 from the same machine). Finally, hit `POST /api/auth/login` with a nonexistent account from two
 different networks until one is limited: the other must still get a normal 401.
 
-Other TLS terminators (an AWS load balancer, CloudFront) are not covered by this overlay: add
-their subnet to `RATE_LIMIT_TRUSTED_PROXIES` in `.env`, never a range covering the whole
-internet, since anyone could then pick their own address with an `X-Forwarded-For` header.
+nginx then passes the backend exactly one `X-Forwarded-For` address, the visitor it resolved: it
+**replaces** the header rather than appending to it, so whatever a visitor typed there never
+reaches the rate limiter. To check it, send `POST /api/auth/login` for a nonexistent account 60
+times from one machine, each with a different made-up `X-Forwarded-For`: it must be limited
+after `RATE_LIMIT_AUTH_PER_MINUTE` attempts exactly as it is without the header.
+
+Other TLS terminators (an AWS load balancer, CloudFront) are not covered by this overlay: give
+nginx their subnet with `set_real_ip_from`, `real_ip_header X-Forwarded-For` and
+`real_ip_recursive on` in a file mounted into `/etc/nginx/conf.d/` (the same way this overlay
+mounts `nginx/cloudflare-real-ip.conf`), never a range covering the whole internet, since anyone
+could then pick their own address with an `X-Forwarded-For` header.
 
 `DEMO_RATE_LIMIT_PER_MINUTE` (default 120) is the per-visitor ceiling on every route.
 

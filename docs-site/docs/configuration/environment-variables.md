@@ -1258,10 +1258,28 @@ sign-in steps that have no identity yet (registration, password reset, single si
 limited per client address.
 
 The client address comes from `X-Forwarded-For` only when the request arrives from an address in
-`RATE_LIMIT_TRUSTED_PROXIES`. The bundled nginx overlays set it for their own network. **If you run
-your own reverse proxy or a load balancer in front, add its address range (CIDR) here**, or every
-request appears to come from the proxy and all users share one rate-limit address. Never add a
-wide range that untrusted machines can send from.
+`RATE_LIMIT_TRUSTED_PROXIES`, and is read from the right, skipping trusted hops
+([MDN: X-Forwarded-For, selecting an IP address](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For#selecting_an_ip_address)).
+The bundled nginx overlays set it for their own network, and the bundled nginx **replaces**
+`X-Forwarded-For` with the one address it saw, so a value typed by a client never reaches the
+backend.
+
+**A load balancer or CDN in front of the bundled nginx** is configured in nginx, not here. Mount a
+file into `/etc/nginx/conf.d/` of the nginx service (the `frontend` service when no HTTPS overlay
+is loaded) with the
+[nginx realip module](https://nginx.org/en/docs/http/ngx_http_realip_module.html):
+
+```nginx
+set_real_ip_from 10.0.1.0/24;      # your load balancer's subnet, nothing wider
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+```
+
+nginx then uses the last address that is not one of your proxies, and passes only that one on.
+Without it every request appears to come from the load balancer and all users share one
+rate-limit address. Set `RATE_LIMIT_TRUSTED_PROXIES` yourself only for a proxy that talks to the
+backend directly, in place of the bundled nginx. Never list a wide range that untrusted machines
+can send from.
 :::
 
 ## Cloud ASR Providers

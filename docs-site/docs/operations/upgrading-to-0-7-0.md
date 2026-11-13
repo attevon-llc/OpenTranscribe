@@ -151,6 +151,19 @@ New installs ask "Expose directly on your LAN without HTTPS?" when HTTPS is not 
 answer defaults to no, which keeps the web UI on the server only; answer yes, or set
 `FRONTEND_BIND_HOST=0.0.0.0` later, to use plain HTTP from other devices.
 
+## A load balancer in front of nginx
+
+**Check this if...** a load balancer, CDN or another reverse proxy sits in front of
+OpenTranscribe's own nginx, and you listed it in `RATE_LIMIT_TRUSTED_PROXIES`.
+
+nginx now replaces `X-Forwarded-For` with the one address it saw instead of adding to what the
+client sent: a client could otherwise type a new address on every request and never be rate
+limited. Behind a load balancer that address is the load balancer, so every user would share one
+rate-limit address. Tell nginx about the load balancer instead, in a file mounted into
+`/etc/nginx/conf.d/` (example in Configuration > Environment variables, rate limits note), and
+remove it from `RATE_LIMIT_TRUSTED_PROXIES`. Cloudflare in front of the public demo is already
+handled by `docker-compose.demo-cloudflare.yml`.
+
 ## Governance audit events are kept in the database until delivered
 
 **Check this if...** you alert on Prometheus metrics, or you rely on the audit log as the record

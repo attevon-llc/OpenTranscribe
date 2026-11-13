@@ -5,8 +5,8 @@
 # sees is a Cloudflare edge and the visitor is only in CF-Connecting-IP. nginx's real_ip module
 # replaces the client address with that header ONLY for peers listed in set_real_ip_from; from
 # any other peer the header is ignored, so it cannot be forged to dodge a per-visitor limit.
-# The backend then reads the usual nginx-appended X-Forwarded-For (RATE_LIMIT_TRUSTED_PROXIES
-# stays nginx-only).
+# nginx then overwrites X-Forwarded-For with that one address, so the backend never sees a value
+# the visitor typed (RATE_LIMIT_TRUSTED_PROXIES stays nginx-only).
 #
 # nginx/cloudflare-real-ip.conf is a pinned snapshot of Cloudflare's published ranges, refreshed
 # with scripts/demo/refresh-cloudflare-ips.sh. Docs: Operations > Public demo.

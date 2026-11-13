@@ -9,8 +9,9 @@
 # is not an option: KMS auto-encryption there would change the live dev MinIO. This script
 # builds an ISOLATED install tree instead, so it also runs unattended on a CI runner.
 #
-# HOW (the rehearsal's pattern, not a new one): tracked files are copied to a temp tree
-# (mktemp -d -t ot-prodenv.XXXXXX, the redcheck naming), `.env` is `.env.example` plus
+# HOW (the rehearsal's pattern, not a new one): HEAD is cloned (`git clone --shared`) into a temp
+# tree (mktemp -d -t ot-prodenv.XXXXXX, the redcheck naming) so the images carry its GIT_SHA;
+# uncommitted tracked changes refuse with exit 3, `.env` is `.env.example` plus
 # generated secrets and the production credentials from
 # scripts/release-tests/lib/env-template.sh `et_service_credentials` (the same helper
 # test-upgrade.sh embeds), nginx certs come from scripts/generate-ssl-cert.sh and the PKI
@@ -86,9 +87,13 @@ PY
 prepare_tree() {
     local tree="${DIR:-$(mktemp -d -t ot-prodenv.XXXXXX)}" cache pw
     mkdir -p "$tree"
-    # Tracked files only, working-tree content: no .env, no gitignored operator state.
-    (cd "$REPO_ROOT" && git ls-files -z --cached --exclude-standard | tar --null -T - -cf -) \
-        | tar -xf - -C "$tree" || { err "could not copy the tracked tree"; return 1; }
+    # A clone of HEAD, not a file copy: opentr.sh stamps GIT_SHA from `git rev-parse` in the
+    # tree it builds, and stack_target's code=image check refuses 'unknown' (a copied tree has
+    # no .git). --shared borrows the object store, so the clone is cheap. Tracked files only:
+    # no .env, no gitignored operator state.
+    git clone -q --shared --no-checkout "$REPO_ROOT" "$tree" \
+        && git -C "$tree" checkout -q --detach "$SOURCE_SHA" \
+        || { err "could not clone $SOURCE_SHA into $tree"; return 1; }
     local env="$tree/.env"
     cp "$tree/.env.example" "$env"
     # Replace every CHANGE_ME placeholder with a generated secret (values never printed).
@@ -120,6 +125,12 @@ prepare_tree() {
     echo "$tree"
 }
 
+# The build is attributed to a commit, so uncommitted tracked edits would be silently left out.
+if [[ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ]]; then
+    err "$REPO_ROOT has uncommitted tracked changes: commit them first (the build is attributed to HEAD)"
+    exit 3
+fi
+SOURCE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)" || { err "$REPO_ROOT has no commit"; exit 3; }
 TREE="$(prepare_tree)" || exit 1
 if [[ "$ACTION" == prepare ]]; then echo "$TREE"; exit 0; fi
 

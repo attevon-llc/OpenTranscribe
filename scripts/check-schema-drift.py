@@ -44,7 +44,8 @@ Usage:
     ./scripts/check-schema-drift.py --fail-on tables,columns   # gate categories
 
 Exit codes: 0 clean (for the selected categories), 1 drift found, 2 misuse,
-3 database unreachable.
+3 database unreachable, 20-28 stack not resolvable or schema not at head
+(scripts/lib/stack_target.py).
 """
 
 from __future__ import annotations
@@ -86,10 +87,46 @@ COSMETIC_CATEGORIES = {
 }
 
 
-def _bootstrap_env() -> None:
-    """Point the app at the dev stack's Postgres without importing conftest."""
+def _resolve_stack() -> int:
+    """Pin POSTGRES_PORT to the resolved stack's OBSERVED port; refuse one not at head.
+
+    A database behind this checkout's migrations "differs from the models" in every table the
+    missing migrations touch, which reads as drift and is not. Name that first (exit code from
+    the stack-target contract: 22 schema, 20-21 no/wrong project, 28 docker).
+    """
+    sys.path.insert(0, str(REPO_ROOT / 'scripts' / 'lib'))
+    import stack_target as st
+
+    env = dict(os.environ)
+    if env.get('POSTGRES_PORT') in (None, '', '5432'):
+        env.pop('POSTGRES_PORT', None)
+    try:
+        stack = st.resolve(REPO_ROOT, env=env)
+        failures = st.run_checks(
+            stack, ['schema-head'], st.parse_allow([], env.get('ST_ALLOW', ''))
+        )
+    except st.StackError as exc:
+        print(exc.line(), file=sys.stderr)
+        return int(exc.code)
+    if failures:
+        print(failures[0].line(), file=sys.stderr)
+        print(
+            'This is "schema not at head", NOT model drift: nothing was compared.', file=sys.stderr
+        )
+        return int(failures[0].code)
+    os.environ['POSTGRES_PORT'] = str(stack.ports['POSTGRES_PORT'])
+    return 0
+
+
+def _bootstrap_env() -> int:
+    """Resolve the stack, then point the app at its Postgres without importing conftest.
+
+    Returns 0, or the stack-target exit code when no stack resolves or its schema is not at head.
+    """
+    resolved = _resolve_stack()
+    if resolved:
+        return resolved
     os.environ.setdefault('POSTGRES_HOST', 'localhost')
-    os.environ.setdefault('POSTGRES_PORT', '5176')
     os.environ.setdefault('SKIP_S3', 'True')
     os.environ.setdefault('SKIP_OPENSEARCH', 'True')
     scratch = Path(os.environ.get('TMPDIR', '/tmp')) / 'ot-schema-drift'
@@ -100,10 +137,11 @@ def _bootstrap_env() -> None:
     try:
         from dotenv import dotenv_values
     except ImportError:
-        return
+        return 0
     for key, value in (dotenv_values(REPO_ROOT / '.env') or {}).items():
         if key.startswith('POSTGRES_') and key not in ('POSTGRES_HOST', 'POSTGRES_PORT'):
             os.environ.setdefault(key, value or '')
+    return 0
 
 
 def _include_object(_obj, name, _type, _reflected, _compare_to) -> bool:
@@ -172,7 +210,9 @@ def main() -> int:
 
     sys.path.insert(0, str(BACKEND))
     os.chdir(BACKEND)
-    _bootstrap_env()
+    resolved = _bootstrap_env()
+    if resolved:
+        return resolved
 
     try:
         diffs = collect_diffs()

@@ -66,3 +66,21 @@ def run_preflight(env: Mapping[str, str] | None = None, repo_root: Path = _REPO_
     except st.StackError as exc:
         return str(exc.line())
     return str(failures[0].line()) if failures else None
+
+
+def observed_ports(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Host ports the target stack OBSERVABLY publishes (``POSTGRES_PORT``, ``MINIO_PORT``, ...).
+
+    Target = ``COMPOSE_PROJECT_NAME`` if exported, else the one live project; an exported
+    ``POSTGRES_PORT`` is deliberately ignored here (the caller only asks when it is unset or the
+    in-container 5432). Empty when docker is unreachable or no single stack resolves: the caller
+    then leaves the variable unset instead of guessing the stock port.
+    """
+    scrubbed = {k: v for k, v in dict(os.environ if env is None else env).items()}
+    scrubbed.pop("POSTGRES_PORT", None)
+    st = load_stack_target()
+    try:
+        stack = st.resolve(_REPO_ROOT, env=scrubbed)
+    except st.StackError:
+        return {}
+    return {name: str(port) for name, port in stack.ports.items()}

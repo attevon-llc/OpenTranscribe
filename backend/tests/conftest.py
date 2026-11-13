@@ -75,6 +75,24 @@ def _service_reachable(host: str, port: int, timeout: float = 0.3) -> bool:
         return False
 
 
+def _observed_stack_ports() -> dict[str, str]:
+    """Ports the resolved stack publishes (tests/stack_preflight.py), loaded by path because this
+    runs before any package path is set up. Only worth the docker call when a port is unset."""
+    needed = ("POSTGRES_PORT", "MINIO_PORT", "OPENSEARCH_PORT")
+    if all(os.environ.get(v) not in (None, "", "5432") for v in needed):
+        return {}
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_ot_stack_preflight", Path(__file__).with_name("stack_preflight.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    observed: dict[str, str] = module.observed_ports()
+    return observed
+
+
 # Set testing environment flag and disable external services in tests
 os.environ["TESTING"] = "True"
 # Declare the suite as a relaxed environment. ENVIRONMENT defaults to "production"
@@ -110,9 +128,12 @@ os.environ["RATE_LIMIT_ENABLED"] = "false"  # Disable rate limiting for tests
 # Deriving both from one value removes the disagreement and lets `--port-offset` work.
 # POSTGRES_PORT below has always behaved this way; this brings MinIO/OpenSearch in line.
 _MINIO_PROBE_HOST = os.environ.get("MINIO_HOST", "localhost")
-_MINIO_PROBE_PORT = int(os.environ.get("MINIO_PORT", "5178"))
+_OBSERVED = _observed_stack_ports()
+_MINIO_PROBE_PORT = int(os.environ.get("MINIO_PORT") or _OBSERVED.get("MINIO_PORT", "0"))
 _OPENSEARCH_PROBE_HOST = os.environ.get("OPENSEARCH_HOST", "localhost")
-_OPENSEARCH_PROBE_PORT = int(os.environ.get("OPENSEARCH_PORT", "5180"))
+_OPENSEARCH_PROBE_PORT = int(
+    os.environ.get("OPENSEARCH_PORT") or _OBSERVED.get("OPENSEARCH_PORT", "0")
+)
 
 os.environ.setdefault(
     "SKIP_S3", "False" if _service_reachable(_MINIO_PROBE_HOST, _MINIO_PROBE_PORT) else "True"
@@ -149,9 +170,11 @@ os.environ["TEMP_DIR"] = _test_temp_subdir
 # Database connection for local testing - use localhost instead of Docker service name
 # The .env file has POSTGRES_HOST=postgres (Docker service) but we need localhost
 os.environ["POSTGRES_HOST"] = "localhost"
-# Ensure we use the correct port (Docker exposes on 5176)
-if "POSTGRES_PORT" not in os.environ or os.environ.get("POSTGRES_PORT") == "5432":
-    os.environ["POSTGRES_PORT"] = "5176"
+# The port is the OBSERVED one of the resolved stack (scripts/lib/stack_target.py), not the stock
+# 5176: that default silently pointed a worktree or --fresh run at the live database. Unresolvable
+# (no docker, no single stack) leaves it unset and the connection fails loudly.
+if os.environ.get("POSTGRES_PORT") in (None, "", "5432") and "POSTGRES_PORT" in _OBSERVED:
+    os.environ["POSTGRES_PORT"] = _OBSERVED["POSTGRES_PORT"]
 
 # --- CUDA device guard (issue #719) -----------------------------------------
 # The fast suite opened a ~300 MiB CUDA primary context on EVERY xdist worker

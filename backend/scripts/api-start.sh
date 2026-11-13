@@ -34,11 +34,12 @@ fi
 # peer rather than the proxy. Without it the app cannot tell http from https, which
 # affects redirect/cookie decisions (issue #284 A0.5).
 #
-# --forwarded-allow-ips is deliberately restricted to the loopback/private ranges a
-# sidecar or in-cluster proxy connects from. Do NOT set it to "*": that tells uvicorn to
-# trust forwarding headers from ANY peer, which is the same spoofing hole the audit
-# middleware had. Application-level trust is enforced separately and independently by
-# RATE_LIMIT_TRUSTED_PROXIES via app/utils/client_ip.py.
+# --forwarded-allow-ips is RATE_LIMIT_TRUSTED_PROXIES, the list app/utils/client_ip.py
+# walks: uvicorn rewrites request.client from X-Forwarded-For BEFORE the app sees it, so a
+# wider list here is a second resolver the app cannot undo. It used to be every RFC1918
+# range, which let any LAN host that reached the API port pick its own client address.
+# Unset, uvicorn's own default (loopback) applies (uvicorn settings, "HTTP":
+# --forwarded-allow-ips). Never "*".
 exec uvicorn app.main:app --host 0.0.0.0 --port 8080 \
-  --proxy-headers --forwarded-allow-ips "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" \
+  --proxy-headers --forwarded-allow-ips "${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1}" \
   "$@"

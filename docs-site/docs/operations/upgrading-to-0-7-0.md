@@ -164,6 +164,11 @@ rate-limit address. Tell nginx about the load balancer instead, in a file mounte
 remove it from `RATE_LIMIT_TRUSTED_PROXIES`. Cloudflare in front of the public demo is already
 handled by `docker-compose.demo-cloudflare.yml`.
 
+The API server now believes forwarding headers (`X-Forwarded-For`, `X-Forwarded-Proto`) only from
+`RATE_LIMIT_TRUSTED_PROXIES`, where it used to believe every private network range. If you
+changed Docker's address pool (`default-address-pools`) so nginx is not in `172.16.0.0/12`, set
+`RATE_LIMIT_TRUSTED_PROXIES` to nginx's network in `.env`.
+
 ## Governance audit events are kept in the database until delivered
 
 **Check this if...** you alert on Prometheus metrics, or you rely on the audit log as the record

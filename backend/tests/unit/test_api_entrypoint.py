@@ -65,14 +65,64 @@ def test_the_script_is_executable_and_reaches_the_image() -> None:
     )
 
 
+def _forwarded_allow_ips(tmp_path: Path, **env: str) -> str:
+    argv, _ = _run_script(tmp_path, **env)
+    return argv[argv.index("--forwarded-allow-ips") + 1]
+
+
 def test_the_script_keeps_the_proxy_flags_for_every_image(tmp_path: Path) -> None:
-    argv, _ = _run_script(tmp_path)
+    argv, _ = _run_script(tmp_path, RATE_LIMIT_TRUSTED_PROXIES="")
     assert argv[:1] == ["app.main:app"]
     assert "--proxy-headers" in argv
-    assert argv[argv.index("--forwarded-allow-ips") + 1] == (
-        "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-    )
+    assert argv[argv.index("--forwarded-allow-ips") + 1] == "127.0.0.1"
     assert "--workers" not in argv, "the count comes from UVICORN_WORKERS, which uvicorn reads"
+
+
+OVERLAY_TRUST = "127.0.0.1/32,172.16.0.0/12"
+
+
+def _resolved_by_uvicorn_then_app(trusted: str, peer: str, forwarded: str) -> str:
+    """The client the app records after uvicorn's own proxy-header pass, as in the image."""
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    from app.utils import client_ip
+
+    def recorded(request: Request) -> PlainTextResponse:
+        return PlainTextResponse(client_ip.resolve_client_ip(request))
+
+    app = Starlette(routes=[Route("/", recorded)])
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted)
+    saved = client_ip._TRUSTED_NETWORKS
+    client_ip._TRUSTED_NETWORKS = client_ip._parse_networks(OVERLAY_TRUST)
+    try:
+        with TestClient(app, client=(peer, 40000)) as http:
+            return http.get("/", headers={"X-Forwarded-For": forwarded}).text
+    finally:
+        client_ip._TRUSTED_NETWORKS = saved
+
+
+def test_uvicorn_trusts_exactly_the_apps_proxy_list(tmp_path: Path) -> None:
+    assert _forwarded_allow_ips(tmp_path, RATE_LIMIT_TRUSTED_PROXIES=OVERLAY_TRUST) == OVERLAY_TRUST
+
+
+@pytest.mark.parametrize("lan_peer", ["192.168.1.50", "10.4.0.7"])
+def test_a_lan_host_on_the_api_port_cannot_pick_its_own_address(
+    tmp_path: Path, lan_peer: str
+) -> None:
+    trusted = _forwarded_allow_ips(tmp_path, RATE_LIMIT_TRUSTED_PROXIES=OVERLAY_TRUST)
+
+    assert _resolved_by_uvicorn_then_app(trusted, lan_peer, "198.51.100.7") == lan_peer
+
+
+def test_the_bundled_nginx_still_supplies_the_client(tmp_path: Path) -> None:
+    trusted = _forwarded_allow_ips(tmp_path, RATE_LIMIT_TRUSTED_PROXIES=OVERLAY_TRUST)
+
+    assert _resolved_by_uvicorn_then_app(trusted, "172.18.0.5", "203.0.113.9") == "203.0.113.9"
 
 
 def test_two_workers_enable_multiprocess_metrics_in_a_wiped_directory(tmp_path: Path) -> None:

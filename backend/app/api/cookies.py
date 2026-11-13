@@ -55,8 +55,8 @@ def _secure_for_request(request: Request) -> bool:
     browser then attaches the resulting non-`Secure` cookie to a plain-HTTP request
     to the same host too — exactly what `Secure` exists to prevent.
 
-    `Dockerfile.prod` runs uvicorn with `--proxy-headers --forwarded-allow-ips
-    <RFC1918 ranges>`, so `request.url.scheme` already reflects the real
+    `scripts/api-start.sh` runs uvicorn with `--proxy-headers --forwarded-allow-ips
+    $RATE_LIMIT_TRUSTED_PROXIES`, so `request.url.scheme` already reflects the real
     client-facing scheme: `https` when a configured, trusted reverse proxy vouches
     for it via `X-Forwarded-Proto`, the raw connection scheme otherwise. No new
     trust boundary is introduced here — this reads a value Starlette already

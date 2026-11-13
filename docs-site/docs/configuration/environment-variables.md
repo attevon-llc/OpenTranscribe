@@ -1262,7 +1262,9 @@ The client address comes from `X-Forwarded-For` only when the request arrives fr
 ([MDN: X-Forwarded-For, selecting an IP address](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For#selecting_an_ip_address)).
 The bundled nginx overlays set it for their own network, and the bundled nginx **replaces**
 `X-Forwarded-For` with the one address it saw, so a value typed by a client never reaches the
-backend.
+backend. The same list is the API server's `--forwarded-allow-ips`
+([uvicorn settings](https://www.uvicorn.org/settings/#http)), so it also decides whose
+`X-Forwarded-Proto` is believed.
 
 **A load balancer or CDN in front of the bundled nginx** is configured in nginx, not here. Mount a
 file into `/etc/nginx/conf.d/` of the nginx service (the `frontend` service when no HTTPS overlay

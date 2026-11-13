@@ -708,8 +708,12 @@ class TestPostProcessingOnRealWorkers:
     def test_with_the_llm_on_summary_and_topics_finish_done(
         self, api_session: requests.Session, backend_url: str, uploaded_file: str
     ):
-        """With ``mock-gpt`` active, the summary and topic tasks must both end ``done``.
+        """With the LLM on, the summary and topic tasks must both end ``done``.
 
+        ``mock-gpt`` answers in markdown, which neither parser can read, so each task runs
+        against the scenario model that returns the JSON its prompt asks for
+        (``mock-summary-json``, ``mock-topics-json``). The tasks use the user's one active
+        configuration, so the test activates one, reprocesses that stage, and then the next.
         The settle test above runs with no LLM, where both are ``skipped``; only this one
         proves the LLM-on path completes on the real workers.
         """
@@ -723,41 +727,45 @@ class TestPostProcessingOnRealWorkers:
         csrf_token = api_session.cookies.get("csrf_token")
         assert csrf_token, "api_session has no csrf_token cookie"
         headers = {"X-CSRF-Token": csrf_token}
-        llm_resp = api_session.post(
-            f"{backend_url}/api/llm-settings",
-            json={
-                "name": f"Mock LLM ok {uploaded_file[:8]}",
-                "provider": "custom",
-                "model_name": "mock-gpt",
-                "base_url": "http://mock-llm:5199/v1",
-                "api_key": "mock-key-not-secret",
-            },
-            headers=headers,
-            timeout=30,
+        stages = (
+            ("summary", "summarization", "mock-summary-json"),
+            ("topics", "topic_extraction", "mock-topics-json"),
         )
-        assert llm_resp.status_code == 200, llm_resp.text[:300]
-        llm_config = llm_resp.json()
-        try:
-            active = api_session.post(
-                f"{backend_url}/api/llm-settings/set-active",
-                json={"configuration_id": llm_config["uuid"]},
+        states: dict[str, str] = {}
+        tasks: dict = {}
+        for task, stage, model in stages:
+            llm_resp = api_session.post(
+                f"{backend_url}/api/llm-settings",
+                json={
+                    "name": f"Mock LLM {model} {uploaded_file[:8]}",
+                    "provider": "custom",
+                    "model_name": model,
+                    "base_url": "http://mock-llm:5199/v1",
+                    "api_key": "mock-key-not-secret",
+                },
                 headers=headers,
                 timeout=30,
             )
-            assert active.status_code == 200, active.text[:300]
+            assert llm_resp.status_code == 200, llm_resp.text[:300]
+            llm_config = llm_resp.json()
+            try:
+                active = api_session.post(
+                    f"{backend_url}/api/llm-settings/set-active",
+                    json={"configuration_id": llm_config["uuid"]},
+                    headers=headers,
+                    timeout=30,
+                )
+                assert active.status_code == 200, active.text[:300]
 
-            triggered = api_session.post(
-                f"{backend_url}/api/files/{uploaded_file}/reprocess",
-                json={"stages": ["summarization", "topic_extraction"]},
-                headers=headers,
-                timeout=60,
-            )
-            assert triggered.status_code == 200, (
-                f"reprocess refused: {triggered.status_code} {triggered.text[:300]}"
-            )
-
-            tasks: dict = {}
-            for task in ("summary", "topics"):
+                triggered = api_session.post(
+                    f"{backend_url}/api/files/{uploaded_file}/reprocess",
+                    json={"stages": [stage]},
+                    headers=headers,
+                    timeout=60,
+                )
+                assert triggered.status_code == 200, (
+                    f"reprocess refused: {triggered.status_code} {triggered.text[:300]}"
+                )
                 body = _post_processing_when_settled(
                     api_session,
                     backend_url,
@@ -768,17 +776,17 @@ class TestPostProcessingOnRealWorkers:
                 )
                 tasks = body.get("tasks") or {}
                 assert task in tasks, f"no {task} task was reported: {body}"
-            states = {k: tasks[k]["state"] for k in ("summary", "topics")}
-            assert states == {"summary": "done", "topics": "done"}, (
-                f"with the LLM on both must finish done: {states}; run={tasks}"
-            )
-        finally:
-            with contextlib.suppress(requests.RequestException):
-                api_session.delete(
-                    f"{backend_url}/api/llm-settings/config/{llm_config['uuid']}",
-                    headers=headers,
-                    timeout=30,
-                )
+                states[task] = tasks[task]["state"]
+            finally:
+                with contextlib.suppress(requests.RequestException):
+                    api_session.delete(
+                        f"{backend_url}/api/llm-settings/config/{llm_config['uuid']}",
+                        headers=headers,
+                        timeout=30,
+                    )
+        assert states == {"summary": "done", "topics": "done"}, (
+            f"with the LLM on both must finish done: {states}; run={tasks}"
+        )
 
     def test_a_failing_llm_reports_the_summary_as_failed(
         self, api_session: requests.Session, backend_url: str, uploaded_file: str

@@ -372,13 +372,37 @@ def compare(log_a: str, log_b: str) -> tuple[int, str]:
     return 0, f'identical verdicts for {len(a)} mutants'
 
 
+_FAILED_TEST_RE = re.compile(r'^_{3,} (\S+) _{3,}$')
+_STATS_FAILURE_MARKERS = ('BadTestExecutionCommandsException', 'failed to collect stats')
+
+
+def stats_failure(text: str) -> str | None:
+    """Why mutmut's clean stats run failed, or None. Names the first failing test when pytest printed one."""
+    plain = re.sub(r'\x1b\[[0-9;]*m', '', text.replace('\r', '\n'))
+    if not any(m in plain for m in _STATS_FAILURE_MARKERS):
+        return None
+    tests = [m.group(1) for ln in plain.splitlines() if (m := _FAILED_TEST_RE.match(ln.strip()))]
+    return f'failing test: {tests[0]}' if tests else 'failing test: not named in the log'
+
+
 def judge(
     key: str, log: str, baseline_survivors: int | None, accept_improved: bool
 ) -> tuple[int, str]:
-    """Parallel-run report. A fall in survivors is suspect (a leak 'kills' mutants), never a pass."""
+    """Parallel-run report. A fall in survivors is suspect (a leak 'kills' mutants), never a pass.
+
+    0 mutants, or any failed stats run, is a FAILURE (rc 1): the module never ran, which is not an
+    improvement and is not "unmeasured, try again" either.
+    """
     verdicts, _ = parse_summary(log)
     if verdicts is None:
         return EXIT_NOT_MEASURED, f'{key}: no completed summary'
+    why = stats_failure(Path(log).read_text(errors='replace'))
+    if why or not verdicts:
+        return 1, (
+            f'{key}: FAILED, mutmut collected {len(verdicts)} mutants because its clean stats run '
+            f'failed before any mutation ({why or "no stats-failure text in the log"}); '
+            f'this is NOT an improvement over baseline {baseline_survivors}'
+        )
     counts: dict[str, int] = {}
     for v in verdicts.values():
         counts[v] = counts.get(v, 0) + 1

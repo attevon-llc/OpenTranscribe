@@ -57,3 +57,7 @@ playwright==1.64.1
 # Development Utilities
 ipython==9.17.1  # Enhanced Python shell
 ipdb==0.13.13  # IPython debugger
+
+# Dev-loop only change-aware selection (scripts/run-backend-tests.sh --affected). MIT licence,
+# never installed in CI or an image, never used by a gate (-p no:testmon on every gate call).
+pytest-testmon==2.3.0

@@ -69,6 +69,9 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/lib/no-selection.sh
+source "$REPO_ROOT/scripts/lib/no-selection.sh"
+refuse_selection_flags "$@"
 cd "$REPO_ROOT" || exit 1
 
 EXIT_GATE=1
@@ -519,6 +522,7 @@ fi
 # Phases are about to write to the stack: arm the end-of-run sweep (see the trap above).
 if $RUN_BACKEND || $RUN_E2E || $WITH_PIPELINE_SMOKE || $WITH_MUTATION_TESTS; then
     TDS_SWEEP_ENABLED=1
+    tds_own_entry_sweep_for_children
 fi
 
 declare -a PHASE_NAMES=()

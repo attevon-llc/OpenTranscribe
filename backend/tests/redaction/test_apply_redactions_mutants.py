@@ -191,3 +191,20 @@ def test_the_malformed_span_error_carries_its_documented_message() -> None:
 
     assert str(caught.value) == "unreadable cached redaction span"
     assert caught.value.__cause__ is not None
+
+
+def test_an_unreadable_span_is_logged_as_an_error_before_failing_closed(caplog) -> None:
+    """The log line is the operator's only sign that cached spans are corrupt."""
+    import logging
+
+    with caplog.at_level(logging.DEBUG, logger="app.services.redaction.spans"):
+        with pytest.raises(MalformedSpanError):
+            apply_redactions("Dana called.", [{"char_start": 0}])
+
+    errors = [r for r in caplog.records if r.name == "app.services.redaction.spans"]
+    assert len(errors) == 1
+    assert errors[0].levelno == logging.ERROR
+    message = errors[0].getMessage()
+    assert message.startswith("Unreadable cached redaction span")
+    assert "failing closed" in message
+    assert errors[0].exc_info, "the validation error is the cause an operator needs"

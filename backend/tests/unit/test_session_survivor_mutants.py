@@ -898,3 +898,62 @@ class TestStateValueIsTruncatedInLogs:
 
         warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
         self._assert_only_the_prefix_is_logged(warnings)
+
+
+# ── degraded-store log lines: the operator's only sign of an outage ──────────────
+#
+# Level, logger name and stable key phrases only (never the full string), so a rewording
+# that keeps the meaning does not break these.
+
+
+def _records(caplog, level: int) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if r.levelno == level]
+
+
+@pytest.mark.unit
+class TestDegradedStoreLogLines:
+    def test_falling_back_to_memory_warns_that_states_are_not_shared(self, caplog):
+        _reset_store_module_state()
+        with (
+            caplog.at_level(logging.DEBUG, logger="app.auth.session"),
+            patch.object(session_module, "get_redis_client", return_value=None),
+        ):
+            session_module._get_store()
+
+        warnings = [r for r in _records(caplog, logging.WARNING) if r.name == "app.auth.session"]
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert message.startswith("Using in-memory OIDC state storage")
+        assert "Login states will not be shared" in message
+        assert message.endswith("restart.")
+
+    def test_recovering_redis_is_announced_at_info(self, caplog):
+        _reset_store_module_state()
+        session_module._store_initialized = True
+        session_module._redis_client = None
+        session_module._in_memory_store = InMemoryStore()
+        with (
+            caplog.at_level(logging.DEBUG, logger="app.auth.session"),
+            patch.object(session_module, "get_redis_client", return_value=MagicMock()),
+        ):
+            session_module._get_store(clock=lambda: 10**9)
+
+        infos = [r for r in _records(caplog, logging.INFO) if r.name == "app.auth.session"]
+        assert len(infos) == 1
+        message = infos[0].getMessage()
+        assert message.startswith("Redis recovered")
+        assert "shared OIDC state storage" in message
+
+    def test_refusing_a_state_at_the_cap_logs_an_error_naming_the_exhaustion(self, caplog):
+        store = OIDCStateStore(max_states=1)
+        store._store = _PatternSensitiveScanStore(matching=[f"{OIDC_STATE_PREFIX}a"], foreign=[])
+
+        with caplog.at_level(logging.DEBUG, logger="app.auth.session"):
+            assert store.store_state(STATE, STATE_DATA) is False
+
+        errors = [r for r in _records(caplog, logging.ERROR) if r.name == "app.auth.session"]
+        assert len(errors) == 1
+        message = errors[0].getMessage()
+        assert message.startswith("OIDC state limit exceeded")
+        assert "Possible state exhaustion attack" in message
+        assert message.endswith("attack.")

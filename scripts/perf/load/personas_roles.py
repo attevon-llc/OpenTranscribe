@@ -23,7 +23,9 @@ from personas_write import ChatUser, SpeakerWork
 from phrasebook import Phrasebook
 from ws_listener import WebSocketListener
 
-SUMMARY_FORMATS = ('md', 'pdf', 'docx')
+# The endpoint's own list (VALID_SUMMARY_EXPORT_FORMATS, app/services/summary_export_service.py):
+# asking for pdf or docx is a 400 by design, and a unit test keeps the two equal.
+SUMMARY_FORMATS = ('md',)
 
 
 class CanaryMixin(SeededUser):

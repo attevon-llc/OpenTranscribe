@@ -276,3 +276,9 @@ def test_a_researcher_outside_the_chat_budget_never_chats_even_with_inherited_ta
 
     assert not [c for c in run.client.calls if c.url.startswith("/api/chat/")]
     assert not [c for c in run.client.calls if c.method == "POST" and c.url.startswith("/api/llm")]
+
+
+def test_the_summary_persona_asks_only_for_formats_the_endpoint_supports(load):
+    from app.services.summary_export_service import VALID_SUMMARY_EXPORT_FORMATS
+
+    assert set(load["personas_roles"].SUMMARY_FORMATS) <= set(VALID_SUMMARY_EXPORT_FORMATS)

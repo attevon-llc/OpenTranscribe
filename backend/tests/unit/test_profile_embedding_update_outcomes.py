@@ -25,7 +25,15 @@ def _db(profile, speakers):
 
 
 def _profile():
-    return SimpleNamespace(id=5, user_id=1, organization_id=None)
+    return SimpleNamespace(
+        id=5,
+        uuid="p-uuid",
+        name="P",
+        user_id=1,
+        organization_id=None,
+        embedding_count=0,
+        last_embedding_update=None,
+    )
 
 
 def _speaker(uuid="s1", media_file_id=10):
@@ -66,14 +74,14 @@ def test_emptied_profile_is_cleared_and_committed_lenient_returns_true():
     result, run = _run(db, strict=False)
     assert result is True
     run.cleared.assert_called_once()
-    db.commit.assert_called_once()
+    assert db.commit.call_count == 2  # release the read transaction, then the short write
 
 
 def test_emptied_profile_strict_raises_after_the_clear():
     db = _db(_profile(), [])
     with pytest.raises(ProfileEmbeddingRecomputeError, match="has no members"):
         _run(db, strict=True)
-    db.commit.assert_called_once()
+    assert db.commit.call_count == 2
 
 
 def test_declined_files_never_enter_the_average():
@@ -113,7 +121,7 @@ def test_refused_write_commits_then_reports_failure(strict):
             _run(db, strict=True, embeddings=[[1.0]], stored=False)
     else:
         assert _run(db, strict=False, embeddings=[[1.0]], stored=False)[0] is False
-    db.commit.assert_called_once()
+    assert db.commit.call_count == 2
 
 
 def test_unreadable_members_are_skipped_but_the_rest_are_averaged():
@@ -121,7 +129,7 @@ def test_unreadable_members_are_skipped_but_the_rest_are_averaged():
     result, run = _run(db, strict=False, embeddings=[None, [2.0]])
     assert result is True
     assert run.written.call_args.args[2] == [[2.0]]
-    db.commit.assert_called_once()
+    assert db.commit.call_count == 2
 
 
 @pytest.mark.parametrize("strict", [False, True])

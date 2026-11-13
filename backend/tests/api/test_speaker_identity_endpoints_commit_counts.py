@@ -70,7 +70,7 @@ def test_rejecting_a_suggestion_commits_twice(client, user_token_headers, normal
     assert _verify(client, db_session, user_token_headers, speaker, action="reject") == 2
 
 
-def test_creating_a_profile_from_a_speaker_commits_twice(
+def test_creating_a_profile_from_a_speaker_commits_four_times(
     client, user_token_headers, normal_user, db_session
 ):
     speaker = _speaker(db_session, normal_user)
@@ -82,4 +82,6 @@ def test_creating_a_profile_from_a_speaker_commits_twice(
         action="create_profile",
         profile_name="New Person",
     )
-    assert commits == 2
+    # Two of its own, plus one each from the profile-embedding and cluster-centroid rebuilds,
+    # which now end their read transaction before the OpenSearch phase.
+    assert commits == 4

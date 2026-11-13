@@ -12,6 +12,8 @@ The service provides intelligent embedding aggregation that:
 """
 
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
 from typing import Any
@@ -129,8 +131,27 @@ def _calculate_average_embedding(embeddings: list[list[float]]) -> list[float]:
     return result
 
 
+@dataclass
+class _ProfileState:
+    """Plain copy of a profile, so OpenSearch work needs no live ORM row (or transaction)."""
+
+    uuid: str
+    name: str
+    user_id: int
+    organization_id: int | None
+    embedding_count: int | None
+    last_embedding_update: datetime | None
+
+
+@dataclass
+class _MemberRef:
+    """Plain copy of the one speaker field the voiceprint read needs."""
+
+    uuid: str
+
+
 def _process_profile_with_no_speakers(
-    profile: SpeakerProfile,
+    profile: SpeakerProfile | _ProfileState,
     profile_id: int,
 ) -> bool:
     """Handle case when profile has no speakers assigned."""
@@ -141,7 +162,7 @@ def _process_profile_with_no_speakers(
 
 
 def _process_profile_with_embeddings(
-    profile: SpeakerProfile,
+    profile: SpeakerProfile | _ProfileState,
     profile_id: int,
     embeddings: list[list[float]],
 ) -> bool:
@@ -378,7 +399,9 @@ def _consenting_member_speakers(
     return [s for s in speakers if s.media_file_id not in excluded]
 
 
-def _member_embeddings(speakers: list[Speaker], profile_id: int) -> list[list[float]]:
+def _member_embeddings(
+    speakers: Sequence[Speaker | _MemberRef], profile_id: int
+) -> list[list[float]]:
     """Stored embeddings of the given speakers, skipping (and logging) unreadable ones."""
     embeddings: list[list[float]] = []
     for speaker in speakers:
@@ -388,6 +411,34 @@ def _member_embeddings(speakers: list[Speaker], profile_id: int) -> list[list[fl
         else:
             logger.warning(f"No embedding found for speaker {speaker.uuid} in profile {profile_id}")
     return embeddings
+
+
+def _discard_orphaned_profile_document(profile_uuid: str) -> None:
+    """Clear the document of a profile deleted while its embedding was being written."""
+    _clear_profile_embedding_from_opensearch(profile_uuid)
+
+
+def _write_profile_embedding_state(db: Session, profile_id: int, snapshot: Any) -> bool:
+    """The short write phase: persist the count the OpenSearch document was built from.
+
+    Re-addresses the row by primary key instead of resuming the ORM instance, so a profile
+    renamed or deleted while OpenSearch ran is neither clobbered nor an error. A profile
+    deleted meanwhile leaves a document nothing owns; the caller clears it (this function
+    holds a session, and the clear is OpenSearch work).
+    """
+    updated = (
+        db.query(SpeakerProfile)
+        .filter(SpeakerProfile.id == profile_id)
+        .update(
+            {
+                SpeakerProfile.embedding_count: snapshot.embedding_count,
+                SpeakerProfile.last_embedding_update: snapshot.last_embedding_update,
+            },
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    return updated != 0
 
 
 class ProfileEmbeddingService:
@@ -421,24 +472,44 @@ class ProfileEmbeddingService:
 
             speakers = _consenting_member_speakers(db, profile, profile_id)
 
+            # Privacy policy (#1280): an averaged profile voiceprint is a voiceprint write.
+            # Clearing an emptied profile is a delete and stays allowed; computing a new
+            # average is not. Under `strict` (a speaker left the profile) the raise makes
+            # the caller ERASE the stored embedding, which is right: it still holds the
+            # removed voice and cannot be rebuilt while the scope is off.
+            decision = (
+                PrivacyView(db).voiceprints_for_scope(int(profile.user_id), profile.organization_id)
+                if speakers
+                else None
+            )
+
+            # Three phases: the reads above, then OpenSearch with NO Postgres transaction
+            # open, then one short write. Everything the middle phase needs is copied to
+            # plain objects first, because ``commit`` expires the ORM rows (a later
+            # attribute read would reopen the very transaction being released).
+            snapshot = _ProfileState(
+                uuid=str(profile.uuid),
+                name=str(profile.name),
+                user_id=int(profile.user_id),
+                organization_id=profile.organization_id,
+                embedding_count=profile.embedding_count,
+                last_embedding_update=profile.last_embedding_update,
+            )
+            member_stubs = [_MemberRef(uuid=str(s.uuid)) for s in speakers]
+            db.commit()
+
             if not speakers:
                 logger.warning(f"No speakers assigned to profile {profile_id}")
-                _process_profile_with_no_speakers(profile, profile_id)
-                db.commit()
+                _process_profile_with_no_speakers(snapshot, profile_id)
+                if not _write_profile_embedding_state(db, profile_id, snapshot):
+                    _discard_orphaned_profile_document(snapshot.uuid)
                 if strict:
                     # The best-effort clear above swallows its own failure; the strict
                     # caller erases again and verifies the document is gone.
                     raise ProfileEmbeddingRecomputeError(f"profile {profile_id} has no members")
                 return True
 
-            # Privacy policy (#1280): an averaged profile voiceprint is a voiceprint write.
-            # Clearing an emptied profile above is a delete and stays allowed; computing a
-            # new average is not. Under `strict` (a speaker left the profile) the raise makes
-            # the caller ERASE the stored embedding, which is right: it still holds the
-            # removed voice and cannot be rebuilt while the scope is off.
-            decision = PrivacyView(db).voiceprints_for_scope(
-                int(profile.user_id), profile.organization_id
-            )
+            assert decision is not None
             if not decision.enabled:
                 logger.info(
                     "Profile %s embedding not recomputed: voiceprints off (%s)",
@@ -449,14 +520,15 @@ class ProfileEmbeddingService:
                     strict, f"profile {profile_id} voiceprints disabled by privacy policy"
                 )
 
-            embeddings = _member_embeddings(speakers, profile_id)
+            embeddings = _member_embeddings(member_stubs, profile_id)
             if not embeddings:
                 logger.warning(f"No valid embeddings found for profile {profile_id}")
                 return _not_recomputed(strict, f"profile {profile_id} has no member voiceprint")
 
             # Delegate averaging + OpenSearch storage to shared helpers
-            stored = _process_profile_with_embeddings(profile, profile_id, embeddings)
-            db.commit()
+            stored = _process_profile_with_embeddings(snapshot, profile_id, embeddings)
+            if not _write_profile_embedding_state(db, profile_id, snapshot):
+                _discard_orphaned_profile_document(snapshot.uuid)
             if not stored:
                 return _not_recomputed(
                     strict, f"OpenSearch refused the embedding write for profile {profile_id}"

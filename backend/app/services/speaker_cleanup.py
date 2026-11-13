@@ -271,6 +271,10 @@ def reconcile_speaker_impact(db: Session, impact: SpeakerImpact) -> list[dict[st
     from app.services import opensearch_erasure as ose
 
     residual: list[dict[str, Any]] = []
+    if impact.erase_speaker_uuids or impact.erase_profile_uuids:
+        # The caller's change is committed (above); end the read transaction that capturing
+        # the impact left open so the first OpenSearch call runs with none.
+        db.commit()
 
     def _fail(stage: str, err: object) -> None:
         residual.append({"stage": stage, "error": str(err)})
@@ -339,7 +343,9 @@ def _refresh_clusters(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
                 continue
             cluster.member_count = remaining
             try:
-                service._update_cluster_centroid(cluster, int(cluster.user_id), strict=True)
+                service._update_cluster_centroid(
+                    cluster, int(cluster.user_id), strict=True, release_transaction=True
+                )
             except CentroidRecomputeError as e:
                 logger.warning(f"Centroid of cluster {cluster_uuid} not rebuildable ({e}); erasing")
                 to_erase.append(cluster_uuid)
@@ -385,6 +391,7 @@ def _refresh_profiles(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
             logger.exception(f"Could not refresh profile {profile_id} after a speaker change")
             fail(STAGE_PROFILES, "could not refresh a profile embedding")
 
+    db.commit()  # end the last read's transaction: the erase below is OpenSearch only
     ose._erase_profile_docs(to_erase, fail)
 
 

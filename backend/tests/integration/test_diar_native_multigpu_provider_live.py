@@ -61,6 +61,7 @@ import pytest
 import requests
 
 from tests.compose_project import compose_service_container
+from tests.compose_project import queue_rivals
 from tests.integration.live_file_cleanup import delete_uploaded_file
 
 # `multi_gpu`: this file needs a MULTI-WORKER GPU TOPOLOGY (a running
@@ -80,6 +81,9 @@ ADMIN_PASSWORD = os.environ.get("OT_TEST_ADMIN_PASSWORD", "password")
 SAMPLE_AUDIO = os.path.join(
     os.path.dirname(__file__), "..", "fixtures", "media", "sample_short.wav"
 )
+
+#: Queues whose consumers can diarize.
+DIARIZE_QUEUES = {"gpu", "gpu-diarize"}
 
 #: (pytest id, compose service that must be running for this topology to apply)
 TOPOLOGIES = [
@@ -129,19 +133,19 @@ def test_diarize_capable_worker_actually_reaches_native_sidecar(
     # raising, this fails loudly instead of shelling out with a null argument.
     assert worker_container is not None
 
-    # An unattributable result must skip as NOT MEASURED, never pass (issue #711). If the
+    # An unattributable result must FAIL the precondition, never skip or pass (issue #711). If the
     # OTHER topology's diarizing worker is up too, both consume a diarize-capable queue in
     # the same deployment and the broker -- not this parametrisation -- picks the winner.
     # Measured 2026-09-05: with gpu-scaled and gpu-diarize both running, the "gpu-split"
     # case was served by gpu-scaled, and asserting on gpu-diarize's logs described a
     # container that had handled nothing.
-    rival_service = next(svc for _id, svc in TOPOLOGIES if svc != worker_service)
-    if compose_service_container(rival_service) is not None:
-        pytest.skip(
-            f"both '{worker_service}' and '{rival_service}' are running in this deployment, "
-            f"so queue routing decides which serves a job and this test cannot attribute the "
-            f"result to {topology_id} -- bring up exactly one diarizing topology and re-run"
-        )
+    rivals = queue_rivals(worker_container, DIARIZE_QUEUES)
+    assert not rivals, (
+        f"another worker consumes a diarize-capable queue ({', '.join(rivals)}) alongside "
+        f"'{worker_service}', so queue routing decides which serves a job and {topology_id} "
+        "cannot be attributed (issue #711): set GPU_SCALE_DEFAULT_WORKER=0 for this "
+        "measurement and bring up exactly one diarizing topology"
+    )
 
     if not os.path.isfile(SAMPLE_AUDIO):
         pytest.skip(f"no sample audio fixture at {SAMPLE_AUDIO}")

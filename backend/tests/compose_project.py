@@ -45,7 +45,9 @@ must never silently resolve to some other operator's stack.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -140,3 +142,48 @@ def compose_service_container(service: str) -> str | None:
     """
     containers = compose_service_containers(service)
     return containers[0] if containers else None
+
+
+_QUEUE_FLAG = re.compile(r"(?:^|\s)(?:-Q|--queues)(?:=|\s+)(\S+)")
+
+
+def consumed_queues(cmd: list[str]) -> set[str]:
+    """Celery queues named by ``-Q`` / ``--queues`` in a container's ``Config.Cmd``."""
+    match = _QUEUE_FLAG.search(" ".join(cmd))
+    return set(match.group(1).split(",")) if match else set()
+
+
+def rivals_from_commands(
+    worker: str, commands: dict[str, list[str]], queues: set[str]
+) -> list[str]:
+    """Containers other than ``worker`` whose command consumes any of ``queues``."""
+    return sorted(
+        name for name, cmd in commands.items() if name != worker and consumed_queues(cmd) & queues
+    )
+
+
+def queue_rivals(worker: str, queues: set[str]) -> list[str]:
+    """Running containers in the project under test, other than ``worker``, that consume
+    any of ``queues``.
+
+    Derived from each container's real command rather than a hardcoded service name, so a
+    consumer nobody listed (the default ``celery-worker`` under ``GPU_SCALE_DEFAULT_WORKER=1``)
+    is still found. A container that cannot be inspected is not a rival.
+    """
+    names = _docker_ps([f"label=com.docker.compose.project={compose_project_name()}"], "{{.Names}}")
+    commands: dict[str, list[str]] = {}
+    for name in names:
+        try:
+            completed = subprocess.run(  # fixed argv, no shell  # nosec B603
+                ["docker", "inspect", "--format", "{{json .Config.Cmd}}", name],
+                capture_output=True,
+                text=True,
+                timeout=_DOCKER_TIMEOUT,
+                check=False,
+            )
+            parsed = json.loads(completed.stdout) if completed.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError, ValueError):
+            continue
+        if isinstance(parsed, list):
+            commands[name] = [str(part) for part in parsed]
+    return rivals_from_commands(worker, commands, queues)

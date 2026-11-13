@@ -80,7 +80,7 @@ Three things to know before touching it:
 
 ## Summary-merge quality gate (`docs/design/summary_quality_eval_plan.md`)
 
-The instrument for "is the rewritten scope/merge rule set at least as good as the current one".
+The instrument for "is the independently written scope/merge rule set at least as good as the current one".
 Pure scorers in `harness/summary_{detectors,scoring,verdict,judge}.py`, run by
 `scripts/benchmark_summary.py` (package `scripts/summary_bench/`) through
 `scripts/run-summary-eval.sh`; the GPU window and the lead's arm files are the only things it

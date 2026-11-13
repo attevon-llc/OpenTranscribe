@@ -4,7 +4,7 @@ Plan only. Written 2026-11-01 against `chore/repo-cleanup` @ `96e8fd85b`. Nothin
 implemented yet. This file is the single source for the work: a fresh implementer with no
 conversation history should be able to execute any lane from it alone.
 
-Context: `docs/design/repo_cleanup_plan.md` section 0b point 3 (frontend duplicate and abstraction
+Context: the repo cleanup pass (frontend duplicate and abstraction
 pass: shared components, design tokens with light/dark parity, verified in a real browser on a
 fresh stack, 12 locales in parity, `ar` is RTL) and point 2 (long Svelte stylesheets are solved by
 a master styling layer and shared components, not by splitting components). The inventory that
@@ -996,7 +996,7 @@ Every lane is one commit-sized unit that leaves the app working.
 The lead runs the full `npm run test`, `npm run build` (bundle budget) and
 `scripts/safe-precommit.sh run --all-files` (both stages) once per batch, on a quiet tree.
 
-Commit discipline: `repo_cleanup_plan.md` §0.3 and §0.5. One writer commits; an implementer in its
+Commit discipline: One writer commits; an implementer in its
 own worktree may commit on its lane branch. Conventional commit messages:
 - `refactor(styles): ...` for zero-diff lanes.
 - `feat(ui): ...` for new primitives.

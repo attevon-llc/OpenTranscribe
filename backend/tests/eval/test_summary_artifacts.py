@@ -1,4 +1,4 @@
-"""Arms, the CLI surface, and the arm-isolation rule: no arm text in any artifact.
+"""Arms, the CLI surface, and the no-leak rule: no arm text in any artifact.
 
 The harness reads the rule strings at run time and records only a SHA-256 and a length. These
 tests run the real pipeline on a sentinel arm and then search everything it wrote.
@@ -19,7 +19,7 @@ from tests.eval.summary_bench_support import FakeTransport
 from tests.eval.summary_bench_support import load_bench
 from tests.eval.summary_bench_support import make_context as _context
 
-SENTINEL = "ARM-TEXT-SENTINEL-4f1c"
+SENTINEL = "RULE-TEXT-SENTINEL-4f1c"
 
 
 @pytest.fixture(scope="module")

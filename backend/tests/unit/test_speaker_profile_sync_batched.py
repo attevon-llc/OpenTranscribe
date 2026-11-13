@@ -31,6 +31,8 @@ class _RecordingClient:
         self.documents = documents
         self.events = events
         self.mgets = 0
+        self.mget_sizes: list[int] = []
+        self.requested_ids: set[str] = set()
         self.bulks = 0
         self.exists_calls = 0
         self.updates = 0
@@ -45,6 +47,8 @@ class _RecordingClient:
 
     def mget(self, index, body, **_):
         self.mgets += 1
+        self.mget_sizes.append(len(body["ids"]))
+        self.requested_ids.update(body["ids"])
         self.events.append("mget")
         return {
             "docs": [
@@ -111,12 +115,14 @@ def test_sync_uses_mget_and_bulk_per_chunk_and_converges(db_session, normal_user
     monkeypatch.setattr(os_client, "opensearch_client", fake)
     monkeypatch.setattr(speaker_metadata, "SYNC_CHUNK_SIZE", 3, raising=False)
 
-    # Count the other tests' committed rows out: the sweep is global over the shared database.
-    others = db_session.query(Speaker).filter(Speaker.id.notin_([s.id for s in speakers])).count()
     first = speaker_metadata.sync_speaker_profiles_to_opensearch(db_session)
 
     assert fake.exists_calls == 0  # no per-row HEAD requests
-    assert fake.mgets == -(-(7 + others) // 3)  # one mget per chunk of 3
+    # The sweep is global over the shared database, so rows other tests commit while it runs
+    # change its size; the chunking is pinned by what it asked for, not by a row count taken before.
+    assert all(size <= 3 for size in fake.mget_sizes)
+    assert fake.mgets == -(-sum(fake.mget_sizes) // 3)  # one mget per chunk of 3
+    assert {str(s.uuid) for s in speakers} <= fake.requested_ids
     assert first["updated"] == 6 and first["errors"] == 0
     assert first["skipped"] >= 1  # control: the speaker with no document was reported
     doc = documents[str(speakers[0].uuid)]

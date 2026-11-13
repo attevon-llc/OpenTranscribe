@@ -245,6 +245,19 @@ def _register_live_test_run(config: pytest.Config) -> None:
     config.stash[_LIVE_RUN_MARKER] = LiveRunMarker(default_testruns_dir(_project_root))
 
 
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Refuse a stack whose schema is not this checkout's head (controller only; see
+    ``tests/stack_preflight.py``). Override with ``ST_ALLOW='schema-head=<reason>'``."""
+    if hasattr(session.config, "workerinput"):
+        return
+    from tests.stack_preflight import EXIT_CODE
+    from tests.stack_preflight import run_preflight
+
+    problem = run_preflight()
+    if problem:
+        pytest.exit(problem, returncode=EXIT_CODE)
+
+
 def pytest_unconfigure(config: pytest.Config) -> None:
     marker = config.stash.get(_LIVE_RUN_MARKER, None)
     if marker is not None:

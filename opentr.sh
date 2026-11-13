@@ -14,6 +14,8 @@ set -uo pipefail
 source ./scripts/common.sh
 # shellcheck source=scripts/opentr-targets.sh
 source ./scripts/opentr-targets.sh
+# shellcheck source=scripts/opentr-info.sh
+source ./scripts/opentr-info.sh
 # shellcheck source=scripts/lib/ldap-test-overlay.sh
 source ./scripts/lib/ldap-test-overlay.sh
 # shellcheck source=scripts/lib/fresh-prod.sh
@@ -274,6 +276,8 @@ show_help() {
   echo "                      - Restart backend, all celery workers, celery-beat & flower without database reset"
   echo "  restart-frontend [--fresh <name>]"
   echo "                      - Restart frontend without affecting backend services"
+  echo "  restart-db --fresh <name>"
+  echo "                      - Restart only the postgres of a --fresh deployment (refused without --fresh)"
   echo "  restart-all [--fresh <name>]"
   echo "                      - Restart all services without resetting database"
   echo "                        (--fresh targets an isolated deployment; without it, the default stack)"
@@ -1315,52 +1319,6 @@ fresh_generate_baked_overlay() {
   echo "$file"
 }
 
-# Verify a baked (--no-bindmount) stack is actually RUNNING the code it claims to
-# (issue #528). Compose has been observed accepting `--force-recreate` on the wire
-# and still leaving old containers up, so after `up` we read GIT_SHA back from
-# every baked service and compare it to the SHA this run exported. A mismatch is
-# self-healed once with the surgical per-service recreate (measured to work where
-# the blanket flag did not), then re-checked; if it STILL disagrees we exit 1 —
-# a baked stack on stale code silently invalidates every measurement taken
-# against it, which is worse than a failed start.
-#
-# $1 = the compose "-f ..." chain for this deployment. Uses $GIT_SHA (exported
-# at script top) as the expected value. Containers reporting nothing or
-# "unknown" count as stale: an unstamped container cannot attribute a
-# measurement either.
-fresh_verify_baked_git_sha() {
-  local files="$1"
-  local expected="$GIT_SHA"
-  local attempt svc cid got stale
-  for attempt in 1 2; do
-    stale=()
-    for svc in "${FRESH_BAKED_SERVICES[@]}"; do
-      # shellcheck disable=SC2086
-      cid="$(docker compose $files ps -q "$svc" 2>/dev/null)"
-      [ -z "$cid" ] && continue # not part of this deployment (profile off)
-      got="$(docker exec "$cid" printenv GIT_SHA 2>/dev/null || echo '<unset>')"
-      if [ "$got" != "$expected" ]; then
-        stale+=("$svc")
-        echo "   ✗ ${svc}: GIT_SHA=${got} (expected ${expected})"
-      fi
-    done
-    if [ "${#stale[@]}" -eq 0 ]; then
-      echo "🔏 Baked-stack code verified: GIT_SHA=${expected} on every baked service."
-      return 0
-    fi
-    if [ "$attempt" -eq 1 ]; then
-      echo "⚠️  ${#stale[@]} baked service(s) are running STALE code — recreating surgically (issue #528)..."
-      # shellcheck disable=SC2086
-      docker compose $files up -d --no-deps --force-recreate "${stale[@]}"
-    fi
-  done
-  echo ""
-  echo "❌ Baked stack is STILL running stale code after a surgical recreate (issue #528)."
-  echo "   Any measurement against this stack would describe code nobody is running."
-  echo "   Inspect: docker compose ${files} ps   and compare printenv GIT_SHA per container."
-  exit 1
-}
-
 # Every host port a fresh dev stack publishes, as "VAR=default" pairs. VAR is the
 # variable the base compose files already interpolate into their single `ports:`
 # entry; default is the value baked into that entry.
@@ -1814,43 +1772,6 @@ write_live_data_markers() {
   done
 }
 
-# `data-paths` subcommand — print resolved live data locations so nothing gets
-# deleted by accident. Read-only; never starts or stops anything.
-print_data_paths() {
-  resolve_data_paths
-  echo "📍 OpenTranscribe data locations"
-  echo "--------------------------------"
-  if [ "$DP_NAS_ACTIVE" = "true" ]; then
-    echo "NAS/bind overlay: ACTIVE (docker-compose.nas.yml auto-loads from .env)"
-    echo ""
-    echo "⚠️  LIVE BIND-MOUNTED DATA — DO NOT delete or 'clean up' these paths:"
-    echo "   MinIO media:  ${MINIO_NAS_PATH:-<unset> (default /mnt/nas/opentranscribe-minio)}"
-    echo "   PostgreSQL:   ${POSTGRES_DATA_PATH:-<unset> (default /mnt/nvm/opentranscribe/pg)}"
-    echo "   OpenSearch:   ${OPENSEARCH_DATA_PATH:-<unset> (default /mnt/nvm/opentranscribe/os)}"
-    echo ""
-    echo "   These dirs carry a '.opentranscribe-live-data' marker after a non-fresh start."
-  else
-    echo "NAS/bind overlay: INACTIVE — data lives in Docker NAMED VOLUMES (project 'opentranscribe'):"
-    echo "   opentranscribe_postgres_data, opentranscribe_minio_data,"
-    echo "   opentranscribe_opensearch_data, opentranscribe_redis_data"
-    echo "   (inspect with: docker volume ls | grep opentranscribe)"
-  fi
-  echo ""
-  echo "Fresh deployments (isolated, never touch the above):"
-  if [ -d "$FRESH_OVERLAY_DIR" ] && ls "${FRESH_OVERLAY_DIR}"/*.yml >/dev/null 2>&1; then
-    local f n
-    for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
-      # *-ports.yml is a stale pre-#343 artifact, not a deployment (see #343).
-      # *-baked.yml is the --no-bindmount volumes overlay (#55), also not its own deployment.
-      case "$f" in *-ports.yml|*-baked.yml) continue;; esac
-      n="$(basename "$f" .yml)"
-      echo "   otfresh-${n} → named volumes otfresh-${n}_{postgres,minio,opensearch,redis}_data"
-    done
-  else
-    echo "   (none — create with ./opentr.sh start dev --fresh <name>)"
-  fi
-}
-
 # Build the compose-file chain used to address a fresh deployment for
 # stop/status/destroy. Mirrors the dev chain (base + override + gpu), plus any
 # aux overlays the deployment was started with, plus the generated
@@ -1911,6 +1832,43 @@ fresh_status() {
   fi
   # shellcheck disable=SC2086
   COMPOSE_PROJECT_NAME="$proj" docker compose $chain ps 2>/dev/null || true
+}
+
+# `data-paths` subcommand — print resolved live data locations so nothing gets
+# deleted by accident. Read-only; never starts or stops anything.
+print_data_paths() {
+  resolve_data_paths
+  echo "📍 OpenTranscribe data locations"
+  echo "--------------------------------"
+  if [ "$DP_NAS_ACTIVE" = "true" ]; then
+    echo "NAS/bind overlay: ACTIVE (docker-compose.nas.yml auto-loads from .env)"
+    echo ""
+    echo "⚠️  LIVE BIND-MOUNTED DATA — DO NOT delete or 'clean up' these paths:"
+    echo "   MinIO media:  ${MINIO_NAS_PATH:-<unset> (default /mnt/nas/opentranscribe-minio)}"
+    echo "   PostgreSQL:   ${POSTGRES_DATA_PATH:-<unset> (default /mnt/nvm/opentranscribe/pg)}"
+    echo "   OpenSearch:   ${OPENSEARCH_DATA_PATH:-<unset> (default /mnt/nvm/opentranscribe/os)}"
+    echo ""
+    echo "   These dirs carry a '.opentranscribe-live-data' marker after a non-fresh start."
+  else
+    echo "NAS/bind overlay: INACTIVE — data lives in Docker NAMED VOLUMES (project 'opentranscribe'):"
+    echo "   opentranscribe_postgres_data, opentranscribe_minio_data,"
+    echo "   opentranscribe_opensearch_data, opentranscribe_redis_data"
+    echo "   (inspect with: docker volume ls | grep opentranscribe)"
+  fi
+  echo ""
+  echo "Fresh deployments (isolated, never touch the above):"
+  if [ -d "$FRESH_OVERLAY_DIR" ] && ls "${FRESH_OVERLAY_DIR}"/*.yml >/dev/null 2>&1; then
+    local f n
+    for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
+      # *-ports.yml is a stale pre-#343 artifact, not a deployment (see #343).
+      # *-baked.yml is the --no-bindmount volumes overlay (#55), also not its own deployment.
+      case "$f" in *-ports.yml|*-baked.yml) continue;; esac
+      n="$(basename "$f" .yml)"
+      echo "   otfresh-${n} → named volumes otfresh-${n}_{postgres,minio,opensearch,redis}_data"
+    done
+  else
+    echo "   (none — create with ./opentr.sh start dev --fresh <name>)"
+  fi
 }
 
 # `fresh-list` — list all known fresh deployments (by generated overlay) plus
@@ -4210,6 +4168,11 @@ case "$1" in
   restart-all)
     shift
     restart_all "$@"
+    ;;
+
+  restart-db)
+    shift
+    restart_db "$@"
     ;;
 
   rebuild-backend)

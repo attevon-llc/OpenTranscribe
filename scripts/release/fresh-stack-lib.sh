@@ -25,6 +25,25 @@
 # what is written, so the cap must simply exceed the low watermark.
 # The stock port set is READ from opentr.sh's FRESH_PORT_VARS, never copied here.
 
+# shellcheck source=../lib/model-cache-dir.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/model-cache-dir.sh"
+
+# fresh_stack_step <label> [command...]
+#   Time one setup step: a UTC start line, then `done duration_s=<n>` (stderr, so it never mixes
+#   with a caller's captured stdout). With a command it runs it and returns its status; with none
+#   it only stamps. The setup used to be reconstructed from file mtimes after the fact.
+fresh_stack_step() {
+    local label="$1" started rc=0
+    shift
+    echo "[$(date -u +%FT%TZ)] fresh-stack: ${label} start" >&2
+    started=$SECONDS
+    if [[ $# -gt 0 ]]; then
+        "$@" || rc=$?
+    fi
+    echo "[$(date -u +%FT%TZ)] fresh-stack: ${label} done duration_s=$((SECONDS - started)) rc=${rc}" >&2
+    return "$rc"
+}
+
 # fresh_stack_name <version>  -> deployment name
 fresh_stack_name() {
     if [[ -n "${RELEASE_TEST_FRESH_NAME:-}" ]]; then
@@ -77,12 +96,14 @@ fresh_stack_teardown() {
 # first, so the stack never comes up (release.sh test exit 3). Seed the isolated dir from the
 # existing export (read-only copy; the live export is never mounted or written) so every run
 # starts with the same, complete model set. Source: RELEASE_TEST_DIAR_MODELS_SRC, else
-# DIAR_NATIVE_MODELS_DIR, else ./models/diar-native. No source or an empty one => skip, and
+# DIAR_NATIVE_MODELS_DIR, else <resolved MODEL_CACHE_DIR>/diar-native (the MAIN checkout's cache
+# from a worktree: a worktree has no models/, so the stack used to provision its own, a ~140 s
+# cold export inside backend startup). No source or an empty one => skip, and
 # the stack falls back to provisioning exactly as before.
 fresh_stack_seed_models() {
     local name="$1" repo="${REPO_ROOT:-.}" slug src dest
     slug="$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
-    src="${RELEASE_TEST_DIAR_MODELS_SRC:-${DIAR_NATIVE_MODELS_DIR:-$repo/models/diar-native}}"
+    src="${RELEASE_TEST_DIAR_MODELS_SRC:-${DIAR_NATIVE_MODELS_DIR:-$(resolve_model_cache_dir "$repo")/diar-native}}"
     dest="$repo/.fresh/${slug:-default}/diar-native-models"
     if [[ ! -d "$src" || -z "$(ls -A "$src" 2>/dev/null)" ]]; then
         echo "no diar-native export at $src to seed from; the stack will provision its own" >&2
@@ -97,21 +118,22 @@ fresh_stack_seed_models() {
 # run), exports the offset ports + COMPOSE_PROJECT_NAME for the gate, then starts it.
 fresh_stack_up() {
     local name="$1" offset="$2" repo="${REPO_ROOT:-.}" kv spec
-    fresh_stack_teardown "$name"
+    fresh_stack_step "teardown ${name}" fresh_stack_teardown "$name"
     while IFS= read -r kv; do
         [[ -n "$kv" ]] && declare -gx "$kv"
     done < <(fresh_stack_port_exports "$offset")
     export COMPOSE_PROJECT_NAME="otfresh-${name}"
     for spec in $(fresh_stack_fast_volumes); do
-        docker volume create --driver local --opt type=tmpfs --opt device=tmpfs \
-            --opt "o=size=${spec##*:},mode=1777" "otfresh-${name}_${spec%%:*}" >&2 || return 1
+        fresh_stack_step "volume ${spec%%:*}" docker volume create --driver local --opt type=tmpfs \
+            --opt device=tmpfs --opt "o=size=${spec##*:},mode=1777" "otfresh-${name}_${spec%%:*}" >&2 || return 1
     done
     # The e2e runner and the gate address the app by URL; point them at the offset ports.
     export E2E_FRONTEND_URL="http://localhost:${FRONTEND_PORT:-5173}"
     export E2E_BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}"
-    fresh_stack_seed_models "$name" || return 1
-    "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" >&2 || return 1
-    fresh_stack_seed_library
+    fresh_stack_step "seed models" fresh_stack_seed_models "$name" || return 1
+    fresh_stack_step "opentr.sh start dev --fresh ${name}" \
+        "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" >&2 || return 1
+    fresh_stack_step "seed library and first run" fresh_stack_seed_library
 }
 
 # fresh_stack_seed_library: the same small corpus on every run (scripts/seed-fresh-deployment.sh
@@ -123,8 +145,8 @@ fresh_stack_seed_library() {
     BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}" bash "$repo/scripts/seed-fresh-deployment.sh" >&2 || true
     # The caller that runs the first-run wizard e2e (60-test.sh, issue #1366) needs the wizard
     # still pending, and completes it itself once that test has run.
-    [[ "${FRESH_STACK_DEFER_FIRST_RUN:-0}" == "1" ]] || fresh_stack_complete_first_run
-    fresh_stack_warm_frontend
+    [[ "${FRESH_STACK_DEFER_FIRST_RUN:-0}" == "1" ]] || fresh_stack_step "first-run completion" fresh_stack_complete_first_run
+    fresh_stack_step "warm frontend" fresh_stack_warm_frontend
 }
 
 # fresh_stack_warm_frontend: compile every frontend route once before the browser tests. A cold

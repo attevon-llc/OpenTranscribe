@@ -32,20 +32,17 @@ and `backend/tests/query_budget.py`.
 Never run this against the dev stack: the seed tool and the driver refuse its ports. Check the host
 is quiet first (`uptime`); concurrent builds or test suites make timings meaningless.
 
-Enable the statistics extensions on this stack only. The library list is written **unquoted**; a
-quoted `'a,b'` is stored as one library name and Postgres then fails to start.
+Enable the statistics extensions on this stack only, with one command (it loads
+`pg_stat_statements` and `auto_explain` through `ALTER SYSTEM`, restarts postgres and the backend
+through `./opentr.sh restart-db` / `restart-backend`, creates the extension, and verifies it; it
+refuses the live, stock and `ot-reltest-*` stacks and is a no-op when already loaded):
 
-```sql
-ALTER SYSTEM SET shared_preload_libraries = pg_stat_statements, auto_explain;
-ALTER SYSTEM SET pg_stat_statements.track = 'top';
-ALTER SYSTEM SET track_io_timing = on;
-ALTER SYSTEM SET auto_explain.log_min_duration = '100ms';
-ALTER SYSTEM SET auto_explain.log_analyze = on;
-ALTER SYSTEM SET auto_explain.log_format = 'json';
+```bash
+python3 scripts/lib/stack_target.py prepare --fresh perf1337 --pg-stat-statements
 ```
 
-Restart with `./opentr.sh stop --fresh perf1337` and `./opentr.sh start dev --fresh perf1337`, then
-`CREATE EXTENSION IF NOT EXISTS pg_stat_statements;` and confirm both libraries in `pg_settings`.
+The SQL lives in `PGSS_SETTINGS` in `scripts/lib/stack_target.py`. The library list is written
+**unquoted**; a quoted `'a,b'` is stored as one library name and Postgres then fails to start.
 The full list of settings is in `docs/design/1337_query_review_plan.md` section 4.1.
 
 ## 2. Seed and snapshot

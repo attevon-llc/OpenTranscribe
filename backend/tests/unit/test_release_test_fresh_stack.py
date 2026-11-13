@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -233,6 +234,43 @@ def test_models_are_seeded_into_the_isolated_dir_before_start(tmp_path: Path) ->
     empty = tmp_path / "none"
     _bash("fresh_stack_up rel-y 400", repo, {**env, "RELEASE_TEST_DIAR_MODELS_SRC": str(empty)})
     assert not (repo / ".fresh" / "rel-y").exists()
+
+
+def test_models_are_seeded_from_the_main_checkouts_cache_when_run_in_a_worktree(
+    tmp_path: Path,
+) -> None:
+    """A worktree has no models/. The default source must be the MAIN checkout's cache, or the
+    stack provisions its own diar-native export inside backend startup (~140 s cold)."""
+    main = tmp_path / "main"
+    (main / "models" / "diar-native").mkdir(parents=True)
+    (main / "models" / "diar-native" / "plda_lda.npy").write_bytes(b"x")
+    stub = _stub_repo(tmp_path)
+    shutil.copy(stub / "opentr.sh", main / "opentr.sh")
+    git = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run([*git, "init", "-q", str(main)], check=True, capture_output=True)
+    subprocess.run([*git, "-C", str(main), "add", "opentr.sh"], check=True, capture_output=True)
+    subprocess.run([*git, "-C", str(main), "commit", "-qm", "x"], check=True, capture_output=True)
+    wt = tmp_path / "wt"
+    subprocess.run([*git, "-C", str(main), "worktree", "add", "-q", str(wt)], check=True)
+    env = {"STUB_LOG": str(tmp_path / "calls.log"), "RELEASE_TEST_FAST_VOLUMES": ""}
+    env_clean = {"MODEL_CACHE_DIR": "", "DIAR_NATIVE_MODELS_DIR": ""}
+    _bash("fresh_stack_up rel-w 400", wt, {**env, **env_clean})
+    seeded = wt / ".fresh" / "rel-w" / "diar-native-models" / "plda_lda.npy"
+    assert seeded.is_file(), "the worktree stack was not seeded from the main checkout's cache"
+    assert not (wt / "models").exists()
+
+
+def test_every_setup_step_prints_a_utc_start_and_a_duration() -> None:
+    """The 9.4-minute setup used to be reconstructed from file mtimes."""
+    proc = subprocess.run(
+        ["bash", "-c", f"source {LIB}\nfresh_stack_step 'a step' bash -c 'exit 3'"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 3, "the step must return the wrapped command's status"
+    assert re.search(r"\[\d{4}-\d\d-\d\dT[\d:]+Z\] fresh-stack: a step start", proc.stderr)
+    assert re.search(r"fresh-stack: a step done duration_s=\d+ rc=3", proc.stderr)
 
 
 def _gb(token: str) -> int:
@@ -479,7 +517,12 @@ def test_warm_up_runs_after_the_wizard_step_and_never_fails_the_stack(tmp_path: 
     assert rc == 0 and "warm-up failed" in err, err
     assert "--base http://localhost:5573 --api http://localhost:5574" in log.read_text()
     lib = LIB.read_text(encoding="utf-8")
-    assert lib.index("fresh_stack_complete_first_run\n    fresh_stack_warm_frontend") > 0
+    assert (
+        lib.index(
+            'fresh_stack_step "first-run completion" fresh_stack_complete_first_run\n    fresh_stack_step "warm frontend"'
+        )
+        > 0
+    )
 
 
 def test_backend_facing_mock_urls_use_the_in_network_port_not_the_host_offset(monkeypatch) -> None:

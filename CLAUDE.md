@@ -51,7 +51,7 @@ for you (a hand-written `-f` list silently drifts as overlays are added):
 ```bash
 ./opentr.sh start prod --build              # build prod images from Dockerfile.prod, then start prod
 ./opentr.sh start prod --build --with-pki   # same, with the PKI/nginx overlay
-./opentr.sh rebuild-backend [--nas]         # dev: rebuild backend services in place (--no-deps)
+./opentr.sh rebuild-backend [--nas]         # dev: rebuild backend services in place (--no-deps), after requirements/Dockerfile changes
 ./opentr.sh rebuild-frontend                # dev: rebuild frontend in place (--no-deps)
 ./opentr.sh build                           # dev: rebuild all images without starting
 ```

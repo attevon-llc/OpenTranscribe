@@ -47,8 +47,8 @@ OPENTR_LIVE_PROJECTS=(
 )
 
 # compose_project_name
-#   The live stack's compose project. $COMPOSE_PROJECT_NAME wins; otherwise detected from a
-#   running postgres container's label; otherwise the old directory-name guess, which is only
+#   The live stack's compose project. $COMPOSE_PROJECT_NAME wins, then the project publishing an
+#   exported $POSTGRES_PORT; otherwise detected from a running postgres container's label; otherwise the old directory-name guess, which is only
 #   reached when no stack is up (in which case every lookup below would find nothing anyway).
 #
 # ⚠️ The detection is an ALLOWLIST, not "the first postgres docker lists", and both halves of
@@ -78,7 +78,19 @@ compose_project_name() {
         return
     fi
 
-    local running=() line root candidate
+    local running=() line root candidate owner="" owner_rc=0
+    # An EXPORTED POSTGRES_PORT is explicit intent too: the project publishing it is the stack
+    # the caller is pointed at (a --fresh target chosen by exporting ports only, or a stack a
+    # worktree started). Without this step the allowlist below resolved the LIVE project.
+    # The decision lives in stack_target.py so pytest and shell cannot drift; no pipe here.
+    if [[ "${POSTGRES_PORT:-}" =~ ^[0-9]+$ ]]; then
+        owner="$(python3 "$(dirname "${BASH_SOURCE[0]}")/stack_target.py" resolve \
+            --port-owner "$POSTGRES_PORT" 2>/dev/null)" || owner_rc=$?
+        if [[ "$owner_rc" -eq 0 && -n "$owner" ]]; then
+            echo "$owner"
+            return
+        fi
+    fi
     while IFS= read -r line; do
         [[ -n "$line" ]] && running+=("$line")
     done < <(docker ps \

@@ -133,16 +133,20 @@ else
         "read the per-phase output above; re-run ./scripts/run-integration-tests.sh"
 fi
 
-# The v0.6.0 browser journeys (#1282 item A), on the SAME fresh stack: run-e2e.sh reads the
+# The v0.6.0 browser journeys (#1282 item A), on the SAME fresh stack. Through run-dev-tests.sh
+# for the same reason as the gate above: the chat journey needs the mock-llm overlay, which the
+# gate's own run stopped when it finished (a direct run-e2e-release.sh call got 400 on the
+# private mock URL, 3 setup errors). run-e2e.sh reads the
 # E2E_* / *_PORT variables fresh-stack-lib.sh exported, so this cannot reach the dev stack.
 # Its own criterion, because it is a separate runner with its own exit code; the integration
 # gate above only runs the 5-file smoke set.
 journeys_rc=0
-./scripts/e2e/run-e2e-release.sh || journeys_rc=$?
+./scripts/run-dev-tests.sh --e2e-release || journeys_rc=$?
+# 5 = NOT MEASURED (see above): the journeys verified nothing, so this blocking criterion fails.
 if (( journeys_rc == 0 )); then
     record release-e2e-journeys pass
 else
-    record release-e2e-journeys fail "run-e2e-release.sh exited $journeys_rc" \
+    record release-e2e-journeys fail "run-dev-tests.sh --e2e-release exited $journeys_rc" \
         "read the failing journey above; re-run ./scripts/e2e/run-e2e-release.sh --fresh ${FRESH_NAME}"
     (( rc == 0 )) && rc=1
 fi

@@ -45,7 +45,13 @@ def test_every_selected_file_exists() -> None:
 
 def test_stage_runs_the_selection_and_records_its_own_criterion() -> None:
     text = STAGE.read_text(encoding="utf-8")
-    assert "scripts/e2e/run-e2e-release.sh" in text
+    assert re.search(r"^\s*\./scripts/run-dev-tests\.sh --e2e-release", text, re.M), (
+        "the journeys must run through the overlay orchestrator: the chat journey needs mock-llm"
+    )
+    assert not re.search(r"^\s*\./scripts/e2e/run-e2e-release\.sh", text, re.M)
+    dev = (REPO_ROOT / "scripts" / "run-dev-tests.sh").read_text(encoding="utf-8")
+    assert "--e2e-release)" in dev
+    assert 'scripts/e2e/run-e2e-release.sh"' in dev
     assert re.search(r"record release-e2e-journeys (pass|fail)", text)
 
 

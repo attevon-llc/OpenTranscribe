@@ -50,6 +50,8 @@ stages:
         severity: blocking
       - id: lite-mode
         severity: blocking
+      - id: lite-demo-overlay
+        severity: blocking
       - id: cold-cache-model-download
         severity: blocking
       - id: cold-cache-weights-present

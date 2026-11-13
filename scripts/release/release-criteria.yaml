@@ -287,6 +287,15 @@ stages:
         # pull_policy: never.
         severity: blocking
 
+      - id: lite-demo-overlay
+        description: >-
+          Scenario C's demo leg: the public-demo overlay (docker-compose.demo.yml) started on the
+          lite stack's own built images, no rebuild and no pull. Frontend and backend healthy,
+          /api/health 200 through the frontend, a write refused with demo_read_only. Proves what
+          nothing else does: the overlay starts and serves on shipped bytes (S6v2 found the demo
+          frontend crash-looping on a Flower upstream scaled to 0).
+        severity: blocking
+
       # ─── Scenario D: the model downloader from an EMPTY cache ───────────
       # v0.6.0 shipped a scripts/download-models.py whose `pyannote` group
       # exits 1 from a cold cache on EVERY host, CPU and GPU alike (synthetic

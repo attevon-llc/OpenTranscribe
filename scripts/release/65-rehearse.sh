@@ -458,6 +458,10 @@ else
 
     if [[ $lite_rc -eq 0 ]]; then
         echo -e "${BLUE}Scenario C — lite (CPU-only) deployment, mocked cloud ASR + mocked LLM${NC}" >&2
+        # The demo leg (lib/demo-leg.sh) writes its own verdict here: a distinct criterion,
+        # so a red demo start names itself instead of failing "lite-mode" wholesale.
+        DEMO_LEG_VERDICT_FILE="$(mktemp -t ot-demo-leg.XXXXXX)"; : > "$DEMO_LEG_VERDICT_FILE"
+        export DEMO_LEG_VERDICT_FILE
         rehearse_timed "Scenario C" ./scripts/release-tests/test-lite-mode.sh --yes || lite_rc=$?
     fi
 
@@ -563,6 +567,20 @@ record upgrade-from-previous "$(scenario_outcome "$upgrade_rc" "$PATCH_SKIP_REAS
 record lite-mode "$(scenario_outcome "$lite_rc" "$PATCH_SKIP_REASON")" \
     "${PATCH_SKIP_REASON:-test-lite-mode.sh rc=$lite_rc}" \
     "read the REPORT.md under its TEST_ROOT" "${PATCH_SKIP_REASON:+waived}"
+
+# The demo leg of Scenario C. Empty/absent verdict = the leg never ran = not-measured, never a pass.
+demo_leg_outcome() {
+    local line=""
+    [[ -z "$PATCH_SKIP_REASON" ]] || { printf 'not-measured\t%s\n' "$PATCH_SKIP_REASON"; return; }
+    [[ -n "${DEMO_LEG_VERDICT_FILE:-}" && -s "$DEMO_LEG_VERDICT_FILE" ]] && line="$(tail -n 1 "$DEMO_LEG_VERDICT_FILE")"
+    case "${line%%$'\t'*}" in
+        pass|fail) printf '%s\n' "$line" ;;
+        *) printf 'not-measured\tScenario C wrote no demo-leg verdict\n' ;;
+    esac
+}
+demo_line="$(demo_leg_outcome)"
+record lite-demo-overlay "${demo_line%%$'\t'*}" "${demo_line#*$'\t'}" \
+    "read the demo leg lines of Scenario C's REPORT.md" "${PATCH_SKIP_REASON:+waived}"
 
 # Scenario D, one criterion per question so a red one names what broke. Each reads the
 # scenario's evidence through the oracle; a missing file is not-measured, never a pass.

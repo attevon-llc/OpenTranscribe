@@ -876,9 +876,13 @@ def test_visual_regression(
             # all (see `_CONDITIONAL_SELECTORS`).
             _assert_masks(page, "file_detail")
         elif surface == "speakers":
-            # Cluster rows (and the chips the masks cover) exist only once the owned clip's
-            # speakers have been through a real clustering run.
+            # Cluster rows (and the chips the masks cover) exist only once speakers have been
+            # through a real clustering run, and recluster only builds a cluster from 2 or more
+            # speakers with matching voiceprints (a lone speaker stays unclustered). The clip is
+            # single-voice, so a second upload of it supplies the second, matching speaker; the
+            # factory deletes it on teardown.
             request.getfixturevalue("owned_transcribed_file")
+            request.getfixturevalue("owned_media_factory")(request.getfixturevalue("admin_token"))
             wait_for_clustered_speakers(backend_url, request.getfixturevalue("api_token"))
             page.goto(f"{base_url}/speakers")
             page.wait_for_selector(".speakers-page", timeout=30000)

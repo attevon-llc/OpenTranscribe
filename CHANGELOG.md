@@ -12,6 +12,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Added
 
+- `ensure_nltk_corpora` uses `resolve_backend_image`, so a dev host no longer pulls the 9.6 GB release image (EFFC).
 - `download-models.py` runs the diar-native group as a child process overlapping the other groups once pyannote is done, with one manifest and the same exit-1-on-failure contract (EFFC SU1).
 - The download, redaction, cloud-asr, NLP and embedding workers no longer wait for `backend: service_healthy` (they still wait for `migrate`); GPU workers, the CPU worker and beat keep waiting because they can run diarization (EFFC B1).
 - `./opentr.sh restart-backend --only <service>[,<service>]` restarts just the named containers (unknown names exit 2); the service list lives in `scripts/lib/restart-services.sh` (EFFC D3).

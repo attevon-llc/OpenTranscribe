@@ -28,12 +28,19 @@ set -euo pipefail
 # ============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BACKEND_URL="${E2E_BACKEND_URL:-http://localhost:5174}"
-FRONTEND_URL="${E2E_FRONTEND_URL:-http://localhost:5173}"
-PKI_URL="${PKI_E2E_URL:-https://localhost:5182}"
+# The stack under test is resolved through compose labels and its OBSERVED ports (never the stock
+# ports, which may belong to another stack); st_target also exports COMPOSE_PROJECT_NAME.
+# shellcheck source=lib/stack-target.sh
+source "${SCRIPT_DIR}/lib/stack-target.sh"
+st_target || exit $?
+BACKEND_URL="${E2E_BACKEND_URL:-http://localhost:${BACKEND_PORT}}"
+FRONTEND_URL="${E2E_FRONTEND_URL:-http://localhost:${FRONTEND_PORT}}"
+# The PKI frontend is a container THIS script starts, so its host port is an input: a free one.
+PKI_HTTPS_PORT="${PKI_HTTPS_PORT:-$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')}"
+PKI_URL="${PKI_E2E_URL:-https://localhost:${PKI_HTTPS_PORT}}"
 ADMIN_EMAIL="admin@example.com"
 ADMIN_PASSWORD="password"
-PKI_CONTAINER_NAME="opentranscribe-frontend-pki"
+PKI_CONTAINER_NAME="${ST_PROJECT}-frontend-pki"
 PKI_IMAGE_TAG="opentranscribe-frontend:pki-test"
 VENV_PATH="${PROJECT_ROOT}/backend/venv"
 TESTS_DIR="${PROJECT_ROOT}/backend/tests/e2e"
@@ -106,9 +113,9 @@ Options:
   --help                 Show this help message
 
 Environment Variables:
-  E2E_FRONTEND_URL       Frontend URL (default: http://localhost:5173)
-  E2E_BACKEND_URL        Backend URL (default: http://localhost:5174)
-  PKI_E2E_URL            PKI HTTPS URL (default: https://localhost:5182)
+  E2E_FRONTEND_URL       Frontend URL (default: the resolved stack's frontend)
+  E2E_BACKEND_URL        Backend URL (default: the resolved stack's backend)
+  PKI_E2E_URL            PKI HTTPS URL (default: a free port, published by this script)
 
 Examples:
   ./scripts/run-auth-e2e.sh                        # Run all tests
@@ -213,7 +220,7 @@ restore_admin_local_auth() {
     # separate pkiadmin@example.com identity instead — so this is normally a no-op
     # ("Admin already has local auth"). It stays in case some other phase or a future
     # change ever converts the shared admin account's auth_type again.
-    docker exec opentranscribe-backend python3 -c "
+    docker exec "$(st_container backend)" python3 -c "
 import os, sys
 sys.path.insert(0, '/app')
 os.environ.setdefault('POSTGRES_HOST', 'postgres')
@@ -238,7 +245,7 @@ db.close()
 
 reset_admin_mfa_db() {
     # Reset MFA for admin user and clean up MFA test users
-    docker exec opentranscribe-backend python3 -c "
+    docker exec "$(st_container backend)" python3 -c "
 import os, sys
 sys.path.insert(0, '/app')
 os.environ.setdefault('POSTGRES_HOST', 'postgres')
@@ -285,7 +292,7 @@ cleanup_on_exit() {
     # `grep -q` exits at its first match, `docker ps` can take SIGPIPE (141), and `pipefail`
     # turns that MATCH into a non-match — so a still-running PKI frontend reads as absent and
     # this cleanup arm is skipped, leaking a container that holds the port the next run needs.
-    if [ -n "$(docker ps -q --filter "name=${PKI_CONTAINER_NAME}" 2>/dev/null)" ]; then
+    if [ -n "$(docker ps -q --filter "name=^${PKI_CONTAINER_NAME}\$" 2>/dev/null)" ]; then
         log_step "Stopping PKI frontend container..."
         docker stop "${PKI_CONTAINER_NAME}" 2>/dev/null
         docker rm "${PKI_CONTAINER_NAME}" 2>/dev/null
@@ -388,16 +395,16 @@ check_prerequisites() {
     fi
     log_ok "Backend is running at ${BACKEND_URL}"
 
-    if ! port_open 5173; then
-        log_err "Frontend not responding at port 5173"
+    if ! port_open "${FRONTEND_PORT}"; then
+        log_err "Frontend not responding at port ${FRONTEND_PORT}"
         exit 1
     fi
     log_ok "Frontend is running at ${FRONTEND_URL}"
 
     # Docker network
     log_step "Checking Docker network..."
-    if ! docker network inspect transcribe-app_default >/dev/null 2>&1; then
-        log_err "Docker network 'transcribe-app_default' does not exist"
+    if ! docker network inspect ${ST_PROJECT}_default >/dev/null 2>&1; then
+        log_err "Docker network '${ST_PROJECT}_default' does not exist"
         exit 1
     fi
     log_ok "Docker network exists"
@@ -615,19 +622,19 @@ phase_3_pki() {
     log_step "Starting PKI frontend container with mTLS..."
     if ! docker run -d \
         --name "${PKI_CONTAINER_NAME}" \
-        --network transcribe-app_default \
+        --network ${ST_PROJECT}_default \
         -v "${PROJECT_ROOT}/frontend/nginx-pki.conf:/etc/nginx/conf.d/default.conf:ro" \
         -v "${PROJECT_ROOT}/scripts/pki/test-certs/nginx/server.crt:/etc/nginx/certs/server.crt:ro" \
         -v "${PROJECT_ROOT}/scripts/pki/test-certs/nginx/server.key:/etc/nginx/certs/server.key:ro" \
         -v "${PROJECT_ROOT}/scripts/pki/test-certs/ca/ca.crt:/etc/nginx/certs/ca.crt:ro" \
-        -p 5182:8443 \
+        -p "${PKI_HTTPS_PORT}:8443" \
         -p "${PKI_HTTP_PORT:-5187}:8080" \
         "${PKI_IMAGE_TAG}"; then
         log_err "Failed to start PKI frontend container"
         RESULT_pki=1
         return 1
     fi
-    wait_for_port 5182 30 "PKI Frontend (HTTPS)" || { RESULT_pki=1; return 1; }
+    wait_for_port "${PKI_HTTPS_PORT}" 30 "PKI Frontend (HTTPS)" || { RESULT_pki=1; return 1; }
 
     # Step 5: Enable PKI in backend auth config with admin DN
     log_step "Enabling PKI authentication in backend..."
@@ -674,7 +681,7 @@ phase_3_pki() {
     log_step "Restarting dev frontend..."
     docker start "${DEV_FRONTEND_CONTAINER:-}" >/dev/null 2>&1
     DEV_FRONTEND_STOPPED=false
-    wait_for_port 5173 30 "Dev Frontend" || true
+    wait_for_port "${FRONTEND_PORT}" 30 "Dev Frontend" || true
 
     # Note (issue #593): this phase used to log in with a cert whose email matched
     # admin@example.com, converting the shared dev super_admin account to auth_type='pki'

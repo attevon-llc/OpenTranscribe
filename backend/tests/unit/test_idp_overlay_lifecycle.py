@@ -26,6 +26,7 @@ start_overlay = _overlay.start_overlay
 stop_overlay = _overlay.stop_overlay
 
 LDAP = "docker-compose.ldap-test.yml"
+PROJECT = "otfresh-idp"
 
 
 @pytest.fixture
@@ -41,6 +42,7 @@ def docker_calls(tmp_path, monkeypatch):
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{stub.parent}:{os.environ['PATH']}")
     monkeypatch.setenv("STUB_LOG", str(log))
+    monkeypatch.setenv("COMPOSE_PROJECT_NAME", PROJECT)
 
     def calls() -> list[str]:
         return log.read_text().splitlines() if log.exists() else []
@@ -66,8 +68,8 @@ def test_an_overlay_the_test_created_is_taken_down(tmp_path, docker_calls):
     assert handle.started_by_test and not handle.container_existed
     stop_overlay(handle)
     calls = docker_calls()
-    assert f"compose -f {LDAP} up -d" in calls
-    assert f"compose -f {LDAP} down" in calls
+    assert f"compose -p {PROJECT} -f {LDAP} up -d" in calls
+    assert f"compose -p {PROJECT} -f {LDAP} down" in calls
     assert not any(" -v" in c for c in calls), "a named volume is not provably ours"
 
 
@@ -79,7 +81,7 @@ def test_a_stopped_container_that_predates_the_test_is_stopped_not_removed(
     assert handle.started_by_test and handle.container_existed
     stop_overlay(handle)
     calls = docker_calls()
-    assert f"compose -f {LDAP} stop keycloak" in calls
+    assert f"compose -p {PROJECT} -f {LDAP} stop keycloak" in calls
     assert not any(c.endswith(" down") or " rm" in c for c in calls), (
         "a container the test did not create must not be removed"
     )

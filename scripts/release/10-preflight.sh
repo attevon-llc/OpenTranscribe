@@ -213,7 +213,14 @@ fi
 # failure to hour three, which is the exact thing this check exists to prevent.
 # Deliberately releasing without it is `--force-preflight "<reason>"`, recorded.
 BUILDER="${REMOTE_BUILDER_NAME:-opentranscribe-multiarch}"
-if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
+# RELEASE_HOST_ARCH_ONLY=1 (`--host-arch-only`): the arm64 legs are deliberately not built, so
+# the builder is not needed. Recorded as a waived exception (warn), never a pass; publish and
+# promote refuse a host-arch-only build, so this cannot reach Docker Hub.
+if [[ "${RELEASE_HOST_ARCH_ONLY:-}" == "1" || "${RELEASE_HOST_ARCH_ONLY:-}" == "true" ]]; then
+    record remote-builder not-measured \
+        "host-arch-only: remote builder not checked, non-host legs will not be built" \
+        "build without --host-arch-only before publishing" waived
+elif ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
     record remote-builder fail \
         "buildx builder '$BUILDER' not found — publish cannot produce a multi-arch manifest" \
         "./scripts/setup-remote-builder.sh setup"

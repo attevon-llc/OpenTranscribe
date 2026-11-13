@@ -46,6 +46,7 @@ Useful flags on `run`:
 | `--json` | Machine-readable criteria + an explicit `next[]` |
 | `--yes` | Required for `tag`, `publish`, `promote` and `finish`; also approves `rehearse` and `smoke` stopping and restarting the live stack |
 | `--serial` | `run` only: keep the strictly ordered schedule (also `RELEASE_SERIAL=1`). Default: `test` runs beside `build` then `scan` when all are selected |
+| `--host-arch-only` | Build, scan and rehearse only the host-architecture (linux/amd64) legs (also `RELEASE_HOST_ARCH_ONLY=1`). See "Host-arch-only builds" below |
 | `--patch` | Verify the version delta is a patch and, if the diff allows, waive the rehearsal scenarios — see [Cutting a patch release](#cutting-a-patch-release) |
 
 State lives in `.release/<version>/steps/` (gitignored) and records status,
@@ -109,6 +110,16 @@ is not "no exceptions"; it is "no *undocumented* exceptions".
 
 `--force-<stage>` works for any stage, and an unknown stage name is rejected
 rather than silently ignored.
+
+## Host-arch-only builds
+
+When the remote arm64 builder is slow or unreachable, `./scripts/release.sh run X.Y.Z --host-arch-only`
+(or `RELEASE_HOST_ARCH_ONLY=1`) builds, scans and rehearses only the legs for the host architecture so
+the release test and rehearsal can run on the Linux images. It is a recorded exception, never a pass:
+`preflight`'s `remote-builder`, `build`'s `every-declared-leg-built`, `scan`'s `every-arch-leg-scanned`
+and `rehearse`'s `arm64-web-legs-run` record `not-measured` with a waiver (warn), and `build` writes
+`.release/<version>/host-arch-only`. `publish` and `promote` refuse (exit 3) while that file exists.
+Re-run `build` without the flag (it removes the file) to build every leg before publishing.
 
 ## Stages
 

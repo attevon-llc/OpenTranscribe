@@ -100,6 +100,15 @@ fi
 
 echo -e "${BLUE}Scanning locally built ${VERSION} images${NC}" >&2
 
+# RELEASE_HOST_ARCH_ONLY: only the host-arch legs exist (see 40-build.sh). SCAN_PLATFORM is
+# security-scan.sh's own single-leg knob, so the unbuilt legs are never looked up locally or
+# pulled from the registry; they are recorded as an exception at the per-leg check below.
+HOST_ONLY=false
+[[ "${RELEASE_HOST_ARCH_ONLY:-}" == "1" || "${RELEASE_HOST_ARCH_ONLY:-}" == "true" ]] && HOST_ONLY=true
+HOST_PLATFORM="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || echo linux/amd64)"
+SCAN_LEG_ENV=()
+[[ "$HOST_ONLY" == "true" ]] && SCAN_LEG_ENV=(SCAN_PLATFORM="$HOST_PLATFORM")
+
 # security-scan.sh's own `all` target scans EVERY scannable component,
 # including `blackwell` — which this stage's build precondition above never
 # checks for, because `blackwell` is not part of `docker-build-push.sh all`/
@@ -145,7 +154,7 @@ for component in "${components[@]}"; do
         FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-true}" \
         OUTPUT_DIR="$OUT_DIR" \
         IMAGE_TAG="$VERSION" \
-            exec ./scripts/security-scan.sh "$component"
+            exec env "${SCAN_LEG_ENV[@]}" ./scripts/security-scan.sh "$component"
     ) > "$scan_log_dir/$component.log" 2>&1 &
     job_pid[$component]=$!
     pending+=("$component")
@@ -250,6 +259,7 @@ fi
 legs_verified=0
 legs_expected=0
 legs_missing=()
+legs_not_built=()
 legs_wrong_version=()
 while IFS=$'\t' read -r comp _capability platforms; do
     [[ "$comp" == "blackwell" ]] && continue
@@ -257,6 +267,11 @@ while IFS=$'\t' read -r comp _capability platforms; do
     IFS=',' read -r -a plats <<< "$platforms"
     for platform in "${plats[@]}"; do
         [[ -n "$platform" ]] || continue
+        if [[ "$HOST_ONLY" == "true" && "$platform" != "$HOST_PLATFORM" ]]; then
+            echo -e "${BLUE}  ${comp}-${platform#linux/}: not built (host-arch-only), not scanned${NC}" >&2
+            legs_not_built+=("${comp}-${platform#linux/}")
+            continue
+        fi
         legs_expected=$((legs_expected + 1))
         label="${comp}-${platform#linux/}"
         report="$OUT_DIR/${label}-trivy.json"
@@ -294,6 +309,13 @@ if (( legs_verified == 0 )); then
         "./scripts/release.sh build $VERSION   # builds every declared leg"
 elif (( ${#legs_missing[@]} > 0 )); then
     record every-arch-leg-scanned fail "unscanned legs: ${legs_missing[*]}"
+elif (( ${#legs_not_built[@]} > 0 )); then
+    # Explicit exception: these legs were never built, so they were never scanned. Waived
+    # (warn), never a pass; publish refuses a host-arch-only build.
+    echo -e "${GREEN}verified ${legs_verified} host-arch leg report(s)${NC}" >&2
+    record every-arch-leg-scanned not-measured \
+        "host-arch-only: ${#legs_not_built[@]} non-host legs not built, not scanned (${legs_not_built[*]})" \
+        "build without --host-arch-only before publishing" waived
 else
     echo -e "${GREEN}verified ${legs_verified} architecture leg report(s)${NC}" >&2
     record every-arch-leg-scanned pass

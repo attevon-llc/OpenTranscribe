@@ -12,6 +12,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Added
 
+- `release.sh --host-arch-only` (`RELEASE_HOST_ARCH_ONLY=1`) builds, scans and rehearses only the host-arch legs as a recorded exception; `publish` and `promote` refuse such a build.
 - E2E for the mobile drawer's focus (enters on open, trapped, returns to the toggle on close and on Escape), the gallery Process and Organize menus at 1180 and 390 px, and `search` and `chat_answer` visual-regression surfaces (baselines come with the screenshot pass) (#1282).
 - CI caches apt archives and the mypy cache and skips the frontend-only pre-commit hooks on a PR that does not touch the frontend (#1099).
 - The release `test` stage runs the first-run wizard e2e on its fresh stack before anything dismisses the wizard, as the blocking criterion `first-run-wizard-e2e` (#1366).

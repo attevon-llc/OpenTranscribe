@@ -52,6 +52,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Changed
 
+- The gpu-scale smoke test no longer waits ~132 s (twice per gate) for a `gpu-scaled@` Flower worker on a stack started without `--gpu-scale`; the six read-only lite-mode happy-path tests share one upload instead of six (~135 s saved).
 - Backend image builds are cheaper: pip uses a BuildKit cache mount (a `requirements.txt` edit no longer re-downloads every wheel), `pip` self-upgrade sits above the requirements COPY, `GIT_SHA`/`BUILD_TIME` sit below the last `RUN` (a new commit no longer re-runs any layer), the apt security-refresh layer sits below the site-packages `COPY`, the dev stack builds the shared backend image from one service instead of thirteen, and healthchecks probe every 5 s during `start_period`.
 
 - Release run schedule: `./scripts/release.sh run` now runs `test` beside `build` then `scan` when all are selected (`--serial` or `RELEASE_SERIAL=1` restores the strict order), and the ledger records each stage's start and duration. `scan` fetches the vulnerability databases once, pins every leg to them and records both versions in each verdict; components scan as background jobs (`SCAN_JOBS`, default 3).

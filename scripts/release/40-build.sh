@@ -390,9 +390,10 @@ while IFS=$'\t' read -r component capability platforms; do
     fi
     leg_tag="${repo}:${VERSION}-${capability}-${HOST_PLATFORM#linux/}"
 
-    baked=$(docker run --rm --entrypoint sh \
-        "${leg_tag}" \
-        -c 'echo "$APP_VERSION"' 2>/dev/null | tr -d '\r')
+    # Metadata read, not a container: `docker run` on the CUDA image attaches every GPU
+    # (nvidia default runtime + NVIDIA_VISIBLE_DEVICES), including ones this project must not touch.
+    baked=$(docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
+        "${leg_tag}" 2>/dev/null | sed -n 's/^APP_VERSION=//p' | tail -n1 | tr -d '\r')
     baked_by_component["$component"]="$baked"
 
     baked_checked=$((baked_checked + 1))

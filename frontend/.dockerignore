@@ -124,3 +124,13 @@ temp/
 # (e.g. community edition). An untracked .env.production on a build host would bake that
 # host's VITE_* values into a published image, which is the reason to exclude it.
 .env.*
+
+# Gitignored generated assets: Dockerfile.prod produces these itself (prebuild runs
+# download-fonts.js; the ffmpeg core is COPY'd from the ffmpeg-wasm-builder stage), so local
+# leftovers must never reach the build context.
+static/fonts/
+public/fonts/
+static/ffmpeg/
+ffmpeg-wasm-build/dist/
+ffmpeg-wasm-build/test/node_modules/
+.bundle-stats/

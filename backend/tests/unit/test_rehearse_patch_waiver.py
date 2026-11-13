@@ -57,7 +57,7 @@ stages:
       - id: cold-cache-nltk-hardlinks-fail-loudly
         severity: blocking
       - id: arm64-web-legs-run
-        severity: warn
+        severity: blocking
 """
 
 COLD_ORACLE = REPO_ROOT / "scripts" / "release-tests" / "lib" / "cold-model-download.py"

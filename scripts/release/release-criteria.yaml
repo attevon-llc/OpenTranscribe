@@ -320,8 +320,10 @@ stages:
         description: >-
           The frontend and docs arm64 legs execute (`nginx -t`) on the arm64 host before
           anything is pushed. Until now they were scanned and manifest-checked but never
-          run before Docker Hub. No `remote-arm64` context is not-measured (a warning).
-        severity: warn
+          run before Docker Hub. A release must not publish an arm64 image that cannot start,
+          so an unreachable arm64 host (no `remote-arm64` context) is not-measured, which
+          BLOCKS like a failure; the recorded way past it is `--force-rehearse "reason"`.
+        severity: blocking
 
   # ─── Version bump. Writes files and commits; publishes nothing. ─────────
   bump:

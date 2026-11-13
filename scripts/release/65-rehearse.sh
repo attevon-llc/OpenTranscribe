@@ -586,10 +586,10 @@ if [[ -z "$PATCH_SKIP_REASON" && $cold_rc -eq 0 ]]; then
 fi
 # --- END cold-cache-record ---
 
-# Gap 2: warn-severity (like smoke's lite-arm64-checked): it needs the arm64 host's context.
+# Gap 2: blocking. An unreachable arm64 host blocks; the recorded override is --force-rehearse "reason".
 arm64_line="$(arm64_web_legs_outcome)"
 record arm64-web-legs-run "${arm64_line%%$'\t'*}" "${arm64_line#*$'\t'}" \
-    "docker context create remote-arm64 ...; then ./scripts/release.sh rehearse ${VERSION}" "${PATCH_SKIP_REASON:+waived}"
+    "make the arm64 host reachable (docker context remote-arm64) and re-run rehearse, or --force-rehearse \"reason\" (recorded in the ledger)" "${PATCH_SKIP_REASON:+waived}"
 
 # Both halves of the contract: every declared criterion was recorded above.
 criteria_assert_all_checked

@@ -193,3 +193,23 @@ def test_a_patch_waiver_is_not_measured(tmp_path):
     out, calls = _arm64(tmp_path, LEGS, "exit 0", patch="no triggers")
     assert out.startswith("not-measured\tno triggers")
     assert calls == ""
+
+
+def test_arm64_web_legs_criterion_is_blocking_so_an_unreachable_host_cannot_publish():
+    import yaml
+
+    from tests.unit.test_release_cold_model_download import CRITERIA_YAML
+
+    doc = yaml.safe_load(CRITERIA_YAML.read_text())
+    sev = {c["id"]: c["severity"] for c in doc["stages"]["rehearse"]["criteria"]}
+    assert sev["arm64-web-legs-run"] == "blocking"
+
+
+def test_unreachable_arm64_host_fails_the_stage_with_a_clear_message(tmp_path: Path):
+    """Real rehearse, no legs.tsv: not-measured on a blocking criterion fails; D passes."""
+    repo, _ = _scratch(tmp_path, PASS_EVIDENCE)
+    _docker(repo, "sha256:abc", tmp_path / "docker.log")
+    proc = _invoke(repo, [VERSION], {"COLD_CACHE_ROOT": str(tmp_path / "c")})
+    crit = _criteria(proc)["arm64-web-legs-run"]
+    assert crit["outcome"] == "not-measured" and crit["status"] == "fail"
+    assert "legs.tsv" in crit["detail"] and "--force-rehearse" in crit["fix"]

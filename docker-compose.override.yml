@@ -146,6 +146,11 @@ services:
       # surfaced as console-error and missing-form failures rather than as rate limiting.
       RATE_LIMIT_AUTH_METHODS_PER_MINUTE: ${DEV_RATE_LIMIT_AUTH_METHODS_PER_MINUTE:-600}
       RATE_LIMIT_DIRECTORY_PER_MINUTE: ${DEV_RATE_LIMIT_DIRECTORY_PER_MINUTE:-600}
+      # Every SPA page load opens /api/ws, and the handshake budget (60/min per IP) is checked
+      # BEFORE accept(), so an exhausted budget surfaces as a bare HTTP 403 on the handshake and a
+      # "WebSocket connection ... failed" console error. The e2e suite drives parallel workers from
+      # ONE IP through hundreds of page loads. Production keeps the 60/min default.
+      WS_HANDSHAKES_PER_IP_PER_MINUTE: ${DEV_WS_HANDSHAKES_PER_IP_PER_MINUTE:-1200}
       ACCOUNT_LOCKOUT_THRESHOLD: ${DEV_ACCOUNT_LOCKOUT_THRESHOLD:-100}
       ACCOUNT_LOCKOUT_DURATION_MINUTES: ${DEV_ACCOUNT_LOCKOUT_DURATION_MINUTES:-1}
       # The dev admin (admin@example.com) is long-lived seeded data. With the production 60-day

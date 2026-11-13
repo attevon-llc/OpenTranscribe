@@ -56,6 +56,8 @@ class _LostFramesState(TypedDict):
     filter: FrameFilter
     ws: WebSocketRoute | None
     snapshots: list[dict[str, Any]]
+    #: Every post-processing read the page made, `(status, body_read)`, for the failure message.
+    reads: list[tuple[int, bool]]
 
 
 _LOST_FRAMES: PageState[_LostFramesState] = PageState()
@@ -103,6 +105,7 @@ def _open_page(
         "filter": FrameFilter(drop_types=drop_types),
         "ws": None,
         "snapshots": [],
+        "reads": [],
     }
     _LOST_FRAMES.attach(page, state)
 
@@ -112,9 +115,14 @@ def _open_page(
         state["ws"] = ws
 
     def on_response(response: Response) -> None:
-        if response.url.endswith(f"/api/files/{file_id}/post-processing") and response.ok:
+        if not response.url.endswith(f"/api/files/{file_id}/post-processing"):
+            return
+        body_read = False
+        if response.ok:
             with contextlib.suppress(Exception):
                 state["snapshots"].append(response.json())
+                body_read = True
+        state["reads"].append((response.status, body_read))
 
     page.route_web_socket("**/api/ws", on_socket)
     page.on("response", on_response)
@@ -179,6 +187,16 @@ def _drive(
                 "the control run saw no post_processing_status frame on the wire",
             )
         expect(card.locator(".job-state")).to_have_text("Complete", timeout=120000)
+        if drop_types:
+            # The card completes the moment the page applies the snapshot; the handler that
+            # records that response reads its body asynchronously and can still be in flight.
+            _wait_for(
+                page,
+                lambda: bool(state["snapshots"]),
+                "the card never read GET /files/{uuid}/post-processing "
+                f"(reads seen, status and body read: {state['reads']})",
+                seconds=15,
+            )
         return page, state
     except BaseException:
         page.close()

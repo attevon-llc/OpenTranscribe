@@ -70,6 +70,7 @@ import { RECORDING_SETTINGS } from '$testMocks/settingsModalMocks';
 import { resetSettingsModalState } from '$testMocks/settingsModalState';
 import { sectionLoaders, startIdlePrefetch } from '$lib/settings/sectionLoaders';
 import { afterNavigateCallbacks } from '$testMocks/app-navigation';
+import { resetAppStores, setPage } from '$testMocks/app-state.svelte';
 import { stampSettingsReturn } from '$lib/settings/returnToSettings';
 import { fullLocalView } from '$lib/settings/pipelineViewFixtures';
 
@@ -1012,6 +1013,23 @@ describe('background warm-up of the other sections', () => {
 
     settingsModalStore.close();
     await waitFor(() => expect(mockWarmup.cancel).toHaveBeenCalled());
+  });
+});
+
+describe('Settings closes itself when the route changes', () => {
+  beforeEach(() => resetAppStores());
+
+  it('closes when the page route moves to another path (e.g. Open full screen)', async () => {
+    setUser('user');
+    const { container } = openModal();
+    await waitForOpen(container);
+
+    setPage('/file-status');
+    // Kit reports the finished navigation to afterNavigate; the modal must close on it.
+    for (const cb of afterNavigateCallbacks)
+      cb({ type: 'link', to: { url: new URL('http://localhost/file-status') } } as never);
+
+    await waitFor(() => expect(container.querySelector('.settings-modal')).toBeNull());
   });
 });
 

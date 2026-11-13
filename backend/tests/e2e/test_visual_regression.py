@@ -94,6 +94,7 @@ from playwright.sync_api import Page
 from playwright.sync_api import expect
 from privacy_ui import PRIVACY_SURFACES
 from privacy_ui import open_privacy_surface
+from speaker_clusters_seed import wait_for_clustered_speakers
 from styling_screens import load_fixture
 from timeouts import APP_SHELL_READY_MS
 
@@ -851,6 +852,8 @@ def test_visual_regression(
         assert applied == theme, f"Expected data-theme={theme}, got {applied}"
 
         if surface == "gallery":
+            # The capture needs a card to photograph; the admin of an isolated stack owns none.
+            request.getfixturevalue("owned_transcribed_file")
             page.goto(base_url)
             page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
             page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
@@ -873,6 +876,10 @@ def test_visual_regression(
             # all (see `_CONDITIONAL_SELECTORS`).
             _assert_masks(page, "file_detail")
         elif surface == "speakers":
+            # Cluster rows (and the chips the masks cover) exist only once the owned clip's
+            # speakers have been through a real clustering run.
+            request.getfixturevalue("owned_transcribed_file")
+            wait_for_clustered_speakers(backend_url, request.getfixturevalue("api_token"))
             page.goto(f"{base_url}/speakers")
             page.wait_for_selector(".speakers-page", timeout=30000)
             _stabilize(page)

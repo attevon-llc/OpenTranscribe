@@ -40,10 +40,11 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from bench_common import backend_url, postgres_container
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BACKEND = os.environ.get('BENCHMARK_BACKEND_URL', 'http://localhost:5174')
+DEFAULT_BACKEND = backend_url()
 DEFAULT_EMAIL = os.environ.get('BENCHMARK_EMAIL', 'admin@example.com')
 DEFAULT_PASSWORD = os.environ.get('BENCHMARK_PASSWORD', 'password')
 AUDIO_DIR = Path('benchmark/test_audio')
@@ -67,13 +68,13 @@ def authenticate(backend_url: str, email: str, password: str) -> str:
     return r.json()['access_token']
 
 
-def db_query(sql: str, container: str = 'opentranscribe-postgres') -> list[list[str]]:
+def db_query(sql: str, container: str | None = None) -> list[list[str]]:
     """Run a SQL SELECT via docker exec (faster + no auth needed for a list)."""
     result = subprocess.run(
         [
             'docker',
             'exec',
-            container,
+            container or postgres_container(),
             'psql',
             '-U',
             'postgres',

@@ -370,8 +370,8 @@ The tag grammar (capability in the repository, restated in the tag, issue #680),
   the production volumes, and gates on an `I UNDERSTAND` prompt. For a stack that runs *beside* the
   live one, use `./opentr.sh start dev --fresh <name> --port-offset N` instead. (The README claimed
   hard isolation with 6173+/6273+ ports until #303 — it never worked that way.)
-- `run_benchmark.py` — `docker compose down -v` on `-p otbench`, plus a legacy cleanup pass aimed at the
-  **`transcribe-app` dev project** (suppress with `--no-cleanup-legacy`).
+- `run_benchmark.py` — `docker compose down -v` on `-p otbench` only; its backend URL is the port that project
+  publishes (`stack_target.resolve`). The legacy `transcribe-app` cleanup and `--no-cleanup-legacy` were removed.
 - `frontend-check.sh` on failure shells out to the `claude` CLI and then `git add`s every modified file
   under `frontend/` — pass `--no-claude` if you don't want your index touched.
 - Everything else writes to the **live dev stack**: benchmarks upload files and never delete them;

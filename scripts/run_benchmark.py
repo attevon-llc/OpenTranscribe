@@ -33,6 +33,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from types import ModuleType
 
 REPO = Path(__file__).resolve().parent.parent
 PROJECT = 'otbench'
@@ -42,7 +43,6 @@ AUDIO_DIR = REPO / 'benchmark' / 'test_audio'
 OUTROOT = Path(os.environ.get('BENCHMARK_OUTROOT', str(REPO / 'docs' / 'engine-benchmark-results')))
 RESULTS_TSV = OUTROOT / 'results.tsv'
 PY = REPO / 'backend' / 'venv' / 'bin' / 'python'
-BACKEND_URL = os.environ.get('BENCHMARK_BACKEND_URL', 'http://localhost:5174')
 
 # Compose file sets (always prefixed with -p otbench).
 BASE_FILES = ['docker-compose.yml', 'docker-compose.gpu.yml', 'docker-compose.bench.yml']
@@ -155,9 +155,45 @@ def compose(
     return run(cmd, env=cenv, check=check, capture=capture)
 
 
-def docker_rm_force(name_glob: str) -> None:
-    res = run(['docker', 'ps', '-aq', '--filter', f'name={name_glob}'], capture=True, check=False)
-    ids = [i for i in res.stdout.split() if i]
+def _stack_target() -> ModuleType:
+    sys.path.insert(0, str(REPO / 'scripts' / 'lib'))
+    import stack_target
+
+    return stack_target
+
+
+def backend_url() -> str:
+    """BENCHMARK_BACKEND_URL, else the port the otbench project's backend really publishes."""
+    explicit = os.environ.get('BENCHMARK_BACKEND_URL')
+    if explicit:
+        return explicit
+    stack = _stack_target().resolve(REPO, project=PROJECT, env=dict(os.environ))
+    return f'http://localhost:{stack.ports["BACKEND_PORT"]}'
+
+
+def docker_rm_force(service_prefix: str) -> None:
+    """Remove this bench project's containers whose compose service starts with the prefix.
+
+    Selected by the compose project and service LABELS (exact), never a container-name substring.
+    """
+    res = run(
+        [
+            'docker',
+            'ps',
+            '-a',
+            '--filter',
+            f'label=com.docker.compose.project={PROJECT}',
+            '--format',
+            '{{.ID}} {{.Label "com.docker.compose.service"}}',
+        ],
+        capture=True,
+        check=False,
+    )
+    ids = [
+        row.split()[0]
+        for row in res.stdout.splitlines()
+        if len(row.split()) == 2 and row.split()[1].startswith(service_prefix)
+    ]
     if ids:
         run(['docker', 'rm', '-f', *ids], check=False, capture=True)
 
@@ -166,35 +202,7 @@ def teardown(env: dict) -> None:
     """Stop + wipe the bench stack. Safe: scoped to project otbench, *_bench_data only."""
     compose(['down', '-v', '--remove-orphans'], ALL_FILES, env=env, profile='', check=False)
     # Stragglers (scaled/split workers can linger if a profile run was interrupted).
-    docker_rm_force(f'{PROJECT}-celery-worker-gpu')
-
-
-def cleanup_legacy() -> None:
-    """One-time: remove pre-rename leftovers that the new project name can't see."""
-    log('clearing legacy bench leftovers (opentranscribe-* bench stack + gpu-scaled orphan)')
-    run(
-        [
-            'docker',
-            'compose',
-            '-p',
-            'transcribe-app',
-            '-f',
-            'docker-compose.yml',
-            '-f',
-            'docker-compose.gpu.yml',
-            '-f',
-            'docker-compose.bench.yml',
-            'down',
-            '--remove-orphans',
-        ],
-        check=False,
-        capture=True,
-    )
-    docker_rm_force('transcribe-app-celery-worker-gpu')
-    # Remove ONLY the old pre-rename bench volumes (exact *_bench_data names — never
-    # the dev data volumes, which are named differently / are NAS bind mounts).
-    for v in ('postgres', 'minio', 'redis', 'opensearch', 'flower'):
-        run(['docker', 'volume', 'rm', f'transcribe-app_{v}_bench_data'], check=False, capture=True)
+    docker_rm_force('celery-worker-gpu')
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +364,11 @@ def wait_ready(gpu_workers: list[str]) -> None:
     log('waiting for backend health...')
     deadline = time.time() + HEALTH_TIMEOUT
     while time.time() < deadline:
-        if _http_ok(f'{BACKEND_URL}/health'):
+        try:
+            healthy = _http_ok(f'{backend_url()}/health')
+        except (_stack_target().StackError, KeyError):
+            healthy = False  # the project has no published backend yet
+        if healthy:
             log('backend healthy.')
             break
         time.sleep(5)
@@ -418,7 +430,7 @@ def wait_auth(timeout: int = 240) -> None:
                 '10',
                 '-X',
                 'POST',
-                f'{BACKEND_URL}/api/auth/token',
+                f'{backend_url()}/api/auth/token',
                 '-d',
                 f'username={email}',
                 '-d',
@@ -610,7 +622,7 @@ def run_level(
 
         bench_env = {
             'BENCHMARK_DB_CONTAINER': f'{PROJECT}-postgres',
-            'BENCHMARK_BACKEND_URL': BACKEND_URL,
+            'BENCHMARK_BACKEND_URL': backend_url(),
             'BENCHMARK_STATS_CONTAINERS': ','.join(stats_containers_for(phase.mode)),
             'BENCHMARK_EMAIL': os.environ.get('BENCHMARK_EMAIL', 'admin@example.com'),
             'BENCHMARK_PASSWORD': os.environ.get('BENCHMARK_PASSWORD', 'password'),
@@ -725,7 +737,6 @@ def main() -> None:
     ap.add_argument('--phases', default='', help='comma list to limit which phases run')
     ap.add_argument('--conc', type=int, default=0, help='single concurrency override (solo phases)')
     ap.add_argument('--skip-build', action='store_true', help='skip rebuilding the bench image')
-    ap.add_argument('--no-cleanup-legacy', action='store_true', help='skip one-time legacy cleanup')
     ap.add_argument(
         '--fresh',
         action='store_true',
@@ -749,8 +760,6 @@ def main() -> None:
     if args.fresh:
         clear_results(selected)
     preflight(args.skip_build)
-    if not args.no_cleanup_legacy:
-        cleanup_legacy()
 
     corpus_path, n_files, hours = build_subset(tier_name, OUTROOT / f'corpus_{tier_name}.json')
     log(f'corpus subset ({tier_name}): {n_files} files, {hours:.1f}h audio')

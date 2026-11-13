@@ -9,12 +9,11 @@
 #
 # Usage:
 #   source backend/venv/bin/activate
-#   bash scripts/benchmark_concurrency_sweep.sh [--gpu-id N] [--max-conc N] [--profile NAME]
+#   bash scripts/benchmark_concurrency_sweep.sh --fresh NAME [--gpu-id N] [--max-conc N] [--profile NAME]
 #
 # Prerequisites:
-#   - All services running (./opentr.sh start dev)
-#   - ENABLE_BENCHMARK_TIMING=true in .env
-#   - ENABLE_VRAM_PROFILING=true in .env
+#   - A --fresh stack the sweep may recreate (the script starts it: ./opentr.sh start dev --fresh NAME)
+#   - ENABLE_BENCHMARK_TIMING=true and ENABLE_VRAM_PROFILING=true in .env (read by opentr.sh)
 #   - backend/venv activated
 #   - docs/benchmark-corpus/corpus.json present
 #
@@ -30,6 +29,7 @@ GPU_ID=2
 PROFILE="by_duration"
 COOLDOWN=20
 CORPUS="docs/benchmark-corpus/corpus.json"
+FRESH=""
 
 # Levels to sweep. Known-stable from BENCHMARK_RESULTS.md: 1,4,8,10,12.
 # New territory starts at 14.  Use --max-conc to cap early if needed.
@@ -43,9 +43,18 @@ while [[ $# -gt 0 ]]; do
         --max-conc) MAX_CONC="$2";  shift 2 ;;
         --profile)  PROFILE="$2";   shift 2 ;;
         --corpus)   CORPUS="$2";    shift 2 ;;
+        --fresh)    FRESH="$2";     shift 2 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
+
+if [[ -z "$FRESH" ]]; then
+    echo "refusing: --fresh NAME is required. The sweep changes GPU_CONCURRENT_REQUESTS and" >&2
+    echo "recreates containers, which must never touch the live stack (./opentr.sh fresh-list)." >&2
+    exit 2
+fi
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
 
 # Build final level list, capped at MAX_CONC
 LEVELS=()
@@ -80,41 +89,27 @@ gpu_vram_total_mb() {
         --id="$GPU_ID" 2>/dev/null || echo "?"
 }
 
-# set_concurrency rewrites .env's GPU_CONCURRENT_REQUESTS for each level. It used to be left at
-# whatever level ran last (1 on a clean finish, any level after Ctrl-C), so the operator's own
-# value was silently lost (issue #1195). Remember the line now; put it back on ANY exit. Only
-# that one line is touched, exactly as set_concurrency already does.
-ORIGINAL_CONCURRENCY_LINE="$(grep -m1 '^GPU_CONCURRENT_REQUESTS=' .env 2>/dev/null || true)"
-restore_concurrency_line() {
-    if [ -n "$ORIGINAL_CONCURRENCY_LINE" ]; then
-        local escaped
-        escaped="$(printf '%s' "$ORIGINAL_CONCURRENCY_LINE" | sed 's/[&|\\]/\\&/g')"
-        sed -i "s|^GPU_CONCURRENT_REQUESTS=.*|${escaped}|" .env
-        echo "[$(date +%H:%M:%S)] Restored .env ${ORIGINAL_CONCURRENCY_LINE}" \
-            "(running containers keep the last level until './opentr.sh start dev')" | tee -a "$LOG"
-    fi
-}
-trap restore_concurrency_line EXIT
-
+# set_concurrency recreates ONLY the --fresh stack's changed containers with the new level.
+# Compose interpolation lets a shell variable beat .env, so the level is exported for
+# `./opentr.sh start dev --fresh NAME` and nothing is written to .env or restarted on the live
+# stack (the old version sed-edited .env and stop/started the live stack: issue #1195 patched the
+# restore, this removes the cause).
 set_concurrency() {
     local conc=$1
     echo "" | tee -a "$LOG"
-    echo "[$(date +%H:%M:%S)] Setting GPU_CONCURRENT_REQUESTS=$conc ..." | tee -a "$LOG"
+    echo "[$(date +%H:%M:%S)] Setting GPU_CONCURRENT_REQUESTS=$conc on fresh stack $FRESH ..." | tee -a "$LOG"
 
-    sed -i "s/^GPU_CONCURRENT_REQUESTS=.*/GPU_CONCURRENT_REQUESTS=$conc/" .env
+    export GPU_CONCURRENT_REQUESTS="$conc"
+    ./opentr.sh start dev --fresh "$FRESH" > /dev/null 2>&1
 
-    # Restart all services so the worker picks up the new env var.
-    # opentr.sh start dev waits for healthy containers.
-    ./opentr.sh stop > /dev/null 2>&1
-    sleep 3
-    ./opentr.sh start dev > /dev/null 2>&1
+    st_target --fresh "$FRESH" || exit $?
+    st_require healthy:celery-worker || exit $?
 
     echo "[$(date +%H:%M:%S)] Waiting 20s for model preload ..." | tee -a "$LOG"
     sleep 20
 
     local actual
-    actual=$(docker exec opentranscribe-celery-worker env 2>/dev/null \
-        | grep GPU_CONCURRENT_REQUESTS | cut -d= -f2 || echo "?")
+    actual=$(docker exec "$(st_container celery-worker)" printenv GPU_CONCURRENT_REQUESTS 2>/dev/null || echo "?")
     echo "[$(date +%H:%M:%S)] Worker ready: GPU_CONCURRENT_REQUESTS=$actual" | tee -a "$LOG"
 
     local vram

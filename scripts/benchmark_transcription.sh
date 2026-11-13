@@ -13,7 +13,10 @@
 set -euo pipefail
 
 # --- Configuration ---
-API_BASE="http://localhost:5174/api"
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+st_target || exit $?
+API_BASE="http://localhost:${BACKEND_PORT}/api"
 FILE_UUID="${1:-5132f182-ecf1-48b1-922b-021416506928}"
 EMAIL="admin@example.com"
 PASSWORD="password"
@@ -65,22 +68,22 @@ echo ""
 echo "[$(date +%H:%M:%S)] Starting log monitors..."
 
 # Start tailing celery-worker logs for TIMING entries (background)
-docker compose logs -f celery-worker 2>&1 | \
+docker compose -p "$ST_PROJECT" logs -f celery-worker 2>&1 | \
   grep --line-buffered -E "TIMING:|VRAM|perf_counter|TranscriptionPipeline|completed in|GPU memory|Reusing cached|Loading model|model loaded|Dispatched|Transcription completed" | \
   tee -a "$TIMING_FILE" &
 TIMING_PID=$!
 
 # Also capture full celery-worker logs for detailed analysis
-docker compose logs -f celery-worker >> "$LOG_FILE" 2>&1 &
+docker compose -p "$ST_PROJECT" logs -f celery-worker >> "$LOG_FILE" 2>&1 &
 LOG_PID=$!
 
 # Tail gpu-scaled worker too if it exists
-docker compose logs -f celery-worker-gpu-scaled 2>&1 | \
+docker compose -p "$ST_PROJECT" logs -f celery-worker-gpu-scaled 2>&1 | \
   grep --line-buffered -E "TIMING:|VRAM|completed in|GPU memory|Reusing cached|Loading model|model loaded|Dispatched|Transcription completed" | \
   tee -a "$TIMING_FILE" &
 TIMING_PID2=$!
 
-docker compose logs -f celery-worker-gpu-scaled >> "$LOG_FILE" 2>&1 &
+docker compose -p "$ST_PROJECT" logs -f celery-worker-gpu-scaled >> "$LOG_FILE" 2>&1 &
 LOG_PID2=$!
 # The followers run until killed. Only the completed/error paths killed them, so the
 # 60-minute timeout fall-through, a `set -e` abort or Ctrl-C left four `logs -f` pipelines

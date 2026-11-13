@@ -19,14 +19,14 @@ LSL_FAIL_REASON=""; LSL_FAIL_FIX=""; export LSL_FAIL_REASON LSL_FAIL_FIX
 : "${RED:=}"; : "${GREEN:=}"; : "${YELLOW:=}"; : "${BLUE:=}"; : "${NC:=}"
 
 # The compose project labels (issue #783): a repo clone runs as `transcribe-app`, a one-liner
-# install as `opentranscribe`, and a git worktree as its own directory name (compose defaults the
-# project to the working directory's basename), so that is a third live name (STACK_TARGETING_PLAN
-# L8/R1). Captured, not piped into `grep -q` (SIGPIPE under pipefail).
+# install as `opentranscribe`. A git worktree's stack is a third live name (STACK_TARGETING_PLAN
+# L8/R1), found by the `project.working_dir` LABEL equal to this checkout, not by guessing a project
+# name from a directory. Captured, not piped into `grep -q` (SIGPIPE under pipefail).
 lsl_live_stack_names() {
     {
         docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}'
         docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}'
-        docker ps --filter "label=com.docker.compose.project=$(basename "$REPO_ROOT")" --format '{{.Names}}'
+        docker ps --filter "label=com.docker.compose.project.working_dir=${REPO_ROOT}" --format '{{.Names}}'
     } | sort -u
 }
 
@@ -35,10 +35,11 @@ lsl_live_stack_names() {
 # and "restored" from another is a different stack under the same name).
 LSL_STOPPED_PROJECT=""; LSL_STOPPED_WORKDIR=""
 lsl_record_what_is_stopping() {
-    local project="" workdir="" label
-    for label in "${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" "${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" "$(basename "$REPO_ROOT")"; do
-        local row
-        row="$(docker ps --filter "label=com.docker.compose.project=${label}" \
+    local project="" workdir="" filter row
+    for filter in "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" \
+                  "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" \
+                  "label=com.docker.compose.project.working_dir=${REPO_ROOT}"; do
+        row="$(docker ps --filter "$filter" \
             --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null || true)"
         row="${row%%$'\n'*}"
         if [[ "$row" == *"|"* ]]; then project="${row%%|*}"; workdir="${row#*|}"; break; fi

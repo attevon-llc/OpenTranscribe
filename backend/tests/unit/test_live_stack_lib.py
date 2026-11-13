@@ -167,8 +167,8 @@ def test_restore_from_the_recorded_checkout_still_starts(tmp_path):
     assert not _marker(root).exists()
 
 
-def test_live_stack_names_include_the_current_worktrees_own_project(tmp_path):
+def test_live_stack_names_include_a_stack_started_from_this_checkout(tmp_path):
     root, bindir, log = _harness(tmp_path)
     _run(tmp_path, "lsl_live_stack_names >/dev/null")
     asked = log.read_text()
-    assert "label=com.docker.compose.project=repo" in asked, asked
+    assert f"label=com.docker.compose.project.working_dir={root}" in asked, asked

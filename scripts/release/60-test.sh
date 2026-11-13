@@ -61,7 +61,21 @@ PREFLIGHT_WHY="$(fresh_stack_preflight_before "$FRESH_NAME" 2>&1)" \
 export FRESH_STACK_DEFER_FIRST_RUN=1
 
 echo -e "${BLUE}Starting isolated fresh stack '${FRESH_NAME}' (port offset +${PORT_OFFSET})${NC}" >&2
-if ! fresh_stack_up "$FRESH_NAME" "$PORT_OFFSET"; then
+# One stack configuration for the whole stage (LOOP_SPEED_PLAN T2). The overlay set is owned by
+# run-dev-tests.sh / dev-test-overlays.sh and only ASKED here, for both calls below, so the stack
+# comes up with every overlay once instead of being recreated by each run-dev-tests.sh call.
+OVERLAY_FLAGS=()
+for _phases in "--backend-only --e2e-smoke --export-capability" "--e2e-release"; do
+    # shellcheck disable=SC2086  # the phase list is a fixed, space-separated flag set
+    _flags="$(./scripts/run-dev-tests.sh $_phases --print-overlay-flags)" \
+        || fail_precondition "could not resolve the overlay set for: $_phases" \
+            "./scripts/run-dev-tests.sh $_phases --print-overlay-flags"
+    for _f in $_flags; do
+        case " ${OVERLAY_FLAGS[*]:-} " in *" $_f "*) ;; *) OVERLAY_FLAGS+=("$_f") ;; esac
+    done
+done
+echo -e "${BLUE}Overlays for the whole stage: ${OVERLAY_FLAGS[*]:-(none)}${NC}" >&2
+if ! fresh_stack_up "$FRESH_NAME" "$PORT_OFFSET" ${OVERLAY_FLAGS[@]+"${OVERLAY_FLAGS[@]}"}; then
     fail_precondition "could not start the isolated fresh stack '${FRESH_NAME}'" \
         "./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset ${PORT_OFFSET}"
 fi

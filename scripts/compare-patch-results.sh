@@ -12,7 +12,10 @@
 
 set -euo pipefail
 
-API_URL="${API_URL:-http://localhost:5174}"
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+if [[ -z "${API_URL:-}" ]]; then st_target || exit $?; fi
+API_URL="${API_URL:-http://localhost:${BACKEND_PORT}}"
 RESULTS_DIR="${RESULTS_DIR:-/mnt/nvm/repos/transcribe-app/test-results/patch-comparison}"
 
 # Same test files as gpu-profile-test.sh

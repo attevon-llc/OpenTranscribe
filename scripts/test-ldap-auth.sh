@@ -9,7 +9,10 @@
 
 set -e
 
-API_URL="${API_URL:-http://localhost:5174/api}"
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+if [[ -z "${API_URL:-}" ]]; then st_target || exit $?; fi
+API_URL="${API_URL:-http://localhost:${BACKEND_PORT}/api}"
 LLDAP_URL="${LLDAP_URL:-http://localhost:17170}"
 
 # Colors for output

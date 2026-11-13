@@ -17,14 +17,21 @@
 #   - Statuses: PENDING, PROCESSING, COMPLETED, ERROR
 # =============================================================================
 
-# Load .env for port/credential defaults
+# Resolve the stack (compose labels, observed ports) instead of guessing container names and
+# ports; credentials come from env_reader (python-dotenv), never `source .env`.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-if [[ -f "$PROJECT_DIR/.env" ]]; then
-    set -a; source "$PROJECT_DIR/.env"; set +a
-fi
-
-PG="docker exec opentranscribe-postgres psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-opentranscribe}"
+# shellcheck source=scripts/lib/stack-target.sh
+source "$SCRIPT_DIR/lib/stack-target.sh"
+st_target || return $?
+_env_value() {
+    python3 "$SCRIPT_DIR/lib/env_reader.py" "$PROJECT_DIR/.env" "$1" --default "${2:-}"
+}
+POSTGRES_USER="${POSTGRES_USER:-$(_env_value POSTGRES_USER postgres)}"
+POSTGRES_DB="${POSTGRES_DB:-$(_env_value POSTGRES_DB opentranscribe)}"
+FLOWER_USER="${FLOWER_USER:-$(_env_value FLOWER_USER admin)}"
+FLOWER_PASSWORD="${FLOWER_PASSWORD:-$(_env_value FLOWER_PASSWORD flower)}"
+PG="docker exec $(st_container postgres) psql -U $POSTGRES_USER -d $POSTGRES_DB"
 
 # =============================================================================
 # START / STOP
@@ -262,7 +269,7 @@ gpu-status() {
 bulk-workers() {
     curl -fsS -u "${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}" \
         --max-time 40 \
-        "http://localhost:${FLOWER_PORT:-5175}/flower/api/workers?refresh=1" 2>/dev/null | \
+        "http://localhost:${FLOWER_PORT}/flower/api/workers?refresh=1" 2>/dev/null | \
         python3 -c "
 import sys, json
 try:
@@ -293,12 +300,12 @@ bulk-queues() {
     local auth=""
     [[ -n "$redis_pass" ]] && auth="-a $redis_pass"
     local depth_script='local t=0 for i=0,9 do local k=KEYS[1] if i>0 then k=KEYS[1].."\6\22"..i end t=t+redis.call("llen",k) end return t'
-    echo "  gpu queue:       $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 gpu 2>/dev/null)"
-    echo "  download queue:  $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 download 2>/dev/null)"
-    echo "  nlp queue:       $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 nlp 2>/dev/null)"
-    echo "  embedding queue: $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 embedding 2>/dev/null)"
-    echo "  cpu queue:       $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 cpu 2>/dev/null)"
-    echo "  utility queue:   $(docker exec opentranscribe-redis redis-cli $auth eval "$depth_script" 1 utility 2>/dev/null)"
+    echo "  gpu queue:       $(docker exec "$(st_container redis)" redis-cli $auth eval "$depth_script" 1 gpu 2>/dev/null)"
+    echo "  download queue:  $(docker exec "$(st_container redis)" redis-cli $auth eval "$depth_script" 1 download 2>/dev/null)"
+    echo "  nlp queue:       $(docker exec "$(st_container redis)" redis-cli $auth eval "$depth_script" 1 nlp 2>/dev/null)"
+    echo "  embedding queue: $(docker exec "$(st_container redis)" redis-cli $auth eval "$depth_script" 1 embedding 2>/dev/null)"
+    echo "  cpu queue:       $(docker exec "$(st_container redis)" redis-cli $auth eval "$depth_script" 1 cpu 2>/dev/null)"
+    echo "  utility queue:   $(docker exec "$(st_container redis)" redis-cli $auth eval "$depth_script" 1 utility 2>/dev/null)"
 }
 
 # Container logs (last N lines)

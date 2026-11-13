@@ -7,7 +7,10 @@
 
 set -e
 
-CONTAINER="opentranscribe-postgres"
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+st_target || exit $?
+CONTAINER="$(st_container postgres)"
 DB_USER="postgres"
 DB_NAME="opentranscribe"
 

@@ -14,7 +14,10 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKI_DIR="${SCRIPT_DIR}/test-certs"
-API_URL="${API_URL:-http://localhost:5174/api}"
+# shellcheck source=scripts/lib/stack-target.sh
+source "${SCRIPT_DIR}/../lib/stack-target.sh"
+if [[ -z "${API_URL:-}" ]]; then st_target || exit $?; fi
+API_URL="${API_URL:-http://localhost:${BACKEND_PORT}/api}"
 
 # Colors
 RED='\033[0;31m'

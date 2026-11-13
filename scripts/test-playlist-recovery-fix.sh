@@ -7,12 +7,16 @@
 
 set -e
 
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+st_target || exit $?
+
 echo "=== Playlist Recovery Fix Verification ==="
 echo
 
 # Check if migrations are applied
 echo "1. Checking database migration version..."
-MIGRATION_VERSION=$(docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -t -c "
+MIGRATION_VERSION=$(docker exec "$(st_container postgres)" psql -U postgres -d opentranscribe -t -c "
 SELECT version_num FROM alembic_version;
 " | tr -d ' ')
 
@@ -21,14 +25,14 @@ if [[ "$MIGRATION_VERSION" == "v072_add_queued_downloading_statuses" ]] || [[ "$
     echo "  Note: status is a VARCHAR column, so new values work immediately"
 else
     echo "✗ Migration v072 not applied yet. Current version: $MIGRATION_VERSION"
-    echo "  Run: docker restart opentranscribe-backend"
+    echo "  Run: docker restart $(st_container backend)"
     exit 1
 fi
 
 # Check if there are any files with the new statuses
 echo
 echo "2. Checking for files with new statuses..."
-docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -c "
+docker exec "$(st_container postgres)" psql -U postgres -d opentranscribe -c "
 SELECT status, COUNT(*) as count
 FROM media_file
 WHERE status IN ('queued', 'downloading')

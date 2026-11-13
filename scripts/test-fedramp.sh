@@ -12,7 +12,10 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-API_BASE="${API_BASE:-http://localhost:5174/api}"
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+if [[ -z "${API_BASE:-}" ]]; then st_target || exit $?; fi
+API_BASE="${API_BASE:-http://localhost:${BACKEND_PORT}/api}"
 # A registered throwaway shape (cleanup-test-users.py ORPHAN_PATTERNS_UNAMBIGUOUS): this script
 # registers a real account and never deletes it, so the sweep is its only cleanup. The old
 # fedramp-test-<ts> shape matched no pattern at all (issue #1195).

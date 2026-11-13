@@ -4,20 +4,24 @@
 
 set -e
 
+# shellcheck source=scripts/lib/stack-target.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stack-target.sh"
+st_target || exit $?
+
 echo "=== Download Recovery Test ==="
 echo
 echo "This test verifies that files stuck in DOWNLOADING status are properly recovered."
 echo
 
 # Check if backend is running
-if ! curl -s http://localhost:5174/health > /dev/null 2>&1; then
+if ! curl -s http://localhost:${BACKEND_PORT}/health > /dev/null 2>&1; then
     echo "✗ Backend is not running. Start it first:"
     echo "  ./opentr.sh start dev"
     exit 1
 fi
 
 echo "1. Checking recovery system is enabled..."
-BACKEND_VERSION=$(docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -t -c "
+BACKEND_VERSION=$(docker exec "$(st_container postgres)" psql -U postgres -d opentranscribe -t -c "
 SELECT version_num FROM alembic_version;
 " | tr -d ' ')
 
@@ -80,10 +84,10 @@ echo
 echo "To test manually:"
 echo "  1. Import a YouTube video"
 echo "  2. Kill the download worker mid-download:"
-echo "     docker stop opentranscribe-celery-download-worker"
+echo "     docker stop $(st_container celery-download-worker)"
 echo "  3. Wait 5+ minutes"
 echo "  4. Check logs for recovery:"
-echo "     docker logs opentranscribe-backend | grep 'stuck download'"
+echo "     docker logs $(st_container backend) | grep 'stuck download'"
 echo "  5. Restart download worker:"
-echo "     docker start opentranscribe-celery-download-worker"
+echo "     docker start $(st_container celery-download-worker)"
 echo "  6. Verify file completes downloading"

@@ -28,6 +28,8 @@
 #                                                   # Accepted in ANY position, with an
 #                                                   # optional explicit <sha> after it.
 #   ./scripts/run-backend-tests.sh --failures       # list failures, no re-run
+#   ./scripts/run-backend-tests.sh --affected [pytest args]   # DEV LOOP ONLY: pytest-testmon, only tests
+#                                                   # whose code changed; never writes last.xml, never evidence
 #   ./scripts/run-backend-tests.sh --log            # path to this checkout's latest full log
 #
 # Artifacts: $OT_TEST_OUT_DIR (default /tmp/ot-backend-tests) / <12-hex hash of this checkout's
@@ -215,11 +217,13 @@ PY
 REQUIRE_FRESH=false
 THROWAWAY_DB=false
 KEEP_REQUESTED=false
+AFFECTED=false
 _ARGV=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --throwaway-db) THROWAWAY_DB=true; shift ;;
         --keep) KEEP_REQUESTED=true; shift ;;
+        --affected) AFFECTED=true; shift ;;
         --require-fresh)
             REQUIRE_FRESH=true
             shift
@@ -242,6 +246,19 @@ if $KEEP_REQUESTED && ! $THROWAWAY_DB; then
     echo -e "${RED}--keep only applies to --throwaway-db${NC}" >&2; exit 2
 fi
 $KEEP_REQUESTED && tpg_keep
+
+# --affected: dev loop only (pytest-testmon). Never publishes last.xml/last.meta, so --summary and
+# --require-fresh can never present a selected subset as evidence. `--cov` forces testmon to
+# --testmon-nocollect (testmon.org), so the combination is refused instead of silently selecting all.
+AFFECTED_BANNER="AFFECTED-ONLY RUN (pytest-testmon): NOT EVIDENCE; the gate runs everything"
+if $AFFECTED; then
+    for _a in "$@"; do
+        case "$_a" in --cov|--cov=*|--coverage|--cov-*)
+            echo -e "${RED}--affected cannot be combined with $_a (testmon disables selection under coverage)${NC}" >&2
+            exit 2 ;;
+        esac
+    done
+fi
 
 case "${1:-}" in
     --summary)  report_summary; exit $? ;;
@@ -379,8 +396,15 @@ ARGS=("$@")
 [[ ${#ARGS[@]} -gt 0 ]] || ARGS=(tests/ --ignore=tests/e2e)
 
 echo -e "${BLUE}Running the backend suite once; artifacts in $OUT_DIR${NC}" >&2
+SELECT_ARGS=()
+if $AFFECTED; then
+    # -forceselect: our addopts carry -m, which testmon treats as "no selection" unless forced.
+    SELECT_ARGS=(--testmon --testmon-forceselect)
+    echo -e "${YELLOW}$AFFECTED_BANNER${NC}" >&2
+    echo -e "${YELLOW}(the first run in a checkout builds .testmondata, so it runs everything asked)${NC}" >&2
+fi
 
-"${PY_CMD[@]}" "${ARGS[@]}" \
+"${PY_CMD[@]}" "${ARGS[@]}" ${SELECT_ARGS[@]+"${SELECT_ARGS[@]}"} \
     -p no:warnings \
     --junitxml="$RUN_XML" \
     2>&1 | tee "$RUN_LOG"
@@ -392,6 +416,11 @@ publish_last() {
     local src="$1" dest="$2"
     cp -f -- "$src" "$dest.tmp.$$" && mv -f -- "$dest.tmp.$$" "$dest"
 }
+if $AFFECTED; then
+    echo -e "${YELLOW}$AFFECTED_BANNER${NC}" >&2
+    echo "Full output: $RUN_LOG"
+    exit "$rc"
+fi
 publish_last "$RUN_LOG" "$LOG"
 
 # ⚠️ THE EVIDENCE AND ITS PROVENANCE ARE PUBLISHED TOGETHER OR NOT AT ALL.

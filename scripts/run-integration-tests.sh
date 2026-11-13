@@ -41,6 +41,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV_PY="$PROJECT_ROOT/backend/venv/bin/python"
 
+# Evidence runs never select by change or by previous outcome (testmon, last-failed, stepwise):
+# refuse them in the arguments or PYTEST_ADDOPTS, and pass NO_SELECT to every pytest below.
+# shellcheck source=scripts/lib/no-selection.sh
+source "$PROJECT_ROOT/scripts/lib/no-selection.sh"
+refuse_selection_flags "$@"
+
 # Where per-phase junit XML lands, so `scripts/analyze-test-timing.py` has something to read
 # and a skip can be attributed after the fact. Overridable so run-dev-tests.sh can point it at
 # its own per-run report dir.
@@ -395,7 +401,7 @@ if $OVERLAY_ONLY; then
     # These tests run only to execute against their overlays: a skip is a vacuous pass.
     INTEGRATION_SKIP_CEILING=0
 fi
-GPU_SELECTION="${GPU_SELECTION:-gpu$MULTI_GPU_FILTER}"
+GPU_SELECTION="${GPU_SELECTION:-gpu and not integration$MULTI_GPU_FILTER}"
 
 # Like run_phase, but a phase that SKIPPED more than the ceiling is NOT MEASURED.
 #
@@ -436,6 +442,7 @@ run_phase_watching_skips() {
         FAILED_PHASES+=("$title (bad skip-ceiling argument)")
         return
     fi
+    record_phase_argv "$@"
     local rc=0
     local out
     out=$(mktemp "${RUN_SCRATCH:-${TMPDIR:-/tmp}}/phase.XXXXXX")
@@ -471,6 +478,10 @@ run_phase_watching_skips() {
     fi
 }
 
+# shellcheck source=scripts/lib/gate-tail-phases.sh
+source "$PROJECT_ROOT/scripts/lib/gate-tail-phases.sh"
+T4_PID=""
+
 # 0. Signature-scoped sweep of orphaned test data (issue #629) — unconditional (not
 # gated behind --cleanup, unlike phase 10's dry-run report below), so leftovers from a
 # PREVIOUS killed run are cleared before this run adds its own. Deletes Tier A
@@ -491,6 +502,9 @@ source "$PROJECT_ROOT/scripts/lib/test-data-sweep.sh"
 tds_sweep_at_exit "$VENV_PY" "$PROJECT_ROOT" _rit_remove_scratch
 if [ "${OT_SKIP_TEST_DATA_SWEEP:-}" = "1" ]; then
     echo -e "${YELLOW}--- Test-data sweep: skipped (OT_SKIP_TEST_DATA_SWEEP=1) ---${NC}\n"
+elif [ "${OT_TEST_DATA_SWEEP_AT_ENTRY:-}" = "parent" ]; then
+    # SW1: a wrapper (run-dev-tests.sh) already swept once before its first phase.
+    echo -e "${YELLOW}--- Test-data sweep (start): done by the wrapping script ---${NC}\n"
 else
     run_phase "Test-data sweep (Tier A)" \
         "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-data.py" --execute-unambiguous
@@ -504,7 +518,7 @@ if ! $OVERLAY_ONLY; then
 # printed `✓ Unit/API suite passed` and exited 0. It is also the phase whose `-rs` output is the
 # only attribution any of those skips has.
 run_phase_watching_skips "Unit/API suite" "$UNIT_SKIP_CEILING" \
-    "${UNIT_ENV[@]}" "$VENV_PY" -m pytest tests/ "${COV_ARGS[@]}" "${SKIP_REASONS[@]}" \
+    "${UNIT_ENV[@]}" "$VENV_PY" -m pytest "${NO_SELECT[@]}" tests/ "${COV_ARGS[@]}" "${SKIP_REASONS[@]}" \
     --junitxml="$GATE_ARTIFACT_DIR/unit.xml"
 
 # 2. The security suites again, this time under FIPS_MODE=true.
@@ -515,7 +529,7 @@ run_phase_watching_skips "Unit/API suite" "$UNIT_SKIP_CEILING" \
 # that used to sit here re-executed 394 tests phase 1 had already run (proved by node-id diff of
 # the two junit artifacts: 0 of 394 absent from unit.xml) under `env` variables no test reads.
 run_phase_watching_skips "Security suites (FIPS_MODE=true)" "$FIPS_SKIP_CEILING" \
-    "${UNIT_ENV[@]}" FIPS_MODE=true "$VENV_PY" -m pytest "${FIPS_MODE_SUITES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short \
+    "${UNIT_ENV[@]}" FIPS_MODE=true "$VENV_PY" -m pytest "${NO_SELECT[@]}" "${FIPS_MODE_SUITES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short \
     "${SKIP_REASONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/gated-fips-on.xml"
 fi
 
@@ -693,7 +707,7 @@ except Exception:
         FAILED_PHASES=()
         SKIPPED_PHASES=()
         run_phase_watching_skips "Integration-marked tests (self-contained)" "$INTEGRATION_SKIP_CEILING" \
-            nice -n 10 "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest "${INTEGRATION_SELF_CONTAINED[@]}" \
+            nice -n 10 "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest "${NO_SELECT[@]}" "${INTEGRATION_SELF_CONTAINED[@]}" \
             -o addopts="" -n 4 --dist loadfile -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
             --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
             "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/integration-self-contained.xml"
@@ -702,12 +716,36 @@ except Exception:
     ) >"$SC_DIR/out" 2>&1 &
     SC_PID=$!
     fi
+    # T4: stack-independent tail beside the live lane (bash `wait` joins it below).
+    T4_DIR="$RUN_SCRATCH/t4"
+    mkdir -p "$T4_DIR"
+    if ! $OVERLAY_ONLY; then
+    (
+        renice -n 10 -p "$BASHPID" >/dev/null 2>&1 || true
+        FAILED_PHASES=()
+        SKIPPED_PHASES=()
+        t4_stack_independent_phases
+        printf '%s\n' "${FAILED_PHASES[@]}" >"$T4_DIR/failed"
+        printf '%s\n' "${SKIPPED_PHASES[@]}" >"$T4_DIR/skipped"
+    ) >"$T4_DIR/out" 2>&1 &
+    T4_PID=$!
+    fi
     run_phase_watching_skips "Integration-marked tests" "$INTEGRATION_SKIP_CEILING" \
-        "${REDIS_ENV[@]}" "${INTEGRATION_ENV[@]}" "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
+        "${REDIS_ENV[@]}" "${INTEGRATION_ENV[@]}" "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest "${NO_SELECT[@]}" tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         "${INTEGRATION_LIVE_IGNORES[@]}" \
         -o addopts="" -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
         --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
         "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/integration.xml"
+    if [ -n "$T4_PID" ]; then
+        wait "$T4_PID" || true
+        cat "$T4_DIR/out"
+        if [ ! -f "$T4_DIR/failed" ]; then
+            FAILED_PHASES+=("Stack-independent tail (no result)")
+        else
+            while IFS= read -r _l; do [ -n "$_l" ] && FAILED_PHASES+=("$_l"); done <"$T4_DIR/failed" || true
+            while IFS= read -r _l; do [ -n "$_l" ] && SKIPPED_PHASES+=("$_l"); done <"$T4_DIR/skipped" || true
+        fi
+    fi
     [ -n "$SC_PID" ] && wait "$SC_PID" || true
     [ -n "$SC_PID" ] && cat "$SC_DIR/out"
     # An absent result file means the lane died before reporting: that is a failure, never a pass.
@@ -722,6 +760,12 @@ except Exception:
 fi
 
 if ! $OVERLAY_ONLY; then
+# T4 above runs the stack-independent tail beside the live lane; with an incomplete stack or no
+# live lane it runs here instead, so the phases always run.
+if [ -z "$T4_PID" ]; then
+    t4_stack_independent_phases
+fi
+
 # 3b. The venv this gate runs in must install what the image ships (#492).
 #
 # Every requirements file is exactly pinned, so the venv and the container are two
@@ -732,8 +776,6 @@ if ! $OVERLAY_ONLY; then
 #
 # Checked HERE rather than in CI because it needs the running container to compare
 # against, which this gate already requires. Read-only; it never modifies either side.
-run_phase "Dependency parity: venv vs container" \
-    "$PROJECT_ROOT/scripts/check-dependency-parity.sh"
 
 # 4. GPU-marked tests. Deselected from the fast suite and from CI (both CPU-only), so
 # this gate is the ONLY place they run — they were silently ungated before #297.
@@ -760,7 +802,7 @@ if $RUN_GPU; then
     # these paths, so one added elsewhere cannot go silently unrun the way `gpu` itself did
     # before #297.
     run_phase_watching_skips "GPU-marked tests" "$GPU_SKIP_CEILING" \
-        "${REDIS_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/unit/test_cuda_device_guard.py \
+        "${REDIS_ENV[@]}" "$VENV_PY" -m pytest "${NO_SELECT[@]}" tests/integration/ tests/unit/test_cuda_device_guard.py \
         -o addopts="" -m "$GPU_SELECTION" -q --tb=short --strict-markers \
         --timeout="${GPU_TEST_TIMEOUT:-1800}" \
         "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/gpu.xml"
@@ -824,7 +866,7 @@ fi
 # already in for months. Without `-rs` the skip would also have had no recorded reason: the
 # `-o addopts=""` drops pyproject's flags, and this phase never restored them.
 run_phase_watching_skips "Model-vs-schema drift" "$SCHEMA_DRIFT_SKIP_CEILING" \
-    env RUN_SCHEMA_DRIFT_TESTS=true "$VENV_PY" -m pytest tests/unit/test_schema_drift.py \
+    env RUN_SCHEMA_DRIFT_TESTS=true "$VENV_PY" -m pytest "${NO_SELECT[@]}" tests/unit/test_schema_drift.py \
     -o addopts="" -q --tb=short "${SKIP_REASONS[@]}"
 
 # 5b. DB session lifetime. A session held across slow non-DB work keeps a transaction open,
@@ -836,8 +878,6 @@ run_phase_watching_skips "Model-vs-schema drift" "$SCHEMA_DRIFT_SKIP_CEILING" \
 # Static and fast (no stack, no DB) — it is a phase here as well as a pre-commit hook because
 # pre-commit only fires on the files a commit touches, and this rule is about a shape that
 # spreads by passing `db` into a callee, i.e. across files a given commit may not include.
-run_phase "DB session lifetime (no transaction across slow work)" \
-    python3 "$SCRIPT_DIR/audit-session-lifetime.py" "$PROJECT_ROOT/backend/app"
 
 # 6. Collection determinism. Two independent processes must collect the SAME test ids.
 #
@@ -855,36 +895,6 @@ run_phase "DB session lifetime (no transaction across slow work)" \
 # measurement — collapsing them into one collection compared against itself would prove
 # nothing. But they are independent, so running them one after the other only doubled the wall
 # clock: measured 78.3 s serial for a single collection of 39.3 s.
-run_phase "Collection determinism (two processes, same test ids)" \
-    bash -c '
-        set -uo pipefail
-        a=$(mktemp) && b=$(mktemp)
-        trap "rm -f $a $b" EXIT
-        "'"$VENV_PY"'" -m pytest --collect-only -q -o addopts= -p no:cacheprovider \
-            2>/dev/null | grep "::" | sort > "$a" &
-        pid_a=$!
-        "'"$VENV_PY"'" -m pytest --collect-only -q -o addopts= -p no:cacheprovider \
-            2>/dev/null | grep "::" | sort > "$b" &
-        pid_b=$!
-        # Wait on both regardless of order, and do not let a crashed collector look like an
-        # empty-but-equal pair — the emptiness check below is the backstop for that.
-        wait "$pid_a" || true
-        wait "$pid_b" || true
-        if [[ ! -s $a || ! -s $b ]]; then
-            # BOTH, now that they run concurrently: one collector dying leaves an empty file,
-            # and two empty files diff clean. "Identical" over nothing is the silent-skip trap
-            # wearing a determinism check as a hat.
-            echo "collected nothing — a probe did not run (a=$(wc -l < "$a") b=$(wc -l < "$b"))" >&2
-            exit 1
-        fi
-        if ! diff -u "$a" "$b" > /tmp/ot-collection-diff.txt; then
-            echo "Test ids differ between two collections of the SAME tree." >&2
-            echo "Under -n auto this makes xdist abort the whole run. First 20 lines:" >&2
-            head -20 /tmp/ot-collection-diff.txt >&2
-            exit 1
-        fi
-        echo "$(wc -l < "$a") test ids, identical across both collections"
-    '
 
 # 7. Mutation ratchet — cheap, and it reads results the operator already produced.
 #
@@ -899,8 +909,6 @@ run_phase "Collection determinism (two processes, same test ids)" \
 # The ratchet exists because "kill every mutant" is not finishable: lockout's 149 survivors
 # include 77 log-string edits no caller can observe. Down is progress, up is a regression, and
 # that is a gate you can actually pass.
-run_phase "Mutation ratchet (last run vs baselines)" \
-    "$SCRIPT_DIR/run-mutation-tests.sh" --check-baseline
 fi
 
 # 8. Optional: corpus-dependent search relevance harness
@@ -910,7 +918,7 @@ fi
 if $SEARCH_QUALITY; then
     run_phase_watching_skips "Search quality harness (corpus-dependent)" \
         "$SEARCH_QUALITY_SKIP_CEILING" \
-        env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py \
+        env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest "${NO_SELECT[@]}" tests/test_search_quality.py \
         -o addopts="" -q --tb=short "${SKIP_REASONS[@]}"
 fi
 

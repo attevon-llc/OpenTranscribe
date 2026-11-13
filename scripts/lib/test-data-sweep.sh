@@ -82,3 +82,12 @@ tds_own_end_sweep_for_children() {
     TDS_IS_PARENT=1
     export OT_TEST_DATA_SWEEP_AT_EXIT=parent
 }
+
+# tds_own_entry_sweep_for_children — SW1. Run the ONE entry sweep here and tell wrapped scripts
+# to skip theirs. An entry sweep clears orphans of EARLIER killed runs; inside one parent run
+# everything newer belongs to a live registered run, so a nested entry sweep finds nothing the
+# parent's did not remove. Call once, right before the first phase that writes to the stack.
+tds_own_entry_sweep_for_children() {
+    export OT_TEST_DATA_SWEEP_AT_ENTRY=parent
+    tds_run_sweep "start"
+}

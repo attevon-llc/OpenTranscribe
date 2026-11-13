@@ -44,6 +44,10 @@ def isolated_lockout_store(monkeypatch):
     # so monkeypatch (which only restores what it itself set) left a live
     # `time.monotonic()` reading behind for whichever test reaches `_get_store()` next.
     monkeypatch.setattr(lockout_store, "_last_redis_probe", 0.0)
+    # `_last_redis_probe=0.0` makes the next `_get_store()` re-probe, and with Redis reachable
+    # (the mutation harness exports REDIS_URL/REDIS_PASSWORD) that swaps the real, persistent
+    # store back in. Pin the documented seam so the test owns its precondition.
+    monkeypatch.setattr(lockout_store, "_get_redis_client", lambda: None)
 
 
 # ── local ───────────────────────────────────────────────────────────────────────

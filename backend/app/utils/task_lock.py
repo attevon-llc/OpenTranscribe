@@ -16,7 +16,7 @@ Fail closed (a concurrent duplicate destroys, duplicates or corrupts state):
     ``system_startup_recovery``, ``system.reclaim_lost_tasks``,
     ``system.reclaim_orphaned_deliveries``, ``system.health_check``: reset file state and
     re-dispatch work, so a duplicate runs a job twice.
-    ``search_index_maintenance``, ``search_index_sweep``, ``search_reembed_degraded``,
+    ``search_index_maintenance``, ``opensearch_index_selfheal``, ``search_index_sweep``, ``search_reembed_degraded``,
     ``opensearch_index_structure_lock:*``: reindex / delete / recreate the shared index; two
     overlapping passes have already deleted most of an index (root CLAUDE.md).
     ``neural_search_bootstrap``: a concurrent deploy deletes an in-flight registration.

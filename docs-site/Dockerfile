@@ -105,6 +105,11 @@ RUN chown -R nginx:nginx /var/cache/nginx && \
 
 USER nginx
 
+# Build identity, last so a per-commit value invalidates no cached layer above it. Same ARG name
+# as every other prod image so stack_target can attribute the image to its commit.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

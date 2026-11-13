@@ -2670,7 +2670,7 @@ start_app() {
     if [ "$BUILD_FLAG" = "--build" ]; then
       echo "🔄 Starting services in PRODUCTION mode with LOCAL BUILD (testing before push)..."
       echo "⚠️  Building backend and frontend images locally instead of pulling from Docker Hub"
-      [ -n "$DRY_RUN_FLAG" ] || build_prod_images # a dry run must not build
+      [ -n "$DRY_RUN_FLAG" ] || build_prod_images "$LITE_FLAG" # a dry run must not build
       # Add local override to prevent pulling from Docker Hub (overrides pull_policy: always)
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.yml"
       # Force no-pull at `up` time. pull_policy:never in the override is NOT reliably honored
@@ -3364,7 +3364,7 @@ reset_and_init() {
     if [ "$BUILD_FLAG" = "--build" ]; then
       echo "🔄 Resetting in PRODUCTION mode with LOCAL BUILD (testing before push)..."
       echo "⚠️  Building backend and frontend images locally instead of pulling from Docker Hub"
-      build_prod_images
+      build_prod_images "$LITE_FLAG"
       # Add local override to prevent pulling from Docker Hub (overrides pull_policy: always)
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.yml"
       # Force no-pull at `up` time so the locally-built image isn't clobbered by a

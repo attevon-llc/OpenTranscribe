@@ -70,7 +70,7 @@ BUILD_TARGET="${1:-all}"
 # Set REMOTE_BUILDER_NAME to override the builder name
 USE_REMOTE_BUILDER="${USE_REMOTE_BUILDER:-false}"
 REMOTE_BUILDER_NAME="${REMOTE_BUILDER_NAME:-opentranscribe-multiarch}"
-DEFAULT_BUILDER_NAME="opentranscribe-builder"
+export DEFAULT_BUILDER_NAME="opentranscribe-builder"
 
 # BUILD_MODE=local  — build for the host arch only, --load into the local daemon,
 #                     push NOTHING. This is what the release flow uses to produce
@@ -834,7 +834,7 @@ build_docs() {
         --platform "$(build_platforms "${component}")" \
         --file Dockerfile \
         --build-arg DOCS_BASE_URL=/docs/ \
-        --build-arg OT_VERSION="${VERSION_FULL}" \
+        --build-arg OT_VERSION="${VERSION_FULL}" --build-arg GIT_SHA="${COMMIT_SHA}" \
         --build-arg APK_SECURITY_REFRESH="${OT_APK_SECURITY_REFRESH:-$(date -u +%Y-%m-%d)}" \
         "${identity_args[@]}" \
         "${tag_args[@]}" \

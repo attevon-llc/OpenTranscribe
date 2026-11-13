@@ -45,14 +45,32 @@ def fake_repo(tmp_path: Path) -> Path:
     )
     _write(root / "opentr.sh", f'#!/bin/bash\necho "opentr $*" >> "{log}"\nexit 0\n')
     _write(root / "scripts" / "generate-ssl-cert.sh", f'#!/bin/bash\necho ssl >> "{log}"\n')
-    _write(root / "scripts" / "pki" / "setup-test-pki.sh", f'#!/bin/bash\necho pki >> "{log}"\n')
+    _write(
+        root / "scripts" / "pki" / "setup-test-pki.sh",
+        f'#!/bin/bash\necho pki >> "{log}"\nmkdir -p scripts/pki/test-certs\n'
+        'echo "PKI_TRUSTED_PROXIES=${FAKE_FRAGMENT:-127.0.0.1/32,172.16.0.0/12}"'
+        " > scripts/pki/test-certs/pki-test.env\n",
+    )
+    # stand-in for the generator: --print-trusted-proxies answers what the project network gives
+    _write(
+        root / "scripts" / "pki" / "generate-test-env.sh",
+        f'#!/bin/bash\necho "proj=$COMPOSE_PROJECT_NAME $*" >> "{log}"\n'
+        'echo "${FAKE_DERIVED_PROXIES:-127.0.0.1/32,10.200.2.0/24}"\n',
+    )
+    (root / "frontend" / "static" / "fonts").mkdir(parents=True)
+    (root / "frontend" / "static" / "fonts" / "Poppins-Bold.woff2").write_text("font")
     _write(
         root / "scripts" / "lib" / "stack-target.sh",
         "st_target() { return 0; }\nst_require() { return 0; }\nst_container() { echo c; }\n",
     )
+    # the pki tail waits on curl then runs pytest from backend/venv: stub both
+    _write(root / "bin" / "curl", "#!/bin/bash\nexit 0\n")
+    _write(root / "backend" / "venv" / "bin" / "python", "#!/bin/bash\nexit 0\n")
     # the operator's .env: must never be copied into the isolated tree
     (root / ".env").write_text("FLOWER_PASSWORD=OPERATOR_SENTINEL\n")
-    (root / ".gitignore").write_text(".env\ncalls.log\n")
+    (root / ".gitignore").write_text(
+        ".env\ncalls.log\nfrontend/static/fonts\nscripts/pki/test-certs\n"
+    )
     env = {**os.environ, **GIT_ENV}
     subprocess.run(["git", "init", "-q"], cwd=root, check=True, env=env)
     subprocess.run(["git", "add", "-A"], cwd=root, check=True, env=env)
@@ -73,7 +91,12 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 def _run(root: Path, *args: str, cache: Path) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, **GIT_ENV, "MODEL_CACHE_DIR": str(cache)}
+    env = {
+        **os.environ,
+        **GIT_ENV,
+        "MODEL_CACHE_DIR": str(cache),
+        "PATH": f"{root / 'bin'}:{os.environ['PATH']}",
+    }
     return subprocess.run(
         ["bash", str(root / "scripts/release-tests/isolated-prod-env.sh"), *args],
         cwd=root,
@@ -147,3 +170,33 @@ def test_run_pki_starts_fresh_project_and_stops_it(fake_repo: Path, tmp_path: Pa
 
 def test_misuse_is_exit_2(fake_repo: Path, tmp_path: Path) -> None:
     assert _run(fake_repo, "run", "bogus", cache=tmp_path).returncode == 2
+
+
+def test_prepare_provisions_the_gitignored_fonts(fake_repo: Path, tmp_path: Path) -> None:
+    """The clone has no gitignored fonts; stack_target asset:frontend-fonts needs a woff2."""
+    res = _run(fake_repo, "prepare", "pki", cache=tmp_path / "models")
+    assert res.returncode == 0, res.stderr
+    tree = Path(res.stdout.strip().splitlines()[-1])
+    assert (tree / "frontend/static/fonts/Poppins-Bold.woff2").read_text() == "font"
+    assert _git(tree, "status", "--porcelain") == ""
+
+
+def test_pki_restarts_once_when_network_subnet_differs_from_fallback(
+    fake_repo: Path, tmp_path: Path
+) -> None:
+    """First start falls back to 172.16/12; the fresh network is elsewhere, so start again."""
+    res = _run(fake_repo, "run", "pki", "--name", "t2", cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+    calls = (fake_repo / "calls.log").read_text().splitlines()
+    assert any("proj=otfresh-t2 --print-trusted-proxies" in c for c in calls), calls
+    assert len([c for c in calls if c.startswith("opentr start")]) == 2, calls
+
+
+def test_pki_does_not_restart_when_trust_already_matches(
+    fake_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_FRAGMENT", "127.0.0.1/32,10.200.2.0/24")
+    res = _run(fake_repo, "run", "pki", "--name", "t3", cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+    calls = (fake_repo / "calls.log").read_text().splitlines()
+    assert len([c for c in calls if c.startswith("opentr start")]) == 1, calls

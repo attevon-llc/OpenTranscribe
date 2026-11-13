@@ -19,10 +19,22 @@ best-effort MinIO delete is a harmless no-op.
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 
+import pytest
 from fastapi import status
 
 from app.models.media import MediaFile
+from app.models.media import TranscriptSegment
+
+_EXISTS = "app.services.minio_service.object_exists_and_size"
+
+
+@pytest.fixture(autouse=True)
+def _no_storage_object():
+    """Default: the prepared row's object never landed (an unfinished upload)."""
+    with patch(_EXISTS, return_value=None):
+        yield
 
 
 def _make_file(db_session, owner, *, file_status: str, **overrides) -> MediaFile:
@@ -140,3 +152,71 @@ def test_cancel_admin_can_delete_others_completed(
     media_file = _make_file(db_session, normal_user, file_status="completed")
     response = client.delete(f"/api/files/{media_file.uuid}", headers=admin_token_headers)
     assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+# ---------------------------------------------------------------------------
+# Trash vs destroy (issue #1101): only an unfinished upload is destroyed
+# ---------------------------------------------------------------------------
+
+
+def _row(db_session, file_uuid):
+    db_session.expire_all()
+    return db_session.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+
+
+def test_pending_with_transcript_is_trashed_not_destroyed(
+    client, user_token_headers, normal_user, db_session
+):
+    """Retry/reprocess put a transcribed file back to PENDING; delete must trash it."""
+    media_file = _make_file(db_session, normal_user, file_status="pending")
+    db_session.add(
+        TranscriptSegment(
+            media_file_id=media_file.id, start_time=0.0, end_time=1.0, text="kept words"
+        )
+    )
+    db_session.commit()
+    with patch(_EXISTS, return_value=4096):
+        response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    row = _row(db_session, media_file.uuid)
+    assert row is not None and row.deleted_at is not None
+    assert db_session.query(TranscriptSegment).filter_by(media_file_id=media_file.id).count() == 1
+
+
+def test_pending_with_transcript_missing_object_is_still_trashed(
+    client, user_token_headers, normal_user, db_session
+):
+    """Processing history alone makes the file non-destroyable, whatever storage says."""
+    media_file = _make_file(db_session, normal_user, file_status="pending")
+    db_session.add(
+        TranscriptSegment(media_file_id=media_file.id, start_time=0.0, end_time=1.0, text="x")
+    )
+    db_session.commit()
+    response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    row = _row(db_session, media_file.uuid)
+    assert row is not None and row.deleted_at is not None
+
+
+def test_completed_but_queued_pending_file_is_trashed(
+    client, user_token_headers, normal_user, db_session
+):
+    """Bytes landed, not yet processed: trash, never destroy."""
+    media_file = _make_file(db_session, normal_user, file_status="pending")
+    with patch(_EXISTS, return_value=4096):
+        response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    row = _row(db_session, media_file.uuid)
+    assert row is not None and row.deleted_at is not None
+
+
+def test_unfinished_upload_is_destroyed_and_multipart_aborted(
+    client, user_token_headers, normal_user, db_session
+):
+    """No object landed and no history: destroyed at once, parts aborted."""
+    media_file = _make_file(db_session, normal_user, file_status="pending")
+    with patch("app.services.multipart_upload.abort_uploads_for_object") as abort:
+        response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    abort.assert_called_once_with(str(media_file.storage_path))
+    assert _row(db_session, media_file.uuid) is None

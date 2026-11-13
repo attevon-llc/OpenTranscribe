@@ -97,6 +97,8 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Fixed
 
+- `DELETE /api/files/{uuid}` destroyed any PENDING file at once, including one whose upload had completed and one put back to pending by retry, reprocess or recovery with its transcript intact, bypassing the trash (#1101). Only an unfinished upload (no object landed in storage and no processing history) is still destroyed, with its multipart aborted; everything else is trashed and restorable. Storage doubt also trashes. The load-test personas no longer purge an upload that was destroyed outright.
+
 - `compose_project_name` (`scripts/lib/compose-project.sh`) ignored an exported `POSTGRES_PORT`, so a target chosen by exporting ports resolved the LIVE project; it now resolves the project publishing that port. The pytest twin lost its "the only postgres anywhere" step, which could pick an unrelated application's database.
 - From a git worktree, the model-cache helpers in `scripts/common.sh` worked on `<worktree>/models` instead of the exported `MODEL_CACHE_DIR`, re-downloading NLTK and OpenSearch models on every worktree `--fresh` start, and `fresh_stack_seed_models` looked for the diar-native export in the worktree, so the backend re-exported it cold (~140 s) at startup.
 - The `opentr.sh start` quick-reference told operators to rebuild images after code changes; the dev stack hot-reloads the API and Vite, celery needs `restart-backend`, and a rebuild is only for dependency or Dockerfile changes.

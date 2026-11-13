@@ -494,7 +494,7 @@ BASE_PORTS = {'POSTGRES_PORT': 5176, 'MINIO_PORT': 5178, 'OPENSEARCH_PORT': 5180
 class ResolvedPort(NamedTuple):
     var: str
     port: int
-    source: str  # "env" | "dotenv" | "default"
+    source: str  # "env" | "stack" | "dotenv"
 
 
 def port_scope_mismatch(ports: list[ResolvedPort]) -> str | None:

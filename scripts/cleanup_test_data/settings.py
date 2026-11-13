@@ -23,8 +23,15 @@ _ARTIFACT_SWEEP_MODULE = _REPO_ROOT / 'scripts' / 'lib' / 'test_artifact_sweep.p
 _env = dotenv_values(_REPO_ROOT / '.env')
 
 
+def _stack_target() -> ModuleType:
+    sys.path.insert(0, str(_REPO_ROOT / 'scripts' / 'lib'))
+    import stack_target
+
+    return stack_target
+
+
 def _setting(name: str, default: str) -> str:
-    return os.environ.get(name) or _env.get(name) or default
+    return str(_stack_target().env_setting(name, default, _env))
 
 
 def _host_setting() -> str:
@@ -35,7 +42,15 @@ def _host_setting() -> str:
 
 
 def _backend_url() -> str:
-    return os.environ.get('E2E_BACKEND_URL', 'http://localhost:5174')
+    explicit = os.environ.get('E2E_BACKEND_URL')
+    if explicit:
+        return explicit
+    port = _stack_target().observed_port('BACKEND_PORT')
+    if not port:
+        raise SystemExit(
+            'stack-target: no backend port resolved (export E2E_BACKEND_URL or start a stack)'
+        )
+    return f'http://localhost:{port}'
 
 
 def _admin_email() -> str:
@@ -61,18 +76,21 @@ def _engine_url() -> str:
     db_user = _setting('POSTGRES_USER', 'postgres')
     db_password = _setting('POSTGRES_PASSWORD', 'postgres')
     db_host = _host_setting()
-    db_port = _setting('POSTGRES_PORT', '5176')
+    db_port = _setting('POSTGRES_PORT', '')
     db_name = _setting('POSTGRES_DB', 'opentranscribe')
     return f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
 
 
 def _resolve_port(sweep: ModuleType, var: str) -> Any:
-    """Env first, then ``.env``, then the stack default: the order ``_setting`` uses."""
+    """Env first, then the resolved stack's published port, then ``.env``."""
     if os.environ.get(var):
         return sweep.ResolvedPort(var, int(os.environ[var]), 'env')
+    observed = _stack_target().observed_port(var)
+    if observed:
+        return sweep.ResolvedPort(var, int(observed), 'stack')
     if _env.get(var):
         return sweep.ResolvedPort(var, int(str(_env[var])), 'dotenv')
-    return sweep.ResolvedPort(var, sweep.BASE_PORTS[var], 'default')
+    raise SystemExit(f'stack-target: no {var} resolved (nothing exported, no stack, no .env)')
 
 
 def _load_artifact_sweep() -> ModuleType:

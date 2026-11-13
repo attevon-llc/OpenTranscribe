@@ -39,6 +39,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from types import ModuleType
 
 from dotenv import dotenv_values
 from sqlalchemy import create_engine, text
@@ -56,8 +57,15 @@ _KEY_CATEGORY = {
 UNSET = 'UNSET'
 
 
+def _stack_target() -> ModuleType:
+    sys.path.insert(0, str(Path(__file__).resolve().parent / 'lib'))
+    import stack_target
+
+    return stack_target
+
+
 def _setting(name: str, default: str) -> str:
-    return os.environ.get(name) or _env.get(name) or default
+    return str(_stack_target().env_setting(name, default, _env))
 
 
 def _host_setting() -> str:
@@ -73,7 +81,7 @@ def _engine():
     db_user = _setting('POSTGRES_USER', 'postgres')
     db_password = _setting('POSTGRES_PASSWORD', 'postgres')
     db_host = _host_setting()
-    db_port = _setting('POSTGRES_PORT', '5176')
+    db_port = _setting('POSTGRES_PORT', '')
     db_name = _setting('POSTGRES_DB', 'opentranscribe')
     url = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
     return create_engine(url)

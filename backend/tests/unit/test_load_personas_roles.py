@@ -282,3 +282,24 @@ def test_the_summary_persona_asks_only_for_formats_the_endpoint_supports(load):
     from app.services.summary_export_service import VALID_SUMMARY_EXPORT_FORMATS
 
     assert set(load["personas_roles"].SUMMARY_FORMATS) <= set(VALID_SUMMARY_EXPORT_FORMATS)
+
+
+def test_the_document_export_persona_sends_only_formats_the_request_schema_accepts(load):
+    from typing import get_args
+
+    from app.schemas.transcript_export import TranscriptDocumentExportRequest
+
+    accepted = set(get_args(TranscriptDocumentExportRequest.model_fields["format"].annotation))
+
+    assert set(load["personas_roles"].DOCUMENT_FORMATS) == accepted == {"pdf", "docx"}
+
+
+def test_the_team_lead_queues_pdf_and_docx_exports_that_the_schema_validates(run):
+    from app.schemas.transcript_export import TranscriptDocumentExportRequest
+
+    calls = [c for c in _calls(run, "TeamLead") if c.url.endswith("/export/document")]
+
+    assert calls, "the team lead never queued a document export"
+    for call in calls:
+        assert call.method == "POST"
+        TranscriptDocumentExportRequest.model_validate(call.body)

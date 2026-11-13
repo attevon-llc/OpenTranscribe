@@ -26,6 +26,9 @@ from ws_listener import WebSocketListener
 # The endpoint's own list (VALID_SUMMARY_EXPORT_FORMATS, app/services/summary_export_service.py):
 # asking for pdf or docx is a 400 by design, and a unit test keeps the two equal.
 SUMMARY_FORMATS = ('md',)
+# DOCX and PDF are a different endpoint (POST /export/document, an async render on the download
+# worker), whose request schema is TranscriptDocumentExportRequest.format.
+DOCUMENT_FORMATS = ('pdf', 'docx')
 
 
 class CanaryMixin(SeededUser):
@@ -232,6 +235,35 @@ class TeamLead(CanaryMixin, SeededUser):
         )
         self._call('files.export', fill=fill, params={'format': 'txt'}, label='txt')
         self._call('files.captions', fill=fill)
+
+    @tag('write')  # queues a render job, so a read-only run must not send it
+    @task(1)  # low weight: every call loads the download worker
+    def export_document(self) -> None:
+        """Queue a DOCX or PDF export, as the export dialog does (requestDocumentExport.ts).
+
+        The browser then opens the job stream for the presigned URL; the render runs on the
+        worker whether or not anyone listens, so the load is the queued job. 409 is the app's
+        answer while redaction detection has not finished, 404 a file with no transcript.
+        """
+        file_uuid = self._a_file()
+        if file_uuid is None:
+            return
+        fmt = random.choice(DOCUMENT_FORMATS)
+        body = {
+            'format': fmt,
+            'include_comments': False,
+            'include_timestamps': True,
+            'include_speakers': True,
+            'line_numbering': 'per_page',
+            'page_size': 'a4',
+        }
+        self._call(
+            'files.export_document',
+            fill={'file_uuid': file_uuid},
+            json=body,
+            expect=(202, 404, 409),
+            label=fmt,
+        )
 
     @tag('write')
     @task(1)

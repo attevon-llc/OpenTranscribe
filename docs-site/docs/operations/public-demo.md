@@ -22,7 +22,7 @@ Four independent layers, each enough to stop a change on its own:
 |---|---|
 | The API refuses writes | With `DEMO_MODE=true`, every request that is not `GET`, `HEAD` or `OPTIONS` gets `403` with `{"detail": {"code": "demo_read_only"}}` before it reaches any handler. Only sign-in, token refresh and sign-out are allowed. Live-update connections (WebSockets) are refused too. |
 | No background work can be queued | With `DEMO_MODE=true`, the app refuses to publish any background task, so a page view cannot start a scan, a download preparation or anything else. |
-| Nothing exists to run work | The demo overlay runs no worker, no scheduler and no Flower. |
+| Nothing exists to run work | The demo overlay runs no worker, no scheduler and no Flower. `/flower/` answers 502 on the demo. |
 | The image cannot transcribe | The demo uses the CPU-only lite image, which has no local speech recognition. |
 
 Every route of the application is checked against the first layer by an automated test, so a

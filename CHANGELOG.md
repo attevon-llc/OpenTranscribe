@@ -78,6 +78,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Fixed
 - Shared-collection access checks exclude files of members pending removal with a correlated `NOT EXISTS` again instead of `NOT IN (SELECT ...)`, which PostgreSQL cannot plan as an anti-join (#1337 regression).
+- The standalone `frontend/ffmpeg-wasm-build/Dockerfile` (used by the dev `prebuild` and the CI cache) pinned emsdk 3.1.40 while the shipped `Dockerfile.prod` used 6.0.13; both are now 6.0.13 and a unit test fails on drift.
 - The export and download menus close on Escape and return focus to their button; the demo no longer sends a comment on Enter; the usage-report prompt is a labelled region that fits 390 px screens; the erasure notice date follows the app language; the demo drops a websocket opened before the demo flag was known; the removed-members date is one translated sentence.
 - The shared `api_session` e2e fixture now lives in `backend/tests/e2e/conftest.py` (the chat rendering tests had none); the file-menu e2e tests select menus by test id.
 - The mobile nav drawer now moves focus in on open, traps Tab while open, closes on Escape and returns focus to its toggle (WCAG 2.4.3) (#1282).

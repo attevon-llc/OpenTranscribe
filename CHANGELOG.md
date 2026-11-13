@@ -12,6 +12,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 
 ### Added
 
+- `download-models.py` runs the diar-native group as a child process overlapping the other groups once pyannote is done, with one manifest and the same exit-1-on-failure contract (EFFC SU1).
 - The download, redaction, cloud-asr, NLP and embedding workers no longer wait for `backend: service_healthy` (they still wait for `migrate`); GPU workers, the CPU worker and beat keep waiting because they can run diarization (EFFC B1).
 - `./opentr.sh restart-backend --only <service>[,<service>]` restarts just the named containers (unknown names exit 2); the service list lives in `scripts/lib/restart-services.sh` (EFFC D3).
 - Release rehearsal and release stages assert their stack (STK4): the rehearsal scenarios check EVERY image they run (backend, backend-lite, frontend, docs) against HEAD before `up` and label their local builds with the revision; the live-stack restore refuses (exit 3) from a different checkout than the one that stopped it and names the right `cd <dir> && ./opentr.sh start dev`; Scenario C's teardown waits on `ot-reltest-lite`; `lite-smoke.sh` takes `--fresh/--project/--stock` and matches GPU workers by compose label; the `test` stage requires schema head, bind-mounted code and health on its fresh stack; the PKI leg checks `FLOWER_PASSWORD` and `nginx/ssl` before the image build (`stack_target.py check --no-stack`) and the stack after it; `run-summary-eval.sh` reuses a running vLLM only when its compose project is the target `--fresh` stack.

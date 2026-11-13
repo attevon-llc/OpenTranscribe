@@ -206,6 +206,24 @@ class TestInMemoryExpiryBoundaries:
         assert store.delete("k") == 1
         assert store.delete("k") == 0
 
+    def test_deleting_a_key_drops_its_deadline_too(self) -> None:
+        """A successful login deletes the attempt counter. Its deadline must go with it.
+
+        The ``max_records`` ceiling only bounds ``_data``, so a deadline left behind for a
+        deleted key is memory nothing evicts until the lockout window ends, one entry per
+        cleared counter. It also breaks the invariant (every key in ``_expires`` is in
+        ``_data``) that ``_drop_if_expired`` and ``_prune_expired`` rely on. Counted through
+        ``_expires`` because bounded memory IS the contract.
+        """
+        store = lockout_store.InMemoryLockoutStore()
+        store.set("lockout:a", "v", ex=3600)
+        store.set("lockout:b", "v", ex=3600)
+
+        assert store.delete("lockout:a") == 1
+
+        assert "lockout:a" not in store._expires
+        assert store._expires.keys() == store._data.keys() == {"lockout:b"}
+
     def test_keys_sweeps_a_key_whose_deadline_is_now(self) -> None:
         clock = _Clock()
         store = lockout_store.InMemoryLockoutStore(clock=clock)

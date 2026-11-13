@@ -30,6 +30,7 @@ is hours and is not the point.
 
 ```bash
 ./scripts/run-mutation-tests.sh --check            # preconditions, mutates nothing
+./scripts/run-mutation-tests.sh --fresh NAME --check   # same, against the otfresh-NAME stack (any mode takes --fresh)
 ./scripts/run-mutation-tests.sh --list             # targets + the tests each one runs
 ./scripts/run-mutation-tests.sh --module spans     # START HERE (~1-3 min)
 ./scripts/run-mutation-tests.sh --module spans --dry-run

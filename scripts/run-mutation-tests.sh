@@ -49,6 +49,8 @@
 #
 # Usage:
 #   ./scripts/run-mutation-tests.sh --check              # preconditions only, mutate nothing
+#   ... --fresh NAME                                     # any mode: target the otfresh-NAME stack (else exported
+#                                                        # COMPOSE_PROJECT_NAME / POSTGRES_PORT, else the live dev stack)
 #   ./scripts/run-mutation-tests.sh --list               # the configured targets + their tests
 #   ./scripts/run-mutation-tests.sh --module spans       # ONE module (start here)
 #   ./scripts/run-mutation-tests.sh --module spans --dry-run   # print the commands, run nothing
@@ -600,6 +602,7 @@ MODULE=""
 DRY_RUN=false
 SHOW_ID=""
 PARALLEL=false
+FRESH_NAME=""
 PAR_MODULES=""
 PAR_JOBS=3
 COMPARE_A=""
@@ -628,11 +631,14 @@ while [[ $# -gt 0 ]]; do
             fi
             MODE=run; MODULE="${2:-}"; shift ;;
         --dry-run) DRY_RUN=true ;;
+        --fresh)
+            [[ -n "${2:-}" && "${2:-}" != -* ]] || { echo -e "${RED}--fresh needs a NAME.${NC}" >&2; exit 2; }
+            FRESH_NAME="$2"; shift ;;
         --parallel) PARALLEL=true; MODE=run; MODULE=ALL ;;
         --modules) PAR_MODULES="${2:-}"; shift ;;
         --jobs) PAR_JOBS="${2:-}"; shift ;;
         --compare-verdicts) MODE=compare; COMPARE_A="${2:-}"; COMPARE_B="${3:-}"; shift 2 ;;
-        -h|--help) sed -n '2,53p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        -h|--help) sed -n '2,55p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) echo -e "${RED}Unknown option: $1${NC}" >&2; exit 2 ;;
     esac
     shift
@@ -654,21 +660,7 @@ source "$SCRIPT_DIR/lib/mutation-stack.sh"
 
 check_preconditions() {
     local ok=true
-
-    if [[ ! -x "$VENV_BIN/python" ]]; then
-        echo -e "${RED}✗ backend/venv missing — create it per CLAUDE.md${NC}"; ok=false
-    else
-        echo -e "${GREEN}✓ backend/venv${NC}"
-    fi
-
-    if [[ ! -x "$VENV_BIN/mutmut" ]]; then
-        echo -e "${RED}✗ mutmut not installed${NC}"
-        echo -e "  ${YELLOW}$VENV_BIN/pip install 'mutmut>=3.2.0'${NC}  (it is in backend/requirements-dev.txt)"
-        ok=false
-    else
-        echo -e "${GREEN}✓ mutmut $("$VENV_BIN/mutmut" version 2>/dev/null || echo '(version unknown)')${NC}"
-    fi
-
+    mutation_check_tooling || ok=false
     mutation_check_stack || ok=false
 
     # A mutation run must be SERIAL. pyproject's addopts carry `-n auto`; every mutant

@@ -180,7 +180,7 @@ Moved intact from `scripts/CLAUDE.md`. Entry point: `scripts/audit-tests.py` (th
     # in each worktree: its OWN --fresh deployment (own Postgres/Redis, own ports) —
     ./opentr.sh start dev --fresh "mutate-$m" --port-offset <unique-per-lane>
     # then, inside that worktree, against ITS OWN stack:
-    POSTGRES_PORT=<lane-port> REDIS_PORT=<lane-port> ./scripts/run-mutation-tests.sh --module "$m"
+    ./scripts/run-mutation-tests.sh --fresh "mutate-$m" --module "$m"   # resolves that stack (ports included)
     ```
 
     ⚠️ **`-n0` still applies WITHIN each lane — the parallelism is ACROSS lanes, never inside

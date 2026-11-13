@@ -23,6 +23,7 @@ from app.db.base import get_db
 from app.schemas.youtube_settings import YoutubeSettings
 from app.schemas.youtube_settings import YoutubeSettingsUpdate
 from app.services import youtube_policy
+from app.utils.client_ip import known_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ def update_youtube_settings(
         outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
-        source_ip=request.client.host if request.client else None,
+        source_ip=known_client_ip(request),
         details={"area": "youtube", "changed": {k: updates[k] for k in sorted(updates)}},
     )
     logger.info("Admin %s updated YouTube settings: %s", current_user.email, sorted(updates))

@@ -42,6 +42,7 @@ from app.services.chat.conversation_queries import find_user_project
 from app.services.chat.conversation_queries import list_user_projects
 from app.services.chat.conversation_queries import llm_config_uuid_for_id
 from app.services.request_context import RequestContext
+from app.utils.client_ip import known_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ def create_project(
         user_id=ctx.user.id,
         username=str(ctx.user.email),
         organization_id=ctx.org_id,
-        source_ip=request.client.host if request.client else None,
+        source_ip=known_client_ip(request),
         details={
             "project_uuid": str(project.uuid),
             # Counts only — never the project name, prompt, or selected files.

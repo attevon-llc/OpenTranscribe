@@ -21,6 +21,7 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.services import transcription_defaults as defaults
+from app.utils.client_ip import known_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ def put_transcription_defaults(
         outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
-        source_ip=request.client.host if request.client else None,
+        source_ip=known_client_ip(request),
         details={
             "area": "transcription.defaults",
             "changed": {k: updates[k] for k in sorted(updates)},

@@ -134,3 +134,13 @@ def resolve_client_ip(request: RequestScope | None) -> str:
 
     # Every hop was trusted — the request originated from inside the trusted set.
     return direct_ip
+
+
+def known_client_ip(request: RequestScope | None) -> str | None:
+    """:func:`resolve_client_ip`, with ``None`` where the address cannot be determined.
+
+    For records whose IP column is nullable: a missing address stays ``NULL`` rather than
+    becoming the string ``"unknown"``.
+    """
+    resolved = resolve_client_ip(request)
+    return None if resolved == UNKNOWN else resolved

@@ -27,6 +27,7 @@ from app.schemas.chat import ChatAdminSettingsUpdate
 from app.services.chat.settings import SETTING_KEYS
 from app.services.chat.settings import get_chat_settings
 from app.services.system_settings_service import set_setting
+from app.utils.client_ip import known_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def update_chat_admin_settings(
         outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
-        source_ip=request.client.host if request.client else None,
+        source_ip=known_client_ip(request),
         details={"area": "chat", "fields": sorted(updates.keys())},
     )
     logger.info("Admin %s updated chat settings: %s", current_user.email, sorted(updates))

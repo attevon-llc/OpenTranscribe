@@ -35,6 +35,7 @@ from app.schemas.chat import ConversationUpdate
 from app.services.chat.conversation_queries import list_conversation_page
 from app.services.chat.conversation_queries import message_counts
 from app.services.request_context import RequestContext
+from app.utils.client_ip import known_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def create_conversation(
         user_id=ctx.user.id,
         username=str(ctx.user.email),
         organization_id=ctx.org_id,
-        source_ip=request.client.host if request.client else None,
+        source_ip=known_client_ip(request),
         details={
             "conversation_uuid": str(conversation.uuid),
             # Counts only — never the selected filenames or tag names.
@@ -198,7 +199,7 @@ def delete_conversation(
         user_id=ctx.user.id,
         username=str(ctx.user.email),
         organization_id=ctx.org_id,
-        source_ip=request.client.host if request.client else None,
+        source_ip=known_client_ip(request),
         details={"conversation_uuid": conversation_uuid},
     )
     return {"status": "deleted", "uuid": conversation_uuid}

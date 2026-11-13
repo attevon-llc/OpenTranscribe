@@ -56,6 +56,7 @@ from app.services.takedown_service import TakedownActor
 from app.services.takedown_service import TakedownRefusedError
 from app.services.takedown_service import quarantine_file
 from app.services.takedown_service import release_file
+from app.utils.client_ip import known_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ def get_org_takedown_file(db: Session, file_uuid: str, org_id: int) -> MediaFile
 
 
 def _request_meta(request: Request) -> tuple[str, str]:
-    ip = request.client.host if request.client else ""
+    ip = known_client_ip(request) or ""
     return ip, request.headers.get("user-agent", "")
 
 

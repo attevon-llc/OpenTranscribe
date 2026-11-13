@@ -246,6 +246,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - GitHub Actions are pinned to commit SHAs with least-privilege permissions.
 - **Action: a forged `X-Forwarded-For` no longer escapes per-client rate limits.** The bundled nginx configs appended the client's own header, so a client whose address sat inside `RATE_LIMIT_TRUSTED_PROXIES` (every host-local request arrives from the Docker gateway) got a new rate-limit bucket per request; nginx now replaces the header with the address it saw. A load balancer in front of nginx now goes in nginx's realip config, not `RATE_LIMIT_TRUSTED_PROXIES` (Configuration > Environment variables).
 - The API server believes `X-Forwarded-For` and `X-Forwarded-Proto` only from `RATE_LIMIT_TRUSTED_PROXIES` (its `--forwarded-allow-ips` was every private range), so a LAN host that reaches the API port can no longer set its own recorded address or escape rate limits.
+- Audit records for admin settings, chat projects and conversations, takedowns, quarantines, authentication-setting changes and verification resends name the client, not the reverse proxy: they resolve the address through the same trusted-proxy rule as rate limits and sign-in.
 - Managed editions: deleting an account now hands organization content to an administrator, so code that creates organizations must call `set_owner`.
 
 ## [0.6.1] - 2026-11-03

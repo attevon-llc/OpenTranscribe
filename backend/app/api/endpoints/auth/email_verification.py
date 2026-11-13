@@ -30,6 +30,7 @@ from app.auth.email_verification import verify_email
 from app.db.base import get_db
 from app.schemas.invitation import EmailVerificationRequest
 from app.schemas.invitation import EmailVerificationResendRequest
+from app.utils.client_ip import resolve_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,6 @@ def resend_verification_endpoint(
     _local_auth: None = Depends(require_local_auth_enabled),
 ) -> dict[str, str]:
     """Request a fresh verification link. Always 200. Rate limited per IP."""
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = resolve_client_ip(request)
     resend_verification(db, body.email, client_ip)
     return {"message": _RESEND_MESSAGE}

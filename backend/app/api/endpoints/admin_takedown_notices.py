@@ -59,6 +59,7 @@ from app.services.takedown_notice_service import create_notice
 from app.services.takedown_notice_service import find_notice
 from app.services.takedown_notice_service import transition_link
 from app.services.takedown_notification_service import notify_owners
+from app.utils.client_ip import known_client_ip
 from app.utils.content_disposition import attachment_header
 from app.utils.csv_safe import render_csv
 
@@ -96,7 +97,7 @@ def takedown_notice_http_error(error: TakedownNoticeError) -> HTTPException:
 
 
 def _meta(request: Request) -> tuple[str | None, str | None]:
-    ip = request.client.host if request.client else None
+    ip = known_client_ip(request)
     return ip, request.headers.get("user-agent")
 
 

@@ -111,6 +111,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - The environment variables listed under Changed that never had an effect.
 
 ### Fixed
+- `filter_shareable_profiles` resolves the privacy policy of every (owner, organization) group with one batched read instead of one per group, so the speaker-suggestions statement count no longer grows with the number of profile owners (LFB A2).
 
 - `DELETE /api/files/{uuid}` destroyed any PENDING file at once, including one whose upload had completed and one put back to pending by retry, reprocess or recovery with its transcript intact, bypassing the trash (#1101). Only an unfinished upload (no object landed in storage and no processing history) is still destroyed, with its multipart aborted; everything else is trashed and restorable. Storage doubt also trashes. The load-test personas no longer purge an upload that was destroyed outright.
 

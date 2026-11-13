@@ -40559,7 +40559,7 @@
     },
     "/api/files/{file_uuid}": {
       "delete": {
-        "description": "Cancel an in-progress upload, or move a file to the trash.\n\nPENDING files owned by the caller get the cancel cleanup, which destroys them at once\n(an aborted upload has nothing to recover). Anything else is moved to the trash\n(issue #1101): recoverable until its window ends or someone deletes it forever with\n``DELETE /files/{uuid}/purge``. Both flows share this route — this router registers\nDELETE /{file_uuid} first, so a separate delete route would be unreachable.",
+        "description": "Cancel an unfinished upload, or move any other file to the trash.\n\nOnly a genuinely unfinished upload is destroyed at once: a PENDING file owned by the\ncaller whose bytes never landed in object storage (a prepared row or an in-progress\nmultipart upload) and that has no processing history. Everything else, including a\nPENDING file whose upload completed (queued, or put back by retry, reprocess or\nrecovery with its transcript intact), goes to the trash (issue #1101): recoverable\nuntil its window ends or someone deletes it forever with\n``DELETE /files/{uuid}/purge``. Both flows share this route: this router registers\nDELETE /{file_uuid} first, so a separate delete route would be unreachable.",
         "operationId": "cancel_upload_api_files__file_uuid__delete",
         "parameters": [
           {

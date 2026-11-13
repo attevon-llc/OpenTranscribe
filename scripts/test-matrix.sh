@@ -21,7 +21,7 @@
 # same commit.
 #
 # Usage:
-#   scripts/test-matrix.sh <1|2|3|4|all> [--only <leg>] [--json] [--dry-run] [--yes]
+#   scripts/test-matrix.sh <1|2|3|4|all|pre-release> [--only <leg>] [--json] [--dry-run] [--yes]
 #   scripts/test-matrix.sh --list
 #
 # Exit codes: 0 pass · 1 gate failed · 2 misuse · 3 precondition unmet · 4 operator abort.
@@ -123,6 +123,14 @@ LEGS=(
     "1.7|1|version consistency|python3 scripts/release/check-version-consistency.py|standard"
     "1.8|1|route coverage|backend/venv/bin/python3 scripts/audit-route-coverage.py --json|standard"
     "2a|2|Cycle 2A — integration gate + full e2e + frontend + auth e2e (real vLLM leg excluded, see doc)|scripts/run-dev-tests.sh --full --all-overlays --search-quality && scripts/run-auth-e2e.sh --cleanup --skip-pki|standard"
+    # ─── `pre-release` selector (R8): the legs `release.sh` does NOT run ───────────────────────
+    # Stage "pre" keeps them out of stages 1-4 and `all` (leg 2a already runs the whole of this
+    # once), so they run only under `test-matrix.sh pre-release`. `release.sh test` runs the
+    # backend gate + smoke e2e + export capability + first-run + journeys; these two add what it
+    # lacks. 2a-overlays still contains the backend gate (run-dev-tests.sh has no flag to run only
+    # the overlay-dependent phases), which is why it is NOT part of the stage-2 loop.
+    "2a-overlays|pre|Pre-release — backend gate with --all-overlays (watch, mock-asr) + --search-quality|scripts/run-dev-tests.sh --backend-only --all-overlays --search-quality|standard"
+    "2a-auth|pre|Pre-release — auth e2e (LDAP, Keycloak, Authentik)|scripts/run-auth-e2e.sh --cleanup --skip-pki|standard"
     "2b|2|Cycle 2B — GPU scaling|scripts/gpu-scale-smoke.sh|smoke"
     "2c|2|Cycle 2C — diarization providers|scripts/diar-native-smoke.sh|smoke"
     "2d|2|Cycle 2D — lite/cpu-only topology|scripts/lite-smoke.sh|smoke"
@@ -141,10 +149,11 @@ LEGS=(
 
 usage() {
     cat <<'EOF'
-Usage: scripts/test-matrix.sh <1|2|3|4|all> [options]
+Usage: scripts/test-matrix.sh <1|2|3|4|all|pre-release> [options]
        scripts/test-matrix.sh --list
 
   1|2|3|4|all   Run the named stage (or all four) from full-test-matrix.md
+  pre-release   Only the legs `release.sh run` does not repeat (2a-overlays, 2a-auth, 2b, 2c, 2d, 3-pki)
   --only <leg>  Run a single leg id (e.g. 1.2, 2b, 3-pki)
   --list        Print every leg parsed from the doc, run nothing
   --json        Machine-readable {stage, leg, status, criteria[], next[]} lines
@@ -209,9 +218,12 @@ check_doc_sync() {
     grep -q "## Stage 3" "$DOC" || missing_in_doc+=("3")
     grep -qi "PKI/mTLS is prod" "$DOC" || missing_in_doc+=("3-pki")
     grep -q "## Stage 4" "$DOC" || missing_in_doc+=("4")
+    grep -q "test-matrix.sh pre-release" "$DOC" || missing_in_doc+=("pre-release")
+    grep -q '`2a-overlays`' "$DOC" || missing_in_doc+=("2a-overlays")
+    grep -q '`2a-auth`' "$DOC" || missing_in_doc+=("2a-auth")
 
     # Reverse direction: every doc leg id has a LEGS entry.
-    local doc_leg_ids=(1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 2a 2b 2c 2d 3 3-pki 4)
+    local doc_leg_ids=(1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 2a 2a-overlays 2a-auth 2b 2c 2d 3 3-pki 4)
     for id in "${doc_leg_ids[@]}"; do
         local found=false
         for entry in "${LEGS[@]}"; do
@@ -423,7 +435,7 @@ run_leg() {
 
     case "$stage" in
         1) ;;
-        2) check_stage2_precondition || return $? ;;
+        2|pre) check_stage2_precondition || return $? ;;
         3)
             [[ "$ASSUME_YES" == "true" ]] || { err "Stage 3 leg $id needs --yes (it rebuilds images and rehearses real deployments for hours)"; return $EXIT_ABORT; }
             check_stage3_precondition "$id" || return $?
@@ -498,6 +510,18 @@ run_stage() {
     return $rc
 }
 
+# R8: what to run BEFORE cutting a release. `release.sh run` already re-runs preflight/verify
+# (stage 1), the backend gate + e2e smoke (`test`), the rehearsal (leg 3) and the scan (leg 4),
+# so repeating those from the matrix runs the release twice. This is the remainder.
+# Union check: tests/unit/test_test_matrix_pre_release.py proves PRE_RELEASE_LEGS plus the release
+# stages cover every LEGS id.
+PRE_RELEASE_LEGS=(2a-overlays 2a-auth 2b 2c 2d 3-pki)
+run_pre_release() {
+    local id rc=0
+    for id in "${PRE_RELEASE_LEGS[@]}"; do run_leg "$id" || rc=$?; done
+    return $rc
+}
+
 # ------------------------------------------------------------------ main
 if [[ "$MODE_LIST" == "true" ]]; then
     check_doc_sync || exit $?
@@ -533,7 +557,8 @@ else
     case "$STAGE_ARG" in
         1|2|3|4) run_stage "$STAGE_ARG" || RC=$? ;;
         all) for s in 1 2 3 4; do run_stage "$s" || RC=$?; done ;;
-        *) err "unknown stage: $STAGE_ARG (expected 1, 2, 3, 4, or all)"; exit $EXIT_MISUSE ;;
+        pre-release) run_pre_release || RC=$? ;;
+        *) err "unknown stage: $STAGE_ARG (expected 1, 2, 3, 4, all, or pre-release)"; exit $EXIT_MISUSE ;;
     esac
 fi
 

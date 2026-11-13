@@ -47,6 +47,8 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC
 export STAGE_ID=smoke
 # shellcheck source=scripts/release/criteria-lib.sh
 source "$SCRIPT_DIR/criteria-lib.sh"
+# shellcheck source=scripts/release/live-stack-lib.sh
+source "$SCRIPT_DIR/live-stack-lib.sh"
 
 fail=0
 
@@ -212,6 +214,32 @@ fi
 # on its first match and `docker ps` can die with SIGPIPE, so the pipeline reports failure and
 # a stack that IS up reads as an all-clear — the guard inverts exactly when it matters. Same
 # fix as 65-rehearse.sh's live-stack check.
+# A running dev/stock stack is stopped here under the SAME approval rule as `rehearse`
+# (live-stack-lib.sh: --yes, RELEASE_AUTO_STOP_STACK=true, or a prompt) and restored when this
+# stage ends. Before this, `release.sh run X --yes` could never pass `smoke` after `rehearse`
+# without a manual `./opentr.sh stop`. Without approval the refusal below stands (exit 3).
+# A stack `rehearse` left down on purpose (RELEASE_DEFER_STACK_RESTORE) is restored at exit.
+SMOKE_STOPPED_STACK=false
+smoke_live_names="$(lsl_live_stack_names)"
+if [[ -n "$smoke_live_names" ]] && lsl_approved_to_stop "$smoke_live_names" "the Hub install smoke"; then
+    if lsl_stop_stack; then
+        SMOKE_STOPPED_STACK=true
+    else
+        record live-stack-stopped fail "$LSL_FAIL_REASON" "$LSL_FAIL_FIX"
+        echo -e "${RED}${LSL_FAIL_REASON}; not proceeding (${LSL_FAIL_FIX}).${NC}" >&2
+        exit 3
+    fi
+fi
+restore_dev_stack_after_smoke() {
+    local stopped="$SMOKE_STOPPED_STACK"
+    SMOKE_STOPPED_STACK=false   # idempotent: runs from the EXIT trap too
+    RELEASE_DEFER_STACK_RESTORE=0 lsl_restore_after_stage "$VERSION" "$stopped"
+}
+# Armed BEFORE the refusals below: a stack stopped here must come back on every exit path.
+trap restore_dev_stack_after_smoke EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 blocking_names="$(docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}')"
 if [[ -n "$blocking_names" ]]; then
     # `${var%%$'\n'*}` instead of `| head -n1` — no pipe, so nothing here can SIGPIPE
@@ -293,7 +321,8 @@ cleanup_install_smoke() {
 }
 # A handler that merely returns hands control back to the interrupted script, which would
 # carry on against the stack it just tore down; INT/TERM must end the run (EXIT then cleans up).
-trap cleanup_install_smoke EXIT
+smoke_exit() { cleanup_install_smoke; restore_dev_stack_after_smoke; }
+trap smoke_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 

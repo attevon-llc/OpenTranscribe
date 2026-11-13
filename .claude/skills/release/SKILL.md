@@ -40,7 +40,7 @@ test" assertion fails. That is the single most common way to waste an hour here.
 ./scripts/release.sh build               # local images, nothing published
 ./scripts/release.sh scan                # scans the LOCAL images + image-hygiene check per leg
 git push -u origin <branch>              # rehearse installs the branch's files from origin
-./opentr.sh stop                         # rehearse and smoke need the live stack down
+./opentr.sh stop                         # optional: with --yes, rehearse and smoke stop/restore it themselves
 ./scripts/release.sh rehearse            # fresh-install, upgrade and lite-mode scenarios
 ./scripts/release.sh tag --yes           # ← first step that leaves this machine
 ./scripts/release.sh publish --yes       # pushes the BUILT legs + assembles :vX.Y.Z; never :latest, never rebuilds
@@ -77,7 +77,10 @@ operator abort.
   really are tmpfs; load below the ceiling. Each exists because its absence cost a multi-hour run.
 - **`test` may run in parallel with `build` then `scan`** (own stack, offset ports, no built image). A second
   `test`, `rehearse`, `run-dev-tests.sh`, `run-integration-tests.sh` or other fresh stack still blocks it.
-  Then `rehearse` after `scan`; it needs the host quiet.
+  Then `rehearse` after `scan`; it needs the host quiet. `release.sh run` now does this overlap itself
+  (`--serial` / `RELEASE_SERIAL=1` to opt out; `test` output in `.release/<v>/logs/test.log`) and starts
+  Scenario D beside `scan`. For a release candidate the final wave's backend phase IS `release.sh test`
+  on the release SHA (one gate, not two), then `run <v> --from build`.
 - **Detach long stages** and wait on the pid; a harness task stop must not kill them:
   `setsid nohup ./scripts/release.sh <stage> 0.X.Y > ~/ot-cleanup-work/<name>.log 2>&1 &` then
   `timeout 590 tail --pid=<pid> -f /dev/null`. Logs under `~/ot-cleanup-work`, never `/tmp` (it is cleaned).
@@ -207,9 +210,12 @@ TEST_ROOT. Never `--force-rehearse` past it: it is the bug a fresh install hits 
   rehearsal scenarios fail at their first transcription — hours in.
 - **The live stack must be STOPPED for `rehearse` and `smoke`.** The scenarios
   deliberately use the one-liner's stock container names and ports 5173-5180 so they
-  exercise what a real user gets. Without approval both refuse (exit 3). `rehearse`
-  alone can stop the stack and restart it afterwards when given `--yes`,
-  `RELEASE_AUTO_STOP_STACK=true`, or an interactive `y`; `smoke` never stops it.
+  exercise what a real user gets. Without approval both refuse (exit 3). Both
+  `rehearse` and `smoke` can stop the stack when given `--yes`,
+  `RELEASE_AUTO_STOP_STACK=true`, or an interactive `y` (one shared rule,
+  `scripts/release/live-stack-lib.sh`). In `run` with both selected the stack stays down between them
+  (`RELEASE_DEFER_STACK_RESTORE`, default on; `=0` to opt out), `smoke` or the exit path restores it, and a
+  stack you stopped by hand is never started.
   A stack that owns the stock ports under any other project (an `otfresh-*` test stack)
   is also exit 3, naming the project and the stop command (`./opentr.sh stop --fresh
   <name>`); `preflight` warns. `scripts/lib/stock-port-owners.sh` is the one definition.

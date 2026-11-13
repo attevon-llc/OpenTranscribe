@@ -527,6 +527,14 @@ does not read as a thorough one. `build`/`publish`/`promote` remain `release.sh`
 Sequencing: Stage 1 + Cycle 2A fit in one day. Cycles 2B/2C/2D plus Stage 3 fit in a second day.
 Stage 4 happens naturally as part of an actual `release.sh run` — don't schedule it separately.
 
+## Before a release: `test-matrix.sh pre-release`
+
+`release.sh run` already runs Stage 1 (`preflight`/`verify`), the backend gate and smoke e2e (`test`),
+Stage 3's rehearsal (`rehearse`) and Stage 4's scan (`scan`). `scripts/test-matrix.sh pre-release` runs only
+the rest: `2a-overlays` (backend gate with `--all-overlays --search-quality`; it still contains the backend
+gate because `run-dev-tests.sh` has no flag for just the overlay phases; it is the only run with the watch and mock-asr overlays up, so overlay-gated tests execute there and skip in `release.sh test`), `2a-auth`, `2b`, `2c`, `2d` and
+`3-pki`. Those two `2a-*` legs carry stage `pre`, so `all` and stage 2 do not run them a second time.
+
 ## Anti-staleness
 
 `scripts/test-matrix.sh` parses this document's leg tables and fails loudly if a documented leg

@@ -56,6 +56,8 @@ stages:
         severity: blocking
       - id: cold-cache-nltk-hardlinks-fail-loudly
         severity: blocking
+      - id: arm64-web-legs-run
+        severity: blocking
 """
 
 COLD_ORACLE = REPO_ROOT / "scripts" / "release-tests" / "lib" / "cold-model-download.py"
@@ -112,6 +114,7 @@ def scratch_repo(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy(REHEARSE_SH, release_dir / "65-rehearse.sh")
     (release_dir / "65-rehearse.sh").chmod(0o755)
     shutil.copy(CRITERIA_LIB_SH, release_dir / "criteria-lib.sh")
+    shutil.copy(CRITERIA_LIB_SH.with_name("live-stack-lib.sh"), release_dir / "live-stack-lib.sh")
     (release_dir / "release-criteria.yaml").write_text(_CRITERIA_YAML)
 
     marker_dir = tmp_path / "markers"

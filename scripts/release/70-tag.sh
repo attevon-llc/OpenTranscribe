@@ -63,6 +63,40 @@ record tag-absent pass
 # --- BEGIN artifacts-match-tagged-commit ---
 head_commit="$(git rev-parse HEAD)"
 stale_stages=()
+reuse_why=""
+# L1: a commit that changed only evidence-neutral paths plus paths that never reach an image
+# (evidence_reuse_paths: backend/tests/**) keeps build/scan/rehearse evidence ONLY IF (a) every leg's
+# local image ID is still the one build recorded in legs.tsv and (b) scripts/release-tests/** is
+# byte-identical to the ledger commit. Anything else re-runs the stage. The reuse is written next to
+# the stage's ledger entry (`<stage>.reuse`), never silent.
+reuse_evidence_ok() {
+    local stage="$1" from="$2" legs="$REPO_ROOT/.release/$VERSION/legs.tsv" tag want have
+    reuse_why=""
+    case "$stage" in build|scan|rehearse) ;; *) return 1 ;; esac
+    if ! git diff --quiet "$from" "$head_commit" -- scripts/release-tests; then
+        reuse_why="scripts/release-tests/** changed"; return 1
+    fi
+    if ! printf '%s\n' "$changed_paths" | "${CRITERIA_PY:-python3}" "${EVIDENCE_NEUTRAL_TOOL:-$SCRIPT_DIR/evidence_neutral.py}" "$stage" --reuse >/dev/null; then
+        reuse_why="a changed path is neither neutral nor image-free"; return 1
+    fi
+    if [[ ! -s "$legs" ]]; then
+        reuse_why="no recorded image IDs ($legs)"; return 1
+    fi
+    while IFS=$'\t' read -r _ _ _ tag want; do
+        have="$(docker image inspect "$tag" --format '{{.Id}}' 2>/dev/null || true)"
+        if [[ -z "$want" || "$have" != "$want" ]]; then
+            reuse_why="image $tag is not the recorded build"; return 1
+        fi
+    done < "$legs"
+    {
+        echo "reused_at=${head_commit}"
+        echo "from=${from}"
+        echo "when=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "legs_sha256=$(sha256sum "$legs" | cut -d' ' -f1)"
+        echo "release_tests_tree=$(git rev-parse "${head_commit}:scripts/release-tests")"
+    } > "$REPO_ROOT/.release/$VERSION/steps/$stage.reuse"
+    return 0
+}
 for evidence_stage in test build scan rehearse; do
     ledger_file="$REPO_ROOT/.release/$VERSION/steps/$evidence_stage"
     ledger_status=""; ledger_sha=""
@@ -95,8 +129,10 @@ for evidence_stage in test build scan rehearse; do
             changed_paths="$(git diff --name-only "$ledger_commit" "$head_commit")"
             if offending_path="$(printf '%s\n' "$changed_paths" | "${CRITERIA_PY:-python3}" "${EVIDENCE_NEUTRAL_TOOL:-$SCRIPT_DIR/evidence_neutral.py}" "$evidence_stage")"; then
                 echo "  $evidence_stage: fresh - only evidence-neutral paths changed since ${ledger_sha}: $(printf '%s' "$changed_paths" | tr '\n' ' ')" >&2
+            elif reuse_evidence_ok "$evidence_stage" "$ledger_commit"; then
+                echo "  $evidence_stage: REUSED - image IDs and scripts/release-tests unchanged since ${ledger_sha}; only image-free paths changed (recorded in steps/$evidence_stage.reuse)" >&2
             else
-                stale_stages+=("$evidence_stage (ran at ${ledger_sha}, HEAD is ${head_commit:0:9}; first non-neutral change: ${offending_path:-policy unreadable})")
+                stale_stages+=("$evidence_stage (ran at ${ledger_sha}, HEAD is ${head_commit:0:9}; first non-neutral change: ${offending_path:-policy unreadable}${reuse_why:+; reuse refused: $reuse_why})")
             fi
         fi
     fi

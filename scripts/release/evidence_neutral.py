@@ -4,7 +4,9 @@
 The policy lives in release-criteria.yaml under `evidence_neutral_paths:` (stage -> globs).
 70-tag.sh pipes `git diff --name-only <evidence-sha> HEAD` in on stdin.
 
-Usage:  evidence_neutral.py <stage> [--criteria PATH] < paths
+Usage:  evidence_neutral.py <stage> [--criteria PATH] [--reuse] < paths
+With --reuse the `evidence_reuse_paths:` globs (paths that never reach an image) count as neutral
+too; the CALLER must then also prove the image IDs and scripts/release-tests are unchanged (L1).
 Exit:   0 every path is neutral for <stage>; 1 prints the FIRST offending path; 2 misuse.
 
 Glob rules, deliberately tiny: `dir/**` matches anything under `dir/`; any other pattern
@@ -39,8 +41,19 @@ def load_policy(criteria: Path) -> dict[str, list[str]]:
     return policy
 
 
-def first_offender(stage: str, paths: list[str], policy: dict[str, list[str]]) -> str | None:
-    globs = policy[stage]
+def load_reuse_policy(criteria: Path) -> dict[str, list[str]]:
+    doc = yaml.safe_load(criteria.read_text(encoding='utf-8'))
+    reuse: dict[str, list[str]] = doc.get('evidence_reuse_paths') or {}
+    return reuse
+
+
+def first_offender(
+    stage: str,
+    paths: list[str],
+    policy: dict[str, list[str]],
+    reuse: dict[str, list[str]] | None = None,
+) -> str | None:
+    globs = policy[stage] + (reuse or {}).get(stage, [])
     for path in paths:
         if not any(matches(g, path) for g in globs):
             return path
@@ -51,11 +64,13 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('stage')
     parser.add_argument('--criteria', type=Path, default=DEFAULT_CRITERIA)
+    parser.add_argument('--reuse', action='store_true')
     args = parser.parse_args(argv)
     try:
         policy = load_policy(args.criteria)
+        reuse = load_reuse_policy(args.criteria) if args.reuse else None
         offender = first_offender(
-            args.stage, [p for p in sys.stdin.read().splitlines() if p], policy
+            args.stage, [p for p in sys.stdin.read().splitlines() if p], policy, reuse
         )
     except (KeyError, OSError, yaml.YAMLError) as exc:
         sys.stderr.write(f"evidence_neutral: cannot read policy for '{args.stage}': {exc!r}\n")

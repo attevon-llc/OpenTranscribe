@@ -39,7 +39,7 @@ from app.auth.lockout_store import REDIS_REPROBE_SECONDS
 #: mechanism for #810's flake and has NOT been shown to remove the one that fired — the flaky
 #: test resets its own `_last_redis_probe` at the top of its body and derives `frozen` from
 #: that same value two lines later, so no neighbour's leftover global can reach it. The five
-#: files sharing these globals are `test_lockout_atomicity`, `test_lockout_cleanup_sweep`,
+#: files sharing these globals are `test_lockout_atomicity`, `test_lockout_inmemory_store_bounded`,
 #: `test_lockout_survivor_mutants`, `test_auth_config_behaviour`, `test_session_survivor_mutants`,
 #: and this one.
 pytestmark = pytest.mark.usefixtures("auth_state_globals_restored")

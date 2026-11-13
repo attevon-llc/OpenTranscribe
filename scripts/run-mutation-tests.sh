@@ -158,9 +158,9 @@ declare -A MODULE_TESTS=(
     # it omitted test_lockout_atomicity.py (named for the module it tests) and
     # test_auth_config_behaviour.py, both of which import app.auth.lockout directly, plus
     # the login path that drives it end to end. Now 80.4%.
-    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py tests/unit/test_lockout_admin_listing.py"
-    [lockout_store]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_store_mutants.py"
-    [lockout_admin]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py tests/unit/test_lockout_admin_listing.py tests/test_admin_security.py"
+    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_inmemory_store_bounded.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py tests/unit/test_lockout_admin_listing.py"
+    [lockout_store]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_inmemory_store_bounded.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_store_mutants.py"
+    [lockout_admin]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_inmemory_store_bounded.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py tests/unit/test_lockout_admin_listing.py tests/test_admin_security.py"
     # HISTORY, kept because the reasoning still applies to the next target like it:
     # this entry used to warn that ~every OIDCStateStore mutant would survive, because
     # `store_state`/`get_state`/`delete_state` had no test at all and the target
@@ -602,9 +602,9 @@ MODULE=""
 DRY_RUN=false
 SHOW_ID=""
 PARALLEL=false
-FRESH_NAME=""
-PAR_MODULES=""
-PAR_JOBS=3
+# exported because their only readers are in the sourced lib/mutation-stack.sh, which shellcheck
+# does not follow without -x (SC2034).
+export FRESH_NAME="" PAR_MODULES="" PAR_JOBS=3
 COMPARE_A=""
 COMPARE_B=""
 

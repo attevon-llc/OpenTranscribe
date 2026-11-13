@@ -63,6 +63,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - `guard-unused-css` ratchet (push stage): a global class defined in `frontend/src/styles/*.css` or a component `:global(...)` selector that no frontend source references fails the gate; classes rendered by highlight.js, the date picker and the range slider are allowlisted with reasons.
 - `contrast-usage.test.ts`: WCAG 2.2 AA contrast for every colour/background token pair the stylesheets actually put in one rule, and for every text-role token on the base surfaces, so a new pairing is checked the day it is written; `consistency.test.ts` now rejects a status or brand fill token used as a text colour.
 - `scripts/lane-check.sh`: every fast whole-tree guard (duplicates, hidden-mypy, style-literals, unused-css, suppressions, vulture, svelte-unused, nuia, api-boundary, raw-env, ruff-ratchet, i18n parity, audit-tests, frontend test:audit) in one parallel command with a PASS/FAIL line each. Each guard runs its pre-commit hook's own entry (read by `scripts/lib/precommit_entry.py`), so the two cannot drift; it never stashes the worktree.
+- The root test `conftest.py` and the scratch-repo scripts (`mypy-hook-negative-control.sh`, `safe-precommit-selftest.sh`) clear every variable `git rev-parse --local-env-vars` lists, so a `git init` in a scratch directory under a pre-commit or pre-push hook can no longer act on the real repository (githooks(5) exports `GIT_DIR`); `test_git_local_env_scrub.py` guards it.
 
 ### Changed
 

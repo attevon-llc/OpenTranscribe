@@ -20,7 +20,8 @@ WORKDIR /app
 
 # Install dependencies first (layer caching)
 COPY package*.json ./
-RUN npm ci
+# Cache mount: downloads persist between builds, never committed to the image.
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # Copy source and build with /docs/ base URL.
 #
@@ -88,15 +89,15 @@ ARG APK_SECURITY_REFRESH=unset
 RUN echo "apk security refresh: ${APK_SECURITY_REFRESH}" \
     && apk upgrade --no-cache && apk del curl
 
-COPY --from=build /app/build /usr/share/nginx/html
+# --chown instead of a later chown -R, which duplicated the whole site in a second layer.
+COPY --from=build --chown=nginx:nginx /app/build /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Run as non-root. nginx.conf already listens on 8080, so nothing needs a
 # privileged port; this image was simply still running as root, which dockle
 # flags (CIS-DI-0001) and which the repo's own Dockerfile convention forbids.
 # The nginx user exists in the base image — only permissions need setting.
-RUN chown -R nginx:nginx /usr/share/nginx/html && \
-    chown -R nginx:nginx /var/cache/nginx && \
+RUN chown -R nginx:nginx /var/cache/nginx && \
     mkdir -p /var/log/nginx && \
     chown -R nginx:nginx /var/log/nginx && \
     touch /var/run/nginx.pid && \

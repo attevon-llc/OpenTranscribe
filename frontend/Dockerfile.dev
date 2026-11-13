@@ -4,19 +4,25 @@ ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
-    git \
-    su-exec
+# su-exec is all the entrypoint needs. python3/make/g++/git were installed here since the initial
+# commit but nothing uses them: package-lock.json's only hasInstallScript package is the optional,
+# macOS-only fsevents, and there are no git dependencies (a native dep would fail loudly at npm ci).
+RUN apk add --no-cache su-exec
 
-# Copy package files
-COPY package.json package-lock.json ./
+# Install dependencies as `node` (uid 1000, the default dev owner) so the image's node_modules is
+# already owned by the uid the entrypoint would chown it to: Docker populates a fresh anonymous
+# volume from the image keeping ownership, so the entrypoint's recursive chown is skipped (#1372).
+# /app is empty here, so this chown touches one directory entry, not a layer of files.
+RUN chown node:node /app
+COPY --chown=node:node package.json package-lock.json ./
 
-# Install dependencies
-RUN npm install
+# `npm ci` installs exactly the lockfile and never rewrites it; the cache mount keeps downloads
+# between builds and is not committed to the image (Docker docs: Optimize cache usage).
+# `su-exec node` (not a USER line) keeps the image ending as root, which the entrypoint needs to repair
+# reused volumes before it drops privileges; su-exec does not set HOME, so npm gets it explicitly.
+RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
+    HOME=/home/node su-exec node:node npm ci \
+    && su-exec node:node mkdir -p .svelte-kit
 
 # Create static directory for fonts
 RUN mkdir -p static/fonts
@@ -24,14 +30,8 @@ RUN mkdir -p static/fonts
 # Copy application code
 COPY . .
 
-# Ensure the fonts directory has the correct permissions
-RUN chmod -R 755 static/fonts
-
-# Ownership of node_modules and .svelte-kit (anonymous volumes in docker-compose.override.yml) is
-# set by the entrypoint at start, not here: a chown in a build layer copies every node_modules file
-# into a new layer (30+ min on a busy disk), while on the volume it only updates metadata (#1372).
-RUN mkdir -p .svelte-kit
-
+# Ownership of reused node_modules / .svelte-kit volumes is repaired by the entrypoint at start,
+# not here: a recursive chown in a build layer copies every file into a new layer (#1372).
 COPY docker-entrypoint.dev.sh /usr/local/bin/docker-entrypoint.dev.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.dev.sh
 

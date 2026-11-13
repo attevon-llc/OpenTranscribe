@@ -44,11 +44,13 @@ Useful flags on `run`:
 | `--from build` | Resume mid-flight |
 | `--dry-run` | Print every command, execute nothing |
 | `--json` | Machine-readable criteria + an explicit `next[]` |
-| `--yes` | Required for `tag`, `publish`, `promote` and `finish`; also approves `rehearse` stopping and restarting the live stack |
+| `--yes` | Required for `tag`, `publish`, `promote` and `finish`; also approves `rehearse` and `smoke` stopping and restarting the live stack |
+| `--serial` | `run` only: keep the strictly ordered schedule (also `RELEASE_SERIAL=1`). Default: `test` runs beside `build` then `scan` when all are selected |
 | `--patch` | Verify the version delta is a patch and, if the diff allows, waive the rehearsal scenarios — see [Cutting a patch release](#cutting-a-patch-release) |
 
 State lives in `.release/<version>/steps/` (gitignored) and records status,
-operator, git SHA, and any override — so a release that dies at hour three
+operator, git SHA, when the stage started, how long it took (`started=`, `duration_s=`),
+and any override — so a release that dies at hour three
 resumes rather than restarting.
 
 **Start a real run from a clean ledger.** After rehearsals the table accumulates
@@ -121,7 +123,7 @@ rather than silently ignored.
 | `rehearse` | Cold-cache model download, then fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |
 | `tag` | Refuses unless the ledger's `test`/`build`/`scan`/`rehearse` steps are `done` or `overridden` **at HEAD, or at an ancestor with only evidence-neutral paths changed since** (`artifacts-match-tagged-commit`; the per-stage neutral set is `evidence_neutral_paths` in `release-criteria.yaml`: CHANGELOG, `docs/**` and root `*.md` for all four, plus `docs-site/**` and `.release/**` for `test`/`rehearse` only because the docs image bakes `docs-site/` in; every stale stage named; `--force-tag "reason"` overrides). Then annotated tag + push; cuts `release/<major>.<minor>` from the tag, or on a patch fast-forwards it to the tag (plain push, never forced; a branch that has diverged is refused with exit 1) | **yes** |
 | `publish` | Pushes the **already-built** legs (`docker push`, no rebuild, no re-scan) and assembles the `:vX.Y.Z` indexes; `:vX.Y.Z` only | **yes** |
-| `smoke` | Install from Docker Hub; verify each image's capability (CUDA vs CPU) and architecture; **needs the live stack stopped** | no |
+| `smoke` | Install from Docker Hub; verify each image's capability (CUDA vs CPU) and architecture; **needs the live stack stopped** (stops and restores it with the same approval as `rehearse`) | no |
 | `promote` | Move `:latest` **by digest** — refuses to move it backwards on a backport | **yes** |
 | `finish` | GitHub release + assets | **yes** |
 
@@ -158,6 +160,39 @@ rather than silently ignored.
   version being promoted is OLDER than that, the copy is skipped and `:latest`
   is left alone — a pass, not a failure. See
   [Cutting a patch release](#cutting-a-patch-release).
+
+## How `run` schedules the stages
+
+`run` executes the selected stages in order, with one overlap: when `test` and `build` are both selected,
+`test` (its own fresh stack, GPU 1) runs in the background beside `build` then `scan`. The stage scripts and
+their arguments are unchanged; only the schedule is. Output of the background `test` goes to
+`.release/<version>/logs/test.log` (`test.json` with `--json`). Both branches always finish and every
+failure is reported, not only the first; `rehearse` and the later stages start only after both. `--serial`
+restores the old order. With `rehearse` selected, Scenario D (the cold-cache model download) starts right
+after `build`, beside `scan` (`65-rehearse.sh --cold-cache-only`, log in `cold-cache.log`); `rehearse`
+reuses that evidence only when the recorded backend image ID equals the current image's and the oracle
+passes all three D criteria, and otherwise runs D itself.
+
+**One dev-stack stop for `rehearse` through `smoke`.** When both are selected, `run` sets
+`RELEASE_DEFER_STACK_RESTORE=1`: `rehearse` stops the dev stack (with `--yes` or
+`RELEASE_AUTO_STOP_STACK=true`), leaves it down, and records
+`.release/<version>/stack-stopped-by-release`; `smoke` uses the same approval rule (it no longer only
+refuses) and restarts the stack when it ends. If the run stops early, release.sh's exit path restores the
+stack when that marker exists. A stack you stopped by hand has no marker and is never started by the
+release. Opt out with `RELEASE_DEFER_STACK_RESTORE=0`. The shared logic is
+`scripts/release/live-stack-lib.sh`.
+
+**The final wave gate is `release.sh test`.** For a release candidate the wave's backend phase is
+`./scripts/release.sh test <version>` run in the checkout the release is cut from, not a separate
+`run-integration-tests.sh` pass: the release test's flags are a superset of the wave's, so running it once
+covers both. Then `./scripts/release.sh run <version> --from build`; `tag` accepts a `test` entry at HEAD or
+at an ancestor with only evidence-neutral changes since.
+
+**What `test` does and does not cover.** `test` exercises the dev images (bind-mounted source), not the
+release images. Only `rehearse` runs the release images, with a feature subset, and only `smoke` runs what
+was pulled from Docker Hub (amd64 install; the lite arm64 probe runs over the remote context).
+`rehearse` also runs `nginx -t` in the frontend and docs arm64 legs on the arm64 host before anything is
+pushed (criterion `arm64-web-legs-run`, a warning when no `remote-arm64` context exists).
 
 ## Running the test stage
 
@@ -326,8 +361,9 @@ Further guarantees:
   cache root the app reads it from.
 - **The script's provenance is recorded** (`git hash-object`), and an uncommitted
   `download-models.py` is unverified.
-- **D runs before the live stack is stopped** (after the stop is approved), so its ~10 minutes
-  are not downtime. Its multi-GB cache is removed once Scenario A has seeded (and from the exit
+- **D runs before the live stack is stopped** (after the stop is approved), so its minutes
+  are not downtime. Under `release.sh run` it starts earlier still, beside `scan` (see
+  [How `run` schedules the stages](#how-run-schedules-the-stages)). Its multi-GB cache is removed once Scenario A has seeded (and from the exit
   trap), using the image under test by image ID; `REPORT.md` and the TSVs are kept.
 - **CPU only.** A downloader regression that appears only on a GPU is not covered.
 
@@ -585,10 +621,12 @@ manifest for an architecture string, which a *degraded but present* arm64 leg pa
 
 ## Before you start
 
-Cutting a release is not the place to discover a regression. Run the
-[full local test matrix](full-test-matrix.md) on the branch first — its Stage 1 is what
-`preflight`/`verify` run automatically, and its Stage 3 rehearsal legs are exactly what
-`rehearse` runs below; this page does not re-derive those steps.
+Cutting a release is not the place to discover a regression. Run
+`./scripts/test-matrix.sh pre-release` on the branch first. It runs only the
+[matrix](full-test-matrix.md) legs `release.sh` does not repeat (overlay and search-quality backend
+phases, auth e2e, GPU scaling, diarization, lite topology, PKI). Do not run matrix stages 1, 3 or 4 first:
+`preflight`/`verify` are Stage 1, `rehearse` is Stage 3 and `scan` is Stage 4, so running them from the
+matrix runs the release twice.
 
 `preflight` checks all of this, but knowing it saves a cycle:
 

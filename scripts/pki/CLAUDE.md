@@ -28,8 +28,9 @@ Moved intact from `scripts/CLAUDE.md`.
   ⚠️ **The docker gateway is never a proxy.** A host process, and any client Docker's userland
   proxy relays to a published port, reaches the backend FROM the bridge gateway, which sits in
   the derived subnet: a forged DN sent to the backend port from the host signed in as admin.
-  The backend refuses its own default gateway whatever the allowlist says
-  (`header_trust.default_gateways`, `test_header_trust_default_gateway.py`), so
+  The backend refuses its own default gateway whatever the allowlist says (trusted-header auth
+  only waives it for a matching `PROXY_SHARED_SECRET`; PKI never;
+  `header_trust.default_gateways`, `test_header_trust_default_gateway.py`), so
   `test-pki-auth.sh` logs in through the mTLS nginx with the client cert, never a bare header.
   `start-pki-prod.sh` was deleted — superseded by `./opentr.sh start prod --build --with-pki`,
   which (unlike the old script) includes `docker-compose.local.yml` so it serves the locally

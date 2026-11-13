@@ -28,6 +28,9 @@ from app.auth.header_trust import header_source_is_trusted
 from app.auth.header_trust import parse_trusted_proxies
 from app.auth.pki_auth import _extract_user_info_from_request
 from app.auth.pki_auth import _validate_pki_headers_source
+from app.auth.proxy.assertion import extract_proxy_assertion
+from app.auth.proxy.config import SHARED_SECRET_HEADER
+from app.auth.proxy.config import ProxyConfig
 
 #: The isolated PKI stack's measured network and allowlist.
 GATEWAY = "10.200.0.1"
@@ -155,3 +158,63 @@ def test_the_pki_smoke_script_logs_in_through_mtls_not_a_forged_header():
     assert f'-H "{DN_HEADER}' not in code
     assert '--cert "$cert_file" --key "$key_file"' in code
     assert '"${PKI_URL}/api/auth/pki/authenticate"' in code
+
+
+# ─── trusted-header auth: a matching shared secret authenticates a host-run proxy ──
+
+
+PROXY_EMAIL = "someone@example.com"
+SECRET = "proxy-secret-test-value"
+
+
+def _proxy_request(peer: str, secret: str | None) -> _Request:
+    headers = {"X-Forwarded-Email": PROXY_EMAIL}
+    if secret is not None:
+        headers[SHARED_SECRET_HEADER] = secret
+    return _Request(peer, headers)
+
+
+def _proxy_config(shared_secret: str) -> ProxyConfig:
+    return ProxyConfig(enabled=True, trusted_proxies=ALLOWLIST, shared_secret=shared_secret)
+
+
+def test_a_host_run_proxy_with_the_right_secret_is_accepted_from_the_gateway(container_routes):
+    assertion = extract_proxy_assertion(_proxy_request(GATEWAY, SECRET), _proxy_config(SECRET))
+    assert assertion is not None
+    assert assertion.email == PROXY_EMAIL
+
+
+@pytest.mark.parametrize(
+    "presented", ["not-the-secret", "", None], ids=["wrong", "empty", "absent"]
+)
+def test_the_gateway_with_a_wrong_or_missing_secret_is_refused(container_routes, presented):
+    assert (
+        extract_proxy_assertion(_proxy_request(GATEWAY, presented), _proxy_config(SECRET)) is None
+    )
+
+
+def test_the_gateway_is_refused_when_no_secret_is_configured(container_routes):
+    """No secret configured: nothing authenticates the hop, so even a sent header is moot."""
+    assert extract_proxy_assertion(_proxy_request(GATEWAY, SECRET), _proxy_config("")) is None
+
+
+def test_the_secret_waiver_is_proxy_only_pki_from_the_gateway_stays_refused(container_routes):
+    """A proxy secret header on a PKI request buys nothing: PKI never passes the waiver."""
+    networks = parse_trusted_proxies(ALLOWLIST)
+    forged = _Request(GATEWAY, {DN_HEADER: ADMIN_DN, SHARED_SECRET_HEADER: SECRET})
+    assert _validate_pki_headers_source(forged, networks, cert_dn_header=DN_HEADER) is False
+    assert (
+        _extract_user_info_from_request(
+            forged, None, None, networks=networks, cert_dn_header=DN_HEADER
+        )
+        is None
+    )
+
+
+def test_the_waiver_still_requires_the_allowlist(container_routes):
+    """The secret relaxes only the gateway rule, never the allowlist itself."""
+    networks = parse_trusted_proxies("192.0.2.0/24")
+    assert not header_source_is_trusted(_Request(GATEWAY), networks, secret_vouched=True)
+    assert header_source_is_trusted(
+        _Request(GATEWAY), parse_trusted_proxies(ALLOWLIST), secret_vouched=True
+    )

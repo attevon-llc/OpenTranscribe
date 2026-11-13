@@ -33,9 +33,18 @@ assertion*, so a whole private range such as `10.0.0.0/8` lets any device on tha
 in as any address (the same hazard described for [PKI](./pki#trust-configuration--read-this-first)).
 
 The backend's own default gateway is refused even when the list covers it: in Docker it is the
-host and every client the userland proxy relays to a published port, not your proxy. Run the
-proxy as a container on the backend's network, or the backend logs `this container's default
-gateway` and refuses the login.
+host and every client the userland proxy relays to a published port, not your proxy. There are
+two supported ways to run the proxy:
+
+- **As a container on the backend's network.** It reaches the backend from its own address.
+- **On the host, pointed at the published backend port, with `proxy_shared_secret` set.** The
+  proxy sends the secret in `X-OpenTranscribe-Proxy-Secret` and the backend compares it in
+  constant time (`hmac.compare_digest`). A request from the gateway is accepted only when the
+  secret matches, so other host processes cannot assert an identity. The gateway must still be
+  inside `proxy_trusted_proxies`.
+
+Without a secret, a request from the gateway is refused and the backend logs `this container's
+default gateway`. PKI has no shared secret, so a PKI proxy must always be a container.
 :::
 
 ## Configuration reference

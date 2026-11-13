@@ -155,6 +155,7 @@ def extract_proxy_assertion(request: RequestLike, cfg: ProxyConfig) -> ProxyAsse
     """
     raw_email = request.headers.get(cfg.email_header)
     asserted = bool(raw_email)
+    presented_secret = request.headers.get(SHARED_SECRET_HEADER)
 
     if not header_assertion_permitted(
         request,
@@ -162,6 +163,10 @@ def extract_proxy_assertion(request: RequestLike, cfg: ProxyConfig) -> ProxyAsse
         asserted=asserted,
         method="proxy",
         setting_name="proxy_trusted_proxies",
+        # A configured secret that matched authenticates the hop, so a proxy on the
+        # host may reach the backend from the docker gateway. No secret, no waiver.
+        secret_vouched=bool(cfg.shared_secret)
+        and shared_secret_matches(presented_secret, cfg.shared_secret),
     ):
         _audit_refusal(
             request,
@@ -175,7 +180,7 @@ def extract_proxy_assertion(request: RequestLike, cfg: ProxyConfig) -> ProxyAsse
         logger.debug("No proxy identity header on this request; falling through")
         return None
 
-    if not shared_secret_matches(request.headers.get(SHARED_SECRET_HEADER), cfg.shared_secret):
+    if not shared_secret_matches(presented_secret, cfg.shared_secret):
         logger.warning(
             "SECURITY: proxy assertion from %s carried a missing or incorrect shared "
             "secret. The peer is allowlisted, so this is a proxy misconfiguration or a "

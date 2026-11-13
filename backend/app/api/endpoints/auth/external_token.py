@@ -87,9 +87,15 @@ def _enforce_proxy_identity_consistency(
 
     from app.auth.header_trust import header_source_is_trusted
     from app.auth.header_trust import parse_trusted_proxies
+    from app.auth.header_trust import shared_secret_matches
+    from app.auth.proxy.config import SHARED_SECRET_HEADER
 
     networks = parse_trusted_proxies(proxy_settings.proxy_trusted_proxies)
-    if not header_source_is_trusted(request, networks):
+    secret = proxy_settings.proxy_shared_secret
+    secret_vouched = bool(secret) and shared_secret_matches(
+        request.headers.get(SHARED_SECRET_HEADER), secret
+    )
+    if not header_source_is_trusted(request, networks, secret_vouched=secret_vouched):
         return
 
     if asserted.strip().lower() == str(user.email).strip().lower():

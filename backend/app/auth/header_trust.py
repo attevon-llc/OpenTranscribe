@@ -191,7 +191,9 @@ def immediate_peer_ip(request: RequestLike) -> str:
     return UNKNOWN_PEER
 
 
-def header_source_is_trusted(request: RequestLike, networks: Sequence[TrustedNetwork]) -> bool:
+def header_source_is_trusted(
+    request: RequestLike, networks: Sequence[TrustedNetwork], *, secret_vouched: bool = False
+) -> bool:
     """Whether the peer that delivered *request* may assert identity headers.
 
     One rule, with no environment-dependent relaxation: the immediate peer must be
@@ -200,11 +202,21 @@ def header_source_is_trusted(request: RequestLike, networks: Sequence[TrustedNet
     operator allow-lists for the proxy, yet it is the host, and every client Docker's
     userland proxy relays to a published port. Trusting it let anyone who could reach
     the backend's port sign in as any DN. An empty allowlist trusts nobody.
+
+    Args:
+        request: The incoming request.
+        networks: Parsed trusted-proxy allowlist.
+        secret_vouched: The request carried a configured shared secret that matched
+            (:func:`shared_secret_matches`, constant time). The secret then authenticates
+            the hop itself, so a proxy run on the host may reach the backend from the
+            gateway. Only trusted-header auth has a secret; PKI never passes this.
     """
     if not networks:
         return False
     peer = immediate_peer_ip(request)
-    return ip_in_networks(peer, networks) and peer not in default_gateways()
+    if not ip_in_networks(peer, networks):
+        return False
+    return secret_vouched or peer not in default_gateways()
 
 
 def header_assertion_permitted(
@@ -214,6 +226,7 @@ def header_assertion_permitted(
     asserted: bool,
     method: str,
     setting_name: str,
+    secret_vouched: bool = False,
 ) -> bool:
     """Decide whether to accept identity headers on *request*.
 
@@ -224,11 +237,12 @@ def header_assertion_permitted(
             headers. When it does not there is nothing to refuse.
         method: Auth-method name, for the log line (``pki`` / ``proxy``).
         setting_name: The allowlist setting an operator would fix.
+        secret_vouched: See :func:`header_source_is_trusted`.
 
     Returns:
         True to continue (trusted peer, or nothing asserted), False to refuse.
     """
-    if header_source_is_trusted(request, networks):
+    if header_source_is_trusted(request, networks, secret_vouched=secret_vouched):
         return True
 
     if not asserted:
@@ -242,7 +256,7 @@ def header_assertion_permitted(
             "%s identity headers received from %s, this container's default gateway: the "
             "address the host and Docker's userland proxy connect from, so it vouches for "
             "nobody even where %s covers it. Send them through the reverse-proxy container "
-            "on the compose network instead.",
+            "on the compose network, or, for trusted-header auth, set a shared secret.",
             method,
             peer,
             setting_name,

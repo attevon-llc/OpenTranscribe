@@ -220,7 +220,7 @@ resolve_needed_overlays() {
             backend) $RUN_BACKEND && phase_ok=true ;;
         esac
         $phase_ok || continue
-        if $OVERLAY_ONLY && [[ -z "${OVERLAY_ONLY_NEEDED[$flag]:-}" ]]; then
+        if ${OVERLAY_ONLY:-false} && [[ -z "${OVERLAY_ONLY_NEEDED[$flag]:-}" ]]; then
             continue
         fi
         # auto tier always runs when its phase is selected; all-overlays tier only under

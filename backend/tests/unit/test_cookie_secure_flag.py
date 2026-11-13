@@ -14,9 +14,9 @@ that one case. An adversarial review of the first version of this fix found that
 ``Secure`` from EVERY cookie the process ever set — including one served over
 genuine HTTPS on the same process (e.g. a LAN deployment later put behind a TLS
 reverse proxy). ``_secure_for_request`` closes that: with the override active, it
-checks the actual request's scheme (which already reflects a trusted reverse
-proxy's ``X-Forwarded-Proto`` via uvicorn's ``--proxy-headers``, per
-``Dockerfile.prod``) and sets ``Secure`` on an actually-HTTPS request regardless.
+checks the actual request's scheme (a trusted reverse proxy's ``X-Forwarded-Proto``
+through ``utils/client_ip.forwarded_proto``, else the connection's own) and sets
+``Secure`` on an actually-HTTPS request regardless.
 
 This module pins: the module-level baseline decision (``_SECURE``, used only when
 no request is available), the per-request decision used by every real cookie set

@@ -58,9 +58,11 @@ are AWS-infra recommendations (outside this repo) are marked ☁️.
   of the ALB. This is the main thing the in-repo nginx can't provide.
 - **Static assets:** serve the built SPA from **S3 + CloudFront** (the 1y-immutable hashed assets
   cache perfectly); origin-shield the API. Or keep the nginx container behind the ALB — both work.
-- **Trust the proxy chain:** ensure the backend validates `X-Forwarded-Proto`/`X-Forwarded-For`
-  and **rejects non-HTTPS** forwarded requests; set FastAPI/uvicorn `--proxy-headers` and the
-  trusted-hosts/forwarded-allow-ips to the ALB subnet only (don't trust arbitrary clients).
+- **Trust the proxy chain:** give the bundled nginx the ALB subnet with the realip module
+  (`set_real_ip_from`, `real_ip_header X-Forwarded-For`, `real_ip_recursive on`; see
+  Configuration > Environment variables, rate limits note). The backend believes
+  `X-Forwarded-For`/`X-Forwarded-Proto` only from `RATE_LIMIT_TRUSTED_PROXIES` (nginx); uvicorn
+  runs with `--no-proxy-headers`. Never trust arbitrary clients.
 - **Secrets:** AWS Secrets Manager / SSM Parameter Store → injected as env at deploy. Never bake
   into the image or the bundle. Rotate DB/MinIO/provider keys.
 - **Object storage:** MinIO → **S3** (or MinIO on EBS with encryption). Presigned URLs already
@@ -85,7 +87,7 @@ are AWS-infra recommendations (outside this repo) are marked ☁️.
 - [ ] CSP has no `script-src 'unsafe-inline'`; zero CSP violations in the browser console.
 - [ ] `npm audit` + `pip-audit` green (moderate+) in CI; Trivy scan of prod images clean.
 - [ ] WAF attached; TLS A+ (HSTS, no weak ciphers); 80→443 redirect.
-- [ ] Backend rejects non-HTTPS `X-Forwarded-Proto`; `--proxy-headers` + trusted IPs set.
+- [ ] ALB subnet in nginx's realip config; `RATE_LIMIT_TRUSTED_PROXIES` covers nginx only.
 - [ ] Secrets only in Secrets Manager; none in image/bundle (grep the built `dist/`).
 - [ ] Redaction verified server-side: a non-owner CANNOT reveal redacted content even via a
       direct `?redact=false` API call (audited; re-verify against prod).

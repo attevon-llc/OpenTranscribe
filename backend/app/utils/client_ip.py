@@ -144,3 +144,21 @@ def known_client_ip(request: RequestScope | None) -> str | None:
     """
     resolved = resolve_client_ip(request)
     return None if resolved == UNKNOWN else resolved
+
+
+#: X-Forwarded-Proto values a trusted proxy may assert (uvicorn's ProxyHeadersMiddleware
+#: accepts the same set).
+_FORWARDED_PROTOS = frozenset({"http", "https", "ws", "wss"})
+
+
+def forwarded_proto(request: RequestScope) -> str | None:
+    """The scheme a trusted proxy reports in ``X-Forwarded-Proto``, else ``None``.
+
+    The same rule as the client address: the header counts only when the connecting peer is
+    in ``RATE_LIMIT_TRUSTED_PROXIES``. Callers fall back to the connection's own scheme.
+    """
+    peer = str(request.client.host) if request.client else UNKNOWN
+    if not is_trusted_proxy(peer):
+        return None
+    value = (request.headers.get("X-Forwarded-Proto") or "").strip().lower()
+    return value if value in _FORWARDED_PROTOS else None

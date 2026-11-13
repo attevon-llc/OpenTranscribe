@@ -29,17 +29,11 @@ else
   unset PROMETHEUS_MULTIPROC_DIR
 fi
 
-# --proxy-headers makes uvicorn honour X-Forwarded-Proto/-For from the reverse proxy, so
-# request.url.scheme is https behind TLS termination and request.client.host is the real
-# peer rather than the proxy. Without it the app cannot tell http from https, which
-# affects redirect/cookie decisions (issue #284 A0.5).
-#
-# --forwarded-allow-ips is RATE_LIMIT_TRUSTED_PROXIES, the list app/utils/client_ip.py
-# walks: uvicorn rewrites request.client from X-Forwarded-For BEFORE the app sees it, so a
-# wider list here is a second resolver the app cannot undo. It used to be every RFC1918
-# range, which let any LAN host that reached the API port pick its own client address.
-# Unset, uvicorn's own default (loopback) applies (uvicorn settings, "HTTP":
-# --forwarded-allow-ips). Never "*".
-exec uvicorn app.main:app --host 0.0.0.0 --port 8080 \
-  --proxy-headers --forwarded-allow-ips "${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1}" \
-  "$@"
+# --no-proxy-headers: request.client stays the host that opened the connection. uvicorn's
+# proxy-header handling (on by default) replaces it with the X-Forwarded-For client and keeps
+# no copy (uvicorn docs, "Proxies and Forwarded Headers"), which left two places wrong:
+# auth/header_trust.py judges whether the HOP that sent an identity header may vouch for it,
+# and saw the end user instead of nginx; and it was a second client resolver with its own
+# trust list. The client address is resolved once, by app/utils/client_ip.py, and
+# X-Forwarded-Proto by client_ip.forwarded_proto, both against RATE_LIMIT_TRUSTED_PROXIES.
+exec uvicorn app.main:app --host 0.0.0.0 --port 8080 --no-proxy-headers "$@"

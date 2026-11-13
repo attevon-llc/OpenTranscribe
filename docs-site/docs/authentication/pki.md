@@ -46,6 +46,10 @@ LAN routers hand out — let any device on that LAN sign in as any DN, including
 (`BACKEND_BIND_HOST=127.0.0.1`), or a client can bypass the proxy entirely.
 :::
 
+:::note[First `--with-pki` start on a new project]
+`./opentr.sh start ... --with-pki` derives `PKI_TRUSTED_PROXIES` from the project's Docker network, but that network does not exist until the first `up` finishes. The first start therefore falls back to `172.16.0.0/12`, and if Docker gave the project a subnet outside that range (for example `10.200.2.0/24` on a `--fresh` stack) every certificate login is refused with 401 and the backend logs `no configured trusted proxy can vouch`. Start once more (the network now exists and the real subnet is used), or pass `--trusted-proxies <cidr>` to `scripts/pki/generate-test-env.sh`.
+:::
+
 A DN header is trusted **only** when it arrives from a configured proxy, or alongside a
 certificate this process has itself validated.
 

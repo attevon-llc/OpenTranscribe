@@ -94,6 +94,18 @@ prepare_tree() {
     git clone -q --shared --no-checkout "$REPO_ROOT" "$tree" \
         && git -C "$tree" checkout -q --detach "$SOURCE_SHA" \
         || { err "could not clone $SOURCE_SHA into $tree"; return 1; }
+    # frontend/static/fonts is gitignored, so the clone has none and stack_target's
+    # asset:frontend-fonts (and the PKI e2e preflight) refuse. Same provisioning as
+    # scripts/e2e/styling-ab.sh: copy the checkout's fonts; fall back to the project's own
+    # `npm run setup-fonts`. Never operator state: fonts are public assets.
+    if compgen -G "$REPO_ROOT/frontend/static/fonts/*.woff2" >/dev/null; then
+        mkdir -p "$tree/frontend/static" \
+            && cp -a "$REPO_ROOT/frontend/static/fonts" "$tree/frontend/static/fonts" \
+            || { err "could not copy frontend fonts"; return 1; }
+    else
+        (cd "$tree/frontend" && npm ci --silent >/dev/null 2>&1 && npm run --silent setup-fonts >/dev/null 2>&1) \
+            || { err "no fonts in $REPO_ROOT and npm run setup-fonts failed"; return 1; }
+    fi
     local env="$tree/.env"
     cp "$tree/.env.example" "$env"
     # Replace every CHANGE_ME placeholder with a generated secret (values never printed).
@@ -161,7 +173,25 @@ STARTED=true
 st_target --fresh "$NAME" || { err "fresh target $NAME did not resolve"; exit 3; }
 st_require code=image healthy isolated || { err "the $NAME stack is not this tree's healthy build"; exit 3; }
 
+# A --with-pki start generates PKI_TRUSTED_PROXIES from the project's docker network
+# (scripts/pki/generate-test-env.sh), but on a fresh project that network only exists once `up`
+# has run, so the first start falls back to 172.16.0.0/12 and the backend then refuses every
+# header-sourced cert ("no configured trusted proxy can vouch"). docs/PKI_SETUP.md's remedy is
+# "start once more so the network exists": do exactly that, only when the value differs.
+settle_pki_trust() {
+    local slug want have
+    slug="$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
+    want="$(COMPOSE_PROJECT_NAME="otfresh-${slug:-default}" ./scripts/pki/generate-test-env.sh \
+        --print-trusted-proxies 2>/dev/null)" || { err "could not derive PKI trusted proxies"; return 1; }
+    have="$(sed -n 's/^PKI_TRUSTED_PROXIES=//p' scripts/pki/test-certs/pki-test.env 2>/dev/null | tail -1)"
+    [[ -n "$want" ]] || { err "empty derived PKI trusted proxies"; return 1; }
+    [[ "$want" == "$have" ]] && return 0
+    echo "PKI trusted proxies were '$have', the project network gives '$want': starting once more"
+    "${START[@]}" || { err "restart failed: ${START[*]}"; return 1; }
+}
+
 if [[ "$MODE" == pki ]]; then
+    settle_pki_trust || exit 1
     PORT=$(( ${PKI_HTTPS_PORT:-5182} + ${OFFSET:-0} ))
     deadline=$(( $(date +%s) + 600 ))
     until curl -sk --max-time 5 "https://localhost:${PORT}/" >/dev/null 2>&1; do

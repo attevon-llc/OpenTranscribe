@@ -267,6 +267,10 @@ EXEMPT: dict[tuple[str, str], str] = {
         "opentranscribe.sh",
         "hardcoded-container",
     ): "ships standalone to end users: stock ports and container names are its documented install layout, not a developer stack guess",
+    (
+        "scripts/opentr-info.sh",
+        "live-port-default",
+    ): "display only: print_access_info echoes the URLs from the same *_PORT variables compose interpolates (opentr.sh exports them for --fresh and --port-offset); it connects to nothing",
 }
 
 # Files whose compose invocations are the stack owners (they derive the project themselves).

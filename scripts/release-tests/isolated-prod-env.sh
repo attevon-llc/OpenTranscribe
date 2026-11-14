@@ -199,14 +199,17 @@ source "$TREE/scripts/lib/stack-target.sh"
 # the generated .env has no HUGGINGFACE_TOKEN to provision it, so the sidecar would exit 8 forever
 # (restart: unless-stopped). Seed it from the host's verified export, the same copy the release
 # `test` stage makes (fresh-stack-lib.sh); never DIAR_ALLOW_UNVERIFIED_MODELS. RELEASE_TEST_DIAR_MODELS_SRC
-# overrides the source.
-DIAR_SRC="${RELEASE_TEST_DIAR_MODELS_SRC:-$(resolve_model_cache_dir "$REPO_ROOT")/diar-native}"
-if [[ -z "$(ls "$DIAR_SRC" 2>/dev/null)" ]]; then
-    err "no diar-native export at $DIAR_SRC to seed the isolated stack from (set RELEASE_TEST_DIAR_MODELS_SRC)"
-    exit 3
+# overrides the source. Not for the demo: the demo host has neither an export nor a token (it never
+# diarizes), so no sidecar runs there, and an empty dir keeps it out of this stack's chain too.
+if [[ "$MODE" == pki ]]; then
+    DIAR_SRC="${RELEASE_TEST_DIAR_MODELS_SRC:-$(resolve_model_cache_dir "$REPO_ROOT")/diar-native}"
+    if [[ -z "$(ls "$DIAR_SRC" 2>/dev/null)" ]]; then
+        err "no diar-native export at $DIAR_SRC to seed the isolated stack from (set RELEASE_TEST_DIAR_MODELS_SRC)"
+        exit 3
+    fi
+    REPO_ROOT="$TREE" RELEASE_TEST_DIAR_MODELS_SRC="$DIAR_SRC" fresh_stack_seed_models "$NAME" \
+        || { err "could not seed diar-native models from $DIAR_SRC"; exit 3; }
 fi
-REPO_ROOT="$TREE" RELEASE_TEST_DIAR_MODELS_SRC="$DIAR_SRC" fresh_stack_seed_models "$NAME" \
-    || { err "could not seed diar-native models from $DIAR_SRC"; exit 3; }
 
 START=(./opentr.sh start prod --build --fresh "$NAME")
 if [[ "$MODE" == pki ]]; then

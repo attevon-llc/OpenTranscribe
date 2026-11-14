@@ -335,3 +335,16 @@ def test_run_demo_takes_its_ports_from_env_and_pki_from_the_flag(
     pki = next(c for c in starts if "--fresh p1" in c)
     assert "--port-offset" not in demo and "--lite --demo" in demo
     assert "--port-offset 700" in pki
+
+
+def test_the_demo_runs_without_the_diarization_sidecar_like_the_demo_host(
+    fake_repo: Path, tmp_path: Path
+) -> None:
+    """Must fire: a seeded export loads docker-compose.diar-native.yml, which the demo host
+    (no export, no token) never runs, so the stack under test was not the demo's."""
+    res = _run(fake_repo, "run", "demo", "--name", "nosidecar", cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+    log = (fake_repo / "calls.log").read_text()
+    assert "diar-native-models: segmentation" not in log
+    res = _run(fake_repo, "run", "demo", "--name", "noexport", cache=tmp_path / "empty", seed=False)
+    assert res.returncode == 0, res.stderr

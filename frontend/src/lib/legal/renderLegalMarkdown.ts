@@ -1,8 +1,11 @@
 const BLOCK_START = /^\s*([-*+]\s|\d+[.)]\s|#{1,6}\s|>|\||```|~~~|-{3,}\s*$|\*{3,}\s*$)/;
 
-/** Draft-review markers in the vendored text (`[COUNSEL: 3]`); hidden at render, never edited in source. */
+/**
+ * Draft-review markers in the vendored text, short (`[COUNSEL: 3]`) and long
+ * (`[COUNSEL: 4: question text, possibly wrapped over lines]`); hidden at render, never edited in source.
+ */
 export function stripCounselMarkers(markdown: string): string {
-  return markdown.replace(/[ \t]*\[COUNSEL:\s*\d+\]/g, '');
+  return markdown.replace(/[ \t]*\[COUNSEL:\s*\w+(?::[^\]]*)?\]/g, '');
 }
 
 /**

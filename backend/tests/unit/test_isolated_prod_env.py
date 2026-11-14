@@ -270,3 +270,12 @@ def test_run_proceeds_when_the_fresh_project_has_no_volumes(
     _write(fake_repo / "bin" / "docker", "#!/bin/bash\nexit 0\n")
     res = _run(fake_repo, "run", "demo", "--name", "brandnew", cache=tmp_path)
     assert res.returncode == 0, res.stderr
+
+
+def test_the_tree_pins_the_images_its_own_build_tags(fake_repo: Path, tmp_path: Path) -> None:
+    """Must fire: without a pin, any compose run in the tree (demo-reset.sh) resolves `:latest`,
+    which is Docker Hub's stale bytes, not this tree's build (S6v5: "No module named app.startup")."""
+    res = _run(fake_repo, "prepare", "demo", "--name", "Proddemo_7", cache=tmp_path / "models")
+    assert res.returncode == 0, res.stderr
+    tree = Path(res.stdout.strip().splitlines()[-1])
+    assert "OT_IMAGE_TAG=otfresh-proddemo-7" in (tree / ".env").read_text().splitlines()

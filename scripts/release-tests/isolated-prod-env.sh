@@ -121,6 +121,10 @@ prepare_tree() {
     done < <(et_service_credentials)
     set_env "$env" OPENSEARCH_ADMIN_PASSWORD "Ot-$(et_rand_hex 12)-aA1!"
     set_env "$env" ENVIRONMENT production
+    # The tag `start prod --build --fresh NAME` builds under (opentr.sh fresh_prod_dispatch), pinned
+    # here as well so every compose run in this tree (demo-reset.sh, opentranscribe.sh) resolves the
+    # images built from it, never a `:latest` that Docker Hub may hold.
+    set_env "$env" OT_IMAGE_TAG "otfresh-${SLUG}"
     cache="$(resolve_model_cache_dir "$REPO_ROOT")"
     set_env "$env" MODEL_CACHE_DIR "$cache"
     if [[ "$MODE" == demo ]]; then
@@ -148,11 +152,12 @@ SOURCE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)" || { err "$REPO_ROOT has no c
 # Every run generates fresh secrets, but a project's named volumes keep the old ones: Postgres then
 # rejects the new password and migrate exits 4, minutes into the build. Refuse before any build.
 # Project-scoped by label (never a name grep) and same slug rule as opentr.sh fresh_sanitize_name.
+SLUG="$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
+SLUG="${SLUG:-default}"
 if [[ "$ACTION" == run ]]; then
-    SLUG="$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
-    OLD_VOLS="$(docker volume ls -q --filter "label=com.docker.compose.project=otfresh-${SLUG:-default}" 2>/dev/null)" || OLD_VOLS=""
+    OLD_VOLS="$(docker volume ls -q --filter "label=com.docker.compose.project=otfresh-${SLUG}" 2>/dev/null)" || OLD_VOLS=""
     if [[ -n "$OLD_VOLS" ]]; then
-        err "project otfresh-${SLUG:-default} already has volumes, holding secrets this run would not know:"
+        err "project otfresh-${SLUG} already has volumes, holding secrets this run would not know:"
         echo "$OLD_VOLS" | sed 's/^/  /' >&2
         err "use a new --name, or have the owner destroy the old volumes (./opentr.sh fresh-destroy ${NAME})"
         exit 3
@@ -209,9 +214,8 @@ st_require code=image healthy isolated || { err "the $NAME stack is not this tre
 # header-sourced cert ("no configured trusted proxy can vouch"). docs/PKI_SETUP.md's remedy is
 # "start once more so the network exists": do exactly that, only when the value differs.
 settle_pki_trust() {
-    local slug want have
-    slug="$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
-    want="$(COMPOSE_PROJECT_NAME="otfresh-${slug:-default}" ./scripts/pki/generate-test-env.sh \
+    local want have
+    want="$(COMPOSE_PROJECT_NAME="otfresh-${SLUG}" ./scripts/pki/generate-test-env.sh \
         --print-trusted-proxies 2>/dev/null)" || { err "could not derive PKI trusted proxies"; return 1; }
     have="$(sed -n 's/^PKI_TRUSTED_PROXIES=//p' scripts/pki/test-certs/pki-test.env 2>/dev/null | tail -1)"
     [[ -n "$want" ]] || { err "empty derived PKI trusted proxies"; return 1; }

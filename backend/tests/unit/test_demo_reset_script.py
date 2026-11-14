@@ -251,3 +251,28 @@ def test_a_service_merely_named_like_the_fence_does_not_count(stub):
 
     assert proc.returncode == 2, proc.stderr
     assert _mutating(calls) == []
+
+
+def _fresh_chain(stub, aux: str | None):
+    install = stub[0]
+    (install / ".fresh").mkdir()
+    (install / ".fresh" / "demo-7.yml").write_text("services: {}\n")
+    if aux is not None:
+        (install / ".fresh" / "demo-7.aux").write_text(aux)
+    proc, calls = run(stub, DEMO_FRESH_NAME="Demo_7")
+    assert proc.returncode == 0, proc.stderr
+    return next(c for c in calls if " down -v " in c)
+
+
+def test_a_locally_built_fresh_stack_is_reset_without_pulling(stub):
+    """Must fire: the fresh stack's images exist only here; `up` under prod's pull_policy would
+    replace them with whatever Docker Hub serves under that tag."""
+    down = _fresh_chain(stub, "docker-compose.prod.yml\ndocker-compose.local.yml\n")
+    assert down.startswith(
+        "docker compose CHAIN -f docker-compose.local.yml -f .fresh/demo-7.yml down -v"
+    ), down
+
+
+def test_a_fresh_stack_started_from_published_images_keeps_the_stock_pull_policy(stub):
+    down = _fresh_chain(stub, "docker-compose.prod.yml\n")
+    assert down.startswith("docker compose CHAIN -f .fresh/demo-7.yml down -v"), down

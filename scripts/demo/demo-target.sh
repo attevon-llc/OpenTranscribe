@@ -22,7 +22,9 @@ demo_assert_target() {
         return 2
     fi
     if [ -n "${DEMO_FRESH_NAME:-}" ]; then
-        project="otfresh-$(printf '%s' "$DEMO_FRESH_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
+        # opentr.sh fresh_sanitize_name: the slug names the project and the .fresh/ files.
+        DEMO_FRESH_SLUG="$(printf '%s' "$DEMO_FRESH_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
+        project="otfresh-${DEMO_FRESH_SLUG:=default}"
     else
         project="${COMPOSE_PROJECT_NAME:-}"
         [ -n "$project" ] || project="$(grep -E '^COMPOSE_PROJECT_NAME=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d ' "'"'")"

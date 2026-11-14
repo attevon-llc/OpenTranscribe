@@ -68,8 +68,14 @@ demo_assert_target || exit "$?"
 
 read -r -a FILES <<<"$(./opentranscribe.sh compose-files)"
 if [ -n "${DEMO_FRESH_NAME:-}" ]; then
-    # opentr.sh's generated overlay re-pins container names and ports for the isolated stack.
-    [ ! -f ".fresh/${DEMO_FRESH_NAME}.yml" ] || FILES+=(-f ".fresh/${DEMO_FRESH_NAME}.yml")
+    # A `start prod --build` fresh stack records docker-compose.local.yml in its .aux (opentr.sh
+    # fresh_prod_dispatch): its images exist only on this host, so `up` must never pull them, or a
+    # published tag of the same name would replace the bytes under test.
+    if grep -qx 'docker-compose.local.yml' ".fresh/${DEMO_FRESH_SLUG}.aux" 2>/dev/null; then
+        FILES+=(-f docker-compose.local.yml)
+    fi
+    # opentr.sh's generated overlay re-pins container names for the isolated stack, last.
+    [ ! -f ".fresh/${DEMO_FRESH_SLUG}.yml" ] || FILES+=(-f ".fresh/${DEMO_FRESH_SLUG}.yml")
 fi
 case " ${FILES[*]} " in
     *" docker-compose.demo.yml "*) ;;

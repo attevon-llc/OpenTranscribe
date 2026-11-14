@@ -798,7 +798,7 @@ add_diar_native_overlay() {
       # premise is dead: lite provisions its own ONNX/PLDA export on first boot exactly
       # like a full install (see resolve_diar_native_models_dir and DIAR_NATIVE_MODELS_DIR
       # in .env.example). Lite's speaker embeddings stay PyAnnote-free-at-runtime either way.
-      [ -n "${LITE_FLAG:-}" ] && export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}}"
+      [ -n "${LITE_FLAG:-}" ] && export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}}"
 
       # The overlay defaults to the PUBLISHED backend image, which is correct for a
       # self-hosted deployment but wrong in this checkout — dev builds the image

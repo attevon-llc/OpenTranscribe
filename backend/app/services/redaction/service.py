@@ -8,6 +8,7 @@ read time, so toggling never triggers a recompute.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -25,6 +26,9 @@ from app.services.redaction.config import normalize_language
 from app.services.redaction.detectors import DetectorUnavailableError
 from app.services.redaction.detectors import no_model_load
 from app.services.redaction.detectors import wordlist
+from app.services.redaction.rescan_coordination import SCAN_COMING
+from app.services.redaction.rescan_coordination import finish_scan
+from app.services.redaction.rescan_coordination import lock_redaction_status
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import apply_redactions
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
@@ -225,6 +229,7 @@ class RedactionService:
         media = db.query(MediaFile).filter(MediaFile.id == file_id).first()
         if media is None:
             return {"status": "skipped", "reason": "file_not_found"}
+        owner_id = int(media.user_id)
 
         media.redaction_status = redaction_defaults.REDACTION_STATUS_PROCESSING
         db.commit()
@@ -376,51 +381,89 @@ class RedactionService:
                 # The spans that DID succeed are committed — they are real findings
                 # and dropping them would be strictly worse — but the status makes
                 # clear the result is partial.
-                failed = hard_failures
-                media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED
-                db.commit()
                 logger.error(
                     "Redaction detection for file %s completed with failed detectors %s; "
                     "marking FAILED so it is re-run rather than caching an incomplete "
                     "result as clean. Partial spans found so far were kept.",
                     file_id,
-                    failed,
+                    hard_failures,
                 )
-                return {"status": "failed", "reason": "detector_failure", "detectors": failed}
-
-            # WHICH detectors this scan's spans reflect (v392). Written in the same
-            # commit as DONE, because the whole point is that the two must never be
-            # read apart: `done` says the scan finished and this says what it looked
-            # at. `skipped` already carries both reasons a detector did not run — the
-            # transcript's language, and unavailability recorded a few lines above.
-            # `list[str]`, matching `media_file.redaction_coverage`'s column type: the
-            # comprehension alone infers a three-member Literal, which "llm" is not.
-            ran: list[str] = [
-                d for d in ("profanity", "pii", "toxicity") if d in supported and d not in skipped
-            ]
-            # Only when it actually RETURNED. `run_llm` says the owner asked for it, which is a
-            # different question from whether it examined one segment.
-            if run_llm and not llm_failures:
-                ran.append("llm")
-            media.redaction_status = redaction_defaults.REDACTION_STATUS_DONE
-            media.redaction_model_version = redaction_defaults.REDACTION_MODEL_VERSION
-            media.redaction_coverage = ran
-            db.commit()
+                terminal: dict[str, Any] = {
+                    "redaction_status": redaction_defaults.REDACTION_STATUS_FAILED
+                }
+                result: dict[str, Any] = {
+                    "status": "failed",
+                    "reason": "detector_failure",
+                    "detectors": hard_failures,
+                }
+            else:
+                # WHICH detectors this scan's spans reflect (v392). Written in the same
+                # commit as DONE, because the whole point is that the two must never be
+                # read apart: `done` says the scan finished and this says what it looked
+                # at. `skipped` already carries both reasons a detector did not run — the
+                # transcript's language, and unavailability recorded a few lines above.
+                # `list[str]`, matching `media_file.redaction_coverage`'s column type: the
+                # comprehension alone infers a three-member Literal, which "llm" is not.
+                ran: list[str] = [
+                    d
+                    for d in ("profanity", "pii", "toxicity")
+                    if d in supported and d not in skipped
+                ]
+                # Only when it actually RETURNED. `run_llm` says the owner asked for it, which
+                # is a different question from whether it examined one segment.
+                if run_llm and not llm_failures:
+                    ran.append("llm")
+                terminal = {
+                    "redaction_status": redaction_defaults.REDACTION_STATUS_DONE,
+                    "redaction_model_version": redaction_defaults.REDACTION_MODEL_VERSION,
+                    "redaction_coverage": ran,
+                }
+                result = {
+                    "status": "done",
+                    "segments": len(segments),
+                    "pii_entities_found": pii_count,
+                    "detectors": ",".join(ran),
+                    "language": normalize_language(media.language),
+                    "skipped_detectors": sorted(skipped),
+                }
         except Exception as exc:  # scan-body boundary: marks the file FAILED and reports it
             db.rollback()
-            media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED
-            db.commit()
             logger.exception("Redaction detection failed for file %s", file_id)
-            return {"status": "failed", "error": str(exc)}
+            terminal = {"redaction_status": redaction_defaults.REDACTION_STATUS_FAILED}
+            result = {"status": "failed", "error": str(exc)}
 
-        return {
-            "status": "done",
-            "segments": len(segments),
-            "pii_entities_found": pii_count,
-            "detectors": ",".join(ran),
-            "language": normalize_language(media.language),
-            "skipped_detectors": sorted(skipped),
-        }
+        if finish_scan(db, file_id, terminal):
+            return result
+        # An edit re-marked the file ``pending`` while this scan read the old text. The spans
+        # just committed address that old text, so the file stays withheld and one more scan
+        # reads the edited text. Only an edit writes ``pending``, so this repeats only while
+        # edits keep arriving.
+        logger.info(
+            "Redaction scan of file %s was superseded by a segment edit; re-queued", file_id
+        )
+        RedactionService.queue_rescan(file_id, owner_id)
+        return {"status": redaction_defaults.REDACTION_STATUS_PENDING, "reason": "superseded"}
+
+    @staticmethod
+    def queue_rescan(file_id: int, user_id: int) -> bool:
+        """Queue a debounced full re-scan after the caller committed ``pending``. Never raises.
+
+        The ``countdown`` (Celery docs, "Calling Tasks" -> "ETA and Countdown") is the
+        debounce window: edits to the file inside it ride this scan, because the file is
+        already ``pending`` (``rescan_coordination``). A failed publish leaves the file
+        ``pending``: withheld rather than read as clean.
+        """
+        try:
+            from app.tasks.redaction_task import redaction_detect_task
+
+            redaction_detect_task.apply_async(
+                kwargs={"file_id": file_id, "user_id": user_id},
+                countdown=redaction_defaults.REDACTION_EDIT_RESCAN_DELAY_SECONDS,
+            )
+        except Exception:  # the pending status stands; it fails closed
+            logger.exception("Could not queue redaction re-detection for file %s", file_id)
+            return False
+        return True
 
     @staticmethod
     def redetect_edited_segment(
@@ -471,14 +514,17 @@ class RedactionService:
         untouched.
 
         Args:
-            db: Database session. Committed only when the file is marked stale.
+            db: The edit's session. Never committed here: the caller commits the edit
+                and any stale mark together, then queues a re-scan if one is owed.
             media_file: The edited segment's file (the policy subject).
             segment: The segment whose ``text`` just changed. Its ``redactions``
                 and ``toxicity`` are updated in place.
 
         Returns:
             ``"done"`` when the cached spans can be trusted, ``"stale"`` when the
-            file was marked for re-detection instead.
+            file was marked for re-detection and a scan already coming covers it,
+            ``"rescan"`` when it was marked and the caller must queue the re-scan
+            after its commit (``RedactionService.queue_rescan``).
         """
         from app.services.redaction.config import blocking_detector_failures
         from app.services.redaction.config import resolve_effective_config
@@ -496,19 +542,20 @@ class RedactionService:
                     det_cfg,
                     failures=failures,
                 )
-            if refused:
-                # Not resident is not "could not run anywhere": only the dedicated worker
-                # can examine this text, and a cached result computed without it would
-                # read as clean forever.
-                segment.redactions = span_dicts or None
-                segment.toxicity = toxicity
-                return RedactionService._mark_redaction_stale(db, media_file, sorted(set(refused)))
         except Exception:  # edit-time boundary: the segment is marked stale below
             # Not just one detector — the whole re-detection. Nothing was
             # examined, and the segment's cached spans still describe the text it
             # had before the edit.
             logger.warning("Re-detection after a segment edit raised", exc_info=True)
             return RedactionService._mark_redaction_stale(db, media_file, ["*"])
+
+        segment.redactions = span_dicts or None
+        segment.toxicity = toxicity
+        if refused:
+            # Not resident is not "could not run anywhere": only the dedicated worker
+            # can examine this text, and a cached result computed without it would
+            # read as clean forever.
+            return RedactionService._mark_redaction_stale(db, media_file, sorted(set(refused)))
 
         blocking: list[str] = []
         if failures:
@@ -529,61 +576,46 @@ class RedactionService:
                 )
                 blocking = sorted(set(failures))
 
-        segment.redactions = span_dicts or None
-        segment.toxicity = toxicity
         if blocking:
             return RedactionService._mark_redaction_stale(db, media_file, blocking)
+        if lock_redaction_status(db, media_file) == redaction_defaults.REDACTION_STATUS_PROCESSING:
+            # A scan in flight read this segment's OLD text and would overwrite these spans
+            # under ``done``. Re-marking ``pending`` makes its terminal write lose, and it
+            # re-scans (rescan_coordination.finish_scan).
+            media_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
         return "done"
 
     @staticmethod
     def _mark_redaction_stale(db: Session, media_file: MediaFile, detectors: list[str]) -> str:
-        """Record that a file's cached spans no longer cover its text, and re-scan it.
+        """Mark a file's cached spans stale in the CALLER's transaction.
+
+        Nothing is committed or queued here. The stale mark commits in the same transaction
+        as the edit that caused it, so no reader ever sees the new text beside ``done``, and
+        the request issues one commit. The re-scan is queued by the caller AFTER that commit
+        (``RedactionService.queue_rescan``), so the worker cannot read the pre-edit rows.
 
         Args:
-            db: Database session (committed here so the queued task cannot read
-                the pre-edit rows).
+            db: The edit's session. The file's row stays locked until its commit.
             media_file: File whose cached spans are no longer trustworthy.
             detectors: What could not be trusted, for the operator-facing log.
 
         Returns:
-            Always ``"stale"``. Never raises: a detector outage must not turn a
-            transcript edit into a 500.
+            ``"rescan"`` when the caller must queue a re-scan after committing, ``"stale"``
+            when a scan already queued or running covers this edit. A detector outage never
+            raises; a database error does, and fails the edit with nothing committed.
         """
-        status = getattr(media_file, "redaction_status", None)
-        already_queued = status in (
-            redaction_defaults.REDACTION_STATUS_PENDING,
-            redaction_defaults.REDACTION_STATUS_PROCESSING,
-        )
+        previous = lock_redaction_status(db, media_file)
         media_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-            logger.exception(
-                "Could not mark file %s stale after an unexaminable segment edit", media_file.id
-            )
-            return "stale"
-
         logger.warning(
             "A segment edit on file %s could not be examined by detectors %s. The file's "
-            "cached spans are marked stale (pending) and a full re-detection was queued, "
-            "rather than caching an unexamined segment as clean.",
+            "cached spans are marked stale (pending) and a full re-detection follows the "
+            "edit's commit, rather than caching an unexamined segment as clean.",
             media_file.id,
             detectors,
         )
-        if already_queued:
-            # A scan is already coming; a second one would just duplicate the CPU
-            # work for someone editing several segments in a row.
-            return "stale"
-        try:
-            from app.tasks.redaction_task import redaction_detect_task
-
-            redaction_detect_task.delay(file_id=int(media_file.id), user_id=int(media_file.user_id))
-        except Exception:
-            # The status stands either way — the file stays withheld rather than
-            # silently reverting to "scanned and clean".
-            logger.exception("Could not queue re-detection for file %s", media_file.id)
-        return "stale"
+        # A scan already coming covers the edit (rescan_coordination), so a run of edits
+        # costs one scan, not one per edit.
+        return "stale" if previous in SCAN_COMING else "rescan"
 
     @staticmethod
     def _run_llm_detector(

@@ -78,6 +78,11 @@ The rules it applies are the product's existing ones, written once:
 - **Capture BEFORE the write, reconcile AFTER the commit.** After the delete, Postgres can no
   longer say which clusters held the speaker; before the commit, a rollback would leave the
   aggregates rebuilt for a change that never happened.
+- **And commit right after the writes.** A link flushed but not committed holds the speaker's
+  row lock, and a merge's `DELETE FROM speaker` of that row waits on it. The label task's
+  `_update_profile_embedding` once flushed, ran the privacy and impact reads, and committed
+  inside the rebuild. Its callers now read first and it commits before the rebuild
+  (`tests/unit/test_speaker_profile_assignment_lock_scope.py`).
 - **A merge is split in two on purpose.** The endpoint rebuilds the SOURCE's clusters and
   profile synchronously but does not erase its voiceprint — `process_speaker_merge_background`
   reads it to average into the target, then `_reconcile_speakers_after_merge` rebuilds the

@@ -104,13 +104,16 @@ def broken_toxicity(monkeypatch):
 
 @pytest.fixture
 def queued_rescans(monkeypatch):
-    """Capture ``redaction_detect_task.delay`` — there is no broker in this suite."""
-    from app.tasks import redaction_task
+    """Record every re-scan queued, at the service seam — there is no broker in this suite."""
+    from app.services.redaction.service import RedactionService
 
     calls: list[dict] = []
-    monkeypatch.setattr(
-        redaction_task.redaction_detect_task, "delay", lambda **kwargs: calls.append(kwargs)
-    )
+
+    def _queue_rescan(file_id: int, user_id: int) -> bool:
+        calls.append({"file_id": file_id, "user_id": user_id})
+        return True
+
+    monkeypatch.setattr(RedactionService, "queue_rescan", staticmethod(_queue_rescan))
     return calls
 
 

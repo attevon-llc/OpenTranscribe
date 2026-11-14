@@ -71,7 +71,11 @@ def test_a_label_folds_the_voice_into_the_new_profile_only_when_allowed(
         lambda db, impact: note(rebuilt, impact, []),
     )
 
-    speakers_profile_workflow._update_profile_embedding(db_session, speaker.id, None, 1)
+    # The caller reads the policy before its writes; the real read decides here.
+    voiceprints_on = speakers_profile_workflow._voiceprints_enabled(db_session, speaker.id)
+    speakers_profile_workflow._update_profile_embedding(
+        db_session, speaker.id, None, 1, voiceprints_on=voiceprints_on
+    )
 
     # The reconcile runs either way (a removal must never be skipped); only the profile the
     # voice would JOIN is left out while voiceprints are off.
@@ -109,7 +113,10 @@ def _call_speakers_endpoint(db, speaker, old, new):
 
 
 def _call_update_task(db, speaker, old, new):
-    speakers_profile_workflow._update_profile_embedding(db, speaker.id, old.id, new.id)
+    voiceprints_on = speakers_profile_workflow._voiceprints_enabled(db, speaker.id)
+    speakers_profile_workflow._update_profile_embedding(
+        db, speaker.id, old.id, new.id, voiceprints_on=voiceprints_on
+    )
     return []
 
 

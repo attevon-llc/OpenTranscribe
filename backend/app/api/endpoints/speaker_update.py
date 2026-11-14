@@ -21,6 +21,7 @@ from app.api.endpoints.speaker_match_notify import (
     send_bulk_update_notification as _send_bulk_update_notification,
 )
 from app.api.endpoints.speakers_profile_workflow import _update_profile_embedding
+from app.api.endpoints.speakers_profile_workflow import _voiceprints_enabled
 from app.core.db_overload import reraise_db_overload
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerMatch
@@ -160,6 +161,9 @@ def _apply_high_confidence_match(
         # second "confirmed" history row; the search document is still pushed.
         return _speaker_sync_document(db, speaker)
 
+    # Read before the first write below: the row lock those writes take is held only until
+    # ``_update_profile_embedding`` commits (see its docstring).
+    voiceprints_on = bool(trigger["profile_id"]) and _voiceprints_enabled(db, int(speaker.id))
     previous_display_name = speaker.display_name
     speaker.display_name = trigger["display_name"]
     speaker.verified = True
@@ -171,7 +175,13 @@ def _apply_high_confidence_match(
         old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
         speaker.profile_id = trigger["profile_id"]
         touch_profile_interaction(db, [int(trigger["profile_id"]), old_profile_id], "auto_link")
-        _update_profile_embedding(db, speaker.id, old_profile_id, int(trigger["profile_id"]))
+        _update_profile_embedding(
+            db,
+            speaker.id,
+            old_profile_id,
+            int(trigger["profile_id"]),
+            voiceprints_on=voiceprints_on,
+        )
 
     tracker.record(int(speaker.media_file_id), before, canonical_speaker_label_for_row(speaker))
 

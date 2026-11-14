@@ -29,6 +29,7 @@ FAKE_DOCKER = (
     + PS_STUB
     + r"""args="$*"
 echo "docker ${args//-f docker-compose.yml -f docker-compose.lite.yml -f docker-compose.demo.yml/CHAIN} workers=${DEMO_WORKER_REPLICAS:-0}" >> "$STUB/calls.log"
+case "$args" in *"config --services"*) cat "$STUB/services" || exit 1 ;; esac
 case "$args" in *demo_seed*) [ -f "$STUB/seed-fails" ] && exit 1 ;; esac
 case "$args" in *assert_inert*) [ -f "$STUB/not-inert" ] && exit 1 ;; esac
 exit 0
@@ -42,6 +43,8 @@ def stub(tmp_path):
     for d in (install, bindir, bundle):
         d.mkdir()
     (bundle / "manifest.json").write_text("{}")
+    # what `docker compose config --services` answers: the real demo chain includes nginx
+    (install / "services").write_text("backend\nfrontend\nnginx\npostgres\n")
     manager = install / "opentranscribe.sh"
     manager.write_text(f'#!/usr/bin/env bash\necho "{CHAIN}"\n')
     docker = bindir / "docker"
@@ -80,6 +83,7 @@ def test_the_site_is_closed_for_the_whole_reset(stub):
 
     assert proc.returncode == 0, proc.stderr
     assert calls == [
+        "docker compose CHAIN config --services workers=0",
         "docker compose CHAIN stop nginx workers=0",
         "docker compose CHAIN down -v --remove-orphans workers=0",
         "docker compose CHAIN up -d --wait --wait-timeout 900 --scale nginx=0 workers=1",
@@ -151,7 +155,7 @@ def test_dry_run_runs_nothing(stub):
     proc, calls = run(stub, "--dry-run")
 
     assert proc.returncode == 0
-    assert calls == []
+    assert calls == ["docker compose CHAIN config --services workers=0"]
     assert "+ docker compose" in proc.stdout
 
 
@@ -216,3 +220,34 @@ def test_the_reset_can_target_a_fresh_stack_and_never_the_live_project(stub):
 
     assert proc.returncode == 0, proc.stderr
     assert "otfresh-t1" in proc.stdout and "opentranscribe" not in proc.stdout
+
+
+def test_a_chain_without_the_fence_service_is_refused_before_anything_is_stopped(stub):
+    """Must fire: the isolated --lite --demo stack had no nginx, so `up nginx` died after `down -v`."""
+    (stub[0] / "services").write_text("backend\nfrontend\npostgres\n")
+
+    proc, calls = run(stub)
+
+    assert proc.returncode == 2, proc.stderr
+    assert "fence service 'nginx'" in proc.stderr and "NGINX_SERVER_NAME" in proc.stderr
+    assert calls == ["docker compose CHAIN config --services workers=0"]
+    assert _mutating(calls) == []
+
+
+def test_a_chain_compose_cannot_render_is_refused_before_anything_is_stopped(stub):
+    (stub[0] / "services").unlink()
+
+    proc, calls = run(stub)
+
+    assert proc.returncode == 2, proc.stderr
+    assert _mutating(calls) == []
+
+
+def test_a_service_merely_named_like_the_fence_does_not_count(stub):
+    """Must stay strict: `nginx-exporter` is not the fence; only an exact service name is."""
+    (stub[0] / "services").write_text("backend\nnginx-exporter\n")
+
+    proc, calls = run(stub)
+
+    assert proc.returncode == 2, proc.stderr
+    assert _mutating(calls) == []

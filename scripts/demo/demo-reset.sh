@@ -25,7 +25,8 @@
 #   DEMO_FRESH_NAME   act on the `--fresh NAME` stack (project otfresh-NAME) instead of the demo
 #   COMPOSE_PROJECT_NAME  override the project (default: .env, else the install dir's name)
 # The target project is asserted (demo-target.sh) before anything is stopped or deleted.
-# Exit: 0 reset, 1 failed (nginx stopped), 2 misuse, 3 another reset/upgrade holds the lock,
+# Exit: 0 reset, 1 failed (nginx stopped), 2 misuse or no nginx service in the chain (nothing
+#       touched), 3 another reset/upgrade holds the lock,
 #       20-28 the target stack failed scripts/lib/stack_target.py (21 = not this install).
 
 set -euo pipefail
@@ -34,7 +35,7 @@ DRY_RUN=0
 case "${1:-}" in
     --dry-run) DRY_RUN=1 ;;
     "") ;;
-    -h | --help) sed -n '2,28p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,29p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
@@ -84,20 +85,35 @@ if [ -z "${DEMO_USER_PASSWORD:-$(env_value DEMO_USER_PASSWORD)}" ]; then
     exit 2
 fi
 
+# The fence is nginx (docker-compose.nginx.yml, loaded when NGINX_SERVER_NAME and its certificate
+# are configured): the only public port. Without it the steps below have nothing to close, and
+# `up nginx` fails only AFTER `down -v` has deleted every volume. Ask compose (read-only) first.
+FENCE=nginx
+if ! SERVICES="$(docker compose "${FILES[@]}" config --services)"; then
+    echo "docker compose config failed for this chain; nothing was stopped or deleted" >&2
+    exit 2
+fi
+if ! grep -qx "$FENCE" <<<"$SERVICES"; then
+    echo "the fence service '$FENCE' is not in the compose chain: ${FILES[*]}" >&2
+    echo "set NGINX_SERVER_NAME and its certificate (nginx/ssl/server.crt, server.key) so the" >&2
+    echo "nginx overlay loads; nothing was stopped or deleted." >&2
+    exit 2
+fi
+
 # The API reports the upgrade time from this file (docker-compose.demo.yml mounts it); it must
 # exist before the first start or Docker creates a directory in its place.
 [ "$DRY_RUN" = 1 ] || [ -e "$INSTALL_DIR/demo-status.json" ] || printf '{}' >"$INSTALL_DIR/demo-status.json"
 
-run docker compose "${FILES[@]}" stop nginx
+run docker compose "${FILES[@]}" stop "$FENCE"
 run docker compose "${FILES[@]}" down -v --remove-orphans
 
 DEMO_WORKER_REPLICAS=1 run docker compose "${FILES[@]}" up -d --wait \
-    --wait-timeout "$UP_TIMEOUT" --scale nginx=0
+    --wait-timeout "$UP_TIMEOUT" --scale "$FENCE=0"
 run docker compose "${FILES[@]}" run --rm -e DEMO_MODE=false \
     -v "$SEED_BUNDLE:/seed:ro" backend python -m app.scripts.demo_seed import --bundle /seed
 
-run docker compose "${FILES[@]}" up -d --wait --wait-timeout "$UP_TIMEOUT" --scale nginx=0
+run docker compose "${FILES[@]}" up -d --wait --wait-timeout "$UP_TIMEOUT" --scale "$FENCE=0"
 # set -e: a non-zero exit (not inert, or NOT MEASURED) stops here with nginx still closed.
 run docker compose "${FILES[@]}" exec -T backend python -m app.scripts.assert_inert
-run docker compose "${FILES[@]}" up -d --wait --wait-timeout "$UP_TIMEOUT" nginx
+run docker compose "${FILES[@]}" up -d --wait --wait-timeout "$UP_TIMEOUT" "$FENCE"
 echo "demo reset complete"

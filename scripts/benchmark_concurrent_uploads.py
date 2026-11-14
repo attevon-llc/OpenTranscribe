@@ -190,7 +190,6 @@ def main() -> None:
     parser.add_argument('--fixture-file', required=True, help='Path to the media fixture to upload')
     parser.add_argument('--n', type=int, default=8, help='Number of concurrent uploads (default 8)')
     parser.add_argument('--backend-url', default=DEFAULT_BACKEND_URL)
-    parser.add_argument('--redis-url', default=None)
     parser.add_argument(
         '--timeout',
         type=int,

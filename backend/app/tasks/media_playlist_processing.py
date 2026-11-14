@@ -32,6 +32,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.media_download_playlist import DOWNLOAD_DISPATCHED_KEY
 from app.services.media_download_playlist import DOWNLOAD_DUE_AT_KEY
@@ -307,9 +308,9 @@ def _dispatch_playlist_video_task(
         logger.exception(f"Failed to dispatch task for video {title}: {e}")
         # Nothing was sent: the claim either failed or committed before a send that raised.
         db.rollback()
-        error_msg = f"Failed to start processing: {str(e)}"
-        media_file.last_error_message = error_msg
-        media_file.error_category = categorize_error(error_msg).value
+        failure = ErrorCategorizationService.classify_failure(str(e))
+        media_file.last_error_message = f"Failed to start processing: {failure.user_message}"
+        media_file.error_category = categorize_error(f"Failed to start processing: {e}").value
         db.flush()
         update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
         return False
@@ -393,8 +394,9 @@ def process_youtube_playlist_task(
         )
     except Exception as e:
         logger.exception(f"Unexpected error in YouTube playlist processing task: {e}")
-        _send_playlist_notification(user_id, "error", f"Unexpected error: {str(e)}", 0)
-        return _create_playlist_error_result(str(e))
+        user_message = ErrorCategorizationService.classify_failure(str(e)).user_message
+        _send_playlist_notification(user_id, "error", f"Unexpected error: {user_message}", 0)
+        return _create_playlist_error_result(user_message)
 
 
 def _process_playlist_with_db(
@@ -455,10 +457,11 @@ def _process_playlist_with_db(
             )
         except Exception as e:
             logger.exception(f"Error processing YouTube playlist {url}: {e}")
+            user_message = ErrorCategorizationService.classify_failure(str(e)).user_message
             _send_playlist_notification(
-                user_id, "error", f"Playlist processing failed: {str(e)}", 0
+                user_id, "error", f"Playlist processing failed: {user_message}", 0
             )
-            return _create_playlist_error_result(str(e))
+            return _create_playlist_error_result(user_message)
 
 
 def _handle_playlist_result(

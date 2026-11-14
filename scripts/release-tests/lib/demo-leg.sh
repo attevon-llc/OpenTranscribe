@@ -25,13 +25,31 @@ DEMO_REFUSAL_CODE="demo_read_only"
 # sidecar (auto-selected only with models or a token) and the two mocks come in through its
 # OPENTRANSCRIBE_EXTRA_COMPOSE_FILES test seam. The demo overlay therefore lands before the mocks
 # rather than last; `docker compose config` resolves byte-identically in either order.
-# Runs in the install dir; DEMO_MODE is set in .env only for this call (the caller restores it).
+# Runs in the install dir, with .env already holding DEMO_MODE=true / DEPLOYMENT_MODE=lite
+# (demo_leg_set_env_key): read_env_value takes the FIRST match, so appending after the template's
+# own `DEMO_MODE=false` line would be ignored and the demo overlay would silently drop out.
 demo_leg_chain_args() {
     local ov extra=""
     for ov in diar-native mock-asr mock-llm; do extra="$extra$(printf ' -f %s' "docker-compose.$ov.yml")"; done
-    printf 'DEMO_MODE=true\n' >> .env
     DEPLOYMENT_MODE=lite OPENTRANSCRIBE_EXTRA_COMPOSE_FILES="${extra# }" \
-        ./opentranscribe.sh compose-files 2>/dev/null | tail -1 | tr ' ' '\n' | sed '/^$/d'
+        ./opentranscribe.sh compose-files | tail -1 | tr ' ' '\n' | sed '/^$/d'
+}
+
+# demo_leg_set_env_key KEY VALUE -> replace KEY's line in ./.env, or append it when absent
+demo_leg_set_env_key() {
+    if grep -qE "^[[:space:]]*(export[[:space:]]+)?$1=" .env 2>/dev/null; then
+        sed -i -E "s|^[[:space:]]*(export[[:space:]]+)?$1=.*|$1=$2|" .env
+    else
+        printf '%s=%s\n' "$1" "$2" >> .env
+    fi
+}
+
+# demo_leg_chain_ok CHAIN_ARGS... -> 0 when lite, demo and the three seam overlays are all in it
+demo_leg_chain_ok() {
+    local want chain=" $* "
+    for want in lite demo diar-native mock-asr mock-llm; do
+        [[ "$chain" == *" docker-compose.$want.yml "* ]] || return 1
+    done
 }
 
 # demo_leg_classify_write HTTP_CODE BODY -> PASS|FAIL (a write counts as refused only on 403 + the demo code)
@@ -45,17 +63,31 @@ demo_leg_verdict() {
     printf '%s\t%s\n' "$1" "$2" >> "$DEMO_LEG_VERDICT_FILE"
 }
 
+# demo_leg_restore_env -> put the install's .env back exactly as it was (RETURN trap of demo_leg_run)
+demo_leg_restore_env() {
+    trap - RETURN
+    if [[ -n "$_DEMO_LEG_ENV_BACKUP" ]]; then
+        cat "$_DEMO_LEG_ENV_BACKUP" > "$_DEMO_LEG_ENV_FILE"
+        rm -f "$_DEMO_LEG_ENV_BACKUP"
+    else
+        rm -f "$_DEMO_LEG_ENV_FILE"
+    fi
+}
+
 # demo_leg_run INSTALL_DIR
 demo_leg_run() {
     local target="$1" args=() line
     pushd "$target" >/dev/null || return 1
-    local env_backup=""
-    if [[ -f .env ]]; then env_backup="$(mktemp)"; cp .env "$env_backup"; fi
+    _DEMO_LEG_ENV_FILE="$(pwd)/.env"
+    _DEMO_LEG_ENV_BACKUP=""
+    if [[ -f .env ]]; then _DEMO_LEG_ENV_BACKUP="$(mktemp)"; cp .env "$_DEMO_LEG_ENV_BACKUP"; fi
+    trap demo_leg_restore_env RETURN
+    demo_leg_set_env_key DEMO_MODE true
+    demo_leg_set_env_key DEPLOYMENT_MODE lite
     while IFS= read -r line; do args+=("$line"); done < <(demo_leg_chain_args)
-    if [[ -n "$env_backup" ]]; then cat "$env_backup" > .env && rm -f "$env_backup"; else rm -f .env; fi
-    if [[ ${#args[@]} -eq 0 ]]; then
-        as_record FAIL "demo leg: ./opentranscribe.sh compose-files printed no chain"
-        demo_leg_verdict fail "no compose chain resolved"
+    if ! demo_leg_chain_ok "${args[@]}"; then
+        as_record FAIL "demo leg: the resolved chain lacks lite, demo or a seam overlay" "chain: ${args[*]:-<empty>}"
+        demo_leg_verdict fail "chain incomplete: ${args[*]:-<empty>}"
         popd >/dev/null || true
         return 0
     fi

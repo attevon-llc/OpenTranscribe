@@ -30,7 +30,15 @@ CRITERIA = REPO_ROOT / "scripts" / "release" / "release-criteria.yaml"
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="bash missing")
 
 
-def _drive(tmp_path: Path, *, health: str, write_code: str, write_body: str, up_rc: int = 0):
+def _drive(
+    tmp_path: Path,
+    *,
+    health: str,
+    write_code: str,
+    write_body: str,
+    up_rc: int = 0,
+    chain: str | None = None,
+):
     """Run demo_leg_run with fakes; returns (stdout, verdict file text, docker argv log)."""
     bindir = tmp_path / "bin"
     bindir.mkdir()
@@ -54,12 +62,21 @@ def _drive(tmp_path: Path, *, health: str, write_code: str, write_body: str, up_
     fe = install / "opentranscribe.sh"
     fe.write_text(
         "#!/bin/bash\n"
-        'grep -q "^DEMO_MODE=true" .env || { echo "demo not selected" >&2; exit 1; }\n'
+        # first match wins, like read_env_value
+        '[ "$(grep -E "^DEMO_MODE=" .env | head -1 | cut -d= -f2-)" = true ]'
+        ' || { echo "demo not selected" >&2; exit 1; }\n'
         '[ "${DEPLOYMENT_MODE:-}" = lite ] || { echo "lite not selected" >&2; exit 1; }\n'
-        'echo "-f docker-compose.yml -f docker-compose.lite.yml -f docker-compose.demo.yml'
-        ' ${OPENTRANSCRIBE_EXTRA_COMPOSE_FILES:-}"\n'
+        + (
+            f'echo "{chain}"\n'
+            if chain is not None
+            else 'echo "-f docker-compose.yml -f docker-compose.lite.yml -f docker-compose.demo.yml'
+            ' ${OPENTRANSCRIBE_EXTRA_COMPOSE_FILES:-}"\n'
+        )
     )
     fe.chmod(0o755)
+    # An install's .env comes from .env.example, which already carries both keys, FIRST.
+    env_text = "A=1\nDEMO_MODE=false\nDEPLOYMENT_MODE=full\nB=2\n"
+    (install / ".env").write_text(env_text)
     verdict = tmp_path / "verdict"
     script = f"""
     set -u
@@ -81,6 +98,7 @@ def _drive(tmp_path: Path, *, health: str, write_code: str, write_body: str, up_
         check=False,
     )
     assert out.returncode == 0, out.stderr
+    assert (install / ".env").read_text() == env_text, "the install's .env must be restored"
     return out.stdout, verdict.read_text(), docker_log.read_text() if docker_log.exists() else ""
 
 
@@ -95,6 +113,22 @@ def test_a_healthy_refusing_demo_stack_passes_and_never_builds_or_pulls(tmp_path
     assert verdict.startswith("pass\t")
     assert "docker-compose.demo.yml" in docker
     assert "--no-build" in docker and "--pull never" in docker
+
+
+def test_the_chain_has_lite_demo_and_the_seam_overlays_despite_a_template_env(tmp_path):
+    # .env.example's DEMO_MODE=false / DEPLOYMENT_MODE=full come first and read_env_value takes the
+    # first match, so a key appended after them would be ignored and the demo overlay would drop out.
+    _, _, docker = _drive(tmp_path, health="200", write_code="403", write_body=_REFUSED)
+    for ov in ("lite", "demo", "diar-native", "mock-asr", "mock-llm"):
+        assert f"docker-compose.{ov}.yml" in docker, ov
+
+
+def test_a_chain_missing_the_demo_overlay_is_a_failure_that_prints_the_chain(tmp_path):
+    out, verdict, docker = _drive(
+        tmp_path, health="200", write_code="403", write_body=_REFUSED, chain="-f docker-compose.yml"
+    )
+    assert "REC FAIL" in out and verdict.startswith("fail\t") and "docker-compose.yml" in verdict
+    assert docker == ""
 
 
 def test_a_write_that_is_not_refused_with_the_demo_code_fails(tmp_path):

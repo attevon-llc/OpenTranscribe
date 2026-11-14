@@ -36,6 +36,9 @@ describe('MenuIcon', () => {
       const svg = svgOf(render(MenuIcon, { props: { name } }).container);
       expect(svg.classList.contains('mirror'), name).toBe(RTL_MIRRORED.has(name));
     }
+    for (const name of ['arrow-left', 'chevrons-right'] as const) {
+      expect(RTL_MIRRORED.has(name), name).toBe(true);
+    }
     expect(RTL_MIRRORED.has('chevron-right')).toBe(true);
     expect(RTL_MIRRORED.has('chevron-down')).toBe(false);
   });

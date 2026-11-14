@@ -208,7 +208,7 @@
 
           <!-- Title -->
           <div class="list-cell list-cell-title">
-            <span class="file-title">{file.title || file.filename}</span>
+            <span class="file-title" dir="auto">{file.title || file.filename}</span>
             <HiddenBadge {file} showUnhide={false} />
             <HoldBadge hold={file.hold} />
           </div>

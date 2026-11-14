@@ -270,7 +270,7 @@
 
                 <!-- Text area -->
                 <div class="card-text">
-                  <h2 class="file-name">{file.title || file.filename}</h2>
+                  <h2 class="file-name" dir="auto">{file.title || file.filename}</h2>
 
                   <div class="meta-line">
                     <!-- Only this text truncates: the hold badge and status stay whole. -->

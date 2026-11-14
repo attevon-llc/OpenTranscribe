@@ -26,7 +26,14 @@ import { render, fireEvent, waitFor } from '@testing-library/svelte';
 // The key stands in for the copy, but interpolated values are appended: a
 // message whose whole job is to report a number ("showing the first 200") is
 // only testable if the number survives the stub.
+const currentLocale = vi.hoisted(() => ({ code: 'en' }));
 vi.mock('$stores/locale', () => ({
+  locale: {
+    subscribe: (run: (value: string) => void) => {
+      run(currentLocale.code);
+      return () => {};
+    },
+  },
   t: {
     subscribe: (run: (value: (key: string, vars?: Record<string, unknown>) => string) => void) => {
       run((key: string, vars?: Record<string, unknown>) =>
@@ -392,6 +399,22 @@ describe('FilterSidebar — roster truncation is signalled (#743b)', () => {
  * The `at-bound → null` collapse is correct and is left alone; what is fixed
  * is ever showing a control whose bounds are made up.
  */
+describe('FilterSidebar — duration slider direction (UI-pass R5)', () => {
+  it.each([
+    ['en', false],
+    ['ar', true],
+  ])('locale %s gives the slider reversed=%s', async (code, expected) => {
+    currentLocale.code = code;
+    try {
+      render(FilterSidebarTestHost);
+      await waitFor(() => expect(sliderMounts.length).toBeGreaterThan(0));
+      expect(sliderProps(sliderMounts.length - 1).reversed).toBe(expected);
+    } finally {
+      currentLocale.code = 'en';
+    }
+  });
+});
+
 describe('FilterSidebar — duration slider bounds (#744)', () => {
   it('does not render the sliders until the real bounds have arrived', async () => {
     let resolveMetadata: (value: unknown) => void = () => {};

@@ -29,7 +29,8 @@
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
+  import { getLanguageDirection } from '$lib/i18n/languages';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { DURATION_CHIP_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { createDebouncedHandler } from '$lib/utils/debounce';
@@ -772,6 +773,7 @@
           step={durationBounds.max > 7200 ? 60 : durationBounds.max > 600 ? 30 : 10}
           range
           pushy
+          reversed={getLanguageDirection($locale) === 'rtl'}
           on:change={handleDurationSliderChange}
         />
       </div>

@@ -125,6 +125,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - The environment variables listed under Changed that never had an effect.
 
 ### Fixed
+- Download, playlist and speaker-clustering failures no longer put the raw exception text (paths, hosts, SQL) in user notifications or task results; users get a fixed sentence and the detail stays in the log (#1365).
 - Public demo: opening a completed recording with no stored analytics, or a speaker's profile suggestions after a failed speaker-index read, no longer tries to queue background work (the demo runs no worker and refuses every publish, so the page answered 500). The index self-heal request also uses the time-bounded Redis client, so a Redis that stops answering cannot hold the request.
 - Editing a segment's text no longer spends the request on three Redis debounce round trips and broker publishes: the re-scan, re-index and analytics follow-ups are queued once, after the response. Speaker suggestions no longer hash every profile for users with no shares (the share lookup is two indexed branches, not one OR).
 - `./opentranscribe.sh update --version` no longer refuses a move away from a non-release tag (a `dev-<sha>` build or a local `otfresh-<name>` build) as a downgrade: only two release versions are compared, and for any other tag the command says the downgrade check does not apply, as it already did silently for `latest`.

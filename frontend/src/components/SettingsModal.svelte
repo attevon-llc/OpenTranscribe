@@ -292,8 +292,8 @@
       .then((list) => (legalAvailable = list.length > 0))
       .catch(() => (legalAvailable = false));
 
-    TakedownNoticesApi.listMine({ limit: 1 })
-      .then((page) => (hasTakedowns = page.total > 0))
+    TakedownNoticesApi.hasAnyMine()
+      .then((any) => (hasTakedowns = any))
       .catch(() => (hasTakedowns = false));
 
     // Load recording settings

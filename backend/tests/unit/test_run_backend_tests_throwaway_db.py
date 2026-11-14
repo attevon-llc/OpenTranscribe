@@ -437,8 +437,13 @@ def test_only_ever_touches_its_own_container(fake_repo: Path) -> None:
     name = _name(fake_repo)
     for call in _docker(fake_repo):
         verb = call.split()[0]
-        assert verb in {"version", "ps", "run", "exec", "rm", "logs"}, call
+        assert verb in {"version", "ps", "container", "run", "exec", "rm", "logs"}, call
         if verb == "version":
+            continue
+        if verb == "container":
+            # stale-reaper listing: read-only, scoped to this lib's two labels
+            assert call.startswith("container ls -a --filter label=ot-test-artifact=1"), call
+            assert "label=org.opentranscribe.purpose=throwaway-test-db" in call, call
             continue
         if verb == "ps":
             # the pre-existing-container check: anchored, so a prefix cannot select others

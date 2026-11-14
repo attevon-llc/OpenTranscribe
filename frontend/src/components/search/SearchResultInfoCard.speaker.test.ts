@@ -14,7 +14,7 @@ describe('SearchResultInfoCard speakers', () => {
     const { container } = render(SearchResultInfoCard, {
       props: { hit: searchHit({ speakers: ['SPEAKER_00', 'Alice'] }) },
     });
-    const chips = [...container.querySelectorAll('.chips')[0].querySelectorAll('.chip')].map(
+    const chips = [...(container.querySelector('.chips')?.querySelectorAll('.chip') ?? [])].map(
       (c) => c.textContent?.trim()
     );
     expect(chips).toEqual(['Speaker 00', 'Alice']);

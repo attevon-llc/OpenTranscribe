@@ -169,3 +169,19 @@ describe('clearUserState', () => {
     }
   });
 });
+
+describe('clearUserState and the takedown probe cache', () => {
+  it('a user switch re-asks whether the new user has takedowns', async () => {
+    const { default: axiosInstance } = await import('$lib/axios');
+    const { TakedownNoticesApi } = await import('$lib/api/takedownNotices');
+    const get = vi.spyOn(axiosInstance, 'get');
+    get.mockResolvedValueOnce({ data: { takedowns: [], total: 3 } } as never);
+    TakedownNoticesApi.resetMineCache();
+    expect(await TakedownNoticesApi.hasAnyMine()).toBe(true);
+    await clearUserState();
+    get.mockResolvedValueOnce({ data: { takedowns: [], total: 0 } } as never);
+    expect(await TakedownNoticesApi.hasAnyMine()).toBe(false);
+    expect(get).toHaveBeenCalledTimes(2);
+    get.mockRestore();
+  });
+});

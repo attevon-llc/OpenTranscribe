@@ -12,50 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit._shell_extract import MANAGER
-from tests.unit._shell_extract import extract_functions
 from tests.unit._shell_extract import requires_install_scripts
-from tests.unit._shell_extract import run_shell
+from tests.unit.manager_update_stub import run_update
 
 pytestmark = requires_install_scripts
 
-_UPDATE_FUNCTIONS = [
-    "read_env_value",
-    "update_parse_args",
-    "update_resolve_rollback_target",
-    "update_refuse_unforced_downgrade",
-    "sed_env_inplace",
-    "append_env_line",
-    "update_pin_image_tag",
-    "update_check_rollback_compat",
-    "run_upgrade_sequence",
-    "cmd_update",
-]
-
 
 def _update(tmp_path: Path, current: str, target: str) -> tuple[str, str]:
-    """Run the REAL `update --version <target>` with docker stubbed; return (output, pinned tag)."""
-    (tmp_path / ".env").write_text(f"OT_IMAGE_TAG={current}\n")
-    snippet = f"""
-YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
-cd {tmp_path}
-check_environment() {{ :; }}
-fix_model_cache_permissions() {{ :; }}
-apply_deployment_pins() {{ :; }}
-get_compose_files() {{ echo "-f docker-compose.yml"; }}
-preflight_upgrade_env() {{ :; }}
-compose_pull_for_upgrade() {{ :; }}
-compose_down_for_upgrade() {{ :; }}
-perform_phased_restart() {{ :; }}
-show_access_info() {{ :; }}
-docker() {{ return 0; }}
-set -- update --version {target}
-{extract_functions(MANAGER, _UPDATE_FUNCTIONS)}
-cmd_update "$@"
-"""
-    out = run_shell(snippet)
-    pinned = (tmp_path / ".env").read_text().split("OT_IMAGE_TAG=")[-1].splitlines()[0]
-    return out, pinned
+    return run_update(tmp_path, f"OT_IMAGE_TAG={current}\n", f"--version {target}")
 
 
 @pytest.mark.parametrize("current", ["otfresh-proddemo7", "dev-1a2b3c4", "latest"])

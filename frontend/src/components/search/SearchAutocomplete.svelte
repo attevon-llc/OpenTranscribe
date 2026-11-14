@@ -339,8 +339,7 @@
   .operator-hint {
     position: absolute;
     top: 100%;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     margin-top: var(--space-1);
     padding: var(--space-2) var(--space-3);
     background: var(--card-background);

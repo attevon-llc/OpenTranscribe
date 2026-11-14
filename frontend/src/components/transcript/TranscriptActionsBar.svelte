@@ -226,7 +226,7 @@
           role="presentation"
           class="export-dropdown-content"
           data-testid="download-menu"
-          use:anchoredPanel={{ anchor: downloadButton, width: 'content', edge: 'right' }}
+          use:anchoredPanel={{ anchor: downloadButton, width: 'content', edge: 'end' }}
           on:click|stopPropagation
         >
           {#if canEmbedSubtitles}

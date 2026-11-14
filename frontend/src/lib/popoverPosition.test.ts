@@ -49,6 +49,14 @@ describe('computePopoverPlacement', () => {
     expect(p.left + p.width).toBe(600 + 240);
   });
 
+  it('edge end mirrors: right edge in LTR, left edge in RTL', () => {
+    const tr = trigger({ left: 600, width: 240 });
+    const ltr = computePopoverPlacement(tr, 300, VIEW, { edge: 'end' });
+    expect(ltr.left + ltr.width).toBe(600 + 240);
+    const rtl = computePopoverPlacement(tr, 300, VIEW, { edge: 'end', rtl: true });
+    expect(rtl.left).toBe(600);
+  });
+
   it('becomes a full-width bottom sheet on a narrow viewport', () => {
     const p = computePopoverPlacement(trigger(), 300, { width: 390, height: 800 });
     expect(p.sheet).toBe(true);

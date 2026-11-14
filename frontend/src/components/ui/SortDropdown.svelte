@@ -25,7 +25,7 @@
   /** i18n key for the trigger button's accessible label. */
   export let ariaLabelKey: string;
   /** Menu alignment relative to the trigger. */
-  export let align: 'left' | 'right' = 'left';
+  export let align: 'start' | 'end' = 'start';
 
   const dispatch = createEventDispatcher<{
     change: { sortBy: string; sortOrder: 'asc' | 'desc' };

@@ -123,7 +123,11 @@
     background: var(--surface-color);
     max-width: 800px;
     max-height: 90vh;
-    overflow-y: auto;
+    /* Column: only the notice body scrolls, so Decline / Acknowledge stay on screen even with
+       the long standard notice at 1280x800. */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-xl);
   }
@@ -137,7 +141,16 @@
     letter-spacing: 2px;
   }
 
+  .classification-header,
+  .classification-footer,
+  .banner-actions {
+    flex-shrink: 0;
+  }
+
   .banner-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
     padding: var(--space-6);
     color: var(--text-color);
   }

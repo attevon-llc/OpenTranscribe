@@ -128,6 +128,22 @@ def test_the_entrypoint_writes_the_rfc7617_credential(tmp_path):
     assert (tmp_path / "authorization.conf").stat().st_mode & 0o077 == 0, "credential is readable"
 
 
+@pytest.mark.parametrize("password", ["", TEST_PASSWORD])
+def test_an_existing_world_readable_placeholder_ends_up_owner_only(tmp_path, password):
+    """The image ships a placeholder file; umask does not tighten a file that already exists."""
+    out = tmp_path / "authorization.conf"
+    out.write_text('proxy_set_header Authorization "";\n')
+    out.chmod(0o644)
+    completed, _ = _run_entrypoint(tmp_path, FLOWER_PASSWORD=password)
+    assert completed.returncode == 0, completed.stderr
+    assert out.stat().st_mode & 0o777 == 0o600
+
+
+def test_the_image_placeholder_is_owner_only():
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert "chmod 0600 /etc/nginx/flower-auth/authorization.conf" in text
+
+
 def test_the_entrypoint_defaults_the_user_like_the_flower_service(tmp_path):
     _, written = _run_entrypoint(tmp_path, FLOWER_PASSWORD=TEST_PASSWORD)
     encoded = re.search(r'"Basic ([^"]+)"', written)

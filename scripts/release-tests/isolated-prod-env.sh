@@ -144,6 +144,20 @@ if [[ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ]]; th
     exit 3
 fi
 SOURCE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)" || { err "$REPO_ROOT has no commit"; exit 3; }
+
+# Every run generates fresh secrets, but a project's named volumes keep the old ones: Postgres then
+# rejects the new password and migrate exits 4, minutes into the build. Refuse before any build.
+# Project-scoped by label (never a name grep) and same slug rule as opentr.sh fresh_sanitize_name.
+if [[ "$ACTION" == run ]]; then
+    SLUG="$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
+    OLD_VOLS="$(docker volume ls -q --filter "label=com.docker.compose.project=otfresh-${SLUG:-default}" 2>/dev/null)" || OLD_VOLS=""
+    if [[ -n "$OLD_VOLS" ]]; then
+        err "project otfresh-${SLUG:-default} already has volumes, holding secrets this run would not know:"
+        echo "$OLD_VOLS" | sed 's/^/  /' >&2
+        err "use a new --name, or have the owner destroy the old volumes (./opentr.sh fresh-destroy ${NAME})"
+        exit 3
+    fi
+fi
 TREE="$(prepare_tree)" || exit 1
 if [[ "$ACTION" == prepare ]]; then echo "$TREE"; exit 0; fi
 

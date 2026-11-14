@@ -246,3 +246,27 @@ def test_demo_seed_runs_with_demo_mode_off_for_that_process_only(
     assert res.returncode == 0, res.stderr
     seed = [x for x in log.read_text().splitlines() if "demo_seed import" in x]
     assert len(seed) == 1 and "exec -e DEMO_MODE=false" in seed[0], seed
+
+
+def test_run_refuses_early_when_the_fresh_project_already_has_volumes(
+    fake_repo: Path, tmp_path: Path
+) -> None:
+    """New secrets against old volumes fail late (Postgres auth, migrate exit 4): refuse first."""
+    _write(
+        fake_repo / "bin" / "docker",
+        '#!/bin/bash\nif [[ "$*" == *"label=com.docker.compose.project=otfresh-old-one"* ]]; then '
+        "echo otfresh-old-one_postgres_data; fi\nexit 0\n",
+    )
+    res = _run(fake_repo, "run", "pki", "--name", "Old_One", cache=tmp_path)
+    assert res.returncode == 3, res.stderr
+    assert "otfresh-old-one" in res.stderr and "new --name" in res.stderr
+    log = fake_repo / "calls.log"
+    assert not log.exists() or "start" not in log.read_text(), "a build started anyway"
+
+
+def test_run_proceeds_when_the_fresh_project_has_no_volumes(
+    fake_repo: Path, tmp_path: Path
+) -> None:
+    _write(fake_repo / "bin" / "docker", "#!/bin/bash\nexit 0\n")
+    res = _run(fake_repo, "run", "demo", "--name", "brandnew", cache=tmp_path)
+    assert res.returncode == 0, res.stderr

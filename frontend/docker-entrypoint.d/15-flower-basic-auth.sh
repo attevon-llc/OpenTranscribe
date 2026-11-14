@@ -16,6 +16,12 @@ set -eu
 
 out="${FLOWER_AUTH_CONF:-/etc/nginx/flower-auth/authorization.conf}"
 umask 077
+# umask only shapes a file this open CREATES. The image ships a placeholder here (Dockerfile.prod)
+# and a truncating redirect keeps an existing file's mode, so the secret landed in a 0644 file.
+# chmod fixes that: the container runs as `nginx` (Dockerfile.prod USER nginx), the file's owner,
+# and nginx reads included files as that same user, so 0600 loses nothing (POSIX open(2)/umask(2)).
+: >"$out"
+chmod 600 "$out"
 
 if [ -z "${FLOWER_PASSWORD:-}" ]; then
     echo "$0: FLOWER_PASSWORD is not set; /flower/ will answer Flower's own 401" >&2

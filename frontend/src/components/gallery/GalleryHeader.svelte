@@ -112,11 +112,15 @@
     margin-inline: calc(-1 * var(--space-4));
   }
 
+  /* Rows wrap at every width: a translated selection toolbar is wider than the 1280px content
+     column, and without wrapping its buttons slid under the trash link and sort control and
+     stopped taking clicks. The trailing group then drops to its own line, aligned to the end. */
   .toolbar-row {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
-    gap: var(--space-4);
+    gap: var(--space-2) var(--space-4);
   }
 
   .toolbar-row-left {
@@ -132,6 +136,7 @@
     align-items: center;
     gap: var(--space-2);
     flex-shrink: 0;
+    margin-inline-start: auto;
   }
 
   .trash-link {

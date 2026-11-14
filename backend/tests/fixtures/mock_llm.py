@@ -157,7 +157,7 @@ def mock_llm_url() -> Iterator[str]:
 
     port = free_port()
     proc = subprocess.Popen(  # fixed argv, no shell
-        [sys.executable, str(SERVER), "--port", str(port)],
+        [sys.executable, str(SERVER), "--port", str(port), "--exit-with-parent", str(os.getpid())],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

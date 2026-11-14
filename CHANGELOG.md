@@ -11,6 +11,7 @@ Upgrading from 0.6.1: read [Upgrading to 0.7.0](docs-site/docs/operations/upgrad
 first. Items marked **Action** can stop an existing install until you adjust a setting.
 
 ### Added
+- Test helpers no longer outlive a killed run: the mock LLM subprocess started by the `mock_llm_url` fixture exits when its pytest process is gone (opt-in `--exit-with-parent PID`), and `throwaway-pg.sh` reaps `ot-testdb-*` containers older than 6 h whose recorded creator pid no longer exists.
 - Visual baseline wrapper: `update-visual-baselines.sh` now checks the free memory of the capture GPU before the stack starts and refuses with exit 3, naming the compose projects holding the card, instead of failing 15 minutes later with CUDA OOM on every seed file (`--dry-run` reports only).
 - Release rehearsal: Scenario C ends with a demo leg (`lite-demo-overlay`, blocking) that starts `docker-compose.demo.yml` on the lite stack's own images (no rebuild, no pull) and asserts frontend healthy, `/api/health` 200 and a write refused with `demo_read_only`; a release can no longer ship a demo frontend that crash-loops.
 - Mutation survivors of `lockout`, `lockout_store` and `password_policy` (MUTKD, #1373): 39, 28 and 22 survivors triaged; 78 killed by caplog tests on level, logger name and key phrase of the lockout and password-history audit lines, each shown red on a mutated tree; baselines are now the reasoned equivalents only (1, 3 and 3). The per-survivor file:line block is also printed to the console, not only appended to the module log.

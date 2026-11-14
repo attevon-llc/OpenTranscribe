@@ -51,15 +51,23 @@ def common() -> ModuleType:
         sys.path.remove(str(_SCRIPTS))
 
 
-def test_redis_url_reads_password_and_port_from_the_env_file(common, tmp_path, monkeypatch):
+def test_redis_url_reads_the_password_from_the_env_file_and_the_port_from_the_stack(
+    common, tmp_path, monkeypatch
+):
+    """The port is the stack's published one (an exported REDIS_PORT here), never the .env
+    value: a --fresh stack publishes at an offset its .env does not know (1cc6878ab)."""
     monkeypatch.delenv("BENCHMARK_REDIS_URL", raising=False)
+    monkeypatch.setenv("REDIS_PORT", "6400")
     env = tmp_path / ".env"
-    env.write_text('REDIS_PASSWORD="s3cret"  # note\nREDIS_PORT=6400  # debug\n')
+    env.write_text('REDIS_PASSWORD="s3cret"  # note\nREDIS_PORT=7777  # debug\n')
     assert common.load_redis_url(env) == "redis://:s3cret@localhost:6400/0"
 
 
-def test_redis_url_defaults_without_an_env_file_and_env_var_wins(common, tmp_path, monkeypatch):
+def test_redis_url_has_no_password_without_an_env_file_and_env_var_wins(
+    common, tmp_path, monkeypatch
+):
     monkeypatch.delenv("BENCHMARK_REDIS_URL", raising=False)
+    monkeypatch.setenv("REDIS_PORT", "5177")
     assert common.load_redis_url(tmp_path / "missing") == "redis://localhost:5177/0"
     monkeypatch.setenv("BENCHMARK_REDIS_URL", "redis://override/1")
     assert common.load_redis_url(tmp_path / "missing") == "redis://override/1"

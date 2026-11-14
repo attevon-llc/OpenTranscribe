@@ -496,10 +496,14 @@
   .gallery-action-buttons {
     display: flex;
     align-items: center;
+    min-width: 0;
   }
 
+  /* Wraps at every width, not only below 1200px: in German or Russian the row is wider than
+     the content column even at 1280px (see GalleryHeader's toolbar rows). */
   .selection-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
   }
@@ -608,7 +612,6 @@
   /* Tablet: allow action buttons to wrap */
   @media (max-width: 1200px) {
     .selection-actions {
-      flex-wrap: wrap;
       gap: var(--space-1-5);
     }
 
@@ -621,7 +624,6 @@
   /* Mobile responsive */
   @media (max-width: 768px) {
     .gallery-action-buttons {
-      min-width: 0;
       overflow: visible;
     }
 

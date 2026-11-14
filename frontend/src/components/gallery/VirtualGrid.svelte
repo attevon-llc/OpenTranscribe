@@ -273,12 +273,12 @@
                   <h2 class="file-name" dir="auto">{file.title || file.filename}</h2>
 
                   <div class="meta-line">
-                    <!-- Only this text truncates: the hold badge and status stay whole. -->
+                    <!-- Only this text truncates: the hold badge and status stay whole. Inside
+                         it the size gives way first, so a long speaker label keeps its count. -->
                     <span class="meta-text">
                       <span>{uploadDate(file, $locale)}</span>
                       {#if file.formatted_file_size}
-                        <span class="meta-dot">&middot;</span>
-                        <span dir="ltr">{file.formatted_file_size}</span>
+                        <span class="meta-size"><span class="meta-dot">&middot;</span><span dir="ltr">{file.formatted_file_size}</span></span>
                       {/if}
                       {#if file.speaker_summary && file.speaker_summary.count > 0}
                         <span class="meta-dot">&middot;</span>
@@ -542,7 +542,21 @@
      hover-reveal system that used to live here (`.status-wrap`/`.status-label`,
      `max-width: 0 -> 120px`, `cursor: help` with no `title`) is gone; the
      indicator now carries a real native tooltip everywhere (§5.4). */
+  /* A row of its own: the date and the speaker count keep their width and only the file size
+     (with its separator) shrinks to an ellipsis. Truncating the line as a whole cut the count off
+     whenever a locale puts the number last (ru "Спикеров: 3"). */
   .meta-text {
+    display: flex;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .meta-text > * {
+    flex-shrink: 0;
+  }
+
+  .meta-text > .meta-size {
+    flex-shrink: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

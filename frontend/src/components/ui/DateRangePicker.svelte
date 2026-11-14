@@ -298,10 +298,12 @@
     color: var(--text-secondary);
   }
 
+  /* Wraps rather than truncating, like the tag picker beside it in the filter sidebar: in most
+     locales "Select date range" is wider than the 260px rail, and an ellipsis left the field
+     unlabelled ("Selecionar intervalo de d..."). */
   .date-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    overflow-wrap: break-word;
   }
 
   .date-text.placeholder {

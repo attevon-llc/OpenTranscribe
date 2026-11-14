@@ -40,14 +40,18 @@
   }
 
   @media (max-width: 768px) {
+    /* No fixed width cap on the text: "No files match" is ~140px in most locales and a 120px
+       cap cut it in half with room to spare beside it. The chip only gives way when the row
+       really runs out (min-width: 0 lets it shrink, the span then ellipsizes). */
     .count-chip {
       font-size: var(--font-size-xs);
       padding: var(--space-1) var(--space-2-5);
       gap: var(--space-1);
+      min-width: 0;
     }
 
     .count-chip span {
-      max-width: 120px;
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;

@@ -130,11 +130,14 @@
   }
 
   /* A column, not a scroller: the search is a fixed header and only the nav list scrolls, so a
-     scrollbar can never sit on top of the input. */
+     scrollbar can never sit on top of the input.
+     264px, not 240: at 240 the label column was 184px and three or four section names per
+     locale wrapped (pt "Os meus avisos de remoção", de "LLM-Anbieter-Konfiguration"), as did
+     the search placeholder. A name that still does not fit wraps; it is never truncated. */
   .settings-sidebar {
     display: flex;
     flex-direction: column;
-    width: 240px;
+    width: 264px;
     background-color: var(--background-color);
     border-inline-end: 1px solid var(--border-color);
     overflow: hidden;

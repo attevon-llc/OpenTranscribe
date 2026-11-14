@@ -41,11 +41,16 @@
 
 /* Declared on the consumers, not on `.file-list`: a container query styles descendants of the
    container, never the container itself. Columns shrink (`minmax(120px, ...)`), they never
-   force the row wider than the list. Full template needs ~806px (selecting) / ~758px. */
+   force the row wider than the list. Full template needs ~836px (selecting) / ~788px.
+   Status takes the larger share of the spare width (not Speakers, which holds a name and a
+   count): a fixed 110px cut "Abgeschlossen" and "In Bearbeitung" (de) and "Elaborazione in
+   corso" (it) to an ellipsis. Every track still comes from this one template, so the header
+   and the rows stay aligned whatever width each fr resolves to. */
 .file-list-header,
 .file-list-row,
 .skel-row {
-  --file-list-columns: 48px minmax(120px, 1.2fr) minmax(120px, 1fr) 90px 100px 90px 110px;
+  --file-list-columns: 48px minmax(120px, 1.2fr) minmax(120px, 0.6fr) 90px 100px 90px
+    minmax(140px, 1fr);
   --file-list-columns-selecting: var(--file-list-check) var(--file-list-columns);
 }
 
@@ -54,7 +59,7 @@
   .file-list-header,
   .file-list-row,
   .skel-row {
-    --file-list-columns: 48px minmax(0, 1fr) 90px 100px 110px;
+    --file-list-columns: 48px minmax(0, 1fr) 90px 100px 140px;
   }
 }
 

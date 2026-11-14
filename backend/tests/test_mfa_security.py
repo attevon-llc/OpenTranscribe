@@ -571,7 +571,7 @@ class TestMFAServiceIntegration:
         # Encrypt for storage
         encrypted = MFAService.encrypt_totp_secret(secret)
         assert encrypted != secret
-        assert encrypted.startswith("v3:")  # FIPS 140-3 format
+        assert encrypted.startswith("v4:")  # current AES-256-GCM envelope
 
         # Decrypt for verification
         decrypted = MFAService.decrypt_totp_secret(encrypted)

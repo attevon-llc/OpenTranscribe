@@ -114,34 +114,40 @@ Sensitive data is encrypted using AES-256-GCM. In v0.4.0, this covers:
 - All authentication configuration values marked as sensitive
 
 Encryption parameters:
-- 256-bit key derived via PBKDF2-SHA256
+- 256-bit key per secret, derived from `ENCRYPTION_KEY` and a random 128-bit salt with
+  HKDF-SHA256 (RFC 5869). HKDF is the extract-then-expand key derivation of NIST SP 800-56C
+  Rev. 2, an approved KDF for deriving keys from key material. PBKDF2 (SP 800-132) is meant for
+  passwords and is no longer used for new ciphertext.
 - 96-bit random nonce per encryption
 - 128-bit authentication tag
 
 **Data Format:**
 ```
-v3:base64(salt):base64(nonce):base64(ciphertext+tag)
+v4:base64(salt):base64(nonce):base64(ciphertext+tag)
 ```
 
 **Key Derivation:**
 ```python
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-kdf = PBKDF2HMAC(
+key = HKDF(
     algorithm=hashes.SHA256(),
     length=32,  # 256 bits
     salt=salt,
-    iterations=600000
-)
-key = kdf.derive(password)
+    info=b"opentranscribe secret encryption v4 AES-256-GCM",
+).derive(encryption_key)
 ```
 
+`ENCRYPTION_KEY` must be high-entropy key material (`openssl rand -hex 32`): HKDF does not
+stretch a guessable value. With `FIPS_VALIDATE_ENTROPY=true` (the default under FIPS 140-3) the
+backend refuses to start with a low-entropy key.
+
 **Backward Compatibility:**
-Data without the `v3:` prefix is assumed to be legacy Fernet-encrypted and will be:
-1. Decrypted using Fernet
-2. Re-encrypted using AES-256-GCM
-3. Stored with `v3:` prefix
+- `v3:` data (same layout, key derived with PBKDF2-SHA256 at 600,000 iterations) still decrypts.
+  Each process derives a `v3:` key once and keeps it in a bounded in-memory cache. It is
+  re-encrypted as `v4:` the next time the secret is saved; nothing is rewritten on read.
+- Data without a version prefix is legacy Fernet and is decrypted with Fernet.
 
 ## JWT Signing
 
@@ -266,7 +272,7 @@ Logs are available in:
 |-----------------|----------------|
 | IA-5 (Authenticator Management) | PBKDF2-SHA256 (600k iter), configurable password policy, history enforcement — see the note below on current NIST composition/expiry guidance |
 | AC-7 (Unsuccessful Login Attempts) | Account lockout (NIST AC-7 compliant), progressive lockout |
-| SC-12 (Cryptographic Key Establishment) | PBKDF2 key derivation for AES-256-GCM |
+| SC-12 (Cryptographic Key Establishment) | HKDF-SHA256 key derivation (SP 800-56C Rev. 2) for AES-256-GCM |
 | SC-13 (Cryptographic Protection) | AES-256-GCM for config at rest, HS512 for JWT signing |
 | SC-28 (Protection of Information at Rest) | AES-256-GCM encrypted sensitive auth config in database |
 | AU-2/AU-3 (Audit Events) | JSON + CEF structured audit logging, OpenSearch integration |

@@ -681,6 +681,17 @@ If `ENCRYPTION_KEY` was rotated or a stored secret is corrupt, reading it now fa
 `SecretDecryptionError` instead of acting as if no secret was set. Provider screens list the
 entry without its credential; re-enter the key. Back up `ENCRYPTION_KEY` with the rest of `.env`.
 
+### Stored secrets use a faster key derivation
+
+Secrets you save from 0.7.0 on (provider API keys, MFA secrets, watch-source and backup
+credentials) are stored as `v4:`, with the key derived by HKDF-SHA256. Secrets saved by 0.6.x
+(`v3:`, PBKDF2-SHA256) still decrypt and need nothing from you; each one turns into `v4:` the
+next time you save it. Nothing is rewritten in the background.
+
+**If you roll back to 0.6.x**, a secret saved under 0.7.0 cannot be decrypted by the older
+version: it answers as an unreadable stored secret. Re-enter that credential after the
+rollback. Secrets you did not save under 0.7.0 are unaffected.
+
 ## Smaller changes
 
 - The video and audio player is Video.js 10 (Plyr is gone); the frontend builds on SvelteKit 3.

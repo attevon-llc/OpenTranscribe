@@ -64,7 +64,7 @@ def test_empty_input_is_still_none_not_an_error(no_key):
     assert enc.decrypt_value("  ") is None
 
 
-def test_decrypt_raises_for_v3_when_key_unconfigured(key, monkeypatch):
+def test_decrypt_raises_for_aead_when_key_unconfigured(key, monkeypatch):
     token = _api_token("sk-secret")
     monkeypatch.setattr(settings, "ENCRYPTION_KEY", "")
     with pytest.raises(enc.EncryptionKeyConfigError):
@@ -138,7 +138,7 @@ def test_unexpected_error_in_decrypt_propagates(key, monkeypatch):
     def _bug(*_a, **_kw):
         raise RuntimeError("programming error")
 
-    monkeypatch.setattr(enc, "_decrypt_v3", _bug)
+    monkeypatch.setattr(enc, "_decrypt_aead", _bug)
     with pytest.raises(RuntimeError):
         enc.decrypt_api_key(token)
     with pytest.raises(RuntimeError):

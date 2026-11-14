@@ -1,26 +1,36 @@
 """
 Encryption utilities for secure storage of sensitive data like API keys.
 
-Version 3 (FIPS 140-3 compliant):
-- Uses AES-256-GCM authenticated encryption
-- Key derivation via PBKDF2-SHA256 with 600k iterations
-- 96-bit random nonce per encryption
-- Associated data (AAD) support for authenticated encryption
+Every new ciphertext is version 4:
+- AES-256-GCM authenticated encryption, 96-bit random nonce, associated data (AAD)
+- Per-secret key derived with HKDF-SHA256 (RFC 5869) from ``ENCRYPTION_KEY`` and a random
+  128-bit salt. HKDF is the ``cryptography`` docs' KDF for deriving keys from key material
+  and the extract-then-expand KDF of NIST SP 800-56C Rev 2, so it is FIPS-approved.
+- Envelope ``v4:salt:nonce:ciphertext``.
 
-Backward compatibility:
-- Legacy Fernet (AES-128-CBC) data is auto-detected and decrypted
-- Re-encryption with AES-256-GCM on access is supported
+Older versions still decrypt; nothing rewrites a stored row on read:
+- v3 (``v3:salt:nonce:ciphertext``) derived its key with PBKDF2-SHA256 at 600k iterations.
+  PBKDF2 is a password KDF (deliberately slow, ~350 ms of CPU here), and ``ENCRYPTION_KEY``
+  is not a password. The v3 key is cached per (master key, salt) in a bounded LRU, so a
+  process pays the derive once per stored secret instead of on every read (every chat
+  turn decrypts the LLM key). A v3 row becomes v4 the next time its owner saves it.
+- No prefix: legacy Fernet (AES-128-CBC), auto-detected.
 
-⚠️ ``settings.ENCRYPTION_ALGORITHM_V3`` is NOT read here, and must not be. The v3 envelope
-is ``v3:salt:nonce:ciphertext`` — it records no algorithm field — so decrypt has to use
-exactly the algorithm encrypt used. Dispatching on a mutable setting would make every
-ciphertext written before an operator changed it undecryptable. The setting is instead
-validated at boot against ``core.config.IMPLEMENTED_ENCRYPTION_ALGORITHMS``
+⚠️ ``ENCRYPTION_KEY`` must be high-entropy key material (``generate_encryption_key()`` or
+``openssl rand -hex 32``, which the installer writes). HKDF does not stretch a weak
+password; the FIPS 140-3 boot check (``FIPS_VALIDATE_ENTROPY``) rejects a low-entropy one.
+
+⚠️ ``settings.ENCRYPTION_ALGORITHM_V3`` is NOT read here, and must not be. The envelopes
+record no algorithm field, so decrypt has to use exactly the algorithm encrypt used.
+Dispatching on a mutable setting would make every ciphertext written before an operator
+changed it undecryptable. The setting is instead validated at boot against
+``core.config.IMPLEMENTED_ENCRYPTION_ALGORITHMS``
 (``app.core.startup_validation._validate_production_secrets``), which refuses to start a FIPS 140-3
 deployment configured for an algorithm this module does not implement.
 """
 
 import base64
+import functools
 import logging
 import os
 from typing import Literal
@@ -32,6 +42,7 @@ from cryptography.fernet import InvalidToken
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from app.core.config import settings
@@ -68,8 +79,10 @@ class EncryptionKeyConfigError(EncryptionError):
     """
 
 
-# V3 encryption constants (FIPS 140-3 compliant)
-ENCRYPTION_V3_PREFIX = "v3:"
+ENCRYPTION_V3_PREFIX = "v3:"  # PBKDF2-SHA256 key; decrypt only
+ENCRYPTION_V4_PREFIX = "v4:"  # HKDF-SHA256 key
+# The version every new ciphertext is written in.
+ENCRYPTION_CURRENT_PREFIX = ENCRYPTION_V4_PREFIX
 # Deliberately a module constant, NOT settings.PBKDF2_ITERATIONS_V3 (C8), even though they
 # share a name and a default today. The v3 envelope (v3:salt:nonce:ciphertext) records no
 # iteration count, so decrypt has to re-derive the key with exactly the count encrypt used.
@@ -77,9 +90,16 @@ ENCRYPTION_V3_PREFIX = "v3:"
 # under the old count the moment an operator raised it in .env. settings.PBKDF2_ITERATIONS_V3
 # governs password hashing (core/security.py) only.
 PBKDF2_ITERATIONS_V3 = 600000
-SALT_SIZE = 16  # 128-bit salt
+SALT_SIZE = 16  # 128-bit salt, both versions (keeps the v4 envelope the v3 length)
 NONCE_SIZE = 12  # 96-bit nonce (recommended for GCM)
 KEY_SIZE = 32  # 256-bit key
+# HKDF "info": binds the derived key to this use (RFC 5869 section 3.2). Changing it orphans
+# every v4 ciphertext, exactly like changing the iteration count would orphan v3.
+HKDF_INFO_V4 = b"opentranscribe secret encryption v4 AES-256-GCM"
+# One entry per distinct stored v3 secret a process reads (32-byte key plus its salt and the
+# master key reference). Bounded so a process that reads many secrets cannot grow without
+# limit; a miss only costs one PBKDF2 derive.
+V3_KEY_CACHE_SIZE = 1024
 
 # Default AAD for API key encryption
 DEFAULT_AAD = b"opentranscribe-api-key-v3"
@@ -104,11 +124,13 @@ def _get_master_key_material() -> bytes:
 
 def _derive_key_v3(password: bytes, salt: bytes) -> bytes:
     """
-    Derive a 256-bit encryption key using PBKDF2-SHA256.
+    Derive the 256-bit key of a v3 ciphertext with PBKDF2-SHA256 (600k iterations).
+
+    Only decrypt reaches this, through :func:`_v3_key`. Never call it per read directly.
 
     Args:
         password: Master key material
-        salt: Random salt for key derivation
+        salt: The salt stored in the v3 envelope
 
     Returns:
         32-byte derived key suitable for AES-256-GCM
@@ -123,44 +145,75 @@ def _derive_key_v3(password: bytes, salt: bytes) -> bytes:
     return kdf.derive(password)
 
 
-def _encrypt_v3(plaintext: bytes, aad: bytes = DEFAULT_AAD) -> str:
+@functools.lru_cache(maxsize=V3_KEY_CACHE_SIZE)
+def _v3_key(master_key: bytes, salt: bytes) -> bytes:
+    """The v3 key for ``salt``, derived once per process.
+
+    Keyed on the master key as well as the salt, so a changed ``ENCRYPTION_KEY`` can never
+    decrypt with a key derived from the old one. The iteration count is the
+    ``PBKDF2_ITERATIONS_V3`` constant, fixed for every v3 envelope, so it needs no slot in the
+    key. The cache holds derived keys, never plaintext, and they are no more sensitive than
+    ``ENCRYPTION_KEY`` itself, which this process already holds. ``lru_cache`` is thread-safe;
+    two threads missing at once may both derive, which is correct, only slower.
     """
-    Encrypt data using AES-256-GCM with PBKDF2 key derivation.
+    return _derive_key_v3(master_key, salt)
+
+
+def _derive_key_v4(master_key: bytes, salt: bytes) -> bytes:
+    """
+    Derive the 256-bit key of a v4 ciphertext with HKDF-SHA256.
+
+    Args:
+        master_key: Master key material (``ENCRYPTION_KEY``)
+        salt: The random salt stored in the v4 envelope
+
+    Returns:
+        32-byte derived key suitable for AES-256-GCM
+    """
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=KEY_SIZE,
+        salt=salt,
+        info=HKDF_INFO_V4,
+    ).derive(master_key)
+
+
+def _b64(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii")
+
+
+def _encrypt_aead(plaintext: bytes, aad: bytes = DEFAULT_AAD) -> str:
+    """
+    Encrypt data with AES-256-GCM under a fresh HKDF-derived key (the current version).
 
     Args:
         plaintext: Data to encrypt
         aad: Associated authenticated data (authenticated but not encrypted)
 
     Returns:
-        Encrypted string in format: v3:base64(salt):base64(nonce):base64(ciphertext)
+        Encrypted string: v4:base64(salt):base64(nonce):base64(ciphertext)
     """
-    # Generate random salt and nonce
     salt = os.urandom(SALT_SIZE)
     nonce = os.urandom(NONCE_SIZE)
-
-    # Derive key from master key material
-    master_key = _get_master_key_material()
-    derived_key = _derive_key_v3(master_key, salt)
-
-    # Encrypt with AES-256-GCM
-    aesgcm = AESGCM(derived_key)
-    ciphertext = aesgcm.encrypt(nonce, plaintext, aad)
-
-    # Encode components as base64
-    salt_b64 = base64.urlsafe_b64encode(salt).decode("ascii")
-    nonce_b64 = base64.urlsafe_b64encode(nonce).decode("ascii")
-    ciphertext_b64 = base64.urlsafe_b64encode(ciphertext).decode("ascii")
-
-    # Return formatted string with version prefix
-    return f"{ENCRYPTION_V3_PREFIX}{salt_b64}:{nonce_b64}:{ciphertext_b64}"
+    derived_key = _derive_key_v4(_get_master_key_material(), salt)
+    ciphertext = AESGCM(derived_key).encrypt(nonce, plaintext, aad)
+    return f"{ENCRYPTION_CURRENT_PREFIX}{_b64(salt)}:{_b64(nonce)}:{_b64(ciphertext)}"
 
 
-def _decrypt_v3(encrypted_data: str, aad: bytes = DEFAULT_AAD) -> bytes:
+def _aead_prefix(encrypted_data: str) -> str | None:
+    """The AES-GCM envelope version prefix of ``encrypted_data``, or None (legacy Fernet)."""
+    for prefix in (ENCRYPTION_V4_PREFIX, ENCRYPTION_V3_PREFIX):
+        if encrypted_data.startswith(prefix):
+            return prefix
+    return None
+
+
+def _decrypt_aead(encrypted_data: str, aad: bytes = DEFAULT_AAD) -> bytes:
     """
-    Decrypt data encrypted with AES-256-GCM.
+    Decrypt a v3 or v4 AES-256-GCM envelope.
 
     Args:
-        encrypted_data: Encrypted string with v3: prefix
+        encrypted_data: Encrypted string with a v3: or v4: prefix
         aad: Associated authenticated data (must match encryption)
 
     Returns:
@@ -168,34 +221,23 @@ def _decrypt_v3(encrypted_data: str, aad: bytes = DEFAULT_AAD) -> bytes:
 
     Raises:
         ValueError: If data format is invalid
-        Exception: If decryption fails (authentication failure, etc.)
+        InvalidTag: If authentication fails (wrong key or AAD, tampered data)
     """
-    # Remove v3: prefix and split components
-    if not encrypted_data.startswith(ENCRYPTION_V3_PREFIX):
-        raise ValueError("Invalid v3 encrypted data format")
+    prefix = _aead_prefix(encrypted_data)
+    if prefix is None:
+        raise ValueError("Invalid encrypted data format: no v3/v4 prefix")
 
-    data = encrypted_data[len(ENCRYPTION_V3_PREFIX) :]
-    parts = data.split(":")
-
+    parts = encrypted_data[len(prefix) :].split(":")
     if len(parts) != 3:
-        raise ValueError("Invalid v3 encrypted data format: expected salt:nonce:ciphertext")
+        raise ValueError("Invalid encrypted data format: expected salt:nonce:ciphertext")
+    salt, nonce, ciphertext = (base64.urlsafe_b64decode(part) for part in parts)
 
-    salt_b64, nonce_b64, ciphertext_b64 = parts
-
-    # Decode base64 components
-    salt = base64.urlsafe_b64decode(salt_b64)
-    nonce = base64.urlsafe_b64decode(nonce_b64)
-    ciphertext = base64.urlsafe_b64decode(ciphertext_b64)
-
-    # Derive key from master key material
     master_key = _get_master_key_material()
-    derived_key = _derive_key_v3(master_key, salt)
-
-    # Decrypt with AES-256-GCM
-    aesgcm = AESGCM(derived_key)
-    plaintext = aesgcm.decrypt(nonce, ciphertext, aad)
-
-    return plaintext
+    if prefix == ENCRYPTION_V3_PREFIX:
+        derived_key = _v3_key(master_key, salt)
+    else:
+        derived_key = _derive_key_v4(master_key, salt)
+    return AESGCM(derived_key).decrypt(nonce, ciphertext, aad)
 
 
 def _get_fernet_key() -> bytes:
@@ -269,7 +311,7 @@ def encrypt_api_key(api_key: str) -> str | None:
         api_key: Plain text API key to encrypt
 
     Returns:
-        Encrypted API key in v3 format, or None if ``api_key`` is empty
+        Encrypted API key in the current (v4) format, or None if ``api_key`` is empty
 
     Raises:
         EncryptionKeyConfigError: If ENCRYPTION_KEY is not configured. Encryption failing
@@ -279,7 +321,7 @@ def encrypt_api_key(api_key: str) -> str | None:
     if not api_key or not api_key.strip():
         return None
 
-    return _encrypt_v3(api_key.encode("utf-8"))
+    return _encrypt_aead(api_key.encode("utf-8"))
 
 
 def _decryption_failed() -> SecretDecryptionError:
@@ -305,18 +347,19 @@ def decrypt_api_key(
     Decrypt an API key from storage.
 
     Automatically detects encryption version:
-    - v3: prefix -> AES-256-GCM decryption
+    - v4: / v3: prefix -> AES-256-GCM decryption (HKDF / cached PBKDF2 key)
     - No prefix -> Legacy Fernet decryption
 
     Args:
         encrypted_api_key: Encrypted API key from database
         auto_upgrade: If True, returns (decrypted, upgraded_encrypted) tuple
-                     for legacy data that should be re-encrypted
+                     for data in an older version that should be re-encrypted
 
     Returns:
         If auto_upgrade=False: Decrypted API key as plain text, or None if the stored value
         is empty (absence)
-        If auto_upgrade=True: Tuple of (decrypted_key, new_v3_encrypted_key or None)
+        If auto_upgrade=True: Tuple of (decrypted_key, current-version ciphertext, or None
+        when the stored value is already current)
 
     Raises:
         SecretDecryptionError: wrong key, corrupt or tampered data (never None).
@@ -329,27 +372,26 @@ def decrypt_api_key(
         return None
 
     try:
-        if encrypted_api_key.startswith(ENCRYPTION_V3_PREFIX):
-            decrypted = _decrypt_v3(encrypted_api_key).decode("utf-8")
-            if auto_upgrade:
-                return decrypted, None  # Already v3, no upgrade needed
-            return decrypted
-
-        legacy_decrypted = _decrypt_fernet_legacy(encrypted_api_key)
-        if auto_upgrade:
-            return legacy_decrypted, encrypt_api_key(legacy_decrypted)
-        return legacy_decrypted
+        if _aead_prefix(encrypted_api_key) is not None:
+            decrypted = _decrypt_aead(encrypted_api_key).decode("utf-8")
+        else:
+            decrypted = _decrypt_fernet_legacy(encrypted_api_key)
     except (InvalidTag, ValueError) as e:
         raise _decryption_failed() from e
+    if not auto_upgrade:
+        return decrypted
+    if encrypted_api_key.startswith(ENCRYPTION_CURRENT_PREFIX):
+        return decrypted, None
+    return decrypted, encrypt_api_key(decrypted)
 
 
 def generate_encryption_key() -> str:
     """
     Generate a new secure encryption key.
 
-    For v3 encryption, any high-entropy string can be used as the master key
-    since PBKDF2 is used for key derivation. This function generates a
-    256-bit random value encoded as base64.
+    ``ENCRYPTION_KEY`` is key material, not a password: v4 derives each secret's key from it
+    with HKDF, which does not stretch a guessable value. This function generates a 256-bit
+    random value encoded as base64.
 
     Returns:
         Base64-encoded 256-bit key suitable for ENCRYPTION_KEY environment variable
@@ -368,23 +410,21 @@ def test_encryption() -> bool:
     try:
         test_data = "test_api_key_12345"
 
-        # Test v3 encryption
         encrypted = encrypt_api_key(test_data)
         if not encrypted:
-            logger.error("V3 encryption returned None")
+            logger.error("Encryption returned None")
             return False
 
-        if not encrypted.startswith(ENCRYPTION_V3_PREFIX):
-            logger.error("V3 encrypted data missing prefix")
+        if not encrypted.startswith(ENCRYPTION_CURRENT_PREFIX):
+            logger.error("Encrypted data missing the %s prefix", ENCRYPTION_CURRENT_PREFIX)
             return False
 
-        # Test v3 decryption
         decrypted = decrypt_api_key(encrypted)
         if decrypted != test_data:
-            logger.error("V3 decryption mismatch")
+            logger.error("Decryption mismatch")
             return False
 
-        logger.info("V3 encryption test passed")
+        logger.info("Encryption self-test passed")
         return True
 
     except (EncryptionError, InvalidTag, ValueError) as e:
@@ -399,14 +439,14 @@ def encrypt_value(value: str, aad: bytes | None = None) -> str | None:
     so a ciphertext cannot be replayed into a different context.
 
     Returns:
-        Encrypted value in v3 format, or None if the value is empty.
+        Encrypted value in the current (v4) format, or None if the value is empty.
 
     Raises:
         EncryptionKeyConfigError: If ENCRYPTION_KEY is not configured.
     """
     if not value or not value.strip():
         return None
-    return _encrypt_v3(value.encode("utf-8"), DEFAULT_AAD if aad is None else aad)
+    return _encrypt_aead(value.encode("utf-8"), DEFAULT_AAD if aad is None else aad)
 
 
 def decrypt_value(encrypted_value: str, aad: bytes | None = None) -> str | None:
@@ -428,9 +468,9 @@ def decrypt_value(encrypted_value: str, aad: bytes | None = None) -> str | None:
         return None
 
     try:
-        if encrypted_value.startswith(ENCRYPTION_V3_PREFIX):
+        if _aead_prefix(encrypted_value) is not None:
             effective_aad = aad if aad is not None else DEFAULT_AAD
-            return _decrypt_v3(encrypted_value, effective_aad).decode("utf-8")
+            return _decrypt_aead(encrypted_value, effective_aad).decode("utf-8")
         return _decrypt_fernet_legacy(encrypted_value)
     except (InvalidTag, ValueError) as e:
         raise _decryption_failed() from e

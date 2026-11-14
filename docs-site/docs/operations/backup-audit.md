@@ -159,7 +159,8 @@ ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "this_should_be_changed_in_pro
 ```
 
 **What the encryption key protects.** `backend/app/utils/encryption.py` derives an
-AES-256-GCM key (PBKDF2-SHA256, 600k iterations) from `ENCRYPTION_KEY` and encrypts every
+AES-256-GCM key per secret (HKDF-SHA256; secrets saved before 0.7.0 used PBKDF2-SHA256) from
+`ENCRYPTION_KEY` and encrypts every
 sensitive column into the database, including:
 
 - user-configured **LLM / ASR API keys**,

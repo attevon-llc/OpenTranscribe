@@ -185,20 +185,12 @@ def create_user_llm_configuration(
     # SSRF guard entirely.
     _assert_safe_llm_endpoint(settings_in.base_url, "LLM configuration create")
 
-    # Check if user already has a configuration with this name
-    existing_config = find_own_llm_config_by_name(db, current_user.id, settings_in.name)
-
-    if existing_config:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Configuration with name '{settings_in.name}' already exists.",
-        )
-
-    # Test encryption before proceeding
+    # All crypto runs before the first query below opens a transaction, so no pooled
+    # connection sits idle in a transaction while it runs (app/db/CLAUDE.md, "Request
+    # connection lifecycle"; auth already ended its own read transaction).
     if not test_encryption():
         raise HTTPException(status_code=500, detail="Encryption system is not working properly")
 
-    # Encrypt API key if provided
     encrypted_api_key = None
     if settings_in.provider == schemas.LLMProvider.BEDROCK:
         # Bedrock keeps its region and AWS credentials in one encrypted blob in this column.
@@ -207,6 +199,15 @@ def create_user_llm_configuration(
         encrypted_api_key = encrypt_api_key(settings_in.api_key)
         if not encrypted_api_key:
             raise HTTPException(status_code=500, detail="Failed to encrypt API key")
+
+    # Check if user already has a configuration with this name
+    existing_config = find_own_llm_config_by_name(db, current_user.id, settings_in.name)
+
+    if existing_config:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Configuration with name '{settings_in.name}' already exists.",
+        )
 
     # Create new configuration. `is_active` (issue #607) is never written from client
     # input here: it is an exclusive, derived flag whose SOLE writer is

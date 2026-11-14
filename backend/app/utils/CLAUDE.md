@@ -79,8 +79,14 @@ so keep heavy imports lazy.
 - `pagination.py` — `paginate()` replaces the
   count+offset+limit boilerplate (counts with `order_by(None)`). Plain SQLAlchemy, so services use it;
   the FastAPI `PageParams` query-parameter dependency lives in `app/api/pagination.py`.
-- `encryption.py` — AES-256-GCM (v3) with legacy Fernet auto-detect. Every stored secret (ASR/LLM
-  keys, S3/SMB creds, OIDC refresh/ID tokens) goes through it.
+- `encryption.py` — AES-256-GCM with legacy Fernet auto-detect. Every stored secret (ASR/LLM
+  keys, S3/SMB creds, OIDC refresh/ID tokens) goes through it. New writes are `v4:` (per-secret key
+  from `ENCRYPTION_KEY` via HKDF-SHA256, microseconds). `v3:` rows (PBKDF2-SHA256, 600k iterations,
+  ~350 ms of CPU) still decrypt through `_v3_key`, an `lru_cache` keyed on (master key, salt), so a
+  process derives each v3 key once: never call `_derive_key_v3` on a read path directly, and never
+  cache plaintext. Nothing re-encrypts on read; a row becomes v4 when its owner saves it. Changing
+  `HKDF_INFO_V4`, `SALT_SIZE` or `PBKDF2_ITERATIONS_V3` orphans stored ciphertext
+  (`tests/unit/test_encryption_key_derivation.py` pins golden vectors of both versions).
 - `task_secret_handoff.py` — **the only way a secret reaches a Celery task.** A task argument is
   written to the broker, survives retries and shows in monitoring, so a credential is never one:
   `stash_task_secret({...}, context=...)` stores it AES-GCM encrypted (the context, e.g. user+file, is the

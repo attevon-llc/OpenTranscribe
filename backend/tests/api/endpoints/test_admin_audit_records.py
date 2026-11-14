@@ -235,7 +235,7 @@ class _FilteringFakeAuditOS:
             hits = [d for d in self.docs if all(self._clause_matches(d, c) for c in clauses)]
         return {
             "hits": {
-                "hits": [{"_source": h} for h in hits],
+                "hits": [{"_id": f"os-{i}", "_source": h} for i, h in enumerate(hits)],
                 "total": {"value": len(hits)},
             }
         }

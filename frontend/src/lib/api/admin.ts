@@ -13,7 +13,7 @@ export interface UserSession {
 }
 
 export interface AuditLogEntry {
-  id: number;
+  id: string;
   timestamp: string;
   event_type: string;
   user_id: number | null;

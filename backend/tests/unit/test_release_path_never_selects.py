@@ -74,7 +74,9 @@ def test_detector_stays_clean_on_lookalikes() -> None:
 
 
 def test_every_gate_pytest_call_disables_selection_plugins() -> None:
-    text = (REPO / "scripts/run-integration-tests.sh").read_text()
+    # 025397df8 moved the tail phases into a sourced library; they are gate pytest calls too.
+    text = (REPO / "scripts/run-integration-tests.sh").read_text() + "\n"
+    text += (REPO / "scripts/lib/gate-tail-phases.sh").read_text()
     calls = [
         ln for ln in text.splitlines() if "-m pytest" in ln and not ln.lstrip().startswith("#")
     ]

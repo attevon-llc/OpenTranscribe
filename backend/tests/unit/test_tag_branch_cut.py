@@ -59,6 +59,8 @@ stages:
         severity: blocking
       - id: artifacts-match-tagged-commit
         severity: blocking
+      - id: shipped-python-equals-tested
+        severity: blocking
       - id: version-consistency-pre-tag
         severity: blocking
       - id: changelog-section
@@ -68,6 +70,10 @@ stages:
       - id: release-branch-tracks-tag
         severity: blocking
 """
+
+# 1e7e596e1 made 70-tag.sh prove shipped Python == tested Python via image_parity.py. That proof has
+# its own coverage; this file is about the branch cut, so the parity check is stubbed to succeed.
+_IMAGE_PARITY_STUB = "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n"
 
 _CHECK_VERSION_CONSISTENCY_STUB = "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n"
 
@@ -118,6 +124,9 @@ def work(tmp_path: Path, origin: Path) -> Path:
     check_stub = release_dir / "check-version-consistency.py"
     check_stub.write_text(_CHECK_VERSION_CONSISTENCY_STUB)
     check_stub.chmod(0o755)
+    parity_stub = release_dir / "image_parity.py"
+    parity_stub.write_text(_IMAGE_PARITY_STUB)
+    parity_stub.chmod(0o755)
 
     (w / "CHANGELOG.md").write_text(_changelog("0.5.0"))
     # The real repo gitignores the ledger; without this it would dirty the worktree.
@@ -136,6 +145,13 @@ def _record_evidence_at_head(work: Path, version: str) -> None:
     steps.mkdir(parents=True, exist_ok=True)
     for stage in ("test", "build", "scan", "rehearse"):
         (steps / stage).write_text(f"status=done\nsha={sha}\n", encoding="utf-8")
+    # The records 70-tag.sh's shipped-python-equals-tested check reads (content is irrelevant:
+    # image_parity.py is stubbed). One backend leg per platform so the host arch always matches.
+    (work / ".release" / version / "tested-fingerprint.txt").write_text("fp\n", encoding="utf-8")
+    (work / ".release" / version / "legs.tsv").write_text(
+        "".join(f"backend\tr\t{plat}\tt\tsha256:x\n" for plat in ("linux/amd64", "linux/arm64")),
+        encoding="utf-8",
+    )
 
 
 def _run_tag(work: Path, version: str) -> subprocess.CompletedProcess:

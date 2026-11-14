@@ -89,6 +89,10 @@ def _run(
 set -uo pipefail
 YELLOW=''; NC=''
 COMPOSE_PROJECT_NAME=otfresh-fake
+# a8c5ba714: the gate resolves the stack through st_target/st_container (scripts/lib/stack-target.sh)
+# and exports the OBSERVED ports, instead of scraping `docker ps` itself. Stand in for that library.
+st_container() {{ echo fake-backend; }}
+export REDIS_PORT=5177 OPENSEARCH_PORT=9200
 {_extract_block()}
 echo "ENV=${{INTEGRATION_ENV[*]:-}}"
 """

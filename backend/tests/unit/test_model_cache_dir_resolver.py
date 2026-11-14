@@ -52,6 +52,13 @@ def layout(tmp_path):
     shutil.copy(SCRIPT, main / "scripts" / SCRIPT.name)
     for name in LIBS:
         shutil.copy(REPO_ROOT / "scripts" / "lib" / name, main / "scripts" / "lib" / name)
+    # 1ef84b254: the script now refuses a base image that is not the code under test. That check
+    # (release-tests/lib/guardrails.sh) has its own coverage and needs a real image, so this
+    # harness installs a library whose assertion always passes; the subject here is the cache dir.
+    (main / "scripts" / "release-tests" / "lib").mkdir(parents=True)
+    (main / "scripts" / "release-tests" / "lib" / "guardrails.sh").write_text(
+        "gr_assert_image_is_the_code_under_test() { return 0; }\n"
+    )
     (main / "docker-compose.benchmark.yml").write_text("services: {}\n")
     (main / "benchmark" / "test_audio").mkdir(parents=True)
     (main / "benchmark" / "test_audio" / "0.5h_1899s.wav").write_bytes(b"x")

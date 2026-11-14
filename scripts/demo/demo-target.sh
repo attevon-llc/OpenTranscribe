@@ -53,7 +53,12 @@ demo_assert_target() {
             echo "demo: refusing: .fresh/${DEMO_FRESH_SLUG}.yml (the fresh stack's container names) is missing" >&2
             return 2
         fi
-        export OPENTRANSCRIBE_EXTRA_COMPOSE_FILES="-f .fresh/${DEMO_FRESH_SLUG}.yml"
+        # A `start prod --build` fresh stack records its build-from-source overlay in .aux (opentr.sh
+        # fresh_prod_dispatch): its images exist only on this host, so `up` must never pull them, or
+        # a published tag of the same name would replace the bytes under test.
+        local built_overlay=""
+        built_overlay="$(grep -x 'docker-compose.local.yml' "$INSTALL_DIR/.fresh/${DEMO_FRESH_SLUG}.aux" 2>/dev/null)" || built_overlay=""
+        export OPENTRANSCRIBE_EXTRA_COMPOSE_FILES="-f .fresh/${DEMO_FRESH_SLUG}.yml${built_overlay:+ -f $built_overlay}"
     fi
     export COMPOSE_PROJECT_NAME="$project"
     echo "demo: target project $project ($want)"

@@ -42,6 +42,9 @@ def _run_predict(tmp_path: Path, *, models_populated: bool, hf_token: str = "") 
     source = OPENTR.read_text(encoding="utf-8")
     resolve_body = _function_body(source, "resolve_diar_native_models_dir")
     overlay_body = _function_body(source, "add_diar_native_overlay")
+    # 53d53b9ba: the auto-load gate asks this helper whether the export exists; without it the
+    # call fails inside the `if` and the sidecar silently never auto-loads.
+    present_body = _function_body(source, "diar_native_models_present")
     assert "predict" in overlay_body, "predict mode removed from add_diar_native_overlay"
 
     models_dir = tmp_path / "diar-native-models"
@@ -52,6 +55,7 @@ def _run_predict(tmp_path: Path, *, models_populated: bool, hf_token: str = "") 
     script = f"""
 set -e
 {resolve_body}
+{present_body}
 {overlay_body}
 
 DIAR_NATIVE_MODELS_DIR="{models_dir}"

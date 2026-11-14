@@ -247,7 +247,7 @@ settle_pki_trust() {
     local want have
     want="$(COMPOSE_PROJECT_NAME="otfresh-${SLUG}" ./scripts/pki/generate-test-env.sh \
         --print-trusted-proxies 2>/dev/null)" || { err "could not derive PKI trusted proxies"; return 1; }
-    have="$(sed -n 's/^PKI_TRUSTED_PROXIES=//p' scripts/pki/test-certs/pki-test.env 2>/dev/null | tail -1)"
+    have="$(sed -n 's/^PKI_TRUSTED_PROXIES=//p' scripts/pki/test-certs/pki-test.env 2>/dev/null | tail -1)" || have=""
     [[ -n "$want" ]] || { err "empty derived PKI trusted proxies"; return 1; }
     [[ "$want" == "$have" ]] && return 0
     echo "PKI trusted proxies were '$have', the project network gives '$want': starting once more"

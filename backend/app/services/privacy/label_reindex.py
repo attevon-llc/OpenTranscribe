@@ -453,12 +453,22 @@ def _retire(db: Session, scope: ResyncScope, requested_at: str | None) -> None:
 # --- drift: what the index holds against what the policy implies -------------------------
 
 
-def _expected_labels(db: Session, file_ids: list[int]) -> dict[int, set[str]]:
-    """``{file id: labels the policy implies now}`` over the speakers that have segments."""
+def expected_speaker_labels(
+    db: Session, file_ids: list[int], *, decided: dict[int, bool] | None = None
+) -> dict[int, set[str]]:
+    """``{file id: labels the policy implies now}`` over the speakers that have segments.
+
+    ``decided`` holds the voiceprint decision of files whose caller already asked the policy;
+    the others are asked here, once per file.
+    """
     from app.services.privacy.redact_view import PrivacyView
 
-    view = PrivacyView(db)
-    view.preload_files(file_ids)
+    decisions = dict(decided or {})
+    undecided = [fid for fid in file_ids if fid not in decisions]
+    if undecided:
+        view = PrivacyView(db)
+        view.preload_files(undecided)
+        decisions.update({fid: view.voiceprints(fid).enabled for fid in undecided})
     has_segments = exists().where(TranscriptSegment.speaker_id == Speaker.id)
     rows = (
         db.query(
@@ -476,9 +486,7 @@ def _expected_labels(db: Session, file_ids: list[int]) -> dict[int, set[str]]:
     expected: dict[int, set[str]] = {fid: set() for fid in file_ids}
     for row in rows:
         file_id = int(row.media_file_id)
-        label = canonical_speaker_label_for_row(
-            row, voiceprint_names=view.voiceprints(file_id).enabled
-        )
+        label = canonical_speaker_label_for_row(row, voiceprint_names=decisions[file_id])
         if label not in UNKNOWN_SPEAKER_LABELS:
             expected[file_id].add(label)
     return expected
@@ -569,7 +577,7 @@ def detect_label_drift(
         if not page:
             cursor = 0  # the whole library was covered: start over next tick
             break
-        expected = _expected_labels(db, [f[0] for f in page])
+        expected = expected_speaker_labels(db, [f[0] for f in page])
         indexed = read_index([f[1] for f in page])
         for file_id, file_uuid, owner_id in page:
             outcome.scanned += 1

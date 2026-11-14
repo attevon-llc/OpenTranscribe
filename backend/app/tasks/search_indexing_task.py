@@ -138,6 +138,8 @@ def index_transcript_search_task(
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
     from app.models.media import TranscriptSegment
+    from app.services.search.index_inputs import read_index_inputs
+    from app.services.search.index_inputs import requeue_if_inputs_moved
     from app.services.search.indexing_service import TranscriptIndexingService
     from app.utils.task_utils import create_task_record
     from app.utils.task_utils import update_task_status
@@ -194,6 +196,14 @@ def index_transcript_search_task(
             media_file = get_refreshed_object(db, MediaFile, file_id)
             if not media_file:
                 raise FileGoneError(f"Media file {file_id} not found")
+            # Decided ONCE for the file: a decision per segment is a policy resolution per
+            # segment. Unreadable = hidden (`voiceprints_allowed` fails closed).
+            from app.services.privacy.gates import voiceprints_allowed
+
+            voiceprint_names = voiceprints_allowed(file_id, db)
+            # Before the snapshot below: a rename or tag change landing while this index
+            # runs is overwritten by its bulk write, so it is checked for afterwards.
+            inputs_before = read_index_inputs(db, file_id, voiceprint_names=voiceprint_names)
 
             # start_time alone is NOT a total order: overlapping speech and
             # interpolated backchannels routinely share an onset (measured on the
@@ -227,12 +237,8 @@ def index_transcript_search_task(
             # attribution" spells; the full-doc index wants the raw name or
             # None to preserve speaker-transition structure in the document
             # body.
-            # Decided ONCE for the file: a decision per segment is a policy resolution per
-            # segment. Unreadable = hidden (`voiceprints_allowed` fails closed).
-            from app.services.privacy.gates import voiceprints_allowed
             from app.utils.speaker_identity_source import visible_profile_id
 
-            voiceprint_names = voiceprints_allowed(file_id, db)
             seg_dicts_full: list[dict[str, str | None]] = []
             segment_dicts: list[dict[str, float | str | int | None]] = []
             for seg in segments:
@@ -333,6 +339,10 @@ def index_transcript_search_task(
             accessible_user_ids=meta["accessible_user_ids"],
             organization_id=meta["organization_id"],
             availability=meta["availability"],
+        )
+
+        requeue_if_inputs_moved(
+            file_id=file_id, file_uuid=file_uuid, user_id=user_id, before=inputs_before
         )
 
         total_ms = round((time.time() - total_start) * 1000)

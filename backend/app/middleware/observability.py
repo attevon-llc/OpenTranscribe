@@ -71,11 +71,16 @@ class ObservabilityMiddleware:
         http_requests_in_flight.inc()
         start = time.perf_counter()
         status = 500
+        # When the response headers left, as opposed to when the request finished: a route that
+        # queues FastAPI BackgroundTasks only completes after them, so ``duration`` includes
+        # post-response work the client never waits for.
+        response_start: float | None = None
 
         async def capture_status(message: Message) -> None:
-            nonlocal status
+            nonlocal status, response_start
             if message["type"] == "http.response.start":
                 status = message["status"]
+                response_start = time.perf_counter()
             await send(message)
 
         try:
@@ -94,7 +99,8 @@ class ObservabilityMiddleware:
             observe_request_connection_hold(route)
 
             db_query_count = self._safe_query_count()
-            self._access_log(request, method, route, status, duration, db_query_count)
+            ttfb = None if response_start is None else response_start - start
+            self._access_log(request, method, route, status, duration, db_query_count, ttfb)
 
             http_requests_in_flight.dec()
             reset(token)
@@ -113,6 +119,7 @@ class ObservabilityMiddleware:
         status: int,
         duration: float,
         db_query_count: int,
+        ttfb: float | None = None,
     ) -> None:
         """Emit one access-log line: human message + structured ``extra`` fields."""
         user_id = getattr(request.state, "user_id", None)
@@ -120,15 +127,17 @@ class ObservabilityMiddleware:
         request_id = getattr(request.state, "request_id", "")
         client_ip = getattr(request.state, "client_ip", "unknown")
         duration_ms = duration * 1000.0
+        ttfb_ms = None if ttfb is None else ttfb * 1000.0
 
         access_logger.info(
-            "%s %s %s %.1fms user=%s dbq=%s",
+            "%s %s %s %.1fms user=%s dbq=%s ttfb=%s",
             method,
             route,
             status,
             duration_ms,
             user_id,
             db_query_count,
+            "-" if ttfb_ms is None else f"{ttfb_ms:.1f}ms",
             extra={
                 "user_id": user_id,
                 "org_id": org_id,
@@ -138,6 +147,7 @@ class ObservabilityMiddleware:
                 "status": status,
                 "duration_ms": round(duration_ms, 1),
                 "db_query_count": db_query_count,
+                "ttfb_ms": None if ttfb_ms is None else round(ttfb_ms, 1),
                 "client_ip": client_ip,
             },
         )

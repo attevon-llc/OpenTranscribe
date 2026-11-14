@@ -12,6 +12,7 @@ live broker/search connectivity.
 """
 
 import logging
+import types
 
 import pytest
 from fastapi import FastAPI
@@ -134,6 +135,37 @@ def test_access_log_contains_structured_fields(obs_app, caplog):
         assert hasattr(rec, field), f"access record missing {field}"
     assert rec.route == "/ok"
     assert rec.status == 200
+
+
+def test_access_log_separates_time_to_response_start_from_total_for_background_tasks(
+    obs_app, caplog, monkeypatch
+):
+    """A route's BackgroundTasks run after the response, so total > time-to-response-start.
+
+    The clock is scripted (start, response start, finish) so the assertion holds at any speed.
+    """
+    from fastapi import BackgroundTasks
+
+    from app.middleware import observability
+
+    @obs_app.get("/queued")
+    def queued(background: BackgroundTasks):
+        background.add_task(lambda: None)
+        return {"ok": True}
+
+    ticks = iter([0.0, 0.010, 0.900])
+    # Only this module's clock: the interpreter's own ``time`` is used by the test client too.
+    monkeypatch.setattr(
+        observability, "time", types.SimpleNamespace(perf_counter=lambda: next(ticks))
+    )
+    with caplog.at_level(logging.INFO, logger="access"):
+        with TestClient(obs_app) as tc:
+            tc.get("/queued")
+    rec = [r for r in caplog.records if r.name == "access"][-1]
+
+    assert rec.ttfb_ms == 10.0
+    assert rec.duration_ms == 900.0
+    assert "900.0ms" in rec.getMessage() and "ttfb=10.0ms" in rec.getMessage()
 
 
 # --------------------------------------------------------------------------- #

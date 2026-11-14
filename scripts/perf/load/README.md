@@ -279,7 +279,7 @@ python3 scripts/perf/load/summarize.py "$RUN"                                   
 | `locust_stats_history.csv` | percentiles over time (`--csv-full-history`) |
 | `samples.csv` | every 5 s: `pg_stat_activity` by state, connections idle in a transaction for over 1 s, the oldest transaction, the API's own connections against its pool capacity (`pgapi`, from Postgres), `db_pool_*` and `http_requests_in_flight` (from the API, so missing when it is saturated), every Celery queue's depth, CPU and memory of each container of this stack (by compose project label), memory and utilisation of the sampled GPUs, and the host's load average and `/proc/pressure` (PSI) |
 | `holders.csv` | who holds a transaction open for over a second or waits on a lock: pid, application, client address, wait event, transaction age, `pg_blocking_pids`, the first 200 characters of the query |
-| `pgss.csv`, `<service>.log.gz` | (`tools/run_profile.sh`) the top 40 statements with `queryid` and the full query; the backend log and every worker, beat and OpenSearch log of the run window |
+| `pgss.csv`, `<service>.log.gz` | (`tools/run_profile.sh`) the top 40 statements with `queryid` and the full query; the backend log and the log of every other service of the compose project |
 | `summary.md` | the report: verdict, per-endpoint table with limits, failures by cause, percentile history, sampler min/mean/max, pool saturation, memory growth |
 | `report.html`, `locust.log`, `sampler.log` | Locust's own report and both logs |
 

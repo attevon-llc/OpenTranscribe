@@ -27,12 +27,9 @@ echo "run.sh rc=$RC" >> "$OUT/console.log"
 docker exec "$PG" sh -c "$PSQL --csv -c \"select calls, round(total_exec_time::numeric,1) total_ms, round(mean_exec_time::numeric,2) mean_ms, round(max_exec_time::numeric,1) max_ms, rows, shared_blks_hit, shared_blks_read, queryid, regexp_replace(query, '\\s+', ' ', 'g') query from pg_stat_statements order by total_exec_time desc limit 40\"" > "$OUT/pgss.csv"
 docker logs --since "$START" "$B" > "$OUT/backend.log" 2>&1
 gzip -f "$OUT/backend.log"
-# Worker logs of the run window: a stall with nothing in the API log is attributed from these
-# (project label, never a name grep).
-for SVC in $(docker ps --filter "label=com.docker.compose.project=${ST_PROJECT}" \
-        --format '{{.Label "com.docker.compose.service"}}' | grep -E 'worker|beat|opensearch'); do
-    docker logs --since "$START" "$(st_container "$SVC")" > "$OUT/${SVC}.log" 2>&1 || true
-    gzip -f "$OUT/${SVC}.log"
-done
+# Every service's log of the run window (tools/capture_logs.sh): a stall with nothing in the API
+# log is attributed from the workers'.
+source "$(dirname "${BASH_SOURCE[0]}")/capture_logs.sh"
+capture_service_logs "$ST_PROJECT" "$OUT" "$START"
 echo "$NAME rc=$RC"
 exit "$RC"

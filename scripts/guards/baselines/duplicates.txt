@@ -29,13 +29,11 @@ backend/tests/api/endpoints/test_admin_data_integrity_routes.py	1	pre-existing d
 backend/tests/api/endpoints/test_admin_user_delete_legal_hold.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/endpoints/test_misc_uncovered_routes.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/endpoints/test_users.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/api/test_admin_holds.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_collection_tenancy.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_cross_tenant_sharing.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_dedup_sharing_tenancy.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_files_prepare_complete_upload.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_metrics_scrape_cost.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/api/test_org_admin_holds.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_org_redaction_floor_threading.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_owner_listing_tenancy.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/test_per_file_options.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

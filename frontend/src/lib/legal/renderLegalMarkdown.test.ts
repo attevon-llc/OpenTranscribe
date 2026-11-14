@@ -68,3 +68,20 @@ describe('stripCounselMarkers', () => {
     expect(html).not.toContain('COUNSEL');
   });
 });
+
+describe('stripCounselMarkers on the vendored documents', () => {
+  const DOCS = ['terms-of-use', 'privacy-notice', 'operator-acknowledgment', 'data-flows-annex'];
+  it.each(DOCS)('leaves no COUNSEL marker in %s', (name) => {
+    const raw = readFileSync(
+      resolve(process.cwd(), `../backend/app/legal/documents/${name}.md`),
+      'utf8'
+    );
+    expect(stripCounselMarkers(raw)).not.toContain('[COUNSEL');
+  });
+
+  it('removes a long-form marker that wraps over two lines', () => {
+    expect(stripCounselMarkers('Text. [COUNSEL: 4: cap and\nexcluded] [COUNSEL: 9]\nNext')).toBe(
+      'Text.\nNext'
+    );
+  });
+});

@@ -166,7 +166,7 @@
   // Reported by CommentSection; the export flow reads it instead of refetching comments.
   let commentCount = 0;
   let reprocessing = false;
-  let showReprocessModal = false;
+  let reprocessModal: SelectiveReprocessModal;
   // Summary modal, generate and the ?view=summary deep link: see FileSummary.
   let fileSummary: FileSummary;
   let showTranscriptModal = false;
@@ -652,7 +652,7 @@
             on:viewTranscript={() => (showTranscriptModal = true)}
             on:showSummary={() => fileSummary.show()}
             on:generateSummary={() => fileSummary.generate()}
-            on:openReprocess={() => (showReprocessModal = true)}
+            on:openReprocess={() => reprocessModal.open()}
           />
         </div>
 
@@ -736,7 +736,7 @@
             mismatch={file?.audio_language_mismatch === true}
             trackLanguage={file?.audio_track_language}
             canReprocess={canEdit && file?.hold?.held !== true}
-            on:chooseTrack={() => (showReprocessModal = true)}
+            on:chooseTrack={() => reprocessModal.open(['transcription'])}
           />
           <MetadataDisplay
             {file}
@@ -825,7 +825,7 @@
 
 <!-- Selective Reprocess Modal (outside conditional blocks to prevent flicker) -->
 <SelectiveReprocessModal
-  bind:showModal={showReprocessModal}
+  bind:this={reprocessModal}
   {file}
   bind:reprocessing
   on:reprocess={handleReprocessFromModal}

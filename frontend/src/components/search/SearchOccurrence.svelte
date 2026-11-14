@@ -4,6 +4,7 @@
   import type { SearchOccurrence } from '$stores/search';
   import { t } from '$stores/locale';
   import { formatClock } from '$lib/utils/formatting';
+  import { translateSpeakerLabel } from '$lib/i18n';
 
   export let occurrence: SearchOccurrence;
   export let fileUuid: string;
@@ -23,7 +24,7 @@
         {#if occurrence.speaker_highlighted}
           <SanitizedHtml html={occurrence.speaker_highlighted} />
         {:else}
-          {occurrence.speaker}
+          {translateSpeakerLabel(occurrence.speaker)}
         {/if}
       </span>
     {/if}

@@ -80,6 +80,12 @@
       'failed': $t('fileStatus.failed'),
       'in_progress': $t('fileStatus.inProgress'),
       'success': $t('common.success'),
+      // Task.status values the backend writes (core/constants.py TASK_STATUS_*: pending,
+      // in_progress, completed, failed, skipped) plus the Celery states a task can surface.
+      'skipped': $t('notifications.job.state.skipped'),
+      'cancelled': $t('common.cancelled'),
+      'canceled': $t('common.cancelled'),
+      'revoked': $t('common.cancelled'),
     };
     return statusMap[status.toLowerCase()] || status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }

@@ -88,6 +88,28 @@ export type ExportFormat = 'csv' | 'json';
 const HAS_ANY_MINE_TTL_MS = 5 * 60 * 1000;
 let hasAnyMineCache: { at: number; promise: Promise<boolean> } | null = null;
 
+const MINE_STORAGE_KEY = 'opentr:takedownMine';
+
+function readStoredMine(userKey: string, now: number): boolean | null {
+  try {
+    const raw = sessionStorage.getItem(MINE_STORAGE_KEY);
+    const entry = raw ? (JSON.parse(raw) as { u?: string; at?: number; any?: boolean }) : null;
+    if (!entry || entry.u !== userKey || typeof entry.any !== 'boolean') return null;
+    if (typeof entry.at !== 'number' || now - entry.at > HAS_ANY_MINE_TTL_MS) return null;
+    return entry.any;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredMine(userKey: string, at: number, any: boolean): void {
+  try {
+    sessionStorage.setItem(MINE_STORAGE_KEY, JSON.stringify({ u: userKey, at, any }));
+  } catch {
+    // Storage blocked or full: the in-memory cache still covers this page.
+  }
+}
+
 export class TakedownNoticesApi {
   static async create(notice: NewTakedownNotice): Promise<TakedownNotice> {
     const response = await axiosInstance.post('/admin/takedown-notices', notice);
@@ -164,11 +186,24 @@ export class TakedownNoticesApi {
    * Whether the signed-in user has any takedown, asked once per window. The settings modal opens
    * often and this only decides if one sidebar entry shows; a fresh GET per open tripped the
    * route's rate limit (429). Concurrent callers share one request; a failure is not cached.
+   *
+   * The answer is also kept in sessionStorage under the user's id, so a full page load inside
+   * the window does not spend another call of the owner's hourly quota; `resetMineCache` (the
+   * logout and tenant-switch purge) removes it. A 429 rejects and is not cached; the caller hides the
+   * entry quietly and the next open asks again.
    */
-  static hasAnyMine(): Promise<boolean> {
+  static hasAnyMine(userKey?: string): Promise<boolean> {
     const now = Date.now();
     if (!hasAnyMineCache || now - hasAnyMineCache.at > HAS_ANY_MINE_TTL_MS) {
-      const promise = TakedownNoticesApi.listMine({ limit: 1 }).then((page) => page.total > 0);
+      const stored = userKey ? readStoredMine(userKey, now) : null;
+      const promise =
+        stored !== null
+          ? Promise.resolve(stored)
+          : TakedownNoticesApi.listMine({ limit: 1 }).then((page) => {
+              const any = page.total > 0;
+              if (userKey) writeStoredMine(userKey, now, any);
+              return any;
+            });
       const entry = { at: now, promise };
       hasAnyMineCache = entry;
       promise.catch(() => {
@@ -181,5 +216,10 @@ export class TakedownNoticesApi {
   /** Forget the cached answer (a takedown was just filed or resolved). */
   static resetMineCache(): void {
     hasAnyMineCache = null;
+    try {
+      sessionStorage.removeItem(MINE_STORAGE_KEY);
+    } catch {
+      // Storage blocked: there was nothing persisted to forget.
+    }
   }
 }

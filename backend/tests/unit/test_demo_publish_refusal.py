@@ -108,6 +108,22 @@ def test_a_get_that_would_scan_redaction_claims_nothing_in_demo(demo_on, monkeyp
     assert claims == []
 
 
+def test_a_get_missing_analytics_queues_nothing_in_demo(demo_on, monkeypatch):
+    from app.api.endpoints.files import detail_response
+    from app.tasks import analytics_dispatch
+
+    queued: list[str] = []
+    monkeypatch.setattr(analytics_dispatch, "dispatch_analytics", queued.append)
+    monkeypatch.setattr(detail_response, "get_file_analytics", lambda _db, _id: None)
+
+    analytics = detail_response._get_or_compute_analytics(
+        MagicMock(), 1, detail_response.FileStatus.COMPLETED, "file-uuid"
+    )
+
+    assert analytics is None
+    assert queued == []
+
+
 def test_refusal_series_exists_at_zero_and_counts_each_refusal(celery_app, demo_on):
     from prometheus_client import REGISTRY
 

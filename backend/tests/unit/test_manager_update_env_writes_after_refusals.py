@@ -48,8 +48,8 @@ compose_pull_for_upgrade() {{ echo "PULL tag=$OT_IMAGE_TAG"; return {pull_rc}; }
 compose_down_for_upgrade() {{ echo REACHED_TEARDOWN; echo down >> {tmp_path}/down.log; }}
 perform_phased_restart() {{ echo REACHED_RESTART; }}
 docker() {{
+  case "$*" in *" run "*" migrate "*) return {docker_run_rc} ;; esac
   if [ "$1" = "compose" ]; then echo some_head; return 0; fi
-  if [ "$1" = "run" ]; then return {docker_run_rc}; fi
 }}
 {extract_functions(MANAGER, _FUNCS)}
 cmd_update update {args}

@@ -138,3 +138,30 @@ def test_lite_pin_prefers_backend_lite_image_override(tmp_path: Path):
         },
     )
     assert image == "myregistry/opentranscribe-backend-lite:custom"
+
+
+def test_a_fresh_build_pairs_the_sidecar_with_the_lite_image_it_just_built(tmp_path: Path):
+    """Must fire: `start prod --build --lite --fresh N` tags its images `otfresh-N`, so the
+    sidecar on `backend-lite:latest` ran whatever stale bytes Docker Hub last served (S6v5)."""
+    image = _run(
+        tmp_path,
+        env={
+            "LITE_FLAG": "--lite",
+            "WITH_DIAR_NATIVE_FLAG": "--with-diar-native",
+            "ENVIRONMENT": "prod",
+            "OT_IMAGE_TAG": "otfresh-demo7",
+        },
+    )
+    assert image == "davidamacey/opentranscribe-backend-lite:otfresh-demo7"
+
+
+def test_without_a_pinned_tag_the_lite_sidecar_keeps_latest(tmp_path: Path):
+    image = _run(
+        tmp_path,
+        env={
+            "LITE_FLAG": "--lite",
+            "WITH_DIAR_NATIVE_FLAG": "--with-diar-native",
+            "ENVIRONMENT": "prod",
+        },
+    )
+    assert image == "davidamacey/opentranscribe-backend-lite:latest"

@@ -209,3 +209,22 @@ def test_a_project_from_another_directory_is_refused_before_any_restart(stub, tm
     assert proc.returncode == 21, proc.stderr
     assert calls == []
     assert not (stub[0] / "demo-status.json").exists()
+
+
+def test_a_real_upgrade_of_a_fresh_stack_is_refused_before_anything_runs(stub):
+    """Must fire: `update` cannot load .fresh/NAME.yml, so it would take the fresh stack down
+    and then collide with the live stack's container names."""
+    proc, calls = run(stub, DEMO_FRESH_NAME="pd7", DEMO_TARGET_TAG="v0.7.0")
+
+    assert proc.returncode == 2, proc.stderr
+    assert "--dry-run" in proc.stderr
+    assert calls == []
+    assert not (stub[0] / ".demo.lock").exists()
+
+
+def test_a_dry_run_of_a_fresh_stack_prints_the_sequence(stub):
+    proc, calls = run(stub, "--dry-run", DEMO_FRESH_NAME="pd7", DEMO_TARGET_TAG="v0.7.0")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "+ ./opentranscribe.sh update --version v0.7.0" in proc.stdout
+    assert calls == []

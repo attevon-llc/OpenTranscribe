@@ -16,7 +16,9 @@ import pytest
 import yaml
 
 from tests.unit.test_compose_file_selection import DEMO
+from tests.unit.test_compose_file_selection import DEMO_CLOUDFLARE
 from tests.unit.test_compose_file_selection import LITE
+from tests.unit.test_compose_file_selection import NGINX
 from tests.unit.test_compose_file_selection import _files
 from tests.unit.test_compose_file_selection import _resolve
 
@@ -147,3 +149,38 @@ def test_the_api_can_read_the_upgrade_record_the_host_script_writes():
     # The host side must be the file demo-upgrade.sh writes by default.
     upgrade = (REPO_ROOT / "scripts/demo/demo-upgrade.sh").read_text()
     assert 'STATUS_FILE="${DEMO_STATUS_FILE:-$INSTALL_DIR/demo-status.json}"' in upgrade
+
+
+def _opentr_overlays(lite: str, demo: str, before: str) -> list[str]:
+    script = (
+        f"source scripts/lib/lite-demo-overlay.sh; COMPOSE_FILES='{before}'; "
+        f"add_lite_and_demo_overlays '{lite}' '{demo}' >/dev/null; "
+        'echo "$COMPOSE_FILES"'
+    )
+    out = subprocess.run(
+        ["bash", "-c", script],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    ).stdout
+    return _files(out)
+
+
+def test_opentr_puts_the_demo_behind_cloudflare_when_nginx_fronts_it():
+    """Must fire: the demo host's chain (opentranscribe.sh) loads the Cloudflare real-IP overlay
+    behind nginx; an opentr.sh --demo stack must run the same chain to test it."""
+    files = _opentr_overlays("", "--demo", " -f docker-compose.nginx.yml")
+    assert files == [NGINX, LITE, DEMO, DEMO_CLOUDFLARE]
+
+
+def test_opentr_adds_no_cloudflare_overlay_without_nginx():
+    assert _opentr_overlays("", "--demo", "") == [LITE, DEMO]
+
+
+def test_opentr_adds_nginx_before_the_demo_overlays_like_the_installer():
+    """The Cloudflare step reads COMPOSE_FILES for nginx, so nginx must already be in it."""
+    source = (REPO_ROOT / "opentr.sh").read_text(encoding="utf-8")
+    calls = re.findall(r"^  (add_nginx_overlay|add_lite_and_demo_overlays)\b", source, re.M)
+    assert calls == ["add_nginx_overlay", "add_lite_and_demo_overlays"] * 2, calls

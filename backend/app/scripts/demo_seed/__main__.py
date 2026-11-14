@@ -15,7 +15,8 @@ needs and the evaluation corpus does not: the real media object in storage (a pl
 404s is worse than no demo), the speakers' display names, and the production indexing and
 redaction tasks run in this process (``mode="eager"``), so the demo is settled when the
 command exits. It exits non-zero, and the reset keeps the public port closed, if any file is
-still pending a redaction scan afterwards.
+still pending a redaction scan afterwards or the demo account does not own exactly the
+manifest's items.
 
 The demo account is ``DEMO_USER_EMAIL`` / ``DEMO_USER_PASSWORD`` (both required), an
 ordinary ``user``: never an administrator.
@@ -260,6 +261,12 @@ def _pending_redactions(db) -> int:
     )
 
 
+def _seeded_file_count(db, user_id: int) -> int:
+    from app.models.media import MediaFile
+
+    return int(db.query(MediaFile).filter(MediaFile.user_id == user_id).count())
+
+
 def _import(bundle: Path) -> int:
     from app.core.config import settings
     from app.db.base import SessionLocal
@@ -287,8 +294,16 @@ def _import(bundle: Path) -> int:
     print(f"seeded {len(conversations)} conversation(s)")
     with SessionLocal() as db:
         pending = _pending_redactions(db)
+        owned = _seeded_file_count(db, user_id)
     if pending:
         print(f"{pending} file(s) still pending a redaction scan", file=sys.stderr)
+        return EXIT_FAILED
+    # The manifest is the file count (design #628 4.2; there is no separate minimum setting): after
+    # `down -v` the demo account must own exactly the bundle's items, or the site opens short.
+    if owned != len(items):
+        print(
+            f"the demo account owns {owned} file(s), the bundle lists {len(items)}", file=sys.stderr
+        )
         return EXIT_FAILED
     print(f"demo seed {version}: {len(items)} item(s)")
     return EXIT_OK

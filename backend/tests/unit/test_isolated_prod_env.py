@@ -33,6 +33,7 @@ def fake_repo(tmp_path: Path) -> Path:
         "scripts/release-tests/lib/env-template.sh",
         "scripts/lib/model-cache-dir.sh",
         "scripts/release/fresh-stack-lib.sh",
+        "scripts/lib/fresh-prod.sh",
     ):
         dest = root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -48,6 +49,8 @@ def fake_repo(tmp_path: Path) -> Path:
     _write(
         root / "opentr.sh",
         f'#!/bin/bash\necho "opentr $*" >> "{log}"\n'
+        # the port table fresh_stack_port_exports reads from the real opentr.sh, two rows of it
+        'FRESH_PORT_VARS=(\n  "BACKEND_PORT=5174"  # backend\n  "FRONTEND_PORT=5173"\n)\n'
         f'for d in .fresh/*/diar-native-models; do [ -d "$d" ] && echo "models $d: $(ls $d)" >> "{log}"; done\n'
         "exit 0\n",
     )
@@ -269,4 +272,79 @@ def test_run_proceeds_when_the_fresh_project_has_no_volumes(
 ) -> None:
     _write(fake_repo / "bin" / "docker", "#!/bin/bash\nexit 0\n")
     res = _run(fake_repo, "run", "demo", "--name", "brandnew", cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+
+
+def test_the_tree_pins_the_images_its_own_build_tags(fake_repo: Path, tmp_path: Path) -> None:
+    """Must fire: without a pin, any compose run in the tree (demo-reset.sh) resolves `:latest`,
+    which is Docker Hub's stale bytes, not this tree's build (S6v5: "No module named app.startup")."""
+    res = _run(fake_repo, "prepare", "demo", "--name", "Proddemo_7", cache=tmp_path / "models")
+    assert res.returncode == 0, res.stderr
+    tree = Path(res.stdout.strip().splitlines()[-1])
+    assert "OT_IMAGE_TAG=otfresh-proddemo-7" in (tree / ".env").read_text().splitlines()
+
+
+def _prepared_env(fake_repo: Path, tmp_path: Path, mode: str, *extra: str) -> list[str]:
+    res = _run(fake_repo, "prepare", mode, *extra, cache=tmp_path / "models")
+    assert res.returncode == 0, res.stderr
+    return (Path(res.stdout.strip().splitlines()[-1]) / ".env").read_text().splitlines()
+
+
+def test_the_demo_tree_is_configured_like_the_demo_host(fake_repo: Path, tmp_path: Path) -> None:
+    """Must fire: without NGINX_SERVER_NAME the chain had no nginx, the reset's fence (S6v5)."""
+    env = _prepared_env(fake_repo, tmp_path, "demo", "--name", "pd7")
+    for line in (
+        "DEPLOYMENT_MODE=lite",
+        "DEMO_MODE=true",
+        "NGINX_SERVER_NAME=localhost",
+        "DIAR_NATIVE_MODELS_DIR=./.fresh/pd7/diar-native-models",
+    ):
+        assert line in env, line
+
+
+def test_the_demo_tree_keeps_its_offset_ports_in_env(fake_repo: Path, tmp_path: Path) -> None:
+    """A plain `docker compose up` in the tree (demo-reset.sh) must bind the isolated ports."""
+    env = _prepared_env(fake_repo, tmp_path, "demo", "--port-offset", "700")
+    assert "BACKEND_PORT=5874" in env and "FRONTEND_PORT=5873" in env
+    assert "NGINX_HTTP_PORT=780" in env and "NGINX_HTTPS_PORT=1143" in env
+
+
+def test_a_pki_tree_is_not_given_demo_settings(fake_repo: Path, tmp_path: Path) -> None:
+    env = _prepared_env(fake_repo, tmp_path, "pki", "--port-offset", "700")
+    assert not [
+        x
+        for x in env
+        if x.startswith(("NGINX_SERVER_NAME=", "BACKEND_PORT=", "DEPLOYMENT_MODE=lite"))
+    ]
+
+
+def test_run_demo_takes_its_ports_from_env_and_pki_from_the_flag(
+    fake_repo: Path, tmp_path: Path
+) -> None:
+    """opentr.sh offsets a port .env sets from that value: passing both would double it."""
+    res = _run(fake_repo, "run", "demo", "--name", "d1", "--port-offset", "700", cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+    res = _run(fake_repo, "run", "pki", "--name", "p1", "--port-offset", "700", cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+    starts = [
+        c
+        for c in (fake_repo / "calls.log").read_text().splitlines()
+        if c.startswith("opentr start")
+    ]
+    demo = next(c for c in starts if "--fresh d1" in c)
+    pki = next(c for c in starts if "--fresh p1" in c)
+    assert "--port-offset" not in demo and "--lite --demo" in demo
+    assert "--port-offset 700" in pki
+
+
+def test_the_demo_runs_without_the_diarization_sidecar_like_the_demo_host(
+    fake_repo: Path, tmp_path: Path
+) -> None:
+    """Must fire: a seeded export loads docker-compose.diar-native.yml, which the demo host
+    (no export, no token) never runs, so the stack under test was not the demo's."""
+    res = _run(fake_repo, "run", "demo", "--name", "nosidecar", cache=tmp_path)
+    assert res.returncode == 0, res.stderr
+    log = (fake_repo / "calls.log").read_text()
+    assert "diar-native-models: segmentation" not in log
+    res = _run(fake_repo, "run", "demo", "--name", "noexport", cache=tmp_path / "empty", seed=False)
     assert res.returncode == 0, res.stderr

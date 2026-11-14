@@ -1,6 +1,7 @@
 import logging
 from typing import Any
 
+from fastapi import BackgroundTasks
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
@@ -323,6 +324,38 @@ def delete_media_file(
         ) from None
 
 
+def publish_text_edit_followups(
+    file_id: int, file_uuid: str, owner_id: int, rescan_owed: bool
+) -> None:
+    """Queue the work a committed text edit owes: redaction re-scan, re-index, analytics.
+
+    Each is debounced per file, so a burst of edits queues one of each. The text is what
+    search/RAG chunks are built from (issue #666); word counts and talk time derive from it
+    (issue #890), hence the analytics dispatch. A failure here must not fail an edit that
+    already committed.
+    """
+    from app.services.redaction.service import RedactionService
+    from app.services.search.reindex_dispatch import dispatch_transcript_reindex
+    from app.tasks.analytics_dispatch import dispatch_analytics
+
+    for name, publish in (
+        ("rescan", lambda: rescan_owed and RedactionService.queue_rescan(file_id, owner_id)),
+        (
+            "reindex",
+            lambda: dispatch_transcript_reindex(
+                file_id=file_id, file_uuid=file_uuid, user_id=owner_id
+            ),
+        ),
+        ("analytics", lambda: dispatch_analytics(file_uuid)),
+    ):
+        try:
+            publish()
+        except Exception:
+            logger.warning(
+                "segment edit follow-up %s failed for %s", name, file_uuid, exc_info=True
+            )
+
+
 def update_single_transcript_segment(
     db: Session,
     file_uuid: str,
@@ -333,6 +366,7 @@ def update_single_transcript_segment(
     organization_id: OrgScope = UNSCOPED,
     bypass: PlatformBypass = PlatformBypass.none(),
     request: Request | None = None,
+    background: BackgroundTasks | None = None,
 ) -> TranscriptSegmentSchema:
     """
     Update a single transcript segment for a media file.
@@ -347,6 +381,7 @@ def update_single_transcript_segment(
         bypass: The request's platform bypass (``ctx.bypass``).
         request: The HTTP request, for the ``content.hold.refused`` event written when the
             file is under a legal hold. None is allowed.
+        background: When given, the post-commit publishes run after the response.
 
     Returns:
         Updated TranscriptSegmentSchema object with all formatted fields
@@ -409,31 +444,14 @@ def update_single_transcript_segment(
     db.refresh(segment)
 
     if text_changed:
-        if redetection == "rescan":
-            from app.services.redaction.service import RedactionService
-
-            # Debounced: edits to this file inside the countdown ride the one scan.
-            RedactionService.queue_rescan(file_id, owner_id)
-
-        # The text is what search/RAG chunk documents are built from — a stale
-        # index otherwise serves the pre-edit wording indefinitely (issue #666).
-        # Debounced per file so editing many segments in a row queues one
-        # re-index, not one per PUT.
-        from app.services.search.reindex_dispatch import dispatch_transcript_reindex
-
-        dispatch_transcript_reindex(file_id=file_id, file_uuid=file_uuid, user_id=owner_id)
-
-        # Word counts and talk time are derived from segment text, so the stored
-        # analytics row is stale the moment the text changes. The SPA's post-save GET
-        # /analytics reads that row, and _get_or_compute_analytics only computes when
-        # it is ABSENT — so without this the UI silently renders pre-edit numbers with
-        # no error (issue #890). Mirrors what the speaker-change path already does at
-        # transcript_segments.py:188. Placed after the segment commit above so the
-        # task reads the post-edit text.
-        # Queued (debounced) rather than computed here: it is CPU plus several statements.
-        from app.tasks.analytics_dispatch import dispatch_analytics
-
-        dispatch_analytics(file_uuid)
+        # The Redis debounce keys and broker publishes cost a round trip each; they run
+        # after the response (FastAPI BackgroundTasks) when the caller passes one.
+        if background is not None:
+            background.add_task(
+                publish_text_edit_followups, file_id, file_uuid, owner_id, redetection == "rescan"
+            )
+        else:
+            publish_text_edit_followups(file_id, file_uuid, owner_id, redetection == "rescan")
 
     if segment.speaker is not None:
         redact_speaker_rows(db, [segment.speaker])

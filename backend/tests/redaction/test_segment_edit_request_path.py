@@ -10,6 +10,7 @@ debounced scan per burst.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from types import SimpleNamespace
 from typing import Any
@@ -75,7 +76,7 @@ def edit(monkeypatch):
             failures.append("pii")
         return [], None
 
-    def _run(status: str | None, *, cold: bool = True):
+    def _run(status: str | None, *, cold: bool = True, background=None):
         if cold:
             monkeypatch.setattr(
                 RedactionService, "detect_segment_spans", staticmethod(_cold_detectors)
@@ -105,6 +106,7 @@ def edit(monkeypatch):
             str(segment.uuid),
             TranscriptSegmentUpdate(text="new words"),
             cast(Any, SimpleNamespace(id=5)),
+            background=background,
         )
         return log, media
 
@@ -168,3 +170,21 @@ def test_a_trusted_edit_on_a_scanned_file_changes_no_status(edit):
     assert media.redaction_status == redaction_defaults.REDACTION_STATUS_DONE
     assert not [e for e in log if e.startswith("publish:scan")]
     assert log.count("commit") == 1
+
+
+def test_with_a_background_hook_the_three_publishes_leave_the_request_path(edit):
+    """The rescan, re-index and analytics publishes collapse into ONE post-response task.
+
+    Inline they cost a Redis debounce round trip and a broker publish each (LOADRUN4 M2).
+    """
+    from fastapi import BackgroundTasks
+
+    background = BackgroundTasks()
+    log, _media = edit(redaction_defaults.REDACTION_STATUS_DONE, background=background)
+
+    assert not [e for e in log if e.startswith("publish") or e in ("reindex", "analytics")], log
+    assert len(background.tasks) == 1, "one deferred task, not one per publish"
+
+    asyncio.run(background())  # what Starlette does after the response is sent
+    assert [e for e in log if e.startswith("publish:scan")], log
+    assert "reindex" in log and "analytics" in log

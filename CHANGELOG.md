@@ -122,6 +122,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - The environment variables listed under Changed that never had an effect.
 
 ### Fixed
+- The one-time imohash recompute now re-checks its completion flag on every batch, so a chain already queued stops cleanly once the flag is set instead of running on.
 - Migration progress tracking (imohash recompute, thumbnail, embedding migrations) now updates O(1) Redis counters instead of rewriting a growing JSON blob per file, which had pinned Redis at 77% CPU when many media objects were missing; the failed-file list in the progress API is capped at 1000 entries.
 - Editing a transcript segment no longer computes analytics or builds the Presidio and toxic-bert models on the request thread (a cold edit took seconds and made HuggingFace network calls): analytics go through the debounced `dispatch_analytics`, and a detector that is not resident in the API process reports unavailable so the file is re-scanned on the redaction worker. Chat input and output masking and search snippet masking share the same guard (LOADRUN2 R4).
 - The Queue Dashboard (`/flower/`) answered 401 to admins on every deployment served by the frontend image, PKI included: nginx admitted the admin but sent Flower none of its Basic credential. The frontend container now writes that credential from `FLOWER_USER`/`FLOWER_PASSWORD` at start and sends it only after the admin check; recreate `frontend` and `flower` together after changing `FLOWER_PASSWORD`.

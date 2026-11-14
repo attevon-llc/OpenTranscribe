@@ -32,6 +32,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.imohash_service import compute_from_minio
 from app.services.migration_progress_service import MigrationProgressService
+from app.services.system_settings_service import get_setting_bool
 from app.services.system_settings_service import set_setting
 
 if TYPE_CHECKING:
@@ -48,6 +49,7 @@ class _RecomputeSummary(TypedDict):
     has_more: bool
     last_id: int
     error: NotRequired[str]
+    stopped: NotRequired[str]
 
 
 # Separate progress namespace so it never collides with the embedding migration.
@@ -58,6 +60,12 @@ RECOMPUTE_FLAG_KEY = "imohash_package_recompute_complete"
 
 # Rows that can never produce a fingerprint are skipped.
 _SKIP_STATUSES = (FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED)
+
+
+def _recompute_already_complete() -> bool:
+    """Whether the completion flag is set (one short read session)."""
+    with session_scope() as db:
+        return get_setting_bool(db, RECOMPUTE_FLAG_KEY, False)
 
 
 def _count_eligible(db: Session) -> int:
@@ -168,6 +176,14 @@ def recompute_all(self: Any, batch_size: int = 100, after_id: int = 0) -> dict:
     }
 
     try:
+        # Every link of the chain re-checks the flag: a chain already in the broker would
+        # otherwise outlive a completion (or a snapshot restore) that set it. The admin
+        # "start" endpoint clears the flag before dispatching, so a deliberate re-run passes.
+        if _recompute_already_complete():
+            logger.info("imohash recompute: completion flag is set, stopping the chain")
+            summary["stopped"] = "already_complete"
+            return dict(summary)
+
         # On the first batch, initialise progress tracking with the total count.
         if after_id == 0:
             with session_scope() as db:

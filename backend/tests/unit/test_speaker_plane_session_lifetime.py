@@ -585,7 +585,7 @@ def retroactive_env(db_session, monkeypatch):
     monkeypatch.setattr(
         su,
         "_update_profile_embedding",
-        lambda db, speaker_id, old_profile_id, profile_id: tracker.observe(
+        lambda db, speaker_id, old_profile_id, profile_id, *, voiceprints_on: tracker.observe(
             "profile_embedding_write"
         ),
     )

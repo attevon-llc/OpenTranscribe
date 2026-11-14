@@ -288,7 +288,7 @@
             id="asr-name"
             type="text"
             bind:value={formData.name}
-            placeholder="e.g., Deepgram Production"
+            placeholder={$t('settings.asrProvider.fields.namePlaceholder')}
             class="form-input"
           />
         </FormField>

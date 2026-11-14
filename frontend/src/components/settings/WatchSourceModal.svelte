@@ -376,7 +376,7 @@
           {/if}
         {:else if form.source_type === 's3'}
           <FormField id="ws-s3ep" label={$t('settings.watchSources.fields.s3Endpoint')} labelSize="md">
-            <input dir="ltr" id="ws-s3ep" type="text" class="form-input" bind:value={form.s3_endpoint_url} placeholder="https://s3.amazonaws.com (blank = AWS)" />
+            <input dir="ltr" id="ws-s3ep" type="text" class="form-input" bind:value={form.s3_endpoint_url} placeholder={$t('settings.watchSources.fields.s3EndpointPlaceholder')} />
           </FormField>
           <div class="form-row">
             <FormField id="ws-s3b" label={$t('settings.watchSources.fields.s3Bucket')} labelSize="md">

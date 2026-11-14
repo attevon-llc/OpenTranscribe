@@ -23,8 +23,12 @@ directory, you have misread the stage.
 ## Key files
 
 - `service.py` — the orchestrator. `generate_file_artifacts(db, file_id, force=False)`
-  reads segments, builds all three, upserts `file_facts`. **Flushes, never commits** — the
-  caller owns the transaction so a reindex batch can do many files in one.
+  reads segments, builds all three, upserts `file_facts`. **It commits once, between the reads
+  and the build**, so no transaction is open while the CPU-bound build runs (a burst of
+  backfill tasks otherwise held connections idle in transaction); that commit also ends any
+  write the caller made first. The final write is flushed, not committed: the caller ends it.
+  Every caller gives it its own `session_scope` for one file; do not call it inside a larger
+  unit of work that must stay atomic.
 - `digest.py` — sentence extraction with provenance, contiguous sectioning, selection.
 - `textrank.py` — TF-IDF + PageRank, numpy only. Also owns `tokenize` / `stopwords_for`.
 - `keyphrases.py` — RAKE-shaped scoring. Reads the same stopword set.

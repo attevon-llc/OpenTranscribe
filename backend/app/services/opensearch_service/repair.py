@@ -73,16 +73,20 @@ def request_index_selfheal(index_name: str) -> bool:
         index_name: The index whose failure prompted the request (logged only).
 
     Returns:
-        True if a heal was dispatched; False if one was requested recently or Redis/the broker
-        is unavailable (the periodic health check still covers it).
+        True if a heal was dispatched; False if one was requested recently, Redis/the broker
+        is unavailable (the periodic health check still covers it), or this is the public
+        demo, which runs no worker and refuses every publish (#628).
     """
     from kombu.exceptions import OperationalError as BrokerUnavailableError
     from redis.exceptions import RedisError
 
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
+    if settings.DEMO_MODE:
+        return False
     try:
-        if not get_redis().set(
+        # The bounded client: this runs while a request waits on the failed read.
+        if not get_request_redis().set(
             INDEX_SELFHEAL_COOLDOWN_KEY, index_name, nx=True, ex=INDEX_SELFHEAL_COOLDOWN_SECONDS
         ):
             return False

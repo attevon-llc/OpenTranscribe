@@ -68,3 +68,20 @@ def test_the_account_owning_every_item_passes(stubbed, tmp_path, capsys):
     assert seed.main(["import", "--bundle", str(tmp_path)]) == seed.EXIT_OK
     assert asked == [7]
     assert "2 item(s)" in capsys.readouterr().out
+
+
+def test_if_empty_leaves_an_account_that_already_owns_files_alone(stubbed, tmp_path, capsys):
+    """Must fire: a reused capture stack (#43) must not get a second copy of its collections."""
+    stubbed.setattr(seed, "_seeded_file_count", lambda _db, _user: 3, raising=False)
+    stubbed.setattr(seed, "_seed_item", lambda *_a: pytest.fail("seeded into a non-empty account"))
+
+    assert seed.main(["import", "--bundle", str(tmp_path), "--if-empty"]) == seed.EXIT_OK
+    assert "already owns 3 file(s)" in capsys.readouterr().out
+
+
+def test_if_empty_seeds_an_empty_account(stubbed, tmp_path):
+    """Must stay clean: the counts before and after the seed are 0 and the bundle's 2."""
+    counts = iter([0, 2])
+    stubbed.setattr(seed, "_seeded_file_count", lambda _db, _user: next(counts), raising=False)
+
+    assert seed.main(["import", "--bundle", str(tmp_path), "--if-empty"]) == seed.EXIT_OK

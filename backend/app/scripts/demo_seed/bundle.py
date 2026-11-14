@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -182,8 +183,25 @@ def _item_problems(root: Path, raw: dict[str, Any]) -> list[str]:
     return problems
 
 
-def load_bundle(root: Path) -> tuple[str, list[SeedItem]]:
-    """``(bundle_version, items)`` for a valid bundle; :class:`BundleError` otherwise."""
+def _select(raw_items: list[Any], only: Sequence[str]) -> tuple[list[Any], list[str]]:
+    """The items named in ``only``, in that order, and every problem with the selection."""
+    wanted = [str(i) for i in only]
+    if not wanted:
+        return [], ["no items selected"]
+    by_id = {str(raw.get("id")): raw for raw in raw_items if isinstance(raw, dict)}
+    problems = [
+        f"{d}: selected more than once" for d in sorted({i for i in wanted if wanted.count(i) > 1})
+    ]
+    problems += [f"{i}: not in the bundle" for i in dict.fromkeys(wanted) if i not in by_id]
+    return [by_id[i] for i in dict.fromkeys(wanted) if i in by_id], problems
+
+
+def load_bundle(root: Path, only: Sequence[str] | None = None) -> tuple[str, list[SeedItem]]:
+    """``(bundle_version, items)`` for a valid bundle; :class:`BundleError` otherwise.
+
+    ``only`` names a selection (``demo_seed subset``): just those items are validated and
+    returned, in that order, so a defect in an item nobody selected does not block it.
+    """
     try:
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -199,6 +217,9 @@ def load_bundle(root: Path) -> tuple[str, list[SeedItem]]:
         raise BundleError(problems)
     ids = [str(i.get("id")) for i in raw_items if isinstance(i, dict)]
     problems += [f"{d}: duplicate id" for d in sorted({i for i in ids if ids.count(i) > 1})]
+    if only is not None:
+        raw_items, selection_problems = _select(raw_items, only)
+        problems += selection_problems
     for raw in raw_items:
         if not isinstance(raw, dict):
             problems.append("an item is not an object")

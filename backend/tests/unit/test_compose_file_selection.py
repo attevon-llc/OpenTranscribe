@@ -855,3 +855,34 @@ def test_the_db_role_overlay_is_selected_only_when_an_app_role_is_configured(tmp
     without, _ = _resolve(tmp_path / "b", env_lines=("POSTGRES_APP_USER=",))
     assert "docker-compose.db-roles.yml" in with_role, with_role
     assert "docker-compose.db-roles.yml" not in without, without
+
+
+# --------------------------------------------------------------------------- #
+# OPENTRANSCRIBE_EXTRA_COMPOSE_FILES: the seam that addresses a --fresh stack
+# --------------------------------------------------------------------------- #
+
+
+def test_extra_compose_files_are_appended_after_every_overlay(tmp_path):
+    """Must fire: `update` could not load a fresh stack's container-name overlay, so it took the
+    fresh stack down and collided with the live stack's names (scripts/demo/demo-target.sh)."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=False,
+        compute_cap="",
+        env_lines=("DEPLOYMENT_MODE=lite", "DEMO_MODE=true"),
+        extra_env={"OPENTRANSCRIBE_EXTRA_COMPOSE_FILES": "-f .fresh/pd7.yml"},
+    )
+    files = _files(chain)
+    assert files[-1] == ".fresh/pd7.yml", chain
+    assert files[:-1] == [BASE, PROD, LITE, DEMO], chain
+
+
+def test_without_the_seam_the_chain_is_unchanged(tmp_path):
+    """Control: a real install never sets it, and nothing is appended."""
+    chain, _ = _resolve(
+        tmp_path,
+        nvidia_runtime=False,
+        compute_cap="",
+        env_lines=("DEPLOYMENT_MODE=lite", "DEMO_MODE=true"),
+    )
+    assert _files(chain) == [BASE, PROD, LITE, DEMO], chain

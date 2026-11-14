@@ -34,6 +34,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MANAGER = REPO_ROOT / "opentranscribe.sh"
 COMMON = REPO_ROOT / "scripts" / "common.sh"
+STALE_LIB = REPO_ROOT / "scripts" / "lib" / "stale-env-values.sh"
 
 pytestmark = pytest.mark.skipif(
     not MANAGER.exists(), reason="opentranscribe.sh not present in this checkout"
@@ -91,8 +92,8 @@ def _check_stale_env_values_snippet(env_contents: str, tmp_path: Path) -> str:
     """
     env_file = tmp_path / "dotenv"
     env_file.write_text(env_contents)
-    table = _extract_array(MANAGER, "STALE_ENV_CHECKS")
-    fn = _extract_function(MANAGER, "check_stale_env_values")
+    table = _extract_array(STALE_LIB, "STALE_ENV_CHECKS")
+    fn = _extract_function(STALE_LIB, "check_stale_env_values")
     snippet = f"""
 source {COMMON}
 {table}
@@ -228,8 +229,8 @@ def test_check_stale_env_values_never_writes_to_the_env_file(tmp_path: Path):
         "BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest\n"
     )
     env_file.write_text(original)
-    table = _extract_array(MANAGER, "STALE_ENV_CHECKS")
-    fn = _extract_function(MANAGER, "check_stale_env_values")
+    table = _extract_array(STALE_LIB, "STALE_ENV_CHECKS")
+    fn = _extract_function(STALE_LIB, "check_stale_env_values")
     snippet = f"""
 source {COMMON}
 {table}
@@ -242,14 +243,33 @@ check_stale_env_values {env_file} > /dev/null
 
 def test_adding_a_third_case_is_a_one_line_table_entry_not_a_new_call_site():
     """The whole point of the table: STALE_ENV_CHECKS must be consulted by exactly one
-    function (check_stale_env_values), which both callers below share — not duplicated logic
-    per caller.
+    function (check_stale_env_values, in the sourced lib), which both callers below share —
+    not duplicated logic per caller.
     """
-    text = MANAGER.read_text()
-    assert text.count("check_stale_env_values") >= 3, (
-        "expected the table's own definition plus at least two call sites "
-        "(preflight_upgrade_env and the update-full report)"
+    assert STALE_LIB.read_text().count("check_stale_env_values() {") == 1
+    assert "check_stale_env_values() {" not in MANAGER.read_text()
+    calls = re.findall(r"=\$\(check_stale_env_values \.env\)", MANAGER.read_text())
+    assert len(calls) == 2, (
+        "expected two call sites (preflight_upgrade_env and the update-full report)"
     )
+
+
+def test_the_upgrade_reports_run_without_the_stale_value_lib(tmp_path: Path):
+    """Must fire: an install whose scripts/lib/stale-env-values.sh is missing (curl-installed
+    script alone, or an install predating the file) still upgrades, unwarned, under set -e.
+    """
+    (tmp_path / ".env").write_text("ENGINE_SHARED_VOLUME_PATH=/tmp/transcription\n")
+    snippet = f"""
+set -e
+YELLOW=''; NC=''
+cd {tmp_path}
+{_extract_function(MANAGER, "update_report_env_drift")}
+update_report_env_drift
+echo REPORT_DONE
+"""
+    out = _run_shell(snippet)
+    assert out.endswith("REPORT_DONE"), out
+    assert "command not found" not in out, out
 
 
 def test_preflight_upgrade_env_calls_check_stale_env_values():

@@ -36,11 +36,14 @@ fi
 
 # ---------------------------------------------------------------- normalisation
 
-# vX.Y.Z, whatever went in.
+# vX.Y.Z for a release number given with or without its v. Any other tag (`latest`, a local
+# `otfresh-<name>` build) is returned as written: prefixing it named an image that does not exist.
 ver_normalize() {
-    local v="${1#v}"
-    [[ -n "$v" ]] || return 1
-    echo "v${v}"
+    [[ -n "${1#v}" ]] || return 1
+    case "$1" in
+        [0-9]*) echo "v$1" ;;
+        *) echo "$1" ;;
+    esac
 }
 
 # X.Y.Z (no prefix) — for pyproject.toml / package.json comparisons.

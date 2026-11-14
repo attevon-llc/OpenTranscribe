@@ -35,6 +35,7 @@ pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OPENTR = REPO_ROOT / "opentr.sh"
+STALE_LIB = REPO_ROOT / "scripts" / "lib" / "stale-env-values.sh"
 
 #: Expected-value data compared against rendered config and .env lines.
 ALL_INTERFACES = "0.0.0.0"  # noqa: S104 - an expected address string; nothing binds a socket
@@ -178,12 +179,12 @@ def test_the_old_wildcard_backend_default_is_reported_as_stale(tmp_path):
     snippet_parts = [
         f"source {COMMON}",
         subprocess.run(
-            ["sed", "-n", "/^STALE_ENV_CHECKS=(/,/^)/p", str(MANAGER)],
+            ["sed", "-n", "/^STALE_ENV_CHECKS=(/,/^)/p", str(STALE_LIB)],
             capture_output=True,
             text=True,
             check=True,
         ).stdout,
-        extract_function(MANAGER, "check_stale_env_values"),
+        extract_function(STALE_LIB, "check_stale_env_values"),
         f"check_stale_env_values {env_file}",
     ]
     env_file.write_text("BACKEND_BIND_HOST=0.0.0.0\n", encoding="utf-8")

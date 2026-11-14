@@ -101,7 +101,10 @@ class TestMigrationStatusTtlIsANamedConstantUsedEverywhere:
     def test_ttl_constant_used_in_start_and_increment(self):
         assert progress_mod.MIGRATION_STATUS_TTL_SECONDS > 24 * 60 * 60
         # The Lua script takes the TTL as ARGV[4] rather than a bare literal,
-        # so it can never drift from the constant used by start_migration().
+        # so it can never drift from the constant used by start_migration(), and
+        # every increment slides the STATUS key's TTL (KEYS[1]): the counters
+        # moving out of the status blob must not stop a long migration from
+        # keeping its status alive.
         lua = progress_mod.MigrationProgressService._INCREMENT_LUA
-        assert '"EX", ARGV[4]' in lua
+        assert 'redis.call("EXPIRE", KEYS[1], ARGV[4])' in lua
         assert "86400" not in lua

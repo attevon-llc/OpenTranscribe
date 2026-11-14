@@ -222,8 +222,12 @@ class MigrationProgressService:
     # capped so a library with many missing objects cannot grow it unbounded.
     # Lua stays only to keep "no-op unless the migration was started" atomic
     # (https://redis.io/docs/latest/develop/programmability/eval-intro/).
+    # Every increment slides the status key's TTL, as the old SET ... EX did: a
+    # migration that outlives one TTL must not lose its status mid-run, which
+    # would turn every later increment into the no-op above.
     _INCREMENT_LUA = """
     if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end
+    redis.call("EXPIRE", KEYS[1], ARGV[4])
     local n = redis.call("HINCRBY", KEYS[2], "processed_files", 1)
     redis.call("HSET", KEYS[2], "last_updated", ARGV[3])
     if ARGV[2] == "1" then

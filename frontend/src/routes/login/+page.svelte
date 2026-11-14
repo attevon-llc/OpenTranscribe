@@ -98,7 +98,6 @@
   const banner = createLoginBanner();
   const {
     enabled: bannerEnabled,
-    text: bannerText,
     classification: bannerClassification,
     consentPending: bannerConsentPending,
     ackPending: bannerAckPending,
@@ -580,19 +579,10 @@
   }
 </script>
 
-<!-- Classification Banner -->
+<!-- Classification marking strip. The consent dialog is LoginBanner below, and only it:
+     rendering a second consent modal here stacked two dialogs on the login page. -->
 {#if $bannerEnabled}
-  <ClassificationBanner
-    classification={$bannerClassification}
-    bannerText={$bannerText}
-    requireAcknowledgment={$bannerConsentPending}
-    position="top"
-    pending={$bannerAckPending}
-    errorMessage={$bannerAckError}
-    noticeUpdated={bannerNoticeUpdated}
-    on:acknowledge={handleBannerAcknowledge}
-    on:decline={handleBannerDecline}
-  />
+  <ClassificationBanner classification={$bannerClassification} position="top" />
 {/if}
 
 <!-- Login Banner Modal (shows consent dialog before login) -->

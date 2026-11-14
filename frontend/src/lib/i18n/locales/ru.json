@@ -3023,6 +3023,7 @@
   "settings.accountStatus.mfaEnabled": "MFA включена",
   "settings.accountStatus.passwordExpired": "Пароль истёк",
   "loginBanner.title": "Уведомление об использовании системы",
+  "classificationBanner.markingLabel": "Гриф секретности: {{level}}",
   "loginBanner.acknowledge": "Принимаю к сведению",
   "loginBanner.decline": "Отклонить",
   "loginBanner.mustAcknowledge": "Чтобы продолжить, подтвердите ознакомление с уведомлением об использовании системы",

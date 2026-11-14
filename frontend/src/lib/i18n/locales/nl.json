@@ -2927,6 +2927,7 @@
   "settings.accountStatus.mfaEnabled": "MFA ingeschakeld",
   "settings.accountStatus.passwordExpired": "Wachtwoord verlopen",
   "loginBanner.title": "Kennisgeving systeemgebruik",
+  "classificationBanner.markingLabel": "Classificatiemarkering: {{level}}",
   "loginBanner.acknowledge": "Ik ga akkoord",
   "loginBanner.decline": "Weigeren",
   "loginBanner.mustAcknowledge": "U moet de kennisgeving over systeemgebruik bevestigen om door te gaan",

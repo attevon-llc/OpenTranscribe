@@ -2936,6 +2936,7 @@
   "settings.accountStatus.mfaEnabled": "MFA Habilitado",
   "settings.accountStatus.passwordExpired": "Contraseña Expirada",
   "loginBanner.title": "Aviso de Uso del Sistema",
+  "classificationBanner.markingLabel": "Marca de clasificación: {{level}}",
   "loginBanner.acknowledge": "Acepto",
   "loginBanner.decline": "Rechazar",
   "loginBanner.mustAcknowledge": "Debe aceptar el aviso de uso del sistema para continuar",

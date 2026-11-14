@@ -23,8 +23,6 @@ const CHROME_OWNER = 'components/ui/BaseModal.svelte';
 const ALLOWED: Record<string, string> = {
   'components/settings/SettingsModalFrame.svelte':
     'the settings shell is a two-pane app surface (sidebar + content), not a title/body/footer dialog; it shares --modal-backdrop and --z-modal',
-  'lib/components/ClassificationBanner.svelte':
-    'mandatory consent interstitial: classification-coloured header, no close button, not dismissible by Escape or backdrop',
   'components/LoginBanner.svelte':
     'mandatory login consent banner: classification-coloured header, no close button, not dismissible',
   'components/ui/DateRangePicker.svelte':

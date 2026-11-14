@@ -2879,6 +2879,7 @@
   "settings.accountStatus.mfaEnabled": "MFA 사용 설정됨",
   "settings.accountStatus.passwordExpired": "비밀번호 만료됨",
   "loginBanner.title": "시스템 사용 안내",
+  "classificationBanner.markingLabel": "보안 등급 표시: {{level}}",
   "loginBanner.acknowledge": "동의합니다",
   "loginBanner.decline": "거부",
   "loginBanner.mustAcknowledge": "계속하려면 시스템 사용 안내에 동의해야 합니다",

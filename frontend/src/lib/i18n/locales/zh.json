@@ -2848,6 +2848,7 @@
   "settings.accountStatus.mfaEnabled": "MFA 已启用",
   "settings.accountStatus.passwordExpired": "密码已过期",
   "loginBanner.title": "系统使用通知",
+  "classificationBanner.markingLabel": "密级标识：{{level}}",
   "loginBanner.acknowledge": "我确认",
   "loginBanner.decline": "拒绝",
   "loginBanner.mustAcknowledge": "您必须确认系统使用通知才能继续",

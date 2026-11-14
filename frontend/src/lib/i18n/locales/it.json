@@ -2975,6 +2975,7 @@
   "settings.accountStatus.mfaEnabled": "MFA abilitata",
   "settings.accountStatus.passwordExpired": "Password scaduta",
   "loginBanner.title": "Avviso di utilizzo del sistema",
+  "classificationBanner.markingLabel": "Marcatura di classificazione: {{level}}",
   "loginBanner.acknowledge": "Confermo",
   "loginBanner.decline": "Rifiuta",
   "loginBanner.mustAcknowledge": "Devi confermare l'avviso di utilizzo del sistema per continuare",

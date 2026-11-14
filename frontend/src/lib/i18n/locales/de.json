@@ -2888,6 +2888,7 @@
   "settings.accountStatus.mfaEnabled": "MFA aktiviert",
   "settings.accountStatus.passwordExpired": "Passwort abgelaufen",
   "loginBanner.title": "Systemnutzungshinweis",
+  "classificationBanner.markingLabel": "Klassifizierungskennzeichnung: {{level}}",
   "loginBanner.acknowledge": "Ich bestätige",
   "loginBanner.decline": "Ablehnen",
   "loginBanner.mustAcknowledge": "Sie müssen den Systemnutzungshinweis bestätigen, um fortzufahren",

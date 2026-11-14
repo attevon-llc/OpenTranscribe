@@ -3119,6 +3119,7 @@
   "settings.accountStatus.mfaEnabled": "المصادقة متعددة العوامل مفعّلة",
   "settings.accountStatus.passwordExpired": "كلمة المرور منتهية الصلاحية",
   "loginBanner.title": "إشعار استخدام النظام",
+  "classificationBanner.markingLabel": "علامة التصنيف الأمني: {{level}}",
   "loginBanner.acknowledge": "أوافق وأقرّ",
   "loginBanner.decline": "رفض",
   "loginBanner.mustAcknowledge": "يجب عليك الإقرار بإشعار استخدام النظام للمتابعة",

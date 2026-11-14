@@ -2848,6 +2848,7 @@
   "settings.accountStatus.mfaEnabled": "MFA有効",
   "settings.accountStatus.passwordExpired": "パスワード期限切れ",
   "loginBanner.title": "システム使用通知",
+  "classificationBanner.markingLabel": "機密区分の表示: {{level}}",
   "loginBanner.acknowledge": "確認しました",
   "loginBanner.decline": "拒否",
   "loginBanner.mustAcknowledge": "続行するにはシステム使用通知を確認する必要があります",

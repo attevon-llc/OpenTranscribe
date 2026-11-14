@@ -204,6 +204,7 @@ GROUP_PERSONAS: dict[str, tuple[str, ...]] = {
         'Editor',
         'Administrator',
         'Researcher',
+        'SpeakerCurator',
         'TeamLead',
     ),
     'comments': (

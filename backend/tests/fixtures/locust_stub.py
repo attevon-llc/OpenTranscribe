@@ -233,6 +233,12 @@ _BODIES: list[tuple[str, str, Any]] = [
     ),
     ("GET", r"/api/tags", [{"name": "loadtest-mytag-1", "uuid": "tag-1"}]),
     ("GET", r"/api/collections", [{"uuid": "col-1"}]),
+    ("GET", r"/api/collections/shared-with-me", [{"uuid": "col-shared"}]),
+    (
+        "GET",
+        r"/api/collections/[^/]+/media",
+        {"items": [{"uuid": "file-shared"}], "has_more": False},
+    ),
     ("GET", r"/api/speakers", [{"uuid": "spk-1", "name": "SPEAKER_00", "display_name": "P 1"}]),
     ("GET", r"/api/speaker-profiles/profiles", [{"uuid": "prof-1"}]),
     ("GET", r"/api/chat/conversations", {"conversations": [{"uuid": "conv-1"}]}),

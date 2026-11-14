@@ -40,12 +40,43 @@ class CanaryMixin(SeededUser):
     """
 
     abstract = True
+    _readable: set[str] | None = None
+
+    def _readable_files(self) -> set[str]:
+        """Every file this caller can read: its own listing plus every collection it owns or is
+        shared (``/shared-with-me`` also lists group shares), paged to the end.
+
+        A file in a shared collection answers 200 by design, so the canary must not ask for one.
+        Read once per user; labelled so the setup requests stay out of the canary row (whose name holds the word canary).
+        """
+        if self._readable is None:
+            seen = set(self.file_uuids)
+            rows = _items(self._call('collections.list', label='readable-set setup'))
+            rows += _items(self._call('collections.shared_with_me', label='readable-set setup'))
+            for row in rows:
+                page, more = 1, True
+                while more and row.get('uuid'):
+                    resp = self._call(
+                        'collections.media',
+                        fill={'collection_uuid': row['uuid']},
+                        params={'page': page, 'page_size': 100},
+                        label='readable-set setup',
+                    )
+                    seen.update(f['uuid'] for f in _items(resp, 'items') if f.get('uuid'))
+                    more = resp.status_code == 200 and bool(resp.json().get('has_more'))
+                    page += 1
+            self._readable = seen
+        return self._readable
 
     @task(1)
     def cross_tenant_canary(self) -> None:
-        foreign = [
+        candidates = [
             f for owner, files in list(FILES_BY_OWNER.items()) if owner != self.email for f in files
         ]
+        if not candidates:
+            return
+        readable = self._readable_files()
+        foreign = [f for f in candidates if f not in readable]
         if foreign:
             self._call(
                 'files.detail',

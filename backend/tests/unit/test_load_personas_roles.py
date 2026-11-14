@@ -220,11 +220,17 @@ def test_the_realistic_mix_is_dominated_by_researchers_and_background_tabs(load)
 # --- the cross-tenant canary ---------------------------------------------------------------
 
 
-def test_the_canary_asks_for_a_file_and_expects_to_be_refused(run):
-    canaries = [c for c in run.client.calls if "canary" in c.name]
+def test_the_canary_asks_for_a_file_and_expects_to_be_refused(load):
+    owners = load["personas_base"].FILES_BY_OWNER
+    owners["someone-else@loadtest.invalid"] = ["file-private"]
+    try:
+        run = stub.run_personas(load["locustfile"], personas=ROLES)
+    finally:
+        owners.pop("someone-else@loadtest.invalid")
 
-    assert {c.persona for c in canaries} == {"SpeakerCurator", "TeamLead"}  # the first user to
-    assert all(c.url.startswith("/api/files/file-") for c in canaries)  # start has no stranger yet
+    canaries = [c for c in run.client.calls if "canary" in c.name]
+    assert {c.persona for c in canaries} >= {"Researcher", "SpeakerCurator", "TeamLead"}
+    assert {c.url for c in canaries} == {"/api/files/file-private"}
 
 
 def test_the_researcher_probes_a_file_another_identity_listed(load):
@@ -238,23 +244,39 @@ def test_the_researcher_probes_a_file_another_identity_listed(load):
     probes = [c for c in researcher.client.calls if "canary" in c.name]
     assert probes and {c.url for c in probes} <= {
         "/api/files/file-of-a-stranger",
-        "/api/files/file-a",
-        "/api/files/file-b",
-        "/api/files/file-c",
     }
     assert any(c.url == "/api/files/file-of-a-stranger" for c in probes)
+
+
+def test_the_canary_never_asks_for_a_file_in_a_collection_shared_with_the_caller(load):
+    owners = load["personas_base"].FILES_BY_OWNER
+    # "file-shared" is in the collection the stub shares with every caller: a 200 is correct.
+    owners["someone-else@loadtest.invalid"] = ["file-shared", "file-private"]
+    try:
+        run = stub.run_personas(load["locustfile"], personas=("TeamLead",), rounds=60)
+    finally:
+        owners.pop("someone-else@loadtest.invalid")
+
+    asked = {c.url for c in run.client.calls if "canary" in c.name}
+    assert "/api/files/file-private" in asked
+    assert "/api/files/file-shared" not in asked
 
 
 def test_a_server_that_answers_the_canary_with_200_makes_it_fail(load):
     # The stub raises on any failed call: a 200 to the canary is a failure, which is what lands
     # in the "cross-tenant canary" row that summarize.py holds to zero.
-    with pytest.raises(AssertionError, match="HTTP 200"):
-        stub.run_personas(
-            load["locustfile"],
-            personas=("TeamLead",),
-            rounds=5,
-            statuses={r"/api/files/file-[abc]": 200},
-        )
+    owners = load["personas_base"].FILES_BY_OWNER
+    owners["someone-else@loadtest.invalid"] = ["file-private"]
+    try:
+        with pytest.raises(AssertionError, match="HTTP 200"):
+            stub.run_personas(
+                load["locustfile"],
+                personas=("TeamLead",),
+                rounds=5,
+                statuses={r"/api/files/file-private": 200},
+            )
+    finally:
+        owners.pop("someone-else@loadtest.invalid")
 
 
 def test_the_stub_merges_base_class_tasks_as_locust_does(load):

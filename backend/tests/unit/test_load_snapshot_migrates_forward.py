@@ -22,10 +22,12 @@ SCRIPT = ROOT / "scripts" / "perf" / "load" / "tools" / "build_snapshot.sh"
 
 DOCKER = """#!/bin/bash
 echo "docker $*" >> "$STUB_LOG"
+[[ "$1" == ps ]] && printf 'id-api backend\\nid-w celery-worker\\nid-pg postgres\\nid-b celery-beat\\n'
+exit 0
 """
 
 STACK_TARGET = """
-st_target() { echo "st_target $*" >> "$STUB_LOG"; }
+st_target() { ST_PROJECT=otfresh-t1; echo "st_target $*" >> "$STUB_LOG"; }
 st_container() { echo cid; }
 st_require() {
   echo "st_require $*" >> "$STUB_LOG"
@@ -88,6 +90,21 @@ def test_migrate_runs_between_restore_and_seed(tmp_path):
     migrate = max(i for i, c in enumerate(calls) if "schema-head+migrate" in c)
     seed = next(i for i, c in enumerate(calls) if c.startswith("SEED"))
     assert restore < migrate < seed
+
+
+def test_the_restore_is_one_transaction_with_the_app_writers_stopped(tmp_path):
+    done, calls = _run(tmp_path)
+
+    assert done.returncode == 0, done.stderr
+    restore = next(i for i, c in enumerate(calls) if "pg_restore" in c)
+    assert "--single-transaction" in calls[restore]
+    assert " -j" not in calls[restore] and "--jobs" not in calls[restore]
+    stop = next(i for i, c in enumerate(calls) if c.startswith("docker stop"))
+    assert stop < restore
+    assert calls[stop] == "docker stop id-api id-w id-b"  # never postgres
+    migrate = max(i for i, c in enumerate(calls) if "schema-head+migrate" in c)
+    assert restore < calls.index("docker start cid") < migrate  # the backend runs the migration
+    assert calls[-1] == "docker start id-api id-w id-b"  # every writer returns after the dump
 
 
 def test_a_database_not_at_head_fails_before_the_seed_with_the_library_code(tmp_path):

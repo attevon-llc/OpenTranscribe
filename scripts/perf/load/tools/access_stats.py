@@ -16,7 +16,7 @@ from collections import defaultdict
 from pathlib import Path
 
 LINE = re.compile(
-    r'INFO:access:\[[^\]]*\] (\w+) (\S+) (\d{3}) ([\d.]+)ms(?: user=\S+)?(?: dbq=(\d+))?'
+    r'INFO:access:\[[^\]]*\] (\w+) (\S+) (\d{3}) ([\d.]+)ms(?: user=\S+)?(?: dbq=(\d+))?(?: ttfb=([\d.]+)ms)?'
 )
 
 
@@ -32,6 +32,7 @@ def main() -> int:
     top = int(sys.argv[sys.argv.index('--top') + 1]) if '--top' in sys.argv else 30
     ms: dict[tuple[str, str], list[float]] = defaultdict(list)
     dbq: dict[tuple[str, str], list[int]] = defaultdict(list)
+    ttfb: dict[tuple[str, str], list[float]] = defaultdict(list)
     status: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: defaultdict(int))
     with gzip.open(run / 'backend.log.gz', 'rt', errors='replace') as fh:
         for line in fh:
@@ -42,6 +43,8 @@ def main() -> int:
             ms[key].append(float(m.group(4)))
             if m.group(5):
                 dbq[key].append(int(m.group(5)))
+            if m.group(6):
+                ttfb[key].append(float(m.group(6)))
             status[key][m.group(3)] += 1
     rows = []
     for key, values in ms.items():
@@ -53,6 +56,10 @@ def main() -> int:
                 'server_p50_ms': round(pct(values, 50), 1),
                 'server_p95_ms': round(pct(values, 95), 1),
                 'server_max_ms': round(max(values), 1),
+                # Time to response headers: what the client waits for, without the BackgroundTasks
+                # that run after the response and are included in server_*_ms.
+                'start_p50_ms': round(pct(ttfb[key], 50), 1) if ttfb[key] else '',
+                'start_p95_ms': round(pct(ttfb[key], 95), 1) if ttfb[key] else '',
                 'server_total_s': round(sum(values) / 1000, 1),
                 'dbq_mean': round(statistics.fmean(dbq[key]), 1) if dbq[key] else '',
                 'dbq_max': max(dbq[key]) if dbq[key] else '',
@@ -68,7 +75,7 @@ def main() -> int:
         print(
             f'{r["method"]:6} {r["route"][:60]:60} n={r["n"]:6} p50={r["server_p50_ms"]:8} '
             f'p95={r["server_p95_ms"]:8} max={r["server_max_ms"]:9} tot={r["server_total_s"]:7}s '
-            f'dbq={r["dbq_mean"]} {r["status"]}'
+            f'start_p95={r["start_p95_ms"]} dbq={r["dbq_mean"]} {r["status"]}'
         )
     return 0
 

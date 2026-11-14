@@ -28,7 +28,19 @@ psql_in() { docker exec -i "$PG" sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d 
 SEED_FLAGS=(--waveform-pm 1000)
 if [[ -n "$OLD" ]]; then
   (cd "$(dirname "$OLD")" && sha256sum -c "$(basename "$OLD").sha256")
-  docker exec -i "$PG" sh -c 'pg_restore -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-opentranscribe}" --clean --if-exists' < "$OLD"
+  # App writers (the API and every Celery worker/beat) stop first: a live write between the
+  # restore's DROP and CREATE statements is what failed LOADRUN5 attempt 1 on a foreign key.
+  # --single-transaction makes the restore all-or-nothing (PostgreSQL docs, pg_restore: it cannot be
+  # combined with -j, which this does not use). Only the backend comes back up, because
+  # schema-head+migrate below runs the migration inside it; the workers return after the dump.
+  mapfile -t WRITERS < <(docker ps --filter "label=com.docker.compose.project=${ST_PROJECT:?}" \
+    --filter "label=com.docker.compose.service" --format '{{.ID}} {{.Label "com.docker.compose.service"}}' \
+    | awk '$2=="backend" || $2 ~ /^celery-/ {print $1}')
+  [[ ${#WRITERS[@]} -eq 0 ]] || docker stop "${WRITERS[@]}" >/dev/null
+  trap '[[ ${#WRITERS[@]} -eq 0 ]] || docker start "${WRITERS[@]}" >/dev/null' EXIT
+  docker exec -i "$PG" sh -c 'pg_restore -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-opentranscribe}" --clean --if-exists --single-transaction' < "$OLD"
+  BACKEND_ID=$(st_container backend)
+  docker start "$BACKEND_ID" >/dev/null
   # pg_restore --clean swaps in the snapshot's older schema: bring it back to head before seeding.
   st_require schema-head+migrate
   "$REPO/scripts/seed-query-review.sh" --fresh "$FRESH" --activity-only "${SEED_FLAGS[@]}"

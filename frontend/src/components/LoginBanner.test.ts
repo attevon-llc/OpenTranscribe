@@ -6,6 +6,8 @@
  * failure, and it cannot fire two acknowledgment writes.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('$lib/axios', () => ({
@@ -120,5 +122,17 @@ describe('LoginBanner', () => {
     await renderBanner();
 
     expect(screen.queryByText(/U\.S\. Government \(USG\)/)).toBeNull();
+  });
+  it('scrolls only the notice body so the buttons stay on screen (UI pass N4)', async () => {
+    vi.mocked(axiosInstance.get).mockResolvedValue({ data: { ...BANNER, text: '' } } as never);
+    const { container } = render(LoginBanner);
+    const ack = await screen.findByRole('button', { name: 'loginBanner.acknowledge' });
+    expect(container.querySelector('.banner-content')?.contains(ack)).toBe(false);
+    const src = fs.readFileSync(path.resolve(__dirname, 'LoginBanner.svelte'), 'utf8');
+    const rule = (sel: string) =>
+      src.match(new RegExp(`\\n\\s*\\${sel}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    expect(rule('.banner-modal')).toMatch(/flex-direction:\s*column/);
+    expect(rule('.banner-modal')).not.toMatch(/overflow-y:\s*auto/);
+    expect(rule('.banner-content')).toMatch(/overflow-y:\s*auto/);
   });
 });

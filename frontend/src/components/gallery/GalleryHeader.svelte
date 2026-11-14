@@ -226,8 +226,11 @@
       gap: var(--space-2);
     }
 
+    /* The count chip and "Select files" share this group; wrapping lets a long translated chip
+       ("Aucun fichier correspondant...") take its own line instead of being ellipsized. */
     .toolbar-row-left {
       flex: 1 1 100%;
+      flex-wrap: wrap;
       min-width: 0;
     }
 

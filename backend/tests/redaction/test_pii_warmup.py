@@ -35,6 +35,9 @@ from app.services.redaction import warmup
 from app.services.redaction.config import redaction_is_in_use
 from app.services.redaction.detectors import pii_presidio
 
+# A real cold build measured ~10 s solo; generous because the suite runs 48-way.
+_IN_FLIGHT_WARMUP_TIMEOUT_S = 120
+
 
 class _FakeAnalyzer:
     """Stands in for a built ``AnalyzerEngine``; identity is what the tests read."""
@@ -79,7 +82,17 @@ def reset_analyzer_singleton():
 
     The singleton outlives a test by design, so without this the second test to run
     would hit a warm cache and assert nothing.
+
+    A warm-up an EARLIER test started is waited for first. Any request-thread refusal
+    asks for one (``detectors._request_warmup``), and it builds a real analyzer under
+    ``_analyzer_lock`` on a daemon thread that outlives that test: the lock tests below
+    then never see their own build start, and its late write would refill the cache
+    this fixture just cleared.
     """
+    in_flight = warmup._warmup_thread
+    if in_flight is not None and in_flight.is_alive():
+        in_flight.join(timeout=_IN_FLIGHT_WARMUP_TIMEOUT_S)
+        assert not in_flight.is_alive(), "a warm-up from an earlier test is still building"
     pii_presidio._analyzer = None
     pii_presidio._analyzer_gliner = None
     pii_presidio._load_failed = False

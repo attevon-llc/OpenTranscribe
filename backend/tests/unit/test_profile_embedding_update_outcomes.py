@@ -77,11 +77,35 @@ def test_emptied_profile_is_cleared_and_committed_lenient_returns_true():
     assert db.commit.call_count == 2  # release the read transaction, then the short write
 
 
-def test_emptied_profile_strict_raises_after_the_clear():
-    db = _db(_profile(), [])
+def test_emptied_profile_strict_raises_and_records_the_empty_count():
+    profile = _profile()
+    profile.embedding_count = 3  # what the stale embedding averaged
+    db = _db(profile, [])
     with pytest.raises(ProfileEmbeddingRecomputeError, match="has no members"):
         _run(db, strict=True)
-    assert db.commit.call_count == 2
+    assert db.commit.call_count == 2  # release the read transaction, then the short write
+    (written,) = db.query.return_value.filter.return_value.update.call_args_list
+    assert list(written.args[0].values())[0] == 0
+
+
+@pytest.mark.parametrize(("strict", "removals"), [(True, 0), (False, 1)])
+def test_only_the_lenient_path_clears_an_emptied_profile_itself(strict, removals):
+    """The strict caller erases and verifies the document across every speaker index itself
+    (``speaker_cleanup._refresh_profiles``); clearing it here too sent every delete twice on
+    the speaker-merge request path. The lenient caller has no eraser behind it: it clears."""
+    db = _db(_profile(), [])
+    removed = MagicMock(return_value=True)
+    with (
+        patch(_P + "file_ids_in_scope", return_value=[]),
+        patch(_P + "declined_file_ids", return_value=set()),
+        patch("app.services.opensearch_service.remove_profile_embedding", removed),
+    ):
+        if strict:
+            with pytest.raises(ProfileEmbeddingRecomputeError, match="has no members"):
+                ProfileEmbeddingService.update_profile_embedding(db, 5, strict=True)
+        else:
+            assert ProfileEmbeddingService.update_profile_embedding(db, 5, strict=False)
+    assert removed.call_count == removals
 
 
 def test_declined_files_never_enter_the_average():

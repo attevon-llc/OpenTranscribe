@@ -62,6 +62,10 @@ def _send_clustering_file_complete(user_id: int, file_uuid: str, clusters_assign
     )
 
 
+# What a user is told when clustering fails; the exception text goes to the log only.
+_CLUSTERING_FAILED = "Speaker clustering failed"
+
+
 def _send_clustering_error(user_id: int, error_message: str) -> None:
     """Send clustering error notification via WebSocket."""
     send_ws_event(
@@ -231,9 +235,9 @@ def recluster_all_speakers(
             except Exception as e:
                 logger.error(f"Error re-clustering speakers for user {user_id}: {e}")
                 with contextlib.suppress(Exception):
-                    clustering_tracker.fail(message=f"Clustering failed: {e}")
+                    clustering_tracker.fail(message=_CLUSTERING_FAILED)
                 if self.request.retries >= self.max_retries:
-                    _send_clustering_error(user_id, str(e))
+                    _send_clustering_error(user_id, _CLUSTERING_FAILED)
                     raise
                 raise self.retry(exc=e) from e
             finally:

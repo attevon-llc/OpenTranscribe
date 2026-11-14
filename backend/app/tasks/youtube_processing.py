@@ -33,6 +33,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services import youtube_policy
+from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.media_download_playlist import DOWNLOAD_STARTED_KEY
 from app.services.media_download_playlist import DOWNLOAD_TASK_ID_KEY
@@ -528,7 +529,7 @@ def process_youtube_url_task(
                     )
                     return {
                         "status": "error",
-                        "message": f"Download complete, but transcription could not be started: {e}",
+                        "message": "Download complete, but transcription could not be started.",
                         "file_id": file_id if file_id is not None else 0,
                     }
 
@@ -541,6 +542,8 @@ def process_youtube_url_task(
             except Exception as e:
                 error_msg = str(e)
                 error_category = categorize_error(error_msg)
+                # The raw text stays in the logs below; users only ever see this sentence.
+                user_message = ErrorCategorizationService.classify_failure(error_msg).user_message
 
                 # Check if this is a retriable error using the canonical set
                 is_retriable = error_category in RETRIABLE_CATEGORIES
@@ -561,7 +564,7 @@ def process_youtube_url_task(
 
                     # Update status to show retry is pending
                     media_file.last_error_message = (
-                        f"Retry {self.request.retries + 1}/{self.max_retries}: {error_msg}"
+                        f"Retry {self.request.retries + 1}/{self.max_retries}: {user_message}"
                     )
                     db.flush()
 
@@ -593,13 +596,13 @@ def process_youtube_url_task(
                     user_id=user_id,
                     file_id=file_id,
                     status=FileStatus.ERROR,
-                    message=f"YouTube processing failed: {error_msg}",
+                    message=f"YouTube processing failed: {user_message}",
                     progress=0,
                 )
 
                 return {
                     "status": "error",
-                    "message": error_msg,
+                    "message": user_message,
                     "file_id": file_id if file_id is not None else 0,
                 }
 
@@ -613,6 +616,7 @@ def process_youtube_url_task(
         raise
     except Exception as e:
         logger.exception("Unexpected error in YouTube processing task")
+        user_message = ErrorCategorizationService.classify_failure(str(e)).user_message
 
         # Send error notification only if file_id was assigned
         if file_id is not None:
@@ -620,13 +624,13 @@ def process_youtube_url_task(
                 user_id=user_id,
                 file_id=file_id,
                 status=FileStatus.ERROR,
-                message=f"Unexpected error: {str(e)}",
+                message=f"Unexpected error: {user_message}",
                 progress=0,
             )
 
         return {
             "status": "error",
-            "message": str(e),
+            "message": user_message,
             "file_id": file_id if file_id is not None else 0,
         }
     finally:

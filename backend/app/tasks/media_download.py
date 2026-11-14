@@ -175,7 +175,7 @@ def prepare_media_download_task(
                 variant=variant,
                 message="Failed to prepare download.",
             )
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Failed to prepare download."}
     finally:
         # Release the dispatch guard on EVERY path. Its 900 s expiry is only a
         # backstop: while the guard outlived the task, a download whose readiness
@@ -314,4 +314,4 @@ def prepare_bulk_subtitles_task(
     except Exception as e:
         logger.exception(f"prepare_bulk_subtitles_task failed (job {job_id}): {e}")
         publish_bulk_event(job_id, status="error", message="Failed to build export.")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Failed to build export."}

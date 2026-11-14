@@ -33,7 +33,9 @@
 }
 
 .provider-panel .config-status.currently-active {
-  background-color: var(--success-bg);
+  /* Painted over the card surface: --success-bg alone is translucent and took on the blue of
+     an active card, which left 4.16:1. */
+  background: linear-gradient(var(--success-bg), var(--success-bg)), var(--surface-color);
   color: var(--success-text);
   border: 1px solid var(--success-border);
 }

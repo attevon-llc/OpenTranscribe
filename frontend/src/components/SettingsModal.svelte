@@ -1370,7 +1370,7 @@
     min-width: 1.25rem;
     padding: 0 var(--space-1-5);
     border-radius: var(--radius-pill);
-    background: rgba(var(--warning-color-rgb), 0.18);
+    background: rgba(var(--warning-color-rgb), 0.1);
     color: var(--warning-text);
     border: 1px solid rgba(var(--warning-color-rgb), 0.45);
     font-size: var(--font-size-2xs);

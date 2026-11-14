@@ -707,7 +707,6 @@
   .stat-detail-hint {
     margin-top: var(--space-2);
     font-size: var(--font-size-2xs);
-    opacity: 0.6;
     font-style: italic;
   }
 

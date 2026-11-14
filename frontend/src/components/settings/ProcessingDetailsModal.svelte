@@ -286,7 +286,6 @@
   .detail-sublabel {
     font-size: var(--font-size-2xs);
     color: var(--text-secondary);
-    opacity: 0.7;
   }
 
   .detail-value {

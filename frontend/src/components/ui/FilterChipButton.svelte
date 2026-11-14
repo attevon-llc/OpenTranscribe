@@ -96,6 +96,6 @@
 
   .filter-chip-count {
     font-size: var(--font-size-xs);
-    opacity: 0.8;
+    font-weight: var(--font-weight-semibold);
   }
 </style>

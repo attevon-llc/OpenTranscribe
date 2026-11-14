@@ -536,7 +536,6 @@
 
   .header-version-sep {
     color: var(--text-secondary);
-    opacity: 0.5;
     font-size: var(--font-size-body);
   }
 
@@ -587,7 +586,6 @@
     color: var(--text-secondary);
     font-size: var(--font-size-md);
     line-height: 1.5;
-    opacity: 0.85;
     margin: 0;
   }
 

@@ -969,7 +969,7 @@
    * the worst of the three, since it then multiplies by opacity 0.7. */
   .step-item.active .step-label { color: var(--primary-on-surface); font-weight: var(--font-weight-semibold); }
   .step-item.completed .step-label { color: var(--primary-on-surface); }
-  .step-item.visited .step-label { color: var(--primary-on-surface); opacity: 0.7; }
+  .step-item.visited .step-label { color: var(--text-secondary); }
 
   /* Connector line between steps */
   .step-line {

@@ -42,8 +42,25 @@ describe('ProcessingDetailsModal — diarization configured-vs-effective (issue 
     expect(screen.getByText('settings.statistics.diarizationFallbackWarning')).toBeInTheDocument();
     expect(screen.getByText('settings.statistics.diarizationConfigured')).toBeInTheDocument();
     expect(screen.getByText('settings.statistics.diarizationEffective')).toBeInTheDocument();
-    expect(screen.getByText('Native diarization sidecar')).toBeInTheDocument();
-    expect(screen.getAllByText('PyAnnote (in-process fallback)').length).toBeGreaterThan(0);
+    // Engines are named from their stable code in the UI language, not the server's English.
+    expect(screen.getByText('settings.statistics.diarEngine.native')).toBeInTheDocument();
+    expect(screen.getAllByText('settings.statistics.diarEngine.pyannote').length).toBeGreaterThan(
+      0
+    );
+    expect(screen.queryByText('Native diarization sidecar')).not.toBeInTheDocument();
+    expect(screen.getByText('settings.statistics.modelPurpose.diarization')).toBeInTheDocument();
+  });
+
+  it('keeps the server description for an engine code this build does not know', () => {
+    render(ProcessingDetailsModal, {
+      isOpen: true,
+      section: 'models',
+      stats: statsWithDiarization(
+        diarizationModel({ effective_backend: 'future', description: 'Future engine' })
+      ),
+    });
+
+    expect(screen.getAllByText('Future engine').length).toBeGreaterThan(0);
   });
 
   it('shows configured/effective rows but no warning when native is actually serving', () => {

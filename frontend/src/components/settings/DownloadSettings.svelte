@@ -3,6 +3,7 @@
   import Toggle from '$components/ui/Toggle.svelte';
   import { onMount, createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import { audioQualityLabel, videoQualityLabel } from '$lib/i18n/backendLabels';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -136,7 +137,7 @@
       >
         {#if systemDefaults}
           {#each Object.entries(systemDefaults.available_video_qualities) as [value, label] (value)}
-            <option {value}>{label}</option>
+            <option {value}>{videoQualityLabel($t, value, label)}</option>
           {/each}
         {:else}
           <option value="best">{$t('settings.download.bestAvailable')}</option>
@@ -178,7 +179,7 @@
         >
           {#if systemDefaults}
             {#each Object.entries(systemDefaults.available_audio_qualities) as [value, label] (value)}
-              <option {value}>{label}</option>
+              <option {value}>{audioQualityLabel($t, value, label)}</option>
             {/each}
           {:else}
             <option value="best">{$t('settings.download.bestAvailable')}</option>

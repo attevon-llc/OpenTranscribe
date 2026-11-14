@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
+  import { audioQualityLabel, videoQualityLabel } from '$lib/i18n/backendLabels';
   import { toastStore } from '$stores/toast';
   import { isOnline } from '$stores/network';
   import { getAuthConfigForUrl, type ProtectedMediaAuthConfig } from '$lib/services/configService';
@@ -205,7 +206,7 @@
             <label for="dl-video-quality">{$t('settings.download.videoQuality')}</label>
             <select id="dl-video-quality" bind:value={downloadVideoQuality} disabled={downloadAudioOnly} class="download-select">
               {#each Object.entries(downloadDefaults.available_video_qualities) as [value, label] (value)}
-                <option {value}>{label}</option>
+                <option {value}>{videoQualityLabel($t, value, label)}</option>
               {/each}
             </select>
           </div>
@@ -221,7 +222,7 @@
               <label for="dl-audio-quality">{$t('settings.download.audioQuality')}</label>
               <select id="dl-audio-quality" bind:value={downloadAudioQuality} class="download-select">
                 {#each Object.entries(downloadDefaults.available_audio_qualities) as [value, label] (value)}
-                  <option {value}>{label}</option>
+                  <option {value}>{audioQualityLabel($t, value, label)}</option>
                 {/each}
               </select>
             </div>

@@ -12,7 +12,8 @@
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi, type ASRModelCapabilities } from '$lib/api/asrSettings';
   import { toastStore } from '$stores/toast';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
+  import { localizeLanguages } from '$lib/i18n/backendLabels';
   import Spinner from '$components/ui/Spinner.svelte';
   import SettingsCard from './transcription/SettingsCard.svelte';
   import InfoTip from './transcription/InfoTip.svelte';
@@ -29,11 +30,17 @@
   let originalTranslateToEnglish = false;
   let originalLlmOutputLanguage = 'en';
 
-  let sourceLanguageGroups: { common: LanguageOption[]; other: LanguageOption[] } = {
-    common: [],
-    other: []
-  };
-  let llmLanguageOptions: LanguageOption[] = [];
+  let systemDefaults: Awaited<ReturnType<typeof getTranscriptionSystemDefaults>> | null = null;
+  // The backend sends code -> English name; the names are rendered in the UI language.
+  $: sourceLanguageGroups = systemDefaults
+    ? groupLanguages(
+        localizeLanguages($t, $locale, systemDefaults.available_source_languages) ?? {},
+        systemDefaults.common_languages
+      )
+    : { common: [] as LanguageOption[], other: [] as LanguageOption[] };
+  $: llmLanguageOptions = Object.entries(
+    localizeLanguages($t, $locale, systemDefaults?.available_llm_output_languages) ?? {}
+  ).map(([code, name]): LanguageOption => ({ code, name }));
   let loading = true;
   let saving = false;
   let resetting = false;
@@ -72,14 +79,7 @@
 
   async function loadSystemDefaults() {
     try {
-      const defaults = await getTranscriptionSystemDefaults();
-      sourceLanguageGroups = groupLanguages(
-        defaults.available_source_languages,
-        defaults.common_languages
-      );
-      llmLanguageOptions = Object.entries(defaults.available_llm_output_languages).map(
-        ([code, name]) => ({ code, name })
-      );
+      systemDefaults = await getTranscriptionSystemDefaults();
     } catch (err) {
       console.error('Failed to load system defaults:', err);
     }

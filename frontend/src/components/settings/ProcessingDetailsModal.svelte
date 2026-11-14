@@ -4,6 +4,7 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { QUEUE_NAME_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { t, locale } from '$stores/locale';
+  import { diarEngineLabel, modelPurposeLabel } from '$lib/i18n/backendLabels';
   import BaseModal from '$components/ui/BaseModal.svelte';
 
   export let isOpen = false;
@@ -178,27 +179,27 @@
                   }}
                   <div class="detail-row model-detail-row">
                     <div class="model-detail-info">
-                      <span class="detail-label">{m.purpose || key}</span>
-                      <span class="detail-sublabel">{m.description || ''}</span>
+                      <span class="detail-label">{modelPurposeLabel($t, key, m.purpose || key)}</span>
+                      <span class="detail-sublabel">{m.effective_backend ? diarEngineLabel($t, m.effective_backend, m.description) : m.description || ''}</span>
                     </div>
                     <span class="detail-value model-name">{m.name || $t('common.notAvailable')}</span>
                   </div>
                   {#if m.configured_backend && m.effective_backend}
                     <div class="detail-row model-engine-row">
                       <span class="detail-label">{$t('settings.statistics.diarizationConfigured')}</span>
-                      <span class="detail-value model-name">{m.configured_description || m.configured_backend}</span>
+                      <span class="detail-value model-name">{diarEngineLabel($t, m.configured_backend, m.configured_description)}</span>
                     </div>
                     <div class="detail-row model-engine-row">
                       <span class="detail-label">{$t('settings.statistics.diarizationEffective')}</span>
-                      <span class="detail-value model-name">{m.description || m.effective_backend}</span>
+                      <span class="detail-value model-name">{diarEngineLabel($t, m.effective_backend, m.description)}</span>
                     </div>
                     {#if m.using_fallback}
                       <div class="detail-row fallback-warning-row" role="alert">
                         <span class="fallback-warning-icon" aria-hidden="true"><MenuIcon name="warning" size="md" /></span>
                         <span class="fallback-warning-text">
                           {$t('settings.statistics.diarizationFallbackWarning', {
-                            configured: m.configured_description || m.configured_backend,
-                            effective: m.description || m.effective_backend
+                            configured: diarEngineLabel($t, m.configured_backend, m.configured_description),
+                            effective: diarEngineLabel($t, m.effective_backend, m.description)
                           })}
                         </span>
                       </div>

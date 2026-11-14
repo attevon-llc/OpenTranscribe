@@ -6,7 +6,8 @@
   when the file's detected language disagrees with its audio track's tag.
 -->
 <script lang="ts">
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
+  import { localizeLanguages } from '$lib/i18n/backendLabels';
   import { languageChoices } from '$lib/fileDetail/reprocessStages';
 
   /** `available_source_languages` from the system defaults: code -> display name. */
@@ -19,8 +20,9 @@
   export let highlight = false;
   export let id = 'reprocess-language-select';
 
-  $: choices = languageChoices(languages);
-  $: savedName = languages?.[savedLanguage ?? 'auto'] ?? languages?.auto ?? '';
+  $: localized = localizeLanguages($t, $locale, languages);
+  $: choices = languageChoices(localized);
+  $: savedName = localized?.[savedLanguage ?? 'auto'] ?? localized?.auto ?? '';
 </script>
 
 {#if choices.length}

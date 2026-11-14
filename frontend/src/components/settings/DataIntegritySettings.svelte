@@ -6,6 +6,7 @@
   import { getErrorStatus } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
+  import { integrityIndexLabel } from '$lib/i18n/backendLabels';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import OrphanedDataPanel from './OrphanedDataPanel.svelte';
@@ -22,6 +23,8 @@
   // Index overview
   interface IndexEntry {
     name: string;
+    /** Stable code the card title is translated from; `label` is the English fallback. */
+    kind?: string;
     label: string;
     exists: boolean;
     total?: number;
@@ -241,7 +244,7 @@
             {#each indexOverview.indices as idx (idx.name)}
               <div class="index-card" class:missing={!idx.exists && !idx.error}>
                 <div class="index-header">
-                  <span class="index-label">{idx.label}</span>
+                  <span class="index-label">{integrityIndexLabel($t, idx.kind, idx.label)}</span>
                   <span class="index-name">{idx.name}</span>
                 </div>
                 {#if idx.error}

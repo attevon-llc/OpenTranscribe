@@ -7,12 +7,13 @@ runs: the only suite that drives them against a cluster
 other caller stubs them out. A survivor count that is ignored, an id sweep that addresses
 ``<uuid>`` instead of ``profile_<uuid>``, or a summary sweep that matches every file's
 documents all left that suite green. These run the real erasers against a stand-in cluster
-that answers by evaluating what it is asked:
+that answers by evaluating what it is asked (``fixtures/speaker_family_cluster.py``).
 
-* deletes by id are realtime, but ``count`` reads a SEARCHER, which keeps listing a deleted
-  document until ``indices.refresh`` — the reason ``_count_surviving`` refreshes first;
-* a ``delete_by_query`` whose scroll meets a document already deleted by id answers 409
-  unless it was sent ``conflicts="proceed"``, as the real cluster does.
+The speaker family (voiceprints, profile embeddings, cluster centroids) also has a request
+budget: the erase runs on the speaker-merge request path, where it once cost about twenty
+sequential requests per merge in a 100-user load run. It is now one ``_bulk``
+delete, one refresh and one per-index survivor count, whatever the number of documents or
+speaker indices.
 """
 
 from __future__ import annotations
@@ -20,80 +21,24 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from opensearchpy.exceptions import ConflictError
-from opensearchpy.exceptions import NotFoundError
 
 from app.services import opensearch_erasure as ose
 from app.services.opensearch_service import settings as os_settings
+from tests.fixtures.speaker_family_cluster import SpeakerFamilyCluster
 
-SPEAKER_INDICES = ["speakers", "speakers_v4"]
+# The real list has the alias, v3, v4 and the legacy v3 backup.
+SPEAKER_INDICES = ["speakers", "speakers_v3", "speakers_v4", "speakers_v3_backup"]
 SUMMARY_INDEX = os_settings.OPENSEARCH_SUMMARY_INDEX
-
-
-def _matches(doc_id: str, doc: dict[str, Any], query: dict[str, Any]) -> bool:
-    if "ids" in query:
-        return doc_id in query["ids"]["values"]
-    if "term" in query:
-        ((field, value),) = query["term"].items()
-        return bool(doc.get(field) == value)
-    if "match_all" in query:
-        return True
-    raise AssertionError(f"the stand-in cannot evaluate {query!r}; teach it, don't skip it")
-
-
-class _Indices:
-    def __init__(self, cluster: _Cluster) -> None:
-        self._cluster = cluster
-
-    def exists(self, index: str) -> bool:
-        return index in self._cluster.docs
-
-    def refresh(self, index: str) -> None:
-        self._cluster.calls.append(("refresh", index))
-        self._cluster.searcher[index] = dict(self._cluster.docs.get(index, {}))
-
-
-class _Cluster:
-    """Live documents per index, plus the searcher's (stale until refresh) view of them."""
-
-    def __init__(self, docs: dict[str, dict[str, dict[str, Any]]]) -> None:
-        self.docs = {index: dict(found) for index, found in docs.items()}
-        self.searcher = {index: dict(found) for index, found in docs.items()}
-        self.indices = _Indices(self)
-        self.calls: list[tuple[Any, ...]] = []
-        self.failures: list[dict[str, Any]] = []
-
-    def delete_now(self, index: str, doc_id: str) -> None:
-        """A realtime by-id delete: gone at once, still listed by the searcher."""
-        self.docs.get(index, {}).pop(doc_id, None)
-
-    def count(self, index: str, body: dict[str, Any]) -> dict[str, int]:
-        self.calls.append(("count", index))
-        if index not in self.docs:
-            raise NotFoundError(404, "index_not_found_exception", {})
-        found = self.searcher.get(index, {})
-        return {"count": sum(1 for i, d in found.items() if _matches(i, d, body["query"]))}
-
-    def delete_by_query(self, index: str, body: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(("delete_by_query", index, body["query"], kwargs))
-        query = body["query"]
-        listed = [i for i, d in self.searcher.get(index, {}).items() if _matches(i, d, query)]
-        live = self.docs.get(index, {})
-        if kwargs.get("conflicts") != "proceed" and any(i not in live for i in listed):
-            raise ConflictError(409, "version_conflict_engine_exception", {})
-        for doc_id in listed:
-            live.pop(doc_id, None)
-        if kwargs.get("refresh"):
-            self.searcher[index] = dict(live)
-        return {"deleted": len(listed), "failures": self.failures}
 
 
 @pytest.fixture
 def cluster(monkeypatch):
-    """Install a stand-in as the erasers' client; the speaker indices are fixed to two."""
+    """Install a stand-in as the erasers' client, with the real speaker index names."""
 
-    def install(docs: dict[str, dict[str, dict[str, Any]]]) -> _Cluster:
-        fake = _Cluster(docs)
+    def install(
+        docs: dict[str, dict[str, dict[str, Any]]], aliases: dict[str, str] | None = None
+    ) -> SpeakerFamilyCluster:
+        fake = SpeakerFamilyCluster(docs, aliases)
         monkeypatch.setattr(ose, "_opensearch_client", lambda: fake)
         monkeypatch.setattr(
             "app.services.opensearch_service.speaker_maintenance.speaker_embedding_indices",
@@ -143,148 +88,122 @@ def test_the_count_refreshes_before_it_reads(cluster) -> None:
 
 
 # ---------------------------------------------------------------------------
-# voiceprints
+# the speaker family: voiceprints, profile embeddings, cluster centroids
 # ---------------------------------------------------------------------------
 
-
-def test_a_surviving_voiceprint_is_reported(cluster, residual, monkeypatch) -> None:
-    """``remove_speaker_embedding`` answers the same for "absent" and "failed"."""
-    cluster({"speakers": {"spk-1": {}}, "speakers_v4": {}})
-    monkeypatch.setattr(
-        "app.services.opensearch_service.remove_speaker_embedding", lambda speaker_uuid: False
-    )
-
-    ose._erase_speaker_docs(["spk-1"], _fail(residual))
-
-    assert residual == [("speakers", "1 voiceprint doc(s) survive in speakers")]
+# (eraser, residual stage, residual label, document id prefix)
+FAMILY = [
+    pytest.param(ose._erase_speaker_docs, "speakers", "voiceprint", "", id="voiceprints"),
+    pytest.param(
+        ose._erase_profile_docs, "profiles", "profile embedding", "profile_", id="profiles"
+    ),
+    pytest.param(ose._erase_cluster_docs, "clusters", "centroid", "cluster_", id="centroids"),
+]
 
 
-def test_a_removed_voiceprint_is_a_clean_sweep(cluster, residual, monkeypatch) -> None:
-    """CONTROL for the one above: a sweep that always reported would pass it too."""
-    fake = cluster({"speakers": {"spk-1": {}}, "speakers_v4": {"spk-1": {}}})
-
-    def remove(speaker_uuid: str) -> bool:
-        for index in SPEAKER_INDICES:
-            fake.delete_now(index, speaker_uuid)
-        return True
-
-    monkeypatch.setattr("app.services.opensearch_service.remove_speaker_embedding", remove)
-
-    ose._erase_speaker_docs(["spk-1"], _fail(residual))
-
-    assert residual == []
-
-
-# ---------------------------------------------------------------------------
-# profile embeddings
-# ---------------------------------------------------------------------------
-
-
-def _profiles_removed_by_id(fake: _Cluster, monkeypatch) -> None:
-    """``remove_profile_embedding``: a realtime delete from the main index only."""
-
-    def remove(profile_uuid: str) -> bool:
-        fake.delete_now("speakers", f"profile_{profile_uuid}")
-        return True
-
-    monkeypatch.setattr("app.services.opensearch_service.remove_profile_embedding", remove)
-
-
-def test_profile_embeddings_are_swept_from_every_speaker_index(
-    cluster, residual, monkeypatch
+@pytest.mark.parametrize(("eraser", "stage", "label", "prefix"), FAMILY)
+def test_every_copy_is_erased_from_every_speaker_index_by_its_doc_id(
+    cluster, residual, eraser, stage, label, prefix
 ) -> None:
-    """The by-id remove misses a mid-migration copy; the sweep must reach it, by its doc id."""
+    """A mid-migration copy can sit in any speaker index; only the named documents go."""
     fake = cluster(
         {
-            "speakers": {"profile_p1": {}, "p1": {}},
-            "speakers_v4": {"profile_p1": {}, "profile_other": {}},
-        }
-    )
-    _profiles_removed_by_id(fake, monkeypatch)
-
-    ose._erase_profile_docs(["p1"], _fail(residual))
-
-    assert residual == []
-    assert fake.docs == {"speakers": {"p1": {}}, "speakers_v4": {"profile_other": {}}}
-
-
-def test_the_profile_sweep_proceeds_past_a_document_deleted_by_id(
-    cluster, residual, monkeypatch
-) -> None:
-    """The searcher still lists what the by-id delete removed; a 409 there means "gone"."""
-    fake = cluster({"speakers": {"profile_p1": {}}, "speakers_v4": {}})
-    _profiles_removed_by_id(fake, monkeypatch)
-
-    ose._erase_profile_docs(["p1"], _fail(residual))
-
-    assert residual == []
-    sweeps = [call for call in fake.calls if call[0] == "delete_by_query"]
-    assert sweeps and all(call[3]["conflicts"] == "proceed" for call in sweeps), sweeps
-
-
-def test_a_surviving_profile_embedding_is_reported(cluster, residual, monkeypatch) -> None:
-    fake = cluster({"speakers": {"profile_p1": {}}, "speakers_v4": {}})
-    # A remove and a sweep that both delete nothing: only the survivor count can tell.
-    monkeypatch.setattr(
-        "app.services.opensearch_service.remove_profile_embedding", lambda profile_uuid: False
-    )
-    monkeypatch.setattr(fake, "delete_by_query", lambda index, body, **kwargs: {"deleted": 0})
-
-    ose._erase_profile_docs(["p1"], _fail(residual))
-
-    assert residual == [("profiles", "1 profile embedding doc(s) survive in speakers")]
-
-
-def test_an_unreachable_profile_index_is_reported(cluster, residual, monkeypatch) -> None:
-    _profiles_removed_by_id(cluster({"speakers": {}, "speakers_v4": {}}), monkeypatch)
-    monkeypatch.setattr(ose, "_opensearch_client", lambda: None)
-
-    ose._erase_profile_docs(["p1"], _fail(residual))
-
-    assert residual == [
-        ("profiles", f"could not verify {index}: OpenSearch client unavailable")
-        for index in SPEAKER_INDICES
-    ]
-
-
-# ---------------------------------------------------------------------------
-# cluster centroids
-# ---------------------------------------------------------------------------
-
-
-def test_centroids_are_swept_from_every_speaker_index_by_their_doc_id(cluster, residual) -> None:
-    fake = cluster(
-        {
-            "speakers": {"cluster_c1": {}, "c1": {}},
-            "speakers_v4": {"cluster_c1": {}, "cluster_other": {}},
+            "speakers": {f"{prefix}a": {}, "a-unprefixed": {}},
+            "speakers_v4": {f"{prefix}a": {}, f"{prefix}b": {}, f"{prefix}other": {}},
+            "speakers_v3_backup": {f"{prefix}b": {}},
         }
     )
 
-    ose._erase_cluster_docs(["c1"], _fail(residual))
+    eraser(["a", "b"], _fail(residual))
 
     assert residual == []
-    assert fake.docs == {"speakers": {"c1": {}}, "speakers_v4": {"cluster_other": {}}}
+    assert fake.docs == {
+        "speakers": {"a-unprefixed": {}},
+        "speakers_v4": {f"{prefix}other": {}},
+        "speakers_v3_backup": {},
+    }
 
 
-def test_a_surviving_centroid_is_reported(cluster, residual, monkeypatch) -> None:
-    fake = cluster({"speakers": {"cluster_c1": {}}, "speakers_v4": {}})
-    monkeypatch.setattr(fake, "delete_by_query", lambda index, body, **kwargs: {"deleted": 0})
+@pytest.mark.parametrize(("eraser", "stage", "label", "prefix"), FAMILY)
+def test_the_erase_costs_three_requests_whatever_the_documents_and_indices(
+    cluster, residual, eraser, stage, label, prefix
+) -> None:
+    """One bulk delete, one refresh, one survivor read. Not a request per id or per index."""
+    fake = cluster({index: {f"{prefix}{n}": {} for n in range(5)} for index in SPEAKER_INDICES})
 
-    ose._erase_cluster_docs(["c1"], _fail(residual))
+    eraser([str(n) for n in range(5)], _fail(residual))
 
-    assert residual == [("clusters", "1 centroid doc(s) survive in speakers")]
+    assert residual == []
+    assert [call[0] for call in fake.calls] == ["bulk", "refresh", "search"], fake.calls
+    assert fake.calls[0] == ("bulk", 5 * len(SPEAKER_INDICES))
+    assert all(not docs for docs in fake.docs.values())
 
 
-def test_an_unreachable_centroid_index_is_reported(cluster, residual, monkeypatch) -> None:
-    cluster({"speakers": {}, "speakers_v4": {}})
+@pytest.mark.parametrize(("eraser", "stage", "label", "prefix"), FAMILY)
+def test_a_document_still_inside_the_refresh_window_is_erased(
+    cluster, residual, eraser, stage, label, prefix
+) -> None:
+    """Written but not yet searchable: a by-id delete removes it; a query sweep would not."""
+    fake = cluster({"speakers_v4": {}})
+    fake.docs["speakers_v4"][f"{prefix}a"] = {}  # live, but the searcher has not seen it
+
+    eraser(["a"], _fail(residual))
+
+    assert residual == []
+    assert fake.docs["speakers_v4"] == {}
+
+
+@pytest.mark.parametrize(("eraser", "stage", "label", "prefix"), FAMILY)
+def test_a_refused_delete_is_reported_by_the_survivor_count(
+    cluster, residual, eraser, stage, label, prefix
+) -> None:
+    """The bulk answer is per item and is not proof; the count names the index that kept it."""
+    fake = cluster({"speakers_v3": {f"{prefix}a": {}}, "speakers_v4": {f"{prefix}a": {}}})
+    fake.write_blocked.add("speakers_v4")
+
+    eraser(["a"], _fail(residual))
+
+    assert residual == [(stage, f"1 {label} doc(s) survive in speakers_v4")]
+    assert fake.docs["speakers_v3"] == {}
+
+
+@pytest.mark.parametrize(("eraser", "stage", "label", "prefix"), FAMILY)
+def test_an_alias_and_its_index_count_a_survivor_once(
+    cluster, residual, eraser, stage, label, prefix
+) -> None:
+    """``speakers`` is an alias of v3 or v4 on a migrated install; the survivor is one document."""
+    fake = cluster({"speakers_v4": {f"{prefix}a": {}}}, aliases={"speakers": "speakers_v4"})
+    fake.write_blocked.add("speakers_v4")
+
+    eraser(["a"], _fail(residual))
+
+    assert residual == [(stage, f"1 {label} doc(s) survive in speakers_v4")]
+
+
+@pytest.mark.parametrize(("eraser", "stage", "label", "prefix"), FAMILY)
+def test_an_unreachable_cluster_is_reported_for_the_delete_and_the_count(
+    cluster, residual, monkeypatch, eraser, stage, label, prefix
+) -> None:
+    """ "I could not ask" is not "nothing is there", for either step."""
+    cluster({"speakers": {}})
     monkeypatch.setattr(ose, "_opensearch_client", lambda: None)
 
-    ose._erase_cluster_docs(["c1"], _fail(residual))
+    eraser(["a"], _fail(residual))
 
     assert residual == [
-        ("clusters", f"could not erase/verify {index}: OpenSearch client unavailable")
-        for index in SPEAKER_INDICES
+        (stage, "OpenSearch client unavailable"),
+        (stage, f"could not verify {', '.join(SPEAKER_INDICES)}: OpenSearch client unavailable"),
     ]
+
+
+@pytest.mark.parametrize(("eraser", "stage", "label", "prefix"), FAMILY)
+def test_nothing_to_erase_sends_nothing(cluster, residual, eraser, stage, label, prefix) -> None:
+    fake = cluster({"speakers": {"a": {}}})
+
+    eraser([], _fail(residual))
+
+    assert residual == []
+    assert fake.calls == []
 
 
 # ---------------------------------------------------------------------------

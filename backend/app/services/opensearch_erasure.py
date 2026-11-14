@@ -41,8 +41,9 @@ def _count_surviving(index: str, query: dict[str, Any]) -> int:
     because "I could not ask" is not "nothing is there"; the caller records that
     as a residual error rather than silently treating it as a clean sweep.
 
-    Its callers are the voiceprint and cluster-centroid sweeps, which address
-    documents by id across speaker indices that have no planes. **Do not route a
+    Its caller is the retired summaries index (:func:`count_legacy_summary_docs`); the
+    speaker family is verified across all its indices at once by
+    :func:`_surviving_per_index`. **Do not route a
     ``transcript_chunks`` count through it**: since index v6 that index holds two
     kinds of document, so every read of it has to say which it means, and a
     helper that takes a caller-supplied predicate can only launder that decision
@@ -96,11 +97,9 @@ def _cleanup_opensearch_for_file(target: dict[str, Any], file_uuid: str) -> list
     the caller, the API and the audit log as a completed erasure, with the row
     that would identify what to re-delete already gone.
 
-    Two of the steps go through helpers whose return value is not proof:
-    ``remove_speaker_embedding`` returns ``False`` for "absent" and "failed" alike,
-    and ``delete_transcript_chunks`` raises on failure but cannot see documents
-    inside the refresh window. For those, the surviving-document count — not the
-    helper's return value — is the evidence.
+    A delete's own answer is not proof: a bulk delete reports per item and
+    ``delete_transcript_chunks`` raises on failure but cannot see documents inside
+    the refresh window. The surviving-document count is the evidence.
 
     Args:
         target: The purge plan from :func:`_load_purge_plan` — ``file_id``,
@@ -131,112 +130,130 @@ def _cleanup_opensearch_for_file(target: dict[str, Any], file_uuid: str) -> list
 
 
 def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], None]) -> None:
-    """Delete the file's speaker embeddings (biometric data) and verify.
+    """Delete speaker voiceprints (biometric data) from every speaker index and verify.
 
-    ``remove_speaker_embedding`` already sweeps every index in
-    ``speaker_embedding_indices()`` (v3, v4, the alias, the legacy v3 backup), so there is
-    exactly one deletion path — but it swallows its own errors and returns
-    ``False`` for "absent" and "failed" alike, so the surviving-document count is
-    what actually proves the embeddings are gone.
+    Documents are keyed by the speaker's UUID. See :func:`_erase_speaker_family_docs` for
+    the three requests this costs, whatever the number of speakers or indices.
     """
-    if not speaker_uuids:
-        return
-
-    for speaker_uuid in speaker_uuids:
-        try:
-            from app.services.opensearch_service import remove_speaker_embedding
-
-            remove_speaker_embedding(speaker_uuid)
-        except Exception as e:  # any failure is a residual; the count still runs
-            logger.exception("Erasure: voiceprint removal failed for speaker %s", speaker_uuid)
-            fail("speakers", e)
-
-    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
-
-    for idx in speaker_embedding_indices():
-        try:
-            left = _count_surviving(idx, {"ids": {"values": speaker_uuids}})
-            if left:
-                fail("speakers", f"{left} voiceprint doc(s) survive in {idx}")
-        except Exception as e:  # unverifiable == not proven gone
-            logger.exception("Erasure: could not verify voiceprint removal in %s", idx)
-            fail("speakers", f"could not verify {idx}: {e}")
+    _erase_speaker_family_docs(list(speaker_uuids), "speakers", "voiceprint", fail)
 
 
 def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], None]) -> None:
-    """Delete the account's speaker-profile embeddings (biometric data).
+    """Delete speaker-profile embeddings (``profile_<uuid>``, biometric data) and verify.
 
-    Sibling of :func:`_erase_speaker_docs` for :class:`SpeakerProfile` rows (issue
-    #715) — used by :func:`purge_account_external_copies` after the account's rows have
-    committed, and by ``speaker_cleanup`` when a profile is deleted or its embedding can
-    no longer be rebuilt (issue #1214). ``remove_profile_embedding`` sweeps its own main +
-    v4-staging indices and swallows its own errors (returns ``False`` for both "absent"
-    and "failed"), so, as for voiceprints, a survivor count over every speaker index is
-    what proves the ``profile_<uuid>`` documents are gone.
+    Used by :func:`purge_account_external_copies` after the account's rows have committed
+    (issue #715), and by ``speaker_cleanup`` when a profile is deleted or its embedding can
+    no longer be rebuilt (issue #1214). A mid-migration profile can sit in an index the
+    main-index helpers do not address (the legacy v3 or its backup), which is why every
+    speaker index is targeted.
     """
-    if not profile_uuids:
-        return
-
-    for profile_uuid in profile_uuids:
-        try:
-            from app.services.opensearch_service import remove_profile_embedding
-
-            remove_profile_embedding(profile_uuid)
-        except Exception as e:  # any failure is a residual; the count still runs
-            logger.exception("Erasure: profile embedding removal failed for %s", profile_uuid)
-            fail("profiles", e)
-
-    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
-
-    # A mid-migration profile can sit in an index ``remove_profile_embedding`` does not
-    # address (the legacy v3 or its backup), so every speaker index is swept by id.
-    # ``conflicts="proceed"``: the by-id delete above is realtime but the sweep's scroll
-    # reads a searcher, which can still list the document it just deleted; the 409 that
-    # produces means "already gone", the end state. The survivor count is the proof.
-    query = {"ids": {"values": [f"profile_{u}" for u in profile_uuids]}}
-    for idx in speaker_embedding_indices():
-        try:
-            client = _opensearch_client()
-            if client is None:
-                raise RuntimeError("OpenSearch client unavailable")
-            if client.indices.exists(index=idx):
-                client.delete_by_query(
-                    index=idx, body={"query": query}, refresh=True, conflicts="proceed"
-                )
-            left = _count_surviving(idx, query)
-            if left:
-                fail("profiles", f"{left} profile embedding doc(s) survive in {idx}")
-        except Exception as e:  # unverifiable == not proven gone
-            logger.exception("Erasure: could not verify profile embedding removal in %s", idx)
-            fail("profiles", f"could not verify {idx}: {e}")
+    doc_ids = [f"profile_{u}" for u in profile_uuids]
+    _erase_speaker_family_docs(doc_ids, "profiles", "profile embedding", fail)
 
 
 def _erase_cluster_docs(cluster_uuids: list[str], fail: Callable[[str, object], None]) -> None:
     """Delete speaker-cluster centroid documents (``cluster_<uuid>``) and verify.
 
     A centroid is the mean of the cluster's member voiceprints — biometric data in its
-    own right. Swept across every speaker index (a mid-migration cluster can sit in v3
-    or v4), and, like the voiceprints, proven gone by a survivor count rather than by
-    the delete's own return value.
+    own right — and a mid-migration cluster can sit in v3 or v4.
     """
-    if not cluster_uuids:
+    doc_ids = [f"cluster_{u}" for u in cluster_uuids]
+    _erase_speaker_family_docs(doc_ids, "clusters", "centroid", fail)
+
+
+def _erase_speaker_family_docs(
+    doc_ids: list[str], stage: str, label: str, fail: Callable[[str, object], None]
+) -> None:
+    """Delete ``doc_ids`` from every speaker index, then prove none survive. Three requests.
+
+    1. One ``_bulk`` request holding a ``delete`` action per (index, id). A by-id delete is
+       realtime, so it also removes a document written inside the refresh window, which a
+       ``delete_by_query`` (it reads a searcher) would not see. A delete never auto-creates
+       its index; an absent index or document answers that item 404, the desired end
+       state. Other item errors are logged; the survivor count below decides.
+    2. One ``_refresh`` over every speaker index, so the count reads a current searcher.
+    3. One search over every speaker index with a ``terms`` aggregation on ``_index``: the
+       survivor count, per concrete index, for the residual.
+
+    This replaced a per-id helper call plus, per index, an existence check, a
+    ``delete_by_query?refresh=true``, a second existence check, a refresh and a count —
+    about 20 sequential requests on the speaker-merge request path under load.
+
+    Docs: OpenSearch Bulk API (delete action, per-item ``status`` / ``error``), Refresh
+    index API and Count/Search multi-target ``<index>,<index>`` with
+    ``ignore_unavailable``, and the ``_index`` metadata field ("count results per index"
+    with a terms aggregation).
+    """
+    if not doc_ids:
         return
     from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
 
-    query = {"ids": {"values": [f"cluster_{u}" for u in cluster_uuids]}}
-    for idx in speaker_embedding_indices():
-        try:
-            client = _opensearch_client()
-            if client is None:
-                raise RuntimeError("OpenSearch client unavailable")
-            if client.indices.exists(index=idx):
-                client.delete_by_query(index=idx, body={"query": query}, refresh=True)
-            left = _count_surviving(idx, query)
-            if left:
-                fail("clusters", f"{left} centroid doc(s) survive in {idx}")
-        except Exception as e:  # unverifiable == not proven gone
-            logger.exception("Erasure: could not erase/verify cluster centroids in %s", idx)
-            fail("clusters", f"could not erase/verify {idx}: {e}")
+    indices = speaker_embedding_indices()
+    try:
+        client = _require_client()
+        actions = [
+            {"delete": {"_index": idx, "_id": doc_id}} for idx in indices for doc_id in doc_ids
+        ]
+        _log_refused_deletes(client.bulk(body=actions), label)
+    except Exception as e:  # any failure is a residual; the count still runs
+        logger.exception("Erasure: %s delete request failed", label)
+        fail(stage, e)
+
+    try:
+        for idx, left in _surviving_per_index(indices, {"ids": {"values": doc_ids}}).items():
+            fail(stage, f"{left} {label} doc(s) survive in {idx}")
+    except Exception as e:  # unverifiable == not proven gone
+        logger.exception("Erasure: could not verify %s removal in %s", label, indices)
+        fail(stage, f"could not verify {', '.join(indices)}: {e}")
+
+
+def _require_client() -> OpenSearch:
+    client = _opensearch_client()
+    if client is None:
+        raise RuntimeError("OpenSearch client unavailable")
+    return client
+
+
+def _log_refused_deletes(response: dict[str, Any], label: str) -> None:
+    """Log every bulk delete the cluster refused for a reason other than "not there"."""
+    if not response.get("errors"):
+        return
+    refused = [
+        item.get("delete") or {}
+        for item in response.get("items") or []
+        if int((item.get("delete") or {}).get("status", 200)) not in (200, 404)
+    ]
+    for item in refused:
+        logger.warning(
+            "Erasure: %s delete refused in %s (status %s, %s)",
+            label,
+            item.get("_index"),
+            item.get("status"),
+            (item.get("error") or {}).get("type"),
+        )
+
+
+def _surviving_per_index(indices: list[str], query: dict[str, Any]) -> dict[str, int]:
+    """Documents still matching ``query``, keyed by concrete index; absent indices are 0.
+
+    One refresh and one search across every target (an alias resolves to its concrete
+    index, counted once). Anything that prevents an answer raises: "I could not ask" is
+    not "nothing is there".
+    """
+    client = _require_client()
+    targets = ",".join(indices)
+    client.indices.refresh(index=targets, ignore_unavailable=True)
+    response = client.search(
+        index=targets,
+        ignore_unavailable=True,
+        body={
+            "size": 0,
+            "query": query,
+            "aggs": {"per_index": {"terms": {"field": "_index", "size": len(indices)}}},
+        },
+    )
+    buckets = response["aggregations"]["per_index"]["buckets"]
+    return {str(b["key"]): int(b["doc_count"]) for b in buckets if int(b["doc_count"])}
 
 
 def _erase_transcript_doc(file_uuid: str, fail: Callable[[str, object], None]) -> None:

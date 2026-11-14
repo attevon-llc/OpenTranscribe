@@ -20,6 +20,8 @@ and ``tasks/CLAUDE.md`` documents the rule.
 import logging
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
@@ -77,6 +79,22 @@ def _load_completion_notification(speaker_uuid: str) -> dict:
             "profile_uuid": str(speaker.profile.uuid) if speaker.profile else None,
             "media_file_uuid": str(speaker.media_file.uuid) if speaker.media_file else None,
         }
+
+
+def _speaker_was_removed(speaker_id: int) -> bool:
+    """Whether the speaker row is gone, read on a fresh session.
+
+    Decides how a failed labeling step is reported. The failure itself does not say: a
+    speaker deleted under the step surfaces as ``ObjectDeletedError``, ``StaleDataError`` or
+    a ``PendingRollbackError`` wrapping either, and the last can have other causes too.
+    An unreadable row answers ``False``, so the step is still reported as failed.
+    """
+    try:
+        with session_scope() as db:
+            return db.query(Speaker.id).filter(Speaker.id == speaker_id).first() is None
+    except SQLAlchemyError:
+        logger.warning(f"Could not check whether speaker {speaker_id} still exists", exc_info=True)
+        return False
 
 
 def _should_rescore_after_profile_change(
@@ -296,14 +314,23 @@ def process_speaker_update_background(
                 exc_info=True,
             )
         except Exception as exc:
-            # The label itself is saved; only profile assignment / matching failed.
-            # Zero counts would read as "nothing matched", so say it failed, and still
-            # run the cache clear and completion event below.
-            matching_failed = True
-            logger.error(
-                f"Retroactive matching failed for speaker {speaker_uuid}: {type(exc).__name__}",
-                exc_info=True,
-            )
+            if _speaker_was_removed(speaker_id):
+                # A merge or delete committed while this task ran (the speaker page queues
+                # this task, then the user merges the speaker away): there is nothing left
+                # to label or match, and the merge reconciled the speaker's profile itself.
+                logger.info(
+                    f"Speaker {speaker_uuid} was merged or deleted while its label was "
+                    f"processed ({type(exc).__name__}); nothing left to match"
+                )
+            else:
+                # The label itself is saved; only profile assignment / matching failed.
+                # Zero counts would read as "nothing matched", so say it failed, and still
+                # run the cache clear and completion event below.
+                matching_failed = True
+                logger.error(
+                    f"Retroactive matching failed for speaker {speaker_uuid}: {type(exc).__name__}",
+                    exc_info=True,
+                )
 
         # 5. Clear video cache — opens its own short session for the one SELECT it
         #    needs; the storage client is constructed before it.

@@ -39,11 +39,10 @@ def test_opensearch_transcript_delete_failure_is_recorded_and_traceback_logged(m
 
 
 def test_opensearch_speaker_delete_failure_is_recorded_and_traceback_logged(monkeypatch, caplog):
-    import app.services.opensearch_service as os_service
-
-    boom = MagicMock(side_effect=RuntimeError("cluster down"))
-    monkeypatch.setattr(os_service, "remove_speaker_embedding", boom)
-    monkeypatch.setattr(opensearch_erasure, "_count_surviving", lambda idx, q: 0)
+    client = MagicMock()
+    client.bulk.side_effect = RuntimeError("cluster down")
+    monkeypatch.setattr(opensearch_erasure, "_opensearch_client", lambda: client)
+    monkeypatch.setattr(opensearch_erasure, "_surviving_per_index", lambda indices, q: {})
     fail = MagicMock()
     with caplog.at_level(logging.ERROR, logger=opensearch_erasure.logger.name):
         opensearch_erasure._erase_speaker_docs(["s1"], fail)

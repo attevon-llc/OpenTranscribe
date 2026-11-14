@@ -15,6 +15,7 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS
 from app.core.queues import CPUPriority
+from app.core.queues import NLPPriority
 from app.core.queues import UtilityPriority
 from app.core.redis import get_redis
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
@@ -303,7 +304,11 @@ def _dispatch_facts_backfill(
     for file_id in file_ids:
         # dispatch_file_facts already contains its own try/except — a broker hiccup on
         # one file must not stop the rest of the batch from being dispatched.
-        dispatch_file_facts(file_id)
+        # BACKGROUND priority: the whole batch is queued at once, and with Redis priorities
+        # (priority_steps 0-9, queue_order_strategy=priority, prefetch 1) a file a user just
+        # transcribed (AUTO_PIPELINE) is still taken first. A Celery rate_limit would not
+        # bound the burst: it is per worker instance, not global (Celery task docs).
+        dispatch_file_facts(file_id, priority=NLPPriority.BACKGROUND)
     stats["facts_backfill_dispatched"] = len(file_ids)
     logger.info(
         "file_facts backfill: dispatched artifact generation for %d completed file(s) "

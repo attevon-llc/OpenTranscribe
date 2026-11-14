@@ -155,10 +155,15 @@ def _process_profile_with_no_speakers(
     profile_id: int,
 ) -> bool:
     """Handle case when profile has no speakers assigned."""
-    profile.embedding_count = 0
-    profile.last_embedding_update = datetime.now(UTC)
+    _mark_emptied(profile)
     _clear_profile_embedding_from_opensearch(str(profile.uuid))
     return True
+
+
+def _mark_emptied(profile: SpeakerProfile | _ProfileState) -> None:
+    """Record that the profile's embedding now averages no one."""
+    profile.embedding_count = 0
+    profile.last_embedding_update = datetime.now(UTC)
 
 
 def _process_profile_with_embeddings(
@@ -483,13 +488,17 @@ class ProfileEmbeddingService:
 
             if not speakers:
                 logger.warning(f"No speakers assigned to profile {profile_id}")
+                if strict:
+                    # The strict caller (speaker_cleanup._refresh_profiles) erases this
+                    # document from every speaker index and verifies it is gone. A
+                    # best-effort clear here first only repeated its deletes on the
+                    # request path (a 100-user load run saw them twice per merge).
+                    _mark_emptied(snapshot)
+                    _write_profile_embedding_state(db, profile_id, snapshot)
+                    raise ProfileEmbeddingRecomputeError(f"profile {profile_id} has no members")
                 _process_profile_with_no_speakers(snapshot, profile_id)
                 if not _write_profile_embedding_state(db, profile_id, snapshot):
                     _discard_orphaned_profile_document(snapshot.uuid)
-                if strict:
-                    # The best-effort clear above swallows its own failure; the strict
-                    # caller erases again and verifies the document is gone.
-                    raise ProfileEmbeddingRecomputeError(f"profile {profile_id} has no members")
                 return True
 
             assert decision is not None

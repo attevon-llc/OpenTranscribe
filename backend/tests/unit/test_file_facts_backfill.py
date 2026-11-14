@@ -125,7 +125,7 @@ def test_a_completed_file_with_no_facts_row_is_dispatched(db_session, monkeypatc
     dispatched: list[int] = []
     monkeypatch.setattr(
         "app.tasks.ingest_artifacts_task.dispatch_file_facts",
-        lambda file_id, pipeline_task_id=None: dispatched.append(file_id),
+        lambda file_id, pipeline_task_id=None, priority=None: dispatched.append(file_id),
     )
 
     stats: dict = {}
@@ -148,7 +148,7 @@ def test_a_file_that_already_has_facts_is_not_dispatched(db_session, monkeypatch
     dispatched: list[int] = []
     monkeypatch.setattr(
         "app.tasks.ingest_artifacts_task.dispatch_file_facts",
-        lambda file_id, pipeline_task_id=None: dispatched.append(file_id),
+        lambda file_id, pipeline_task_id=None, priority=None: dispatched.append(file_id),
     )
 
     stats: dict = {}
@@ -170,7 +170,7 @@ def test_a_completed_file_with_no_segments_is_not_dispatched(db_session, monkeyp
     dispatched: list[int] = []
     monkeypatch.setattr(
         "app.tasks.ingest_artifacts_task.dispatch_file_facts",
-        lambda file_id, pipeline_task_id=None: dispatched.append(file_id),
+        lambda file_id, pipeline_task_id=None, priority=None: dispatched.append(file_id),
     )
 
     stats: dict = {}
@@ -190,7 +190,7 @@ def test_the_batch_size_bounds_dispatch_to_the_most_recently_completed_files(
     dispatched: list[int] = []
     monkeypatch.setattr(
         "app.tasks.ingest_artifacts_task.dispatch_file_facts",
-        lambda file_id, pipeline_task_id=None: dispatched.append(file_id),
+        lambda file_id, pipeline_task_id=None, priority=None: dispatched.append(file_id),
     )
 
     stats: dict = {}
@@ -211,7 +211,7 @@ def test_a_zero_batch_size_dispatches_nothing_even_with_a_real_backlog(db_sessio
     dispatched: list[int] = []
     monkeypatch.setattr(
         "app.tasks.ingest_artifacts_task.dispatch_file_facts",
-        lambda file_id, pipeline_task_id=None: dispatched.append(file_id),
+        lambda file_id, pipeline_task_id=None, priority=None: dispatched.append(file_id),
     )
     user = _make_user(db_session)
     _make_completed_file(db_session, user.id)  # a real backlog entry, deliberately unfetched

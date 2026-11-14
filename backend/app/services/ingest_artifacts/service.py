@@ -230,9 +230,15 @@ def generate_file_artifacts(
 ) -> FileFacts | None:
     """Generate and upsert ``file_facts`` for *file_id*.
 
+    Three phases, so no Postgres transaction is open while the artifacts are built: read the
+    inputs into plain values, **commit** (which ends the read transaction, and with it any
+    write the caller made before calling), build, then re-read the row and write it. Building
+    is CPU work (TextRank, keyphrases) that ran with the read transaction still open, so a
+    burst of these tasks on a loaded host showed up as connections idle in transaction for
+    1-2 s. Same pattern as ``profile_embedding_service.update_profile_embedding``.
+
     Args:
-        db: Active session. The caller owns the transaction — this function flushes but
-            does not commit, so a reindex batch can do many files in one transaction.
+        db: Active session. The write is flushed, not committed: the caller ends it.
         file_id: ``MediaFile.id``.
         force: Regenerate even when the fingerprint and generator version both match.
 
@@ -261,17 +267,26 @@ def generate_file_artifacts(
         logger.debug("file_facts: file %s already current (fingerprint match)", file_id)
         return existing
 
+    # Copied before the commit expires the row.
+    duration, language, recorded_at = (
+        media_file.duration,
+        media_file.language,
+        media_file.upload_time,
+    )
+    db.commit()
+
     started = time.perf_counter()
     artifacts = build_artifacts(
-        segments,
-        duration=media_file.duration,
-        language=media_file.language,
-        recorded_at=media_file.upload_time,
+        segments, duration=duration, language=language, recorded_at=recorded_at
     )
     elapsed_ms = int((time.perf_counter() - started) * 1000)
 
     digest = artifacts["digest"]
-    row = existing or FileFacts(media_file_id=file_id)
+    # Re-read: the row may have been written by another task while this one built.
+    row = db.query(FileFacts).filter(FileFacts.media_file_id == file_id).first()
+    if row is None:
+        row = FileFacts(media_file_id=file_id)
+        db.add(row)
     row.generator_version = GENERATOR_VERSION
     row.source_fingerprint = fingerprint
     row.language = digest["language"]
@@ -281,8 +296,6 @@ def generate_file_artifacts(
     row.digest_word_count = int(digest["word_count"])
     row.section_count = len(digest["sections"])
     row.generation_ms = elapsed_ms
-    if existing is None:
-        db.add(row)
     db.flush()
 
     logger.info(

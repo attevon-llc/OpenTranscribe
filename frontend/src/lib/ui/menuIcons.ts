@@ -207,6 +207,8 @@ export const MENU_ICONS = {
   'chevron-right': [poly('9 18 15 12 9 6')],
   'chevron-left': [poly('15 18 9 12 15 6')],
   'arrow-right': [line(5, 12, 19, 12), poly('12 5 19 12 12 19')],
+  'arrow-left': [line(19, 12, 5, 12), poly('12 19 5 12 12 5')],
+  'chevrons-right': [poly('13 17 18 12 13 7'), poly('6 17 11 12 6 7')],
   // View controls (the legal reader's full-screen toggle).
   maximize: [
     poly('15 3 21 3 21 9'),
@@ -232,6 +234,8 @@ export const RTL_MIRRORED: ReadonlySet<MenuIconName> = new Set<MenuIconName>([
   'chevron-right',
   'chevron-left',
   'arrow-right',
+  'arrow-left',
+  'chevrons-right',
 ]);
 
 /** The `size` tokens (`--icon-size-*` in `styles/theme.css`) and their pixel fallbacks. */

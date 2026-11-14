@@ -644,7 +644,8 @@
   }
 
   .opensearch-status {
-    margin: var(--space-1) 0 var(--space-1) var(--space-12);
+    margin: var(--space-1) 0;
+    margin-inline-start: var(--space-12);
   }
 
   .fields-grid {

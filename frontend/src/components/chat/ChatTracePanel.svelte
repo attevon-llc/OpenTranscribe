@@ -14,10 +14,11 @@
   ⚠️ Escape must stopPropagation. The page-level Escape handler CANCELS an
   in-flight generation, so without this, closing the panel would abort the answer.
 
-  ⚠️ RTL: pinned to `right: 0` unconditionally rather than `inset-inline-end`. A
-  right-hand inspector anchors to the physical screen edge in both directions —
-  a deliberate deviation from the app's general RTL rule, recorded here so a
-  future audit does not "fix" it into a regression. Text inside still follows dir.
+  ⚠️ RTL: pinned to `inset-inline-end`. It used to be a physical `right: 0` in both
+  directions, but the conversation sidebar sits at inline-start (the right edge in
+  RTL), so the panel covered the sidebar and "New chat" (UI-pass finding R1). The
+  panel and the page's reserved padding both use the inline-end side so they mirror
+  together.
 -->
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
@@ -188,13 +189,13 @@
   .trace-panel {
     position: fixed;
     top: var(--navbar-height);
-    right: 0;
+    inset-inline-end: 0;
     bottom: 0;
     z-index: calc(var(--z-sticky) + 15);
     display: flex;
     flex-direction: column;
     width: min(24rem, 92vw);
-    border-left: 1px solid var(--border-color);
+    border-inline-start: 1px solid var(--border-color);
     background-color: var(--surface-color);
     box-shadow: var(--shadow-lg);
   }

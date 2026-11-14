@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import axiosInstance from '$lib/axios';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import BulkAudioExtractionModal from './BulkAudioExtractionModal.svelte';
 
   import { recordingStore, recordingManager, hasActiveRecording } from '$stores/recording';
@@ -795,10 +796,7 @@
     <div class="nav-left">
       {#if !isFirstStep}
         <button type="button" class="nav-btn nav-back" on:click={goBack}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
+          <MenuIcon name="arrow-left" size={14} />
           {$t('uploader.back')}
         </button>
       {/if}
@@ -817,10 +815,7 @@
           title={$t('uploader.reviewWithDefaultsTooltip')}
         >
           {$t('uploader.reviewWithDefaults')}
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="13 17 18 12 13 7"></polyline>
-            <polyline points="6 17 11 12 6 7"></polyline>
-          </svg>
+          <MenuIcon name="chevrons-right" size={14} />
         </button>
       {/if}
 
@@ -842,10 +837,7 @@
           title={hasValidationError ? $t('uploader.minMaxValidationError') : ''}
         >
           {nextIsReview ? $t('uploader.stepReview') : $t('uploader.next')}
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-            <polyline points="12 5 19 12 12 19"></polyline>
-          </svg>
+          <MenuIcon name="arrow-right" size={14} />
         </button>
       {/if}
     </div>

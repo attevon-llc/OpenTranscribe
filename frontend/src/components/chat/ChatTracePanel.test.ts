@@ -167,3 +167,13 @@ describe('ChatTracePanel', () => {
     expect(container.querySelector('[aria-live]')).toBeNull();
   });
 });
+
+describe('ChatTracePanel RTL placement (UI-pass R1)', () => {
+  it('pins to the inline-end edge, never a physical right', async () => {
+    const src = (await import('./ChatTracePanel.svelte?raw')).default as string;
+    const css = src.slice(src.indexOf('<style>'));
+    expect(css).toContain('inset-inline-end: 0');
+    expect(css).not.toMatch(/\n\s*right:/);
+    expect(css).not.toMatch(/border-left:/);
+  });
+});

@@ -144,7 +144,8 @@
       </svg>
       {$t('uploader.mediaUrl')}
     </label>
-    <div class="url-input-wrapper">
+    <!-- dir=ltr on the wrapper too: the input is ltr (URLs), so its end padding and the absolutely placed paste button must resolve to the same side (R2). -->
+    <div class="url-input-wrapper" dir="ltr">
       <input dir="ltr"
         id="media-url"
         type="url"
@@ -305,7 +306,8 @@
 
   .url-input {
     width: 100%;
-    padding: var(--space-2-5) var(--space-10) var(--space-2-5) var(--space-3);
+    padding-block: var(--space-2-5);
+    padding-inline: var(--space-3) var(--space-10);
     font-size: var(--font-size-body);
   }
   .url-input:disabled { opacity: 0.6; cursor: not-allowed; }

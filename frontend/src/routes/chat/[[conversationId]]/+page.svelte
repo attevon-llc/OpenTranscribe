@@ -655,12 +655,12 @@
     min-height: 0;
     --chat-gutter: 1.25rem;
     padding: 0 var(--chat-gutter);
-    transition: padding-right var(--duration-base) cubic-bezier(0.16, 1, 0.3, 1);
+    transition: padding-inline-end var(--duration-base) cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   /* ⚠️ The open trace panel MUST reserve its own width, and the earlier
      "it never reflows the answer" rule was wrong about the cost of not doing
-     so. The panel is `position: fixed; right: 0; width: min(24rem, 92vw)`, and
+     so. The panel is `position: fixed; inset-inline-end: 0; width: min(24rem, 92vw)`, and
      the message column is centred at 52rem inside `1fr` — so measured at a
      1280px viewport the panel's left edge lands at x=896 while the send button
      ends at x=1183. The panel covered the composer by 287px (207px at 1440px),
@@ -675,7 +675,7 @@
      reservation applies — there is nothing behind it to click. */
   @media (min-width: 900px) {
     .chat-page.trace-open .chat-main {
-      padding-right: calc(min(24rem, 92vw) + var(--chat-gutter));
+      padding-inline-end: calc(min(24rem, 92vw) + var(--chat-gutter));
     }
   }
 

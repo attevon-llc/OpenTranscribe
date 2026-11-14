@@ -80,6 +80,7 @@ def run_fn(
         REPO_ROOT={REPO_ROOT!s}
         source "$REPO_ROOT/scripts/lib/compose-project.sh"
         source "$REPO_ROOT/{SCRIPT_REL}"
+        source "$REPO_ROOT/scripts/lib/visual-baseline-provenance.sh"
         set +e
         if [[ "$(type -t destroy_capture_project)" != "function" ]]; then
             echo "SCRIPT_NOT_SOURCED"; exit 97

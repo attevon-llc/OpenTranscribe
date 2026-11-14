@@ -259,7 +259,21 @@ else
 fi
 
 cd "$PROJECT_ROOT"
-ARGS=("$@")
+
+# The usage header documents `tests/e2e/test_x.py` (relative to backend/), but pytest runs from
+# the repo root, where that path is outside the backend rootdir/conftest: the run then dies on
+# "unrecognized arguments: --backend-url". Map such an argument onto backend/, keeping any
+# `::node` suffix. Flags and already-correct paths pass through untouched.
+normalize_e2e_paths() {
+    local a
+    for a in "$@"; do
+        case "$a" in
+            tests/e2e*) printf '%s\n' "backend/$a" ;;
+            *) printf '%s\n' "$a" ;;
+        esac
+    done
+}
+mapfile -t ARGS < <(normalize_e2e_paths "$@")
 # Default to the whole e2e directory when no path argument was given.
 # NOTE: never use "${ARGS[@]:-}" — on an empty array it expands to ONE EMPTY
 # STRING argument, which pytest treats as "collect the repo root".

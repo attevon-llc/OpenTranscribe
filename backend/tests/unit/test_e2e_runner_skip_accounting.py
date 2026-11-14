@@ -427,3 +427,27 @@ def test_the_not_measured_message_tells_the_truth_about_rs():
         "the NOT MEASURED message promises -rs on every phase that can report it, but these "
         f"would print no skip reasons: {offenders}"
     )
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        (
+            ["tests/e2e/test_search.py", "-v"],
+            ["backend/tests/e2e/test_search.py", "-v"],
+        ),
+        (
+            ["tests/e2e/test_search.py::TestA::test_b", "-k", "x y"],
+            ["backend/tests/e2e/test_search.py::TestA::test_b", "-k", "x y"],
+        ),
+        (["backend/tests/e2e/test_a.py"], ["backend/tests/e2e/test_a.py"]),
+        (["-m", "upload", "--headed"], ["-m", "upload", "--headed"]),
+    ],
+)
+def test_relative_e2e_paths_are_mapped_under_backend(given: list[str], expected: list[str]) -> None:
+    """The documented `tests/e2e/...` form must reach pytest as `backend/tests/e2e/...`."""
+    harness = _extract(E2E_RUNNER, "normalize_e2e_paths") + ('\nnormalize_e2e_paths "$@"\n')
+    out = subprocess.run(
+        ["bash", "-c", harness, "bash", *given], capture_output=True, text=True, check=True
+    ).stdout
+    assert out.splitlines() == expected

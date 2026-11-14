@@ -692,6 +692,25 @@ def _unpin_opensearch_client_reexport():
 
 
 @pytest.fixture(autouse=True)
+def _join_inflight_pii_warmup():
+    """Never let a request-thread refusal's background warm-up outlive its test.
+
+    Any no-model-load refusal asks for a daemon warm-up that builds a real analyzer. A test
+    that did not stub the request leaves it running, and its late write into
+    ``pii_presidio._analyzer`` lands inside a later test that had just cleared the cache
+    (``test_outside_the_guard_loading_still_happens`` saw a real analyzer and did not raise).
+    """
+    yield
+    import sys
+
+    warmup = sys.modules.get("app.services.redaction.warmup")
+    thread = getattr(warmup, "_warmup_thread", None)
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=120)
+        assert not thread.is_alive(), "a PII warm-up started by this test is still building"
+
+
+@pytest.fixture(autouse=True)
 def _clear_sidecar_readiness_cache():
     """Isolate the diar-native readiness/liveness TTL caches between tests.
 

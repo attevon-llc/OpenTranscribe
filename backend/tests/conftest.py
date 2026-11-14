@@ -701,13 +701,9 @@ def _join_inflight_pii_warmup():
     (``test_outside_the_guard_loading_still_happens`` saw a real analyzer and did not raise).
     """
     yield
-    import sys
+    from tests.warmup_join import join_inflight_pii_warmup
 
-    warmup = sys.modules.get("app.services.redaction.warmup")
-    thread = getattr(warmup, "_warmup_thread", None)
-    if thread is not None and thread.is_alive():
-        thread.join(timeout=120)
-        assert not thread.is_alive(), "a PII warm-up started by this test is still building"
+    join_inflight_pii_warmup()
 
 
 @pytest.fixture(autouse=True)

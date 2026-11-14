@@ -291,24 +291,24 @@ class TestFIPS140_3Encryption:
         assert decrypted == test_data
 
     def test_encryption_version_prefix(self):
-        """Verify FIPS 140-3 encrypted data has v3: prefix."""
-        from app.utils.encryption import ENCRYPTION_V3_PREFIX
+        """Verify new ciphertext is written in the current (v4, HKDF) envelope."""
+        from app.utils.encryption import ENCRYPTION_V4_PREFIX
         from app.utils.encryption import encrypt_api_key
 
         encrypted = encrypt_api_key("test-data")
         assert encrypted is not None
-        assert encrypted.startswith(ENCRYPTION_V3_PREFIX)
+        assert encrypted.startswith(ENCRYPTION_V4_PREFIX)
 
     def test_encryption_format(self):
-        """Verify v3 encryption format: v3:salt:nonce:ciphertext."""
-        from app.utils.encryption import ENCRYPTION_V3_PREFIX
+        """Verify the encryption format: v4:salt:nonce:ciphertext."""
+        from app.utils.encryption import ENCRYPTION_V4_PREFIX
         from app.utils.encryption import encrypt_api_key
 
         encrypted = encrypt_api_key("test-data")
         assert encrypted is not None
 
         # Remove prefix and check format
-        data = encrypted[len(ENCRYPTION_V3_PREFIX) :]
+        data = encrypted[len(ENCRYPTION_V4_PREFIX) :]
         parts = data.split(":")
         assert len(parts) == 3  # salt:nonce:ciphertext
 
@@ -380,7 +380,7 @@ class TestFIPS140_3Encryption:
         # With auto_upgrade=True, should return tuple
         decrypted, upgraded = decrypt_api_key(encrypted, auto_upgrade=True)
         assert decrypted == test_data
-        # Already v3, no upgrade needed
+        # Already the current version, no upgrade needed
         assert upgraded is None
 
 
@@ -632,7 +632,7 @@ class TestFIPS140_3MFA:
 
         encrypted = MFAService.encrypt_totp_secret(secret)
         assert encrypted != secret
-        assert encrypted.startswith("v3:")
+        assert encrypted.startswith("v4:")
 
         decrypted = MFAService.decrypt_totp_secret(encrypted)
         assert decrypted == secret
@@ -1009,7 +1009,7 @@ class TestEncryptionAlgorithmEnforcedAtBoot:
         """The allowlist is keyed on the implementation, not on the FIPS-approved list.
 
         AES-256-CCM is equally FIPS-approved; adding it here without writing the code would
-        be a data-loss bug. This pins the set to the one algorithm ``_encrypt_v3`` builds.
+        be a data-loss bug. This pins the set to the one algorithm ``_encrypt_aead`` builds.
         """
         from app.core.config import IMPLEMENTED_ENCRYPTION_ALGORITHMS
 

@@ -116,8 +116,8 @@ way as soon as its catalog entry says `supports_diarization` and its parser fill
 
 ## API keys
 
-AES-256-GCM via `utils/encryption.encrypt_api_key` (PBKDF2-SHA256, 600k iters, `v3:` prefix; legacy
-Fernet auto-detected on read). Responses expose only `has_api_key` / `has_access_key_id`, never a value
+AES-256-GCM via `utils/encryption.encrypt_api_key` (HKDF-SHA256 key, `v4:` prefix; `v3:` PBKDF2 rows
+and legacy Fernet auto-detected on read). Responses expose only `has_api_key` / `has_access_key_id`, never a value
 or mask, on any route (the owner-only `GET /config/{uuid}/api-key` was removed in #1246).
 Which cloud providers a plain user may pick, and whether they may save a key of their own, is
 `services/asr_provider_policy.py` (`SystemSettings` `asr.cloud_providers_for_users`,

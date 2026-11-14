@@ -159,7 +159,7 @@ class TestStorage:
         assert row.is_active is True
         stored = str(row.api_key)
         assert _KEY not in stored
-        assert stored.startswith("v3:")
+        assert stored.startswith("v4:")
         assert decrypt_api_key(stored) == _KEY
 
     def test_put_twice_replaces_rather_than_duplicates(

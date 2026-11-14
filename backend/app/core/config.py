@@ -60,7 +60,7 @@ def is_relaxed_environment(environment: str) -> bool:
 #
 # ⚠️ This is keyed on the code, NOT on what FIPS approves. AES-256-CCM is equally
 # FIPS-approved and adding its name here without writing the code would be a data-loss
-# bug, not a compliance win: the v3 envelope is ``v3:salt:nonce:ciphertext`` and records
+# bug, not a compliance win: the envelopes (``v3:``/``v4:salt:nonce:ciphertext``) record
 # no algorithm field, so decrypt has to use exactly the algorithm encrypt used. Every
 # ciphertext already in the database — LLM/ASR provider keys, MFA TOTP secrets, SMB/SMTP
 # credentials, backup secrets — would become undecryptable.

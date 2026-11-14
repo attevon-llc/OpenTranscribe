@@ -244,11 +244,19 @@ MINIO_KMS_AUTO_ENCRYPTION=on
 
 **Database fields**: Sensitive fields (API keys, TOTP secrets, LLM provider credentials,
 watch-source passwords) are encrypted at the application layer using AES-256-GCM with:
-- 256-bit key derived via PBKDF2-SHA256 (600k iterations)
+- a 256-bit key per secret, derived from `ENCRYPTION_KEY` and a random 128-bit salt with
+  HKDF-SHA256 (RFC 5869; the two-step KDF of NIST SP 800-56C Rev. 2)
 - 96-bit random nonce per encryption
 - 128-bit authentication tag
 
-Data format: `v3:base64(salt):base64(nonce):base64(ciphertext+tag)`
+Data format: `v4:base64(salt):base64(nonce):base64(ciphertext+tag)`
+
+Secrets saved by 0.6.x and earlier are `v3:` (the same layout, key derived with PBKDF2-SHA256 at
+600,000 iterations). They still decrypt, and each process derives a `v3:` key once and keeps it
+in memory, so a stored key no longer costs a PBKDF2 run on every use. A `v3:` secret becomes
+`v4:` the next time it is saved. `ENCRYPTION_KEY` is key material, not a password: HKDF does not
+slow down guessing, so generate it (`openssl rand -hex 32`, as the installer does) and never
+type one by hand.
 
 **PostgreSQL and OpenSearch data directories**: Vanilla PostgreSQL and OpenSearch have **no
 built-in at-rest encryption**. The standard approach is encrypting the storage layer beneath
@@ -416,7 +424,7 @@ OpenTranscribe includes features that map to NIST 800-53 controls:
 | **AU-2/AU-3** (Audit Events) | Comprehensive audit logging with timestamps and source IPs |
 | **IA-2** (Identification and Authentication) | Multi-factor authentication, PKI/CAC support |
 | **IA-5** (Authenticator Management) | Configurable password policy (complexity, history, expiration) — see [Password Policy and Current NIST Guidance](#password-policy-and-current-nist-guidance) below for how the shipped defaults relate to current guidance |
-| **SC-12** (Cryptographic Key Establishment) | PBKDF2 key derivation |
+| **SC-12** (Cryptographic Key Establishment) | HKDF-SHA256 key derivation (SP 800-56C Rev. 2) |
 | **SC-13** (Cryptographic Protection) | AES-256-GCM at rest, HMAC-SHA-256 (HS256) JWT signing -- both FIPS-approved; see [Algorithm Requirements](#algorithm-requirements) |
 | **SC-28** (Protection of Information at Rest) | Encrypted sensitive data fields |
 
@@ -545,8 +553,8 @@ alone can never be false. Every gate in the codebase therefore goes through one 
 :::
 
 :::caution[`ENCRYPTION_ALGORITHM_V3` is validated, not dispatched on]
-`AES-256-GCM` is the only value this build implements, and it is not selectable. The v3
-ciphertext envelope (`v3:salt:nonce:ciphertext`) records **no algorithm field**, so decrypt
+`AES-256-GCM` is the only value this build implements, and it is not selectable. The
+ciphertext envelopes (`v3:` and `v4:salt:nonce:ciphertext`) record **no algorithm field**, so decrypt
 has to use exactly the algorithm encrypt used — switching would make every stored provider
 key, TOTP secret and credential undecryptable. Naming any other algorithm therefore makes a
 FIPS deployment **refuse to start**, rather than silently encrypt with something other than

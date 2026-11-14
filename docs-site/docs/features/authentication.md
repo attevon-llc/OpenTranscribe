@@ -200,8 +200,9 @@ on the authentication routes resolved through the trusted-proxy chain.
 
 **Where**: the `auth_config` table. **Precedence**: database → environment variable → coded
 default. **Encryption**: sensitive values with AES-256-GCM (96-bit nonce, 128-bit tag), keys
-derived from the application master secret with PBKDF2-SHA256 at 600,000 iterations, versioned
-prefix for transparent algorithm upgrades. Satisfies NIST SP 800-132 and FedRAMP SC-28.
+derived from the application master secret with HKDF-SHA256 (values saved before 0.7.0 used
+PBKDF2-SHA256 at 600,000 iterations and still decrypt), versioned prefix for transparent
+algorithm upgrades. Satisfies NIST SP 800-56C Rev. 2 and FedRAMP SC-28.
 
 Two properties worth knowing:
 
@@ -236,7 +237,7 @@ resets.
 | FedRAMP | AC-10 | Concurrent-session limit, audited |
 | FedRAMP | AC-12 | Rotation, revocation, idle + absolute timeouts |
 | FedRAMP | AU-2 / AU-3 | Audit logging |
-| FedRAMP | SC-12 / SC-13 / SC-28 | PBKDF2 derivation, AES-256-GCM, HS512 JWTs, encrypted at rest |
+| FedRAMP | SC-12 / SC-13 / SC-28 | HKDF derivation, AES-256-GCM, HS512 JWTs, encrypted at rest |
 | NIST 800-53 | AC-7 | Progressive account lockout |
 
 ### FIPS 140-3

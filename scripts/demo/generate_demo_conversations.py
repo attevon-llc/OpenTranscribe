@@ -21,6 +21,7 @@ the conversation and regenerating, never by hand-editing model text.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import sys
@@ -47,6 +48,15 @@ RETRY = Retry(
     respect_retry_after_header=True,
     raise_on_status=False,
 )
+
+
+def _load_relabel():
+    """The seeder's relabel module (stdlib only), loaded by path: this script runs on the host."""
+    path = Path(__file__).resolve().parents[2] / 'backend/app/scripts/demo_seed/relabel.py'
+    spec = importlib.util.spec_from_file_location('demo_seed_relabel', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _session(base: str, email: str, password: str) -> requests.Session:
@@ -166,6 +176,8 @@ def main() -> int:
     if missing:
         sys.exit(f'seeded files not found for items: {missing}')
     item_by_uuid = {v: k for k, v in uuids.items()}
+    relabel = _load_relabel()
+    names = relabel.load_names(args.bundle)
     out_dir = args.bundle / 'conversations'
     out_dir.mkdir(exist_ok=True)
     entries = []
@@ -218,7 +230,9 @@ def main() -> int:
         rel = f'conversations/{conv["id"]}.json'
         (args.bundle / rel).write_text(
             json.dumps(
-                {'title': conv['title'], 'items': conv['items'], 'messages': messages},
+                relabel.relabel_conversation(
+                    {'title': conv['title'], 'items': conv['items'], 'messages': messages}, names
+                ),
                 indent=2,
                 ensure_ascii=False,
             )

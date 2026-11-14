@@ -41,6 +41,25 @@ describe('TakedownNoticesApi', () => {
     });
   });
 
+  it('hasAnyMine asks once for repeated and concurrent calls, and retries after a failure', async () => {
+    TakedownNoticesApi.resetMineCache();
+    get.mockResolvedValue({ data: { takedowns: [], total: 2 } } as never);
+    const [a, b] = await Promise.all([
+      TakedownNoticesApi.hasAnyMine(),
+      TakedownNoticesApi.hasAnyMine(),
+    ]);
+    expect([a, b]).toEqual([true, true]);
+    await TakedownNoticesApi.hasAnyMine();
+    expect(get).toHaveBeenCalledTimes(1);
+
+    TakedownNoticesApi.resetMineCache();
+    get.mockRejectedValueOnce(new Error('429'));
+    await expect(TakedownNoticesApi.hasAnyMine()).rejects.toThrow();
+    await Promise.resolve();
+    get.mockResolvedValue({ data: { takedowns: [], total: 0 } } as never);
+    expect(await TakedownNoticesApi.hasAnyMine()).toBe(false);
+  });
+
   it('export reads the server-built filename and the truncation flag', async () => {
     get.mockResolvedValue({
       data: new Blob(['x']),

@@ -47,6 +47,10 @@ export async function purgeTenantDataCaches(): Promise<void> {
     // How many held files the previous user could see, and the last legal-hold refusal they got.
     import('$lib/legalHold/heldCount').then((m) => m.resetHeldCount()),
     import('$lib/legalHold/refusal').then((m) => m.resetHoldRefusals()),
+    // Whether the previous user had any takedown (decides one settings sidebar entry).
+    import('$lib/api/takedownNotices').then(({ TakedownNoticesApi }) =>
+      TakedownNoticesApi.resetMineCache()
+    ),
   ]);
 }
 

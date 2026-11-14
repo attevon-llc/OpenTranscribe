@@ -187,7 +187,8 @@ def query_audit_logs(
         }
 
         response = client.search(index=index_pattern, body=query)
-        logs = [hit["_source"] for hit in response["hits"]["hits"]]
+        # `_id` is the only stable row identity (the documents carry none); the UI keys rows on it.
+        logs = [{**hit["_source"], "id": hit["_id"]} for hit in response["hits"]["hits"]]
         total = response["hits"]["total"]["value"]
         return {"logs": logs, "total": total, "offset": offset, "limit": limit}
     except OpenSearchException as e:

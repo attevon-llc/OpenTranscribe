@@ -85,6 +85,9 @@ export interface OwnerTakedownList {
 
 export type ExportFormat = 'csv' | 'json';
 
+const HAS_ANY_MINE_TTL_MS = 5 * 60 * 1000;
+let hasAnyMineCache: { at: number; promise: Promise<boolean> } | null = null;
+
 export class TakedownNoticesApi {
   static async create(notice: NewTakedownNotice): Promise<TakedownNotice> {
     const response = await axiosInstance.post('/admin/takedown-notices', notice);
@@ -155,5 +158,28 @@ export class TakedownNoticesApi {
       params: { limit: params?.limit, offset: params?.offset },
     });
     return response.data;
+  }
+
+  /**
+   * Whether the signed-in user has any takedown, asked once per window. The settings modal opens
+   * often and this only decides if one sidebar entry shows; a fresh GET per open tripped the
+   * route's rate limit (429). Concurrent callers share one request; a failure is not cached.
+   */
+  static hasAnyMine(): Promise<boolean> {
+    const now = Date.now();
+    if (!hasAnyMineCache || now - hasAnyMineCache.at > HAS_ANY_MINE_TTL_MS) {
+      const promise = TakedownNoticesApi.listMine({ limit: 1 }).then((page) => page.total > 0);
+      const entry = { at: now, promise };
+      hasAnyMineCache = entry;
+      promise.catch(() => {
+        if (hasAnyMineCache === entry) hasAnyMineCache = null;
+      });
+    }
+    return hasAnyMineCache.promise;
+  }
+
+  /** Forget the cached answer (a takedown was just filed or resolved). */
+  static resetMineCache(): void {
+    hasAnyMineCache = null;
   }
 }

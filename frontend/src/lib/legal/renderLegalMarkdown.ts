@@ -1,5 +1,10 @@
 const BLOCK_START = /^\s*([-*+]\s|\d+[.)]\s|#{1,6}\s|>|\||```|~~~|-{3,}\s*$|\*{3,}\s*$)/;
 
+/** Draft-review markers in the vendored text (`[COUNSEL: 3]`); hidden at render, never edited in source. */
+export function stripCounselMarkers(markdown: string): string {
+  return markdown.replace(/[ \t]*\[COUNSEL:\s*\d+\]/g, '');
+}
+
 /**
  * Joins hard-wrapped paragraph lines.
  *
@@ -42,5 +47,5 @@ export function unwrapParagraphs(markdown: string): string {
  */
 export async function renderLegalMarkdown(markdown: string): Promise<string> {
   const { renderChatMarkdown } = await import('$lib/utils/chatMarkdown');
-  return renderChatMarkdown(unwrapParagraphs(markdown));
+  return renderChatMarkdown(unwrapParagraphs(stripCounselMarkers(markdown)));
 }

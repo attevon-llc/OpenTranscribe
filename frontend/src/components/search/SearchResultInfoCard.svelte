@@ -15,6 +15,7 @@
   import { createEventDispatcher } from 'svelte';
   import type { SearchHit } from '$stores/search';
   import { t, locale } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
   import { formatClock, formatDate, formatFileSize, formatLanguageNames } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
 
@@ -137,7 +138,7 @@
     <h4 class="group-label">{$t('filter.speakers')}</h4>
     <ul class="chips">
       {#each visibleSpeakers as speaker (speaker)}
-        <li class="chip" dir="auto">{speaker}</li>
+        <li class="chip" dir="auto">{translateSpeakerLabel(speaker)}</li>
       {/each}
       {#if hiddenSpeakers > 0}
         <li class="chip more">{$t('search.moreCount', { count: hiddenSpeakers })}</li>

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { renderLegalMarkdown, unwrapParagraphs } from './renderLegalMarkdown';
+import { renderLegalMarkdown, stripCounselMarkers, unwrapParagraphs } from './renderLegalMarkdown';
 
 const COMPONENTS = [
   'src/components/FirstRunWizard.svelte',
@@ -52,5 +52,19 @@ describe('renderLegalMarkdown', () => {
   it.each(COMPONENTS)('%s does not statically import the chat markdown module', (file) => {
     const source = readFileSync(resolve(process.cwd(), file), 'utf8');
     expect(source).not.toMatch(/import\s[^;]*from\s+['"]\$lib\/utils\/chatMarkdown['"]/);
+  });
+});
+
+describe('stripCounselMarkers', () => {
+  it('removes draft markers without touching the rest of the text', () => {
+    expect(stripCounselMarkers('Terms control. [COUNSEL: 1]\nNext [COUNSEL: 12] line.')).toBe(
+      'Terms control.\nNext line.'
+    );
+  });
+
+  it('keeps them out of the rendered html', async () => {
+    const html = await renderLegalMarkdown('Hello world. [COUNSEL: 2]');
+    expect(html).toContain('Hello world.');
+    expect(html).not.toContain('COUNSEL');
   });
 });

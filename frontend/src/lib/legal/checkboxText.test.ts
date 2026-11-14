@@ -17,3 +17,9 @@ describe('extractCheckboxText', () => {
     expect(extractCheckboxText(null)).toBeNull();
   });
 });
+
+describe('extractCheckboxText draft markers', () => {
+  it('drops [COUNSEL: n] from the label', () => {
+    expect(extractCheckboxText('Checkbox text:\n> I agree. [COUNSEL: 3]')).toBe('I agree.');
+  });
+});

@@ -1,3 +1,5 @@
+import { stripCounselMarkers } from './renderLegalMarkdown';
+
 /**
  * Pull the acceptance sentence out of a legal document.
  *
@@ -23,5 +25,6 @@ export function extractCheckboxText(markdown: string | null | undefined): string
     .join(' ')
     .replace(/^[*_"“]+|[*_"”]+$/g, '')
     .trim();
-  return text || null;
+  const clean = stripCounselMarkers(text).trim();
+  return clean || null;
 }

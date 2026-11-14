@@ -167,10 +167,9 @@
    */
   function getSpeakerDisplayName(speakerKey) {
     // First check if there's a user-assigned display name
-    const displayName = speakerDisplayNameMap[speakerKey];
-    if (displayName) return displayName;
-    // Otherwise translate the SPEAKER_XX label to the current locale
-    return translateSpeakerLabel(speakerKey);
+    // The map falls back to the raw SPEAKER_XX key for unnamed speakers, so the label is
+    // translated on the way out; a user-assigned name passes through unchanged.
+    return translateSpeakerLabel(speakerDisplayNameMap[speakerKey] || speakerKey);
   }
 
   /**

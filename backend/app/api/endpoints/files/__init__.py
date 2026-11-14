@@ -17,6 +17,7 @@ from typing import Any
 from typing import NamedTuple
 
 from fastapi import APIRouter
+from fastapi import BackgroundTasks
 from fastapi import Depends
 from fastapi import File
 from fastapi import HTTPException
@@ -237,6 +238,7 @@ def update_transcript_segment(
     segment_uuid: str,
     segment_update: TranscriptSegmentUpdate,
     http_request: Request,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -254,6 +256,7 @@ def update_transcript_segment(
         organization_id=ctx.org_id,
         bypass=ctx.bypass,
         request=http_request,
+        background=background,
     )
 
     # Transcript has been updated - subtitles will be regenerated on-demand

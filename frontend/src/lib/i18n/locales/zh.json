@@ -747,6 +747,7 @@
   "settings.llmProvider.activateTooltip": "激活此配置",
   "settings.llmProvider.probeReasoning": "实测推理关闭开关",
   "settings.llmProvider.probeReasoningRunning": "正在实测 {{name}}：进行三次简短生成，比较推理开启、关闭与未设置的结果。",
+  "settings.llmProvider.probeReasoningPending": "正在实测推理关闭开关。在较慢的模型上可能需要几分钟；完成后会保存结果。",
   "settings.llmProvider.reasoningOffSwitch.works": "推理可以关闭。聊天设置中现已提供该开关。",
   "settings.llmProvider.reasoningOffSwitch.absent": "该模型会忽略请求并照样推理，因此不提供开关——一个毫无作用的开关比没有更糟。",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "该模型不会单独报告推理内容，因此没有可关闭的东西。",

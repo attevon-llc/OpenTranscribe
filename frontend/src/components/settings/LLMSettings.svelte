@@ -489,6 +489,11 @@
                 {#if config.base_url}
                   <div class="config-url">{config.base_url}</div>
                 {/if}
+                {#if probingReasoning === config.uuid}
+                  <div class="probe-status" role="status" data-testid="llm-probe-reasoning-status">
+                    {$t('settings.llmProvider.probeReasoningPending')}
+                  </div>
+                {/if}
                 <div class="provider-share-row">
                   <div class="toggle-label">
                     <Toggle id="share-config-{config.uuid}" checked={!!config.is_shared} onchange={() => handleShareToggle(config)} disabled={saving} />
@@ -536,6 +541,7 @@
                   class="btn btn-secondary test-connection-button"
                   on:click={() => probeReasoning(config)}
                   disabled={probingReasoning !== null}
+                  aria-busy={probingReasoning === config.uuid}
                   title={$t('settings.llmProvider.probeReasoning')}
                   data-testid="llm-probe-reasoning"
                 >
@@ -811,6 +817,13 @@
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-family: var(--font-mono);
+  }
+
+  .probe-status {
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-style: italic;
   }
 
   .config-actions {

@@ -74,6 +74,12 @@ EXEMPT_ROUTES: tuple[DeadlineExemption, ...] = (
         f"{_API}/files/bulk-export-stream",
         "streaming export: runs as long as the transfer",
     ),
+    DeadlineExemption(
+        "POST",
+        f"{_API}/llm-settings/config/{{config_uuid}}/reasoning-probe",
+        "three real generations, minutes on a slow local model; releases the request session "
+        "before dialling, and is bounded by 3 x LLM_REASONING_PROBE_TIMEOUT_S",
+    ),
     DeadlineExemption("GET", "/metrics", "Prometheus scrape; not user work"),
 )
 

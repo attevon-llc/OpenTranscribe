@@ -749,6 +749,7 @@
   "settings.llmProvider.activateTooltip": "Tornar esta configuração ativa",
   "settings.llmProvider.probeReasoning": "Medir o desligamento do raciocínio",
   "settings.llmProvider.probeReasoningRunning": "Medindo {{name}}: três gerações curtas, comparando raciocínio ligado, desligado e não definido.",
+  "settings.llmProvider.probeReasoningPending": "Medindo o desligamento do raciocínio. Isso pode levar alguns minutos em um modelo lento; o resultado é salvo quando terminar.",
   "settings.llmProvider.reasoningOffSwitch.works": "O raciocínio pode ser desligado. Os controlos do chat já oferecem a opção.",
   "settings.llmProvider.reasoningOffSwitch.absent": "Este modelo ignora o pedido e raciocina mesmo assim, por isso não é oferecida qualquer opção — um interruptor sem efeito seria pior do que nenhum.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "Este modelo não reporta raciocínio separado, portanto não há nada para desligar.",

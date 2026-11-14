@@ -781,6 +781,7 @@
   "settings.llmProvider.activateTooltip": "تفعيل هذا التكوين",
   "settings.llmProvider.probeReasoning": "قياس إمكانية إيقاف الاستدلال",
   "settings.llmProvider.probeReasoningRunning": "جارٍ قياس {{name}}: ثلاث عمليات توليد قصيرة لمقارنة الاستدلال في حالاته: مفعّل، ومعطّل، وغير محدد.",
+  "settings.llmProvider.probeReasoningPending": "جارٍ قياس إمكانية إيقاف الاستدلال. قد يستغرق ذلك بضع دقائق مع نموذج بطيء، وتُحفظ النتيجة عند الانتهاء.",
   "settings.llmProvider.reasoningOffSwitch.works": "يمكن إيقاف الاستدلال. أصبحت عناصر تحكم المحادثة توفّر هذا المفتاح الآن.",
   "settings.llmProvider.reasoningOffSwitch.absent": "يتجاهل هذا النموذج الطلب ويستمر في الاستدلال على أي حال، لذا لا يُعرض مفتاح تبديل — فمفتاح لا يفعل شيئًا أسوأ من عدم وجود مفتاح أصلًا.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "لا يُبلغ هذا النموذج عن استدلال منفصل، لذا لا يوجد ما يمكن إيقافه.",

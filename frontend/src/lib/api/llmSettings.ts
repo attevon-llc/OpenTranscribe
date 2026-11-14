@@ -15,6 +15,15 @@ export type LLMProvider =
 
 type ConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
+/**
+ * Client timeout for the reasoning probe. Three real generations ran 107 s on a small local
+ * model, past the 60 s default every other call uses. The server bounds the probe at 3 x
+ * `LLM_REASONING_PROBE_TIMEOUT_S` (240 s, `backend/app/core/llm_defaults.py`); this waits a
+ * little longer than that and stays under nginx's 300 s `proxy_read_timeout`.
+ * `backend/tests/unit/test_llm_reasoning_probe_bounds.py` pins all three numbers together.
+ */
+export const REASONING_PROBE_TIMEOUT_MS = 270_000;
+
 export interface UserLLMSettings {
   uuid: string; // UUID - primary identifier from backend
   user_id: string; // UUID
@@ -381,7 +390,9 @@ export class LLMSettingsApi {
    */
   static async probeReasoningCapability(configId: string): Promise<ReasoningCapability> {
     const response = await axiosInstance.post(
-      `${this.BASE_PATH}/config/${configId}/reasoning-probe`
+      `${this.BASE_PATH}/config/${configId}/reasoning-probe`,
+      undefined,
+      { timeout: REASONING_PROBE_TIMEOUT_MS }
     );
     return response.data;
   }

@@ -747,6 +747,7 @@
   "settings.llmProvider.activateTooltip": "この設定をアクティブにする",
   "settings.llmProvider.probeReasoning": "推論のオフ切り替えを実測する",
   "settings.llmProvider.probeReasoningRunning": "{{name}} を実測中: 短い生成を3回行い、推論オン・オフ・未指定を比較します。",
+  "settings.llmProvider.probeReasoningPending": "推論のオフ切り替えを実測しています。低速なモデルでは数分かかることがあります。結果は完了時に保存されます。",
   "settings.llmProvider.reasoningOffSwitch.works": "推論をオフにできます。チャットの設定に切り替えが表示されるようになりました。",
   "settings.llmProvider.reasoningOffSwitch.absent": "このモデルは要求を無視して推論するため、切り替えは表示されません。何もしない切り替えは、無いよりも悪いからです。",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "このモデルは推論を分けて報告しないため、オフにするものがありません。",

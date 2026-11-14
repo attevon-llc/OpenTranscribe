@@ -1360,6 +1360,7 @@
   "settings.llmProvider.savedConfigs": "Gespeicherte Konfigurationen",
   "settings.llmProvider.probeReasoning": "Abschaltung des Denkprozesses messen",
   "settings.llmProvider.probeReasoningRunning": "{{name}} wird gemessen: drei kurze Generierungen, Vergleich von Denkprozess ein, aus und nicht gesetzt.",
+  "settings.llmProvider.probeReasoningPending": "Die Abschaltung des Denkprozesses wird gemessen. Bei einem langsamen Modell kann das einige Minuten dauern; das Ergebnis wird gespeichert, sobald die Messung abgeschlossen ist.",
   "settings.llmProvider.reasoningOffSwitch.works": "Der Denkprozess lässt sich abschalten. Die Chat-Einstellungen bieten den Schalter jetzt an.",
   "settings.llmProvider.reasoningOffSwitch.absent": "Dieses Modell ignoriert die Anfrage und denkt trotzdem nach, daher wird kein Schalter angeboten — ein wirkungsloser Schalter wäre schlimmer als gar keiner.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "Dieses Modell meldet keinen separaten Denkprozess, es gibt also nichts abzuschalten.",

@@ -361,10 +361,20 @@ def probe_reasoning_capability(
     The verdict is keyed to (provider, endpoint, model), so it survives until
     one of those changes and is then simply not found again — there is no stale
     answer to invalidate.
+
+    **Long, and synchronous like its siblings** ("Test connection", the
+    context-window probe). Three generations took 107 s on a small local model,
+    so the route is exempt from the request deadline
+    (``middleware/request_deadline.py``) and bounded instead by the probe's own
+    per-arm timeout. The read below leaves a transaction open; the session is
+    closed before the generations so no pool connection is held across them
+    (``app/tasks/CLAUDE.md``, "the session-lifetime rule"), and the verdict is
+    written in a fresh, short transaction afterwards.
     """
     user_config = _get_accessible_config(db, config_uuid, ctx)
 
     llm_config = _config_to_llm_config(db, user_config)
+    db.close()
     result = llm_reasoning.probe(llm_config)
     llm_reasoning.record(db, llm_config, result)
     return _reasoning_capability_payload(

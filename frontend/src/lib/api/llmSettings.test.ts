@@ -18,7 +18,7 @@ vi.mock('$lib/axios', async () => {
   return { ...actual, default: mockInstance };
 });
 
-import { LLMSettingsApi, llmProviderDisplayName } from './llmSettings';
+import { LLMSettingsApi, REASONING_PROBE_TIMEOUT_MS, llmProviderDisplayName } from './llmSettings';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -90,5 +90,18 @@ describe('representative CRUD calls', () => {
     const result = await LLMSettingsApi.getBedrockServerCredentials();
     expect(mockInstance.get).toHaveBeenCalledWith('/llm-settings/bedrock/server-credentials');
     expect(result).toEqual(status);
+  });
+});
+
+describe('reasoning probe', () => {
+  it('waits past the 60 s default, because three generations outlast it on a slow model', async () => {
+    mockInstance.post.mockResolvedValue({ data: { off_switch: 'works' } });
+    await LLMSettingsApi.probeReasoningCapability('config-uuid');
+    expect(mockInstance.post).toHaveBeenCalledWith(
+      '/llm-settings/config/config-uuid/reasoning-probe',
+      undefined,
+      { timeout: REASONING_PROBE_TIMEOUT_MS }
+    );
+    expect(REASONING_PROBE_TIMEOUT_MS).toBeGreaterThan(60_000);
   });
 });

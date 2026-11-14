@@ -149,6 +149,33 @@ describe('probes and tests', () => {
     expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('Mine: '), 8000);
   });
 
+  it('shows the probe as pending on its own row until the verdict arrives', async () => {
+    let finish!: (v: unknown) => void;
+    api.probeReasoningCapability.mockReturnValueOnce(new Promise((r) => (finish = r)));
+    const { container } = await mount();
+    const row = (i: number): HTMLElement => {
+      const el = item(container, i);
+      if (!el) throw new Error(`no configuration row ${i}`);
+      return el;
+    };
+    const status = (i: number) =>
+      row(i).querySelector('[data-testid="llm-probe-reasoning-status"]');
+    const probeButton = () => byTestId(row(0), 'llm-probe-reasoning');
+    expect(status(0)).toBeNull();
+
+    await fireEvent.click(probeButton());
+    await waitFor(() => expect(status(0)).not.toBeNull());
+    expect(status(0)?.getAttribute('role')).toBe('status');
+    expect(status(0)?.textContent).toContain('settings.llmProvider.probeReasoningPending');
+    expect(probeButton().getAttribute('aria-busy')).toBe('true');
+    expect(status(1)).toBeNull();
+
+    finish({ off_switch: 'works' });
+    await waitFor(() => expect(status(0)).toBeNull());
+    expect(probeButton().getAttribute('aria-busy')).toBe('false');
+    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('Mine: '), 8000);
+  });
+
   it('runs the context-window probe and warns on a mismatch', async () => {
     api.probeContextWindow.mockResolvedValueOnce({
       status: 'measured',

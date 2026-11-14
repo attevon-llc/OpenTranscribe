@@ -779,6 +779,7 @@
   "settings.llmProvider.activateTooltip": "Назначить эту конфигурацию активной",
   "settings.llmProvider.probeReasoning": "Проверить отключение рассуждений",
   "settings.llmProvider.probeReasoningRunning": "Проверка {{name}}: три коротких генерации — с включёнными рассуждениями, с выключенными и без указания параметра.",
+  "settings.llmProvider.probeReasoningPending": "Идёт проверка отключения рассуждений. На медленной модели это может занять несколько минут; результат сохраняется по завершении.",
   "settings.llmProvider.reasoningOffSwitch.works": "Рассуждения можно отключить. В управлении чатом теперь есть соответствующий переключатель.",
   "settings.llmProvider.reasoningOffSwitch.absent": "Эта модель игнорирует запрос и всё равно рассуждает, поэтому переключатель не показывается: переключатель, который ничего не меняет, хуже, чем его отсутствие.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "Эта модель не выделяет рассуждения отдельно, так что отключать нечего.",

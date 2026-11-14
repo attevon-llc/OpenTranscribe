@@ -778,6 +778,7 @@
   "settings.llmProvider.activateTooltip": "Rendi attiva questa configurazione",
   "settings.llmProvider.probeReasoning": "Misura l'interruttore di disattivazione del ragionamento",
   "settings.llmProvider.probeReasoningRunning": "Misurazione di {{name}}: tre generazioni brevi, confrontando ragionamento attivo, disattivato e non impostato.",
+  "settings.llmProvider.probeReasoningPending": "Misurazione dell'interruttore di disattivazione del ragionamento in corso. Con un modello lento può richiedere alcuni minuti; il risultato viene salvato al termine.",
   "settings.llmProvider.reasoningOffSwitch.works": "Il ragionamento può essere disattivato. I controlli della chat ora offrono l'interruttore.",
   "settings.llmProvider.reasoningOffSwitch.absent": "Questo modello ignora la richiesta e ragiona comunque, quindi non viene offerto alcun interruttore — un interruttore che non fa nulla sarebbe peggio di nessun interruttore.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "Questo modello non segnala un ragionamento separato, quindi non c'è nulla da disattivare.",

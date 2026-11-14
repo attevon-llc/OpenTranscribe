@@ -98,6 +98,7 @@ def run_check(
         source "$REPO_ROOT/scripts/lib/compose-project.sh"
         source "$REPO_ROOT/scripts/lib/stack-target.sh"
         source "$REPO_ROOT/scripts/lib/gpu-free-vram.sh"
+        source "$REPO_ROOT/scripts/lib/visual-baseline-provenance.sh"
         source "$REPO_ROOT/{SCRIPT_REL}"
         set +e   # the script turns on `set -e` at source time
         for fn in derive_surfaces assert_gpu_device_allowed observe_capture_stack; do
@@ -487,7 +488,7 @@ def test_the_sidecar_records_the_commit_and_whether_the_tree_was_dirty() -> None
     unnoticed. Without the dirty flag, a baseline captured from uncommitted work
     is indistinguishable from one anybody else can regenerate.
     """
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = (REPO_ROOT / "scripts/lib/visual-baseline-provenance.sh").read_text(encoding="utf-8")
     body = source.split("record_provenance() {", 1)[1].split("\n}", 1)[0]
     for field in ('"git_sha"', '"git_dirty"', '"reason"'):
         assert field in body, f"the provenance sidecar no longer records {field}"
@@ -649,3 +650,9 @@ def test_the_vram_preflight_is_invoked_before_the_stack_starts() -> None:
     main_body = source.split("main() {", 1)[1]
     assert "assert_gpu_has_free_vram" in main_body
     assert main_body.index("assert_gpu_has_free_vram") < main_body.index("start_capture_stack")
+
+
+def test_json_string_escapes_quotes_backslashes_and_newlines() -> None:
+    proc = run_check("json_string $'a\\\\b \"q\"\nz'; echo")
+    assert rc_of(proc) == 0
+    assert proc.stdout.splitlines()[0] == '"a\\\\b \\"q\\" z"'

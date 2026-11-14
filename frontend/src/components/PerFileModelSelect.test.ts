@@ -42,12 +42,14 @@ describe('PerFileModelSelect', () => {
   it('puts speakers and timing in every native option and explains the selected one', async () => {
     asrApi.getStatus.mockResolvedValue({ deployment_mode: 'full', is_cloud_provider: false });
     const { container } = render(PerFileModelSelect, { props: { adminModel: 'large-v3-turbo' } });
-    await waitFor(() => expect(options(container)[0]).toContain('settings.asrProvider.flagsLine'));
+    await waitFor(() => expect(noteKeys(container)).toHaveLength(1));
     expect(options(container)).toHaveLength(2);
     for (const text of options(container)) {
-      expect(text).toContain('settings.asrProvider.speakersIncluded');
-      expect(text).toContain('settings.asrProvider.timing.word');
+      expect(text).not.toContain('settings.asrProvider');
     }
+    const select = container.querySelector('select') as HTMLSelectElement;
+    const hint = container.querySelector('[data-testid="per-file-model-flags"]') as HTMLElement;
+    expect(select.getAttribute('aria-describedby')).toBe(hint.id);
     expect(noteKeys(container)).toEqual(['settings.asrProvider.implication.speakersLocal']);
   });
 
@@ -61,9 +63,7 @@ describe('PerFileModelSelect', () => {
     const { container } = render(PerFileModelSelect, { props: { adminModel: 'large-v3-turbo' } });
     await waitFor(() => expect(options(container)[0]).toContain('uploader.cloudDefaultOption'));
     expect(options(container)[0]).toContain('Gladia');
-    expect(options(container)[0]).toContain('settings.asrProvider.textOnly');
-    // The Fast model is this server's, so it still returns speakers (from this server).
-    expect(options(container)[1]).toContain('settings.asrProvider.speakersIncluded');
+    expect(options(container)[0]).not.toContain('settings.asrProvider');
     expect(noteKeys(container)).toEqual(['settings.asrProvider.implication.textOnly']);
   });
 

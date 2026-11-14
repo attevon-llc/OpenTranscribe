@@ -19,24 +19,30 @@
   // Current language info; an unsupported locale previews the default (first) language.
   $: currentLanguage =
     SUPPORTED_LANGUAGES.find((l) => l.code === $locale) ?? SUPPORTED_LANGUAGES[0];
+  $: machineTranslated = isMachineTranslated($locale);
 </script>
 
 <div class="language-settings">
   <FormField id="ui-language" label={$t("settings.language.selectLabel")} labelSize="md" hint={$t("settings.language.hint")} let:describedby>
     <select
-      id="ui-language" aria-describedby={describedby}
+      id="ui-language"
+      aria-describedby={[describedby, machineTranslated ? "ui-language-mt" : ""].filter(Boolean).join(" ")}
       class="form-select"
       value={$locale}
       on:change={handleLanguageChange}
     >
       {#each SUPPORTED_LANGUAGES as lang (lang.code)}
         <option value={lang.code}>
-          {lang.nativeName} ({lang.name}){isMachineTranslated(lang.code)
-            ? ` · ${$t("settings.language.machineTranslated")}`
-            : ""}
+          {lang.nativeName} ({lang.name})
         </option>
       {/each}
     </select>
+    <!-- A native option cannot wrap, so the machine-translation marker is a note on the selected language. -->
+    {#if machineTranslated}
+      <p id="ui-language-mt" class="mt-note" data-testid="language-mt-note">
+        {$t("settings.language.machineTranslated")}
+      </p>
+    {/if}
   </FormField>
 
   <div class="language-preview">
@@ -70,6 +76,12 @@
     padding-inline-end: var(--space-10);
   }
 
+
+  .mt-note {
+    margin: var(--space-1-5) 0 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+  }
 
   .language-preview {
     background-color: var(--background-color);

@@ -1,15 +1,14 @@
 <!--
   PerFileModelSelect.svelte — the transcription model choice of one upload or reprocess (#1243).
 
-  A native select cannot draw pills, so every option carries its flags in its own label
-  ("..., Speakers included, Word timing") and the selected option repeats them as the shared
-  `CapabilityBadges` with what they mean for speaker detection. The options and their flags
+  A native option cannot wrap, so a flag-laden label was cut at the select's edge in en and ar.
+  Each option is just the model name; the selected option's flags show as the shared
+  `CapabilityBadges` under the select, linked to it with aria-describedby. The options and their flags
   come from `$lib/settings/perFileModel` (the ASR catalog and the user's saved provider), so
   a cloud provider is named as what "my setting" runs instead of the server's own model.
 -->
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { optionWithFlags } from '$lib/settings/asrCapabilities';
   import {
     loadPerFileFacts,
     optionName,
@@ -39,13 +38,19 @@
   $: lite = facts?.status.deployment_mode === 'lite';
 </script>
 
-<select {id} bind:value on:change={() => dispatch('change')} class="model-select">
+<select
+  {id}
+  bind:value
+  on:change={() => dispatch('change')}
+  class="model-select"
+  aria-describedby={selected?.capability ? `${id}-flags` : undefined}
+>
   {#each options as option (option.kind)}
-    <option value={option.value}>{optionWithFlags(optionName(option, $t), option.capability, $t)}</option>
+    <option value={option.value}>{optionName(option, $t)}</option>
   {/each}
 </select>
 {#if selected?.capability}
-  <div class="model-flags" data-testid="per-file-model-flags">
+  <div class="model-flags" id="{id}-flags" data-testid="per-file-model-flags">
     <CapabilityBadges
       returnsSpeakers={selected.capability.returnsSpeakers}
       timing={selected.capability.timing}

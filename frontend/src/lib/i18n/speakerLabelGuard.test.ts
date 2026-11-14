@@ -115,5 +115,8 @@ describe('speaker placeholder labels are localised', () => {
       }
     }
     expect(offenders).toEqual([]);
-  });
+    // Parses every .svelte file under components/ and routes/ with the Svelte compiler; under
+    // the push tier's coverage instrumentation and 8 workers that takes longer than vitest's 5 s
+    // default, so the whole-tree scan gets the same explicit budget as the other scan tests.
+  }, 60_000);
 });

@@ -42,3 +42,28 @@ def test_seeded_names_are_recorded_as_typed_by_a_person(db_session, normal_user)
     assert [(e.kind, e.origin, e.after_value["name"]) for e in events] == [
         ("rename", "typed", "Flight director")
     ]
+
+
+def test_a_bundle_transcripts_speakers_map_names_the_imported_speakers(
+    db_session, normal_user, tmp_path
+):
+    import json
+
+    from app.scripts.demo_seed.bundle import load_bundle
+    from tests.unit._demo_bundle import item
+    from tests.unit._demo_bundle import write_bundle
+
+    write_bundle(tmp_path, [item("bls-a")])
+    transcript = tmp_path / "transcripts/bls-a.json"
+    data = json.loads(transcript.read_text())
+    data["speakers"] = {"SPEAKER_00": "BLS narrator"}
+    transcript.write_text(json.dumps(data))
+    _, items = load_bundle(tmp_path)
+    media_file = make_file(db_session, normal_user)
+    speaker = make_speaker(db_session, normal_user, media_file, "SPEAKER_00")
+    db_session.commit()
+
+    _name_speakers(db_session, media_file.id, items[0].speaker_names())
+    db_session.commit()
+
+    assert (speaker.display_name, speaker.verified) == ("BLS narrator", True)

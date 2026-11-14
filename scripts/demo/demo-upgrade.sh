@@ -14,7 +14,9 @@
 #      compose files and scripts of that tag);
 #   5. demo-reset.sh (fresh seed against the new schema; the demo resets on every upgrade);
 #   6. /health must answer 200 with the target version;
-#   7. on any failure: update --rollback, update-full, reset, health, and exit 1.
+#   7. on any failure: roll back (update --rollback once the target was pinned; before that the
+#      install is still on its tag and `update` restarts it there), update-full, reset, health,
+#      and exit 1.
 # Every upgrade ends in a reset from the seed, so the one-way migration chain never blocks
 # the rollback here.
 #
@@ -41,7 +43,7 @@ DRY_RUN=0
 case "${1:-}" in
     --dry-run) DRY_RUN=1 ;;
     "") ;;
-    -h | --help) sed -n '2,37p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,39p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
@@ -118,6 +120,17 @@ move_to() {
         { [ "$DRY_RUN" = 1 ] || health_reports "$1"; }
 }
 
+roll_back() {
+    # `update` pins OT_IMAGE_TAG only after the pull and the teardown succeeded. Before that the
+    # install is still on $CURRENT, and --rollback would move it to the tag an EARLIER upgrade
+    # recorded, one release further back; restart it on $CURRENT instead.
+    if [ "$(env_value OT_IMAGE_TAG || true)" = "$TARGET" ]; then
+        run ./opentranscribe.sh update --rollback
+    else
+        run ./opentranscribe.sh update
+    fi
+}
+
 TARGET="$(resolve_target)"
 if ! [[ "$TARGET" =~ $TAG_RE ]]; then
     echo "refusing target tag '$TARGET' (expected vX.Y.Z)" >&2
@@ -139,7 +152,7 @@ if move_to "$TARGET"; then
 fi
 
 echo "upgrade to $TARGET failed; rolling back to $CURRENT" >&2
-if run ./opentranscribe.sh update --rollback &&
+if roll_back &&
     run ./opentranscribe.sh update-full &&
     run env DEMO_LOCK_HELD=1 "$RESET_CMD" &&
     { [ "$DRY_RUN" = 1 ] || health_reports "$CURRENT"; }; then

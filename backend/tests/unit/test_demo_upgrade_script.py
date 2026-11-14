@@ -31,6 +31,8 @@ echo "${COMPOSE_PROJECT_NAME:-}|${OPENTRANSCRIBE_EXTRA_COMPOSE_FILES:-}" >> env.
 tag() { grep '^OT_IMAGE_TAG=' .env | cut -d= -f2; }
 case "$1 ${2:-}" in
   "update --version")
+    # A target with no images: the pull is refused before anything is pinned or recorded.
+    [ -f "missing-$3" ] && exit 1
     echo "# OT_PREVIOUS_IMAGE_TAG=$(tag)" > prev
     sed -i "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=$3|" .env ;;
   "update --rollback")
@@ -153,6 +155,26 @@ def test_an_unhealthy_upgrade_rolls_back_and_exits_1(stub):
         "opentranscribe.sh update-full",
         "reset lock_held=1",
     ]
+    assert status(stub)["tag"] == "v0.6.1"
+    assert status(stub)["result"] == "rolled-back"
+
+
+def test_a_target_refused_before_the_pin_is_restarted_on_the_current_tag(stub):
+    """Must fire: `update --rollback` here moved the demo to the tag an EARLIER upgrade recorded
+    (or, with none recorded, failed and exited 4) although the demo never left v0.6.1."""
+    (stub[0] / "prev").write_text("# OT_PREVIOUS_IMAGE_TAG=v0.5.0\n")
+    (stub[0] / "missing-v0.7.0").write_text("")
+
+    proc, calls = run(stub)
+
+    assert proc.returncode == 1, proc.stderr
+    assert calls == [
+        "opentranscribe.sh update --version v0.7.0",
+        "opentranscribe.sh update",
+        "opentranscribe.sh update-full",
+        "reset lock_held=1",
+    ]
+    assert "OT_IMAGE_TAG=v0.6.1" in (stub[0] / ".env").read_text()
     assert status(stub)["tag"] == "v0.6.1"
     assert status(stub)["result"] == "rolled-back"
 

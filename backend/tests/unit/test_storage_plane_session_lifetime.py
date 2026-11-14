@@ -198,9 +198,13 @@ def _make_media_file(db_session, user, *, filename="meeting.mp4", **overrides) -
 def test_imohash_recompute_reads_minio_outside_the_session(db_session, normal_user, monkeypatch):
     tracker = _ScopeTracker(db_session)
     monkeypatch.setattr(imo, "session_scope", tracker.scope)
-    monkeypatch.setattr(imo.recompute_progress, "start_migration", lambda **kw: None)
-    monkeypatch.setattr(imo.recompute_progress, "increment_processed", lambda **kw: None)
+    monkeypatch.setattr(
+        imo,
+        "recompute_progress",
+        SimpleNamespace(start_migration=lambda **kw: None, increment_processed=lambda **kw: None),
+    )
     monkeypatch.setattr(imo, "_finalize_recompute", lambda: None)
+    monkeypatch.setattr(imo, "_recompute_already_complete", lambda: False)
 
     files = [_make_media_file(db_session, normal_user) for _ in range(2)]
     db_session.commit()
@@ -255,6 +259,19 @@ def test_imohash_read_phase_returns_plain_data(db_session, normal_user, monkeypa
     assert batch[0]["storage_path"] == str(media_file.storage_path)
     for value in batch[0].values():
         _assert_plain(value, "_load_recompute_batch")
+
+
+def test_imohash_recompute_chain_stops_once_the_flag_is_set(monkeypatch):
+    """A link already in the broker must not do work, or chain on, after completion."""
+    monkeypatch.setattr(imo, "_recompute_already_complete", lambda: True)
+    touched: list[str] = []
+    monkeypatch.setattr(imo, "_load_recompute_batch", lambda *a, **k: touched.append("load"))
+    monkeypatch.setattr(imo.recompute_all, "apply_async", lambda **kw: touched.append("chain"))
+
+    summary = imo.recompute_all(batch_size=2, after_id=10)
+
+    assert summary["stopped"] == "already_complete"
+    assert touched == []
 
 
 # --------------------------------------------------------------------------- #

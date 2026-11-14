@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 import redis
+from bench_common import load_redis_url
 
 from bench_parallel.backend_api import (
     BENCH_UPLOAD_PREFIX,
@@ -20,7 +21,7 @@ from bench_parallel.backend_api import (
     get_benchmark_files,
     get_valid_token,
 )
-from bench_parallel.config import BACKEND_URL, GPU_DEVICE_ID, REDIS_URL
+from bench_parallel.config import BACKEND_URL, GPU_DEVICE_ID
 from bench_parallel.formatting import now_ts
 from bench_parallel.models import BatchResult
 from bench_parallel.report_files import write_reports
@@ -263,7 +264,7 @@ def main():
     print('Authenticated.')
 
     # Connect to Redis
-    r = redis.from_url(REDIS_URL, decode_responses=False)
+    r = redis.from_url(load_redis_url(), decode_responses=False)
     r.ping()
     print('Redis connected.')
 

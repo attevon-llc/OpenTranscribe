@@ -37,7 +37,7 @@ from e2e_bench.backend_api import (
     poll_task_completion,
     upload_file_via_api,
 )
-from e2e_bench.config import DEFAULT_BACKEND_URL, DEFAULT_REDIS_URL, POLL_TIMEOUT
+from e2e_bench.config import DEFAULT_BACKEND_URL, POLL_TIMEOUT
 from e2e_bench.formatting import fmt_duration
 
 DB_CONTAINER = 'opentranscribe-postgres'
@@ -190,7 +190,7 @@ def main() -> None:
     parser.add_argument('--fixture-file', required=True, help='Path to the media fixture to upload')
     parser.add_argument('--n', type=int, default=8, help='Number of concurrent uploads (default 8)')
     parser.add_argument('--backend-url', default=DEFAULT_BACKEND_URL)
-    parser.add_argument('--redis-url', default=DEFAULT_REDIS_URL)
+    parser.add_argument('--redis-url', default=None)
     parser.add_argument(
         '--timeout',
         type=int,

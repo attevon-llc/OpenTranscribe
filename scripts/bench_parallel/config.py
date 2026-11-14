@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import os
 
-from bench_common import backend_url, load_redis_url, postgres_container
+from bench_common import backend_url, postgres_container
 
 BACKEND_URL = backend_url()
 POLL_INTERVAL = 5.0  # seconds between status polls
 
 
-REDIS_URL = load_redis_url()
 POLL_TIMEOUT = int(os.environ.get('BENCHMARK_POLL_TIMEOUT', '14400'))  # 4 hours default
 VRAM_SAMPLE_INTERVAL = 2.0  # seconds between nvidia-smi samples
 STATS_SAMPLE_INTERVAL = 2.0  # seconds between docker-stats CPU/RAM samples

@@ -23,7 +23,11 @@ function backendTaskTypes(): Set<string> {
   ];
   for (const file of pyFiles(TASKS_DIR)) {
     const source = readFileSync(file, 'utf8');
-    for (const pattern of patterns) for (const m of source.matchAll(pattern)) found.add(m[1]);
+    for (const pattern of patterns)
+      for (const m of source.matchAll(pattern)) {
+        const [, type] = m;
+        if (type) found.add(type);
+      }
   }
   return found;
 }

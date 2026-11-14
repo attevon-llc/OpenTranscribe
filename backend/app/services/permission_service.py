@@ -398,16 +398,24 @@ class PermissionService:
         share) and deduplicated with DISTINCT afterwards (issue #1337, 90 ms mean). The
         ``media_file`` hop added nothing: ``collection_member.media_file_id`` is that file.
         """
-        reachable = (
-            select(Speaker.profile_id)
-            .join(CollectionMember, CollectionMember.media_file_id == Speaker.media_file_id)
-            .join(CollectionShare, CollectionShare.collection_id == CollectionMember.collection_id)
-            .where(
-                or_(
-                    CollectionShare.target_user_id == user_id,
-                    CollectionShare.target_group_id.in_(user_group_ids),
+
+        # OR-to-UNION: ``target_user_id = X OR target_group_id IN (...)`` cannot use the
+        # share indexes (PostgreSQL docs, "Combining Multiple Indexes"), so the planner
+        # misestimated and hashed every profile. Each branch below is one indexed predicate.
+        def _branch(share_pred: Any) -> Any:
+            return (
+                select(Speaker.profile_id)
+                .join(CollectionMember, CollectionMember.media_file_id == Speaker.media_file_id)
+                .join(
+                    CollectionShare,
+                    CollectionShare.collection_id == CollectionMember.collection_id,
                 )
+                .where(share_pred)
             )
+
+        reachable = union_all(
+            _branch(CollectionShare.target_user_id == user_id),
+            _branch(CollectionShare.target_group_id.in_(user_group_ids)),
         )
         query = db.query(SpeakerProfile.id).filter(SpeakerProfile.id.in_(reachable))
         if org_pred is not None:

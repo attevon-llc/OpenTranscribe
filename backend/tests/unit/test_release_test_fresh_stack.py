@@ -313,7 +313,14 @@ def _run(script: str, tmp_path: Path, stubs: dict[str, str], env: dict[str, str]
         f = bindir / cmd
         f.write_text("#!/bin/bash\n" + body + "\n")
         f.chmod(0o755)
-    base = {k: v for k, v in os.environ.items() if not k.startswith("RELEASE_TEST_")}
+    # A gate run exports the offset stack's ports; a helper test that did not set them itself
+    # must see them unset, or "refuse to guess" is never exercised (and a real value is used).
+    ambient = ("BACKEND_PORT", "FRONTEND_PORT", "E2E_BACKEND_URL", "E2E_FRONTEND_URL")
+    base = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("RELEASE_TEST_") and k not in ambient
+    }
     full = {
         **base,
         "PATH": f"{bindir}:{os.environ['PATH']}",

@@ -8,6 +8,7 @@ read time, so toggling never triggers a recompute.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -25,6 +26,7 @@ from app.services.redaction.config import normalize_language
 from app.services.redaction.detectors import DetectorUnavailableError
 from app.services.redaction.detectors import no_model_load
 from app.services.redaction.detectors import wordlist
+from app.services.redaction.rescan_coordination import finish_scan
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import apply_redactions
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
@@ -225,6 +227,7 @@ class RedactionService:
         media = db.query(MediaFile).filter(MediaFile.id == file_id).first()
         if media is None:
             return {"status": "skipped", "reason": "file_not_found"}
+        owner_id = int(media.user_id)
 
         media.redaction_status = redaction_defaults.REDACTION_STATUS_PROCESSING
         db.commit()
@@ -376,51 +379,89 @@ class RedactionService:
                 # The spans that DID succeed are committed — they are real findings
                 # and dropping them would be strictly worse — but the status makes
                 # clear the result is partial.
-                failed = hard_failures
-                media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED
-                db.commit()
                 logger.error(
                     "Redaction detection for file %s completed with failed detectors %s; "
                     "marking FAILED so it is re-run rather than caching an incomplete "
                     "result as clean. Partial spans found so far were kept.",
                     file_id,
-                    failed,
+                    hard_failures,
                 )
-                return {"status": "failed", "reason": "detector_failure", "detectors": failed}
-
-            # WHICH detectors this scan's spans reflect (v392). Written in the same
-            # commit as DONE, because the whole point is that the two must never be
-            # read apart: `done` says the scan finished and this says what it looked
-            # at. `skipped` already carries both reasons a detector did not run — the
-            # transcript's language, and unavailability recorded a few lines above.
-            # `list[str]`, matching `media_file.redaction_coverage`'s column type: the
-            # comprehension alone infers a three-member Literal, which "llm" is not.
-            ran: list[str] = [
-                d for d in ("profanity", "pii", "toxicity") if d in supported and d not in skipped
-            ]
-            # Only when it actually RETURNED. `run_llm` says the owner asked for it, which is a
-            # different question from whether it examined one segment.
-            if run_llm and not llm_failures:
-                ran.append("llm")
-            media.redaction_status = redaction_defaults.REDACTION_STATUS_DONE
-            media.redaction_model_version = redaction_defaults.REDACTION_MODEL_VERSION
-            media.redaction_coverage = ran
-            db.commit()
+                terminal: dict[str, Any] = {
+                    "redaction_status": redaction_defaults.REDACTION_STATUS_FAILED
+                }
+                result: dict[str, Any] = {
+                    "status": "failed",
+                    "reason": "detector_failure",
+                    "detectors": hard_failures,
+                }
+            else:
+                # WHICH detectors this scan's spans reflect (v392). Written in the same
+                # commit as DONE, because the whole point is that the two must never be
+                # read apart: `done` says the scan finished and this says what it looked
+                # at. `skipped` already carries both reasons a detector did not run — the
+                # transcript's language, and unavailability recorded a few lines above.
+                # `list[str]`, matching `media_file.redaction_coverage`'s column type: the
+                # comprehension alone infers a three-member Literal, which "llm" is not.
+                ran: list[str] = [
+                    d
+                    for d in ("profanity", "pii", "toxicity")
+                    if d in supported and d not in skipped
+                ]
+                # Only when it actually RETURNED. `run_llm` says the owner asked for it, which
+                # is a different question from whether it examined one segment.
+                if run_llm and not llm_failures:
+                    ran.append("llm")
+                terminal = {
+                    "redaction_status": redaction_defaults.REDACTION_STATUS_DONE,
+                    "redaction_model_version": redaction_defaults.REDACTION_MODEL_VERSION,
+                    "redaction_coverage": ran,
+                }
+                result = {
+                    "status": "done",
+                    "segments": len(segments),
+                    "pii_entities_found": pii_count,
+                    "detectors": ",".join(ran),
+                    "language": normalize_language(media.language),
+                    "skipped_detectors": sorted(skipped),
+                }
         except Exception as exc:  # scan-body boundary: marks the file FAILED and reports it
             db.rollback()
-            media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED
-            db.commit()
             logger.exception("Redaction detection failed for file %s", file_id)
-            return {"status": "failed", "error": str(exc)}
+            terminal = {"redaction_status": redaction_defaults.REDACTION_STATUS_FAILED}
+            result = {"status": "failed", "error": str(exc)}
 
-        return {
-            "status": "done",
-            "segments": len(segments),
-            "pii_entities_found": pii_count,
-            "detectors": ",".join(ran),
-            "language": normalize_language(media.language),
-            "skipped_detectors": sorted(skipped),
-        }
+        if finish_scan(db, file_id, terminal):
+            return result
+        # An edit re-marked the file ``pending`` while this scan read the old text. The spans
+        # just committed address that old text, so the file stays withheld and one more scan
+        # reads the edited text. Only an edit writes ``pending``, so this repeats only while
+        # edits keep arriving.
+        logger.info(
+            "Redaction scan of file %s was superseded by a segment edit; re-queued", file_id
+        )
+        RedactionService.queue_rescan(file_id, owner_id)
+        return {"status": redaction_defaults.REDACTION_STATUS_PENDING, "reason": "superseded"}
+
+    @staticmethod
+    def queue_rescan(file_id: int, user_id: int) -> bool:
+        """Queue a debounced full re-scan after the caller committed ``pending``. Never raises.
+
+        The ``countdown`` (Celery docs, "Calling Tasks" -> "ETA and Countdown") is the
+        debounce window: edits to the file inside it ride this scan, because the file is
+        already ``pending`` (``rescan_coordination``). A failed publish leaves the file
+        ``pending``: withheld rather than read as clean.
+        """
+        try:
+            from app.tasks.redaction_task import redaction_detect_task
+
+            redaction_detect_task.apply_async(
+                kwargs={"file_id": file_id, "user_id": user_id},
+                countdown=redaction_defaults.REDACTION_EDIT_RESCAN_DELAY_SECONDS,
+            )
+        except Exception:  # the pending status stands; it fails closed
+            logger.exception("Could not queue redaction re-detection for file %s", file_id)
+            return False
+        return True
 
     @staticmethod
     def redetect_edited_segment(

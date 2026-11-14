@@ -73,15 +73,25 @@ def no_toxicity_model(monkeypatch):
 
 @pytest.fixture
 def queued_rescans(monkeypatch):
-    """Capture ``redaction_detect_task.delay`` — there is no broker in this suite."""
+    """Capture queued re-scans — there is no broker in this suite.
+
+    An edit queues with ``delay``; a scan an edit superseded re-queues with
+    ``apply_async`` and a countdown (``RedactionService.queue_rescan``). Only the
+    task kwargs are recorded.
+    """
     from app.tasks import redaction_task
 
     calls: list[dict] = []
+
+    def _apply_async(kwargs=None, **_options):
+        calls.append(kwargs)
+
     monkeypatch.setattr(
         redaction_task.redaction_detect_task,
         "delay",
         lambda **kwargs: calls.append(kwargs),
     )
+    monkeypatch.setattr(redaction_task.redaction_detect_task, "apply_async", _apply_async)
     return calls
 
 
@@ -436,6 +446,47 @@ def test_editing_again_while_a_rescan_is_pending_does_not_queue_a_second_one(
     db_session.refresh(media)
     assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
     assert len(queued_rescans) == 1, "the second edit rode the scan the first one queued"
+
+
+def test_an_edit_that_lands_mid_scan_keeps_the_file_pending_and_rescans(
+    db_session, pii_masking_user, queued_rescans, monkeypatch
+):
+    """The scan read the OLD text; an edit committed before its terminal write.
+
+    Writing ``done`` there cached the old text's spans as the truth for the edited
+    segment. The terminal write is conditional on ``processing``, so the edit's
+    ``pending`` stands and exactly one more scan is queued to read the new text.
+    """
+    from sqlalchemy import update
+
+    from app.models.media import MediaFile
+    from app.services.redaction.detectors import toxicity as tox
+    from app.services.redaction.service import RedactionService
+
+    monkeypatch.setattr(pii_presidio, "_get_analyzer", lambda _use_gliner: _WorkingAnalyzer())
+    media, _segment = _seed_scanned_file(db_session, pii_masking_user)
+    media.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
+    db_session.flush()
+
+    def _edit_lands_during_the_scan(texts, _language):
+        # What a concurrent PUT commits while the worker is inside the detectors.
+        db_session.execute(
+            update(MediaFile)
+            .where(MediaFile.id == media.id)
+            .values(redaction_status=redaction_defaults.REDACTION_STATUS_PENDING)
+        )
+        return [None] * len(texts)
+
+    monkeypatch.setattr(tox, "score_texts", _edit_lands_during_the_scan)
+
+    result = RedactionService.detect_and_store(db_session, media.id)
+
+    db_session.refresh(media)
+    assert result["status"] == redaction_defaults.REDACTION_STATUS_PENDING
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING, (
+        "a scan that read the pre-edit text must not mark the file done"
+    )
+    assert queued_rescans == [{"file_id": media.id, "user_id": pii_masking_user.id}]
 
 
 # ----------------------------------------------------------------- the narrowness

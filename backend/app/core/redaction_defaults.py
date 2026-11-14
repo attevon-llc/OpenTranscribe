@@ -115,3 +115,8 @@ REDACTION_STATUS_PENDING = "pending"
 REDACTION_STATUS_PROCESSING = "processing"
 REDACTION_STATUS_DONE = "done"
 REDACTION_STATUS_FAILED = "failed"
+
+# Delay before the full re-scan a segment edit queues. Edits to the same file inside the
+# window ride the one queued scan (services/redaction/rescan_coordination.py), so an
+# edit-and-undo pair or a run of corrections costs one scan instead of one per edit.
+REDACTION_EDIT_RESCAN_DELAY_SECONDS = 5

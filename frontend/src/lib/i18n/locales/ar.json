@@ -3793,7 +3793,7 @@
   "settings.localAuth.loginBannerEnableHelp": "تعرض إشعارًا في صفحة تسجيل الدخول يجب على كل مستخدم الإقرار به قبل تسجيل الدخول (FedRAMP AC-8)",
   "settings.localAuth.loginBannerClassification": "تصنيف اللافتة",
   "settings.localAuth.loginBannerText": "نص اللافتة",
-  "settings.localAuth.loginBannerTextHelp": "يُعرض كاملًا في صفحة تسجيل الدخول؛ يتطلب تغيير هذا النص من كل مستخدم إعادة الإقرار به",
+  "settings.localAuth.loginBannerTextHelp": "يُعرض كاملًا في صفحة تسجيل الدخول؛ يتطلب تغيير هذا النص من كل مستخدم إعادة الإقرار به. اتركه فارغًا لعرض إشعار الموافقة القياسي لحكومة الولايات المتحدة (وزارة الدفاع) باللغة الإنجليزية.",
   "loginBanner.consentText": "بالنقر على \"أقرّ\"، فإنك توافق على الشروط أعلاه وتؤكد أنك مخوَّل بالوصول إلى هذا النظام.",
   "settings.accountStatus.loadError": "فشل تحميل تقرير حالة الحسابات",
   "settings.accountStatus.comingSoonDesc": "هذه الميزة قادمة قريبًا. لم يتم بعد تنفيذ نقاط النهاية الخلفية الخاصة بتقارير حالة الحسابات.",

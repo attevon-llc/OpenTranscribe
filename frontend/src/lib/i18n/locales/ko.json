@@ -3518,7 +3518,7 @@
   "settings.localAuth.loginBannerEnableHelp": "로그인 페이지에 모든 사용자가 로그인 전에 확인해야 하는 안내문을 표시합니다(FedRAMP AC-8)",
   "settings.localAuth.loginBannerClassification": "분류 라벨",
   "settings.localAuth.loginBannerText": "배너 텍스트",
-  "settings.localAuth.loginBannerTextHelp": "로그인 페이지에 전체 표시됩니다. 이 텍스트를 변경하면 모든 사용자가 다시 확인해야 합니다",
+  "settings.localAuth.loginBannerTextHelp": "로그인 페이지에 전체가 표시됩니다. 이 문구를 변경하면 모든 사용자가 다시 동의해야 합니다. 비워 두면 미국 정부(DoD) 표준 동의 고지가 영어로 표시됩니다.",
   "loginBanner.consentText": "\"확인함\"을 클릭하면 위 약관에 동의하며 이 시스템에 접근할 권한이 있음을 확인하는 것입니다.",
   "settings.accountStatus.loadError": "계정 상태 보고서를 불러오지 못했습니다",
   "settings.accountStatus.comingSoonDesc": "이 기능은 곧 제공될 예정입니다. 계정 상태 보고를 위한 백엔드 엔드포인트가 아직 구현되지 않았습니다.",

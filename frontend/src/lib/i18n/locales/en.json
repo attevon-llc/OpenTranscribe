@@ -3573,7 +3573,7 @@
   "settings.localAuth.loginBannerEnableHelp": "Displays a notice on the login page that every user must acknowledge before signing in (FedRAMP AC-8)",
   "settings.localAuth.loginBannerClassification": "Classification Label",
   "settings.localAuth.loginBannerText": "Banner Text",
-  "settings.localAuth.loginBannerTextHelp": "Shown in full on the login page; changing this text requires every user to re-acknowledge it",
+  "settings.localAuth.loginBannerTextHelp": "Shown in full on the login page; changing this text requires every user to re-acknowledge it. Leave it empty to show the standard U.S. Government (DoD) consent notice, in English.",
   "loginBanner.consentText": "By clicking \"I Acknowledge\", you consent to the terms above and confirm that you are authorized to access this system.",
   "settings.accountStatus.loadError": "Failed to load account status report",
   "settings.accountStatus.comingSoonDesc": "This feature is coming soon. The backend endpoints for account status reporting are not yet implemented.",

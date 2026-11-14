@@ -3628,7 +3628,7 @@
   "settings.localAuth.loginBannerEnableHelp": "Mostra un avviso nella pagina di accesso che ogni utente deve confermare prima di accedere (FedRAMP AC-8)",
   "settings.localAuth.loginBannerClassification": "Etichetta di classificazione",
   "settings.localAuth.loginBannerText": "Testo del banner",
-  "settings.localAuth.loginBannerTextHelp": "Mostrato per intero nella pagina di accesso; modificare questo testo richiede a ogni utente di confermarlo di nuovo",
+  "settings.localAuth.loginBannerTextHelp": "Mostrato per intero nella pagina di accesso; modificare questo testo obbliga ogni utente a confermarlo di nuovo. Lascialo vuoto per mostrare l'avviso di consenso standard del governo degli Stati Uniti (DoD), in inglese.",
   "loginBanner.consentText": "Cliccando su \"Confermo\", accetti i termini sopra indicati e confermi di essere autorizzato ad accedere a questo sistema.",
   "settings.accountStatus.loadError": "Impossibile caricare il report sullo stato degli account",
   "settings.accountStatus.comingSoonDesc": "Questa funzionalità arriverà presto. Gli endpoint backend per il report sullo stato degli account non sono ancora implementati.",

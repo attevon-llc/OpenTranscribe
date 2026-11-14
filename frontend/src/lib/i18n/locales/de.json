@@ -3536,7 +3536,7 @@
   "settings.localAuth.loginBannerEnableHelp": "Zeigt auf der Anmeldeseite einen Hinweis an, den jeder Benutzer vor der Anmeldung bestätigen muss (FedRAMP AC-8)",
   "settings.localAuth.loginBannerClassification": "Einstufungskennzeichnung",
   "settings.localAuth.loginBannerText": "Bannertext",
-  "settings.localAuth.loginBannerTextHelp": "Wird auf der Anmeldeseite vollständig angezeigt; bei Änderung des Textes muss jeder Benutzer ihn erneut bestätigen",
+  "settings.localAuth.loginBannerTextHelp": "Wird auf der Anmeldeseite vollständig angezeigt; bei Änderung des Textes muss jeder Benutzer ihn erneut bestätigen. Leer lassen, um den standardmäßigen Einwilligungshinweis der US-Regierung (DoD) auf Englisch anzuzeigen.",
   "loginBanner.consentText": "Durch Klicken auf \"Ich bestätige\" stimmen Sie den obigen Bedingungen zu und bestätigen, dass Sie zum Zugriff auf dieses System berechtigt sind.",
   "settings.accountStatus.loadError": "Fehler beim Laden des Kontostatusberichts",
   "settings.accountStatus.comingSoonDesc": "Diese Funktion wird bald verfügbar sein. Die Backend-Endpunkte für Kontostatusberichte sind noch nicht implementiert.",

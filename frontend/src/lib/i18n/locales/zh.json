@@ -3481,7 +3481,7 @@
   "settings.localAuth.loginBannerEnableHelp": "在登录页面显示通知，每位用户必须确认后才能登录（FedRAMP AC-8）",
   "settings.localAuth.loginBannerClassification": "分级标签",
   "settings.localAuth.loginBannerText": "横幅文本",
-  "settings.localAuth.loginBannerTextHelp": "在登录页面完整显示；修改此文本后，所有用户都需要重新确认",
+  "settings.localAuth.loginBannerTextHelp": "在登录页面完整显示；修改此文本后，所有用户都需要重新确认。留空则显示美国政府（DoD）标准同意声明（英文）。",
   "loginBanner.consentText": "点击\"我确认\"即表示您同意上述条款，并确认您已获授权访问此系统。",
   "settings.accountStatus.loadError": "加载账户状态报告失败",
   "settings.accountStatus.comingSoonDesc": "此功能即将推出。账户状态报告的后端接口尚未实现。",

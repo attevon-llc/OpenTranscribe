@@ -3591,7 +3591,7 @@
   "settings.localAuth.loginBannerEnableHelp": "Exibe na página de login um aviso que todo usuário deve reconhecer antes de entrar (FedRAMP AC-8)",
   "settings.localAuth.loginBannerClassification": "Rótulo de classificação",
   "settings.localAuth.loginBannerText": "Texto do banner",
-  "settings.localAuth.loginBannerTextHelp": "Exibido na íntegra na página de login; alterar este texto exige que todos os usuários o reconheçam novamente",
+  "settings.localAuth.loginBannerTextHelp": "Exibido por completo na página de login; alterar este texto exige que todos os usuários o confirmem novamente. Deixe vazio para exibir o aviso de consentimento padrão do Governo dos EUA (DoD), em inglês.",
   "loginBanner.consentText": "Ao clicar em \"Eu Reconheço\", você consente com os termos acima e confirma que está autorizado a acessar este sistema.",
   "settings.accountStatus.loadError": "Falha ao carregar o relatório de status das contas",
   "settings.accountStatus.comingSoonDesc": "Este recurso estará disponível em breve. Os endpoints do backend para relatórios de status das contas ainda não foram implementados.",

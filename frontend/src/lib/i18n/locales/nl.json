@@ -3573,7 +3573,7 @@
   "settings.localAuth.loginBannerEnableHelp": "Toont een melding op de inlogpagina die elke gebruiker moet bevestigen voordat hij zich aanmeldt (FedRAMP AC-8)",
   "settings.localAuth.loginBannerClassification": "Classificatielabel",
   "settings.localAuth.loginBannerText": "Bannertekst",
-  "settings.localAuth.loginBannerTextHelp": "Wordt volledig weergegeven op de inlogpagina; het wijzigen van deze tekst vereist dat elke gebruiker deze opnieuw bevestigt",
+  "settings.localAuth.loginBannerTextHelp": "Wordt volledig getoond op de inlogpagina; als je deze tekst wijzigt, moet elke gebruiker hem opnieuw bevestigen. Laat hem leeg om de standaard toestemmingsmelding van de Amerikaanse overheid (DoD) in het Engels te tonen.",
   "loginBanner.consentText": "Door op \"Ik bevestig\" te klikken, gaat u akkoord met de bovenstaande voorwaarden en bevestigt u dat u gemachtigd bent om toegang te krijgen tot dit systeem.",
   "settings.accountStatus.loadError": "Laden van accountstatusrapport mislukt",
   "settings.accountStatus.comingSoonDesc": "Deze functie komt binnenkort beschikbaar. De backend-endpoints voor accountstatusrapportage zijn nog niet geïmplementeerd.",

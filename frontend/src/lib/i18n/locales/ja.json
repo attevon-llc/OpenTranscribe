@@ -3481,7 +3481,7 @@
   "settings.localAuth.loginBannerEnableHelp": "サインインする前にすべてのユーザーが確認に同意する必要がある通知を、ログインページに表示します（FedRAMP AC-8）",
   "settings.localAuth.loginBannerClassification": "分類ラベル",
   "settings.localAuth.loginBannerText": "バナーテキスト",
-  "settings.localAuth.loginBannerTextHelp": "ログインページに全文が表示されます。このテキストを変更すると、すべてのユーザーが再度確認する必要があります",
+  "settings.localAuth.loginBannerTextHelp": "ログインページに全文が表示されます。この文面を変更すると、すべてのユーザーが再度同意する必要があります。空欄にすると、米国政府 (DoD) の標準同意通知が英語で表示されます。",
   "loginBanner.consentText": "「承認します」をクリックすることにより、上記の条件に同意し、このシステムへのアクセスが許可されていることを確認します。",
   "settings.accountStatus.loadError": "アカウント状態レポートの読み込みに失敗しました",
   "settings.accountStatus.comingSoonDesc": "この機能は近日公開予定です。アカウント状態レポートのバックエンドエンドポイントはまだ実装されていません。",

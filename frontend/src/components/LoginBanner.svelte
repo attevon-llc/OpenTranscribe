@@ -3,6 +3,7 @@
   import { t } from '$stores/locale';
   import axiosInstance from '$lib/axios';
   import { colorsFor } from '$lib/utils/classificationColors';
+  import { STANDARD_USG_CONSENT_NOTICE } from '$lib/auth/standardConsentNotice';
 
   /**
    * The acknowledgment is being recorded server-side
@@ -30,6 +31,8 @@
   let loading = true;
 
   $: colors = colorsFor(banner.classification);
+  // An enabled banner with no wording of its own shows the standard notice, never an empty box.
+  $: noticeText = banner.text?.trim() ? banner.text : STANDARD_USG_CONSENT_NOTICE;
 
 
   onMount(async () => {
@@ -74,7 +77,7 @@
         {/if}
 
         <div class="banner-text">
-          {banner.text}
+          {noticeText}
         </div>
 
         <p class="legal-notice">

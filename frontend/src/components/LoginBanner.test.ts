@@ -105,4 +105,20 @@ describe('LoginBanner', () => {
       ).not.toBeInTheDocument()
     );
   });
+
+  it('shows the standard USG notice when the banner is enabled with no text of its own', async () => {
+    vi.mocked(axiosInstance.get).mockResolvedValue({ data: { ...BANNER, text: '' } } as never);
+    render(LoginBanner);
+
+    expect(
+      await screen.findByText(/You are accessing a U\.S\. Government \(USG\) Information System/)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/See User Agreement for details\./)).toBeInTheDocument();
+  });
+
+  it('shows the administrator wording, not the standard notice, when there is some', async () => {
+    await renderBanner();
+
+    expect(screen.queryByText(/U\.S\. Government \(USG\)/)).toBeNull();
+  });
 });

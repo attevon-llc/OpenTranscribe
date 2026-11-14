@@ -3591,7 +3591,7 @@
   "settings.localAuth.loginBannerEnableHelp": "Affiche sur la page de connexion un avis que chaque utilisateur doit accepter avant de se connecter (FedRAMP AC-8)",
   "settings.localAuth.loginBannerClassification": "Étiquette de classification",
   "settings.localAuth.loginBannerText": "Texte de la bannière",
-  "settings.localAuth.loginBannerTextHelp": "Affiché en entier sur la page de connexion ; modifier ce texte oblige chaque utilisateur à l'accepter de nouveau",
+  "settings.localAuth.loginBannerTextHelp": "Affiché en entier sur la page de connexion ; modifier ce texte oblige chaque utilisateur à l'accepter à nouveau. Laissez-le vide pour afficher l'avis de consentement standard du gouvernement des États-Unis (DoD), en anglais.",
   "loginBanner.consentText": "En cliquant sur \"J'accepte\", vous consentez aux conditions ci-dessus et confirmez que vous êtes autorisé à accéder à ce système.",
   "settings.accountStatus.loadError": "Échec du chargement du rapport de statut des comptes",
   "settings.accountStatus.comingSoonDesc": "Cette fonctionnalité sera bientôt disponible. Les endpoints backend pour les rapports de statut des comptes ne sont pas encore implémentés.",

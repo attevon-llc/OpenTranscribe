@@ -154,6 +154,76 @@ def _release_claim(key: str, file_uuid: str) -> None:
         logger.exception(f"Could not release the reindex debounce claim for file {file_uuid}")
 
 
+def requeue_after_version_conflicts(
+    *,
+    conflicts: int,
+    what: str,
+    file_id: int | None = None,
+    file_uuid: str | None = None,
+) -> ReindexDispatch | None:
+    """Queue the file's rebuild when a field rewrite skipped documents on version conflicts.
+
+    The field rewrites (tags, access, speaker and title renames) are ``update_by_query``
+    calls with ``conflicts="proceed"``. OpenSearch takes a snapshot of the index when the
+    call starts, and a document another writer changed since then is not rewritten; it is
+    only counted in ``version_conflicts`` (OpenSearch docs, "Update by query"). Two rewrites
+    of one file in the same second collide on every document, because each chunk carries
+    the file-level ``speakers`` and ``tags``: renaming two speakers and adding a tag right
+    after left the losing value in the index until somebody ran a full reindex.
+
+    The rebuild is :func:`queue_transcript_reindex`, which reads every field from Postgres
+    when it runs, so whichever writes collided, the file converges on what Postgres holds.
+
+    Args:
+        conflicts: The ``version_conflicts`` count of the rewrite.
+        what: The rewrite, for the log line.
+        file_id: The file's integer id, when the caller has it.
+        file_uuid: The file's UUID, when the caller has it. One of the two is required.
+
+    Returns:
+        ``None`` when nothing conflicted or the file no longer exists, else the dispatch
+        outcome.
+    """
+    if not conflicts:
+        return None
+    identity = _file_identity(file_id=file_id, file_uuid=file_uuid)
+    if identity is None:
+        return None
+    outcome = queue_transcript_reindex(
+        file_id=identity[0], file_uuid=identity[1], user_id=identity[2]
+    )
+    logger.warning(
+        f"{what} for file {identity[1]} skipped {conflicts} document(s) on version "
+        f"conflicts; file rebuild {outcome.value}"
+    )
+    return outcome
+
+
+def _file_identity(*, file_id: int | None, file_uuid: str | None) -> tuple[int, str, int] | None:
+    """``(id, uuid, owner id)`` of one file, looked up by whichever key the caller holds."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+
+    if file_id is None and not file_uuid:
+        return None
+    try:
+        with session_scope() as db:
+            query = db.query(MediaFile.id, MediaFile.uuid, MediaFile.user_id)
+            if file_id is not None:
+                query = query.filter(MediaFile.id == file_id)
+            else:
+                query = query.filter(MediaFile.uuid == file_uuid)
+            row = query.first()
+    except SQLAlchemyError:
+        logger.exception(f"Could not look up file {file_id or file_uuid} to queue its rebuild")
+        return None
+    if row is None:
+        return None
+    return int(row[0]), str(row[1]), int(row[2])
+
+
 def dispatch_transcript_reindex(
     *,
     file_id: int,

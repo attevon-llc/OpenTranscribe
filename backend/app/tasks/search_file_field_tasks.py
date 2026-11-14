@@ -22,6 +22,21 @@ from app.tasks.search_indexing_task import extract_file_index_metadata
 logger = logging.getLogger(__name__)
 
 
+def _rebuild_on_conflicts(response: dict[str, Any], file_id: int, what: str) -> bool:
+    """Queue the file's rebuild if the rewrite skipped documents; True when one was asked for.
+
+    ``conflicts="proceed"`` skips a document another writer changed during the rewrite and
+    only counts it, so without this the skipped documents kept the old value for good.
+    """
+    from app.services.search.reindex_dispatch import ReindexDispatch
+    from app.services.search.reindex_dispatch import requeue_after_version_conflicts
+
+    conflicts = int(response.get("version_conflicts", 0) or 0)
+    outcome = requeue_after_version_conflicts(conflicts=conflicts, what=what, file_id=file_id)
+    # ALREADY_PENDING counts: the pending rebuild reads Postgres when it runs.
+    return outcome is not None and outcome is not ReindexDispatch.FAILED
+
+
 @celery_app.task(
     name="update_file_access_index",
     priority=UtilityPriority.ROUTINE,
@@ -72,6 +87,7 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
     updated = 0
     errors = 0
     missing_file_ids: list[int] = []
+    rebuild_queued: list[int] = []
 
     for file_id in file_ids:
         try:
@@ -117,6 +133,8 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
             )
             file_updated = response.get("updated", 0)
             updated += file_updated
+            if _rebuild_on_conflicts(response, int(file_id), "Access index update"):
+                rebuild_queued.append(int(file_id))
             logger.debug(
                 f"Updated accessible_user_ids for file {file_id}: "
                 f"{file_updated} chunks, {len(accessible_ids)} users"
@@ -149,6 +167,8 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
     }
     if missing_file_ids:
         result["missing_file_ids"] = missing_file_ids
+    if rebuild_queued:
+        result["rebuild_queued"] = rebuild_queued
     return result
 
 
@@ -211,6 +231,7 @@ def update_file_tags_index(self: Any, file_ids: list[int]) -> dict[str, Any]:
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
     updated = 0
     errors = 0
+    rebuild_queued: list[int] = []
     for file_id in file_ids:
         try:
             response = client.update_by_query(
@@ -226,6 +247,8 @@ def update_file_tags_index(self: Any, file_ids: list[int]) -> dict[str, Any]:
                 conflicts="proceed",
             )
             updated += int(response.get("updated", 0))
+            if _rebuild_on_conflicts(response, int(file_id), "Tag index update"):
+                rebuild_queued.append(int(file_id))
         except OpenSearchException as e:
             errors += 1
             logger.error(
@@ -241,7 +264,15 @@ def update_file_tags_index(self: Any, file_ids: list[int]) -> dict[str, Any]:
     logger.info(
         f"Tag index update: {updated} documents across {len(file_ids)} files, {errors} errors"
     )
-    return {"status": "success", "updated": updated, "files": len(file_ids), "errors": errors}
+    result: dict[str, Any] = {
+        "status": "success",
+        "updated": updated,
+        "files": len(file_ids),
+        "errors": errors,
+    }
+    if rebuild_queued:
+        result["rebuild_queued"] = rebuild_queued
+    return result
 
 
 @celery_app.task(

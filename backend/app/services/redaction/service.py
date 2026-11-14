@@ -26,7 +26,9 @@ from app.services.redaction.config import normalize_language
 from app.services.redaction.detectors import DetectorUnavailableError
 from app.services.redaction.detectors import no_model_load
 from app.services.redaction.detectors import wordlist
+from app.services.redaction.rescan_coordination import SCAN_COMING
 from app.services.redaction.rescan_coordination import finish_scan
+from app.services.redaction.rescan_coordination import lock_redaction_status
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import apply_redactions
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
@@ -512,14 +514,17 @@ class RedactionService:
         untouched.
 
         Args:
-            db: Database session. Committed only when the file is marked stale.
+            db: The edit's session. Never committed here: the caller commits the edit
+                and any stale mark together, then queues a re-scan if one is owed.
             media_file: The edited segment's file (the policy subject).
             segment: The segment whose ``text`` just changed. Its ``redactions``
                 and ``toxicity`` are updated in place.
 
         Returns:
             ``"done"`` when the cached spans can be trusted, ``"stale"`` when the
-            file was marked for re-detection instead.
+            file was marked for re-detection and a scan already coming covers it,
+            ``"rescan"`` when it was marked and the caller must queue the re-scan
+            after its commit (``RedactionService.queue_rescan``).
         """
         from app.services.redaction.config import blocking_detector_failures
         from app.services.redaction.config import resolve_effective_config
@@ -537,19 +542,20 @@ class RedactionService:
                     det_cfg,
                     failures=failures,
                 )
-            if refused:
-                # Not resident is not "could not run anywhere": only the dedicated worker
-                # can examine this text, and a cached result computed without it would
-                # read as clean forever.
-                segment.redactions = span_dicts or None
-                segment.toxicity = toxicity
-                return RedactionService._mark_redaction_stale(db, media_file, sorted(set(refused)))
         except Exception:  # edit-time boundary: the segment is marked stale below
             # Not just one detector — the whole re-detection. Nothing was
             # examined, and the segment's cached spans still describe the text it
             # had before the edit.
             logger.warning("Re-detection after a segment edit raised", exc_info=True)
             return RedactionService._mark_redaction_stale(db, media_file, ["*"])
+
+        segment.redactions = span_dicts or None
+        segment.toxicity = toxicity
+        if refused:
+            # Not resident is not "could not run anywhere": only the dedicated worker
+            # can examine this text, and a cached result computed without it would
+            # read as clean forever.
+            return RedactionService._mark_redaction_stale(db, media_file, sorted(set(refused)))
 
         blocking: list[str] = []
         if failures:
@@ -570,61 +576,46 @@ class RedactionService:
                 )
                 blocking = sorted(set(failures))
 
-        segment.redactions = span_dicts or None
-        segment.toxicity = toxicity
         if blocking:
             return RedactionService._mark_redaction_stale(db, media_file, blocking)
+        if lock_redaction_status(db, media_file) == redaction_defaults.REDACTION_STATUS_PROCESSING:
+            # A scan in flight read this segment's OLD text and would overwrite these spans
+            # under ``done``. Re-marking ``pending`` makes its terminal write lose, and it
+            # re-scans (rescan_coordination.finish_scan).
+            media_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
         return "done"
 
     @staticmethod
     def _mark_redaction_stale(db: Session, media_file: MediaFile, detectors: list[str]) -> str:
-        """Record that a file's cached spans no longer cover its text, and re-scan it.
+        """Mark a file's cached spans stale in the CALLER's transaction.
+
+        Nothing is committed or queued here. The stale mark commits in the same transaction
+        as the edit that caused it, so no reader ever sees the new text beside ``done``, and
+        the request issues one commit. The re-scan is queued by the caller AFTER that commit
+        (``RedactionService.queue_rescan``), so the worker cannot read the pre-edit rows.
 
         Args:
-            db: Database session (committed here so the queued task cannot read
-                the pre-edit rows).
+            db: The edit's session. The file's row stays locked until its commit.
             media_file: File whose cached spans are no longer trustworthy.
             detectors: What could not be trusted, for the operator-facing log.
 
         Returns:
-            Always ``"stale"``. Never raises: a detector outage must not turn a
-            transcript edit into a 500.
+            ``"rescan"`` when the caller must queue a re-scan after committing, ``"stale"``
+            when a scan already queued or running covers this edit. A detector outage never
+            raises; a database error does, and fails the edit with nothing committed.
         """
-        status = getattr(media_file, "redaction_status", None)
-        already_queued = status in (
-            redaction_defaults.REDACTION_STATUS_PENDING,
-            redaction_defaults.REDACTION_STATUS_PROCESSING,
-        )
+        previous = lock_redaction_status(db, media_file)
         media_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-            logger.exception(
-                "Could not mark file %s stale after an unexaminable segment edit", media_file.id
-            )
-            return "stale"
-
         logger.warning(
             "A segment edit on file %s could not be examined by detectors %s. The file's "
-            "cached spans are marked stale (pending) and a full re-detection was queued, "
-            "rather than caching an unexamined segment as clean.",
+            "cached spans are marked stale (pending) and a full re-detection follows the "
+            "edit's commit, rather than caching an unexamined segment as clean.",
             media_file.id,
             detectors,
         )
-        if already_queued:
-            # A scan is already coming; a second one would just duplicate the CPU
-            # work for someone editing several segments in a row.
-            return "stale"
-        try:
-            from app.tasks.redaction_task import redaction_detect_task
-
-            redaction_detect_task.delay(file_id=int(media_file.id), user_id=int(media_file.user_id))
-        except Exception:
-            # The status stands either way — the file stays withheld rather than
-            # silently reverting to "scanned and clean".
-            logger.exception("Could not queue re-detection for file %s", media_file.id)
-        return "stale"
+        # A scan already coming covers the edit (rescan_coordination), so a run of edits
+        # costs one scan, not one per edit.
+        return "stale" if previous in SCAN_COMING else "rescan"
 
     @staticmethod
     def _run_llm_detector(

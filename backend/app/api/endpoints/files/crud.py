@@ -387,31 +387,41 @@ def update_single_transcript_segment(
             setattr(segment, field, update_fields[field])
 
     # If the text changed, re-run redaction detection for THIS segment only so the
-    # edited text never bypasses masking. The API process preloads no ML detectors,
-    # so this is also where a detector is most likely to be unavailable — and this
-    # path WRITES, so a swallowed failure would be cached as "clean" forever rather
-    # than costing one request. `redetect_edited_segment` owns that decision: it
-    # marks the file stale and queues a worker re-scan instead of persisting a
-    # result nobody could examine. It never raises for a detector fault, so a
-    # broken detector cannot turn a transcript edit into a 500.
+    # edited text never bypasses masking. The API process builds no ML detector on a
+    # request thread, so this is also where a detector is most likely to be
+    # unavailable — and this path WRITES, so a swallowed failure would be cached as
+    # "clean" forever rather than costing one request. `redetect_edited_segment` owns
+    # that decision: it marks the file stale in THIS transaction instead of persisting
+    # a result nobody could examine, and says whether a worker re-scan is owed. It
+    # never raises for a detector fault, so a broken detector cannot turn a transcript
+    # edit into a 500.
+    redetection = None
     if text_changed:
         from app.services.redaction.service import RedactionService
 
-        RedactionService.redetect_edited_segment(db, db_file, segment)
+        redetection = RedactionService.redetect_edited_segment(db, db_file, segment)
 
+    # Read before the commit expires the row, so the dispatches below cost no SELECT.
+    file_id, file_uuid, owner_id = int(db_file.id), str(db_file.uuid), int(db_file.user_id)
+    # ONE commit: the new text and the stale mark land together. Everything after it is
+    # queued work, published only once the rows it will read exist.
     db.commit()
     db.refresh(segment)
 
-    # The text is what search/RAG chunk documents are built from — a stale
-    # index otherwise serves the pre-edit wording indefinitely (issue #666).
-    # Debounced per file so editing many segments in a row queues one
-    # re-index, not one per PUT.
     if text_changed:
+        if redetection == "rescan":
+            from app.services.redaction.service import RedactionService
+
+            # Debounced: edits to this file inside the countdown ride the one scan.
+            RedactionService.queue_rescan(file_id, owner_id)
+
+        # The text is what search/RAG chunk documents are built from — a stale
+        # index otherwise serves the pre-edit wording indefinitely (issue #666).
+        # Debounced per file so editing many segments in a row queues one
+        # re-index, not one per PUT.
         from app.services.search.reindex_dispatch import dispatch_transcript_reindex
 
-        dispatch_transcript_reindex(
-            file_id=db_file.id, file_uuid=str(db_file.uuid), user_id=int(db_file.user_id)
-        )
+        dispatch_transcript_reindex(file_id=file_id, file_uuid=file_uuid, user_id=owner_id)
 
         # Word counts and talk time are derived from segment text, so the stored
         # analytics row is stale the moment the text changes. The SPA's post-save GET
@@ -423,7 +433,7 @@ def update_single_transcript_segment(
         # Queued (debounced) rather than computed here: it is CPU plus several statements.
         from app.tasks.analytics_dispatch import dispatch_analytics
 
-        dispatch_analytics(str(db_file.uuid))
+        dispatch_analytics(file_uuid)
 
     if segment.speaker is not None:
         redact_speaker_rows(db, [segment.speaker])

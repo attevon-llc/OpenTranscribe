@@ -73,11 +73,10 @@ def no_toxicity_model(monkeypatch):
 
 @pytest.fixture
 def queued_rescans(monkeypatch):
-    """Capture queued re-scans — there is no broker in this suite.
+    """Capture the re-scan an edit queues — there is no broker in this suite.
 
-    An edit queues with ``delay``; a scan an edit superseded re-queues with
-    ``apply_async`` and a countdown (``RedactionService.queue_rescan``). Only the
-    task kwargs are recorded.
+    Edits queue it with ``apply_async`` and a debounce ``countdown``
+    (``RedactionService.queue_rescan``); only the task kwargs are recorded.
     """
     from app.tasks import redaction_task
 
@@ -86,11 +85,6 @@ def queued_rescans(monkeypatch):
     def _apply_async(kwargs=None, **_options):
         calls.append(kwargs)
 
-    monkeypatch.setattr(
-        redaction_task.redaction_detect_task,
-        "delay",
-        lambda **kwargs: calls.append(kwargs),
-    )
     monkeypatch.setattr(redaction_task.redaction_detect_task, "apply_async", _apply_async)
     return calls
 

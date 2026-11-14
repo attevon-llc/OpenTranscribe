@@ -26,6 +26,8 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   resolver half stays best-effort. Personal scope (`organization_id=None`) never reads an organization row. The floor can only
   add. The Settings screen for it is not part of v0.6.0; the API field `redaction_floor` is.
 - `service.py` — `RedactionService.detect_and_store` / `mask_segment` / `is_segment_toxic`.
+- `rescan_coordination.py` — the hand-off between a segment edit and the worker's full re-scan:
+  the row-locked status re-read, the conditional terminal write, the debounced re-queue.
 - `export_policy.py` — **who** an export is masked for, **whether** it may be produced yet
   (`export_masking_is_pending`), and the policy digest that keys a cached burned-in render
   (`export_policy_fingerprint`). Its module docstring is the argument, not a summary — read it
@@ -270,12 +272,30 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   withholds, `chat/redactor_chunk_plans._gather_chunk_segments` refuses non-`done` and falls
   through to inline fail-closed masking, `llm_guard` defers **retryably**). Not `failed` — that is non-retryable in
   `llm_guard`. Not a 4xx — a detector outage must not block a user fixing a typo.
-  **The queue drains in one hop**: `detect_and_store` writes `processing` then `done` or
-  `failed` and never `pending`, so only an edit can set it and there is no cycle; a second edit
-  while a scan is pending rides the first one's dispatch. Blocking is `blocking_detector_failures`
+  **The edit commits ONCE and queues after it.** The stale mark joins the edit's own
+  transaction (no reader ever sees the new text beside `done`), and the full re-scan is published
+  only after that commit, with a `countdown` (`REDACTION_EDIT_RESCAN_DELAY_SECONDS`). The status
+  is the debounce claim: an edit on a file already `pending` or `processing` rides the scan that
+  is coming, so an edit-and-undo pair or a run of corrections costs one scan, not one each
+  (LOADRUN3: 114 of 114 edits each queued a full scan, two commits per PUT, the publish between
+  them). Re-detecting only the edited segment was rejected: `redaction_status` is per FILE, so a
+  segment-scoped scan could not tell readers when every edited segment was covered without a new
+  per-segment marker (a schema change); the full re-scan is the one path that ends in `done`.
+  **Every interleaving is fail-closed** (`rescan_coordination.py`): the edit re-reads the status
+  under `SELECT ... FOR UPDATE` before deciding, and `detect_and_store` writes its terminal
+  status only `WHERE redaction_status = 'processing'`. An edit that lands while a scan reads the
+  OLD text makes that write lose; the file stays `pending` and the scan re-queues itself
+  (`RedactionService.queue_rescan`). Before this, such a scan wrote `done` over the edit and cached the old
+  text's spans for the edited segment. This holds on the warm path too: an edit whose detectors
+  ran cleanly still re-marks a `processing` file `pending`. **The queue still drains**:
+  `detect_and_store` never writes `pending` itself, so a re-queue happens only while edits keep
+  arriving. ⚠️ A failed publish leaves the file `pending` with nothing queued, and later edits
+  ride it (withheld, never read as clean); recovery is the same as for a stranded lazy claim
+  (`redaction_gate.claim_and_dispatch_redaction_scan`'s docstring). Blocking is `blocking_detector_failures`
   against the **file owner's** policy (the subject `llm_guard` uses — the editor may be an admin
   whose own redaction is off), so a CPU-only deployment that never enabled `pii` is untouched.
-  Pinned by `tests/redaction/test_segment_edit_redetection.py`.
+  Pinned by `tests/redaction/test_segment_edit_redetection.py`, `test_segment_edit_request_path.py`
+  (one commit, publishes after it) and `test_rescan_coordination.py` (the conditional write).
 - **⚠️ The toxicity detector emits a SCORE, never a span — so `_DETECTOR_CATEGORIES` maps
   `toxicity` to NOTHING.** That entry is the one with a decision in it, and it is what makes
   reporting toxicity failures safe. Its outcomes used to be swallowed entirely

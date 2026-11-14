@@ -72,12 +72,15 @@ def _gate(monkeypatch, in_use: bool) -> None:
 
 
 def _edit() -> str:
-    media = SimpleNamespace(language="en", user_id=1, id=1)
+    media = SimpleNamespace(language="en", user_id=1, id=1, redaction_status="done")
     segment = SimpleNamespace(text="hello there", words=None, redactions=None, toxicity=None)
+    # The edit re-reads the file's scan status under a row lock before it commits; a scanned
+    # file's status is simply read back.
+    session = SimpleNamespace(refresh=lambda *_a, **_kw: None)
     # Partial stand-ins: session_scope and redaction_is_in_use are patched above, so only the
     # attributes the edit path reads exist. cast() names the types the method is declared with.
     return RedactionService.redetect_edited_segment(
-        cast("Session", None),
+        cast("Session", session),
         cast("MediaFile", media),
         cast("TranscriptSegment", segment),
     )

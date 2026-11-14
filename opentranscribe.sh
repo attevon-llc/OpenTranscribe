@@ -1043,6 +1043,9 @@ get_compose_files() {
     compose_files="$compose_files$(compose_overlay_gpu_split)"
     # #628: last, so its refusals win over every overlay above
     compose_files="$compose_files$(compose_overlay_demo "$compose_files")"
+    # Test seam, after everything: extra `-f FILE` arguments, e.g. the container-name renames that
+    # address a --fresh stack (scripts/demo/demo-target.sh). Unset on a real install.
+    compose_files="$compose_files${OPENTRANSCRIBE_EXTRA_COMPOSE_FILES:+ $OPENTRANSCRIBE_EXTRA_COMPOSE_FILES}"
 
     echo "$compose_files"
 }

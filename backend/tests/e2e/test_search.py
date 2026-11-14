@@ -275,11 +275,18 @@ class TestSearchResultClickThrough:
         expect(search_page.locator(".transcript-segment").first).to_be_visible(timeout=15000)
 
     def test_view_transcript_opens_the_modal_and_highlights_the_match(
-        self, search_page: Page, known_query: str
+        self, search_page: Page, known_query: str, owned_transcribed_file: dict
     ):
         """`.view-transcript-btn` opens the in-place modal — no navigation, real highlights."""
         _run_search(search_page, known_query)
-        card = self._first_result_card(search_page)
+        # Every xdist worker uploads the same clip, so the first card can be ANOTHER
+        # worker's file, deleted at its session teardown (the modal then reads "File not
+        # found"). Address this session's own upload.
+        card = search_page.locator(
+            ".results-list .result-card",
+            has=search_page.locator(f'a[href^="/files/{owned_transcribed_file["uuid"]}"]'),
+        ).first
+        expect(card).to_be_visible(timeout=15000)
         card.locator(".view-transcript-btn").click()
 
         # `.search-transcript-modal-wrapper` is a plain, unsized wrapper div around the

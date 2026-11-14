@@ -292,7 +292,8 @@
       .then((list) => (legalAvailable = list.length > 0))
       .catch(() => (legalAvailable = false));
 
-    TakedownNoticesApi.hasAnyMine()
+    // A refusal (429 included) just hides the entry; nothing is logged or toasted for it.
+    TakedownNoticesApi.hasAnyMine($userStore?.uuid)
       .then((any) => (hasTakedowns = any))
       .catch(() => (hasTakedowns = false));
 

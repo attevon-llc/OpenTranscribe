@@ -60,6 +60,37 @@ describe('TakedownNoticesApi', () => {
     expect(await TakedownNoticesApi.hasAnyMine()).toBe(false);
   });
 
+  it('hasAnyMine survives a page reload per user, is purged with the cache, and a 429 stays quiet', async () => {
+    sessionStorage.clear();
+    TakedownNoticesApi.resetMineCache();
+    get.mockResolvedValue({ data: { takedowns: [], total: 1 } } as never);
+    expect(await TakedownNoticesApi.hasAnyMine('u-1')).toBe(true);
+    expect(get).toHaveBeenCalledTimes(1);
+
+    // A full page load drops module memory but keeps sessionStorage.
+    vi.resetModules();
+    const fresh = (await import('./takedownNotices')).TakedownNoticesApi;
+    get.mockClear();
+    expect(await fresh.hasAnyMine('u-1')).toBe(true);
+    expect(get).not.toHaveBeenCalled();
+
+    // Another user never reads it.
+    vi.resetModules();
+    const other = (await import('./takedownNotices')).TakedownNoticesApi;
+    get.mockResolvedValue({ data: { takedowns: [], total: 0 } } as never);
+    expect(await other.hasAnyMine('u-2')).toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+
+    // The logout purge removes it.
+    other.resetMineCache();
+    expect(sessionStorage.getItem('opentr:takedownMine')).toBeNull();
+
+    // A 429 rejects without persisting anything.
+    get.mockRejectedValueOnce(Object.assign(new Error('429'), { response: { status: 429 } }));
+    await expect(other.hasAnyMine('u-2')).rejects.toThrow();
+    expect(sessionStorage.getItem('opentr:takedownMine')).toBeNull();
+  });
+
   it('export reads the server-built filename and the truncation flag', async () => {
     get.mockResolvedValue({
       data: new Blob(['x']),

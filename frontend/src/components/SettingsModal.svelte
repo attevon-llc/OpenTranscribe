@@ -1370,9 +1370,11 @@
     min-width: 1.25rem;
     padding: 0 var(--space-1-5);
     border-radius: var(--radius-pill);
-    background: rgba(var(--warning-color-rgb), 0.1);
-    color: var(--warning-text);
-    border: 1px solid rgba(var(--warning-color-rgb), 0.45);
+    /* Opaque fill: the badge sits on the nav item's hover/active grey, not the page surface, and a
+       translucent tint over that grey read 4.33:1. The solid pair is 6.81:1 on any backdrop. */
+    background: var(--warning-solid);
+    color: var(--text-on-warning);
+    border: 1px solid var(--warning-solid);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-semibold);
     line-height: 1.4;

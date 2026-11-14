@@ -271,6 +271,18 @@ describe('token pairs used together in the stylesheets clear WCAG 2.2 AA', () =>
     expect(stale).toEqual([]);
   });
 
+  it('the settings nav count badge uses an opaque pair, not a tint over the nav grey (UI pass C6)', () => {
+    const src = fs.readFileSync(path.join(SRC, 'components/SettingsModal.svelte'), 'utf8');
+    const body = src.match(/\n\s*\.nav-badge\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(body).toMatch(/background:\s*var\(--warning-solid\)/);
+    expect(body).toMatch(/color:\s*var\(--text-on-warning\)/);
+    for (const theme of THEMES) {
+      const fg = opaque(theme, '--text-on-warning');
+      const bg = opaque(theme, '--warning-solid');
+      expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(TEXT);
+    }
+  });
+
   it('control: a status fill used as text on the light card fails the bar', () => {
     // #ef4444 on white is 3.76:1: the detector must call this a failure.
     expect(contrastRatio([0xef, 0x44, 0x44], [255, 255, 255])).toBeLessThan(TEXT);

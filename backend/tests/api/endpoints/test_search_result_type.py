@@ -423,6 +423,7 @@ class TestSummaryMaskingFailsClosed:
         )
         assert response.status_code == 503, response.text
 
+    @pytest.mark.models
     def test_a_detector_outage_is_scoped_to_the_leaves_actually_returned(
         self,
         client,
@@ -431,6 +432,7 @@ class TestSummaryMaskingFailsClosed:
         db_session,
         monkeypatch,
         stub_transcript_search,
+        resident_pii_analyzer,
     ):
         """The real #822 fix, proven rather than assumed: a summary with a
         matching leaf AND a non-matching leaf, where the masker raises only for

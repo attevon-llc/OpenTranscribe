@@ -115,7 +115,9 @@ def test_a_redaction_disabled_reader_gets_the_summary_untouched(
 
 
 @pytest.mark.models
-def test_pii_in_the_bluf_is_masked(client, db_session, normal_user, user_token_headers):
+def test_pii_in_the_bluf_is_masked(
+    client, db_session, normal_user, user_token_headers, resident_pii_analyzer
+):
     """The headline defect: the BLUF restated a phone number the transcript masked."""
     media_file = _make_file(
         db_session,
@@ -134,7 +136,7 @@ def test_pii_in_the_bluf_is_masked(client, db_session, normal_user, user_token_h
 
 @pytest.mark.models
 def test_every_section_is_masked_not_only_the_first(
-    client, db_session, normal_user, user_token_headers
+    client, db_session, normal_user, user_token_headers, resident_pii_analyzer
 ):
     """⚠️ The anti-batching test. Do not "optimise" detection into one call.
 
@@ -163,7 +165,9 @@ def test_every_section_is_masked_not_only_the_first(
 
 
 @pytest.mark.models
-def test_nested_lists_and_dicts_are_masked(client, db_session, normal_user, user_token_headers):
+def test_nested_lists_and_dicts_are_masked(
+    client, db_session, normal_user, user_token_headers, resident_pii_analyzer
+):
     """``summary_data`` is free-form JSON, so the walk must not name known fields."""
     media_file = _make_file(
         db_session,
@@ -269,7 +273,7 @@ def test_a_profanity_only_policy_never_builds_the_pii_analyzer(
 
 @pytest.mark.models
 def test_a_share_recipients_own_policy_governs_not_the_owners(
-    client, db_session, normal_user, other_user, user_token_headers
+    client, db_session, normal_user, other_user, user_token_headers, resident_pii_analyzer
 ):
     """The subject is the REQUESTING user — the read-surface rule from #85.
 

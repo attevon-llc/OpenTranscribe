@@ -1127,21 +1127,18 @@ json_string() {
 # ---------------------------------------------------------------------------
 main() {
     parse_args "$@"
-
     # shellcheck source=scripts/lib/compose-project.sh
     source "$REPO_ROOT/scripts/lib/compose-project.sh"
     # shellcheck source=scripts/lib/stack-target.sh
     source "$REPO_ROOT/scripts/lib/stack-target.sh"
-
+    source "$REPO_ROOT/scripts/lib/gpu-free-vram.sh"
     derive_surfaces
     derive_base_ports
     validate_args
     check_preconditions
     resolve_git_provenance
     warn_if_dirty
-
     cd "$REPO_ROOT"
-
     derive_seed_manifest
 
     WORKDIR="${OT_VISUAL_WORKDIR:-/tmp/ot-visual-baselines/$(date +%Y%m%d-%H%M%S)}"
@@ -1149,6 +1146,8 @@ main() {
     snapshot_baselines
 
     trap restore_baselines_unless_accepted EXIT
+
+    assert_gpu_has_free_vram "${GPU_DEVICE:-${GPU_DEVICE_ID:-1}}" || exit "$EXIT_PRECONDITION"
 
     $REBUILD_STACK && rebuild_capture_project
 

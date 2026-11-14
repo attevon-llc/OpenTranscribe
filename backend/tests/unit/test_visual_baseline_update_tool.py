@@ -97,6 +97,7 @@ def run_check(
         REPO_ROOT={REPO_ROOT!s}
         source "$REPO_ROOT/scripts/lib/compose-project.sh"
         source "$REPO_ROOT/scripts/lib/stack-target.sh"
+        source "$REPO_ROOT/scripts/lib/gpu-free-vram.sh"
         source "$REPO_ROOT/{SCRIPT_REL}"
         set +e   # the script turns on `set -e` at source time
         for fn in derive_surfaces assert_gpu_device_allowed observe_capture_stack; do
@@ -595,3 +596,56 @@ def test_the_full_capture_still_requires_the_real_venv() -> None:
         "check_preconditions no longer requires the real venv, so a capture run can start "
         "without pytest/Playwright and fail much later for an unrelated-looking reason"
     )
+
+
+# ---------------------------------------------------------------------------
+# GPU free-memory preflight: refuse BEFORE the stack starts (2026-11-14: another idle
+# stack held 7.3 GB of the 12 GB card, all 3 seed files OOMed, found 15 minutes later).
+# ---------------------------------------------------------------------------
+def _stub_nvidia_smi(directory: Path, free_mb: int) -> Path:
+    """A fake nvidia-smi: free memory for `memory.free`, no compute apps."""
+    binary = directory / "nvidia-smi"
+    binary.write_text(
+        "#!/usr/bin/env bash\n"
+        'echo "$@" >> "$(dirname "$0")/nvidia-smi.log"\n'
+        'case "$*" in\n'
+        f'  *memory.free*) echo "{free_mb}" ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    binary.chmod(0o755)
+    return directory
+
+
+def test_low_free_vram_refuses_with_exit_3_before_any_start(tmp_path: Path) -> None:
+    _stub_nvidia_smi(tmp_path, free_mb=4700)
+    proc = run_check(
+        "assert_gpu_has_free_vram 1", env={"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"}
+    )
+    assert rc_of(proc) == 3, proc.stdout + proc.stderr
+    assert "4700" in proc.stdout + proc.stderr
+
+
+def test_enough_free_vram_proceeds(tmp_path: Path) -> None:
+    _stub_nvidia_smi(tmp_path, free_mb=11000)
+    proc = run_check(
+        "assert_gpu_has_free_vram 1", env={"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"}
+    )
+    assert rc_of(proc) == 0, proc.stdout + proc.stderr
+
+
+def test_dry_run_reports_low_vram_without_refusing(tmp_path: Path) -> None:
+    _stub_nvidia_smi(tmp_path, free_mb=100)
+    proc = run_check(
+        "DRY_RUN=true; assert_gpu_has_free_vram 1",
+        env={"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+    )
+    assert rc_of(proc) == 0
+    assert "100" in proc.stdout + proc.stderr
+
+
+def test_the_vram_preflight_is_invoked_before_the_stack_starts() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    main_body = source.split("main() {", 1)[1]
+    assert "assert_gpu_has_free_vram" in main_body
+    assert main_body.index("assert_gpu_has_free_vram") < main_body.index("start_capture_stack")

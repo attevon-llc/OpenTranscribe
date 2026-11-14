@@ -777,6 +777,7 @@
   "settings.llmProvider.activateTooltip": "Deze configuratie actief maken",
   "settings.llmProvider.probeReasoning": "Redeneer-uitschakeling meten",
   "settings.llmProvider.probeReasoningRunning": "Bezig met meten van {{name}}: drie korte generaties, waarbij redeneren aan, uit en niet ingesteld worden vergeleken.",
+  "settings.llmProvider.probeReasoningPending": "De redeneer-uitschakeling wordt gemeten. Bij een traag model kan dit enkele minuten duren; het resultaat wordt opgeslagen zodra de meting klaar is.",
   "settings.llmProvider.reasoningOffSwitch.works": "Redeneren kan worden uitgeschakeld. De chatinstellingen bieden nu de schakelaar aan.",
   "settings.llmProvider.reasoningOffSwitch.absent": "Dit model negeert het verzoek en redeneert toch, dus wordt er geen schakelaar aangeboden — een schakelaar die niets doet zou erger zijn dan geen schakelaar.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "Dit model rapporteert geen apart redeneerproces, dus er is niets om uit te schakelen.",

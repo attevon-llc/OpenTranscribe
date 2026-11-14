@@ -1395,6 +1395,7 @@
   "settings.llmProvider.savedConfigs": "Configurations Enregistrées",
   "settings.llmProvider.probeReasoning": "Mesurer la désactivation du raisonnement",
   "settings.llmProvider.probeReasoningRunning": "Mesure de {{name}} : trois générations courtes, comparant le raisonnement activé, désactivé et non spécifié.",
+  "settings.llmProvider.probeReasoningPending": "Mesure de la désactivation du raisonnement en cours. Cela peut prendre quelques minutes avec un modèle lent ; le résultat est enregistré à la fin.",
   "settings.llmProvider.reasoningOffSwitch.works": "Le raisonnement peut être désactivé. Les contrôles du chat proposent désormais l'option.",
   "settings.llmProvider.reasoningOffSwitch.absent": "Ce modèle ignore la demande et raisonne quand même : aucune option n'est proposée, car un interrupteur sans effet serait pire que rien.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "Ce modèle ne signale aucun raisonnement séparé, il n'y a donc rien à désactiver.",

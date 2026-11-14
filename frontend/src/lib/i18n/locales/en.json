@@ -777,6 +777,7 @@
   "settings.llmProvider.activateTooltip": "Make this configuration active",
   "settings.llmProvider.probeReasoning": "Measure reasoning off-switch",
   "settings.llmProvider.probeReasoningRunning": "Measuring {{name}}: three short generations, comparing reasoning on, off, and unset.",
+  "settings.llmProvider.probeReasoningPending": "Measuring the reasoning off-switch. This can take a few minutes on a slow model; the result is saved when it finishes.",
   "settings.llmProvider.reasoningOffSwitch.works": "Reasoning can be turned off. The chat controls now offer the toggle.",
   "settings.llmProvider.reasoningOffSwitch.absent": "This model ignores the request and reasons anyway, so no toggle is offered — a switch that did nothing would be worse than none.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "This model reports no separate reasoning, so there is nothing to turn off.",

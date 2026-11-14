@@ -131,7 +131,10 @@ the activated arm legitimately returns `content: null` with 1,656 characters of 
 
 1. Configure it as an LLM configuration and press the probe (or `POST .../reasoning-probe`).
    It runs three real generations at temperature 0 against **that** endpoint: `true`, then
-   `false`, then the parameter omitted.
+   `false`, then the parameter omitted. On a small local model that is minutes, not seconds
+   (107 s measured on Qwen3-4B-AWQ), so the route is exempt from `REQUEST_DEADLINE_SECONDS`
+   and bounded by `LLM_REASONING_PROBE_TIMEOUT_S` per arm instead; under the deadline the
+   verdict was measured and then refused at the write.
 2. Read the verdict. `works` → the toggle appears. `absent` → probed, and the model ignored it.
    `no_reasoning` → nothing to switch off. `unsupported` → this build has no off-switch
    parameter for that provider. `unknown` → never probed, or the probe could not complete.

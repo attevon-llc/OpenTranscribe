@@ -150,7 +150,7 @@ def test_every_exempt_template_is_a_real_route():
     ]
     unexplained = [e.template for e in EXEMPT_ROUTES if not e.reason.strip()]
 
-    assert len(EXEMPT_ROUTES) == 8
+    assert len(EXEMPT_ROUTES) == 9
     assert missing == []
     assert unexplained == []
 

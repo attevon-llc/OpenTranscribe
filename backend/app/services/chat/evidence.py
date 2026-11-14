@@ -1,7 +1,8 @@
 """What a turn's evidence passes through after retrieval, and what is recorded about it.
 
 The quarantine drop for the ranked tiers, the read-time expansion count, the merge
-(digests lead) and the fail-closed filter that drops whatever masking emptied, plus
+(digests lead), the fail-closed filter that drops whatever masking emptied and the drop of
+duplicate excerpts (one file span, one source id), plus
 the grounding diagnostics (languages, retrieval counters) written to ``meta``.
 
 ``_drop_quarantined_hits`` is called through ``context_prep.py``'s module globals (from
@@ -136,8 +137,46 @@ def _merge_evidence(
         kept=len(kept),
         dropped=len(masked) - len(kept),
     )
-    masked = kept
-    return masked
+    unique = _drop_duplicate_excerpts(kept)
+    if len(unique) < len(kept):
+        meta["chunks_dropped_duplicate"] = len(kept) - len(unique)
+    return unique
+
+
+def _excerpt_key(chunk: MaskedChunk) -> tuple[object, ...]:
+    """What makes two excerpts the same source to a reader.
+
+    A transcript chunk is its file and time span, not its ``chunk_index``: read-time
+    expansion (``context_expansion.py``) widens each short chunk to its surrounding
+    exchange and keeps the list's length, so two short neighbours in a short recording
+    come back as the SAME span with the same rebuilt text under two indexes. A digest
+    section is keyed apart, so it never collapses into a transcript chunk that happens
+    to share its bounds, and an LLM summary never collapses into an extractive digest
+    section of the same number (different text, different provenance).
+    """
+    source = chunk.source
+    if source.is_digest:
+        return ("digest", source.file_uuid, source.digest_section, source.is_llm_summary)
+    return ("chunk", source.file_uuid, source.start_time, source.end_time)
+
+
+def _drop_duplicate_excerpts(chunks: list[MaskedChunk]) -> list[MaskedChunk]:
+    """Keep the first, best-ranked copy of each excerpt.
+
+    This list is what ``prompt_blocks.format_excerpts`` numbers and what the ``sources``
+    frame is built from, so a duplicate here is one passage shown to the model, and
+    offered to the user, under two ids. Each copy went through masking already and both
+    are masked the same way (same file, same span), so dropping one changes no masking.
+    """
+    seen: set[tuple[object, ...]] = set()
+    unique: list[MaskedChunk] = []
+    for chunk in chunks:
+        key = _excerpt_key(chunk)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(chunk)
+    return unique
 
 
 def _record_languages(

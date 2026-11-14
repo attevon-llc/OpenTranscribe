@@ -776,6 +776,7 @@
   "settings.llmProvider.activateTooltip": "이 구성을 활성화합니다",
   "settings.llmProvider.probeReasoning": "추론 끄기 스위치 측정",
   "settings.llmProvider.probeReasoningRunning": "{{name}} 측정 중: 짧은 생성 3회로 추론 켜짐, 꺼짐, 미설정 상태를 비교합니다.",
+  "settings.llmProvider.probeReasoningPending": "추론 끄기 스위치를 측정하는 중입니다. 느린 모델에서는 몇 분이 걸릴 수 있으며, 결과는 완료되면 저장됩니다.",
   "settings.llmProvider.reasoningOffSwitch.works": "추론을 끌 수 있습니다. 이제 채팅 설정에서 전환 스위치를 제공합니다.",
   "settings.llmProvider.reasoningOffSwitch.absent": "이 모델은 요청을 무시하고 어차피 추론을 수행하므로 전환 스위치를 제공하지 않습니다. 아무 효과가 없는 스위치는 없는 것보다 못합니다.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "이 모델은 별도의 추론 과정을 보고하지 않으므로 끌 것이 없습니다.",

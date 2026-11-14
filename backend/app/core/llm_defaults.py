@@ -37,9 +37,18 @@ LLM_REASONING_PROBE_TEMPERATURE = 0.0
 #: suppressed one (the measured "on" arm spent 1,123 tokens).
 LLM_REASONING_PROBE_MAX_TOKENS = 1200
 
-#: Per-arm HTTP timeout. Three arms, so the whole probe is bounded well inside
-#: a request's patience; a slow endpoint yields UNKNOWN rather than hanging.
-LLM_REASONING_PROBE_TIMEOUT_S = 120
+#: Per-arm HTTP read timeout. The probe runs three arms in sequence, so its worst
+#: case is 3 x this = 240 s, inside nginx's ``proxy_read_timeout 300s``
+#: (``frontend/nginx.conf``) and the SPA's own timeout for this one call
+#: (``REASONING_PROBE_TIMEOUT_MS`` in ``frontend/src/lib/api/llmSettings.ts``).
+#: ``test_llm_reasoning_probe_bounds.py`` pins both. A slow endpoint yields UNKNOWN
+#: rather than hanging. 120 s per arm used to add up to 360 s, past nginx.
+#:
+#: The probe route is exempt from ``REQUEST_DEADLINE_SECONDS``
+#: (``middleware/request_deadline.py``): a real local model measured 107 s for the
+#: three arms (Qwen3-4B-AWQ on vLLM, 2026-11-13), and under the 55 s deadline the
+#: verdict write was refused, so it was measured and then lost.
+LLM_REASONING_PROBE_TIMEOUT_S = 80
 
 #: The "off" arm must remove at least 90% of the reasoning the control arms
 #: produced before the switch is called real. Justification: the control is

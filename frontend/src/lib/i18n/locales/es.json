@@ -1395,6 +1395,7 @@
   "settings.llmProvider.savedConfigs": "Configuraciones Guardadas",
   "settings.llmProvider.probeReasoning": "Medir el interruptor de razonamiento",
   "settings.llmProvider.probeReasoningRunning": "Midiendo {{name}}: tres generaciones cortas, comparando razonamiento activado, desactivado y sin especificar.",
+  "settings.llmProvider.probeReasoningPending": "Midiendo el interruptor de razonamiento. Puede tardar unos minutos con un modelo lento; el resultado se guarda al terminar.",
   "settings.llmProvider.reasoningOffSwitch.works": "El razonamiento se puede desactivar. Los controles del chat ya ofrecen la opción.",
   "settings.llmProvider.reasoningOffSwitch.absent": "Este modelo ignora la petición y razona igualmente, así que no se ofrece ninguna opción: un interruptor que no hiciera nada sería peor que ninguno.",
   "settings.llmProvider.reasoningOffSwitch.no_reasoning": "Este modelo no informa de un razonamiento separado, así que no hay nada que desactivar.",

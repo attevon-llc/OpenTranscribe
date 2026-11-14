@@ -7,6 +7,7 @@ import importlib
 import sys
 from pathlib import Path
 from types import ModuleType
+from types import SimpleNamespace
 
 import pytest
 
@@ -71,6 +72,17 @@ def test_redis_url_has_no_password_without_an_env_file_and_env_var_wins(
     assert common.load_redis_url(tmp_path / "missing") == "redis://localhost:5177/0"
     monkeypatch.setenv("BENCHMARK_REDIS_URL", "redis://override/1")
     assert common.load_redis_url(tmp_path / "missing") == "redis://override/1"
+
+
+def test_redis_url_refuses_when_no_stack_publishes_a_port(common, tmp_path, monkeypatch):
+    """No URL with an empty port (``redis://localhost:/0``) and no guessed stock port."""
+    monkeypatch.delenv("BENCHMARK_REDIS_URL", raising=False)
+    monkeypatch.delenv("REDIS_PORT", raising=False)
+    monkeypatch.setattr(
+        common, "_stack_target", lambda: SimpleNamespace(observed_port=lambda _var: "")
+    )
+    with pytest.raises(SystemExit, match="no REDIS_PORT resolved"):
+        common.load_redis_url(tmp_path / "missing")
 
 
 def test_default_env_file_is_the_repo_root_dotenv(common):

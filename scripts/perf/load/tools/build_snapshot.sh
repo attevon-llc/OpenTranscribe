@@ -36,6 +36,17 @@ if [[ -n "$OLD" ]]; then
 else
   "$REPO/scripts/seed-query-review.sh" --fresh "$FRESH" "${SEED_FLAGS[@]}"
 fi
+# A migrated install has every one-time pass flagged done; seeded rows have no media objects, so an
+# unflagged snapshot makes the stack re-run the imohash/thumbnail/normalization passes during the load
+# run (loadrun2 R1: 34k NoSuchKey failures, Redis 77% CPU). Keys are the code's own constants:
+# tasks/imohash_recompute.py RECOMPUTE_FLAG_KEY, core/constants.py THUMBNAIL_*_DONE_KEY,
+# tasks/speaker_embedding_migration.py NORMALIZATION_DONE_KEY.
+psql_in -c "INSERT INTO system_settings (key, value, description) VALUES
+  ('imohash_package_recompute_complete','true','load seed: one-time pass marked done'),
+  ('thumbnail_webp_migration_done','true','load seed: one-time pass marked done'),
+  ('thumbnail_backfill_done','true','load seed: one-time pass marked done'),
+  ('embedding_normalization_done','true','load seed: one-time pass marked done')
+  ON CONFLICT (key) DO UPDATE SET value='true'"
 psql_in -c ANALYZE
 docker exec "$PG" sh -c 'pg_dump -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-opentranscribe}" -Fc' > "$OUT"
 (cd "$(dirname "$OUT")" && sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256" && cat "$(basename "$OUT").sha256")

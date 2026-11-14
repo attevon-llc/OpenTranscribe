@@ -167,7 +167,9 @@ def _parse_phases(source: str) -> list[Phase]:
 
 
 def _gate_phases() -> list[Phase]:
-    return _parse_phases(GATE.read_text(encoding="utf-8"))
+    # 025397df8 moved the tail phases into a sourced library; they are still gate phases.
+    tail = GATE.parent / "lib" / "gate-tail-phases.sh"
+    return _parse_phases(GATE.read_text(encoding="utf-8") + "\n" + tail.read_text(encoding="utf-8"))
 
 
 # --------------------------------------------------------------------------------------

@@ -31,6 +31,9 @@ from pathlib import Path
 import pytest
 
 GATE = Path(__file__).resolve().parents[3] / "scripts" / "run-integration-tests.sh"
+#: ``record_phase_argv`` (called by ``run_phase_watching_skips``) moved into the sourced tail-phase
+#: library in 025397df8, so the harness has to lift it from there.
+TAIL_LIB = GATE.parent / "lib" / "gate-tail-phases.sh"
 
 pytestmark = pytest.mark.skipif(
     not GATE.is_file() or shutil.which("bash") is None,
@@ -60,6 +63,8 @@ _HERMETIC_ENV = {
 def _extract(function_name: str) -> str:
     """Lift one shell function out of the gate script, verbatim."""
     source = GATE.read_text(encoding="utf-8")
+    if f"{function_name}() {{" not in source:
+        source = TAIL_LIB.read_text(encoding="utf-8")
     start = source.index(f"{function_name}() {{")
     return source[start : source.index("\n}\n", start) + 3]
 
@@ -84,6 +89,7 @@ def _harness(body: str) -> str:
         FAILED_PHASES=(); SKIPPED_PHASES=()
         {_extract("phase_clock_start")}
         {_extract("phase_clock_end")}
+        {_extract("record_phase_argv")}
         {_extract("run_phase_watching_skips")}
     """) + textwrap.dedent(body)
 

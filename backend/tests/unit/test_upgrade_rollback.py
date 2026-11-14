@@ -91,7 +91,7 @@ def test_rollback_refuses_when_target_image_does_not_know_the_live_head(tmp_path
 
     `docker` is stubbed as a bash function (functions shadow PATH binaries for
     unqualified calls) so this needs no live stack and no real backend image:
-    `docker compose ... exec ... psql` returns a fake live head, `docker run ...`
+    `docker compose ... exec ... psql` returns a fake live head, `docker compose ... run ... migrate`
     (the "does the target image know this revision" check) returns 1 — grep found
     nothing, i.e. the target image does NOT know it.
     """
@@ -99,12 +99,10 @@ def test_rollback_refuses_when_target_image_does_not_know_the_live_head(tmp_path
     body = _update_command_body()
     docker_stub = """
 docker() {
-  if [ "$1" = "compose" ]; then
-    echo "v393_add_overlap_timing_columns"
-    return 0
-  elif [ "$1" = "run" ]; then
-    return 1
-  fi
+  case "$*" in
+    *" exec "*psql*) echo "v393_add_overlap_timing_columns"; return 0 ;;
+    *" run "*" migrate "*) return 1 ;;
+  esac
   return 0
 }
 """
@@ -119,7 +117,7 @@ docker() {
 def test_rollback_proceeds_when_target_image_knows_the_live_head(tmp_path: Path):
     """Positive control for the test above: same setup, but the target image DOES know
 
-    the live head (`docker run`'s grep succeeds) — rollback must proceed to teardown,
+    the live head (the `compose run migrate` grep succeeds) — rollback must proceed to teardown,
     not just "the preflight never fires at all" (which would pass the negative test
     for the wrong reason too).
     """
@@ -127,12 +125,10 @@ def test_rollback_proceeds_when_target_image_knows_the_live_head(tmp_path: Path)
     body = _update_command_body()
     docker_stub = """
 docker() {
-  if [ "$1" = "compose" ]; then
-    echo "v393_add_overlap_timing_columns"
-    return 0
-  elif [ "$1" = "run" ]; then
-    return 0
-  fi
+  case "$*" in
+    *" exec "*psql*) echo "v393_add_overlap_timing_columns"; return 0 ;;
+    *" run "*" migrate "*) return 0 ;;
+  esac
   return 0
 }
 """
@@ -157,3 +153,32 @@ docker() { echo "DOCKER_SHOULD_NOT_BE_CALLED_UNDER_FORCE_DOWNGRADE"; return 1; }
     assert "DOCKER_SHOULD_NOT_BE_CALLED_UNDER_FORCE_DOWNGRADE" not in out, out
     assert "Refusing to roll back" not in out, out
     assert "REACHED_TEARDOWN" in out, f"expected the rollback to proceed to teardown: {out}"
+
+
+def test_rollback_asks_the_image_the_chain_will_start_not_the_full_backend(tmp_path: Path):
+    """Must fire: a lite install (every arm64 host, the public demo) has no full/CUDA image, so
+    `docker run davidamacey/opentranscribe-backend:<tag>` failed and every rollback was refused
+    (demo-upgrade.sh exit 4). The check must run through the compose chain, with the target tag."""
+    (tmp_path / ".env").write_text("OT_IMAGE_TAG=v0.5.0\n# OT_PREVIOUS_IMAGE_TAG=v0.4.1\n")
+    log = tmp_path / "docker.log"
+    body = _update_command_body()
+    docker_stub = f"""
+docker() {{
+  echo "TAG=$OT_IMAGE_TAG $*" >> {log}
+  case "$*" in
+    *" exec "*psql*) echo "v393_add_overlap_timing_columns"; return 0 ;;
+    "compose -f docker-compose.yml run --rm --no-deps -T --entrypoint sh migrate -c "*) return 0 ;;
+  esac
+  return 1
+}}
+"""
+    out = run_shell(_rollback_snippet(tmp_path, body, docker_stub))
+    assert "REACHED_TEARDOWN" in out, out
+    calls = log.read_text().splitlines()
+    check = [c for c in calls if " migrate " in c]
+    assert len(check) == 1 and check[0].startswith(
+        "TAG=v0.4.1 compose -f docker-compose.yml run"
+    ), calls
+    assert not [
+        c for c in calls if " run --rm --entrypoint" in c and "opentranscribe-backend:" in c
+    ]

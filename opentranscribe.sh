@@ -2172,10 +2172,10 @@ update_check_rollback_compat() {
     if [ -z "$rollback_live_head" ]; then
         echo -e "${YELLOW}⚠️  Could not read the live database's alembic head — skipping the${NC}"
         echo -e "${YELLOW}   rollback-compatibility check (postgres may not be running).${NC}"
-    # Ask the TARGET image whether it knows that revision — no Python imports,
-    # no env, no DB: every published backend image ships its own
-    # alembic/versions/ tree (backend/Dockerfile.prod:229, COPY --chown into /app).
-    elif ! docker run --rm --entrypoint sh "davidamacey/opentranscribe-backend:${UPDATE_TARGET_VERSION}" -c \
+    # Ask the TARGET image whether it knows that revision (every backend image ships /app/alembic/versions).
+    # `compose run migrate` resolves the image this chain will start (OT_IMAGE_TAG is the target by now):
+    # the lite image on a lite install and any BACKEND_*_IMAGE override, never a hard-coded full/CUDA image.
+    elif ! docker compose "${rollback_chain[@]}" run --rm --no-deps -T --entrypoint sh migrate -c \
             "grep -lq 'revision = \"${rollback_live_head}\"' /app/alembic/versions/*.py" \
             >/dev/null 2>&1; then
         echo -e "${RED}❌ Refusing to roll back to ${UPDATE_TARGET_VERSION}: the database is at${NC}"

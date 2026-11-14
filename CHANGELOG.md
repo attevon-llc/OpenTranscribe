@@ -122,6 +122,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - The environment variables listed under Changed that never had an effect.
 
 ### Fixed
+- `./opentranscribe.sh update --version` no longer refuses a move away from a non-release tag (a `dev-<sha>` build or a local `otfresh-<name>` build) as a downgrade: only two release versions are compared, and for any other tag the command says the downgrade check does not apply, as it already did silently for `latest`.
 - `./opentranscribe.sh update --rollback` back to a `latest` or locally built tag (such as `otfresh-<name>`) now pins that tag as recorded; it used to prefix a `v` (`vlatest`) and fail to find the images. `setup-opentranscribe.sh --version` follows the same rule: only a bare release number (`0.7.0`) gains the `v`.
 - `./opentranscribe.sh update --rollback` on a lite install (every arm64 host, the public demo) no longer refuses every rollback: its schema-compatibility check ran the full CUDA backend image, which a lite host does not have; it now asks the image the install will start (`compose run migrate`), honouring the lite image and `BACKEND_*_IMAGE`.
 - Migration progress tracking (imohash recompute, thumbnail, embedding migrations) now updates O(1) Redis counters instead of rewriting a growing JSON blob per file, which had pinned Redis at 77% CPU when many media objects were missing; the failed-file list in the progress API is capped at 1000 entries.

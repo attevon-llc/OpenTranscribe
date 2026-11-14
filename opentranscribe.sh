@@ -2022,19 +2022,23 @@ update_resolve_rollback_target() {
     echo -e "${YELLOW}   the newer schema is not readable by $UPDATE_TARGET_VERSION.${NC}"
 }
 
-# Refuse a downgrade unless asked twice. Newer releases add columns
-# and tables the older image does not know about; the chain does not
-# go backwards.
+# Refuse a downgrade unless asked twice. Newer releases add columns and tables the older image
+# does not know about; the chain does not go backwards. Only two release versions have an order:
+# `latest`, a local `otfresh-<name>` build or a `dev-<sha>` tag has none (sort -V ranked them below
+# every vX.Y.Z and refused the move), so for those the check says it does not apply.
 update_refuse_unforced_downgrade() {
-    if [ "$UPDATE_ROLLBACK" = false ] && [ "$UPDATE_FORCE_DOWNGRADE" = false ] && [ "$UPDATE_CURRENT_TAG" != "latest" ]; then
-        local older
-        older=$(printf '%s\n%s\n' "${UPDATE_CURRENT_TAG#v}" "${UPDATE_TARGET_VERSION#v}" | sort -V | head -1)
-        if [ "$older" = "${UPDATE_TARGET_VERSION#v}" ] && [ "$UPDATE_TARGET_VERSION" != "$UPDATE_CURRENT_TAG" ]; then
-            echo -e "${RED}❌ Refusing to downgrade $UPDATE_CURRENT_TAG → $UPDATE_TARGET_VERSION${NC}"
-            echo -e "${YELLOW}   The migration chain is one-way. Use --rollback (which warns${NC}"
-            echo -e "${YELLOW}   about the database) or --force-downgrade if you are certain.${NC}"
-            exit 1
-        fi
+    [ "$UPDATE_ROLLBACK" = false ] && [ "$UPDATE_FORCE_DOWNGRADE" = false ] || return 0
+    local release='^v?[0-9]+\.[0-9]+\.[0-9]+' older
+    if ! [[ $UPDATE_CURRENT_TAG =~ $release && $UPDATE_TARGET_VERSION =~ $release ]]; then
+        echo -e "${YELLOW}ℹ️  $UPDATE_CURRENT_TAG → $UPDATE_TARGET_VERSION: not two release versions, so no downgrade check${NC}"
+        return 0
+    fi
+    older=$(printf '%s\n%s\n' "${UPDATE_CURRENT_TAG#v}" "${UPDATE_TARGET_VERSION#v}" | sort -V | head -1)
+    if [ "$older" = "${UPDATE_TARGET_VERSION#v}" ] && [ "$UPDATE_TARGET_VERSION" != "$UPDATE_CURRENT_TAG" ]; then
+        echo -e "${RED}❌ Refusing to downgrade $UPDATE_CURRENT_TAG → $UPDATE_TARGET_VERSION${NC}"
+        echo -e "${YELLOW}   The migration chain is one-way. Use --rollback (which warns${NC}"
+        echo -e "${YELLOW}   about the database) or --force-downgrade if you are certain.${NC}"
+        exit 1
     fi
 }
 

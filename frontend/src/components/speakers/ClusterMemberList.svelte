@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { translateSpeakerLabel } from '$lib/i18n';
   import type { SpeakerCluster, SpeakerClusterMember } from '$lib/types/speakerCluster';
   import type { OutlierAnalysisResponse, MinorityAnalysisItem } from '$lib/types/speakerCluster';
   import { analyzeClusterOutliers } from '$lib/api/speakerClusters';
@@ -142,7 +143,7 @@
         {/if}
       </button>
     {/if}
-    <span class="member-name">{member.display_name || member.speaker_name}</span>
+    <span class="member-name">{translateSpeakerLabel(member.display_name || member.speaker_name)}</span>
     <span class="member-file">{member.media_file_title || ''}</span>
     <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
     <GenderBadge

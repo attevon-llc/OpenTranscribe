@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { translateSpeakerLabel } from '$lib/i18n';
   import type { SpeakerInboxItem as InboxItemType } from '$lib/types/speakerCluster';
   import { audioPlaybackStore } from '$stores/audioPlaybackStore';
   import { t } from '$stores/locale';
@@ -71,7 +72,7 @@
         {/if}
       </button>
       <div class="item-info">
-        <div class="speaker-name">{item.speaker_name}</div>
+        <div class="speaker-name">{translateSpeakerLabel(item.speaker_name)}</div>
         {#if item.suggested_name}
           <div class="suggestion">
             <span class="suggestion-label">{$t('speakers.inbox.suggestion')}</span>

@@ -59,8 +59,7 @@ def _handle_profile_embedding_updates(
     # Privacy policy (#1280): only the WRITE side is gated. A speaker leaving a profile or
     # cluster is reconciled whatever the switch says (the old aggregate still averages its
     # voice, #1214); what is declined while voiceprints are off is folding a voice IN.
-    file_id = speaker_lookups.speaker_file_id(db, speaker_id)
-    voiceprints_on = file_id is not None and PrivacyView(db).voiceprints(int(file_id)).enabled
+    voiceprints_on = _voiceprints_enabled(db, speaker_id)
 
     if old_profile_id == new_profile_id:
         if not (display_name_changed and new_profile_id):
@@ -123,6 +122,12 @@ def auto_create_or_assign_profile(
     )
 
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+    # Every read happens before the first write, so the speaker row is locked only from the
+    # writes to the commit inside ``_update_profile_embedding``. A merge deleting this speaker
+    # waits on that lock, so nothing but the writes may sit inside it.
+    voiceprints_on = _voiceprints_enabled(db, int(speaker.id))
+    speaker_uuid = str(speaker.uuid)
+    verified = bool(speaker.verified)
     if existing_profile:
         # The user typed this name on this one speaker: that overrides an earlier
         # unassignment from the same profile (issue #1233).
@@ -141,27 +146,26 @@ def auto_create_or_assign_profile(
             f"Assigned speaker {speaker.id} to existing profile '{existing_profile.name}' (ID: {existing_profile.id})"
         )
 
-        _update_profile_embedding(db, int(speaker.id), old_profile_id, int(existing_profile.id))
+        profile_id, profile_uuid = int(existing_profile.id), str(existing_profile.uuid)
+        _update_profile_embedding(
+            db, int(speaker.id), old_profile_id, profile_id, voiceprints_on=voiceprints_on
+        )
 
-        # Sync profile assignment to OpenSearch
+        # Sync profile assignment to OpenSearch, from values read before the commit: a
+        # committed row would lazy-load and reopen a transaction under the network call.
         try:
             from app.services.opensearch_service import update_speaker_profile
 
-            # Get profile UUID if profile is assigned
-            profile_uuid = None
-            if speaker.profile_id and existing_profile:
-                profile_uuid = str(existing_profile.uuid)
-
             update_speaker_profile(
-                speaker_uuid=str(speaker.uuid),
-                profile_id=int(speaker.profile_id) if speaker.profile_id else None,
+                speaker_uuid=speaker_uuid,
+                profile_id=profile_id,
                 profile_uuid=profile_uuid,
-                verified=bool(speaker.verified),
+                verified=verified,
             )
-            logger.info(f"Synced speaker {speaker.uuid} profile assignment to OpenSearch")
+            logger.info(f"Synced speaker {speaker_uuid} profile assignment to OpenSearch")
         except CLUSTER_UNAVAILABLE_ERRORS as e:
             logger.warning(
-                f"Failed to sync speaker {speaker.uuid} profile to OpenSearch: {e}",
+                f"Failed to sync speaker {speaker_uuid} profile to OpenSearch: {e}",
                 exc_info=True,
             )
 
@@ -188,51 +192,67 @@ def auto_create_or_assign_profile(
             f"Created new profile '{new_profile.name}' (ID: {new_profile.id}) and assigned speaker {speaker.id}"
         )
 
-        _update_profile_embedding(db, int(speaker.id), old_profile_id, int(new_profile.id))
+        profile_id, profile_uuid = int(new_profile.id), str(new_profile.uuid)
+        _update_profile_embedding(
+            db, int(speaker.id), old_profile_id, profile_id, voiceprints_on=voiceprints_on
+        )
 
-        # Sync new profile assignment to OpenSearch
+        # Sync new profile assignment to OpenSearch (values read before the commit, as above)
         try:
             from app.services.opensearch_service import update_speaker_profile
 
             update_speaker_profile(
-                speaker_uuid=str(speaker.uuid),
-                profile_id=int(speaker.profile_id) if speaker.profile_id else None,
-                profile_uuid=str(new_profile.uuid),
-                verified=bool(speaker.verified),
+                speaker_uuid=speaker_uuid,
+                profile_id=profile_id,
+                profile_uuid=profile_uuid,
+                verified=verified,
             )
-            logger.info(f"Synced speaker {speaker.uuid} new profile assignment to OpenSearch")
+            logger.info(f"Synced speaker {speaker_uuid} new profile assignment to OpenSearch")
         except CLUSTER_UNAVAILABLE_ERRORS as e:
             logger.warning(
-                f"Failed to sync speaker {speaker.uuid} new profile to OpenSearch: {e}",
+                f"Failed to sync speaker {speaker_uuid} new profile to OpenSearch: {e}",
                 exc_info=True,
             )
 
     return True
 
 
+def _voiceprints_enabled(db: Session, speaker_id: int) -> bool:
+    """Whether the privacy policy lets a voice be folded into an aggregate for this speaker."""
+    file_id = speaker_lookups.speaker_file_id(db, speaker_id)
+    return file_id is not None and PrivacyView(db).voiceprints(int(file_id)).enabled
+
+
 def _update_profile_embedding(
-    db: Session, speaker_id: int, old_profile_id: int | None, profile_id: int
+    db: Session,
+    speaker_id: int,
+    old_profile_id: int | None,
+    profile_id: int,
+    *,
+    voiceprints_on: bool,
 ) -> None:
-    """Rebuild the profiles a speaker moved between, and the clusters it belongs to.
+    """Commit the caller's profile link, then rebuild the profiles and clusters it touched.
 
     The new profile gains the voice; a profile the speaker had before loses it, which
     used to be skipped here, so the old profile kept averaging a voice that had been
     reassigned away from it (issue #1214). Delegates to ``speaker_cleanup``, which logs
-    any residual at ERROR; the label that triggered this has already committed.
+    any residual at ERROR.
+
+    **Commits first.** ``reconcile_speaker_impact`` requires a committed change (a
+    rolled-back link must never reach OpenSearch), and the commit is what releases the
+    caller's row lock on the speaker. This used to flush and keep the transaction open
+    through the impact reads, so a merge's ``DELETE FROM speaker`` of the same row waited
+    on a background task. ``voiceprints_on`` is therefore read by the caller BEFORE its
+    writes (:func:`_voiceprints_enabled`).
+
+    Privacy policy (#1280): only the WRITE side is gated. The profile the speaker left is
+    reconciled whatever the switch says (its aggregate still averages the voice, #1214);
+    folding the voice into the new profile is declined while voiceprints are off.
     """
     from app.services.speaker_cleanup import profile_move_impact
     from app.services.speaker_cleanup import reconcile_speaker_impact
 
-    # Privacy policy (#1280): only the WRITE side is gated. The profile the speaker left is
-    # reconciled whatever the switch says (its aggregate still averages the voice, #1214);
-    # folding the voice into the new profile is declined while voiceprints are off.
-    file_id = speaker_lookups.speaker_file_id(db, speaker_id)
-    voiceprints_on = file_id is not None and PrivacyView(db).voiceprints(int(file_id)).enabled
-
-    # Both callers set ``profile_id`` a moment ago and autoflush is off: without the flush
-    # the rebuild reads the membership from before the link, and the profile embedding
-    # never contains the voice that just joined it (issue #1233).
-    db.flush()
+    db.commit()
     impact = profile_move_impact(
         db, speaker_id, old_profile_id, profile_id, voiceprints_enabled=voiceprints_on
     )

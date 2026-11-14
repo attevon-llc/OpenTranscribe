@@ -63,7 +63,10 @@
       border-color var(--duration-fast),
       box-shadow var(--duration-fast);
     cursor: pointer;
-    max-width: 300px;
+    /* A native option cannot wrap, so the select takes the whole field: a 300px cap cut
+       "Português (Portuguese) · tradução automática". */
+    inline-size: 100%;
+    max-inline-size: 100%;
     padding-inline-end: var(--space-10);
   }
 

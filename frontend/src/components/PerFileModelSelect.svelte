@@ -58,7 +58,9 @@
 
 <style>
   .model-select {
-    width: 100%;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
     padding: var(--space-2) var(--space-2-5);
     font-size: var(--font-size-md);
     cursor: pointer;

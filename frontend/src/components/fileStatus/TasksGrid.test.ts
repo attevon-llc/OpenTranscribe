@@ -101,17 +101,8 @@ describe('TasksGrid — progress rendering', () => {
     // Real copy, so a renamed task_type shows up as a wrong label rather than a
     // missing translation key.
     expect(container.textContent).toContain('Transcription');
-    expect(container.textContent).toContain('Search');
-    expect(container.textContent).toContain('Summarization');
-  });
-
-  it('falls back to the summarization label for an unrecognised task_type', () => {
-    // Pinning current behaviour: the {:else} branch is a catch-all, so a NEW
-    // backend task type is silently mislabelled "Summarization". Documented here
-    // so the next task type added is a conscious change to this component.
-    const { container } = renderGrid([task({ task_type: 'redaction' })]);
-
-    expect(container.textContent).toContain('Summarization');
+    expect(container.textContent).toContain('Search indexing');
+    expect(container.textContent).toContain('AI summary');
   });
 });
 
@@ -121,5 +112,24 @@ describe('TasksGrid — progress bar accessibility', () => {
     const bar = container.querySelector('[role="progressbar"]');
     expect(bar?.getAttribute('aria-label')).toBe('interview.mp4');
     expect(bar?.getAttribute('aria-valuenow')).toBe('42');
+  });
+});
+
+describe('TasksGrid — task type label', () => {
+  it('does not call a redaction task "Summarization"', () => {
+    const { container } = renderGrid([task({ task_type: 'redaction_detection' })]);
+
+    expect(container.querySelector('.task-type-cell')?.textContent).not.toContain('Summarization');
+    expect(container.querySelector('.task-type-cell')?.textContent).toMatch(/redaction/i);
+  });
+
+  it('labels a summarization task as a summary and transcription as transcription', () => {
+    const rows = renderGrid([
+      task({ id: 'a', task_type: 'summarization' }),
+      task({ id: 'b', task_type: 'transcription' }),
+    ]).container.querySelectorAll('.task-type-cell');
+
+    expect(rows[0]?.textContent).toContain('AI summary');
+    expect(rows[1]?.textContent).toMatch(/transcription/i);
   });
 });

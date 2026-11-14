@@ -4,6 +4,7 @@
     python -m app.scripts.demo_seed validate --bundle /seed
     python -m app.scripts.demo_seed import --bundle /seed [--if-empty]
     python -m app.scripts.demo_seed subset --bundle /seed --items a,b [--bundle-version V] [--out D]
+    python -m app.scripts.demo_seed relabel --bundle /seed --out /seed.labels-fixed [--names n.json]
 
 ``import`` runs only inside ``scripts/demo/demo-reset.sh``'s seed phase: a one-off backend
 container with ``DEMO_MODE=false``, the public port closed, and a database that ``down -v``
@@ -39,6 +40,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core.demo_info import DEMO_LICENSE_KEY
+from app.scripts.demo_seed import processing
 from app.scripts.demo_seed.bundle import BundleError
 from app.scripts.demo_seed.bundle import SeedItem
 from app.scripts.demo_seed.bundle import load_bundle
@@ -174,10 +176,24 @@ def _seed_item(item: SeedItem, bundle_version: str, user_id: int) -> str:
             {"filename": item.media.name, "content_type": content_type, "file_size": size}
         )
         db.commit()
+    _finish_item(item.id, record, user_id, storage_path, content_type)
+    return file_uuid
+
+
+def _finish_item(item_id: str, record, user_id: int, storage_path: str, content_type: str) -> None:
+    """What a pipeline run records, a thumbnail, then the production indexing and redaction."""
+    from app.db.base import SessionLocal
+    from app.scripts.corpus_injection import injector
+
+    with SessionLocal() as db:
+        processing.record_import_processing(db, record.media_file_id, user_id)
+    if not processing.generate_import_thumbnail(
+        record.media_file_id, user_id, storage_path, content_type
+    ):
+        raise RuntimeError(f"{item_id}: no thumbnail could be made from the media")
     injector.dispatch_indexing(record, user_id, mode="eager")
     with SessionLocal() as db:
         injector.dispatch_redaction(db, record, user_id, mode="eager")
-    return file_uuid
 
 
 def _seed_conversations(
@@ -350,10 +366,21 @@ def _subset(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _relabel(bundle: Path, out: Path | None, names: Path | None) -> int:
+    from app.scripts.demo_seed import relabel
+
+    if out is None or out.exists():
+        print("relabel needs --out naming a directory that does not exist yet", file=sys.stderr)
+        return EXIT_USAGE
+    count = relabel.relabel_bundle(bundle, out, relabel.load_names(bundle, names))
+    print(f"relabelled {count} conversation(s) into {out}")
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point; returns the exit code."""
     parser = argparse.ArgumentParser(prog="python -m app.scripts.demo_seed")
-    parser.add_argument("command", choices=("validate", "import", "export", "subset"))
+    parser.add_argument("command", choices=("validate", "import", "export", "subset", "relabel"))
     parser.add_argument("--bundle", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, help="export: the manifest naming the items")
     parser.add_argument(
@@ -361,11 +388,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--items", help="subset: comma-separated item ids, in order")
     parser.add_argument("--bundle-version", help="subset: refuse any other bundle version")
-    parser.add_argument("--out", type=Path, help="subset: write the selection as a bundle here")
+    parser.add_argument(
+        "--out", type=Path, help="subset: write the selection as a bundle here; relabel: the copy"
+    )
+    parser.add_argument("--names", type=Path, help="relabel: JSON {item id: {label: name}}")
     args = parser.parse_args(argv)
     try:
         if args.command == "subset":
             return _subset(args)
+        if args.command == "relabel":
+            return _relabel(args.bundle, args.out, args.names)
         if args.command == "export":
             return _export(args.bundle, args.manifest)
         if args.command == "validate":

@@ -49,6 +49,17 @@ def _drive(tmp_path: Path, *, health: str, write_code: str, write_body: str, up_
         f.chmod(0o755)
     install = tmp_path / "install"
     install.mkdir()
+    # The leg asks the install's own front end for the chain (lite + demo from .env, mocks via the
+    # EXTRA seam) instead of hand-building it; stand in for that script.
+    fe = install / "opentranscribe.sh"
+    fe.write_text(
+        "#!/bin/bash\n"
+        'grep -q "^DEMO_MODE=true" .env || { echo "demo not selected" >&2; exit 1; }\n'
+        '[ "${DEPLOYMENT_MODE:-}" = lite ] || { echo "lite not selected" >&2; exit 1; }\n'
+        'echo "-f docker-compose.yml -f docker-compose.lite.yml -f docker-compose.demo.yml'
+        ' ${OPENTRANSCRIBE_EXTRA_COMPOSE_FILES:-}"\n'
+    )
+    fe.chmod(0o755)
     verdict = tmp_path / "verdict"
     script = f"""
     set -u
@@ -110,7 +121,8 @@ def test_the_overlay_is_wired_into_scenario_c_and_declared_blocking():
     lite = LITE.read_text()
     assert "docker-compose.demo.yml" in LEG.read_text() and "phase 07d demo_leg_phase" in lite
     assert lite.index("phase 07d") < lite.index("phase 07c phase_07c_summary")
-    assert "-f docker-compose.demo.yml" in LEG.read_text()
+    # The chain comes from ./opentranscribe.sh compose-files, not a hand-built -f list.
+    assert "opentranscribe.sh compose-files" in LEG.read_text()
     ids = {
         c["id"]: c["severity"]
         for c in yaml.safe_load(CRITERIA.read_text())["stages"]["rehearse"]["criteria"]

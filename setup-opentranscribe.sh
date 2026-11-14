@@ -655,7 +655,7 @@ create_configuration_files() {
 resolve_install_ref() {
     if [ -n "${OPENTRANSCRIBE_VERSION:-}" ]; then
         OT_IMAGE_TAG="${OPENTRANSCRIBE_VERSION}"
-        case "$OT_IMAGE_TAG" in v*) ;; *) OT_IMAGE_TAG="v${OT_IMAGE_TAG}" ;; esac
+        case "$OT_IMAGE_TAG" in [0-9]*) OT_IMAGE_TAG="v${OT_IMAGE_TAG}" ;; esac  # only a bare number gains its v
         OPENTRANSCRIBE_BRANCH="$OT_IMAGE_TAG"
         print_info "Installing pinned release: $OT_IMAGE_TAG"
         return 0

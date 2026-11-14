@@ -2149,7 +2149,8 @@ cmd_update() {
     fi
 
     if [ -n "$UPDATE_TARGET_VERSION" ]; then
-        case "$UPDATE_TARGET_VERSION" in v*) ;; *) UPDATE_TARGET_VERSION="v${UPDATE_TARGET_VERSION}" ;; esac
+        # Only a bare release number gains its `v`; a recorded `latest` or `otfresh-<name>` stays as written.
+        case "$UPDATE_TARGET_VERSION" in [0-9]*) UPDATE_TARGET_VERSION="v${UPDATE_TARGET_VERSION}" ;; esac
         # The tag is spliced into a sed replacement, .env, an image reference and a `sh -c`
         # run inside the target image, so only characters a tag can contain are accepted.
         case "$UPDATE_TARGET_VERSION" in

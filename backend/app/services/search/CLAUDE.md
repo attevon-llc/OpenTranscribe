@@ -226,6 +226,7 @@ it cannot be sent, and it cannot reach the kNN reads. The Postgres post-filter
   `batch_size` is compared only when the live pipeline has one (the creation path drops it on
   OpenSearch versions that reject it, and treating that as drift is a boot loop), and a
   `field_map` change still needs a **reindex** before existing documents embed the new field.
+- **A field rewrite acts on `version_conflicts`**: `reindex_dispatch.requeue_after_version_conflicts`.
 - **Every delete AND every targeted rewrite of the chunks index goes through
   `chunk_plane_query`** (issues #400, #405).
   Re-indexing overwrites `{file_uuid}_{chunk_index}` in place, so a shorter re-chunk used to

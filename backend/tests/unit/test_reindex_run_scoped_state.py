@@ -31,6 +31,8 @@ from typing import Any
 
 import pytest
 
+from app.services.search.index_inputs import IndexInputs
+
 USER_ID = 1
 
 
@@ -273,6 +275,7 @@ def _run_batch(monkeypatch, file_ids: list[int], *args: Any) -> dict[str, Any]:
                     "accessible_user_ids": [USER_ID],
                     "organization_id": None,
                     "availability": "available",
+                    "index_inputs": IndexInputs(frozenset({"A"}), ()),
                 },
             )
             for fid in ids
@@ -283,6 +286,10 @@ def _run_batch(monkeypatch, file_ids: list[int], *args: Any) -> dict[str, Any]:
             return 7
 
     monkeypatch.setattr(reindex_task, "_load_reindex_page", _page)
+    # The files are stand-ins with no rows; whether their inputs moved is not this test's concern.
+    monkeypatch.setattr(
+        "app.services.search.index_inputs.requeue_if_inputs_moved", lambda **kwargs: None
+    )
     monkeypatch.setattr(
         reindex_task,
         "_is_cancellation_requested",

@@ -417,6 +417,7 @@ def _load_reindex_page(file_ids: list[int]) -> list[tuple[str, dict[str, Any] | 
     from sqlalchemy.orm import defer
 
     from app.models.media import MediaFile
+    from app.services.search.index_inputs import read_index_inputs
 
     page: list[tuple[str, dict[str, Any] | None]] = []
     with session_scope() as db:
@@ -432,7 +433,12 @@ def _load_reindex_page(file_ids: list[int]) -> list[tuple[str, dict[str, Any] | 
             .all()
         )
         for media_file in page_files:
-            page.append((str(media_file.uuid), _extract_file_metadata(db, media_file)))
+            # Before the metadata: see services/search/index_inputs.py.
+            inputs = read_index_inputs(db, int(media_file.id))
+            metadata = _extract_file_metadata(db, media_file)
+            if metadata is not None:
+                metadata["index_inputs"] = inputs
+            page.append((str(media_file.uuid), metadata))
     return page
 
 
@@ -461,6 +467,7 @@ def reindex_batch_task(
             that pair.
     """
     from app.services.progress_tracker import ProgressTracker
+    from app.services.search.index_inputs import requeue_if_inputs_moved
     from app.services.search.indexing_service import TranscriptIndexingService
 
     indexing_service = TranscriptIndexingService()
@@ -535,6 +542,12 @@ def reindex_batch_task(
                     availability=metadata["availability"],
                 )
 
+                requeue_if_inputs_moved(
+                    file_id=metadata["file_id"],
+                    file_uuid=metadata["file_uuid"],
+                    user_id=user_id,
+                    before=metadata["index_inputs"],
+                )
                 local_stats["indexed"] += 1
                 local_stats["chunks"] += chunk_count
 

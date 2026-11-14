@@ -261,6 +261,12 @@ def _retry_on_conflicts(task: Any, response: dict[str, Any], what: str, file_uui
     Reading the count and retrying is what makes the declared ``max_retries`` real
     rather than decorative. Combined with the run-time re-resolution above, a
     retry converges instead of racing the same writer again.
+
+    Retries run on a fixed delay, so renames of several speakers of one file dispatched
+    together retry together and can collide every time. Once the retries are spent the
+    file's rebuild is queued (``requeue_after_version_conflicts``), which reads every
+    field from Postgres; the skipped documents used to keep the old value until somebody
+    ran a full reindex.
     """
     conflicts = int(response.get("version_conflicts", 0) or 0)
     if not conflicts:
@@ -273,10 +279,13 @@ def _retry_on_conflicts(task: Any, response: dict[str, Any], what: str, file_uui
     try:
         task.retry(countdown=task.default_retry_delay)
     except task.MaxRetriesExceededError:
+        from app.services.search.reindex_dispatch import requeue_after_version_conflicts
+
         logger.error(
             f"{what} for file {file_uuid} still had {conflicts} version conflict(s) after "
-            f"{task.max_retries} retries; those documents keep the old value until a reindex"
+            f"{task.max_retries} retries; queueing the file's rebuild"
         )
+        requeue_after_version_conflicts(conflicts=conflicts, what=what, file_uuid=file_uuid)
         return False
     return True
 

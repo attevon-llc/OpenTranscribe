@@ -42,8 +42,14 @@
   export let reprocessing: boolean = false;
   export let bulkMode: boolean = false;
   export let bulkFiles: (ReprocessFile & { uuid: string })[] = [];
-  /** Stages ticked when the modal opens; the wizard then skips ahead to the settings step. */
-  export let initialStages: string[] = [];
+  // Stages ticked on open; the wizard then skips ahead to the settings step. Consumed once.
+  let initialStages: string[] = [];
+
+  /** Opens the wizard, optionally with stages preselected (then it starts on the settings step). */
+  export function open(stages: string[] = []) {
+    initialStages = stages;
+    showModal = true;
+  }
 
   const dispatch = createEventDispatcher();
 
@@ -246,6 +252,7 @@
     selectedAudioTrack = target?.audio_stream_index ?? target?.audio_streams?.[0]?.index ?? null;
     void loadSpeakerPrefill();
     if (initialStages.length > 0) void startOnSettingsStep(initialStages);
+    initialStages = [];
     // Ensure LLM status is loaded (may not be ready if user navigated quickly)
     void llmStatusStore.initialize();
     ASRSettingsApi.getStatus().then((status) => {

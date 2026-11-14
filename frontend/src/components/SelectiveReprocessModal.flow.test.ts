@@ -369,9 +369,8 @@ describe('opened from the track-mismatch notice (#1263)', () => {
   };
 
   it('starts on the settings step with transcription selected and the track picker showing', async () => {
-    render(SelectiveReprocessModal, {
-      props: { showModal: true, file: TWO_TRACKS, initialStages: ['transcription'] },
-    });
+    const { component } = render(SelectiveReprocessModal, { props: { file: TWO_TRACKS } });
+    component.open(['transcription']);
     await waitFor(() => expect(screen.getByTestId('audio-track-select')).toBeInTheDocument());
     expect(boxes()).toHaveLength(0);
   });

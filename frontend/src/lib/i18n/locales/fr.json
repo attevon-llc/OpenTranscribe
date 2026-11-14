@@ -4849,6 +4849,7 @@
   "upload.youtubeVideo": "Vidéo YouTube",
   "upload.videoUrl": "URL de la vidéo",
   "common.somethingWentWrong": "Une erreur s'est produite",
+  "common.networkError": "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
   "common.rateLimited": "Trop de requêtes — veuillez patienter un instant.",
   "common.serverBusy": "Le serveur est occupé, veuillez réessayer dans un instant",
   "search.searchFailed": "Échec de la recherche",

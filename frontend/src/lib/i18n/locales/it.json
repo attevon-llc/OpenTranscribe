@@ -4849,6 +4849,7 @@
   "upload.youtubeVideo": "Video YouTube",
   "upload.videoUrl": "URL video",
   "common.somethingWentWrong": "Qualcosa è andato storto",
+  "common.networkError": "Impossibile raggiungere il server. Controlla la connessione e riprova.",
   "common.rateLimited": "Troppe richieste — attendere un momento.",
   "common.serverBusy": "Il server è occupato, riprova tra un momento",
   "search.searchFailed": "Ricerca non riuscita",

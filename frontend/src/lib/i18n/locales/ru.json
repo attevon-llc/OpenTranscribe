@@ -4903,6 +4903,7 @@
   "upload.youtubeVideo": "Видео YouTube",
   "upload.videoUrl": "URL видео",
   "common.somethingWentWrong": "Что-то пошло не так",
+  "common.networkError": "Не удаётся связаться с сервером. Проверьте подключение и повторите попытку.",
   "common.rateLimited": "Слишком много запросов — подождите немного.",
   "common.serverBusy": "Сервер занят, повторите попытку через минуту",
   "search.searchFailed": "Не удалось выполнить поиск",

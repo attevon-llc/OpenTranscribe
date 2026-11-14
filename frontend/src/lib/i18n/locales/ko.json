@@ -4727,6 +4727,7 @@
   "upload.youtubeVideo": "YouTube 동영상",
   "upload.videoUrl": "동영상 URL",
   "common.somethingWentWrong": "문제가 발생했습니다",
+  "common.networkError": "서버에 연결할 수 없습니다. 연결 상태를 확인한 후 다시 시도하세요.",
   "common.rateLimited": "요청이 너무 많습니다 — 잠시 기다려 주세요.",
   "common.serverBusy": "서버가 바쁩니다. 잠시 후 다시 시도해 주세요",
   "search.searchFailed": "검색에 실패했습니다",

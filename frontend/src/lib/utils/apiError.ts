@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { isRequestCancelled } from '$lib/axios';
-import { HOLD_REFUSAL_KEYS, LEGAL_REFUSAL_KEYS, holdAuthorityKey } from '$lib/i18n/keyMaps';
+import { API_ERROR_CODE_KEYS, HOLD_REFUSAL_KEYS, holdAuthorityKey } from '$lib/i18n/keyMaps';
 import { SUPPORT_ERROR_TOAST, supportGrantErrorCode } from '$lib/supportAccess/errors';
 import { readAccountLifecycle } from '$stores/auth';
 import { toastStore } from '$stores/toast';
@@ -22,6 +22,7 @@ interface AxiosLikeError {
   response?: { status?: number; data?: { detail?: unknown; message?: unknown } };
   message?: unknown;
   code?: unknown;
+  isAxiosError?: unknown;
 }
 
 /**
@@ -55,11 +56,11 @@ function holdRefusalMessage(detail: unknown): string | null {
   return key ? get(t)(key) : null;
 }
 
-/** The translated sentence for a legal processing gate refusal (``detail.code``), else null. */
-function legalRefusalMessage(detail: unknown): string | null {
+/** The translated sentence for a refusal whose ``detail.code`` the client knows, else null. */
+function codedRefusalMessage(detail: unknown): string | null {
   const code = (detail as { code?: unknown } | null | undefined)?.code;
-  if (typeof code !== 'string') return null;
-  const key = LEGAL_REFUSAL_KEYS[code];
+  if (typeof code !== 'string' || !Object.hasOwn(API_ERROR_CODE_KEYS, code)) return null;
+  const key = API_ERROR_CODE_KEYS[code];
   return key ? get(t)(key) : null;
 }
 
@@ -78,8 +79,9 @@ function translatedRefusal(error: unknown, detail: unknown): string | null {
   // shows the same sentence, so the toast store collapses the pair into one.
   const supportKey = SUPPORT_ERROR_TOAST[supportGrantErrorCode(error) ?? ''];
   if (supportKey) return get(t)(supportKey);
-  // A legal processing gate refusal carries a stable code; the sentence is ours, translated.
-  return legalRefusalMessage(detail);
+  // A refusal with a stable code we know (legal gate, invitation and verification links): the
+  // sentence is ours, translated. Unknown codes fall through to the server's own message.
+  return codedRefusalMessage(detail);
 }
 
 // FastAPI's default 422 shape is an ARRAY of validation-error objects
@@ -109,10 +111,26 @@ function serverMessage(e: AxiosLikeError | null | undefined, detail: unknown): s
 }
 
 /**
- * Extracts a human-readable message from an unknown error, preferring the FastAPI
- * `response.data.detail` shape, then `response.data.message`, then `error.message`,
- * then the fallback. The default fallback is resolved per call, so it follows the
- * active locale rather than the one that was active when this module was imported.
+ * The error's own message, when it is worth showing. Axios fills `message` with its English
+ * transport text ("Network Error", "Request failed with status code 500", "timeout of 30000ms
+ * exceeded"), never anything a user should read, so an axios error contributes a translated
+ * network sentence or nothing, and the caller's translated fallback speaks instead.
+ */
+function clientMessage(error: unknown): string | undefined {
+  const e = error as AxiosLikeError | null | undefined;
+  if (e?.isAxiosError === true) {
+    return getErrorCode(error) === 'ERR_NETWORK' ? get(t)('common.networkError') : undefined;
+  }
+  return nonBlank(e?.message);
+}
+
+/**
+ * Extracts a human-readable message from an unknown error. Order: a refusal the client
+ * translates from a stable code (`API_ERROR_CODE_KEYS`, legal holds, support access), then the
+ * server's own words (`response.data.detail`, `detail.message`, `response.data.message`), then
+ * a non-axios error's `message` (or the translated network sentence for an unreachable server),
+ * then the fallback. The default fallback is resolved per call, so it follows the active locale
+ * rather than the one that was active when this module was imported.
  */
 export function getErrorMessage(
   error: unknown,
@@ -121,7 +139,7 @@ export function getErrorMessage(
   const e = error as AxiosLikeError;
   const detail = e?.response?.data?.detail;
   return (
-    translatedRefusal(error, detail) ?? serverMessage(e, detail) ?? nonBlank(e?.message) ?? fallback
+    translatedRefusal(error, detail) ?? serverMessage(e, detail) ?? clientMessage(error) ?? fallback
   );
 }
 

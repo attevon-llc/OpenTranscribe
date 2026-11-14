@@ -4788,6 +4788,7 @@
   "upload.youtubeVideo": "YouTube-video",
   "upload.videoUrl": "Video-URL",
   "common.somethingWentWrong": "Er is iets misgegaan",
+  "common.networkError": "De server is niet bereikbaar. Controleer je verbinding en probeer het opnieuw.",
   "common.rateLimited": "Te veel verzoeken — wacht even.",
   "common.serverBusy": "De server is bezig, probeer het zo opnieuw",
   "search.searchFailed": "Zoeken mislukt",

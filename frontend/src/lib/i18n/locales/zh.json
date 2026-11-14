@@ -4727,6 +4727,7 @@
   "upload.youtubeVideo": "YouTube 视频",
   "upload.videoUrl": "视频链接",
   "common.somethingWentWrong": "出错了",
+  "common.networkError": "无法连接到服务器。请检查网络连接后重试。",
   "common.rateLimited": "请求过多，请稍候再试。",
   "common.serverBusy": "服务器繁忙，请稍后再试",
   "search.searchFailed": "搜索失败",

@@ -333,3 +333,14 @@ export const LEGAL_REFUSAL_KEYS: Record<string, string> = {
   legal_document_unavailable: 'legal.errors.documentUnavailable',
   legal_gate_unavailable: 'legal.errors.gateUnavailable',
 };
+
+/**
+ * Stable `detail.code` values of API refusals the client says in the reader's language.
+ * `getErrorMessage` reads this for every call site; the server's English `message` is kept
+ * for any code not listed here.
+ */
+export const API_ERROR_CODE_KEYS: Record<string, string> = {
+  ...LEGAL_REFUSAL_KEYS,
+  invitation_invalid: 'auth.acceptInvite.invalidLink',
+  verification_link_invalid: 'auth.verifyEmail.failed',
+};

@@ -4788,6 +4788,7 @@
   "upload.youtubeVideo": "YouTube Video",
   "upload.videoUrl": "Video URL",
   "common.somethingWentWrong": "Something went wrong",
+  "common.networkError": "Cannot reach the server. Check your connection and try again.",
   "common.rateLimited": "Too many requests — please wait a moment.",
   "common.serverBusy": "The server is busy, please try again in a moment",
   "search.searchFailed": "Search failed",

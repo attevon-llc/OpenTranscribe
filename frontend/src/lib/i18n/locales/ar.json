@@ -5032,6 +5032,7 @@
   "upload.youtubeVideo": "فيديو YouTube",
   "upload.videoUrl": "رابط الفيديو",
   "common.somethingWentWrong": "حدث خطأ ما",
+  "common.networkError": "تعذّر الوصول إلى الخادم. تحقّق من اتصالك وحاول مرة أخرى.",
   "common.rateLimited": "طلبات كثيرة جدًا — يرجى الانتظار لحظة.",
   "common.serverBusy": "الخادم مشغول، يرجى المحاولة مرة أخرى بعد قليل",
   "search.searchFailed": "فشل البحث",

@@ -4788,6 +4788,7 @@
   "upload.youtubeVideo": "YouTube-Video",
   "upload.videoUrl": "Video-URL",
   "common.somethingWentWrong": "Etwas ist schiefgelaufen",
+  "common.networkError": "Der Server ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
   "common.rateLimited": "Zu viele Anfragen — bitte warten Sie einen Moment.",
   "common.serverBusy": "Der Server ist ausgelastet, bitte versuchen Sie es gleich noch einmal",
   "search.searchFailed": "Suche fehlgeschlagen",

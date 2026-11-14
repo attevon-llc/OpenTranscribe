@@ -149,10 +149,10 @@ benchmarks, one-off SQL) and has **zero destructive-operation warnings**; that i
   ⚠️ `seed-fresh-deployment.sh` is **idempotent per file** (#1238): it lists the deployment and
   uploads only absent files, matching on the stored `title` + extension (the stored `filename` is
   sanitized and differs from the on-disk name for ~1 in 4 corpus files), and uploads nothing if the
-  listing fails. `--manifest` prints `# source: …` then `<name><TAB><bytes>` with no network call;
-  `e2e/update-visual-baselines.sh` derives its expected corpus from it and refuses to capture unless
-  the library equals it exactly (names, multiplicity, sizes, all `completed`, nothing extra), because
-  the gallery's card count cannot be masked. `opentr.sh fresh-destroy <name> --yes` exists for
+  listing fails. `--manifest` prints `# source: …` then `<name><TAB><bytes>`, no network call.
+  It does **not** seed visual baselines (#43, the images are public): `e2e/update-visual-baselines.sh`
+  imports the neutral demo-bundle slice in `e2e/visual-seed-corpus.json` (`lib/visual-seed-corpus.sh`)
+  and refuses unless the library equals it exactly. `opentr.sh fresh-destroy <name> --yes` exists for
   non-tty callers; without it EOF at the prompt now fails (it used to "cancel" with exit 0). The
   wrapper's `--destroy`/`--rebuild` verify the project's volumes are gone rather than trust that exit
   status.

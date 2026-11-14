@@ -137,6 +137,25 @@ class TestTheLibraryMustBeExactlyTheSeed:
         assert "missing: " + SEED[2][0] in result.stderr
         assert "not part of the seed: " in result.stderr
 
+    def test_the_demo_corpus_headers_are_not_taken_for_files(self):
+        """#43: the neutral corpus's manifest carries `# corpus:` and `# bundle_version:` lines."""
+        neutral = [("fema-emergency-kit.mp4", 8391745), ("voa-en-7897488.mp3", 2336644)]
+        manifest = "\n".join(
+            [
+                "# source: neutral-visual",
+                "# corpus: neutral-visual 1",
+                "# bundle_version: 2026.11.1",
+                *(f"{n}\t{s}" for n, s in neutral),
+            ]
+        )
+        with StubBackend() as stub:
+            for name, size in neutral:
+                stub.add_file(name, size=size)
+            result = run_gate(stub, manifest)
+
+        assert result.returncode == 0, result.stderr
+        assert "exactly the 2-file seed corpus" in result.stdout
+
     def test_the_status_match_is_case_insensitive(self):
         with seeded_stub(status="Completed") as stub:
             result = run_gate(stub, manifest_for(SEED))

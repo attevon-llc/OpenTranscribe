@@ -1,0 +1,13 @@
+{
+  "_comment": "The library every visual baseline (scripts/e2e/update-visual-baselines.sh) is photographed against: a fixed slice of the public demo's seed bundle (issue #628), loaded with its precomputed transcripts by `python -m app.scripts.demo_seed import`, so no speech recognition runs and no benchmark recording appears in a committed image (#43). Five US-government public-domain items: one to four speakers, audio and video, 2 to 13 minutes. bundle_version pins the bundle the slice was chosen from; a rebuilt bundle is refused until this file is updated on purpose, and every changed baseline is then recaptured. Bump corpus_version whenever items changes.",
+  "corpus_id": "neutral-visual",
+  "corpus_version": 1,
+  "bundle_version": "2026.11.1",
+  "items": [
+    "fema-flood-insurance-advocate",
+    "fema-emergency-kit",
+    "voa-en-7897488",
+    "usgs-lecture-geology-up-close-2017",
+    "nasa-escapade-mars-space-weather"
+  ]
+}

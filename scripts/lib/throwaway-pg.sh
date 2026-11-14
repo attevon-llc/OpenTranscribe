@@ -34,6 +34,12 @@ TPG_MAX_CONNECTIONS="${OT_TEST_PG_MAX_CONNECTIONS:-300}"
 TPG_READY_TIMEOUT="${OT_TEST_PG_READY_TIMEOUT:-120}"
 # Bound on retries after losing the probe-then-bind race to a concurrent run.
 TPG_RUN_ATTEMPTS=5
+# A container older than this whose creating run is gone is a leftover of a SIGKILLed runner
+# (the EXIT trap cannot run then) and is reaped by the next run. See tpg_reap_stale.
+TPG_STALE_AFTER_SECONDS="${OT_TEST_PG_STALE_AFTER_SECONDS:-21600}"
+TPG_OWNER_PID_LABEL="org.opentranscribe.owner-pid"
+TPG_OWNER_START_LABEL="org.opentranscribe.owner-start"
+TPG_CREATED_LABEL="org.opentranscribe.created-epoch"
 TPG_USER="postgres"
 TPG_DB="transcribe_test"
 
@@ -58,6 +64,42 @@ tpg_port_is_stock() {
     (( port >= STOCK_PORT_LOW && port <= STOCK_PORT_HIGH ))
 }
 
+# tpg_proc_start <pid> -> the kernel start time (clock ticks) of <pid>, empty when it is gone.
+# Paired with the pid so a recycled pid is not mistaken for the original runner.
+tpg_proc_start() {
+    local stat
+    stat="$(cat "/proc/$1/stat" 2>/dev/null)" || return 0
+    stat="${stat##*) }"   # comm may hold spaces; field 22 is the 20th after the closing paren
+    set -- $stat
+    echo "${20:-}"
+}
+
+# tpg_reap_stale -> remove containers of EXACTLY this lib's shape (name ot-testdb-<12hex> AND
+# compose project opentranscribe-pytest-<32hex> AND both test labels) that are older than
+# TPG_STALE_AFTER_SECONDS and whose recorded creator (pid + start time) no longer exists.
+# Every removal names one container selected by that full shape; anything else is skipped.
+tpg_reap_stale() {
+    local now name pid start created project cstr
+    now="$(date +%s)"
+    while IFS='|' read -r name pid start created project; do
+        [[ "$name" =~ ^ot-testdb-[0-9a-f]{12}$ ]] || continue
+        [[ "$project" =~ ^opentranscribe-pytest-[0-9a-f]{32}$ ]] || continue
+        if [[ ! "$created" =~ ^[0-9]+$ ]]; then
+            # Containers from before the labels existed: fall back to docker's own timestamp.
+            cstr="$(docker inspect -f '{{.Created}}' "$name" 2>/dev/null)" || continue
+            created="$(date -d "$cstr" +%s 2>/dev/null)" || continue
+        fi
+        (( now - created >= TPG_STALE_AFTER_SECONDS )) || continue
+        if [[ "$pid" =~ ^[0-9]+$ && -n "$start" && "$(tpg_proc_start "$pid")" == "$start" ]]; then
+            continue   # its runner is still alive
+        fi
+        echo "reaping stale throwaway postgres ${name} (creator gone)" >&2
+        docker rm -f "$name" >/dev/null 2>&1 || true
+    done < <(docker container ls -a --filter "label=${TPG_LABEL}" --filter "label=${TPG_PURPOSE_LABEL}" \
+        --format "{{.Names}}|{{.Label \"${TPG_OWNER_PID_LABEL}\"}}|{{.Label \"${TPG_OWNER_START_LABEL}\"}}|{{.Label \"${TPG_CREATED_LABEL}\"}}|{{.Label \"com.docker.compose.project\"}}" 2>/dev/null)
+    return 0
+}
+
 # tpg_start -> sets TPG_NAME/TPG_PORT/TPG_PASSWORD; returns 1 with a message on failure.
 tpg_start() {
     local attempt out candidate project platform platform_args=()
@@ -69,6 +111,7 @@ tpg_start() {
         echo "container ${candidate} already exists; refusing to touch it" >&2
         return 1
     fi
+    tpg_reap_stale
     # Pin the image platform to the daemon's own: a foreign-arch image left in the local store
     # by a multi-arch build would otherwise be picked.
     if platform="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null)" \
@@ -84,6 +127,9 @@ tpg_start() {
         if out="$(docker run -d --rm --name "$candidate" ${platform_args[@]+"${platform_args[@]}"} \
             --label "$TPG_LABEL" --label "$TPG_PURPOSE_LABEL" \
             --label "com.docker.compose.project=${project}" \
+            --label "${TPG_OWNER_PID_LABEL}=$$" \
+            --label "${TPG_OWNER_START_LABEL}=$(tpg_proc_start "$$")" \
+            --label "${TPG_CREATED_LABEL}=$(date +%s)" \
             -e POSTGRES_USER="$TPG_USER" -e POSTGRES_PASSWORD="$TPG_PASSWORD" -e POSTGRES_DB="$TPG_DB" \
             -p "127.0.0.1:${TPG_PORT}:5432" \
             --tmpfs "/var/lib/postgresql/data:rw,size=${TPG_TMPFS_SIZE}" \

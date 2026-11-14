@@ -33,7 +33,9 @@ import argparse
 import collections
 import hashlib
 import json
+import os
 import re
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -474,6 +476,25 @@ class Handler(BaseHTTPRequestHandler):
             print('  client disconnected mid-stream (Stop pressed?)')
 
 
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)  # signal 0 only probes existence; nothing is signalled
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _exit_when_gone(pid: int, interval: float = 0.5) -> None:
+    # os.getppid() would also change on reparenting, but a pid probe is robust to the parent
+    # being a non-main thread's creator, which is the prctl(PR_SET_PDEATHSIG) pitfall.
+    while _pid_alive(pid):
+        time.sleep(interval)
+    print('parent gone; exiting')
+    os._exit(0)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=5199)
@@ -483,12 +504,22 @@ def main() -> None:
     # opts into 0.0.0.0 explicitly in docker-compose.mock-llm.yml, where the
     # container boundary plus a 127.0.0.1-only published port are the isolation.
     parser.add_argument('--host', default='127.0.0.1')
+    # Opt-in, used only by the pytest fixture. A SIGKILLed test worker never runs its fixture
+    # teardown, so the child would outlive it (PPID 1) for days. The compose service omits this.
+    parser.add_argument(
+        '--exit-with-parent',
+        type=int,
+        metavar='PID',
+        help='exit when this process id is gone (polled; no prctl, so no thread caveat)',
+    )
     args = parser.parse_args()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f'Mock LLM listening on http://{args.host}:{args.port}/v1')
     print(f'  Base URL for containers: http://172.19.0.1:{args.port}/v1')
     print(f'  Model: {MODEL_ID}')
+    if args.exit_with_parent is not None:
+        threading.Thread(target=_exit_when_gone, args=(args.exit_with_parent,), daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

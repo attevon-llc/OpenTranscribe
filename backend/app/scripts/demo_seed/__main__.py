@@ -1,8 +1,9 @@
-"""Seed the public demo from a bundle (issue #628): ``validate``, ``import`` or ``export``.
+"""Seed the public demo from a bundle (issue #628): ``validate``, ``import``, ``export``, ``subset``.
 
     python -m app.scripts.demo_seed export --bundle /out --manifest /seed/manifest.json
     python -m app.scripts.demo_seed validate --bundle /seed
-    python -m app.scripts.demo_seed import --bundle /seed
+    python -m app.scripts.demo_seed import --bundle /seed [--if-empty]
+    python -m app.scripts.demo_seed subset --bundle /seed --items a,b [--bundle-version V] [--out D]
 
 ``import`` runs only inside ``scripts/demo/demo-reset.sh``'s seed phase: a one-off backend
 container with ``DEMO_MODE=false``, the public port closed, and a database that ``down -v``
@@ -20,6 +21,12 @@ manifest's items.
 
 The demo account is ``DEMO_USER_EMAIL`` / ``DEMO_USER_PASSWORD`` (both required), an
 ordinary ``user``: never an administrator.
+
+``subset`` (``subset.py``) prints ``<media file><TAB><bytes>`` for a validated selection of
+items and, with ``--out``, writes that selection as a bundle of its own. The visual-baseline
+wrapper (``scripts/e2e/update-visual-baselines.sh``) imports such a slice into a throwaway
+stack's admin account with ``--if-empty``, which leaves an account that already owns files
+alone, so a reused capture stack is never seeded twice (#43).
 """
 
 from __future__ import annotations
@@ -267,7 +274,7 @@ def _seeded_file_count(db, user_id: int) -> int:
     return int(db.query(MediaFile).filter(MediaFile.user_id == user_id).count())
 
 
-def _import(bundle: Path) -> int:
+def _import(bundle: Path, if_empty: bool = False) -> int:
     from app.core.config import settings
     from app.db.base import SessionLocal
 
@@ -282,6 +289,10 @@ def _import(bundle: Path) -> int:
     with SessionLocal() as db:
         user_id = _ensure_demo_user(db, email, password)
         db.commit()
+        owned_before = _seeded_file_count(db, user_id) if if_empty else 0
+    if owned_before:
+        print(f"the account already owns {owned_before} file(s); not importing (--if-empty)")
+        return EXIT_OK
     conversations = load_conversations(bundle, {i.id for i in items})
     uuid_by_item: dict[str, str] = {}
     for item in items:
@@ -322,14 +333,39 @@ def _export(bundle: Path, manifest: Path | None) -> int:
     return EXIT_OK
 
 
+def _subset(args: argparse.Namespace) -> int:
+    from app.scripts.demo_seed.subset import select_items
+    from app.scripts.demo_seed.subset import write_subset
+
+    if not args.items:
+        print("subset needs --items", file=sys.stderr)
+        return EXIT_USAGE
+    ids = [i.strip() for i in args.items.split(",") if i.strip()]
+    if args.out is None:
+        _, items = select_items(args.bundle, ids, args.bundle_version)
+    else:
+        _, items = write_subset(args.bundle, args.out, ids, args.bundle_version)
+    for item in items:
+        print(f"{item.media.name}\t{item.media.stat().st_size}")
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point; returns the exit code."""
     parser = argparse.ArgumentParser(prog="python -m app.scripts.demo_seed")
-    parser.add_argument("command", choices=("validate", "import", "export"))
+    parser.add_argument("command", choices=("validate", "import", "export", "subset"))
     parser.add_argument("--bundle", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, help="export: the manifest naming the items")
+    parser.add_argument(
+        "--if-empty", action="store_true", help="import: only into an account owning no file"
+    )
+    parser.add_argument("--items", help="subset: comma-separated item ids, in order")
+    parser.add_argument("--bundle-version", help="subset: refuse any other bundle version")
+    parser.add_argument("--out", type=Path, help="subset: write the selection as a bundle here")
     args = parser.parse_args(argv)
     try:
+        if args.command == "subset":
+            return _subset(args)
         if args.command == "export":
             return _export(args.bundle, args.manifest)
         if args.command == "validate":
@@ -340,7 +376,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"{len(conversations)} conversation(s)"
             )
             return EXIT_OK
-        return _import(args.bundle)
+        return _import(args.bundle, if_empty=args.if_empty)
     except BundleError as exc:
         for problem in exc.problems:
             print(f"bundle: {problem}", file=sys.stderr)

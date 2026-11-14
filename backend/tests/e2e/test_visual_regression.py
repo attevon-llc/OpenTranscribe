@@ -37,14 +37,12 @@ Then re-run WITHOUT update mode to compare against the committed baselines::
         --base-url=... --backend-url=...   # the isolated stack's ports
 
 Requirements:
-- An ISOLATED, seeded stack — never the shared live dev stack (issue #451):
-  ``./opentr.sh start dev --fresh <name> --port-offset N --seed-benchmark``,
-  then point ``--base-url``/``--backend-url`` (or ``base_url``/``backend_url``,
-  see conftest) at its ports.
-- At least one completed, transcribed file with segments in that dataset
-  (``--seed-benchmark`` uploads a fixed, small set via
-  ``scripts/seed-fresh-deployment.sh``; wait for all of them to leave
-  "processing" before running this suite)
+- An ISOLATED, seeded stack — never the shared live dev stack (issue #451).
+  The wrapper above starts one (``--fresh visual --port-offset 100``) and imports
+  the neutral demo-bundle slice in ``scripts/e2e/visual-seed-corpus.json`` into it
+  (#43: never the benchmark recordings); point ``--base-url``/``--backend-url``
+  (or ``base_url``/``backend_url``, see conftest) at its ports. Keep it with
+  ``--keep`` to compare against it.
 - admin@example.com / password (seeded automatically on a fresh deployment)
 
 Why isolation is not optional here (issue #451): ``gallery`` and ``file_detail``
@@ -185,7 +183,7 @@ def api_token(backend_url: str) -> str:
     Also dismisses the FirstRunWizard (``FirstRunWizard.svelte`` +
     ``POST /admin/first-run-wizard/complete``) for the super_admin account. It
     mounts unconditionally in the root layout and, on an account that has never
-    completed it — true of a brand-new ``--fresh --seed-benchmark`` admin —
+    completed it — true of a brand-new ``--fresh`` capture-stack admin —
     opens a `BaseModal` on first authenticated page load whose backdrop
     intercepts every click, including the settings surface's `.user-button`.
     There is no localStorage/query-param gate to suppress it with; its
@@ -724,8 +722,8 @@ def _skip_unless_isolated_stack(surface: str, base_url: str, backend_url: str) -
             f"    ./scripts/e2e/update-visual-baselines.sh "
             f"--reason '<why>' --surface {surface}\n"
             f"which brings that stack up (--fresh visual --port-offset 100 "
-            f"--seed-benchmark --with-mock-llm), waits for the seeded media to finish "
-            f"processing, refuses to capture unless the library is exactly the seed "
+            f"--with-mock-llm), imports the neutral seed corpus (DEMO_SEED_BUNDLE), "
+            f"refuses to capture unless the library is exactly that "
             f"corpus, and tears it down again. To COMPARE against it without "
             f"updating, add --keep and re-run this module with --base-url/--backend-url "
             f"pointed at the offset ports it prints."

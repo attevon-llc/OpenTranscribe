@@ -291,14 +291,29 @@ both light and dark themes, and compares each against a committed PNG under
 ./scripts/e2e/update-visual-baselines.sh --help
 ```
 
-It brings up an isolated, seeded stack (`--fresh visual --port-offset 100
---seed-benchmark --with-mock-llm`), waits for the seeded media to finish processing,
-**asserts the library is exactly the seed corpus** (below), captures, prints a
+It brings up an isolated stack (`--fresh visual --port-offset 100 --with-mock-llm`),
+imports the **neutral seed corpus** into it (below), **asserts the library is exactly
+that corpus**, captures, prints a
 per-surface old-vs-new percentage with the actual/diff images written to a
 `/tmp/ot-visual-baselines/<timestamp>/` directory it names, asks you to confirm, writes a
 provenance sidecar per image, and stops the stack again. `--keep` leaves it running
 (useful for the verification re-run it prints); `--destroy` also removes its volumes;
 `--rebuild` destroys the project *before* starting, for a pristine stack.
+
+### The seed corpus is neutral, licensed demo content
+
+Every committed baseline is a public image, so the library it photographs is a fixed
+slice of the public demo's seed bundle, never the benchmark recordings:
+`scripts/e2e/visual-seed-corpus.json` names five US-government public-domain items (one
+to four speakers, audio and video, 2 to 13 minutes) and pins the bundle version they were
+chosen from. Point the wrapper at the bundle with `DEMO_SEED_BUNDLE=/path/to/bundle`. It
+validates the slice before starting anything (`python -m app.scripts.demo_seed subset`:
+licence, provenance and media digest of each item), then imports it into the capture
+stack's admin account with the precomputed transcripts and conversations
+(`demo_seed import --if-empty`), so the seed needs no transcription. A rebuilt bundle of
+another version is refused until the corpus file is updated on purpose; bump its
+`corpus_version` and recapture every baseline when you do. Each sidecar records
+`corpus_id`, `corpus_version` and `bundle_version`.
 
 ### The image must measure the UI, not the stack's history
 
@@ -308,12 +323,12 @@ start while the capture stack kept its volumes, so four starts left 12 files and
 gallery baseline taken at 9 failed a compare at 12 (6.8% against a 0.5% tolerance).
 Two layers now stop that, doing different jobs:
 
-- **Prevention.** `scripts/seed-fresh-deployment.sh` is idempotent per file: it lists the
-  deployment first and uploads only the seed files that are absent, so
-  `--seed-benchmark` is safe to repeat. If the listing cannot be read it uploads
-  nothing. `--manifest` prints, with no network call, exactly which
-  `<filename><TAB><bytes>` pairs it would seed; the wrapper derives its expectation from
-  that, never from a copy of the names.
+- **Prevention.** The import runs only into an account that owns no file
+  (`--if-empty`), so a reused capture stack is never seeded twice. The expected
+  `<filename><TAB><bytes>` pairs come from `demo_seed subset` over the bundle itself,
+  never from a copy of the names. (`scripts/seed-fresh-deployment.sh`, behind
+  `--seed-benchmark`, is idempotent per file in the same way, but it is not used for
+  baselines.)
 - **Detection.** Before photographing anything the wrapper requires the library to equal
   that manifest: every file exactly once, with the recorded size, `completed`, and
   **nothing else** (a leaked `e2e-owned-*` row counts as history). It compares

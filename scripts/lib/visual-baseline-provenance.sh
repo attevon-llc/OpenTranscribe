@@ -98,11 +98,19 @@ EOF
 # new small file in that directory silently changes every future baseline and nothing says so.
 # `seed_source` is the directory's last component only: a committed sidecar must not carry the
 # photographer's home path.
+#
+# `corpus_id`, `corpus_version` and `bundle_version` name the demo-bundle slice the library was
+# seeded from (scripts/lib/visual-seed-corpus.sh, #43); null for a manifest without them.
 corpus_json() {
-    local line source="" name size entries="" count=0
+    local line source="" name size entries="" count=0 corpus="" version="null" bundle=""
     while IFS= read -r line; do
         case "$line" in
             "# source:"*) source="${line#"# source:"}"; source="${source# }"; source="${source##*/}" ;;
+            "# corpus: "*)
+                read -r corpus version <<< "${line#"# corpus: "}"
+                [[ "$version" =~ ^[0-9]+$ ]] || version="$(json_string "$version")"
+                ;;
+            "# bundle_version: "*) bundle="${line#"# bundle_version: "}" ;;
             "#"*|"") ;;
             *)
                 name="${line%%$'\t'*}"
@@ -113,8 +121,10 @@ corpus_json() {
                 ;;
         esac
     done <<< "$SEED_MANIFEST"
-    printf '{"seed_source": %s, "files": [%s], "library_total": %d}' \
-        "$(json_string "$source")" "$entries" "$count"
+    printf '{"seed_source": %s, "corpus_id": %s, "corpus_version": %s, "bundle_version": %s, "files": [%s], "library_total": %d}' \
+        "$(json_string "$source")" "$( [[ -n "$corpus" ]] && json_string "$corpus" || echo null)" \
+        "$( [[ -n "$corpus" ]] && echo "$version" || echo null)" \
+        "$( [[ -n "$bundle" ]] && json_string "$bundle" || echo null)" "$entries" "$count"
 }
 
 # Minimal JSON string escaping for operator-supplied text (--reason).

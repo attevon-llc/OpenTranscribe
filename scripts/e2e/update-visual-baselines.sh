@@ -30,9 +30,11 @@
 #      three independent ways (declared offset, resolved ports, and the compose
 #      project that actually owns those ports once the stack is up), because the
 #      first two are statements of intent and only the third is an observation.
-#   2. It stands up the isolated seeded stack itself, so nobody has to remember
-#      `--fresh visual --port-offset 100 --seed-benchmark --with-mock-llm`, and
-#      stops it again afterwards. Before it photographs anything it asserts the
+#   2. It stands up the isolated stack itself (`--fresh visual --port-offset 100
+#      --with-mock-llm`), imports the neutral demo-bundle slice into it
+#      (scripts/lib/visual-seed-corpus.sh: public-domain items, precomputed
+#      transcripts, never the benchmark recordings, #43), and stops it again
+#      afterwards. Before it photographs anything it asserts the
 #      library is EXACTLY the seed corpus (names, multiplicity, sizes, all
 #      completed, nothing extra) -- the image must measure the UI, not how many
 #      times the stack was started (#1238: the seed used to upload on every
@@ -139,8 +141,8 @@ DESTROY_STACK=false
 REBUILD_STACK=false
 #: Set when a destroy ran but volumes of the project remain (checked, never assumed).
 DESTROY_FAILED=false
-#: The files the seeder WILL upload, as printed by `seed-fresh-deployment.sh --manifest`.
-#: Derived from the code that creates the corpus, never transcribed here.
+#: The files the import WILL create, from `demo_seed subset` over the bundle's corpus slice
+#: (scripts/lib/visual-seed-corpus.sh). Derived from the bundle itself, never transcribed here.
 SEED_MANIFEST=""
 SELECTED_SURFACES=()
 
@@ -179,10 +181,15 @@ Options:
                         safety checks; start nothing, capture nothing, write
                         nothing.
 
+  -h, --help            This message.
+
+The seed corpus is the neutral slice of the demo seed bundle named in
+scripts/e2e/visual-seed-corpus.json, imported with its precomputed transcripts
+(no transcription). Set DEMO_SEED_BUNDLE to the bundle directory.
+
 Before capturing, the library must be EXACTLY the seed corpus (same files, same
 sizes, all completed, nothing else). A reused stack that satisfies that is safe;
 one that does not is refused with the remedy named.
-  -h, --help            This message.
 EOF
 }
 
@@ -436,7 +443,7 @@ start_capture_stack() {
         assert_project_is_not_live "$FRESH_PROJECT" || exit "$EXIT_MISUSE"
 
         start_args=(start dev --fresh "$FRESH_NAME" --port-offset "$PORT_OFFSET"
-                    --seed-benchmark --with-mock-llm)
+                    --with-mock-llm)
         [[ -n "$GPU_DEVICE" ]] && start_args+=(--gpu-device "$GPU_DEVICE")
 
         log "${BLUE}▶ ${OPENTR} ${start_args[*]}${NC}"
@@ -482,8 +489,8 @@ stop_capture_stack() {
 ${OPENTR} stop --fresh ${FRESH_NAME}${NC}"
         return 0
     fi
-    # `stop --fresh` keeps volumes. That is safe to reuse ONLY because the seeder is
-    # idempotent per file and assert_corpus_is_the_seed refuses any library that is not
+    # `stop --fresh` keeps volumes. That is safe to reuse ONLY because the import runs only
+    # into an empty account (--if-empty) and assert_corpus_is_the_seed refuses any library that is not
     # exactly the seed corpus before a capture -- this comment used to say the kept corpus
     # "reproduces this one", which was false while every start re-uploaded the seed (#1238).
     # --destroy is the opt-in for a pristine next run.
@@ -538,36 +545,6 @@ rebuild_capture_project() {
     fi
     destroy_capture_project || die "--rebuild could not remove ${project}'s volumes" \
         "$EXIT_PRECONDITION"
-}
-
-# The files the seeder will upload, derived from the seeder itself (`--manifest` shares its
-# selection code and makes no network call). Run from REPO_ROOT with the caller's
-# environment, exactly as opentr.sh runs the real seed, so SEED_MEDIA_DIR / SEED_MAX_FILES
-# and the worktree-aware default directory (#973) resolve identically for both.
-#
-# A synthetic or empty manifest is refused HERE, before a multi-minute stack start: those
-# files carry no speech, the pipeline marks them `error`, and there is nothing to photograph.
-derive_seed_manifest() {
-    local line count=0 source=""
-    SEED_MANIFEST="$(bash "$REPO_ROOT/scripts/seed-fresh-deployment.sh" --manifest)" \
-        || die "seed-fresh-deployment.sh --manifest failed" "$EXIT_PRECONDITION"
-    while IFS= read -r line; do
-        case "$line" in
-            "# source:"*) source="${line#"# source:"}"; source="${source# }" ;;
-            "#"*|"") ;;
-            *) count=$((count + 1)) ;;
-        esac
-    done <<< "$SEED_MANIFEST"
-    if [[ "$source" == "synthetic" || $count -eq 0 ]]; then
-        die "no real seed media (the seeder would fall back to silent synthetic fixtures \
-that the pipeline marks as errors). Set SEED_MEDIA_DIR to a directory of speech recordings." \
-            "$EXIT_PRECONDITION"
-    fi
-    log "${BLUE}🌱 Expected seed corpus: ${count} file(s) from ${source}${NC}"
-    while IFS= read -r line; do
-        [[ -z "$line" || "$line" == "#"* ]] && continue
-        log "     ${line//$'\t'/  }  bytes"
-    done <<< "$SEED_MANIFEST"
 }
 
 # The capture must photograph EXACTLY the seed corpus and nothing else.
@@ -766,9 +743,7 @@ while time.time() < deadline:
             # as "0 completed file(s)" and the capture photographed an empty library (#973).
             fail(
                 f"seeded media finished but none completed ({counts}); the visual suite needs "
-                "transcribed files, so refusing to capture against an empty corpus. A worktree "
-                "without SEED_MEDIA_DIR seeds silent fixtures that the pipeline correctly "
-                f"marks as errors.\n{remedy}"
+                f"transcribed files, so refusing to capture against an empty corpus.\n{remedy}"
             )
         bad = sorted(f"{label(f)} ({status_of(f)})" for f in files if status_of(f) != "completed")
         fail(
@@ -1012,6 +987,8 @@ main() {
     source "$REPO_ROOT/scripts/lib/gpu-free-vram.sh"
     # shellcheck source=scripts/lib/visual-baseline-provenance.sh
     source "$REPO_ROOT/scripts/lib/visual-baseline-provenance.sh"
+    # shellcheck source=scripts/lib/visual-seed-corpus.sh
+    source "$REPO_ROOT/scripts/lib/visual-seed-corpus.sh"
 
     derive_surfaces
     derive_base_ports
@@ -1050,6 +1027,8 @@ otfresh-${FRESH_NAME}).${NC}"
     # The two OBSERVATIONS. Everything above is a statement of intent; only these
     # can catch a stack that is up but is not the one we think it is.
     observe_capture_stack || exit "$EXIT_PRECONDITION"
+    seed_capture_corpus || die "could not import the seed corpus into the capture stack" \
+        "$EXIT_PRECONDITION"
 
     assert_corpus_is_the_seed || die "the library is not exactly the seed corpus — capturing \
 now would record the stack's history, not the UI (see the message above)" "$EXIT_PRECONDITION"

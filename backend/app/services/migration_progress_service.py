@@ -36,6 +36,10 @@ MIGRATION_KEY_PREFIX = "embedding_migration"
 # Redis key alive indefinitely.
 MIGRATION_STATUS_TTL_SECONDS = 72 * 60 * 60
 
+# Upper bound on failed-file UUIDs kept for the progress API. The true failure
+# count is still tracked (``failed_count``); only the listed UUIDs are capped.
+MAX_RECORDED_FAILED_FILES = 1000
+
 
 class MigrationStatus(TypedDict):
     """Type definition for migration status."""
@@ -120,22 +124,29 @@ class MigrationProgressService:
 
             if status_json:
                 parsed = json.loads(status_json)
-                # lua-cjson cannot tell an empty JSON array from an empty object, so
-                # _INCREMENT_LUA's round-trip re-encode of the whole status blob
-                # silently turns "failed_files": [] into {} the moment
-                # increment_processed() is called with zero failures recorded so
-                # far (self-heals the instant a real failure is appended — see
-                # test_migration_progress_service.py). Left uncorrected this
-                # breaks the MigrationStatus.failed_files: list[str] contract for
-                # every migration during the window before its first failure.
-                if isinstance(parsed.get("failed_files"), dict):
-                    parsed["failed_files"] = []
+                self._merge_progress(parsed)
                 return cast(MigrationStatus, parsed)
             return default_status
 
         except (RedisError, ValueError) as e:
             logger.error(f"Error getting migration status from Redis: {e}", exc_info=True)
             return default_status
+
+    def _merge_progress(self, parsed: dict) -> None:
+        """Overlay the O(1) counters/failed set onto the static status blob."""
+        assert self.redis_client is not None
+        counters = self.redis_client.hgetall(self._get_key("progress"))
+        if not counters:
+            return
+        text = {
+            (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+            for k, v in counters.items()
+        }
+        parsed["processed_files"] = int(text.get("processed_files", 0))
+        if text.get("last_updated"):
+            parsed["last_updated"] = text["last_updated"]
+        members = self.redis_client.smembers(self._get_key("failed"))
+        parsed["failed_files"] = sorted(m.decode() if isinstance(m, bytes) else m for m in members)
 
     def is_running(self) -> bool:
         """Check if a migration is currently running.
@@ -195,6 +206,7 @@ class MigrationProgressService:
             self.redis_client.set(status_key, json.dumps(status), ex=MIGRATION_STATUS_TTL_SECONDS)
             # Clear any previous completion flag
             self.redis_client.delete(self._get_key("completed"))
+            self.redis_client.delete(self._get_key("progress"), self._get_key("failed"))
             logger.info(f"Started migration tracking: {total_files} files")
             return True
 
@@ -202,36 +214,27 @@ class MigrationProgressService:
             logger.error(f"Error starting migration tracking: {e}", exc_info=True)
             return False
 
-    # Lua script for atomic increment of processed_files + optional failed_files append.
-    # Runs entirely within Redis — no race conditions between concurrent callers.
+    # Progress counters live OUTSIDE the status JSON blob (loadrun2 R1): the old
+    # script GET/cjson.decode/linear-scan/re-encode/SET the whole blob per call
+    # (43 ms at 30k failures, 76% of Redis time). Redis data types
+    # (https://redis.io/docs/latest/develop/data-types/) give O(1) updates:
+    # a hash for counters (HINCRBY) and a SET for deduplicated failed UUIDs,
+    # capped so a library with many missing objects cannot grow it unbounded.
+    # Lua stays only to keep "no-op unless the migration was started" atomic
+    # (https://redis.io/docs/latest/develop/programmability/eval-intro/).
     _INCREMENT_LUA = """
-    local key = KEYS[1]
-    local file_uuid = ARGV[1]
-    local is_failure = ARGV[2] == "1"
-    local now = ARGV[3]
-
-    local raw = redis.call("GET", key)
-    if not raw then return 0 end
-
-    local status = cjson.decode(raw)
-    status["processed_files"] = (status["processed_files"] or 0) + 1
-    status["last_updated"] = now
-
-    if is_failure and file_uuid ~= "" then
-        local failed = status["failed_files"] or {}
-        -- check for duplicate
-        local found = false
-        for _, v in ipairs(failed) do
-            if v == file_uuid then found = true; break end
-        end
-        if not found then
-            table.insert(failed, file_uuid)
-            status["failed_files"] = failed
+    if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end
+    local n = redis.call("HINCRBY", KEYS[2], "processed_files", 1)
+    redis.call("HSET", KEYS[2], "last_updated", ARGV[3])
+    if ARGV[2] == "1" then
+        redis.call("HINCRBY", KEYS[2], "failed_count", 1)
+        if ARGV[1] ~= "" and redis.call("SCARD", KEYS[3]) < tonumber(ARGV[5]) then
+            redis.call("SADD", KEYS[3], ARGV[1])
+            redis.call("EXPIRE", KEYS[3], ARGV[4])
         end
     end
-
-    redis.call("SET", key, cjson.encode(status), "EX", ARGV[4])
-    return status["processed_files"]
+    redis.call("EXPIRE", KEYS[2], ARGV[4])
+    return n
     """
 
     def increment_processed(self, success: bool = True, file_uuid: str | None = None) -> bool:
@@ -254,12 +257,15 @@ class MigrationProgressService:
             status_key = self._get_key("status")
             self.redis_client.eval(
                 self._INCREMENT_LUA,
-                1,  # number of KEYS
+                3,  # number of KEYS
                 status_key,
+                self._get_key("progress"),
+                self._get_key("failed"),
                 file_uuid or "",
                 "1" if not success else "0",
                 datetime.now(UTC).isoformat(),
                 MIGRATION_STATUS_TTL_SECONDS,
+                MAX_RECORDED_FAILED_FILES,
             )
             return True
 
@@ -322,6 +328,7 @@ class MigrationProgressService:
             status_key = self._get_key("status")
             self.redis_client.delete(status_key)
             self.redis_client.delete(self._get_key("completed"))
+            self.redis_client.delete(self._get_key("progress"), self._get_key("failed"))
             logger.info("Migration status cleared")
             return True
 

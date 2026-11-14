@@ -123,3 +123,20 @@ def test_run_profile_prepares_statement_statistics_itself_and_never_in_a_shipped
     assert "ALTER SYSTEM SET shared_preload_libraries = pg_stat_statements" in core
     for compose in ROOT.glob("docker-compose*.yml"):
         assert "shared_preload_libraries" not in compose.read_text(), compose.name
+
+
+def test_snapshot_flags_every_one_time_migration_done_with_the_codes_own_keys():
+    """The flags are read from code, so a renamed key fails here instead of re-running the pass."""
+    from app.core import constants
+    from app.tasks.imohash_recompute import RECOMPUTE_FLAG_KEY
+    from app.tasks.speaker_embedding_migration import NORMALIZATION_DONE_KEY
+
+    text = SCRIPT.read_text()
+    for key in (
+        RECOMPUTE_FLAG_KEY,
+        constants.THUMBNAIL_WEBP_MIGRATION_DONE_KEY,
+        constants.THUMBNAIL_BACKFILL_DONE_KEY,
+        NORMALIZATION_DONE_KEY,
+    ):
+        assert f"('{key}','true'" in text
+    assert text.index("imohash_package_recompute_complete") < text.index("psql_in -c ANALYZE")

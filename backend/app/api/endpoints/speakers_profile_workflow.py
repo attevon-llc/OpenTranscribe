@@ -111,109 +111,103 @@ def auto_create_or_assign_profile(
     Returns:
         bool: Always True; a failure is raised, never returned as False.
     """
-    speaker_id = speaker.id  # read before the try: a failed session cannot refresh it
-    try:
-        # The tenant of the speaker's file: a voiceprint only ever joins a profile
-        # of the same tenant (None = personal; always None in the community edition).
-        speaker_org_id = speaker_lookups.file_organization_id(db, speaker.media_file_id)
+    # The tenant of the speaker's file: a voiceprint only ever joins a profile
+    # of the same tenant (None = personal; always None in the community edition).
+    speaker_org_id = speaker_lookups.file_organization_id(db, speaker.media_file_id)
 
-        # The same-named profile of this user in the speaker's tenant, if any. Names
-        # are unique per user per tenant (v430), so another tenant's profile of that
-        # name is neither linked nor in the way of creating one here.
-        existing_profile = speaker_lookups.profile_by_name_pattern(
-            db, speaker.user_id, display_name.strip(), speaker_org_id
+    # The same-named profile of this user in the speaker's tenant, if any. Names
+    # are unique per user per tenant (v430), so another tenant's profile of that
+    # name is neither linked nor in the way of creating one here.
+    existing_profile = speaker_lookups.profile_by_name_pattern(
+        db, speaker.user_id, display_name.strip(), speaker_org_id
+    )
+
+    old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+    if existing_profile:
+        # The user typed this name on this one speaker: that overrides an earlier
+        # unassignment from the same profile (issue #1233).
+        from app.services.speaker_identity_rules import lift_profile_blacklist
+
+        lift_profile_blacklist(db, int(speaker.id), int(existing_profile.id))
+        # Assign speaker to existing profile
+        speaker.profile_id = existing_profile.id
+        touch_profile_interaction(db, [existing_profile.id, old_profile_id], "human_link")
+        # A person typed this name (issue #1280). The request that saved the name already
+        # recorded it, with the suggestion it accepted; this step must not overwrite that.
+        record_human_identity(
+            speaker, user_id=user_id, origin=ORIGIN_PROFILE_ASSIGNED, keep_recorded=True
+        )
+        logger.info(
+            f"Assigned speaker {speaker.id} to existing profile '{existing_profile.name}' (ID: {existing_profile.id})"
         )
 
-        old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
-        if existing_profile:
-            # The user typed this name on this one speaker: that overrides an earlier
-            # unassignment from the same profile (issue #1233).
-            from app.services.speaker_identity_rules import lift_profile_blacklist
+        _update_profile_embedding(db, int(speaker.id), old_profile_id, int(existing_profile.id))
 
-            lift_profile_blacklist(db, int(speaker.id), int(existing_profile.id))
-            # Assign speaker to existing profile
-            speaker.profile_id = existing_profile.id
-            touch_profile_interaction(db, [existing_profile.id, old_profile_id], "human_link")
-            # A person typed this name (issue #1280). The request that saved the name already
-            # recorded it, with the suggestion it accepted; this step must not overwrite that.
-            record_human_identity(
-                speaker, user_id=user_id, origin=ORIGIN_PROFILE_ASSIGNED, keep_recorded=True
+        # Sync profile assignment to OpenSearch
+        try:
+            from app.services.opensearch_service import update_speaker_profile
+
+            # Get profile UUID if profile is assigned
+            profile_uuid = None
+            if speaker.profile_id and existing_profile:
+                profile_uuid = str(existing_profile.uuid)
+
+            update_speaker_profile(
+                speaker_uuid=str(speaker.uuid),
+                profile_id=int(speaker.profile_id) if speaker.profile_id else None,
+                profile_uuid=profile_uuid,
+                verified=bool(speaker.verified),
             )
-            logger.info(
-                f"Assigned speaker {speaker.id} to existing profile '{existing_profile.name}' (ID: {existing_profile.id})"
-            )
-
-            _update_profile_embedding(db, int(speaker.id), old_profile_id, int(existing_profile.id))
-
-            # Sync profile assignment to OpenSearch
-            try:
-                from app.services.opensearch_service import update_speaker_profile
-
-                # Get profile UUID if profile is assigned
-                profile_uuid = None
-                if speaker.profile_id and existing_profile:
-                    profile_uuid = str(existing_profile.uuid)
-
-                update_speaker_profile(
-                    speaker_uuid=str(speaker.uuid),
-                    profile_id=int(speaker.profile_id) if speaker.profile_id else None,
-                    profile_uuid=profile_uuid,
-                    verified=bool(speaker.verified),
-                )
-                logger.info(f"Synced speaker {speaker.uuid} profile assignment to OpenSearch")
-            except CLUSTER_UNAVAILABLE_ERRORS as e:
-                logger.warning(
-                    f"Failed to sync speaker {speaker.uuid} profile to OpenSearch: {e}",
-                    exc_info=True,
-                )
-
-        else:
-            # Create new profile for this speaker name (org-stamped from the
-            # speaker's tenant — issue #262e; None = personal/community).
-            new_profile = SpeakerProfile(
-                user_id=speaker.user_id,
-                name=display_name.strip(),
-                description=f"Auto-created profile for {display_name.strip()}",
-                uuid=str(uuid.uuid4()),
-                organization_id=speaker_org_id,
-            )
-            db.add(new_profile)
-            db.flush()  # Get the ID without committing
-
-            # Assign speaker to new profile
-            speaker.profile_id = new_profile.id
-            touch_profile_interaction(db, [new_profile.id, old_profile_id], "human_link")
-            record_human_identity(
-                speaker, user_id=user_id, origin=ORIGIN_PROFILE_CREATED, keep_recorded=True
-            )
-            logger.info(
-                f"Created new profile '{new_profile.name}' (ID: {new_profile.id}) and assigned speaker {speaker.id}"
+            logger.info(f"Synced speaker {speaker.uuid} profile assignment to OpenSearch")
+        except CLUSTER_UNAVAILABLE_ERRORS as e:
+            logger.warning(
+                f"Failed to sync speaker {speaker.uuid} profile to OpenSearch: {e}",
+                exc_info=True,
             )
 
-            _update_profile_embedding(db, int(speaker.id), old_profile_id, int(new_profile.id))
+    else:
+        # Create new profile for this speaker name (org-stamped from the
+        # speaker's tenant — issue #262e; None = personal/community).
+        new_profile = SpeakerProfile(
+            user_id=speaker.user_id,
+            name=display_name.strip(),
+            description=f"Auto-created profile for {display_name.strip()}",
+            uuid=str(uuid.uuid4()),
+            organization_id=speaker_org_id,
+        )
+        db.add(new_profile)
+        db.flush()  # Get the ID without committing
 
-            # Sync new profile assignment to OpenSearch
-            try:
-                from app.services.opensearch_service import update_speaker_profile
+        # Assign speaker to new profile
+        speaker.profile_id = new_profile.id
+        touch_profile_interaction(db, [new_profile.id, old_profile_id], "human_link")
+        record_human_identity(
+            speaker, user_id=user_id, origin=ORIGIN_PROFILE_CREATED, keep_recorded=True
+        )
+        logger.info(
+            f"Created new profile '{new_profile.name}' (ID: {new_profile.id}) and assigned speaker {speaker.id}"
+        )
 
-                update_speaker_profile(
-                    speaker_uuid=str(speaker.uuid),
-                    profile_id=int(speaker.profile_id) if speaker.profile_id else None,
-                    profile_uuid=str(new_profile.uuid),
-                    verified=bool(speaker.verified),
-                )
-                logger.info(f"Synced speaker {speaker.uuid} new profile assignment to OpenSearch")
-            except CLUSTER_UNAVAILABLE_ERRORS as e:
-                logger.warning(
-                    f"Failed to sync speaker {speaker.uuid} new profile to OpenSearch: {e}",
-                    exc_info=True,
-                )
+        _update_profile_embedding(db, int(speaker.id), old_profile_id, int(new_profile.id))
 
-        return True
+        # Sync new profile assignment to OpenSearch
+        try:
+            from app.services.opensearch_service import update_speaker_profile
 
-    except Exception:
-        logger.exception(f"Error in auto profile creation/assignment for speaker {speaker_id}")
-        raise
+            update_speaker_profile(
+                speaker_uuid=str(speaker.uuid),
+                profile_id=int(speaker.profile_id) if speaker.profile_id else None,
+                profile_uuid=str(new_profile.uuid),
+                verified=bool(speaker.verified),
+            )
+            logger.info(f"Synced speaker {speaker.uuid} new profile assignment to OpenSearch")
+        except CLUSTER_UNAVAILABLE_ERRORS as e:
+            logger.warning(
+                f"Failed to sync speaker {speaker.uuid} new profile to OpenSearch: {e}",
+                exc_info=True,
+            )
+
+    return True
 
 
 def _update_profile_embedding(

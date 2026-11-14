@@ -106,3 +106,54 @@ def test_segment_edit_queues_analytics_instead_of_computing_it():
     }
     assert "refresh_analytics" not in calls
     assert "dispatch_analytics" in calls
+
+
+# ---- every request-thread caller fails CLOSED when the detector is unavailable ----
+
+
+def _cfg(categories=("pii",)):
+    from app.core.redaction_config import EffectiveRedactionConfig
+
+    return EffectiveRedactionConfig(enabled=True, enabled_categories=set(categories))
+
+
+def test_chat_input_masking_drops_the_chunk_when_pii_detector_is_cold(cold):
+    from app.services.chat.redactor import _mask_inline
+
+    assert _mask_inline("call 555-867-5309", _cfg()) == ""
+    assert cold == []
+
+
+def test_chat_output_masking_withholds_the_span_when_pii_detector_is_cold(cold):
+    from app.core import redaction_defaults
+    from app.services.chat.output_redactor import OutputRedactor
+
+    red = OutputRedactor(_cfg())
+    out = red.mask("call 555-867-5309")
+    assert out == redaction_defaults.REDACTION_LLM_FAILSAFE_TEXT
+    assert "555" not in out
+    assert cold == []
+
+
+def test_snippet_masking_raises_unavailable_when_pii_detector_is_cold(cold):
+    from app.services.search import snippet_redaction
+
+    with pytest.raises(snippet_redaction.SnippetMaskingUnavailableError):
+        snippet_redaction.mask_snippets(["call 555-867-5309"], _cfg())
+    assert cold == []
+
+
+def test_refusal_requests_a_background_warmup_rate_limited(monkeypatch):
+    from app.services.redaction import detectors
+    from app.services.redaction import warmup
+
+    started: list[int] = []
+    monkeypatch.setattr(warmup, "start_pii_warmup", lambda: started.append(1))
+    monkeypatch.setattr(detectors, "_last_warmup_request", float("-inf"))
+    for _ in range(2):
+        with no_model_load():
+            detectors.refuse_model_load("pii")
+    assert started == [1]
+    with no_model_load():
+        pass  # nothing refused: no warm-up requested
+    assert started == [1]

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import logging
+import time
 from collections.abc import Iterator
 
 # Set (to a list that collects refusals) while a request thread runs a detector. A loader that
@@ -29,6 +31,33 @@ def no_model_load() -> Iterator[list[str]]:
         yield refused
     finally:
         _refused_loads.reset(token)
+        if refused:
+            _request_warmup()
+
+
+_WARMUP_RETRY_SECONDS = 60.0
+_last_warmup_request = float("-inf")
+
+
+def _request_warmup() -> None:
+    """Ask the API process to warm detectors in the background, at most once a minute.
+
+    A refusal means this request failed closed because the models are not resident, which
+    happens when redaction was first enabled AFTER startup (the startup warm-up is gated on
+    redaction being in use). Without this the API process would refuse until restarted.
+    ``start_pii_warmup`` re-checks the gate and builds on a daemon thread, off the request.
+    """
+    global _last_warmup_request
+    now = time.monotonic()
+    if now - _last_warmup_request < _WARMUP_RETRY_SECONDS:
+        return
+    _last_warmup_request = now
+    try:
+        from app.services.redaction.warmup import start_pii_warmup
+
+        start_pii_warmup()
+    except Exception:  # an optimisation, never load-bearing for the request that refused
+        logging.getLogger(__name__).warning("Could not start detector warm-up", exc_info=True)
 
 
 def refuse_model_load(name: str) -> bool:

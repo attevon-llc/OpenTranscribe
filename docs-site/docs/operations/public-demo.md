@@ -231,7 +231,10 @@ every upgrade:
 4. restarts without workers and opens the site again.
 
 If any step fails, the script stops with the site still closed. A half-seeded demo is never
-public. The reset takes 10 to 20 minutes, mostly waiting for the search model to load.
+public: the seed fails unless the demo account ends up with exactly the recordings the seed
+bundle's `manifest.json` lists. Before it stops or deletes anything, the script checks that nginx
+is part of the stack (`NGINX_SERVER_NAME` and its certificate configured); without nginx there
+is nothing to close, so it refuses and changes nothing. The reset takes 10 to 20 minutes, mostly waiting for the search model to load.
 
 ## Upgrades
 

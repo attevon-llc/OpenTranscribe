@@ -167,9 +167,10 @@ Runs on the demo host from the install directory (a normal `setup-opentranscribe
 4. Record the current tag; `./opentranscribe.sh update --version <target>` then
    `./opentranscribe.sh update-full` (config files of that tag).
 5. `scripts/demo/demo-reset.sh` (fresh seed against the new schema, D6).
-6. Health: `/health` 200 **and** a content assertion: `GET /api/files` as the demo user returns
-   at least one item (there is no `DEMO_MIN_FILES` setting: the seed bundle's manifest is the count), and `GET /api/version` (or the About payload) reports the
-   target tag.
+6. Health: `/health` 200 reporting the target tag. The content assertion runs inside step 5:
+   `demo_seed import` exits 1, and the reset keeps nginx closed, unless the demo account owns
+   exactly the bundle manifest's items (`load_bundle` already refuses an empty manifest). The
+   manifest is the count; no separate minimum setting exists.
 7. On failure: `./opentranscribe.sh update --rollback`, `update-full`, reset again, health again;
    exit 1 either way so the timer's `OnFailure=` alerts.
 8. Write `demo-status.json` (`{tag, previous_tag, upgraded_at, result}`) for the release

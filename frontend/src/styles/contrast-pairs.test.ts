@@ -83,14 +83,14 @@ const PAIRS: Pair[] = [
       reason: 'secondary / muted text on a surface',
     }))
   ),
-  // Tertiary is only ever placed on the base surfaces (4.34:1 on --hover-color in light, so a
-  // hover row must not use it); contrast-usage.test.ts would flag a new pairing.
-  ...['--surface-color', '--background-color'].map((bg) => ({
+  // Tertiary text sits on sunken panels too (settings hints on --surface-secondary were
+  // 4.34:1 with #64748b), so it is held on every surface.
+  ...SURFACES.map((bg) => ({
     fg: '--text-tertiary',
     bg,
     min: TEXT,
     themes: BOTH,
-    reason: 'tertiary text on the two base surfaces only',
+    reason: 'tertiary text on every surface',
   })),
   ...['--link-color', '--link-hover'].flatMap((fg) =>
     ['--surface-color', '--background-color'].map((bg) => ({

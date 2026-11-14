@@ -536,7 +536,6 @@
 
   .meta-dot {
     margin: 0 var(--space-1);
-    opacity: 0.5;
   }
 
   /* Positions the shared FileStatusIndicator at the end of the meta line — the

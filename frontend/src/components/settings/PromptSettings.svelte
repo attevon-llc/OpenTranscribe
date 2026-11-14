@@ -913,7 +913,6 @@
   .config-url {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
-    opacity: 0.7;
     max-width: 400px;
     display: -webkit-box;
     -webkit-line-clamp: 2;

@@ -112,7 +112,7 @@
     border-color: rgba(var(--accent-rgb), 0.3);
     background: rgba(var(--accent-rgb), 0.08);
   }
-  .chip.info .chip-value { color: rgb(var(--accent-rgb)); }
+  .chip.info .chip-value { color: var(--info-text); }
 
   .chip.danger {
     border-color: rgba(var(--error-color-rgb), 0.3);

@@ -399,7 +399,7 @@
   }
 
   .pg-stats .sep {
-    opacity: 0.4;
+    color: var(--text-secondary);
   }
 
   .overview-grid {
@@ -415,8 +415,10 @@
     overflow: hidden;
   }
 
+  /* Dashed border, not opacity: fading the card drops its text under 4.5:1. */
   .index-card.missing {
-    opacity: 0.5;
+    border-style: dashed;
+    background: var(--surface-secondary);
   }
 
   .index-header {

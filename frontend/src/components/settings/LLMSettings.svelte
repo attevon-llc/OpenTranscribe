@@ -811,7 +811,6 @@
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
     font-family: var(--font-mono);
-    opacity: 0.7;
   }
 
   .config-actions {

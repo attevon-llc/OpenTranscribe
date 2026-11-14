@@ -137,7 +137,7 @@
   --color-text: var(--text-color);
   --color-text-secondary: var(--text-secondary);
   /* #94a3b8 read 2.56:1 on the card: a hint is still text (SC 1.4.3) */
-  --color-text-tertiary: #64748b;
+  --color-text-tertiary: #5f6b7e;
   --color-bg: var(--background-color);
   --color-bg-secondary: #f1f5f9;
   --color-bg-tertiary: #e2e8f0;
@@ -535,7 +535,7 @@
   --color-primary-alpha: rgba(96, 165, 250, 0.2);
   --color-text: var(--text-color);
   --color-text-secondary: var(--text-secondary);
-  --color-text-tertiary: #94a3b8;
+  --color-text-tertiary: #aab6c8;
   --color-bg: var(--background-color);
   --color-bg-secondary: #1e293b;
   --color-bg-tertiary: #334155;

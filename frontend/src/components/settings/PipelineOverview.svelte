@@ -300,9 +300,12 @@
     gap: var(--space-2);
   }
 
-  /* A step that does not run is dimmed, but its problem and its link are not. */
-  .step-card.off > :not(.issues):not(.step-foot) {
-    opacity: 0.6;
+  /* A step that does not run reads as inactive by its dashed, sunken card and its Off chip.
+     Fading the text instead left it at 2.5:1 (WCAG 1.4.3), and the step is information, not a
+     disabled control. */
+  .step-card.off {
+    border-style: dashed;
+    background: var(--surface-secondary);
   }
 
   .step-head {

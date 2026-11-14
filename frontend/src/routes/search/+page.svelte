@@ -863,7 +863,6 @@
     gap: var(--space-1-5);
     font-size: var(--font-size-xs);
     color: var(--primary-on-surface);
-    opacity: 0.7;
     margin-top: var(--space-1);
   }
 

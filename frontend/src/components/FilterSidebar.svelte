@@ -1074,16 +1074,22 @@
   }
 
   /* The range slider library has no RTL mode (its handles are placed from the left edge), so
-     the scale and its min/max labels read left to right in every language, like the player's
-     sliders. */
+     the scale reads left to right in every language, like the player's sliders, and is
+     `reversed` in RTL. */
   .slider-labels {
-    direction: ltr;
     display: flex;
     justify-content: space-between;
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
     margin-bottom: var(--space-1);
     font-variant-numeric: tabular-nums;
+  }
+
+  /* The row follows the document direction so the min label sits at inline-start, over the
+     min handle (the slider is `reversed` in RTL); each clock keeps its digits left to right. */
+  .slider-labels span {
+    direction: ltr;
+    unicode-bidi: isolate;
   }
 
   .slider-wrapper {

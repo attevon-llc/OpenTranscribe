@@ -21,7 +21,18 @@ describe('FilterSidebar duration slider in right-to-left languages', () => {
   const src = fs.readFileSync(FILE, 'utf8');
   const style = src.slice(src.indexOf('<style'));
 
-  it.each(['.slider-labels', '.slider-wrapper'])('%s keeps a left-to-right scale', (sel) => {
-    expect(rule(style, sel)).toMatch(/direction:\s*ltr/);
+  it('keeps the scale itself left to right', () => {
+    expect(rule(style, '.slider-wrapper')).toMatch(/direction:\s*ltr/);
+  });
+
+  it('lets the label row follow the document direction so min sits over the reversed min handle', () => {
+    expect(rule(style, '.slider-labels')).not.toMatch(/direction:/);
+    expect(src).toMatch(/reversed=\{getLanguageDirection\(\$locale\) === 'rtl'\}/);
+  });
+
+  it('isolates each label so its digits stay left to right', () => {
+    const r = rule(style, '.slider-labels span');
+    expect(r).toMatch(/direction:\s*ltr/);
+    expect(r).toMatch(/unicode-bidi:\s*isolate/);
   });
 });

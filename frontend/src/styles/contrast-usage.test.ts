@@ -201,6 +201,59 @@ function evaluate(): { resolved: number; failures: Result[]; stale: string[] } {
   return { resolved, failures, stale };
 }
 
+/**
+ * A rule that sets a text colour AND `opacity` below 1 is not what contrast-usage measured: the
+ * browser multiplies the glyphs by the opacity, so a 5.7:1 token ships at 2.5:1 (UI pass
+ * C1-C4: index cards, prompt descriptions, pipeline steps, chip counts all used it). Fade with
+ * a different token or a border/background change instead. Selectors listed here are not
+ * running text, each with the reason.
+ */
+const OPACITY_NOT_TEXT = new Map<string, string>([
+  ['components/UserFileStatus.svelte .live-status-icon', 'icon glyph, SC 1.4.11 non-text'],
+  ['components/FileDetailSkeleton.svelte .skeleton-player-icon', 'decorative skeleton'],
+  [
+    'components/SettingsModal.svelte .nav-item.locked',
+    'locked nav entry, inactive component (SC 1.4.3 exempts it)',
+  ],
+  ['components/transcript/TranscriptSegmentList.svelte .overlap-indicator svg', 'icon'],
+  [
+    'components/notifications/NotificationShell.svelte .notification-dismiss',
+    'icon-only button glyph',
+  ],
+  ['components/ui/EmptyState.svelte .empty-icon', 'decorative icon'],
+  ['components/settings/LLMConfigModal.svelte .info-tooltip', 'icon trigger'],
+  ['components/settings/PromptSettings.svelte .info-tooltip', 'icon trigger'],
+  ['components/gallery/VirtualGrid.svelte .placeholder', 'placeholder artwork, no text'],
+]);
+
+function opacityOnText(): string[] {
+  const out: string[] = [];
+  for (const file of walk(SRC)) {
+    let text = fs.readFileSync(file, 'utf8');
+    if (file.endsWith('.svelte')) {
+      text = [...text.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
+    }
+    text = text.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of text.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+      const sel = m[1].trim().split('\n').pop()!.trim();
+      const body = m[2];
+      if (/disabled|::placeholder|:hover|:not\(/.test(sel)) continue;
+      if (!/(?<![-\w])opacity\s*:\s*0?\.\d+/.test(body)) continue;
+      const fg = [...body.matchAll(FG_RE)].map((x) => x[1]);
+      if (!fg.some((t) => TEXT_ROLE.test(t))) continue;
+      const key = `${rel(file)} ${sel}`;
+      if (!OPACITY_NOT_TEXT.has(key)) out.push(key);
+    }
+  }
+  return out;
+}
+
+describe('text is not faded with opacity', () => {
+  it('no rule sets a text colour together with opacity < 1', () => {
+    expect(opacityOnText()).toEqual([]);
+  });
+});
+
 describe('token pairs used together in the stylesheets clear WCAG 2.2 AA', () => {
   const { resolved, failures, stale } = evaluate();
 

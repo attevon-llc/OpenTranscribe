@@ -12,6 +12,11 @@
 # the project must have containers, and their compose working_dir label must be this install
 # directory. Exit codes are stack_target's contract: 20 NO_PROJECT, 21 WRONG_PROJECT, 28 DOCKER.
 # Needs INSTALL_DIR set by the caller.
+#
+# A fresh stack is addressed through opentr.sh's generated .fresh/<slug>.yml, which re-pins every
+# container_name (otherwise any `up` collides with the live stack's names). It is exported as
+# OPENTRANSCRIBE_EXTRA_COMPOSE_FILES, which opentranscribe.sh's get_compose_files appends last, so
+# `compose-files`, `update` and `update-full` all resolve the fresh stack's chain. Missing: exit 2.
 
 demo_assert_target() {
     local lib here project want have rc=0
@@ -42,6 +47,13 @@ demo_assert_target() {
     if [ "$have" != "$want" ]; then
         echo "demo: refusing: project '$project' runs from '${ST_WORKING_DIR:-?}', not this install ($want)" >&2
         return 21
+    fi
+    if [ -n "${DEMO_FRESH_NAME:-}" ]; then
+        if [ ! -f "$INSTALL_DIR/.fresh/${DEMO_FRESH_SLUG}.yml" ]; then
+            echo "demo: refusing: .fresh/${DEMO_FRESH_SLUG}.yml (the fresh stack's container names) is missing" >&2
+            return 2
+        fi
+        export OPENTRANSCRIBE_EXTRA_COMPOSE_FILES="-f .fresh/${DEMO_FRESH_SLUG}.yml"
     fi
     export COMPOSE_PROJECT_NAME="$project"
     echo "demo: target project $project ($want)"

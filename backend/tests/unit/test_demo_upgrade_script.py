@@ -27,6 +27,7 @@ pytestmark = pytest.mark.skipif(shutil.which("flock") is None, reason="needs uti
 
 FAKE_OPENTRANSCRIBE = r"""#!/usr/bin/env bash
 echo "opentranscribe.sh $*" >> calls.log
+echo "${COMPOSE_PROJECT_NAME:-}|${OPENTRANSCRIBE_EXTRA_COMPOSE_FILES:-}" >> env.log
 tag() { grep '^OT_IMAGE_TAG=' .env | cut -d= -f2; }
 case "$1 ${2:-}" in
   "update --version")
@@ -211,18 +212,42 @@ def test_a_project_from_another_directory_is_refused_before_any_restart(stub, tm
     assert not (stub[0] / "demo-status.json").exists()
 
 
-def test_a_real_upgrade_of_a_fresh_stack_is_refused_before_anything_runs(stub):
-    """Must fire: `update` cannot load .fresh/NAME.yml, so it would take the fresh stack down
-    and then collide with the live stack's container names."""
+def _fresh_overlay(stub, slug: str) -> None:
+    """The container-name overlay `opentr.sh --fresh` generates for the stack."""
+    (stub[0] / ".fresh").mkdir(exist_ok=True)
+    (stub[0] / ".fresh" / f"{slug}.yml").write_text("services: {}\n")
+
+
+def test_a_fresh_stack_is_upgraded_through_its_container_name_overlay(stub):
+    """Must fire: a real upgrade of a fresh stack was refused, so its real and forced-failure legs
+    could only run on the demo host. `update` now gets the stack's project and overlay."""
+    _fresh_overlay(stub, "pd7")
+
+    proc, calls = run(stub, DEMO_FRESH_NAME="pd7", DEMO_TARGET_TAG="v0.7.0")
+
+    assert proc.returncode == 0, proc.stderr
+    assert calls == [
+        "opentranscribe.sh update --version v0.7.0",
+        "opentranscribe.sh update-full",
+        "reset lock_held=1",
+    ]
+    env_seen = set((stub[0] / "env.log").read_text().splitlines())
+    assert env_seen == {"otfresh-pd7|-f .fresh/pd7.yml"}
+    assert status(stub)["result"] == "upgraded"
+
+
+def test_a_fresh_stack_without_its_overlay_is_refused_before_anything_runs(stub):
+    """Must fire: without .fresh/<slug>.yml `update` would collide with the live stack's names."""
     proc, calls = run(stub, DEMO_FRESH_NAME="pd7", DEMO_TARGET_TAG="v0.7.0")
 
     assert proc.returncode == 2, proc.stderr
-    assert "--dry-run" in proc.stderr
+    assert ".fresh/pd7.yml" in proc.stderr
     assert calls == []
-    assert not (stub[0] / ".demo.lock").exists()
+    assert not (stub[0] / "demo-status.json").exists()
 
 
 def test_a_dry_run_of_a_fresh_stack_prints_the_sequence(stub):
+    _fresh_overlay(stub, "pd7")
     proc, calls = run(stub, "--dry-run", DEMO_FRESH_NAME="pd7", DEMO_TARGET_TAG="v0.7.0")
 
     assert proc.returncode == 0, proc.stderr

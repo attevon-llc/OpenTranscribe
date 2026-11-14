@@ -37,6 +37,13 @@ exit 0
 )
 
 
+# `compose-files` as opentranscribe.sh answers it: the chain, then the extra-files seam last.
+MANAGER_STUB = (
+    f'#!/usr/bin/env bash\necho "{CHAIN}${{OPENTRANSCRIBE_EXTRA_COMPOSE_FILES:+ '
+    '$OPENTRANSCRIBE_EXTRA_COMPOSE_FILES}"\n'
+)
+
+
 @pytest.fixture
 def stub(tmp_path):
     install, bindir, bundle = tmp_path / "install", tmp_path / "bin", tmp_path / "bundle"
@@ -46,7 +53,7 @@ def stub(tmp_path):
     # what `docker compose config --services` answers: the real demo chain includes nginx
     (install / "services").write_text("backend\nfrontend\nnginx\npostgres\n")
     manager = install / "opentranscribe.sh"
-    manager.write_text(f'#!/usr/bin/env bash\necho "{CHAIN}"\n')
+    manager.write_text(MANAGER_STUB)
     docker = bindir / "docker"
     docker.write_text(FAKE_DOCKER)
     for path in (manager, docker):
@@ -206,8 +213,7 @@ def test_a_project_with_no_containers_is_refused_before_any_docker_call(stub):
 
 def test_the_asserted_project_is_the_one_compose_acts_on(stub):
     """Must stay clean: the matching project proceeds, under the project that was asserted."""
-    install = stub[0]
-    (install / "opentranscribe.sh").write_text(f'#!/usr/bin/env bash\necho "{CHAIN}"\n')
+    _fresh_overlay(stub, "demo-x")
     proc, calls = run(stub, DEMO_FRESH_NAME="Demo-X")
 
     assert proc.returncode == 0, proc.stderr
@@ -216,6 +222,7 @@ def test_the_asserted_project_is_the_one_compose_acts_on(stub):
 
 
 def test_the_reset_can_target_a_fresh_stack_and_never_the_live_project(stub):
+    _fresh_overlay(stub, "t1")
     proc, _ = run(stub, DEMO_FRESH_NAME="t1", COMPOSE_PROJECT_NAME="opentranscribe")
 
     assert proc.returncode == 0, proc.stderr
@@ -253,10 +260,24 @@ def test_a_service_merely_named_like_the_fence_does_not_count(stub):
     assert _mutating(calls) == []
 
 
+def _fresh_overlay(stub, slug: str) -> None:
+    """The container-name overlay `opentr.sh --fresh` generates for the stack."""
+    (stub[0] / ".fresh").mkdir(exist_ok=True)
+    (stub[0] / ".fresh" / f"{slug}.yml").write_text("services: {}\n")
+
+
+def test_a_fresh_stack_without_its_container_name_overlay_is_refused(stub):
+    """Must fire: without .fresh/<slug>.yml every `up` collides with the live stack's names."""
+    proc, calls = run(stub, DEMO_FRESH_NAME="t1")
+
+    assert proc.returncode == 2, proc.stderr
+    assert ".fresh/t1.yml" in proc.stderr
+    assert _mutating(calls) == []
+
+
 def _fresh_chain(stub, aux: str | None):
     install = stub[0]
-    (install / ".fresh").mkdir()
-    (install / ".fresh" / "demo-7.yml").write_text("services: {}\n")
+    _fresh_overlay(stub, "demo-7")
     if aux is not None:
         (install / ".fresh" / "demo-7.aux").write_text(aux)
     proc, calls = run(stub, DEMO_FRESH_NAME="Demo_7")
@@ -269,7 +290,7 @@ def test_a_locally_built_fresh_stack_is_reset_without_pulling(stub):
     replace them with whatever Docker Hub serves under that tag."""
     down = _fresh_chain(stub, "docker-compose.prod.yml\ndocker-compose.local.yml\n")
     assert down.startswith(
-        "docker compose CHAIN -f docker-compose.local.yml -f .fresh/demo-7.yml down -v"
+        "docker compose CHAIN -f .fresh/demo-7.yml -f docker-compose.local.yml down -v"
     ), down
 
 

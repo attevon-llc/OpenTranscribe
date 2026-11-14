@@ -2,6 +2,7 @@
   import type { UploadItem } from '$lib/services/uploadService';
   import { uploadsStore } from '$stores/uploads';
   import { t } from '$stores/locale';
+  import { UPLOAD_TYPE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
@@ -92,7 +93,7 @@
           {upload.name}
         </div>
         <div class="upload-meta">
-          <span class="upload-type">{upload.type}</span>
+          <span class="upload-type">{labelFor($t, UPLOAD_TYPE_KEYS, upload.type)}</span>
           {#if upload.size}
             <span class="upload-size" dir="ltr">{upload.size ? formatFileSize(upload.size) : ''}</span>
           {/if}

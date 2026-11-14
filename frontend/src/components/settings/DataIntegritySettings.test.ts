@@ -29,6 +29,27 @@ function status(index_overview: unknown) {
   http.get.mockResolvedValue({ data: { running: false, last_run: null, index_overview } });
 }
 
+describe('DataIntegritySettings index card titles', () => {
+  it('titles a card from its kind code in the UI language, not the server label', async () => {
+    status({
+      indices: [
+        { name: 'my_summaries', kind: 'summaries', label: 'SERVER LABEL', exists: true, total: 1 },
+      ],
+    });
+    render(DataIntegritySettings);
+
+    expect(await screen.findByText('Summaries')).toBeInTheDocument();
+    expect(screen.queryByText('SERVER LABEL')).toBeNull();
+  });
+
+  it('keeps the server label when the kind is missing or unknown', async () => {
+    status({ indices: [{ name: 'idx', label: 'Older Backend Label', exists: true, total: 1 }] });
+    render(DataIntegritySettings);
+
+    expect(await screen.findByText('Older Backend Label')).toBeInTheDocument();
+  });
+});
+
 describe('DataIntegritySettings index overview errors', () => {
   it('names the index whose counts could not be read', async () => {
     status({

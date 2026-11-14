@@ -16,7 +16,9 @@ vi.mock('../stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 
-vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 vi.mock('../stores/llmStatus', async () => {
   const { readable } = await import('svelte/store');

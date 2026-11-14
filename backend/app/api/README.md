@@ -280,7 +280,7 @@ List routes that paginate use `page` / `page_size` query parameters and return a
   "detail": "Resource not found"
 }
 ```
-Some routes return a structured `detail` such as `{"code": "...", "message": "..."}` (for example the pipeline-plan 409s); the codes are stable, the messages are fixed sentences.
+Some routes return a structured `detail` such as `{"code": "...", "message": "..."}` (for example the pipeline-plan 409s); the codes are stable, the messages are fixed sentences. The invitation and email-verification token refusals are of this kind: `POST /auth/invitations/lookup` and `/auth/invitations/accept` answer 400 with `code: "invitation_invalid"`, and `POST /auth/verify-email` with `code: "verification_link_invalid"`, one identical answer for every bad token state (a password-policy refusal on accept stays a plain string). Clients translate from `code` and fall back to `message`.
 
 ### Validation Error Response (422)
 ```json

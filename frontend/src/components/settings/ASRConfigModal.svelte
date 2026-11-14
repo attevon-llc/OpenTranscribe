@@ -15,6 +15,7 @@
   } from '$lib/api/asrSettings';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { localWhisperDescription } from '$lib/i18n/backendLabels';
   import { getErrorMessage } from '$lib/utils/apiError';
   import type { DiarizationSource } from '$lib/api/transcriptionSettings';
   import { PIPELINE_ISSUE_KEYS } from '$lib/settings/pipelineKeys';
@@ -287,7 +288,7 @@
             id="asr-name"
             type="text"
             bind:value={formData.name}
-            placeholder="e.g., Deepgram Production"
+            placeholder={$t('settings.asrProvider.fields.namePlaceholder')}
             class="form-input"
           />
         </FormField>
@@ -351,7 +352,7 @@
                 <option value="">{$t('settings.asrProvider.selectModel')}</option>
                 {#each availableModels as m (m.id)}
                   <option value={m.id}>
-                    {optionWithFlags(m.name, modelCapability(providers, formData.provider, m.id), $t)}{m.price_per_min_batch ? ` — $${m.price_per_min_batch}/min` : ''}{m.description ? ` — ${m.description}` : ''}
+                    {optionWithFlags(m.name, modelCapability(providers, formData.provider, m.id), $t)}{m.price_per_min_batch ? ` — $${m.price_per_min_batch}/min` : ''}{localWhisperDescription($t, m) ? ` — ${localWhisperDescription($t, m)}` : ''}
                   </option>
                 {/each}
               </select>

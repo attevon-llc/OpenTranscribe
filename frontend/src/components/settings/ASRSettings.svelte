@@ -26,6 +26,7 @@
   import { loadAsrSettings } from '$lib/settings/asrSettingsLoader';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { localWhisperDescription } from '$lib/i18n/backendLabels';
   import { getErrorMessage } from '$lib/utils/apiError';
   import EmptyState from '$components/ui/EmptyState.svelte';
 
@@ -100,6 +101,8 @@
     supports_translation: boolean;
     supports_diarization: boolean;
     language_support: string;
+    vram_hint_gb?: number | null;
+    is_default?: boolean;
   } | null = null;
 
   let showConfigModal = false;
@@ -439,8 +442,8 @@
         <div class="model-info-row">
           <div class="model-name-display">
             <span class="model-label">{localModelInfo?.display_name || activeLocalModel}</span>
-            {#if localModelInfo?.description}
-              <span class="model-desc">{localModelInfo.description}</span>
+            {#if localModelInfo?.description || localModelInfo?.vram_hint_gb}
+              <span class="model-desc">{localWhisperDescription($t, localModelInfo)}</span>
             {/if}
           </div>
           <div class="model-capabilities">

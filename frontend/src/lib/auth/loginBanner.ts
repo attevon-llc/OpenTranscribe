@@ -29,7 +29,6 @@ export type AcknowledgeOutcome = 'signed-in' | 'dismissed' | 'failed';
  */
 export function createLoginBanner() {
   const enabled = writable(false);
-  const text = writable('');
   const classification = writable<BannerClassification>('UNCLASSIFIED');
   const consentPending = writable(false);
   const ackPending = writable(false);
@@ -37,7 +36,6 @@ export function createLoginBanner() {
 
   return {
     enabled,
-    text,
     classification,
     consentPending,
     ackPending,
@@ -51,7 +49,6 @@ export function createLoginBanner() {
     applyMethods(methods: AuthMethods): void {
       if (!methods.login_banner_enabled) return;
       enabled.set(true);
-      text.set(methods.login_banner_text || '');
       classification.set(
         (methods.login_banner_classification as BannerClassification) || 'UNCLASSIFIED'
       );

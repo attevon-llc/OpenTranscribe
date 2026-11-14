@@ -55,6 +55,10 @@ interface ASRModelInfo {
   speaker_count_hints?: SpeakerCountHint[];
   /** Present only where the model differs from its provider entry. */
   timestamp_granularity?: TimestampGranularity;
+  /** Local Whisper models: the VRAM estimate behind the English `description`. */
+  vram_hint_gb?: number;
+  /** Local Whisper models: the model a fresh deployment uses. */
+  is_default?: boolean;
 }
 
 export interface ASRProviderInfo {
@@ -235,6 +239,8 @@ interface RawASRModel {
   language_support?: string;
   speaker_count_hints?: SpeakerCountHint[];
   timestamp_granularity?: TimestampGranularity;
+  vram_hint_gb?: number;
+  is_default?: boolean;
 }
 
 /**
@@ -290,6 +296,8 @@ function normalizeModel(m: RawASRModel): ASRProviderInfo['models'][number] {
     language_support: m.language_support,
     speaker_count_hints: m.speaker_count_hints,
     timestamp_granularity: m.timestamp_granularity,
+    vram_hint_gb: m.vram_hint_gb,
+    is_default: m.is_default,
   };
 }
 
@@ -542,6 +550,8 @@ export class ASRSettingsApi {
       supports_translation: boolean;
       supports_diarization: boolean;
       language_support: string;
+      vram_hint_gb?: number | null;
+      is_default?: boolean;
     };
     /** What each Whisper worker reports it has loaded (empty when none has reported). */
     loaded_models: { worker: string; model: string; ready_at: string }[];

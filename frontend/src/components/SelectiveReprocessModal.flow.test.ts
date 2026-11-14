@@ -28,6 +28,13 @@ vi.mock('$stores/locale', () => ({
       return () => {};
     },
   },
+  // ForcedLanguageSelect names languages in the UI language.
+  locale: {
+    subscribe: (run: (value: string) => void) => {
+      run('en');
+      return () => {};
+    },
+  },
 }));
 
 const llm = vi.hoisted(() => ({ available: { current: false } }));
@@ -289,7 +296,8 @@ describe('submitting', () => {
       await waitFor(() => expect(select()).not.toBeNull());
       expect(Array.from(select()!.options).map((o) => [o.value, o.textContent])).toEqual([
         ['', 'reprocess.languageDefault'],
-        ['auto', 'Auto-detect'],
+        // Auto-detect comes from its translation key; names come from Intl in the UI language.
+        ['auto', 'settings.transcription.defaultSourceAuto'],
         ['en', 'English'],
         ['fr', 'French'],
       ]);

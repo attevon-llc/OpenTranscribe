@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth.local_auth_gate import require_local_auth_enabled
 from app.api.rate_limit import get_auth_rate_limit
 from app.api.rate_limit import limiter
+from app.auth.email_verification import INVALID_CODE
 from app.auth.email_verification import resend_verification
 from app.auth.email_verification import verify_email
 from app.db.base import get_db
@@ -56,7 +57,11 @@ def verify_email_endpoint(
     """
     ok, error = verify_email(db, body.token)
     if not ok:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
+        # ``code`` lets the client translate the one generic refusal; ``message`` is its English.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": INVALID_CODE, "message": error},
+        )
     return {"message": "Your email address has been verified. You can sign in now."}
 
 

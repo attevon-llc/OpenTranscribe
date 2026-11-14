@@ -1246,7 +1246,7 @@ AUDIT_LOG_RETENTION_DAYS=0     # 0 = keep forever; otherwise >= 365 (prunable Po
 
 # Login Banner
 LOGIN_BANNER_ENABLED=false
-LOGIN_BANNER_TEXT=This is a restricted system...
+LOGIN_BANNER_TEXT=This is a restricted system...   # empty = the standard U.S. Government (DoD) consent notice
 LOGIN_BANNER_CLASSIFICATION=UNCLASSIFIED   # default
 ```
 

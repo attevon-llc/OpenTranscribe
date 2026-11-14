@@ -19,6 +19,8 @@ export const SAME_IN_EVERY_LANGUAGE: Record<string, string> = {
   'settings.speakerIdentification.credential.providerLink':
     'only placeholders and an arrow; the placeholders carry the translated names',
   'userManagement.linkIdentity.providerLdap': 'protocol and attribute names',
+  'settings.download.audioBitrate':
+    'a number and the unit abbreviation kbps, which Japanese and Chinese interfaces write as is',
   'nav.logoAlt': 'vendor or product name',
   'llm.provider.openai': 'vendor or product name',
   'llm.provider.ollama': 'vendor or product name',

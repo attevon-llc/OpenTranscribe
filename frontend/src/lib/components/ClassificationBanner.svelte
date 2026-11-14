@@ -12,58 +12,21 @@
    * - SECRET: Red (#c8102e)
    * - TOP SECRET: Orange (#ff6600)
    * - TOP SECRET/SCI: Yellow (#ffc72c) with black text
+   *
+   * The marking strip only. The AC-8 consent dialog is `$components/LoginBanner.svelte`;
+   * this component used to carry a second, English-only copy of it, and the login page
+   * showed both at once.
    */
 
-  import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { colorsFor } from '$lib/utils/classificationColors';
 
   export let classification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
-  export let bannerText: string = '';
-  export let requireAcknowledgment: boolean = false;
   export let position: 'top' | 'both' = 'top';
-  /**
-   * The acknowledgment is being recorded server-side
-   * (`POST /auth/banner/acknowledge`). Disables both actions so a double click
-   * cannot fire two writes.
-   */
-  export let pending: boolean = false;
-  /** Why the last acknowledgment attempt failed. Empty when there is nothing to say. */
-  export let errorMessage: string = '';
-  /**
-   * The user already accepted a banner, but the wording has since changed and the
-   * server expired that consent (`reason: "banner_text_changed"`). Saying so is
-   * the difference between "the notice was updated" and "this is broken".
-   */
-  export let noticeUpdated: boolean = false;
-
-  const dispatch = createEventDispatcher();
-
-  // Default consent banner text (DoD standard)
-  const defaultBannerText = `You are accessing a U.S. Government (USG) Information System (IS) that is provided for USG-authorized use only.
-
-By using this IS (which includes any device attached to this IS), you consent to the following conditions:
-
-- The USG routinely intercepts and monitors communications on this IS for purposes including, but not limited to, penetration testing, COMSEC monitoring, network operations and defense, personnel misconduct (PM), law enforcement (LE), and counterintelligence (CI) investigations.
-
-- At any time, the USG may inspect and seize data stored on this IS.
-
-- Communications using, or data stored on, this IS are not private, are subject to routine monitoring, interception, and search, and may be disclosed or used for any USG-authorized purpose.
-
-- This IS includes security measures (e.g., authentication and access controls) to protect USG interests--not for your personal benefit or privacy.
-
-- Notwithstanding the above, using this IS does not constitute consent to PM, LE or CI investigative searching or monitoring of the content of privileged communications, or work product, related to personal representation or services by attorneys, psychotherapists, or clergy, and their assistants. Such communications and work product are private and confidential. See User Agreement for details.`;
 
   $: colors = colorsFor(classification);
-  $: displayText = bannerText || defaultBannerText;
-
-  function handleAcknowledge() {
-    dispatch('acknowledge');
-  }
-
-  function handleDecline() {
-    dispatch('decline');
-  }
+  // The marking itself stays as written: classification levels are regulatory markings, not copy.
+  $: markingLabel = $t('classificationBanner.markingLabel', { level: classification });
 </script>
 
 <!-- Top Banner -->
@@ -71,70 +34,10 @@ By using this IS (which includes any device attached to this IS), you consent to
   class="classification-banner"
   style="background-color: {colors.bg}; color: {colors.text};"
   role="banner"
-  aria-label="Classification marking: {classification}"
+  aria-label={markingLabel}
 >
   <span class="classification-text">{classification}</span>
 </div>
-
-{#if requireAcknowledgment}
-  <!-- Full Consent Modal -->
-  <div class="consent-overlay" role="dialog" aria-modal="true" aria-labelledby="consent-title">
-    <div class="consent-modal">
-      <div
-        class="consent-header"
-        style="background-color: {colors.bg}; color: {colors.text};"
-      >
-        <h2 id="consent-title">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          </svg>
-          U.S. Government Information System
-        </h2>
-        <span class="classification-badge">{classification}</span>
-      </div>
-
-      <div class="consent-body">
-        <div class="warning-icon" aria-hidden="true">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-        </div>
-
-        {#if noticeUpdated}
-          <p class="notice-updated" role="status">{$t('loginBanner.noticeUpdated')}</p>
-        {/if}
-
-        <div class="consent-text">
-          {#each displayText.split('\n\n') as paragraph, i (i)}
-            <p>{paragraph}</p>
-          {/each}
-        </div>
-
-        {#if errorMessage}
-          <p class="consent-error" role="alert">{errorMessage}</p>
-        {/if}
-      </div>
-
-      <div class="consent-footer">
-        <button class="btn-decline" on:click={handleDecline} disabled={pending}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-          Exit System
-        </button>
-        <button class="btn-acknowledge" on:click={handleAcknowledge} disabled={pending}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-          {pending ? $t('loginBanner.acknowledging') : 'I Acknowledge & Consent'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
 
 {#if position === 'both'}
   <!-- Bottom Banner (sticky) -->
@@ -142,7 +45,7 @@ By using this IS (which includes any device attached to this IS), you consent to
     class="classification-banner classification-banner-bottom"
     style="background-color: {colors.bg}; color: {colors.text};"
     role="contentinfo"
-    aria-label="Classification marking: {classification}"
+    aria-label={markingLabel}
   >
     <span class="classification-text">{classification}</span>
   </div>
@@ -176,198 +79,5 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .classification-text {
     display: inline-block;
-  }
-
-  /* Consent Overlay */
-  .consent-overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-critical);
-    padding: var(--space-4);
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-
-  .consent-modal {
-    background-color: #ffffff;
-    border-radius: var(--radius-lg);
-    max-width: 700px;
-    width: 100%;
-    max-height: 90vh;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  }
-
-  .consent-header {
-    padding: var(--space-4) var(--space-6);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-  }
-
-  .consent-header h2 {
-    margin: 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .consent-header svg {
-    flex-shrink: 0;
-  }
-
-  .classification-badge {
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs);
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    background-color: rgba(255, 255, 255, 0.2);
-    white-space: nowrap;
-  }
-
-  .consent-body {
-    padding: var(--space-6);
-    overflow-y: auto;
-    flex: 1;
-    background-color: #f8fafc;
-  }
-
-  .warning-icon {
-    text-align: center;
-    margin-bottom: var(--space-4);
-    color: #dc2626;
-  }
-
-  .notice-updated {
-    margin: 0 0 var(--space-4);
-    padding: var(--space-3) var(--space-4);
-    border-left: 4px solid #b45309;
-    border-radius: var(--radius-sm);
-    background-color: #fef3c7;
-    color: #7c2d12;
-    font-size: var(--font-size-body);
-    font-weight: var(--font-weight-semibold);
-  }
-
-  .consent-error {
-    margin: var(--space-4) 0 0;
-    padding: var(--space-3) var(--space-4);
-    border-left: 4px solid #b91c1c;
-    border-radius: var(--radius-sm);
-    background-color: #fee2e2;
-    color: #7f1d1d;
-    font-size: var(--font-size-md);
-  }
-
-  .consent-text {
-    color: #1f2937;
-    font-size: var(--font-size-body);
-    line-height: 1.6;
-  }
-
-  .consent-text p {
-    margin-bottom: var(--space-4);
-  }
-
-  .consent-text p:last-child {
-    margin-bottom: 0;
-  }
-
-  .consent-footer {
-    padding: var(--space-4) var(--space-6);
-    background-color: #f1f5f9;
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-4);
-    border-top: 1px solid #e2e8f0;
-  }
-
-  .btn-decline,
-  .btn-acknowledge {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-3) var(--space-6);
-    border-radius: var(--radius-md);
-    font-size: 0.95rem;
-    font-weight: var(--font-weight-semibold);
-    cursor: pointer;
-    transition: all var(--duration-base) ease;
-    border: none;
-  }
-
-  .btn-decline {
-    background-color: #6b7280;
-    color: var(--text-on-solid);
-  }
-
-  .btn-decline:hover {
-    background-color: #4b5563;
-  }
-
-  .btn-acknowledge {
-    background-color: #059669;
-    color: var(--text-on-solid);
-  }
-
-  .btn-acknowledge:hover {
-    background-color: #047857;
-  }
-
-  .btn-decline:disabled,
-  .btn-acknowledge:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  /* Dark mode adjustments */
-  :global([data-theme='dark']) .consent-modal {
-    background-color: #1e293b;
-  }
-
-  :global([data-theme='dark']) .consent-body {
-    background-color: #0f172a;
-  }
-
-  :global([data-theme='dark']) .consent-text {
-    color: #e2e8f0;
-  }
-
-  :global([data-theme='dark']) .consent-footer {
-    background-color: #1e293b;
-    border-top-color: #334155;
-  }
-
-  /* Responsive */
-  @media (max-width: 640px) {
-    .consent-modal {
-      margin: var(--space-2);
-      max-height: 95vh;
-    }
-
-    .consent-header {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .consent-footer {
-      flex-direction: column;
-    }
-
-    .btn-decline,
-    .btn-acknowledge {
-      width: 100%;
-      justify-content: center;
-    }
   }
 </style>

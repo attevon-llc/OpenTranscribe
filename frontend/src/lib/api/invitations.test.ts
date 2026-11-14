@@ -7,7 +7,7 @@
  * worth anything if the client refuses to reconstruct the distinction, so they
  * are pinned here rather than left to review.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 
 vi.mock('$lib/axios', () => {
   const axiosInstance = { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() };
@@ -16,6 +16,7 @@ vi.mock('$lib/axios', () => {
 
 import axiosInstance from '$lib/axios';
 import { getErrorMessage } from '$lib/utils/apiError';
+import { initI18n } from '$lib/i18n';
 import {
   lookupInvitation,
   acceptInvitation,
@@ -122,6 +123,39 @@ describe('invitation errors are rendered, not classified', () => {
   it('falls back only when the server sent no usable detail and no error message', () => {
     expect(getErrorMessage({ response: { status: 400, data: {} } }, 'fallback')).toBe('fallback');
     expect(getErrorMessage({ response: { data: { detail: '  ' } } }, 'fallback')).toBe('fallback');
+  });
+});
+
+describe('the coded refusal shape the backend sends now', () => {
+  // `detail` is `{code, message}` since the refusal gained a stable code; the bare-string shape
+  // above is what older servers send, and both must keep working.
+  beforeAll(async () => {
+    await initI18n('en');
+  });
+
+  const coded = () => ({
+    response: {
+      status: 400,
+      data: { detail: { code: 'invitation_invalid', message: GENERIC_INVALID } },
+    },
+  });
+
+  it('answers every bad token with the one translated sentence', async () => {
+    const outcomes = await Promise.all(
+      ['unknown', 'expired', 'revoked', 'used'].map(async () => {
+        post.mockRejectedValueOnce(coded());
+        try {
+          await lookupInvitation('whatever');
+          throw new Error('expected a rejection');
+        } catch (err) {
+          return getErrorMessage(err, 'fallback');
+        }
+      })
+    );
+
+    expect(new Set(outcomes).size).toBe(1);
+    expect(outcomes[0]).toBe('This invitation link is invalid, expired, or has already been used.');
+    expect(outcomes[0]).not.toBe('fallback');
   });
 });
 

@@ -31,6 +31,7 @@ later login (see ``backend/tests/CLAUDE.md``).
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
@@ -386,13 +387,15 @@ class TestEmailVerification:
         client.post(VERIFY_EMAIL_PATH, json={"token": token})
 
         outcomes = {
-            (response.status_code, response.json().get("detail"))
+            (response.status_code, json.dumps(response.json().get("detail"), sort_keys=True))
             for response in (
                 client.post(VERIFY_EMAIL_PATH, json={"token": tok})
                 for tok in (token, "no-such-token-at-all", "")
             )
         }
         assert len(outcomes) == 1, f"token state leaked through the response: {outcomes}"
+        # The one refusal carries a code the SPA translates (see apiError.ts).
+        assert '"code": "verification_link_invalid"' in next(iter(outcomes))[1]
 
     def test_resend_is_answer_identical_for_known_unknown_and_verified(
         self, client, normal_user, mailer, db_session
@@ -666,17 +669,18 @@ class TestInvitationTokenStatesAreIndistinguishable:
 
     def test_lookup_answers_every_bad_token_identically(self, client, token_states):
         outcomes = {
-            (response.status_code, response.json().get("detail"))
+            (response.status_code, json.dumps(response.json().get("detail"), sort_keys=True))
             for response in (
                 client.post(INVITE_LOOKUP_PATH, headers=_csrf(client), json={"token": tok})
                 for tok in token_states
             )
         }
         assert len(outcomes) == 1, f"token state leaked through lookup: {outcomes}"
+        assert '"code": "invitation_invalid"' in next(iter(outcomes))[1]
 
     def test_accept_answers_every_bad_token_identically(self, client, token_states):
         outcomes = {
-            (response.status_code, response.json().get("detail"))
+            (response.status_code, json.dumps(response.json().get("detail"), sort_keys=True))
             for response in (
                 client.post(
                     INVITE_ACCEPT_PATH,

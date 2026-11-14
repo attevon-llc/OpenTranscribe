@@ -30,9 +30,8 @@ describe('createLoginBanner', () => {
         login_banner_classification: 'CUI',
       })
     );
-    expect([get(b.enabled), get(b.text), get(b.classification), get(b.consentPending)]).toEqual([
+    expect([get(b.enabled), get(b.classification), get(b.consentPending)]).toEqual([
       true,
-      'Notice',
       'CUI',
       true,
     ]);

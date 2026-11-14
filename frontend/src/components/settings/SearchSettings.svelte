@@ -5,6 +5,7 @@
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { t, locale } from '$stores/locale';
+  import { embeddingModelText } from '$lib/i18n/backendLabels';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { createPoller } from '$lib/utils/poller';
   import { toastStore } from '$stores/toast';
@@ -573,7 +574,16 @@
       {:else}
         {#each models as model (model.model_id)}
           <option value={model.model_id}>
-            {model.name} — {model.dimension}d, ~{model.size_mb}MB{model.model_id === currentModelId ? ' (Current)' : ''}
+            {$t(
+              model.model_id === currentModelId
+                ? 'settings.search.modelOptionCurrent'
+                : 'settings.search.modelOption',
+              {
+                name: embeddingModelText($t, model.model_id, 'name', model.name),
+                dimension: model.dimension,
+                size: model.size_mb
+              }
+            )}
           </option>
         {/each}
       {/if}
@@ -592,7 +602,7 @@
           <span class="lang-badge not-ready">{$t('settings.search.notDownloadedBadge')}</span>
         {/if}
       </div>
-      <small class="form-text">{selectedModel.description}</small>
+      <small class="form-text">{embeddingModelText($t, selectedModel.model_id, 'description', selectedModel.description)}</small>
       {#if !selectedModel.ready}
         <!-- Without this the only route to a non-default model was two API calls by
              hand: the switch endpoint refuses a model OpenSearch cannot embed with. -->

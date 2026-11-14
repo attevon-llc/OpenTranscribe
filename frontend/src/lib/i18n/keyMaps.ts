@@ -17,6 +17,8 @@ import type { GrantableRole } from '$lib/api/groupMappings';
 import type { AccessLevel, GrantStatus } from '$lib/api/supportAccess';
 import type { StoredNoticeType } from '$lib/api/takedownNotices';
 import type { WATCH_FILE_STATUSES } from '$lib/api/watchSourcesApi';
+import type { RecordingSettings } from '$lib/api/userSettings';
+import type { UploadType } from '$lib/services/upload/types';
 import type {
   JobState,
   JobTaskKey,
@@ -332,4 +334,30 @@ export const LEGAL_REFUSAL_KEYS: Record<string, string> = {
   legal_acceptance_required: 'legal.errors.acceptanceRequired',
   legal_document_unavailable: 'legal.errors.documentUnavailable',
   legal_gate_unavailable: 'legal.errors.gateUnavailable',
+};
+
+/**
+ * Stable `detail.code` values of API refusals the client says in the reader's language.
+ * `getErrorMessage` reads this for every call site; the server's English `message` is kept
+ * for any code not listed here.
+ */
+export const API_ERROR_CODE_KEYS: Record<string, string> = {
+  ...LEGAL_REFUSAL_KEYS,
+  invitation_invalid: 'auth.acceptInvite.invalidLink',
+  verification_link_invalid: 'auth.verifyEmail.failed',
+};
+
+/** `recording_quality` user setting: the stored code, shown with its sample rate and bitrate. */
+export const RECORDING_QUALITY_KEYS: Record<RecordingSettings['recording_quality'], string> = {
+  standard: 'settings.recording.qualityStandard',
+  high: 'settings.recording.qualityHigh',
+  maximum: 'settings.recording.qualityMaximum',
+};
+
+/** The upload tray's source badge. */
+export const UPLOAD_TYPE_KEYS: Record<UploadType, string> = {
+  file: 'upload.typeBadge.file',
+  url: 'upload.typeBadge.url',
+  recording: 'upload.typeBadge.recording',
+  'extracted-audio': 'upload.typeBadge.extractedAudio',
 };

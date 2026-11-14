@@ -100,7 +100,7 @@
         type="text"
         bind:value={formData.proxy_trusted_proxies}
         on:input={handleChange}
-        placeholder="e.g. 203.0.113.5/32 (your proxy's IP) or its docker subnet — never a whole private range"
+        placeholder={$t('settings.proxy.trustedProxiesPlaceholder')}
         disabled={!formData.proxy_enabled}
       />
     </FormField>

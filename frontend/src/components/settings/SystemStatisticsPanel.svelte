@@ -17,6 +17,7 @@
   import { taskStatusIcon } from '$lib/ui/menuIcons';
   import { createEventDispatcher } from 'svelte';
   import { t, locale } from '$stores/locale';
+  import { diarEngineLabel } from '$lib/i18n/backendLabels';
   import Spinner from '$components/ui/Spinner.svelte';
   import InfoTip from '$components/settings/transcription/InfoTip.svelte';
   import Badge from '$components/ui/Badge.svelte';
@@ -227,12 +228,12 @@
             <div class="model-item">
               <span class="model-label">{$t('settings.statistics.diarization')}:</span>
               <span class="model-value">
-                {stats.models.diarization?.description || stats.models.diarization?.name || $t('common.notAvailable')}
+                {diarEngineLabel($t, stats.models.diarization?.effective_backend, stats.models.diarization?.description) || stats.models.diarization?.name || $t('common.notAvailable')}
               </span>
               {#if stats.models.diarization?.using_fallback}
                 <span class="model-fallback-badge" title={$t('settings.statistics.diarizationFallbackWarning', {
-                  configured: stats.models.diarization?.configured_description || stats.models.diarization?.configured_backend,
-                  effective: stats.models.diarization?.description || stats.models.diarization?.effective_backend
+                  configured: diarEngineLabel($t, stats.models.diarization?.configured_backend, stats.models.diarization?.configured_description),
+                  effective: diarEngineLabel($t, stats.models.diarization?.effective_backend, stats.models.diarization?.description)
                 })}>
                   <MenuIcon name="warning" size="xs" />
                   {$t('settings.statistics.diarizationFallbackBadge')}

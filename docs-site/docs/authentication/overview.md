@@ -207,6 +207,11 @@ With `login_banner_enabled` on, a user who has not acknowledged the banner is re
 non-exempt route with **403** `detail.code == "banner_acknowledgment_required"`. The exempt set
 is the banner itself, the acknowledgment endpoint, and both logout routes.
 
+**An empty `login_banner_text` shows the standard notice.** With the banner enabled and no text
+set, the login page shows the standard U.S. Government (DoD) information-system consent notice,
+verbatim and in English, the same way the classification level is shown as written. Set
+`login_banner_text` to use your own wording or another language.
+
 **An acknowledgment expires when the banner text changes.** The comparison is against the
 `login_banner_text` config row's `updated_at`, so editing the wording re-asks everyone. A user
 who accepted "UNCLASSIFIED — monitoring in effect" has not accepted a later

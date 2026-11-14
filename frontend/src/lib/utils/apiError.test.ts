@@ -14,13 +14,14 @@ vi.mock('$stores/auth', () => ({
   readAccountLifecycle: () => null,
 }));
 
-describe('getErrorMessage', () => {
-  // The default fallback is translated, so the locale bundle must be registered
-  // before asserting on it — otherwise `t` returns the raw dot-notation key.
-  beforeAll(async () => {
-    await initI18n('en');
-  });
+// The default fallback is translated, so the locale bundle must be registered before asserting
+// on it, otherwise `t` returns the raw dot-notation key. Once per file: a second `initI18n`
+// resets i18next's resources and leaves every later lookup returning keys.
+beforeAll(async () => {
+  await initI18n('en');
+});
 
+describe('getErrorMessage', () => {
   it('translates a support-access refusal instead of showing the server English sentence', () => {
     const error = {
       response: {
@@ -154,11 +155,69 @@ describe('getErrorMessage', () => {
   });
 });
 
-describe('handleApiError — 429 wait hint (issue #788)', () => {
-  beforeAll(async () => {
-    await initI18n('en');
+describe('getErrorMessage: a refusal with a stable code the client translates', () => {
+  const coded = (code: string) => ({
+    response: { status: 400, data: { detail: { code, message: 'SERVER ENGLISH' } } },
   });
 
+  it('says an invalid invitation link in the UI language, not the server sentence', () => {
+    expect(getErrorMessage(coded('invitation_invalid'))).toBe(
+      'This invitation link is invalid, expired, or has already been used.'
+    );
+  });
+
+  it('says an invalid verification link in the UI language', () => {
+    expect(getErrorMessage(coded('verification_link_invalid'))).toBe(
+      'This verification link is invalid or has expired.'
+    );
+  });
+
+  it('keeps the server message for a code it does not know', () => {
+    expect(getErrorMessage(coded('some_new_code'))).toBe('SERVER ENGLISH');
+    expect(getErrorMessage(coded('constructor'))).toBe('SERVER ENGLISH');
+  });
+});
+
+describe("getErrorMessage: axios's own English transport text", () => {
+  const axiosError = (code: string, message: string, response?: unknown) => ({
+    isAxiosError: true,
+    code,
+    message,
+    response,
+  });
+
+  it('never reaches the user: a bare 500 shows the translated fallback', () => {
+    expect(
+      getErrorMessage(
+        axiosError('ERR_BAD_RESPONSE', 'Request failed with status code 500', {
+          status: 500,
+          data: {},
+        }),
+        'Could not load the list'
+      )
+    ).toBe('Could not load the list');
+  });
+
+  it('turns an unreachable server into the translated network sentence', () => {
+    expect(getErrorMessage(axiosError('ERR_NETWORK', 'Network Error'), 'fallback')).toBe(
+      'Cannot reach the server. Check your connection and try again.'
+    );
+  });
+
+  it('still prefers what the server said over either', () => {
+    expect(
+      getErrorMessage(
+        axiosError('ERR_BAD_REQUEST', 'Request failed with status code 400', {
+          status: 400,
+          data: { detail: 'Name already taken' },
+        }),
+        'fallback'
+      )
+    ).toBe('Name already taken');
+  });
+});
+
+describe('handleApiError — 429 wait hint (issue #788)', () => {
   beforeEach(() => {
     toastWarning.mockClear();
     toastError.mockClear();

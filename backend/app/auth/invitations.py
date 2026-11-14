@@ -45,6 +45,9 @@ logger = logging.getLogger(__name__)
 #: already registered — returns exactly this. Any variation tells the holder of
 #: a guessed token which guesses were closer.
 GENERIC_INVALID = "This invitation link is invalid, expired, or has already been used."
+#: Stable code sent beside :data:`GENERIC_INVALID`, so a client can show the sentence in the
+#: reader's language. One code for every rejection, for the same reason as the one message.
+INVALID_CODE = "invitation_invalid"
 
 
 def _hash(raw_token: str) -> str:

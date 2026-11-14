@@ -232,7 +232,6 @@
     ? $t('gallery.bulk.tagModal.addTitle', { count: fileUuids.length })
     : $t('gallery.bulk.tagModal.removeTitle', { count: fileUuids.length })}
   size="sm"
-  allowOverflow
   onClose={() => dispatch('close')}
 >
   <form id={formId} class="bulk-tag-form" on:submit|preventDefault={submit}>

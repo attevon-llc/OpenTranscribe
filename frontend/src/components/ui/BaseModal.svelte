@@ -61,13 +61,6 @@
    *  layer above another modal it can be opened from. */
   export let zIndex: string | number = 'var(--z-modal)';
   /**
-   * Let an inner dropdown escape the body's scroll clip.
-   *
-   * Only for modals whose content fits without scrolling; otherwise the body
-   * stops scrolling and long content is unreachable.
-   */
-  export let allowOverflow = false;
-  /**
    * Whether clicking the backdrop dismisses the modal.
    *
    * Set `false` for dialogs holding in-progress user work that a stray click
@@ -162,7 +155,7 @@
           </svg>
         </button>
       </div>
-      <div class="modal-body" class:allow-overflow={allowOverflow}>
+      <div class="modal-body">
         <slot />
       </div>
       {#if $$slots.footer}
@@ -271,21 +264,18 @@
     background-color: var(--button-hover);
   }
 
+  /* The body is ALWAYS the scroller, so tall content scrolls inside the card and the footer
+     stays reachable. There used to be an `allowOverflow` opt-out (overflow: visible) so an
+     in-body combobox would not be clipped; with it a flex item's `min-height: auto` became the
+     content height, the card grew past its max-height and the footer fell off screen (the
+     support-access break-glass dialog). Dropdowns no longer need it: every one is placed by
+     `$lib/actions/anchoredPanel`, which portals it to <body>. */
   .modal-body {
     padding: var(--space-6);
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
     overscroll-behavior: contain;
-  }
-
-  /* An absolutely-positioned dropdown inside a scrolling body is clipped by
-     that scroll container no matter how high its z-index, so it renders as a
-     sliver under the footer. `allowOverflow` drops the clip for modals whose
-     content is short enough not to need scrolling but which do contain a
-     combobox — SearchableSelect in the bulk tag modal is the case this exists
-     for. */
-  .modal-body.allow-overflow {
-    overflow: visible;
   }
 
   .modal-footer {

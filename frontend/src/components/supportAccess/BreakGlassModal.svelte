@@ -105,7 +105,6 @@
   onClose={close}
   title={$t('supportAccess.breakGlass.title')}
   size="md"
-  allowOverflow
   closeOnBackdropClick={false}
 >
   {#if step === 'form'}

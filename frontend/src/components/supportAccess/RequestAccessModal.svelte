@@ -72,7 +72,7 @@
   }
 </script>
 
-<BaseModal {isOpen} {onClose} title={$t('supportAccess.request.title')} size="md" allowOverflow>
+<BaseModal {isOpen} {onClose} title={$t('supportAccess.request.title')} size="md">
   <form id="support-request-form" on:submit|preventDefault={submit}>
     <GrantTargetFields
       idPrefix="request"

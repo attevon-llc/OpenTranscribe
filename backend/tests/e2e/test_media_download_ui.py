@@ -22,6 +22,7 @@ from conftest import complete_first_run_wizard
 from conftest import delete_media_file
 from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
+from playwright.sync_api import expect
 
 # This module used to define its own ``BACKEND_URL`` constant here. A module constant is
 # evaluated at import time, so it could not see ``--backend-url`` and this file always
@@ -108,6 +109,11 @@ def test_gallery_bulk_export_downloads_zip(
     page = authenticated_page
     page.goto(base_url)
     page.wait_for_load_state("networkidle")
+
+    # "Select all" is a no-op while the gallery list is still empty (the store ignores it
+    # rather than toggling), which leaves every bulk export item disabled. Wait for the
+    # fixture's own completed file to render before selecting.
+    expect(page.locator(".file-card, .file-list-row").first).to_be_visible(timeout=30000)
 
     # Enter selection mode, then select every file to reveal the bulk-action toolbar.
     page.get_by_role("button", name="Select Files").first.click()

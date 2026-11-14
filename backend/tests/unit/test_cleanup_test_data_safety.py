@@ -468,7 +468,11 @@ def test_stale_markers_are_pruned_and_live_or_young_ones_kept(tmp_path: Path) ->
 @pytest.mark.unit
 def test_store_planes_refuse_a_mixed_stack_before_touching_anything(tmp_path: Path) -> None:
     """POSTGRES_PORT exported for one stack, OPENSEARCH_PORT for another: exit 2, no I/O.
-    Ports point at closed localhost ports, so reaching a store would fail differently."""
+    Ports point at closed localhost ports, so reaching a store would fail differently.
+
+    The backend is pinned too: the script no longer falls back to the live stack's port, so
+    with nothing exported it resolves the backend from whatever stack docker reports, and on
+    a host without exactly one it stops with exit 1 before the store planes are reached."""
     import os
     import subprocess
 
@@ -482,6 +486,7 @@ def test_store_planes_refuse_a_mixed_stack_before_touching_anything(tmp_path: Pa
             "POSTGRES_PORT": "5976",
             "OPENSEARCH_PORT": "5180",
             "MINIO_PORT": "5978",
+            "E2E_BACKEND_URL": "http://localhost:1",
             "TESTRUN_REGISTRY_DIR": str(tmp_path / ".testruns"),
         }
     )

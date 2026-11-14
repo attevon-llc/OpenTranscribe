@@ -468,6 +468,10 @@ class TestTagManagerTools:
         tag_api.post(f"/api/tags/files/{owned_transcribed_file['uuid']}/tags", {"name": used})
         tag_api.post("/api/tags", {"name": unused})
         _reload_tags(tags_page)
+        # `all_inner_texts()` and `.count()` are snapshots: taken straight after the reload
+        # they can read an empty list before it renders (seen once as "not listed: []").
+        expect(_row(tags_page, used)).to_be_visible(timeout=10000)
+        expect(_row(tags_page, unused)).to_be_visible(timeout=10000)
 
         def position(name: str) -> int:
             names = [t.strip() for t in _tag_rows(tags_page).all_inner_texts()]

@@ -23,6 +23,7 @@
   import Badge from '$components/ui/Badge.svelte';
   import { badgeVariantForStatus } from '$lib/fileStatus/statusVariant';
   import EmptyState from '$components/ui/EmptyState.svelte';
+  import { taskTypeLabel } from '$lib/settings/taskTypeLabels';
 
   export let stats: SystemStats;
   export let statsLoading = false;
@@ -439,7 +440,7 @@
               {#each stats.tasks.recent as task (task.id)}
                 <tr>
                   <td>{task.id.substring(0, 8)}...</td>
-                  <td>{task.type}</td>
+                  <td>{taskTypeLabel(task.type, $t)}</td>
                   <td>
                     <Badge variant={badgeVariantForStatus(task.status)} size="md" class="status-badge">{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</Badge>
                   </td>

@@ -575,6 +575,83 @@ def test_accept_endpoint_answers_every_bad_token_identically(db, mailer, admin):
                 body=InvitationAcceptRequest(token=token),
                 db=db,
             )
-        outcomes.add((exc.value.status_code, exc.value.detail))
+        outcomes.add((exc.value.status_code, repr(exc.value.detail)))
 
     assert len(outcomes) == 1, f"token state leaked through the response: {outcomes}"
+    assert outcomes == {
+        (400, repr({"code": "invitation_invalid", "message": GENERIC_INVALID_INVITE}))
+    }
+
+
+GENERIC_INVALID_INVITE = "This invitation link is invalid, expired, or has already been used."
+
+
+def _peeled(endpoint):
+    """The handler under slowapi's rate-limit decorator, which needs live app state."""
+    return getattr(endpoint, "__wrapped__", endpoint)
+
+
+def _request():
+    return SimpleNamespace(
+        client=SimpleNamespace(host="10.0.0.1"), headers={}, state=SimpleNamespace()
+    )
+
+
+def test_lookup_refusal_carries_a_stable_code_for_the_client_to_translate(db):
+    """The SPA translates by ``code``; the English sentence travels as ``message``."""
+    from fastapi import HTTPException
+
+    from app.api.endpoints.auth.invitations import lookup_invitation_endpoint
+    from app.schemas.invitation import InvitationLookupRequest
+
+    with pytest.raises(HTTPException) as exc:
+        _peeled(lookup_invitation_endpoint)(
+            request=_request(),
+            response=Response(),
+            body=InvitationLookupRequest(token="no-such-token"),
+            db=db,
+        )
+    assert exc.value.status_code == 400
+    # Starlette types ``detail`` as str, but FastAPI serialises any JSON value it is given.
+    detail: object = exc.value.detail
+    assert detail == {"code": "invitation_invalid", "message": GENERIC_INVALID_INVITE}
+
+
+def test_a_password_policy_refusal_stays_a_plain_sentence(db, mailer, admin):
+    """Only the token-state refusal is coded: the policy text tells the user what to fix."""
+    from fastapi import HTTPException
+
+    from app.api.endpoints.auth.invitations import accept_invitation_endpoint
+    from app.schemas.invitation import InvitationAcceptRequest
+
+    _inv, token = _invite(db, mailer, admin)
+    with pytest.raises(HTTPException) as exc:
+        _peeled(accept_invitation_endpoint)(
+            request=_request(),
+            response=Response(),
+            body=InvitationAcceptRequest(token=token),
+            db=db,
+        )
+    assert exc.value.status_code == 400
+    assert isinstance(exc.value.detail, str)
+    assert exc.value.detail != GENERIC_INVALID_INVITE
+
+
+def test_verify_email_refusal_carries_a_stable_code(db):
+    from fastapi import HTTPException
+
+    from app.api.endpoints.auth.email_verification import verify_email_endpoint
+    from app.auth.email_verification import GENERIC_INVALID
+    from app.schemas.invitation import EmailVerificationRequest
+
+    with pytest.raises(HTTPException) as exc:
+        _peeled(verify_email_endpoint)(
+            request=_request(),
+            response=Response(),
+            body=EmailVerificationRequest(token="nope"),
+            db=db,
+            _local_auth=None,
+        )
+    assert exc.value.status_code == 400
+    detail: object = exc.value.detail
+    assert detail == {"code": "verification_link_invalid", "message": GENERIC_INVALID}

@@ -29,6 +29,7 @@ from app.api.rate_limit import limiter
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.invitations import GENERIC_INVALID
+from app.auth.invitations import INVALID_CODE
 from app.auth.invitations import accept_invitation
 from app.auth.invitations import create_invitation
 from app.auth.invitations import invitation_status
@@ -159,6 +160,11 @@ def revoke_invitation_endpoint(
     return None
 
 
+def _invalid_detail() -> dict[str, str]:
+    """The one refusal for every bad token state: a stable code plus the English sentence."""
+    return {"code": INVALID_CODE, "message": GENERIC_INVALID}
+
+
 @router.post("/invitations/lookup", response_model=InvitationLookupResponse)
 @limiter.limit(get_auth_rate_limit())
 def lookup_invitation_endpoint(
@@ -175,7 +181,7 @@ def lookup_invitation_endpoint(
     """
     invitation = lookup_invitation(db, body.token)
     if invitation is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=GENERIC_INVALID)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_invalid_detail())
 
     return InvitationLookupResponse(
         email=str(invitation.email),
@@ -202,7 +208,10 @@ def accept_invitation_endpoint(
     """
     user, error = accept_invitation(db, body.token, body.password, body.full_name)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
+        # A token-state rejection carries the stable code; a password-policy refusal is a
+        # specific sentence the user acts on, so it stays a plain detail.
+        detail = _invalid_detail() if error == GENERIC_INVALID else error
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
     client_ip, user_agent = _get_client_info(request)
     audit_logger.log_admin_action(

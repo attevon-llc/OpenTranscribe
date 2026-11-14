@@ -42,6 +42,8 @@ MAX_TOKENS_PER_HOUR = 3
 
 #: One message for every outcome of a verification attempt, valid or not.
 GENERIC_INVALID = "This verification link is invalid or has expired."
+#: Stable code sent beside :data:`GENERIC_INVALID`, so a client can translate the sentence.
+INVALID_CODE = "verification_link_invalid"
 
 
 def _hash(raw_token: str) -> str:

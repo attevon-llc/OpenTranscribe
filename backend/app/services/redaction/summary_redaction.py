@@ -45,8 +45,10 @@ a custom prompt called its fields.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
+from collections.abc import Iterator
 from typing import Any
 
 from app.core.redaction_config import EffectiveRedactionConfig
@@ -72,13 +74,29 @@ class SummaryMaskingUnavailableError(RuntimeError):
     """
 
 
-def mask_summary(summary_data: dict[str, Any], cfg: EffectiveRedactionConfig) -> dict[str, Any]:
+@contextlib.contextmanager
+def _model_load_policy(allow_model_load: bool) -> Iterator[None]:
+    if allow_model_load:
+        yield
+        return
+    from app.services.redaction.detectors import no_model_load
+
+    with no_model_load():
+        yield
+
+
+def mask_summary(
+    summary_data: dict[str, Any], cfg: EffectiveRedactionConfig, *, allow_model_load: bool = False
+) -> dict[str, Any]:
     """Mask every string leaf of a summary under one effective redaction policy.
 
     Args:
         summary_data: The summary as stored, free-form JSON.
         cfg: The requesting user's effective config (admin floor already folded in
             by ``resolve_effective_config``).
+        allow_model_load: False (default) is for request threads: a detector model that is
+            not resident is reported unavailable rather than built. A worker caller passes
+            True.
 
     Returns:
         A new dict with the same shape. When the policy does not apply, the input
@@ -94,19 +112,20 @@ def mask_summary(summary_data: dict[str, Any], cfg: EffectiveRedactionConfig) ->
     run_profanity, run_pii, run_custom, label_cfg = policy
 
     failures: list[str] = []
-    masked = {
-        key: value
-        if key in _UNMASKED_TOP_LEVEL_KEYS
-        else _mask_node(
-            value,
-            label_cfg,
-            failures,
-            run_profanity=run_profanity,
-            run_pii=run_pii,
-            run_custom=run_custom,
-        )
-        for key, value in summary_data.items()
-    }
+    with _model_load_policy(allow_model_load):
+        masked = {
+            key: value
+            if key in _UNMASKED_TOP_LEVEL_KEYS
+            else _mask_node(
+                value,
+                label_cfg,
+                failures,
+                run_profanity=run_profanity,
+                run_pii=run_pii,
+                run_custom=run_custom,
+            )
+            for key, value in summary_data.items()
+        }
 
     # `detect_segment_spans` SWALLOWS a detector exception and returns the spans it
     # did collect, so "found nothing" and "could not look" are the same return
@@ -165,13 +184,17 @@ def resolve_summary_leaf_policy(
     return run_profanity, run_pii, run_custom, dataclasses.replace(cfg, style="label")
 
 
-def mask_summary_leaf(text: str, cfg: EffectiveRedactionConfig) -> str:
+def mask_summary_leaf(
+    text: str, cfg: EffectiveRedactionConfig, *, allow_model_load: bool = False
+) -> str:
     """Mask ONE summary-derived string (an action item, a keyphrase, ...).
 
     The single-string entry point onto the same machinery :func:`mask_summary`
     uses for a whole tree. Cross-meeting recurrence needs this shape: it groups
     individual item strings, which have no ``segment_ids`` provenance to rebuild
     from, so each is detected live exactly like a summary leaf.
+
+    ``allow_model_load`` is as for :func:`mask_summary`.
 
     Raises:
         SummaryMaskingUnavailableError: A detector feeding an enabled category
@@ -184,14 +207,15 @@ def mask_summary_leaf(text: str, cfg: EffectiveRedactionConfig) -> str:
     run_profanity, run_pii, run_custom, label_cfg = policy
 
     failures: list[str] = []
-    masked = _mask_leaf(
-        text,
-        label_cfg,
-        failures,
-        run_profanity=run_profanity,
-        run_pii=run_pii,
-        run_custom=run_custom,
-    )
+    with _model_load_policy(allow_model_load):
+        masked = _mask_leaf(
+            text,
+            label_cfg,
+            failures,
+            run_profanity=run_profanity,
+            run_pii=run_pii,
+            run_custom=run_custom,
+        )
 
     from app.services.redaction.config import blocking_detector_failures
 

@@ -207,12 +207,14 @@ class OutputRedactor:
         blow the latency budget. PII and profanity are what this guards.
         """
         from app.services.redaction.config import detection_config_for_all
+        from app.services.redaction.detectors import no_model_load
         from app.services.redaction.service import RedactionService
 
         failures: list[str] = []
-        spans, _toxicity = RedactionService.detect_segment_spans(
-            span, None, detection_config_for_all(), run_toxicity=False, failures=failures
-        )
+        with no_model_load():
+            spans, _toxicity = RedactionService.detect_segment_spans(
+                span, None, detection_config_for_all(), run_toxicity=False, failures=failures
+            )
         blocking = self._blocking_failures(failures)
         if blocking:
             raise RuntimeError(f"detectors unavailable for enabled categories: {sorted(blocking)}")

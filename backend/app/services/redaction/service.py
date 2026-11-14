@@ -23,6 +23,7 @@ from app.services.redaction.config import detection_config_for_all
 from app.services.redaction.config import detector_language_support
 from app.services.redaction.config import normalize_language
 from app.services.redaction.detectors import DetectorUnavailableError
+from app.services.redaction.detectors import no_model_load
 from app.services.redaction.detectors import wordlist
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import apply_redactions
@@ -486,12 +487,22 @@ class RedactionService:
         try:
             det_cfg = detection_config_for_all()
             det_cfg["language"] = media_file.language
-            span_dicts, toxicity = RedactionService.detect_segment_spans(
-                str(segment.text),
-                segment.words,
-                det_cfg,
-                failures=failures,
-            )
+            # Never build a model on the request thread: a detector that is not resident here
+            # reports unavailable and the file is handed to the redaction worker below.
+            with no_model_load() as refused:
+                span_dicts, toxicity = RedactionService.detect_segment_spans(
+                    str(segment.text),
+                    segment.words,
+                    det_cfg,
+                    failures=failures,
+                )
+            if refused:
+                # Not resident is not "could not run anywhere": only the dedicated worker
+                # can examine this text, and a cached result computed without it would
+                # read as clean forever.
+                segment.redactions = span_dicts or None
+                segment.toxicity = toxicity
+                return RedactionService._mark_redaction_stale(db, media_file, sorted(set(refused)))
         except Exception:  # edit-time boundary: the segment is marked stale below
             # Not just one detector — the whole re-detection. Nothing was
             # examined, and the segment's cached spans still describe the text it

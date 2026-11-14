@@ -418,13 +418,12 @@ def update_single_transcript_segment(
         # /analytics reads that row, and _get_or_compute_analytics only computes when
         # it is ABSENT — so without this the UI silently renders pre-edit numbers with
         # no error (issue #890). Mirrors what the speaker-change path already does at
-        # transcript_segments.py:188. Placed after the segment commit above:
-        # refresh_analytics deletes+recomputes, so running it before that commit would
-        # recompute against the pre-edit text.
-        from app.services.analytics_service import AnalyticsService
+        # transcript_segments.py:188. Placed after the segment commit above so the
+        # task reads the post-edit text.
+        # Queued (debounced) rather than computed here: it is CPU plus several statements.
+        from app.tasks.analytics_dispatch import dispatch_analytics
 
-        if not AnalyticsService.refresh_analytics(db, db_file.id):
-            logger.warning("Analytics refresh failed after text edit on file %s", db_file.uuid)
+        dispatch_analytics(str(db_file.uuid))
 
     if segment.speaker is not None:
         redact_speaker_rows(db, [segment.speaker])

@@ -122,6 +122,7 @@ first. Items marked **Action** can stop an existing install until you adjust a s
 - The environment variables listed under Changed that never had an effect.
 
 ### Fixed
+- Migration progress tracking (imohash recompute, thumbnail, embedding migrations) now updates O(1) Redis counters instead of rewriting a growing JSON blob per file, which had pinned Redis at 77% CPU when many media objects were missing; the failed-file list in the progress API is capped at 1000 entries.
 - The Queue Dashboard (`/flower/`) answered 401 to admins on every deployment served by the frontend image, PKI included: nginx admitted the admin but sent Flower none of its Basic credential. The frontend container now writes that credential from `FLOWER_USER`/`FLOWER_PASSWORD` at start and sends it only after the admin check; recreate `frontend` and `flower` together after changing `FLOWER_PASSWORD`.
 - `opentr.sh start prod --build --lite` now builds the lite backend image (it built only the full one), and the docs image takes `GIT_SHA`, so every prod image reports its commit instead of `unknown`.
 - The public demo (`--lite --demo`, or `DEMO_MODE=true`) starts again: its frontend nginx crash-looped on "host not found in upstream flower" because the demo runs no Flower. The optional upstreams (`/flower/` everywhere, `/docs/` in the frontend image) now resolve per request through Docker's DNS, so a missing service answers 502 on its own path instead of stopping the site; a unit test checks every nginx config against every compose mode.

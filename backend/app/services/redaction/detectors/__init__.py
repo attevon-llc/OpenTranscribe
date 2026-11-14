@@ -2,6 +2,43 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
+from collections.abc import Iterator
+
+# Set (to a list that collects refusals) while a request thread runs a detector. A loader that
+# would have to BUILD a model there returns "unavailable" instead, because a build is ~10 s of CPU
+# plus HuggingFace Hub network round trips (measured 3.7 s on a segment edit). The dedicated
+# redaction worker and the startup warm-up never set it, so they still load.
+_refused_loads: contextvars.ContextVar[list[str] | None] = contextvars.ContextVar(
+    "redaction_refused_loads", default=None
+)
+
+
+@contextlib.contextmanager
+def no_model_load() -> Iterator[list[str]]:
+    """Forbid building a detector model inside this block; yields the refusals recorded.
+
+    Already-resident models are used as normal. A detector that is not resident reports
+    :class:`DetectorUnavailableError` (the existing, fail-closed "could not look" outcome) and
+    its name lands in the yielded list so the caller can hand the work to the redaction worker.
+    """
+    refused: list[str] = []
+    token = _refused_loads.set(refused)
+    try:
+        yield refused
+    finally:
+        _refused_loads.reset(token)
+
+
+def refuse_model_load(name: str) -> bool:
+    """True (and recorded) when the current context forbids building ``name``."""
+    refused = _refused_loads.get()
+    if refused is None:
+        return False
+    refused.append(name)
+    return True
+
 
 class DetectorUnavailableError(RuntimeError):
     """A detector could not run **at all**, so the text was never examined.

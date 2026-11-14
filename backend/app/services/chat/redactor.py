@@ -314,12 +314,14 @@ def _mask_inline(text: str, cfg: EffectiveRedactionConfig) -> str:
     try:
         from app.services.redaction.config import blocking_detector_failures
         from app.services.redaction.config import detection_config_for_all
+        from app.services.redaction.detectors import no_model_load
         from app.services.redaction.service import RedactionService
 
         failures: list[str] = []
-        spans, _toxicity = RedactionService.detect_segment_spans(
-            text, None, detection_config_for_all(), run_toxicity=False, failures=failures
-        )
+        with no_model_load():
+            spans, _toxicity = RedactionService.detect_segment_spans(
+                text, None, detection_config_for_all(), run_toxicity=False, failures=failures
+            )
         blocking = blocking_detector_failures(failures, cfg.enabled_categories)
         if blocking:
             raise RuntimeError(f"detectors unavailable for enabled categories: {sorted(blocking)}")

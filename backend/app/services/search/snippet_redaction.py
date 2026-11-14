@@ -191,6 +191,7 @@ def _detect(
     """
     from app.services.redaction.config import blocking_detector_failures
     from app.services.redaction.config import detection_config_for_all
+    from app.services.redaction.detectors import no_model_load
     from app.services.redaction.detectors import wordlist
     from app.services.redaction.service import RedactionService
 
@@ -199,15 +200,16 @@ def _detect(
     for doc in docs:
         if not doc.plain:
             continue
-        found, _toxicity = RedactionService.detect_segment_spans(
-            doc.plain,
-            None,
-            det_cfg,
-            run_profanity=run_profanity,
-            run_pii=run_pii,
-            run_toxicity=False,
-            failures=failures,
-        )
+        with no_model_load():
+            found, _toxicity = RedactionService.detect_segment_spans(
+                doc.plain,
+                None,
+                det_cfg,
+                run_profanity=run_profanity,
+                run_pii=run_pii,
+                run_toxicity=False,
+                failures=failures,
+            )
         doc.spans.extend(found)
         # Custom words must be matched over the WHOLE snippet, same as profanity/pii
         # above — matching per-run instead (as mask_segment's own inline rescan does)

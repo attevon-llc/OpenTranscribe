@@ -21,6 +21,7 @@ from typing import Any
 from app.core import redaction_defaults
 from app.core.config import settings
 from app.services.redaction.detectors import DetectorUnavailableError
+from app.services.redaction.detectors import refuse_model_load
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import build_word_offsets
 from app.services.redaction.spans import map_char_span_to_words
@@ -159,6 +160,8 @@ def _get_analyzer(use_gliner: bool) -> Any:
     cached = _cached(use_gliner)
     if cached is not None:
         return cached
+    if refuse_model_load("pii"):
+        return None
     with _analyzer_lock:
         # Re-check: whoever held the lock may have built exactly what we need.
         cached = _cached(use_gliner)

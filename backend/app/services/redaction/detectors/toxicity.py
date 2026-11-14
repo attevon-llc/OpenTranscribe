@@ -28,6 +28,7 @@ from typing import Any
 
 from app.core import redaction_defaults
 from app.services.redaction.detectors import DetectorUnavailableError
+from app.services.redaction.detectors import refuse_model_load
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,8 @@ def _get_pipe(model_name: str) -> Any:
     if model_name in _pipes:
         return _pipes[model_name]
     if model_name in _load_failed:
+        return None
+    if refuse_model_load(f"toxicity:{model_name}"):
         return None
     with _load_lock:
         if model_name in _pipes:

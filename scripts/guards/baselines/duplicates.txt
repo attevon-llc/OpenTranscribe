@@ -193,8 +193,8 @@ frontend/src/components/Navbar.aboutModalFailure.test.ts	1	pre-existing duplicat
 frontend/src/components/Navbar.mobileNotifications.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/Navbar.notificationsMount.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/Navbar.supportAccess.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/SelectiveReprocessModal.flow.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/SelectiveReprocessModal.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/SelectiveReprocessModal.flow.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/SelectiveReprocessModal.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/SettingsModal.lazySections.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/SettingsModal.orgContext.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/SettingsModal.supportAccess.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

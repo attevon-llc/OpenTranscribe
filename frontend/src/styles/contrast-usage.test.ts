@@ -234,12 +234,11 @@ function opacityOnText(): string[] {
       text = [...text.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
     }
     text = text.replace(/\/\*[\s\S]*?\*\//g, '');
-    for (const m of text.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
-      const sel = m[1].trim().split('\n').pop()!.trim();
-      const body = m[2];
+    for (const [, prelude = '', body = ''] of text.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+      const sel = (prelude.trim().split('\n').pop() ?? '').trim();
       if (/disabled|::placeholder|:hover|:not\(/.test(sel)) continue;
       if (!/(?<![-\w])opacity\s*:\s*0?\.\d+/.test(body)) continue;
-      const fg = [...body.matchAll(FG_RE)].map((x) => x[1]);
+      const fg = [...body.matchAll(FG_RE)].flatMap((x) => (x[1] ? [x[1]] : []));
       if (!fg.some((t) => TEXT_ROLE.test(t))) continue;
       const key = `${rel(file)} ${sel}`;
       if (!OPACITY_NOT_TEXT.has(key)) out.push(key);

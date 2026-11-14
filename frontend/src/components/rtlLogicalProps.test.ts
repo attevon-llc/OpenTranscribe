@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import search from './search/SearchAutocomplete.svelte?raw';
 import clusters from './speakers/ClustersTab.svelte?raw';
 import backup from './settings/BackupSettings.svelte?raw';
 import dirsync from './settings/DirectorySyncSettings.svelte?raw';
-import page from '/src/routes/search/+page.svelte?raw';
 import media from './upload/MediaUrlPanel.svelte?raw';
+
+// Read from disk: a static `../routes` import is banned by the alias rule, and the absolute
+// `/src/...` form is one knip cannot resolve. No alias covers src/routes.
+const page = readFileSync(resolve(__dirname, '..', 'routes/search/+page.svelte'), 'utf8');
 
 // UI-pass R2/R6/R7: physical padding/margin does not mirror in Arabic (MDN: CSS logical properties).
 const css = (s: string) => s.slice(s.indexOf('<style'));

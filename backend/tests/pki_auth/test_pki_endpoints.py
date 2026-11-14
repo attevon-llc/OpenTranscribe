@@ -49,8 +49,13 @@ def trusted_pki_peer(monkeypatch):
     monkeypatch.setattr(
         pki_auth, "_pki_header_source_is_trusted", lambda request, networks=None: True
     )
-    monkeypatch.setattr(pki_auth, "header_source_is_trusted", lambda request, networks: True)
-    monkeypatch.setattr(header_trust, "header_source_is_trusted", lambda request, networks: True)
+
+    # Same signature as the real ``header_source_is_trusted`` so a change to it fails here.
+    def _trusted(request, networks, *, secret_vouched=False):
+        return True
+
+    monkeypatch.setattr(pki_auth, "header_source_is_trusted", _trusted)
+    monkeypatch.setattr(header_trust, "header_source_is_trusted", _trusted)
 
 
 @pytest.fixture

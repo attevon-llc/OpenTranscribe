@@ -118,7 +118,7 @@ if [[ -z "$parity_fail" && -n "$backend_image" ]] && python3 "$SCRIPT_DIR/image_
         --tsv "$PARITY_DIR/tested-images.tsv" --fingerprint "$PARITY_DIR/tested-fingerprint.txt" >&2; then
     record tested-images-recorded pass "$(wc -l < "$PARITY_DIR/tested-images.tsv") service image(s) in $PARITY_DIR/tested-images.tsv"
 else
-    record tested-images-recorded fail "could not record the tested images/fingerprint (${parity_fail:-backend image unresolved or fingerprint failed})" \
+    record tested-images-recorded fail "could not save the tested-image list or fingerprint (${parity_fail:-backend image unresolved or fingerprint failed})" \
         "docker ps --filter label=com.docker.compose.project=${ST_PROJECT}; python3 scripts/release/image_parity.py record-tested --help"
     parity_rc=1
 fi

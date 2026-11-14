@@ -38,7 +38,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `prompting.py` + siblings | Layered system prompt, concatenation only; `prompt_blocks` = delimited excerpts and counted/recurrence/synthesis blocks; `prompt_sanitize` = the injection boundary (`_sanitize_body_text`/`_sanitize_attribute`) |
 | `citations.py` | Structured citations; `[n]` markers only SELECT, never construct |
 | `service.py` | The SSE generator: keepalive/trace, the answer stream and teardown |
-| `context_prep.py` | `_prepare_context`'s phase wiring (rewrite, route, count, retrieve, mask) and the ONE masking call site, `_mask_evidence`; the phases live in the siblings its docstring maps: `turn.py`, `prompt_budget.py`, `planning_steps.py`, `fanout.py`, **`masking.py` (whether excerpts are masked before the LLM)**, `evidence.py` (quarantine drop, fail-closed filter), `summary_tier.py`, `streaming.py`, `persistence.py` |
+| `context_prep.py` | `_prepare_context`'s phase wiring (rewrite, route, count, retrieve, mask) and the ONE masking call site, `_mask_evidence`; the phases live in the siblings its docstring maps: `turn.py`, `prompt_budget.py`, `planning_steps.py`, `fanout.py`, **`masking.py` (whether excerpts are masked before the LLM)**, `evidence.py` (quarantine drop, fail-closed filter, one source id per file span), `summary_tier.py`, `streaming.py`, `persistence.py` |
 | `frames.py` | The SSE encoder (`sse`), the failure texts and the frame builders (context warnings, the `sources` frame via `_grounding_frames`, delta/reasoning, error, usage/done) |
 | `limits.py` | Per-user hourly + concurrency caps, cancel flags (fail open) |
 | `hooks.py` | Cloud seam, mirrors `tasks/transcription/hooks.py` exactly |

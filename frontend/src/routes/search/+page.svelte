@@ -656,7 +656,7 @@
                 sortBy={$searchStore.sortBy}
                 sortOrder={$searchStore.sortOrder}
                 ariaLabelKey="search.sort.label"
-                align="right"
+                align="end"
                 on:change={handleSortChange}
               />
             </div>
@@ -1045,20 +1045,20 @@
     .filter-rail {
       position: fixed;
       top: var(--content-top);
-      left: -100%;
+      inset-inline-start: -100%;
       width: 100% !important;
       min-width: 100% !important;
       height: calc(100vh - var(--content-top));
       height: calc(100dvh - var(--content-top));
       background: var(--surface-color);
       z-index: var(--z-dropdown);
-      transition: left var(--duration-slow) ease;
-      border-right: none;
+      transition: inset-inline-start var(--duration-slow) ease;
+      border-inline-end: none;
       border-top: 1px solid var(--border-color);
     }
 
     .filter-rail.show {
-      left: 0;
+      inset-inline-start: 0;
     }
 
     .filter-rail:not(.show) {

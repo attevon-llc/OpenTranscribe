@@ -156,7 +156,7 @@
     <div
       class="dropdown-menu"
       bind:this={menuRef}
-      use:anchoredPanel={{ anchor: buttonRef, width: 'content', edge: 'right', gap: 8 }}
+      use:anchoredPanel={{ anchor: buttonRef, width: 'content', edge: 'end', gap: 8 }}
     >
       <div class="dropdown-header">
         <span>{$t('nav.signedInAs')}</span>

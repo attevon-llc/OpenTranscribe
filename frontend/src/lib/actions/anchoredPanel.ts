@@ -9,8 +9,8 @@ export interface AnchoredPanelOptions {
   minWidth?: number;
   /** Defaults to `document.documentElement.dir === 'rtl'`. */
   rtl?: boolean;
-  /** Physical edge of the anchor to align to; default is the inline-start edge. */
-  edge?: 'left' | 'right';
+  /** Logical edge of the anchor to align to (mirrors in RTL); default is 'start'. */
+  edge?: 'start' | 'end';
   /** Upper bound for the panel's height (px), for panels whose stylesheet capped them. */
   maxHeight?: number;
   /** Move the node to `<body>` (default). Pass false when the caller already hosts it there. */

@@ -303,7 +303,7 @@ describe('SortDropdown: direction arrows', () => {
     expect(arrowPoints(activeItem?.querySelector('.option-arrow'))).toBe('down');
   });
 
-  it('aligns the menu to the trigger right edge when align="right"', async () => {
+  it('aligns the menu to the trigger end edge when align="end"', async () => {
     layoutMocks();
     render(SortDropdown, {
       props: {
@@ -311,12 +311,12 @@ describe('SortDropdown: direction arrows', () => {
         sortBy: 'relevance',
         sortOrder: 'desc',
         ariaLabelKey: 'search.sort.label',
-        align: 'right',
+        align: 'end',
       },
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'search.sort.label' }));
-    // Right-aligned: the menu's right edge lands on the trigger's right edge.
+    // End-aligned (LTR: right edge): the menu's right edge lands on the trigger's right edge.
     const menu = document.querySelector('.dropdown-menu') as HTMLElement;
     expect(menu.style.left).toBe(`${TRIGGER_LEFT + TRIGGER_WIDTH - MENU_WIDTH}px`);
   });

@@ -39,8 +39,8 @@ export interface PlacementOptions {
   rtl?: boolean;
   /** Exact panel width (e.g. a menu's own content width) instead of trigger-width/minWidth. */
   width?: number;
-  /** Physical edge of the trigger the panel aligns to; defaults to the inline-start edge. */
-  edge?: 'left' | 'right';
+  /** Logical edge of the trigger the panel aligns to (mirrors in RTL); defaults to 'start'. */
+  edge?: 'start' | 'end';
 }
 
 export function computePopoverPlacement(
@@ -66,7 +66,7 @@ export function computePopoverPlacement(
   const width = Math.min(wanted, viewport.width - margin * 2);
 
   // Horizontal: align the panel's inline-start edge with the trigger's, then clamp.
-  const alignRight = edge ? edge === 'right' : rtl;
+  const alignRight = edge === 'end' ? !rtl : rtl;
   const aligned = alignRight ? trigger.left + trigger.width - width : trigger.left;
   const left = Math.round(Math.min(Math.max(aligned, margin), viewport.width - width - margin));
 

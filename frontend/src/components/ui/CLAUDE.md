@@ -155,7 +155,7 @@ clipped by any `overflow: auto` ancestor.
 ```svelte
 <button bind:this={triggerEl} on:click={toggle}>...</button>
 {#if open}
-  <div class="menu" bind:this={panelEl} use:anchoredPanel={{ anchor: triggerEl, width: 'content', edge: 'right' }}>...</div>
+  <div class="menu" bind:this={panelEl} use:anchoredPanel={{ anchor: triggerEl, width: 'content', edge: 'end' }}>...</div>
 {/if}
 ```
 

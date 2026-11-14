@@ -2746,9 +2746,9 @@ start_app() {
     echo "🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set; workers run without owner credentials)"
   fi
 
-  add_lite_and_demo_overlays "$LITE_FLAG" "$DEMO_FLAG"
-
   add_nginx_overlay
+
+  add_lite_and_demo_overlays "$LITE_FLAG" "$DEMO_FLAG"
 
   # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
   # prod to docker-compose.pki.yml; cert generation + the test-env fragment
@@ -3437,9 +3437,9 @@ reset_and_init() {
     echo "🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set; workers run without owner credentials)"
   fi
 
-  add_lite_and_demo_overlays "$LITE_FLAG" "$DEMO_FLAG"
-
   add_nginx_overlay
+
+  add_lite_and_demo_overlays "$LITE_FLAG" "$DEMO_FLAG"
 
   # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
   # prod to docker-compose.pki.yml; cert generation + the test-env fragment

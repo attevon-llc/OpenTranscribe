@@ -100,6 +100,21 @@ beforeEach(() => {
 });
 
 describe('listing', () => {
+  it('labels each card with its translated content type, never the raw code', async () => {
+    const qa = prompt({ uuid: 'qa', name: 'Panel', is_owner: true, content_type: 'qa_panel' });
+    const untyped = prompt({ uuid: 'none', name: 'Untyped', is_owner: true, content_type: '' });
+    serve([SYS_UNIVERSAL, qa, untyped], 'sys-uni');
+    const { container } = await mount();
+    const types = [...container.querySelectorAll('.config-provider')].map(
+      (e) => e.textContent?.trim()
+    );
+    expect(types).toEqual([
+      'prompts.contentTypeGeneral',
+      'prompts.contentTypeQaPanel',
+      'prompts.contentTypeGeneral',
+    ]);
+  });
+
   it('shows system, own and shared prompts in their own sections, hiding speaker identification', async () => {
     serve([SYS_UNIVERSAL, SYS_HIDDEN, MINE, THEIRS], 'mine');
     const { container } = await mount();

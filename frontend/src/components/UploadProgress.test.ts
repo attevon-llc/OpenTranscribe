@@ -179,3 +179,13 @@ describe('UploadProgress — status icons are SVG, named, and never a glyph', ()
     expect(container.textContent).not.toMatch(/[✓✗⊘↑↻⚙⏳⚠]/u);
   });
 });
+
+describe('UploadProgress — source badge', () => {
+  it('names the upload source in the UI language, not the internal type code', () => {
+    const { container } = render(UploadProgress, {
+      props: { upload: uploadItem({ type: 'recording' }) },
+    });
+
+    expect(container.querySelector('.upload-type')?.textContent).toBe('Recording');
+  });
+});

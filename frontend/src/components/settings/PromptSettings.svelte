@@ -83,6 +83,16 @@
     { value: 'speaker_identification', label: $t('prompts.contentTypeSpeakerIdentification') }
   ];
 
+  // A prompt card shows its type by label; an unknown type keeps its code, an empty one is general.
+  // `types` is passed in so the template re-renders when a language switch rebuilds `contentTypes`.
+  function contentTypeLabel(
+    code: string | null | undefined,
+    types: { value: string; label: string }[]
+  ): string {
+    const value = code || 'general';
+    return types.find((c) => c.value === value)?.label ?? value;
+  }
+
   onMount(async () => {
     await loadData();
   });
@@ -465,7 +475,7 @@
                     </svg>
                   </span>
                 </div>
-                <div class="config-provider">{prompt.content_type || 'General'}</div>
+                <div class="config-provider">{contentTypeLabel(prompt.content_type, contentTypes)}</div>
                 {#if prompt.description}
                   <div class="config-url">{prompt.description}</div>
                 {/if}
@@ -522,7 +532,7 @@
                   {prompt.name}
                   {#if prompt.is_shared}<span class="share-badge">{$t('prompts.shared')}</span>{/if}
                 </div>
-                <div class="config-provider">{prompt.content_type || 'General'}</div>
+                <div class="config-provider">{contentTypeLabel(prompt.content_type, contentTypes)}</div>
                 {#if prompt.description}
                   <div class="config-url">{prompt.description}</div>
                 {/if}
@@ -625,7 +635,7 @@
                     <span class="admin-badge">{$t('settings.sharing.adminBadge')}</span>
                   {/if}
                 </div>
-                <div class="config-provider">{prompt.content_type || 'General'}</div>
+                <div class="config-provider">{contentTypeLabel(prompt.content_type, contentTypes)}</div>
                 {#if prompt.description}
                   <div class="config-url">{prompt.description}</div>
                 {/if}

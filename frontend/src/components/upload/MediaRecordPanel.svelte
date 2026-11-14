@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import { RECORDING_QUALITY_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { recordingStore, recordingManager, isRecording, recordingDuration, audioLevel } from '$stores/recording';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { formatClock } from '$lib/utils/formatting';
@@ -169,7 +170,7 @@
     </div>
 
     <div class="settings-summary">
-      <span>{$t('uploader.recordingSettingsSummary', { max: Math.floor(maxRecordingDuration / 60), quality: recordingQuality, autoStop: autoStopEnabled ? $t('uploader.on') : $t('uploader.off') })}</span>
+      <span>{$t('uploader.recordingSettingsSummary', { max: Math.floor(maxRecordingDuration / 60), quality: labelFor($t, RECORDING_QUALITY_KEYS, recordingQuality), autoStop: autoStopEnabled ? $t('uploader.on') : $t('uploader.off') })}</span>
       <button type="button" class="settings-link" on:click={() => settingsModalStore.open('recording')} title={$t('uploader.changeSettingsTooltip')}>
         {$t('uploader.changeSettings')}
       </button>

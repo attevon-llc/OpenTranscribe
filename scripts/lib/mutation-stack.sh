@@ -78,10 +78,19 @@ mutation_parallel_dirty_files() {
     git -C "$REPO_ROOT" status --porcelain -- "${paths[@]}"
 }
 
+# _mut_worktree_path KEY -> where KEY's measuring worktree lives. This is a PATH, not a compose
+# project: the checkout's directory name is not used (from a git worktree it is the worktree's own
+# name). A hash of the checkout root keeps two checkouts sharing OT_MUTATION_WORKTREE_ROOT apart.
+_mut_worktree_path() {
+    local tag
+    tag="$(printf '%s' "$REPO_ROOT" | cksum | cut -d' ' -f1)"
+    printf '%s\n' "${OT_MUTATION_WORKTREE_ROOT:-$(dirname "$REPO_ROOT")}/ot-mut-${tag}-$1"
+}
+
 # mutation_parallel_worktree KEY SHA -> prints the path; sparse (backend + scripts) to avoid 3 GB each.
 mutation_parallel_worktree() {
     local key=$1 sha=$2 wt
-    wt="${OT_MUTATION_WORKTREE_ROOT:-$(dirname "$REPO_ROOT")}/$(basename "$REPO_ROOT")-mut-$key"
+    wt="$(_mut_worktree_path "$key")"
     if [[ -e "$wt/.git" ]]; then
         [[ -z "$(git -C "$wt" status --porcelain)" ]] || { echo "dirty worktree $wt: refusing (remove it yourself)" >&2; return 3; }
         git -C "$wt" checkout -q --detach "$sha" || return 3
@@ -115,7 +124,7 @@ mutation_parallel_run() {
     if $DRY_RUN; then
         local k db idx wt
         while IFS=$'\t' read -r k db idx; do
-            wt="${OT_MUTATION_WORKTREE_ROOT:-$(dirname "$REPO_ROOT")}/$(basename "$REPO_ROOT")-mut-$k"
+            wt="$(_mut_worktree_path "$k")"
             echo "module $k: worktree=$wt max-children=$children jobs=$jobs"
             echo "    POSTGRES_DB=$db REDIS_URL=redis://***@<stack redis>/$idx addopts='-o addopts= -p no:cacheprovider -p no:testmon <tests>'"
         done < <(python3 "$_MUT_ISO_PY" plan --modules "$csv" --tsv)

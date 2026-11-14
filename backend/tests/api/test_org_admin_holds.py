@@ -406,7 +406,7 @@ def test_a_restricted_collection_cannot_be_held_by_someone_who_cannot_see_it(cli
             json={"scope": "collection", "collection_uuid": str(foreign.uuid), "reason": REASON},
         )
     assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert gov.db.query(ContentHold).count() == 0
+    assert gov.new_holds() == []
 
 
 # --------------------------------------------------------------------------- #

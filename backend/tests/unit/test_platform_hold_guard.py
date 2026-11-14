@@ -52,6 +52,11 @@ def _hold(gov, *files, authority=AUTHORITY_PLATFORM, collection=None) -> Content
     return hold
 
 
+def _listing(rows: list[ContentHold], total: int) -> dict:
+    """``list_platform_holds``'s answer in the shape ``GovWorld.own_platform_listing`` reads."""
+    return {"holds": [{"uuid": str(h.uuid)} for h in rows], "total": total}
+
+
 def test_a_platform_hold_is_held_by_the_platform_and_kept_apart_from_organization_uuids(gov):
     platform_only, org_only, both, free = (gov.file(gov.alice) for _ in range(4))
     p = _hold(gov, platform_only, both)
@@ -156,9 +161,15 @@ def test_the_organization_list_never_shows_a_platform_hold_and_the_platform_list
     org_rows, org_total = list_holds(gov.db, gov.org.id, active_only=False)
     assert [h.uuid for h in org_rows] == [o.uuid] and org_total == 1
 
-    active, active_total = list_platform_holds(gov.db, active_only=True)
-    assert [h.uuid for h in active] == [p.uuid] and active_total == 1
-    everything, total = list_platform_holds(gov.db, active_only=False)
-    assert [h.uuid for h in everything] == [released.uuid, p.uuid] and total == 2
+    # Released platform holds of earlier runs stay in a shared database (see GovWorld.prior_holds).
+    active = gov.own_platform_listing(_listing(*list_platform_holds(gov.db)), active_only=True)
+    assert active == {"holds": [{"uuid": str(p.uuid)}], "total": 1}
+    everything = gov.own_platform_listing(
+        _listing(*list_platform_holds(gov.db, active_only=False)), active_only=False
+    )
+    assert everything == {
+        "holds": [{"uuid": str(released.uuid)}, {"uuid": str(p.uuid)}],
+        "total": 2,
+    }
     page, _ = list_platform_holds(gov.db, active_only=False, limit=1, offset=1)
     assert [h.uuid for h in page] == [p.uuid]

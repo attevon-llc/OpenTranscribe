@@ -588,9 +588,10 @@ def get_index_overview() -> dict[str, Any]:
     v4_index = get_speaker_index_v4()
 
     # Speaker indices with type breakdowns
+    # ``kind`` is the stable code the UI translates; ``label`` is the English fallback.
     speaker_configs = [
-        (speaker_index, "Speaker Embeddings (V3)"),
-        (v4_index, "Speaker Embeddings (V4)"),
+        (speaker_index, "speakers_v3", "Speaker Embeddings (V3)"),
+        (v4_index, "speakers_v4", "Speaker Embeddings (V4)"),
     ]
     # Transcript indices grouped into one card
     transcript_indices = [
@@ -601,8 +602,8 @@ def get_index_overview() -> dict[str, Any]:
     indices: list[dict[str, Any]] = []
 
     # --- Speaker indices ---
-    for index_name, label in speaker_configs:
-        entry: dict[str, Any] = {"name": index_name, "label": label, "exists": False}
+    for index_name, kind, label in speaker_configs:
+        entry: dict[str, Any] = {"name": index_name, "kind": kind, "label": label, "exists": False}
         try:
             if not client.indices.exists(index=index_name):
                 indices.append(entry)
@@ -644,6 +645,7 @@ def get_index_overview() -> dict[str, Any]:
     # --- Transcripts (metadata + chunks combined) ---
     tx_entry: dict[str, Any] = {
         "name": "transcripts",
+        "kind": "transcripts",
         "label": "Transcripts",
         "exists": False,
         "breakdown": {},
@@ -668,6 +670,7 @@ def get_index_overview() -> dict[str, Any]:
     # --- Summaries ---
     sum_entry: dict[str, Any] = {
         "name": settings.OPENSEARCH_SUMMARY_INDEX,
+        "kind": "summaries",
         "label": "Summaries",
         "exists": False,
     }

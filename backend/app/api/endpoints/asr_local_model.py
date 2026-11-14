@@ -67,6 +67,10 @@ def get_active_local_model(
                 "supports_translation": m.get("supports_translation", True),
                 "supports_diarization": m.get("supports_diarization", True),
                 "language_support": m.get("language_support", "multilingual"),
+                # The numbers behind ``description``, so the UI can say it in the reader's
+                # language instead of showing the catalog's English sentence.
+                "vram_hint_gb": m.get("vram_hint_gb"),
+                "is_default": bool(m.get("is_default", False)),
             }
             break
     # English-only ".en" variants (tiny.en, base.en, …) are not in the catalog but are
@@ -91,6 +95,8 @@ def get_active_local_model(
                     "supports_translation": m.get("supports_translation", True),
                     "supports_diarization": m.get("supports_diarization", True),
                     "language_support": m.get("language_support", "multilingual"),
+                    "vram_hint_gb": m.get("vram_hint_gb"),
+                    "is_default": bool(m.get("is_default", False)),
                 }
                 break
 

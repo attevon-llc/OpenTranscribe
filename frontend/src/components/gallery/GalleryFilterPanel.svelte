@@ -116,7 +116,10 @@
       height: calc(100vh - var(--content-top));
       height: calc(100dvh - var(--content-top));
       background: var(--surface-color);
-      z-index: var(--z-modal);
+      /* A drawer under the navbar, not a dialog: on the dropdown tier like the search page's
+         rail, so the navbar (--z-navbar, which holds the open mobile menu) and the menu's scrim
+         (Navbar.svelte .mobile-overlay) cover it. On --z-modal it painted over the open menu. */
+      z-index: var(--z-dropdown);
       transition: inset-inline-start var(--duration-slow) ease;
       border-inline-end: 1px solid var(--border-color);
       border-top: 1px solid var(--border-color);

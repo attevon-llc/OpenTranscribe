@@ -34,7 +34,11 @@ def postgres_container() -> str:
 
 
 def load_redis_url(env_file: Path = REPO_ENV_FILE) -> str:
-    """Build the Redis URL: BENCHMARK_REDIS_URL, else .env's password and the resolved stack's port."""
+    """Build the Redis URL: BENCHMARK_REDIS_URL, else .env's password and the resolved stack's port.
+
+    Raises:
+        SystemExit: Neither is set and no stack publishes a Redis port.
+    """
     explicit = os.environ.get('BENCHMARK_REDIS_URL', '')
     if explicit:
         return explicit
@@ -51,6 +55,13 @@ def load_redis_url(env_file: Path = REPO_ENV_FILE) -> str:
     # The port is the stack's PUBLISHED one (an exported REDIS_PORT, else the resolved project),
     # never the .env value: a --fresh stack publishes at an offset the .env does not know.
     port = _stack_target().observed_port('REDIS_PORT')
+    if not port:
+        # Same refusal as cleanup-test-data's resolver: never a URL with no port, and never
+        # the live stack's stock port guessed in its place.
+        raise SystemExit(
+            'stack-target: no REDIS_PORT resolved '
+            '(export BENCHMARK_REDIS_URL or REDIS_PORT, or start a stack)'
+        )
     if password:
         return f'redis://:{password}@localhost:{port}/0'
     return f'redis://localhost:{port}/0'

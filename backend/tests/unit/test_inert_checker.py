@@ -30,7 +30,13 @@ from app.core.inert_reach import ReachabilityModel
 
 #: Every safe-method route of the real app that reaches a Celery publish, with where.
 GET_ROUTES_THAT_ENQUEUE: dict[str, str] = {
-    "GET /api/files/{file_uuid}": "redaction_gate.py: lazy redaction scan via the detail body",
+    "GET /api/files/{file_uuid}": (
+        "redaction_gate.py: lazy redaction scan via the detail body; detail_response.py: "
+        "queue missing analytics (skipped in DEMO_MODE)"
+    ),
+    "GET /api/files/{file_uuid}/analytics": (
+        "detail_response.py: queue missing analytics (skipped in DEMO_MODE)"
+    ),
     "GET /api/files/{file_uuid}/segments": "redaction_gate.py: lazy redaction scan",
     "GET /api/files/{file_uuid}/subtitles": "redaction_gate.py: lazy redaction scan",
     "GET /api/files/{file_uuid}/captions": "redaction_gate.py: lazy redaction scan",
@@ -39,6 +45,9 @@ GET_ROUTES_THAT_ENQUEUE: dict[str, str] = {
     "GET /api/admin/stats": "admin_system_metrics.py: on-demand system.update_gpu_stats",
     "GET /api/system/stats": "admin_system_metrics.py: on-demand system.update_gpu_stats",
     "GET /api/auth/oidc/callback": "group_file_index_service.py: access reindex on group sync",
+    "GET /api/speaker-profiles/speakers/{speaker_uuid}/suggestions": (
+        "repair.py: index self-heal after a failed kNN read (skipped in DEMO_MODE)"
+    ),
 }
 
 #: Safe-method routes that must stay clean: if one of these is flagged, the model over-reaches.
@@ -179,7 +188,13 @@ class TestRouteModel:
         missing = sorted(set(GET_ROUTES_THAT_ENQUEUE) - set(flagged))
 
         assert missing == []
-        assert "redaction_detect_task.delay()" in flagged["GET /api/files/{file_uuid}"].witness
+        # One witness per route: the detail route now reaches the analytics queue first, so
+        # the lazy redaction chain is pinned on a route that has only that one.
+        assert (
+            "redaction_detect_task.delay()"
+            in flagged["GET /api/files/{file_uuid}/segments"].witness
+        )
+        assert "analyze_transcript_task" in flagged["GET /api/files/{file_uuid}"].witness
         assert "send_task()" in flagged["GET /api/system/stats"].witness
 
     def test_the_real_app_enqueues_on_exactly_the_known_get_routes(self, live_findings):

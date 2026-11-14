@@ -103,7 +103,7 @@ def test_self_heal_is_dispatched_once_per_cooldown(monkeypatch):
 
     sent: list[str] = []
     fake_redis = _FakeRedis()
-    monkeypatch.setattr(redis_module, "get_redis", lambda: fake_redis)
+    monkeypatch.setattr(redis_module, "get_request_redis", lambda: fake_redis)
     monkeypatch.setattr(
         celery_module.celery_app, "send_task", lambda name, *a, **k: sent.append(name)
     )
@@ -111,6 +111,28 @@ def test_self_heal_is_dispatched_once_per_cooldown(monkeypatch):
     assert repair.request_index_selfheal("speakers") is True
     assert repair.request_index_selfheal("speakers") is False
     assert sent == ["search_index_selfheal"]
+
+
+def test_self_heal_is_never_requested_on_the_public_demo(monkeypatch):
+    """A failed read on the demo must not publish: it has no worker and refuses every publish,
+    so ``send_task`` would raise ``DemoPublishRefusedError`` out of a GET (#628)."""
+    from app.core import celery as celery_module
+    from app.core import redis as redis_module
+    from app.core.config import settings
+
+    sent: list[str] = []
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(settings, "DEMO_MODE", True)
+    # Both clients answer, so only the demo check can be what stops the publish.
+    monkeypatch.setattr(redis_module, "get_request_redis", lambda: fake_redis)
+    monkeypatch.setattr(redis_module, "get_redis", lambda: fake_redis)
+    monkeypatch.setattr(
+        celery_module.celery_app, "send_task", lambda name, *a, **k: sent.append(name)
+    )
+
+    assert repair.request_index_selfheal("speakers") is False
+    assert sent == []
+    assert fake_redis.keys == {}, "the cooldown must not be spent on a heal never requested"
 
 
 class _StubConnection(Connection):

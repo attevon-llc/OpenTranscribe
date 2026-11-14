@@ -422,7 +422,9 @@ def test_a_replayed_matching_pass_does_not_relabel_a_speaker_it_already_labeled(
     monkeypatch.setattr(su.speaker_lookups, "speakers_by_id", lambda _db, _ids: {5: speaker})
     monkeypatch.setattr(su, "store_speaker_match", lambda *_a: side_effects.append("match"))
     monkeypatch.setattr(su, "touch_profile_interaction", lambda *_a: side_effects.append("touch"))
-    monkeypatch.setattr(su, "_update_profile_embedding", lambda *_a: side_effects.append("rebuild"))
+    monkeypatch.setattr(
+        su, "_update_profile_embedding", lambda *_a, **_k: side_effects.append("rebuild")
+    )
     monkeypatch.setattr(su, "_get_profile_uuid", lambda _db, _pid: "profile-uuid")
     trigger = {
         "id": 1,

@@ -269,10 +269,14 @@ def test_mask_digests_respects_the_force_floor_too():
         id=6, redaction_status="done", redaction_coverage=None, language="en", user_id=1
     )
     facts_q = MagicMock()
-    facts_q.filter.return_value.first.return_value = (digest_row.digest,)
+    # `_load_digest_rows` reads every hit's digest in ONE batched `IN (...)` query, and
+    # it runs BEFORE the per-hit scan probe. Answering in the old per-hit order sent the
+    # hit down the unresolvable branch, where the inline masker's real Presidio happened
+    # to produce the expected text, so this test passed without reaching provenance.
+    facts_q.filter.return_value.all.return_value = [(6, digest_row.digest)]
     seg_q = MagicMock()
     seg_q.filter.return_value.order_by.return_value.all.return_value = [segment_row]
-    db.query.side_effect = [scan_q, facts_q, seg_q]
+    db.query.side_effect = [facts_q, scan_q, seg_q]
 
     with (
         patch(
@@ -288,6 +292,8 @@ def test_mask_digests_respects_the_force_floor_too():
 
     assert masked[0].content == "[REDACTED BUDGET SENTENCE]"
     assert masked[0].was_masked is True
+    # The cached provenance path ran: the sentence's segments were read.
+    seg_q.filter.assert_called_once()
 
 
 # --------------------------------------------------------------------------- #

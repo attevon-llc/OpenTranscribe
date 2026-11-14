@@ -162,7 +162,7 @@ def test_the_export_includes_action_items_and_speaker_analysis(
 
 @pytest.mark.models
 def test_the_admin_force_floor_reaches_the_summary_export(
-    client, db_session, normal_user, user_token_headers
+    client, db_session, normal_user, user_token_headers, resident_pii_analyzer
 ):
     """Mirrors test_summary_redaction.py's admin-force-floor test, for the export route."""
     media_file = _make_file(db_session, normal_user, {"bluf": _NAME_SENTENCES[0]})
@@ -183,7 +183,7 @@ def test_the_admin_force_floor_reaches_the_summary_export(
 
 @pytest.mark.models
 def test_every_section_is_masked_not_only_the_first(
-    client, db_session, normal_user, user_token_headers
+    client, db_session, normal_user, user_token_headers, resident_pii_analyzer
 ):
     """The same name in three separate sections must be masked in all three — the
     anti-batching property from test_summary_redaction.py, re-checked on this route."""

@@ -15,7 +15,7 @@ org-admin, so the guard 403s and the org-scoped surfaces are unreachable.
 
 **OpenSearch is a fake cluster, not a patched-out function.** The erasure code
 under test — ``_erase_speaker_voiceprints`` and ``_cleanup_opensearch_for_file``
-— runs in full against ``_FakeOpenSearch``. Patching those two out (which every
+— runs in full against ``ErasureCluster`` (``fixtures/erasure_cluster.py``). Patching those two out (which every
 test here used to do) made ``voiceprints_deleted`` an assertion on the mock's own
 return value: replacing the whole body of ``_erase_speaker_voiceprints`` with
 ``return 0`` failed no test in the repo, on the function whose docstring calls it
@@ -30,7 +30,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
-from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
+from fixtures.erasure_cluster import ErasureCluster
 
 from app.api.deps_context import require_org_admin
 from app.auth.audit_events import AuditOutcome
@@ -98,88 +98,6 @@ class World:
         self.__dict__.update(kw)
 
 
-def _unavailable(api: str) -> OpenSearchConnectionError:
-    """The exception opensearch-py raises when the cluster cannot be reached.
-
-    Built with opensearch-py's own three-argument shape (``status``, ``error``,
-    ``info``) because ``ConnectionError.__str__`` reads ``args[1]`` and
-    ``args[2]`` — a one-argument construction blows up on ``str(e)``, in the
-    error-reporting code the test exists to exercise.
-    """
-    return OpenSearchConnectionError("N/A", f"{api}: connection refused", Exception("refused"))
-
-
-class _FakeIndices:
-    def __init__(self, cluster: "_FakeOpenSearch"):
-        self._cluster = cluster
-
-    def exists(self, index: str) -> bool:
-        self._cluster.maybe_fail("indices.exists")
-        return index not in self._cluster.absent_indices
-
-    def exists_alias(self, name: str) -> bool:
-        self._cluster.maybe_fail("indices.exists")
-        return False
-
-    def refresh(self, index: str) -> None:
-        """A ``count`` is a search and sees only what the last refresh made visible.
-
-        The chunks-index survivor count forces one first (#435), so unrefreshed
-        survivors of a delete that failed part-way cannot read as gone. Recorded
-        rather than ignored so a test can assert it happened.
-        """
-        self._cluster.maybe_fail("indices.refresh")
-        self._cluster.refreshed.append(index)
-
-
-class _FakeOpenSearch:
-    """A stand-in cluster whose answer to each API call the test chooses.
-
-    OpenSearch itself is not the system under test — the app's behaviour when a
-    store cannot *prove* the subject's documents are gone is. So the erasure
-    functions run unmodified and talk to this.
-
-    Args:
-        deleted: ``deleted`` count each ``delete_by_query`` reports.
-        counts: Per-index survivor counts returned by ``count`` (default 0).
-        failures: ``failures`` list each ``delete_by_query`` reports — the way
-            OpenSearch reports a *partial* sweep, in the body, without raising.
-        fail: API names (``delete``, ``delete_by_query``, ``count``,
-            ``indices.exists``, ``indices.refresh``) that raise "cluster
-            unreachable" instead.
-        absent_indices: Index names ``indices.exists`` answers False for.
-    """
-
-    def __init__(self, *, deleted=0, counts=None, failures=None, fail=(), absent_indices=()):
-        self.deleted = deleted
-        self.counts = counts or {}
-        self.failures = list(failures or [])
-        self.fail = set(fail)
-        self.absent_indices = set(absent_indices)
-        self.indices = _FakeIndices(self)
-        self.deleted_docs: list[tuple[str, str]] = []
-        self.delete_by_query_calls: list[tuple[str, dict]] = []
-        self.refreshed: list[str] = []
-
-    def maybe_fail(self, api: str) -> None:
-        if api in self.fail:
-            raise _unavailable(api)
-
-    def delete(self, index, id):  # noqa: A002 — opensearch-py's parameter name
-        self.maybe_fail("delete")
-        self.deleted_docs.append((index, str(id)))
-        return {"result": "deleted"}
-
-    def delete_by_query(self, index, body, refresh=False, conflicts=None):
-        self.maybe_fail("delete_by_query")
-        self.delete_by_query_calls.append((index, body))
-        return {"deleted": self.deleted, "failures": self.failures}
-
-    def count(self, index, body=None):
-        self.maybe_fail("count")
-        return {"count": self.counts.get(index, 0)}
-
-
 @pytest.fixture(autouse=True)
 def _no_receipt_measurement():
     """These tests pin what the DESTROY reports with a stand-in cluster and an uncommitted
@@ -212,7 +130,7 @@ def _no_receipt_measurement():
 
 @pytest.fixture()
 def fake_opensearch():
-    """Install a :class:`_FakeOpenSearch` at every attribute the erasure reads.
+    """Install an :class:`ErasureCluster` at every attribute the erasure reads.
 
     Three, because the client is read three different ways: the package
     attribute (the erasure service and the file cleanup), the ``client``
@@ -225,7 +143,7 @@ def fake_opensearch():
 
     @contextmanager
     def _install(**kwargs):
-        cluster = _FakeOpenSearch(**kwargs)
+        cluster = ErasureCluster(**kwargs)
         with (
             patch("app.services.opensearch_service.opensearch_client", cluster),
             patch("app.services.opensearch_service.client.opensearch_client", cluster),

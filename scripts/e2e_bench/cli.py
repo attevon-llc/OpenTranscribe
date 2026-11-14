@@ -9,6 +9,7 @@ import time
 
 import redis
 import requests
+from bench_common import load_redis_url
 
 from e2e_bench.backend_api import (
     get_auth_token,
@@ -20,7 +21,6 @@ from e2e_bench.backend_api import (
 )
 from e2e_bench.config import (
     DEFAULT_BACKEND_URL,
-    DEFAULT_REDIS_URL,
     INTER_ITERATION_WAIT,
     POLL_TIMEOUT,
 )
@@ -80,7 +80,11 @@ Examples:
     )
     parser.add_argument('--output', default='benchmark_results.csv', help='Output CSV path')
     parser.add_argument('--backend-url', default=DEFAULT_BACKEND_URL, help='Backend URL')
-    parser.add_argument('--redis-url', default=DEFAULT_REDIS_URL, help='Redis URL')
+    parser.add_argument(
+        '--redis-url',
+        default=None,
+        help='Redis URL (default: BENCHMARK_REDIS_URL, else the resolved stack)',
+    )
     parser.add_argument(
         '--timeout',
         type=int,
@@ -128,7 +132,8 @@ Examples:
         else:
             print('  WARNING: Could not fetch file metadata', file=sys.stderr)
 
-    r = redis.from_url(args.redis_url, decode_responses=False)
+    # Resolved only when the flag is absent: an explicit URL must work with no stack running.
+    r = redis.from_url(args.redis_url or load_redis_url(), decode_responses=False)
 
     all_results: list[dict] = []
     all_vram: list[dict] = []

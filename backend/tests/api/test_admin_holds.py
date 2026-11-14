@@ -23,7 +23,6 @@ from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
 from app.models.audit_outbox import AuditOutbox
-from app.models.content_hold import ContentHold
 from app.models.media import MediaFile
 from app.services import audit_outbox
 from app.services import content_hold_service as holds
@@ -100,7 +99,7 @@ def test_a_regular_user_can_neither_read_nor_place_nor_release(client, gov, oper
         assert {r.status_code for r in answers} == {status.HTTP_403_FORBIDDEN}
         assert all(REASON not in r.text for r in answers)
     assert hold_state(gov.db, f.id).platform_hold_uuids == (hold_uuid,)
-    assert gov.db.query(ContentHold).count() == 1
+    assert [str(h.uuid) for h in gov.new_holds()] == [hold_uuid]
 
 
 @pytest.mark.parametrize("role", ["admin", "super_admin"])
@@ -181,7 +180,7 @@ def test_a_missing_file_is_a_404_and_one_poisons_the_whole_request(client, gov, 
     assert missing.status_code == mixed.status_code == status.HTTP_404_NOT_FOUND
     assert missing.text == mixed.text
     assert not hold_state(gov.db, real.id).held
-    assert gov.db.query(ContentHold).count() == 0
+    assert gov.new_holds() == []
 
 
 @pytest.mark.parametrize("reason", ["", "too short", "x" * 2001])
@@ -201,8 +200,10 @@ def test_release_keeps_the_record_and_a_second_release_is_a_409(client, gov, ope
     with gov.acting_as(operator, org=None):
         released = client.post(f"{HOLDS}/{hold_uuid}/release", json={"reason": REASON})
         again = client.post(f"{HOLDS}/{hold_uuid}/release", json={"reason": REASON})
-        active = client.get(HOLDS).json()
-        history = client.get(HOLDS, params={"active_only": "false"}).json()
+        active = gov.own_platform_listing(client.get(HOLDS).json(), active_only=True)
+        history = gov.own_platform_listing(
+            client.get(HOLDS, params={"active_only": "false"}).json(), active_only=False
+        )
     assert released.status_code == status.HTTP_200_OK, released.text
     assert released.json()["active"] is False and released.json()["release_reason"] == REASON
     assert released.json()["released_by_display"] == operator.full_name
@@ -262,7 +263,7 @@ def test_a_missing_collection_is_a_404(client, gov, operator):
         client, gov, operator, scope="collection", collection_uuid=str(uuid_pkg.uuid4())
     )
     assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert gov.db.query(ContentHold).count() == 0
+    assert gov.new_holds() == []
 
 
 # --------------------------------------------------------------------------- #
@@ -277,7 +278,9 @@ def test_an_organizations_hold_is_a_404_here_and_never_listed(client, gov, opera
     ).hold
     gov.db.commit()
     with gov.acting_as(operator, org=None):
-        listed = client.get(HOLDS, params={"active_only": "false"}).json()
+        listed = gov.own_platform_listing(
+            client.get(HOLDS, params={"active_only": "false"}).json(), active_only=False
+        )
         read = client.get(f"{HOLDS}/{org_hold.uuid}")
         released = client.post(f"{HOLDS}/{org_hold.uuid}/release", json={"reason": REASON})
     assert listed == {"holds": [], "total": 0}

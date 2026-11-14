@@ -497,6 +497,9 @@ pytest_plugins = [
     # `privacy_world` / `privacy_allows_all`: the real privacy policy (#1280) read from the
     # test's own rows, and its opt-out for suites that pass fake file ids. Opt-in.
     "fixtures.privacy_world",
+    # `resident_pii_analyzer`: the startup warm-up a deployment runs, so a test driving live
+    # detection through an endpoint is not refused a request-thread model build. Opt-in.
+    "fixtures.resident_detectors",
     # pytest's own bundled plugin, enabling the `pytester` fixture — used by
     # unit/test_e2e_base_url_precedence.py to run a real, isolated pytest subprocess
     # against a copy of tests/e2e/pytest.ini (issue #965). It contributes no fixtures

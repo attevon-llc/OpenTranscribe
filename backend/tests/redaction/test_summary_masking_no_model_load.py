@@ -8,6 +8,7 @@ import types
 import pytest
 
 from app.core.redaction_config import EffectiveRedactionConfig
+from app.services.redaction import detectors
 from app.services.redaction.detectors import pii_presidio
 from app.services.redaction.detectors import toxicity
 
@@ -18,6 +19,10 @@ def cold(monkeypatch):
     monkeypatch.setattr(pii_presidio, "_analyzer", None)
     monkeypatch.setattr(pii_presidio, "_load_failed", False)
     monkeypatch.setattr(toxicity, "_pipes", {})
+    # A refusal asks for a background warm-up, which would build through the recording
+    # stubs below on another thread and land in ``builds`` after the fact. That request is
+    # covered by test_refusal_requests_a_background_warmup_rate_limited.
+    monkeypatch.setattr(detectors, "_request_warmup", lambda: None)
     monkeypatch.setattr(pii_presidio, "_build_analyzer", lambda _g: builds.append("pii"))
     monkeypatch.setitem(
         sys.modules, "transformers", types.SimpleNamespace(pipeline=lambda *a, **k: None)

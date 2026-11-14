@@ -27,7 +27,6 @@ app/api/endpoints/files/bulk_actions.py::bulk_file_action  # per-file results li
 app/api/endpoints/speakers_merge.py::_refresh_analytics_after_merge  # analytics refresh after a committed merge
 app/api/endpoints/speakers_profile_workflow.py::_clear_video_cache_for_speaker  # cache clear after a committed update
 app/api/endpoints/speakers_suggestions.py::_reject_speaker_suggestion  # chunk-plane label sync is re-queued by the reconcile sweep
-app/api/endpoints/transcript_segments.py::_handle_speaker_change  # analytics refresh after a committed segment edit
 app/api/endpoints/summarization.py::_queue_topic_companion  # reports the companion as UNAVAILABLE; the summary itself is queued
 app/api/endpoints/prompts_sharing.py::get_shared_prompt_library  # the tag filter list is optional decoration on the library
 

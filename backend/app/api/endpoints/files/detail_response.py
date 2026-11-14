@@ -13,6 +13,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.error_handlers import ErrorHandler
+from app.core.config import settings
 from app.core.db_overload import reraise_db_overload
 from app.core.env import env_bool
 from app.core.exceptions import DomainError
@@ -160,7 +161,6 @@ def set_file_urls(db_file: MediaFile, bypass: PlatformBypass = PlatformBypass.no
         bypass: The request's platform bypass; under a support-access grant the presigned
             thumbnail URL is capped to a few minutes (issue #1122).
     """
-    from app.core.config import settings
     from app.services.file_availability import is_unavailable_for
     from app.services.minio_service import get_file_url
 
@@ -225,6 +225,10 @@ def _get_or_compute_analytics(
     # against "completed" and was always True (issue #272).
     if analytics or file_status != FileStatus.COMPLETED or not file_uuid:
         return analytics
+    if settings.DEMO_MODE:
+        # A read on the public demo enqueues nothing (#628): it runs no worker and refuses
+        # every publish, so queueing here would turn the GET into a 500.
+        return None
 
     from app.tasks.analytics_dispatch import dispatch_analytics
 

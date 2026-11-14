@@ -12,12 +12,18 @@ counts with no error.
 These are API-level tests against a real Postgres session (``db_session``/``client``
 fixtures) rather than a mocked one, because the bug is specifically about a STORED value
 staying stale — a mock would have to fake the very staleness being tested.
+
+The edit no longer recomputes inline: after the response it queues ``analyze_transcript``
+for the file (``crud._publish_text_edit_followups``, debounced in ``analytics_dispatch``).
+The suite has no broker, so the queued call is recorded and the test then runs what that
+task runs, ``AnalyticsService.compute_and_save_analytics``, against the edited rows.
 """
 
 from __future__ import annotations
 
 import uuid
 
+import pytest
 from fastapi import status
 
 from app.core.enums import FileStatus
@@ -54,8 +60,20 @@ def _make_file_with_segment(db_session, owner, *, text: str) -> tuple[MediaFile,
     return media_file, segment
 
 
+@pytest.fixture
+def queued_analytics(monkeypatch) -> list[dict]:
+    """Every ``analyze_transcript`` the request queued, by its kwargs."""
+    from app.tasks.analytics import analyze_transcript_task
+
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        analyze_transcript_task, "apply_async", lambda **kw: calls.append(kw["kwargs"])
+    )
+    return calls
+
+
 def test_editing_segment_text_updates_the_word_count(
-    client, user_token_headers, normal_user, db_session
+    client, user_token_headers, normal_user, db_session, queued_analytics
 ):
     media_file, segment = _make_file_with_segment(db_session, normal_user, text="one two three")
 
@@ -74,7 +92,13 @@ def test_editing_segment_text_updates_the_word_count(
         json={"text": "one two three four five six seven eight"},
     )
     assert edit_response.status_code == status.HTTP_200_OK
+    assert queued_analytics == [{"file_uuid": str(media_file.uuid)}], (
+        "a text edit must queue the analytics refresh for its file"
+    )
 
+    # What the queued task does once a worker picks it up, on the rows the edit committed.
+    db_session.expire_all()
+    assert AnalyticsService.compute_and_save_analytics(db_session, media_file.id)
     after = client.get(
         f"/api/files/{media_file.uuid}/analytics", headers=user_token_headers
     ).json()["analytics"]
@@ -110,7 +134,7 @@ def test_the_reindex_dispatch_from_666_still_fires_alongside_the_analytics_refre
 
 
 def test_a_non_text_edit_does_not_refresh_analytics(
-    client, user_token_headers, normal_user, db_session
+    client, user_token_headers, normal_user, db_session, queued_analytics
 ):
     """``text_changed`` is the gate for BOTH the reindex dispatch and the analytics
     refresh — a start_time-only edit must not recompute analytics."""
@@ -128,6 +152,7 @@ def test_a_non_text_edit_does_not_refresh_analytics(
         json={"start_time": 1.5},
     )
     assert response.status_code == status.HTTP_200_OK
+    assert queued_analytics == [], "a timing-only edit must not queue an analytics refresh"
 
     after = client.get(
         f"/api/files/{media_file.uuid}/analytics", headers=user_token_headers

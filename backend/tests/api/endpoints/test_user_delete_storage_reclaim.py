@@ -446,12 +446,16 @@ def test_speaker_and_profile_embeddings_are_removed_only_after_the_rows_are_comm
     ``_delete_user_speakers`` used to call ``remove_speaker_embedding`` once per
     speaker — and ``_delete_user_owned_records`` called ``remove_profile_embedding``
     once per profile — from INSIDE ``delete_admin_user``'s ``db.begin_nested()``
-    savepoint. This spies on ``Session.commit`` and both OpenSearch removal functions
-    into one ORDERED list and asserts every removal call follows the commit — the same
+    savepoint. This spies on ``Session.commit`` and on the erasure's OpenSearch client
+    into one ORDERED list and asserts every removal follows the commit — the same
     shape as ``test_the_objects_are_removed_only_after_the_rows_are_committed`` above,
     which pins the same rule for object storage.
+
+    The removal is the speaker family's one ``_bulk`` delete (``opensearch_erasure``
+    since the bulk erasure change), so the client is the spy point: it sees every
+    removal whichever helper sends it.
     """
-    import app.services.opensearch_service as os_mod
+    import app.services.opensearch_erasure as ose
 
     media_file = _make_media_file(db_session, int(normal_user.id))
     speaker = _make_speaker(db_session, int(normal_user.id), int(media_file.id))
@@ -468,17 +472,8 @@ def test_speaker_and_profile_embeddings_are_removed_only_after_the_rows_are_comm
         order.append("commit")
         return real_commit()
 
-    def _speaker_spy(speaker_uuid: str):
-        order.append(f"speaker:{speaker_uuid}")
-        return True
-
-    def _profile_spy(profile_uuid: str):
-        order.append(f"profile:{profile_uuid}")
-        return True
-
     monkeypatch.setattr(db_session, "commit", _commit_spy)
-    monkeypatch.setattr(os_mod, "remove_speaker_embedding", _speaker_spy)
-    monkeypatch.setattr(os_mod, "remove_profile_embedding", _profile_spy)
+    monkeypatch.setattr(ose, "_require_client", lambda: _ErasureClient(order))
 
     response = client.delete(f"/api/admin/users/{normal_user.uuid}", headers=admin_token_headers)
     assert response.status_code == status.HTTP_200_OK, response.text
@@ -515,18 +510,13 @@ def test_a_speaker_embedding_removal_failure_is_reported_as_partial(
     """
     import app.services.file_cleanup_service as fcs
     import app.services.opensearch_erasure as ose
-    import app.services.opensearch_service as os_mod
     from app.services import account_security_service as acct_module
 
     media_file = _make_media_file(db_session, int(normal_user.id))
     _make_speaker(db_session, int(normal_user.id), int(media_file.id))
 
-    def _boom(speaker_uuid: str):
-        raise RuntimeError(f"simulated OpenSearch outage for {speaker_uuid}")
-
-    monkeypatch.setattr(os_mod, "remove_speaker_embedding", _boom)
+    monkeypatch.setattr(ose, "_require_client", lambda: _ErasureClient([], fail_deletes=True))
     monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", lambda target, file_uuid: [])
-    monkeypatch.setattr(ose, "_count_surviving", lambda index, query: 0)
     # The storage leg must SUCCEED for this test to measure what its docstring claims.
     # Left real, the result depends on whether object storage happens to be reachable:
     # locally the dev stack answers and only "speakers" fails, but CI has no MinIO, so
@@ -559,6 +549,37 @@ def test_a_speaker_embedding_removal_failure_is_reported_as_partial(
     assert len(events) == 1
     assert events[0]["outcome"] is AuditOutcome.PARTIAL
     assert events[0]["details"]["stages"] == ["speakers"]
+
+
+class _ErasureClient:
+    """The OpenSearch client the speaker-family erasure talks to, recording what it removes.
+
+    Each ``_bulk`` delete lands in ``order`` as ``speaker:<uuid>`` (a voiceprint) or
+    ``profile:<uuid>`` (a ``profile_<uuid>`` document). The survivor read finds nothing.
+    ``fail_deletes`` makes the bulk request raise, the way an unreachable cluster does.
+    """
+
+    def __init__(self, order: list[str], *, fail_deletes: bool = False) -> None:
+        self.order = order
+        self.fail_deletes = fail_deletes
+        self.indices = self
+
+    def bulk(self, body: list[dict]) -> dict:
+        if self.fail_deletes:
+            raise RuntimeError("simulated OpenSearch outage on the bulk delete")
+        for action in body:
+            doc_id = str(action["delete"]["_id"])
+            if doc_id.startswith("profile_"):
+                self.order.append(f"profile:{doc_id.removeprefix('profile_')}")
+            elif not doc_id.startswith("cluster_"):
+                self.order.append(f"speaker:{doc_id}")
+        return {"errors": False, "items": []}
+
+    def refresh(self, **_kwargs: object) -> None:
+        return None
+
+    def search(self, **_kwargs: object) -> dict:
+        return {"aggregations": {"per_index": {"buckets": []}}}
 
 
 def _calls(func_node: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:

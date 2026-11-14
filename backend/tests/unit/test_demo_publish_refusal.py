@@ -40,9 +40,16 @@ def celery_app(monkeypatch):
 
 
 @pytest.fixture
-def a_task(celery_app):
+def a_task(celery_app, monkeypatch):
     from app.tasks.redaction_task import redaction_detect_task
 
+    # An earlier test's ``monkeypatch.setattr(redaction_detect_task, "delay" | "apply_async")``
+    # is undone by setting the OLD bound method back on the instance, and that bound method is
+    # the session-wide ``_skip_celery_dispatch`` stub. Left in place it shadows the real
+    # ``Task.apply_async`` restored above, so nothing would ever reach ``send_task``.
+    for name in ("delay", "apply_async"):
+        if name in vars(redaction_detect_task):
+            monkeypatch.delattr(redaction_detect_task, name)
     return redaction_detect_task
 
 
@@ -99,6 +106,22 @@ def test_a_get_that_would_scan_redaction_claims_nothing_in_demo(demo_on, monkeyp
     redaction_gate._lazy_dispatch_redaction(db=MagicMock(), db_file=MagicMock())
 
     assert claims == []
+
+
+def test_a_get_missing_analytics_queues_nothing_in_demo(demo_on, monkeypatch):
+    from app.api.endpoints.files import detail_response
+    from app.tasks import analytics_dispatch
+
+    queued: list[str] = []
+    monkeypatch.setattr(analytics_dispatch, "dispatch_analytics", queued.append)
+    monkeypatch.setattr(detail_response, "get_file_analytics", lambda _db, _id: None)
+
+    analytics = detail_response._get_or_compute_analytics(
+        MagicMock(), 1, detail_response.FileStatus.COMPLETED, "file-uuid"
+    )
+
+    assert analytics is None
+    assert queued == []
 
 
 def test_refusal_series_exists_at_zero_and_counts_each_refusal(celery_app, demo_on):

@@ -29,6 +29,7 @@ only on mock call args:
 
 from __future__ import annotations
 
+import builtins
 import contextlib
 import json
 import logging
@@ -96,15 +97,18 @@ def _scope_yielding(db_session):
 class FakeRedis:
     """Structural stand-in covering everything ``MigrationProgressService`` and the
     orchestrator's direct ``get_redis()`` lock calls actually use: ``get``/``set`` (with
-    ``nx``/``ex``)/``delete``/``ping``, plus a real ``eval`` that mirrors
+    ``nx``/``ex``)/``delete``/``ping``, the ``hgetall``/``smembers`` reads ``get_status``
+    overlays onto the status blob, plus a real ``eval`` that mirrors
     ``MigrationProgressService._INCREMENT_LUA`` closely enough to drive
-    ``increment_processed`` correctly (json in, atomic-processed-count-increment
-    semantics, json out) — real Redis's Lua script is not available in-process, so this
-    reimplements just the one script this module depends on.
+    ``increment_processed`` correctly (no-op unless the status key exists, a counter
+    hash, a capped set of failed UUIDs) — real Redis's Lua script is not available
+    in-process, so this reimplements just the one script this module depends on.
     """
 
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
+        self.hashes: dict[str, dict[str, str]] = {}
+        self.sets: dict[str, builtins.set[str]] = {}
         self.set_calls: list[dict[str, Any]] = []
         self.delete_calls: list[str] = []
 
@@ -122,31 +126,36 @@ class FakeRedis:
         n = 0
         for k in keys:
             self.delete_calls.append(k)
-            if k in self.store:
-                del self.store[k]
-                n += 1
+            for space in (self.store, self.hashes, self.sets):
+                if k in space:
+                    del space[k]
+                    n += 1
         return n
 
     def ping(self) -> bool:
         return True
 
+    def hgetall(self, key: str) -> dict[str, str]:
+        return dict(self.hashes.get(key, {}))
+
+    def smembers(self, key: str) -> builtins.set[str]:
+        return builtins.set(self.sets.get(key, builtins.set()))
+
     def eval(self, script: str, numkeys: int, *args: Any) -> int:
-        # Issue #657, defect 6: the real Lua script now takes the TTL as a
-        # 5th ARGV (MIGRATION_STATUS_TTL_SECONDS) instead of a bare literal.
-        key, file_uuid, is_failure_flag, now, _ttl = args
-        raw = self.store.get(key)
-        if not raw:
+        status_key, progress_key, failed_key = args[:numkeys]
+        file_uuid, is_failure_flag, now, _ttl, cap = args[numkeys:]
+        if status_key not in self.store:
             return 0
-        status = json.loads(raw)
-        status["processed_files"] = status.get("processed_files", 0) + 1
-        status["last_updated"] = now
-        if is_failure_flag == "1" and file_uuid:
-            failed = status.get("failed_files", [])
-            if file_uuid not in failed:
-                failed.append(file_uuid)
-            status["failed_files"] = failed
-        self.store[key] = json.dumps(status)
-        return int(status["processed_files"])
+        counters = self.hashes.setdefault(progress_key, {})
+        processed = int(counters.get("processed_files", 0)) + 1
+        counters["processed_files"] = str(processed)
+        counters["last_updated"] = now
+        if is_failure_flag == "1":
+            counters["failed_count"] = str(int(counters.get("failed_count", 0)) + 1)
+            failed = self.sets.setdefault(failed_key, builtins.set())
+            if file_uuid and len(failed) < int(cap):
+                failed.add(file_uuid)
+        return processed
 
 
 class _FakeUuidQuery:

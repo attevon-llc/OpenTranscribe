@@ -13,6 +13,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 
 import pytest
@@ -20,6 +21,8 @@ from sqlalchemy.orm import Session
 
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
+from app.models.content_hold import AUTHORITY_PLATFORM
+from app.models.content_hold import ContentHold
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
@@ -57,9 +60,29 @@ class GovWorld:
     alice: User
     bob: User
     outsider: User
+    #: Hold records in the database before this world was built: uuid -> (authority, active).
+    #: Nothing in the product deletes a hold (a hold and its release are the audit trail), so a
+    #: shared database keeps the released holds of earlier runs, such as the legal-hold e2e.
+    prior_holds: dict[str, tuple[str, bool]] = field(default_factory=dict)
 
     def user(self, label: str) -> User:
         return new_user(self.db, label)
+
+    def new_holds(self) -> list[ContentHold]:
+        """Hold records created since this world was built."""
+        return [h for h in self.db.query(ContentHold).all() if str(h.uuid) not in self.prior_holds]
+
+    def own_platform_listing(self, listed: dict, *, active_only: bool) -> dict:
+        """A platform hold listing with the records that predate this world taken out of it."""
+        prior = sum(
+            1
+            for authority, active in self.prior_holds.values()
+            if authority == AUTHORITY_PLATFORM and (active or not active_only)
+        )
+        return {
+            "holds": [h for h in listed["holds"] if h["uuid"] not in self.prior_holds],
+            "total": listed["total"] - prior,
+        }
 
     def join(self, user: User, org: Organization | None = None, role: str = "org:member") -> None:
         self.db.add(
@@ -176,6 +199,9 @@ def _build_world(db) -> GovWorld:
         db.refresh(org)
         return org
 
+    prior_holds = {
+        str(h.uuid): (h.authority, h.released_at is None) for h in db.query(ContentHold).all()
+    }
     world = GovWorld(
         db=db,
         org=_org("a"),
@@ -184,6 +210,7 @@ def _build_world(db) -> GovWorld:
         alice=new_user(db, "alice"),
         bob=new_user(db, "bob"),
         outsider=new_user(db, "outsider"),
+        prior_holds=prior_holds,
     )
     world.join(world.admin, role="org:admin")
     world.join(world.alice)

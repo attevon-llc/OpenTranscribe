@@ -265,7 +265,8 @@
   .search-input {
     width: 100%;
     min-width: 0;
-    padding: var(--space-2) var(--space-8) var(--space-2) var(--space-3);
+    padding-block: var(--space-2);
+    padding-inline: var(--space-3) var(--space-8);
     font-size: var(--font-size-md);
     box-sizing: border-box;
   }

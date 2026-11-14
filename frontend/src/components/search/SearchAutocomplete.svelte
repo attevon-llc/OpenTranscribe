@@ -260,12 +260,12 @@
   }
 
   .search-input.has-value {
-    padding-right: var(--space-10);
+    padding-inline-end: var(--space-10);
   }
 
   .clear-btn {
     position: absolute;
-    right: 0.5rem;
+    inset-inline-end: 0.5rem;
     top: 0;
     bottom: 0;
     margin: auto 0;

@@ -287,7 +287,8 @@
 
   .enable-hint {
     display: block;
-    margin: var(--space-1) 0 0 var(--space-12);
+    margin: var(--space-1) 0 0;
+    margin-inline-start: var(--space-12);
   }
 
   .fields-grid {

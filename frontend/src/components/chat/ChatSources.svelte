@@ -22,6 +22,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
   import { citationQuery, formatClock } from '$lib/utils/chatMarkdown';
   import type { ChatSource } from '$lib/types/chat';
 
@@ -146,7 +147,7 @@
                       {$t('chat.sources.summaryBadge')}
                     </span>
                   {:else if source.speaker}
-                    <span class="source-speaker">{source.speaker}</span>
+                    <span class="source-speaker">{translateSpeakerLabel(source.speaker)}</span>
                   {/if}
                   {#if !isSummary(source)}
                     <span class="source-time">{formatClock(source.start_time)}</span>

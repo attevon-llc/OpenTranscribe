@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
   import { browser } from '$app/env';
   import type { SpeakerMediaPreviewData } from '$lib/api/speakerClusters';
 
@@ -22,7 +23,7 @@
   <svelte:component this={FloatingPreviewPlayer}
     bind:this={playerRef}
     title={speakerPreviewData.title}
-    subtitle={speakerPreviewData.speaker_name}
+    subtitle={translateSpeakerLabel(speakerPreviewData.speaker_name)}
     currentTime={previewCurrentTime}
     jumpToFileId={speakerPreviewData.file_uuid}
     jumpToTime={previewCurrentTime || speakerPreviewData.start_time}

@@ -11,6 +11,7 @@
   combined, and speakers alone is valid ("everything Dana said, anywhere").
 -->
 <script lang="ts">
+  import { translateSpeakerLabel } from '$lib/i18n';
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
@@ -116,7 +117,7 @@
               on:change={() => toggle(speaker.display_name)}
               data-testid="picker-speaker-checkbox"
             />
-            <span class="row-label">{speaker.display_name}</span>
+            <span class="row-label">{translateSpeakerLabel(speaker.display_name)}</span>
             {#if speaker.media_count !== undefined}
               <span class="row-count">
                 {$t('chat.picker.speakerFileCount', { count: speaker.media_count })}

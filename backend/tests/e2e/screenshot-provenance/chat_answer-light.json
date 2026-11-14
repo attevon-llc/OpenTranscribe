@@ -1,11 +1,11 @@
 {
   "baseline": "__screenshots__/chat_answer-light.png",
-  "captured_at": "2026-11-14T19:29:50Z",
-  "git_sha": "b67bfae7cdd23ae6cce2f949acd2f08bdbfea234",
-  "git_branch": "v070/cap43",
+  "captured_at": "2026-11-14T20:43:21Z",
+  "git_sha": "0b45e71dabf5973e7fa0a967412abadc90fe067d",
+  "git_branch": "v070/neutralcap",
   "git_dirty": false,
   "git_dirty_paths": 0,
-  "reason": "v0.7.0 styling refresh and UI pass fixes",
+  "reason": "v0.7.0 neutral licensed corpus (#43), translated speaker labels",
   "captured_by": "scripts/e2e/update-visual-baselines.sh",
   "stack": {
     "compose_project": "otfresh-visual",
@@ -14,9 +14,9 @@
     "seeded": true,
     "mode": "dev (local source bind-mounted)"
   },
-  "corpus": {"seed_source": "test_audio", "files": [{"filename": "seed_t1_899s_40d403ee_DOGE_s_Findings__Elon_Musk_Protests__and_Medicare_Fraud.m4a", "size": 14721443}, {"filename": "seed_t1_531s_a536922c_Will_the_Gaza_Ceasefire_Hold_.mp4", "size": 18228379}, {"filename": "seed_t1_520s_fa049b47_The_AI_Arms_Race_with_China.mp4", "size": 24469909}], "library_total": 3},
+  "corpus": {"seed_source": "neutral-visual", "corpus_id": "neutral-visual", "corpus_version": 1, "bundle_version": "2026.11.1", "files": [{"filename": "fema-flood-insurance-advocate.mp4", "size": 4800324}, {"filename": "fema-emergency-kit.mp4", "size": 8391745}, {"filename": "voa-en-7897488.mp3", "size": 2336644}, {"filename": "usgs-lecture-geology-up-close-2017.mp4", "size": 15908459}, {"filename": "nasa-escapade-mars-space-weather.mp4", "size": 16950618}], "library_total": 5},
   "change_from_previous": {
-    "status": "NEW",
-    "differing_pixels": ""
+    "status": "identical",
+    "differing_pixels": "0.0000%"
   }
 }

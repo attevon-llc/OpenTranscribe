@@ -39,7 +39,7 @@ Each result is one file: its title, a line of date, duration and relevance, and 
 
 ### Speaker operator
 
-Type `speaker:"Name"` (for example `speaker:"Joe Rogan" china`) to search only within what that speaker said.
+Type `speaker:"Name"` (for example `speaker:"Narrator" mars`) to search only within what that speaker said.
 
 ### Semantic search
 
@@ -88,7 +88,7 @@ Keyword search is a plain-language search; it does not parse Boolean operators. 
 | **Several words** | `project deadline` | Matches transcripts containing the words, ranking passages where they appear close together or in order higher |
 | **Exact phrase** | `"project deadline"` | Matches the exact phrase, with no typo tolerance |
 | **Typo tolerance** | Automatic | Handles typos and minor spelling variations (unquoted queries only) |
-| **Speaker** | `speaker:"Joe Rogan" china` | Searches only that speaker's words |
+| **Speaker** | `speaker:"Narrator" mars` | Searches only that speaker's words |
 
 ### Semantic Search Tips
 

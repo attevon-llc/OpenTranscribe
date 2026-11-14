@@ -166,7 +166,9 @@ def test_a_stored_suggestion_is_not_asked_for_again_unless_forced(extraction):
     "model, why",
     [
         ("mock-error", "the provider rejected the call"),
-        ("mock-gpt", "the reply is markdown with no JSON in it"),
+        # Not mock-gpt: it answers a prompt that spells out the topic schema with that JSON,
+        # as a real model does (#1308). mock-reasoning still replies with the markdown chat text.
+        ("mock-reasoning", "the reply is markdown with no JSON in it"),
         ("mock-empty", "the reply is empty"),
         ("mock-summary-json", "the reply is JSON of the wrong shape"),
     ],

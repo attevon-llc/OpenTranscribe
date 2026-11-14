@@ -281,11 +281,10 @@ def test_the_retriable_error_path_actually_retries_up_to_the_cap(
     ).get()
 
     assert len(fake_service.calls) == 4, "expected 1 initial attempt + 3 retries"
-    assert result == {
-        "status": "error",
-        "message": "Connection timeout",
-        "file_id": media_file.id,
-    }
+    assert result["status"] == "error"
+    assert result["file_id"] == media_file.id
+    # A fixed sentence, never the raw exception text.
+    assert "Connection timeout" not in result["message"]
 
 
 def test_a_terminal_attempt_at_the_retry_cap_writes_the_original_error_and_stops(
@@ -315,11 +314,8 @@ def test_a_terminal_attempt_at_the_retry_cap_writes_the_original_error_and_stops
     ).get()
 
     assert retry_calls == [], "at retries == max_retries, self.retry must never be called"
-    assert result == {
-        "status": "error",
-        "message": "Connection timeout",
-        "file_id": media_file.id,
-    }
+    assert result["status"] == "error"
+    assert "Connection timeout" not in result["message"]
     db_session.refresh(media_file)
     assert media_file.status == FileStatus.ERROR
     assert media_file.last_error_message == "Connection timeout"
@@ -354,7 +350,7 @@ def test_a_download_that_cannot_start_transcription_is_not_reported_as_success(
     ).get()
 
     assert result["status"] == "error"
-    assert "broker down" in result["message"]
+    assert "broker down" not in result["message"]
     assert result["file_id"] == media_file.id
 
 
@@ -400,6 +396,68 @@ def test_the_dispatch_failure_is_logged_with_a_traceback(
     formatted = matching[0].getMessage()
     assert str(media_file.id) in formatted
     assert "broker down" in formatted
+
+
+# --------------------------------------------------------------------------------------
+# 2c. User-visible failure text is a fixed sentence, never the exception (issue #1365)
+# --------------------------------------------------------------------------------------
+
+_SECRET = "/secret/path/cookies.txt on host db-internal.local"
+
+
+def test_a_terminal_download_failure_notifies_without_the_exception_text(
+    monkeypatch, db_session, normal_user, yt_url_seams
+):
+    media_file = _make_media_file(db_session, normal_user)
+    fake_service = _FakeMediaDownloadService(exc=RuntimeError(_SECRET))
+    monkeypatch.setattr(youtube_processing, "MediaDownloadService", lambda: fake_service)
+
+    result = process_youtube_url_task.apply(
+        args=("https://youtu.be/abc123", normal_user.id, str(media_file.uuid)),
+        retries=3,
+    ).get()
+
+    errors = [n for n in yt_url_seams.notifications if n["status"] == FileStatus.ERROR]
+    assert errors, "the user must still be told the download failed"
+    for text in [n["message"] for n in errors] + [result["message"]]:
+        assert "/secret/path" not in text
+        assert "db-internal" not in text
+
+
+def test_a_retry_notification_and_row_message_carry_no_exception_text(
+    monkeypatch, db_session, normal_user, yt_url_seams
+):
+    media_file = _make_media_file(db_session, normal_user)
+    fake_service = _FakeMediaDownloadService(exc=RuntimeError(f"Connection timeout {_SECRET}"))
+    monkeypatch.setattr(youtube_processing, "MediaDownloadService", lambda: fake_service)
+
+    process_youtube_url_task.apply(
+        args=("https://youtu.be/abc123", normal_user.id, str(media_file.uuid)),
+    ).get()
+
+    assert yt_url_seams.notifications
+    for n in yt_url_seams.notifications:
+        assert "/secret/path" not in n["message"]
+
+
+def test_an_unexpected_task_error_notifies_without_the_exception_text(
+    monkeypatch, db_session, normal_user, yt_url_seams
+):
+    media_file = _make_media_file(db_session, normal_user)
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError(_SECRET)
+
+    monkeypatch.setattr(youtube_processing, "get_refreshed_object", _boom)
+
+    result = process_youtube_url_task.apply(
+        args=("https://youtu.be/abc123", normal_user.id, str(media_file.uuid)),
+    ).get()
+
+    errors = [n for n in yt_url_seams.notifications if n["status"] == FileStatus.ERROR]
+    assert errors
+    for text in [n["message"] for n in errors] + [result["message"]]:
+        assert "/secret/path" not in text
 
 
 # --------------------------------------------------------------------------------------

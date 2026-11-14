@@ -28,7 +28,8 @@
 #   DEMO_RESET_CMD       default: demo-reset.sh beside this script
 #   DEMO_STATUS_FILE     default: $DEMO_INSTALL_DIR/demo-status.json (read by the release
 #                        `finish` stage)
-#   DEMO_FRESH_NAME      act on the `--fresh NAME` stack instead of the demo (demo-target.sh)
+#   DEMO_FRESH_NAME      act on the `--fresh NAME` stack instead of the demo (demo-target.sh);
+#                        --dry-run only, `update` cannot address a fresh stack
 # The target compose project is asserted before the first restart or volume delete.
 # Exit: 0 upgraded or already current, 1 upgrade failed (rolled back), 2 misuse,
 #       3 another upgrade/reset holds the lock, 4 rollback ALSO failed (page someone),
@@ -40,7 +41,7 @@ DRY_RUN=0
 case "${1:-}" in
     --dry-run) DRY_RUN=1 ;;
     "") ;;
-    -h | --help) sed -n '2,36p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,37p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
@@ -56,6 +57,14 @@ TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
 cd "$INSTALL_DIR"
 if [ ! -f .env ] || [ ! -x ./opentranscribe.sh ]; then
     echo "not an OpenTranscribe install directory: $INSTALL_DIR" >&2
+    exit 2
+fi
+# `update` runs opentranscribe.sh's own compose chain, which has no way to load a fresh stack's
+# container_name overlay (.fresh/NAME.yml): on a shared host it would take the fresh stack down and
+# then collide with the live stack's container names. Only the dry run is meaningful there.
+if [ -n "${DEMO_FRESH_NAME:-}" ] && [ "$DRY_RUN" != 1 ]; then
+    echo "DEMO_FRESH_NAME: opentranscribe.sh update cannot address a --fresh stack; use --dry-run," >&2
+    echo "or run the real upgrade on a demo install (docs/design/628_public_demo_plan.md, V5)" >&2
     exit 2
 fi
 

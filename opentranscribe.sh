@@ -1485,7 +1485,7 @@ perform_phased_restart() {
     local compose_files="$1"
     local -a compose_chain
     read -r -a compose_chain <<< "$compose_files"
-    local backend_port waited max_wait state
+    local backend_port waited max_wait state failure
 
     backend_port=$(read_env_value BACKEND_PORT)
     backend_port="${backend_port:-5174}"
@@ -1504,34 +1504,34 @@ perform_phased_restart() {
     echo -e "${BLUE}⏳ Waiting for backend to become healthy (up to 15 minutes)...${NC}"
     waited=0
     max_wait=900
+    failure="failed to become healthy within ${max_wait}s"
     while [ $waited -lt $max_wait ]; do
         if curl -sf --connect-timeout 2 --max-time 4 \
             "http://localhost:${backend_port}/health" >/dev/null 2>&1; then
             echo -e "${GREEN}✓ Backend healthy after ${waited}s${NC}"
+            failure=""
             break
         fi
-        # Hard-fail detection: don't burn the full 15 minutes on a dead container.
-        state=$(docker inspect opentranscribe-backend \
-            --format '{{.State.Status}}:{{.State.ExitCode}}' 2>/dev/null || echo "unknown:?")
+        # Hard-fail detection: don't burn the full 15 minutes on a dead container. Asked through the
+        # chain (this project's backend), never by container name: a --fresh overlay renames it.
+        state=$(docker compose "${compose_chain[@]}" ps -a --format '{{.State}}:{{.ExitCode}}' backend 2>/dev/null || true)
         case "$state" in
             exited:0|restarting:*)
                 # Clean exit or restart-policy cycling; keep polling.
                 ;;
             exited:*)
-                echo -e "${RED}❌ Backend exited with non-zero code: $state${NC}"
-                echo -e "${YELLOW}Last 40 lines of backend logs:${NC}"
-                docker logs --tail 40 opentranscribe-backend 2>&1 || true
-                return 1
+                failure="exited with non-zero code: $state"
+                break
                 ;;
         esac
         sleep 5
         waited=$((waited + 5))
     done
 
-    if [ $waited -ge $max_wait ]; then
-        echo -e "${RED}❌ Backend failed to become healthy within ${max_wait}s${NC}"
+    if [ -n "$failure" ]; then
+        echo -e "${RED}❌ Backend ${failure}${NC}"
         echo -e "${YELLOW}Last 40 lines of backend logs:${NC}"
-        docker logs --tail 40 opentranscribe-backend 2>&1 || true
+        docker compose "${compose_chain[@]}" logs --tail 40 backend 2>&1 || true
         return 1
     fi
 

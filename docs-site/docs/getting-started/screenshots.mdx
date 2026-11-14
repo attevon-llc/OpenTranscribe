@@ -23,7 +23,7 @@ The following animation shows the complete end-to-end workflow from upload to AI
 
 <div style={{textAlign: "center", margin: "2rem 0"}}>
   <Img src="/img/opentranscribe-workflow.gif" alt="OpenTranscribe Complete Workflow" style={{maxWidth: "100%", width: "800px", borderRadius: "8px", boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)"}} />
-  <p style={{marginTop: "1rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Complete workflow: Login → Upload → Process → Transcribe → Speaker Identification → AI Tags & Collections</p>
+  <p style={{marginTop: "1rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Complete workflow: Login → Gallery → Upload → Processing → Transcript → Search → Speaker clusters</p>
 </div>
 
 ---
@@ -71,8 +71,8 @@ The simplest way to add media is to drag and drop files directly into the upload
 ### YouTube Video Import
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/upload/02-add-media-youtube-url-filled.png" alt="YouTube URL upload with playlist" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>YouTube URL tab with playlist URL entered. Supports both individual videos and entire playlists for bulk processing.</p>
+  <Img src="/img/screenshots/upload/02-add-media-youtube-url-filled.png" alt="YouTube URL entered" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Media URL tab with a YouTube link entered. Supports individual videos and whole playlists for bulk processing.</p>
 </div>
 
 Import videos directly from YouTube by pasting a URL. OpenTranscribe automatically detects playlists and can queue all videos for processing in one operation.
@@ -93,8 +93,8 @@ Record audio directly through your browser microphone. Configure quality setting
 ### Initial Transcription Phase
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/processing/01-processing-progress-42-percent-transcription.png" alt="Processing at 42%" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Processing view at 42% completion during initial transcription. Progress timeline shows Setup and Transcription stages, moving toward Analysis.</p>
+  <Img src="/img/screenshots/processing/01-processing-progress-42-percent-transcription.png" alt="Processing at 43%" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Processing view at 43% during AI transcription. The progress timeline shows Setup done and Transcription active, with Analysis and Finalization to come.</p>
 </div>
 
 During processing, you can monitor real-time progress with detailed status messages. The progress bar shows which stage is active: Setup, Transcription, or Analysis.
@@ -102,8 +102,8 @@ During processing, you can monitor real-time progress with detailed status messa
 ### Word-Level Alignment
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/processing/02-processing-progress-50-percent-alignment.png" alt="Word alignment at 50%" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Word-level timestamp alignment in progress. This creates precise timestamps for every word, enabling accurate click-to-seek.</p>
+  <Img src="/img/screenshots/processing/02-processing-progress-50-percent-alignment.png" alt="Analyzing speaker patterns at 55%" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Transcription stage at 55%, analyzing speaker patterns. Word-level timestamps come from the same pass, enabling accurate click-to-seek.</p>
 </div>
 
 Word-level timestamps come from the Whisper model itself (no separate alignment step), allowing precise navigation within your transcript.
@@ -111,8 +111,8 @@ Word-level timestamps come from the Whisper model itself (no separate alignment 
 ### Speaker Diarization
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/processing/03-processing-progress-65-percent-speaker-assignment.png" alt="Speaker assignment at 65%" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Speaker diarization phase at 65% completion. System assigns speakers to transcript segments using voice analysis.</p>
+  <Img src="/img/screenshots/processing/03-processing-progress-65-percent-speaker-assignment.png" alt="Saving the transcript at 75%" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Analysis stage at 75%: the transcript with its speaker assignments is being saved. The first segments already appear on the right.</p>
 </div>
 
 The Analysis phase includes automatic speaker diarization, which identifies different speakers in your audio and assigns unique labels to each.
@@ -120,8 +120,8 @@ The Analysis phase includes automatic speaker diarization, which identifies diff
 ### Real-Time Notifications
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/workflow/01-notifications-panel-youtube-playlist-processing.png" alt="YouTube playlist processing notifications" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Notifications panel showing YouTube playlist detection: "28 of 28 videos queued for download" with individual task progress.</p>
+  <Img src="/img/screenshots/workflow/01-notifications-panel-youtube-playlist-processing.png" alt="Processing notifications for several uploads" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Notifications panel with four uploads processing at once, each with its own progress bar and stage chips (main processing, AI enrichment, transcription).</p>
 </div>
 
 The notifications panel keeps you informed with real-time updates for all processing tasks. For playlists, you'll see each video's progress independently.
@@ -133,8 +133,8 @@ The notifications panel keeps you informed with real-time updates for all proces
 ### Playlist Processing Initialization
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/gallery/10-gallery-bulk-processing-grid.png" alt="12 videos processing" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Gallery showing 12 videos all in "Processing" state from a NASA documentary playlist. Orange badges indicate active processing.</p>
+  <Img src="/img/screenshots/gallery/10-gallery-bulk-processing-grid.png" alt="Four new videos processing" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Gallery with four new uploads in the top row still processing (orange status dots) beside files that are already complete.</p>
 </div>
 
 When you import a YouTube playlist, all videos are queued automatically. Processing happens in parallel for efficient batch operations.
@@ -143,7 +143,7 @@ When you import a YouTube playlist, all videos are queued automatically. Process
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/workflow/09-notifications-multiple-downloads-transcribing.png" alt="Concurrent processing notifications" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Multiple videos downloading and transcribing simultaneously with progress percentages. Demonstrates parallel processing capabilities.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Several videos at different stages at once: one complete, others saving their transcripts. Demonstrates parallel processing.</p>
 </div>
 
 OpenTranscribe efficiently processes multiple videos at once, with downloads and transcriptions running in parallel across available workers.
@@ -152,7 +152,7 @@ OpenTranscribe efficiently processes multiple videos at once, with downloads and
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/11-gallery-videos-completing-with-thumbnails.png" alt="Thumbnails appearing" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Gallery showing transition as thumbnails are automatically generated from video content. Bottom row shows completed videos with visual previews.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Thumbnails are generated from each video as it completes, so the new uploads show visual previews in the gallery.</p>
 </div>
 
 As videos complete processing, thumbnails are automatically extracted to provide visual previews in your gallery.
@@ -160,8 +160,8 @@ As videos complete processing, thumbnails are automatically extracted to provide
 ### Batch Processing Complete
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/gallery/13-gallery-all-completed-overview.png" alt="All 28 videos completed" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Full gallery view with all 28 videos from NASA playlist successfully processed. Diverse space documentary content with thumbnails ready.</p>
+  <Img src="/img/screenshots/gallery/13-gallery-all-completed-overview.png" alt="All files completed" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>List view of the whole library after processing: 13 files, each with its speakers, duration, date, size and a Completed status.</p>
 </div>
 
 Once batch processing completes, your gallery displays all videos with thumbnails, ready for viewing, searching, and organization.
@@ -174,7 +174,7 @@ Once batch processing completes, your gallery displays all videos with thumbnail
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/transcript/01-transcript-view-speaker-editor-open.png" alt="Transcript workspace" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Complete transcript workspace with video player, waveform visualization, timestamped transcript entries, and speaker editor panel.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Transcript workspace with video player, waveform, timestamped transcript entries, and the speaker editor panel open.</p>
 </div>
 
 The transcript view combines video playback with interactive transcript navigation. Click any timestamp to jump directly to that moment in the video. The waveform provides visual audio feedback.
@@ -183,7 +183,7 @@ The transcript view combines video playback with interactive transcript navigati
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/transcript/02-transcript-with-named-speakers-fullscreen.png" alt="Named speakers in transcript" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Transcript displaying properly identified speakers (NARRATOR, ED ALDRIN, MICHAEL COLLINS) with color-coded labels for easy reading.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Full transcript view of a public lecture with named speakers (Lecture host, Geologist) shown as color-coded labels.</p>
 </div>
 
 After naming speakers, your transcript becomes much more readable with clear attribution for every statement.
@@ -192,7 +192,7 @@ After naming speakers, your transcript becomes much more readable with clear att
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/ai-features/03-ai-summary-search-feature.png" alt="Search with highlighting" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Search functionality with "Saturn V" query highlighted in orange. Shows "1/3" results with navigation arrows for easy searching.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Transcript search with the query "solar wind" highlighted in the text. Shows "1 of 7" matches with navigation arrows.</p>
 </div>
 
 Search within transcripts or AI summaries to quickly find specific words, phrases, or topics. Results are highlighted with navigation controls.
@@ -205,16 +205,16 @@ Search within transcripts or AI summaries to quickly find specific words, phrase
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/speakers/01-speaker-editor-modal-empty-labels.png" alt="Default speaker labels" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Speaker editor showing default labels (SPEAKER_00 through SPEAKER_07) after automatic diarization. Ready to be renamed.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Speaker editor showing the default labels (Speaker 00, Speaker 01) after automatic diarization, ready to be renamed.</p>
 </div>
 
-After automatic speaker diarization, speakers are labeled with generic names (SPEAKER_00, SPEAKER_01, etc.). Use the speaker editor to assign meaningful names.
+After automatic speaker diarization, speakers are labeled with generic names (Speaker 00, Speaker 01, etc.). Use the speaker editor to assign meaningful names.
 
 ### Named Speakers
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/speakers/02-speaker-names-with-historical-figures.png" alt="Historical speaker names" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Speaker editor with Apollo 11 mission participants identified: Michael Collins, John F. Kennedy, Narrator, President Nixon, Ed Aldrin, Buzz Aldrin, President Johnson.</p>
+  <Img src="/img/screenshots/speakers/02-speaker-names-with-historical-figures.png" alt="Named speakers in the editor" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Speaker editor with the lecture's speakers named: Geologist, Rock physicist, Lecture host. Each name can also become a reusable speaker profile.</p>
 </div>
 
 Assign proper names to speakers based on your knowledge of the content. Names are color-coded for easy visual identification throughout the transcript.
@@ -222,8 +222,8 @@ Assign proper names to speakers based on your knowledge of the content. Names ar
 ### AI Speaker Suggestions
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/ai-features/01-speaker-profile-suggestions-expanded.png" alt="AI speaker suggestions" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>AI-powered speaker identification showing "5 suggestions available" with Profile badge. System analyzes voice patterns and transcript context.</p>
+  <Img src="/img/screenshots/ai-features/01-speaker-profile-suggestions-expanded.png" alt="Speaker profile suggestions" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Speaker editor with a suggestion expanded: a profile match (Narrator, 75%) found by voice. Suggestions are never applied automatically.</p>
 </div>
 
 OpenTranscribe can suggest speaker identities based on voice analysis and transcript content, helping you identify speakers faster.
@@ -232,7 +232,7 @@ OpenTranscribe can suggest speaker identities based on voice analysis and transc
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/speakers/06-speaker-voice-similarity-expanded.png" alt="Voice fingerprinting analysis" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Voice fingerprinting showing similarity percentages: President Nixon (100% - self), Ed Aldrin (85%), Buzz Aldrin (86%), John F. Kennedy (71%), President Johnson (68%).</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>A speaker cluster expanded: six speakers grouped under the BLS narrator profile, with the files they appear in and a gender-mismatch warning for review.</p>
 </div>
 
 Advanced voice fingerprinting analyzes acoustic characteristics to compute similarity scores. This helps match the same speaker across different videos with high confidence.
@@ -241,7 +241,7 @@ Advanced voice fingerprinting analyzes acoustic characteristics to compute simil
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/ai-features/05-speaker-voice-fingerprint-files.png" alt="Speaker appears in videos" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Voice fingerprint showing files where "President Nixon" appears. Current video marked with checkmark. Track speakers across your entire library.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>The Narrator cluster lists every recording the voice appears in, so you can track a speaker across your library.</p>
 </div>
 
 Once you've named a speaker, OpenTranscribe can identify them in other videos using voice embeddings, making it easy to find all content featuring specific individuals.
@@ -253,8 +253,8 @@ Once you've named a speaker, OpenTranscribe can identify them in other videos us
 ### Generate AI Summary
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/processing/04-processing-complete-with-summary-button.png" alt="Generate AI Summary button" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Transcript view with "Generate AI Summary" button available after transcription completes. AI summarization is optional and user-triggered.</p>
+  <Img src="/img/screenshots/processing/04-processing-complete-with-summary-button.png" alt="Summary button" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Completed transcript with the Summary button next to Transcript in the player toolbar. AI summarization is optional.</p>
 </div>
 
 After transcription completes, you can optionally generate an AI-powered summary using your configured LLM provider.
@@ -310,7 +310,7 @@ Once applied, tags and collections appear in their respective sections with easy
 
 <div style={{textAlign: "center", margin: "2rem 0"}}>
   <Img src="/img/opentranscribe-chat-workflow.gif" alt="OpenTranscribe AI Chat Workflow" style={{maxWidth: "100%", width: "800px", borderRadius: "8px", boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)"}} />
-  <p style={{marginTop: "1rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Chat workflow: ask a question → narrow the scope with Add context → get a grounded, cited answer.</p>
+  <p style={{marginTop: "1rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Chat workflow: open a new chat → narrow the scope with Add context → ask a question about the chosen recordings.</p>
 </div>
 
 ### Ask Your Recordings Anything
@@ -360,7 +360,7 @@ the assistant says so rather than guessing.
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/01-gallery-filters-expanded-tags-visible.png" alt="Filters sidebar" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Gallery with filters sidebar showing Search Files, Tags (Important, Interview, Meeting, Personal, Space), Collections, Speakers, and Date Range sections.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Gallery filters sidebar scrolled to the Tags section (Preparedness, Public safety, Science and more) above Collections and Ownership.</p>
 </div>
 
 The filters sidebar provides powerful ways to find specific content: search by filename, filter by tags, collections, speakers, or date range.
@@ -369,7 +369,7 @@ The filters sidebar provides powerful ways to find specific content: search by f
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/02-gallery-speakers-filter-populated.png" alt="Speaker filters" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Speakers filter showing detected speakers with video counts: Buzz Aldrin (1), Ed Aldrin (1), John F. Kennedy (1), Michael Collins (1).</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Speakers filter dropdown listing named speakers with file counts: Narrator (2), Flood insurance advocate, Geologist, Heliophysicist and more.</p>
 </div>
 
 After processing, speakers automatically appear in the filter sidebar with counts showing how many videos they appear in. Filter your library to find all content featuring specific individuals.
@@ -378,7 +378,7 @@ After processing, speakers automatically appear in the filter sidebar with count
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/03-gallery-tags-filter-dropdown-expanded.png" alt="Tag selection dropdown" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Tag filter dropdown with searchable checkbox list: Space, Important, Interview, Meeting, Personal. Search field at top for filtering options.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Tag filter dropdown with a searchable checkbox list and file counts: Preparedness, Public safety, Science, English idioms, Flood risk.</p>
 </div>
 
 The tag dropdown is searchable and supports multiple selections, making it easy to filter by combinations of tags.
@@ -391,7 +391,7 @@ The tag dropdown is searchable and supports multiple selections, making it easy 
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/14-gallery-collections-management-modal.png" alt="Manage Collections" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Manage Collections modal showing existing "NASA" collection (0 files) with New Collection button, edit and delete actions.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Manage Collections modal listing existing collections with their file counts, a New Collection button, and share, edit and delete actions.</p>
 </div>
 
 Collections help organize your media library into logical groups. Create, edit, and delete collections through the management modal.
@@ -400,7 +400,7 @@ Collections help organize your media library into logical groups. Create, edit, 
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/15-gallery-create-collection-modal.png" alt="Create collection form" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Create New Collection modal with Name field ("My Collection") and Description field. Simple form for organizing content.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Create New Collection modal with Name ("Public safety"), Description, and a default summary prompt for the collection.</p>
 </div>
 
 Creating a collection is simple: provide a name and optional description. Collections can represent projects, topics, events, or any organizational scheme you prefer.
@@ -409,7 +409,7 @@ Creating a collection is simple: provide a name and optional description. Collec
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/16-gallery-edit-collection-modal.png" alt="Edit collection" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Edit Collection modal for NASA collection. Update name, description, and settings for existing collections.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Edit Collection modal for an existing collection. Update its name, description and default summary prompt.</p>
 </div>
 
 Edit existing collections to update their name or description as your organizational needs evolve.
@@ -422,7 +422,7 @@ Edit existing collections to update their name or description as your organizati
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/17-gallery-select-files-mode-inactive.png" alt="Selection mode activated" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Selection mode enabled showing checkbox on video thumbnail. Header displays "Select all", "Add to Collection", "Delete 0 selected", "Cancel Selection" buttons.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Selection mode enabled with a checkbox on every card. The header shows Select all, Process, Organize and Delete 0 selected.</p>
 </div>
 
 Enable selection mode to perform bulk actions on multiple files. Checkboxes appear on each video card for easy selection.
@@ -431,7 +431,7 @@ Enable selection mode to perform bulk actions on multiple files. Checkboxes appe
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/18-gallery-file-selected-actions-enabled.png" alt="Selected file with actions" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Video selected with blue border and checked checkbox. Action buttons enabled: green "Add to Collection", red "Delete 1 selected".</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>One video selected with a blue border and checked box. Process, Organize and the red Delete 1 selected button are enabled.</p>
 </div>
 
 Selected files are indicated with a blue border and checked checkbox. Action buttons activate showing the count of selected items.
@@ -440,7 +440,7 @@ Selected files are indicated with a blue border and checked checkbox. Action but
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/gallery/19-gallery-add-to-collection-modal.png" alt="Bulk add to collection" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Collections modal with selected file. NASA collection shows blue "Add 1 file" button for bulk assignment.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Collections modal for the selected file: it shows the file's current collection and an Add 1 file button on each other collection.</p>
 </div>
 
 With files selected, you can add them all to a collection in one operation. The "Add X files" button shows how many will be added.
@@ -448,8 +448,8 @@ With files selected, you can add them all to a collection in one operation. The 
 ### Delete Confirmation
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/gallery/20-gallery-delete-confirmation-modal.png" alt="Delete confirmation" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Delete confirmation dialog: "Are you sure you want to delete 1 selected file(s)? This action cannot be undone." Safety warning for destructive actions.</p>
+  <Img src="/img/screenshots/gallery/20-gallery-delete-confirmation-modal.png" alt="Move to trash confirmation" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Move to trash? dialog: selected files go to the Trash and can be recovered for 30 days before they are deleted forever.</p>
 </div>
 
 Destructive actions like deletion require confirmation to prevent accidents. The system clearly warns that deletions cannot be undone.
@@ -462,7 +462,7 @@ Destructive actions like deletion require confirmation to prevent accidents. The
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/info/01-file-status-dashboard-overview.png" alt="File status overview" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>My Files Status dashboard showing: 1 Total Files, 1 Completed, 0 Processing, 0 Pending, 0 Errors. Green success message "All your files are processing normally!"</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>My Files Status dashboard: 13 total files, 13 completed, 0 processing, 0 pending, 0 errors, with the task list below.</p>
 </div>
 
 The File Status dashboard provides an overview of all processing activity. Monitor total files, completion status, and identify any errors requiring attention. Open it from **Settings → System → File status → Open full screen**.
@@ -471,7 +471,7 @@ The File Status dashboard provides an overview of all processing activity. Monit
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/info/02-file-status-task-details-modal.png" alt="File details" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>File Details modal showing file information (name, size 70 MB, duration 27:48, language) and Task Details with completion status.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>File Details modal for a processed video: file information (size, duration, language, models used) and Task Details with completion status.</p>
 </div>
 
 Click any file to view detailed information including file size, duration, language, upload time, and completion status for all processing tasks.
@@ -480,7 +480,7 @@ Click any file to view detailed information including file size, duration, langu
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/info/03-task-details-all-stages-expanded.png" alt="Task timing breakdown" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Complete task timeline showing processing times: Analytics (0s), Speaker_identification (33s), Summarization (41s), Transcription (1m 33s).</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Task Details timeline with each stage's timing: Transcription (21s), speaker attribute detection, Analytics and Summarization.</p>
 </div>
 
 Detailed task information includes processing times for each stage, helping you understand performance and identify any bottlenecks.
@@ -502,7 +502,7 @@ Administrators can monitor system-wide statistics including user counts, media l
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/settings/04-settings-sidebar-administration.png" alt="Settings sidebar" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Settings sidebar showing ADMINISTRATION (Users, Statistics, Task Health, System Settings) and USER SETTINGS (Profile, Password, Recording, Audio Extraction, AI Prompts, LLM Configuration).</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Settings with the sidebar grouped into personal, AI, media, administration and system sections, here open at Authentication.</p>
 </div>
 
 Settings are grouped into Account, Transcription & Speakers, AI & Chat, Media & Output, and (for administrators) Administration and System. Navigate easily between all configuration options.
@@ -511,7 +511,7 @@ Settings are grouped into Account, Transcription & Speakers, AI & Chat, Media & 
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/settings/01-settings-llm-configuration-create.png" alt="Create LLM config" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Create LLM Configuration modal with fields: Configuration Name (Local vLLM), Provider (vLLM), Base URL, Model Name (gpt-oss-20b), Max Tokens (131000), Temperature (0.3). Green success from Test Connection.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Create LLM Configuration modal: Configuration Name, Provider (Custom), Base URL and Model Name filled from a detected local LLM server, plus Max Tokens and Temperature.</p>
 </div>
 
 Configure your LLM provider for AI features. OpenTranscribe supports vLLM, OpenAI, Ollama, Claude (Anthropic), Amazon Bedrock, and OpenRouter. Test connections before saving to ensure proper configuration.
@@ -520,7 +520,7 @@ Configure your LLM provider for AI features. OpenTranscribe supports vLLM, OpenA
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/settings/02-settings-llm-provider-saved.png" alt="Saved LLM configuration" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Saved LLM configuration card showing provider details with Activate, Test Connection, Edit, and Delete buttons.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Saved LLM configuration card marked Currently Active, with test, edit, share and delete actions and the AI Summary Settings below.</p>
 </div>
 
 Manage saved LLM configurations with options to activate, test connectivity, edit settings, or delete providers you no longer need.
@@ -529,7 +529,7 @@ Manage saved LLM configurations with options to activate, test connectivity, edi
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/settings/03-settings-ai-summarization-prompts.png" alt="AI prompt viewer" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>AI Summarization Prompts viewer showing "Universal Content Analyzer" prompt details including full prompt text with BLUF format instructions. Copy button available.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>AI Summarization Prompts: the system prompts (Universal Content Analyzer active, Q&A Panel Extractor) and your own custom prompts.</p>
 </div>
 
 Customize AI prompts used for summarization. View system prompts, copy them for reference, or create custom prompts tailored to your content types.
@@ -538,7 +538,7 @@ Customize AI prompts used for summarization. View system prompts, copy them for 
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/settings/05-settings-users-admin-panel.png" alt="User management" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Users administration panel for creating and managing user accounts with role-based access control.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>User Management panel for creating, inviting and managing user accounts with role-based access control.</p>
 </div>
 
 Administrators can create and manage user accounts, assign roles, and control access to features throughout the application.
@@ -550,8 +550,8 @@ Administrators can create and manage user accounts, assign roles, and control ac
 ### Complete AI Processing Notifications
 
 <div style={{marginBottom: "2rem"}}>
-  <Img src="/img/screenshots/workflow/06-notifications-summarization-complete.png" alt="All AI tasks complete" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Notifications showing all AI tasks completed: Summarization (100%), Topic Extraction (8 tags, 3 collections found), Transcription completed.</p>
+  <Img src="/img/screenshots/workflow/06-notifications-summarization-complete.png" alt="All processing tasks complete" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Notifications showing every upload complete, including the AI enrichment step.</p>
 </div>
 
 When all processing completes, notifications confirm success for each stage: transcription, topic extraction, and summarization. Your content is now fully analyzed and ready to use.
@@ -569,7 +569,7 @@ Once AI summarization completes, a Summary tab appears next to the Transcript ta
 
 <div style={{marginBottom: "2rem"}}>
   <Img src="/img/screenshots/processing/05-processing-complete-ready-for-interaction.png" alt="Complete interface" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
-  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Fully processed video showing player, waveform, transcript entries, and all metadata sections (Tags, Collections, Analytics, Comments). Ready for complete user interaction.</p>
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Fully processed video with player, waveform, named speakers, transcript entries and the metadata sections (Tags, Collections, Analytics, Comments).</p>
 </div>
 
 With processing complete, you have access to the full OpenTranscribe experience: video playback with synchronized transcript, named speakers, AI summaries, suggested tags and collections, and all metadata management tools.

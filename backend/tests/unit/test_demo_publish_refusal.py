@@ -40,9 +40,16 @@ def celery_app(monkeypatch):
 
 
 @pytest.fixture
-def a_task(celery_app):
+def a_task(celery_app, monkeypatch):
     from app.tasks.redaction_task import redaction_detect_task
 
+    # An earlier test's ``monkeypatch.setattr(redaction_detect_task, "delay" | "apply_async")``
+    # is undone by setting the OLD bound method back on the instance, and that bound method is
+    # the session-wide ``_skip_celery_dispatch`` stub. Left in place it shadows the real
+    # ``Task.apply_async`` restored above, so nothing would ever reach ``send_task``.
+    for name in ("delay", "apply_async"):
+        if name in vars(redaction_detect_task):
+            monkeypatch.delattr(redaction_detect_task, name)
     return redaction_detect_task
 
 

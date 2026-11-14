@@ -56,12 +56,12 @@ def test_file_facts_dispatch_swallows_only_broker_outages(monkeypatch, caplog):
     task = MagicMock()
     monkeypatch.setattr(ingest_artifacts_task, "generate_file_facts_task", task)
 
-    task.delay.side_effect = BrokerDown("broker unreachable")
+    task.apply_async.side_effect = BrokerDown("broker unreachable")
     with caplog.at_level(logging.WARNING, logger=ingest_artifacts_task.logger.name):
         assert ingest_artifacts_task.dispatch_file_facts(7) is False
     assert _traceback_logged(caplog, "Failed to dispatch file_facts")
 
-    task.delay.side_effect = TypeError("wrong kwargs: a bug, not an outage")
+    task.apply_async.side_effect = TypeError("wrong kwargs: a bug, not an outage")
     with pytest.raises(TypeError):
         ingest_artifacts_task.dispatch_file_facts(7)
 

@@ -89,6 +89,11 @@ against the live model, with a negative control that fails if the window ever gr
 
 - **Transcription** → `postprocess.enrich_and_dispatch` → `dispatch_file_facts`. Not gated on
   an LLM provider, unlike every other enrichment task on the nlp queue.
+- **Backfills** (`search_maintenance_task._dispatch_facts_backfill`, up to 200 per hourly tick,
+  and `speaker_label_backfill`) dispatch with `priority=NLPPriority.BACKGROUND`, so a burst
+  never sits ahead of a file a user just transcribed (`AUTO_PIPELINE`). Redis priorities need
+  `queue_order_strategy="priority"` and prefetch 1, both set in `core/celery.py`; a Celery
+  `rate_limit` would not help, it is per worker instance.
 - **Indexing (index v6)** calls `generate_file_artifacts` from
   `search/indexing_service._index_digest_plane`, which runs on the per-file index path —
   i.e. inside `reindex_transcript` as addendum **G1** requires, and also on first ingest,

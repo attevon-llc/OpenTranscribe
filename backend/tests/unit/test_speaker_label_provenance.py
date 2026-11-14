@@ -511,7 +511,10 @@ def backfill_world(db_session, normal_user, speaker_os_seams, monkeypatch):
     from app.services.system_settings_service import set_setting
 
     facts: list[int] = []
-    monkeypatch.setattr("app.tasks.ingest_artifacts_task.dispatch_file_facts", facts.append)
+    monkeypatch.setattr(
+        "app.tasks.ingest_artifacts_task.dispatch_file_facts",
+        lambda file_id, **kwargs: facts.append(file_id),
+    )
     top = db_session.query(MediaFile.id).order_by(MediaFile.id.desc()).limit(1).scalar() or 0
     set_setting(db_session, backfill.COMPLETE_FLAG_KEY, "false")
     set_setting(db_session, backfill.CURSOR_KEY, str(top))

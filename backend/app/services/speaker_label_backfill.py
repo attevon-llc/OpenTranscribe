@@ -77,6 +77,7 @@ def backfill_llm_suggested_labels(db: Any, stats: dict[str, Any]) -> None:
         stats["speaker_label_backfill"] = "complete"
         return
 
+    from app.core.queues import NLPPriority
     from app.services.search.reindex_dispatch import ReindexDispatch
     from app.services.search.reindex_dispatch import queue_transcript_reindex
     from app.services.speaker_status_service import SpeakerStatusService
@@ -135,8 +136,9 @@ def backfill_llm_suggested_labels(db: Any, stats: dict[str, Any]) -> None:
             break
         queued += 1
         handled_through = int(file_id)
-        # Facts fingerprint the resolved speaker, so a changed label regenerates them.
-        dispatch_file_facts(int(file_id))
+        # Facts fingerprint the resolved speaker, so a changed label regenerates them. A
+        # backfill batch: queued behind any file a user just transcribed.
+        dispatch_file_facts(int(file_id), priority=NLPPriority.BACKGROUND)
     if handled_through != after_id:
         set_setting(
             db,

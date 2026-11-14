@@ -100,14 +100,28 @@ def generate_file_facts_task(
         benchmark_timing.mark(pipeline_task_id, "file_facts_end")
 
 
-def dispatch_file_facts(file_id: int, pipeline_task_id: str | None = None) -> bool:
+def dispatch_file_facts(
+    file_id: int,
+    pipeline_task_id: str | None = None,
+    *,
+    priority: int = NLPPriority.AUTO_PIPELINE,
+) -> bool:
     """Fire-and-forget dispatch, contained. Returns whether the task was queued.
 
     Wrapped because it is called from the enrichment fan-out: a broker hiccup must cost
     the digest, not the whole enrichment pass.
+
+    Args:
+        file_id: ``MediaFile.id``.
+        pipeline_task_id: Upstream application task id, for the benchmark markers.
+        priority: NLP-queue priority (Redis: 0 runs first). A backfill passes
+            ``NLPPriority.BACKGROUND`` so a burst of it never sits ahead of a file a user
+            just transcribed.
     """
     try:
-        generate_file_facts_task.delay(file_id=file_id, pipeline_task_id=pipeline_task_id)
+        generate_file_facts_task.apply_async(
+            kwargs={"file_id": file_id, "pipeline_task_id": pipeline_task_id}, priority=priority
+        )
         logger.info("Dispatched file_facts generation for file %s", file_id)
         return True
     except (KombuError, OSError) as exc:

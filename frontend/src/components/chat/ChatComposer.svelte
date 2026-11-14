@@ -7,7 +7,7 @@
   (rather than sitting disabled, which would strand the user mid-generation).
 -->
 <script lang="ts">
-  import { createEventDispatcher, tick } from 'svelte';
+  import { createEventDispatcher, onMount, tick } from 'svelte';
   import { t } from '$stores/locale';
   import type { StreamStatus } from '$lib/types/chat';
 
@@ -32,13 +32,27 @@
   $: canSend = value.trim().length > 0 && !tooLong && !disabled && !isStreaming && blockedFor <= 0;
   $: showCounter = value.length > maxLength * 0.9;
 
+  $: placeholder = disabled ? $t('chat.setup.noLlmMessage') : $t('chat.composer.placeholder');
+
+  /**
+   * Size the field to its text, or to its placeholder while empty.
+   *
+   * A placeholder does not count towards `scrollHeight`, so the two-line "chat needs a language
+   * model" notice was cut off mid-line in most locales. Measuring it as a value for one
+   * synchronous read sizes the field to it without a paint in between.
+   */
   async function autoGrow(): Promise<void> {
-    if (!textarea) return;
     await tick();
+    // Re-read after the tick: the component may have been destroyed in between.
+    if (!textarea) return;
     textarea.style.height = 'auto';
+    const showsPlaceholder = textarea.value === '' && textarea.placeholder !== '';
+    if (showsPlaceholder) textarea.value = textarea.placeholder;
+    const contentHeight = textarea.scrollHeight;
+    if (showsPlaceholder) textarea.value = '';
     const maxHeight = MAX_ROWS * LINE_HEIGHT_PX + 16;
-    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    textarea.style.height = `${Math.min(contentHeight, maxHeight)}px`;
+    textarea.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
   }
 
   function submit(): void {
@@ -67,7 +81,25 @@
     textarea?.focus();
   }
 
-  $: if (value !== undefined) void autoGrow();
+  // Re-measure when the field's WIDTH changes (the trace panel opening beside the chat, a window
+  // resize): the same text wraps onto a different number of lines. Height changes are ignored,
+  // so setting the height here cannot feed back into the observer.
+  onMount(() => {
+    // On first render the value never changes, so without this the empty field (and its
+    // placeholder) was never measured at all.
+    void autoGrow();
+    if (typeof ResizeObserver === 'undefined') return;
+    let width = textarea.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (textarea.clientWidth === width) return;
+      width = textarea.clientWidth;
+      void autoGrow();
+    });
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  });
+
+  $: if (value !== undefined && placeholder !== undefined) void autoGrow();
 </script>
 
 <div class="composer" class:disabled>
@@ -77,7 +109,7 @@
       bind:value
       on:keydown={handleKeydown}
       rows={MIN_ROWS}
-      placeholder={disabled ? $t('chat.setup.noLlmMessage') : $t('chat.composer.placeholder')}
+      {placeholder}
       aria-label={$t('chat.composer.placeholder')}
       {disabled}
       data-testid="chat-composer-input"

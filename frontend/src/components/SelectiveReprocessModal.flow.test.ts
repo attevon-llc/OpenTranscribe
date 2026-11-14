@@ -4,7 +4,7 @@
  * prefill and the cloud-ASR banner are covered in `SelectiveReprocessModal.test.ts`.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
@@ -355,5 +355,30 @@ describe('submitting', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('media missing'));
     expect(document.querySelector('.stage-checkbox, .review-section')).not.toBeNull();
     expect(primary().disabled).toBe(false);
+  });
+});
+
+describe('opened from the track-mismatch notice (#1263)', () => {
+  const TWO_TRACKS = {
+    ...DONE,
+    audio_streams: [
+      { index: 0, language: 'por', codec: 'aac' },
+      { index: 1, language: 'eng', codec: 'aac' },
+    ],
+    audio_stream_index: 0,
+  };
+
+  it('starts on the settings step with transcription selected and the track picker showing', async () => {
+    render(SelectiveReprocessModal, {
+      props: { showModal: true, file: TWO_TRACKS, initialStages: ['transcription'] },
+    });
+    await waitFor(() => expect(screen.getByTestId('audio-track-select')).toBeInTheDocument());
+    expect(boxes()).toHaveLength(0);
+  });
+
+  it('still opens on the stage list with nothing ticked when no stage is preselected', async () => {
+    await open({ file: TWO_TRACKS });
+    expect(boxes().every((b) => !b.checked)).toBe(true);
+    expect(screen.queryByTestId('audio-track-select')).toBeNull();
   });
 });

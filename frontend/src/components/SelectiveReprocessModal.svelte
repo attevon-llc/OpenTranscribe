@@ -1,6 +1,6 @@
 <script lang="ts">
   import InfoIcon from '$components/ui/InfoIcon.svelte';
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, tick } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { t } from '$stores/locale';
@@ -42,6 +42,8 @@
   export let reprocessing: boolean = false;
   export let bulkMode: boolean = false;
   export let bulkFiles: (ReprocessFile & { uuid: string })[] = [];
+  /** Stages ticked when the modal opens; the wizard then skips ahead to the settings step. */
+  export let initialStages: string[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -225,6 +227,16 @@
     }
   }
 
+  // Svelte 4 does not re-run `$:` blocks for state assigned inside a reactive pass (handleOpen
+  // runs from one), so apply the preselection after the current flush.
+  async function startOnSettingsStep(stages: string[]) {
+    await tick();
+    selectedStages = new Set(stages);
+    if (requiresSettingsStep(selectedStages, showsSpeakerSettings(selectedStages, isCloudASR))) {
+      currentStep = 2;
+    }
+  }
+
   // Reset state and fetch ASR status when modal opens
   function handleOpen(open: boolean, target: typeof file) {
     if (!open) return;
@@ -233,6 +245,7 @@
     selectedLanguage = null;
     selectedAudioTrack = target?.audio_stream_index ?? target?.audio_streams?.[0]?.index ?? null;
     void loadSpeakerPrefill();
+    if (initialStages.length > 0) void startOnSettingsStep(initialStages);
     // Ensure LLM status is loaded (may not be ready if user navigated quickly)
     void llmStatusStore.initialize();
     ASRSettingsApi.getStatus().then((status) => {

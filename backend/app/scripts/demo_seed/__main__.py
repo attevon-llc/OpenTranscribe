@@ -39,6 +39,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core.demo_info import DEMO_LICENSE_KEY
+from app.scripts.demo_seed import processing
 from app.scripts.demo_seed.bundle import BundleError
 from app.scripts.demo_seed.bundle import SeedItem
 from app.scripts.demo_seed.bundle import load_bundle
@@ -174,10 +175,24 @@ def _seed_item(item: SeedItem, bundle_version: str, user_id: int) -> str:
             {"filename": item.media.name, "content_type": content_type, "file_size": size}
         )
         db.commit()
+    _finish_item(item.id, record, user_id, storage_path, content_type)
+    return file_uuid
+
+
+def _finish_item(item_id: str, record, user_id: int, storage_path: str, content_type: str) -> None:
+    """What a pipeline run records, a thumbnail, then the production indexing and redaction."""
+    from app.db.base import SessionLocal
+    from app.scripts.corpus_injection import injector
+
+    with SessionLocal() as db:
+        processing.record_import_processing(db, record.media_file_id, user_id)
+    if not processing.generate_import_thumbnail(
+        record.media_file_id, user_id, storage_path, content_type
+    ):
+        raise RuntimeError(f"{item_id}: no thumbnail could be made from the media")
     injector.dispatch_indexing(record, user_id, mode="eager")
     with SessionLocal() as db:
         injector.dispatch_redaction(db, record, user_id, mode="eager")
-    return file_uuid
 
 
 def _seed_conversations(

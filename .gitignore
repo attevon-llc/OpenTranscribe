@@ -329,8 +329,10 @@ GITHUB_OPTIMIZATION_TASKS.md
 # PKI test certificates (generated)
 scripts/pki/test-certs/
 
-# Claude Code worktrees
+# Claude Code worktrees, private agent notes and throwaway scripts
 .claude/worktrees/
+.claude/work/
+.claude/tmp/
 test-results/
 
 # Watch Sources local mount (test/runtime media — issue #26)

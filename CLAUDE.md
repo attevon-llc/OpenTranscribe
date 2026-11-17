@@ -386,6 +386,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
   merged"). Only once the branch is fully green does a PR go open from it into `master`; `master`
   changes **only** via that merged PR, never via a local `git merge <branch>` on `master` pushed
   directly — that bypasses review and produces a merge commit nobody chose the message for.
+- **Where files live.** Worktrees in `.claude/worktrees/`, scratch in `.claude/tmp/`, private notes in `.claude/work/` (all git-ignored), generic tooling committed under `scripts/`; nothing in `~`, `/tmp` or beside the repo. Close every task with a cleanup pass. Rules and lifetimes: `docs/agent-workflow/where-files-live.md`.
 - **More than one writer in a checkout? ONE of them commits**, everyone else hands over exact paths plus a commit message. Inside a stash window your uncommitted work is GONE from disk and a green test run can have tested the OLD code: check the run used YOUR code. To watch a test fail against old code use a `git archive HEAD` tree (`ot-redcheck.` prefix), never swap files in the shared checkout. `audit-tests` is a whole-tree gate; commit with an explicit pathspec (and `git add` untracked files first). The reasoning and incidents: `docs/agent-workflow/pre-commit-and-concurrent-writers.md`.
 - **Every `.py` edit under `backend/app/` restarts the hot-reloading dev backend, and startup
   dispatches `search_index_maintenance`.** That corrupted three reindexes in one day. Batch app-file

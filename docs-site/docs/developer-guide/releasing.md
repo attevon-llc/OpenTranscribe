@@ -656,7 +656,15 @@ matrix runs the release twice.
 - **Clean worktree** — a release must be reproducible from its tag.
 - **The remote ARM64 builder** is a machine on the LAN, and its address can move.
   Preflight prints the stale endpoint and the fix rather than failing at publish
-  time.
+  time. The symptom to recognise: `docker buildx ls` shows the `remote-arm64` node
+  as `error`, with `Get "http://docker.example.com/_ping": context deadline exceeded`.
+  That host name is only Docker's placeholder for an SSH-tunnelled endpoint, not a
+  setting to hunt for; it means the SSH connection to the saved address timed out
+  (the machine changed network, is asleep, or SSH is off). Check
+  `ssh <user>@<ip> uname -m` (it must print `arm64`), then repoint the saved address
+  with `./scripts/setup-remote-builder.sh --host <user>@<current-ip>` (or
+  `docker context update remote-arm64 --docker host=ssh://<user>@<current-ip>`) and
+  confirm `docker buildx ls` shows the node `running`.
 - **`HUGGINGFACE_TOKEN`** in `scripts/release-tests/.env.test-secrets`, or both
   rehearsal scenarios fail at their first transcription — hours in.
 - **Model fixtures**: `./scripts/release-tests/provision-test-media.sh` derives

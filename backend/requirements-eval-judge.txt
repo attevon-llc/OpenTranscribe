@@ -9,7 +9,7 @@
 # ---------------------------------------------------------------------------
 # Why a separate venv, not a separate `pip install` into the same one
 # ---------------------------------------------------------------------------
-# `ragas==0.4.3` (Apache-2.0) requires `instructor` unconditionally (no extras
+# `ragas==0.4.4` (Apache-2.0) requires `instructor` unconditionally (no extras
 # gate). `instructor==1.15.4` (the newest version PyPI has, checked 2026-08-19 —
 # no newer release exists) requires `openai<3.0.0,>=2.0.0`. `backend/
 # requirements.txt` pins `openai==3.3.0` — the app's real LLM client, exercised
@@ -33,7 +33,7 @@
 # A second, independently-discovered conflict: ragas 0.4.3 vs current
 # langchain-community
 # ---------------------------------------------------------------------------
-# `ragas==0.4.3` declares `Requires-Dist: langchain-community` with NO version
+# `ragas==0.4.4` declares `Requires-Dist: langchain-community` with NO version
 # bound at all, so an unconstrained install resolves the newest release
 # (0.4.2, checked 2026-08-19). `ragas/llms/base.py` imports
 # `from langchain_community.chat_models.vertexai import ChatVertexAI` at
@@ -60,7 +60,7 @@
 # (#492): "every spec is pinned, a floor is not a pin."
 langchain-community==0.4.2
 
-ragas==0.4.3
+ragas==0.4.4
 
 # `ragas.embeddings.huggingface_provider.HuggingFaceEmbeddings(use_api=False)` —
 # `answer_correctness`'s LOCAL similarity embedder (module docstring: never a
